@@ -582,6 +582,7 @@ DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, J
     : IProcessor(InputPorts{}, OutputPorts(num_streams, Block()))
     , join(std::move(join_))
 {
+    spillable = typeid_cast<GraceHashJoin *>(join.get()) || typeid_cast<SpillingHashJoin *>(join.get());
 }
 
 void DelayedJoinedBlocksTransform::work()
@@ -591,6 +592,55 @@ void DelayedJoinedBlocksTransform::work()
 
     delayed_blocks = join->getDelayedBlocks();
     finished = finished || delayed_blocks == nullptr;
+}
+
+ProcessorMemoryStats DelayedJoinedBlocksTransform::getMemoryStats()
+{
+    if (!spillable)
+        return {};
+
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = join->getTotalByteCount();
+    res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
+    return res;
+}
+
+bool DelayedJoinedBlocksTransform::spillOnSize(size_t bytes)
+{
+    if (join->getTotalByteCount() < bytes)
+        return false;
+
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+    {
+        grace_join->forceSpill();
+        return true;
+    }
+    if (auto * spilling_join = typeid_cast<SpillingHashJoin *>(join.get()))
+        return spilling_join->forceSpill();
+    return false;
+}
+
+const void * DelayedJoinedBlocksTransform::getMemoryReservationSpillTarget() const
+{
+    return join.get();
+}
+
+bool DelayedJoinedBlocksTransform::spillForMemoryReservation()
+{
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+        return grace_join->spillForMemoryReservation();
+    if (auto * spilling_join = typeid_cast<SpillingHashJoin *>(join.get()))
+        return spilling_join->spillForMemoryReservation();
+    return false;
+}
+
+bool DelayedJoinedBlocksTransform::hasPendingSpill() const
+{
+    if (const auto * grace_join = typeid_cast<const GraceHashJoin *>(join.get()))
+        return grace_join->hasPendingSpill();
+    if (const auto * spilling_join = typeid_cast<const SpillingHashJoin *>(join.get()))
+        return spilling_join->hasPendingMemoryReservationSpill();
+    return false;
 }
 
 IProcessor::Status DelayedJoinedBlocksTransform::prepare()
