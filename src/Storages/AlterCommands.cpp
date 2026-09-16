@@ -151,6 +151,38 @@ void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChange
     }
 }
 
+/// Rebuilds the implicit minmax indices from the `SETTINGS` clause. A setting dropped from it falls
+/// back to `settings_defaults`, the engine's config defaults. Engines without implicit indices pass none.
+void refreshSettingsDerivedMetadata(
+    StorageInMemoryMetadata & metadata, const MergeTreeSettings * settings_defaults, ContextPtr context)
+{
+    if (!settings_defaults)
+        return;
+
+    MergeTreeSettings effective_settings = *settings_defaults;
+    for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
+    {
+        if (MergeTreeSettings::hasBuiltin(change.name))
+            effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+    }
+
+    metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+    metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+    metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+    metadata.add_minmax_index_for_block_number_column
+        = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
+    metadata.add_minmax_index_for_block_offset_column
+        = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
+
+    for (const auto & column : metadata.columns)
+    {
+        metadata.dropImplicitIndicesForColumn(column.name);
+        metadata.addImplicitIndicesForColumn(column, context);
+    }
+    metadata.dropImplicitIndicesForVirtualColumns();
+    metadata.addImplicitIndicesForVirtualColumns(context);
+}
+
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
     if (property.empty())
@@ -750,7 +782,11 @@ std::optional<AlterCommand> AlterCommand::extractSettingsResets()
 
 
 void AlterCommand::apply(
-    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const ColumnsDescription * columns_before_alter,
+    const MergeTreeSettings * settings_defaults) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&]() -> bool {
@@ -1276,32 +1312,7 @@ void AlterCommand::apply(
                 std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
-        MergeTreeSettings effective_settings;
-        bool any_mt_setting = false;
-        for (const auto & change : settings_from_storage)
-        {
-            if (MergeTreeSettings::hasBuiltin(change.name))
-            {
-                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
-                any_mt_setting = true;
-            }
-        }
-        if (any_mt_setting)
-        {
-            metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-            metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
-            metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-            metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
-            metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
-
-            for (const auto & column : metadata.columns)
-            {
-                metadata.dropImplicitIndicesForColumn(column.name);
-                metadata.addImplicitIndicesForColumn(column, context);
-            }
-            metadata.dropImplicitIndicesForVirtualColumns();
-            metadata.addImplicitIndicesForVirtualColumns(context);
-        }
+        refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RESET_SETTING)
     {
@@ -1309,6 +1320,7 @@ void AlterCommand::apply(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
         resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
+        refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1806,7 +1818,11 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+void AlterCommands::apply(
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const MergeTreeSettings * settings_defaults) const
 {
     if (!prepared)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
@@ -1814,8 +1830,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     auto metadata_copy = metadata;
 
     for (const AlterCommand & command : *this)
+    {
         if (!command.ignore)
-            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns);
+            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
+    }
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
