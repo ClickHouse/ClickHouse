@@ -19,8 +19,6 @@
 #include <IO/ReadBufferFromS3.h>
 
 #include <IO/S3/Requests.h>
-#include <Common/FailPoint.h>
-#include <aws/core/http/HttpResponse.h>
 
 #include <fmt/ranges.h>
 
@@ -55,12 +53,6 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
-    extern const int S3_OBJECT_CHANGED_DURING_READ;
-}
-
-namespace FailPoints
-{
-    extern const char s3_copy_inject_etag_mismatch[];
 }
 
 namespace S3RequestSetting
@@ -95,8 +87,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const LoggerPtr log_,
-            bool use_upload_checksum_algorithm_)
+            const LoggerPtr log_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -105,13 +96,6 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
-            /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`)
-            /// and rejects `SigV4`-signed requests that carry them with `SignatureDoesNotMatch`, so never enable them for
-            /// `GCS`. `GCS` is never an `S3Express` bucket, so this is independent of the `S3Express` handling.
-            , upload_checksum_algorithm(
-                use_upload_checksum_algorithm_ && !client_ptr->isClientForGCS()
-                    ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
-                    : std::nullopt)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -119,14 +103,7 @@ namespace
 
         virtual ~UploadHelper() = default;
 
-        /// The `ETag` of the generation the upload or copy created at `dest_key`, as the response
-        /// to the request that created it reported it; empty until then, and when the endpoint
-        /// reported none.
-        const String & createdETag() const { return created_etag; }
-
     protected:
-        String created_etag;
-
         std::shared_ptr<const S3::Client> client_ptr;
         const String & dest_bucket;
         const String & dest_key;
@@ -135,7 +112,6 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -152,7 +128,6 @@ namespace
         size_t normal_part_size;
         String multipart_upload_id;
         DequeWithMemoryTracking<String> multipart_tags;
-        DequeWithMemoryTracking<String> multipart_checksums;
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
@@ -170,9 +145,6 @@ namespace
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
-
-            if (usesFlexibleUploadChecksumHeader())
-                request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -226,10 +198,7 @@ namespace
             for (size_t i = 0; i < multipart_tags.size(); ++i)
             {
                 Aws::S3::Model::CompletedPart part;
-                part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-                if (usesFlexibleUploadChecksumHeader())
-                    S3::RequestChecksum::setChecksum(part, *upload_checksum_algorithm, multipart_checksums.at(i));
-                multipart_upload.AddParts(part);
+                multipart_upload.AddParts(part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
             }
 
             request.SetMultipartUpload(multipart_upload);
@@ -253,7 +222,6 @@ namespace
 
                 if (outcome.IsSuccess())
                 {
-                    created_etag = outcome.GetResult().GetETag();
                     LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     break;
                 }
@@ -313,7 +281,6 @@ namespace
             try
             {
                 multipart_tags.resize(num_parts);
-                multipart_checksums.resize(num_parts);
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
                     if (has_failed)
@@ -327,12 +294,11 @@ namespace
                     chassert(part_size);
 
                     auto & part_tag = multipart_tags[part_number - 1];
-                    auto & part_checksum = multipart_checksums[part_number - 1];
 
-                    task_tracker.add([this, part_number, position, part_size, &part_tag, &part_checksum]()
+                    task_tracker.add([this, part_number, position, part_size, &part_tag]()
                     {
                         UploadPartTask task = {part_number, position, part_size};
-                        this->processUploadTask(task, part_tag, part_checksum);
+                        this->processUploadTask(task, part_tag);
                     });
 
                     position = next_position;
@@ -414,26 +380,7 @@ namespace
             normal_part_size = part_size;
         }
 
-        String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
-        {
-            if (!usesFlexibleUploadChecksumHeader())
-                return {};
-
-            auto & upload_part_request = typeid_cast<S3::UploadPartRequest &>(request);
-
-            upload_part_request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
-
-            auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(upload_part_request, *upload_checksum_algorithm);
-            S3::RequestChecksum::setChecksum(upload_part_request, *upload_checksum_algorithm, checksum);
-            return checksum;
-        }
-
-        bool usesFlexibleUploadChecksumHeader() const
-        {
-            return upload_checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*upload_checksum_algorithm);
-        }
-
-        void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
+        void processUploadTask(UploadPartTask & task, String & part_tag)
         {
             if (has_failed)
                 return;
@@ -443,21 +390,17 @@ namespace
                 Stopwatch watch;
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
-                auto checksum = prepareChecksums(*request);
                 auto tag = processUploadPartRequest(*request);
 
                 watch.stop();
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
-                part_tag = std::move(tag);
-                /// Empty unless a flexible checksum was requested; `prepareChecksums` guarantees a
-                /// non-empty value in that case (it throws otherwise), so there is nothing to re-check here.
-                part_checksum = std::move(checksum);
+                part_tag = tag;
                 auto finished_count = ++num_finished_parts;
 
                 LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
-                        task.part_number, dest_bucket, dest_key, multipart_upload_id, part_tag, finished_count, num_parts);
+                        task.part_number, dest_bucket, dest_key, multipart_upload_id, tag, finished_count, num_parts);
             }
             catch (Exception & e)
             {
@@ -489,16 +432,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(
-                client_ptr_,
-                dest_bucket_,
-                dest_key_,
-                request_settings_,
-                object_metadata_,
-                schedule_,
-                blob_storage_log_,
-                getLogger("copyDataToS3File"),
-                /* use_upload_checksum_algorithm =*/ true)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"))
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -549,9 +483,6 @@ namespace
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
-            if (usesFlexibleUploadChecksumHeader())
-                request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
-
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
 
@@ -582,7 +513,6 @@ namespace
 
                 if (outcome.IsSuccess())
                 {
-                    created_etag = outcome.GetResult().GetETag();
                     Int64 object_size = request.GetContentLength();
                     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, object_size);
                     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
@@ -688,8 +618,6 @@ namespace
             size_t src_offset_,
             size_t src_size_,
             size_t src_object_size_,
-            const String & src_etag_,
-            const String & src_version_id_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
@@ -697,7 +625,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<String()> fallback_method_,
+            std::function<void()> fallback_method_,
             bool is_ranged_copy_)
             : UploadHelper(
                 client_ptr_,
@@ -707,39 +635,22 @@ namespace
                 object_metadata_,
                 schedule_,
                 blob_storage_log_,
-                getLogger("copyS3File"),
-                /* use_upload_checksum_algorithm =*/ false)
+                getLogger("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
             , src_object_size(src_object_size_)
-            , src_etag(src_etag_)
-            , src_version_id(src_version_id_)
-            /// Native multipart copy is disabled for `S3Express` buckets: there `Client::doRequest` forces
-            /// `CreateMultipartUpload` to use a flexible checksum, but the copy path does not propagate the per-part
-            /// checksums returned by `UploadPartCopy` into `CompleteMultipartUpload`, which then fails. Large objects
-            /// fall back to read-and-reupload via `fallback_method`, which checksums each part correctly.
-            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy() && !client_ptr_->isS3ExpressBucket())
+            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
             , is_ranged_copy(is_ranged_copy_)
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
         {
-            /// Makes the pinned copy carry a generation the source never had, which is what a source
-            /// replaced in place between the `HeadObject` of the caller and the copy looks like to
-            /// the endpoint: it answers `412`, and the copy must be refused, not retried by another
-            /// route and not fallen back to an unpinned read.
-            fiu_do_on(FailPoints::s3_copy_inject_etag_mismatch, {
-                if (!src_etag.empty())
-                    src_etag = "\"injected-etag-mismatch\"";
-            });
         }
 
         void performCopy()
         {
-            LOG_TEST(log, "Copy object {} to {} using native copy{}{}", src_key, dest_key,
-                src_version_id.empty() ? "" : fmt::format(" of version {}", src_version_id),
-                src_etag.empty() ? "" : fmt::format(", pinned to the generation with `ETag` {}", src_etag));
+            LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
 
             /// A ranged copy carries a byte range that whole-object CopyObject ignores, so it must not take
             /// the single-operation path -- doing so would copy the entire source object. It can only use
@@ -750,7 +661,7 @@ namespace
             bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
             if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
             {
-                created_etag = fallback_method();
+                fallback_method();
                 return;
             }
 
@@ -775,27 +686,10 @@ namespace
         size_t offset;
         size_t size;
         size_t src_object_size;
-        /// The generation of the source that is copied, or empty for a copy by key alone.
-        String src_etag;
-        /// The version of the source that is copied, or empty for the current one.
-        const String & src_version_id;
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
-        /// The read-and-write copy; returns the `ETag` of the generation it created, like this class does.
-        std::function<String()> fallback_method;
-
-        /// What `CopyObject` and `UploadPartCopy` name as the source: `bucket/key`, with the version
-        /// appended as `?versionId=...` when one is selected, which is the form the SDK documents for
-        /// `SetCopySource` (the SDK percent-encodes the whole value into `x-amz-copy-source`, and the
-        /// endpoint decodes it back). Without the version, a copy of a source that the caller reads by
-        /// version would copy the latest version of the key instead.
-        String copySource() const
-        {
-            if (src_version_id.empty())
-                return src_bucket + "/" + src_key;
-            return src_bucket + "/" + src_key + "?versionId=" + src_version_id;
-        }
+        std::function<void()> fallback_method;
 
         void performSingleOperationCopy()
         {
@@ -804,30 +698,9 @@ namespace
             processCopyRequest(request);
         }
 
-        /// Whether the endpoint refused the copy because the source is not the generation the copy is
-        /// pinned to. The SDK has no typed model error for `PreconditionFailed`, so the raw code is kept
-        /// in the exception name; the HTTP status is checked as well, for a marshaller that keeps it.
-        bool sourceIsNotThePinnedGeneration(const Aws::Client::AWSError<Aws::S3::S3Errors> & error) const
-        {
-            return !src_etag.empty()
-                && (error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED
-                    || error.GetExceptionName() == "PreconditionFailed");
-        }
-
-        [[noreturn]] void throwSourceChanged() const
-        {
-            throw Exception(
-                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
-                "S3 object {}/{} was not copied to {}/{}: it was replaced after it was selected for the copy "
-                "(`x-amz-copy-source-if-match` on `ETag` {} failed)",
-                src_bucket, src_key, dest_bucket, dest_key, src_etag);
-        }
-
         void fillCopyRequest(S3::CopyObjectRequest & request)
         {
-            request.SetCopySource(copySource());
-            if (!src_etag.empty())
-                request.SetCopySourceIfMatch(src_etag);
+            request.SetCopySource(src_bucket + "/" + src_key);
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
 
@@ -859,7 +732,6 @@ namespace
                 auto outcome = client_ptr->CopyObject(request);
                 if (outcome.IsSuccess())
                 {
-                    created_etag = outcome.GetResult().GetCopyObjectResultDetails().GetETag();
                     LOG_TRACE(
                         log,
                         "Single operation copy has completed. Bucket: {}, Key: {}, Object size: {}",
@@ -868,11 +740,6 @@ namespace
                         size);
                     break;
                 }
-
-                /// Decided before every other route: a `412` means the source is another generation
-                /// now, and neither a multipart copy nor the read-and-write fallback may copy that one.
-                if (sourceIsNotThePinnedGeneration(outcome.GetError()))
-                    throwSourceChanged();
 
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
                     outcome.GetError().GetExceptionName() == "InvalidRequest" ||
@@ -889,7 +756,7 @@ namespace
                             dest_bucket,
                             dest_key,
                             size);
-                        created_etag = fallback_method();
+                        fallback_method();
                         break;
                     }
 
@@ -942,7 +809,7 @@ namespace
                     throw;
 
                 tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
-                created_etag = fallback_method();
+                fallback_method();
             }
         }
 
@@ -951,11 +818,7 @@ namespace
             auto request = std::make_unique<S3::UploadPartCopyRequest>();
 
             /// Make a copy request to copy a part.
-            request->SetCopySource(copySource());
-            /// Every part is pinned to the same generation, so a source replaced in place between two
-            /// parts cannot make the destination a splice of two generations.
-            if (!src_etag.empty())
-                request->SetCopySourceIfMatch(src_etag);
+            request->SetCopySource(src_bucket + "/" + src_key);
             request->SetBucket(dest_bucket);
             request->SetKey(dest_key);
             request->SetUploadId(multipart_upload_id);
@@ -976,8 +839,6 @@ namespace
             auto outcome = client_ptr->UploadPartCopy(req);
             if (!outcome.IsSuccess())
             {
-                if (sourceIsNotThePinnedGeneration(outcome.GetError()))
-                    throwSourceChanged();
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
@@ -1005,7 +866,7 @@ std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
 }
 
 
-String copyDataToS3File(
+void copyDataToS3File(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
@@ -1029,7 +890,6 @@ String copyDataToS3File(
         schedule,
         blob_storage_log};
     helper.performCopy();
-    return helper.createdETag();
 }
 
 
@@ -1037,15 +897,13 @@ namespace
 {
     /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
     /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    String copyS3FileImpl(
+    void copyS3FileImpl(
         std::shared_ptr<const S3::Client> src_s3_client,
         const String & src_bucket,
         const String & src_key,
         size_t src_offset,
         size_t src_size,
         size_t src_object_size,
-        const String & src_etag,
-        const String & src_version_id,
         std::shared_ptr<const S3::Client> dest_s3_client,
         const String & dest_bucket,
         const String & dest_key,
@@ -1060,9 +918,9 @@ namespace
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
 
-        std::function<String()> fallback_method = [&] mutable
+        std::function<void()> fallback_method = [&] mutable
         {
-            return copyDataToS3File(
+            copyDataToS3File(
                 fallback_file_reader,
                 src_offset,
                 src_size,
@@ -1078,7 +936,8 @@ namespace
         if (!settings[S3RequestSetting::allow_native_copy])
         {
             LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            return fallback_method();
+            fallback_method();
+            return;
         }
 
         CopyFileHelper helper{
@@ -1088,8 +947,6 @@ namespace
             src_offset,
             src_size,
             src_object_size,
-            src_etag,
-            src_version_id,
             dest_bucket,
             dest_key,
             settings,
@@ -1100,17 +957,14 @@ namespace
             std::move(fallback_method),
             is_ranged_copy};
         helper.performCopy();
-        return helper.createdETag();
     }
 }
 
-String copyS3File(
+void copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_size,
-    const String & src_etag,
-    const String & src_version_id,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1121,15 +975,13 @@ String copyS3File(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    return copyS3FileImpl(
+    copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,
         /* src_offset= */ 0,
         src_size,
         /* src_object_size= */ src_size,
-        src_etag,
-        src_version_id,
         std::move(dest_s3_client),
         dest_bucket,
         dest_key,
@@ -1142,15 +994,13 @@ String copyS3File(
         /* is_ranged_copy= */ false);
 }
 
-String copyS3FileRange(
+void copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
     size_t src_size,
     size_t src_object_size,
-    const String & src_etag,
-    const String & src_version_id,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1161,15 +1011,13 @@ String copyS3FileRange(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    return copyS3FileImpl(
+    copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,
         src_offset,
         src_size,
         src_object_size,
-        src_etag,
-        src_version_id,
         std::move(dest_s3_client),
         dest_bucket,
         dest_key,

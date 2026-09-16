@@ -2,7 +2,6 @@
 
 #include <string>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -169,12 +168,6 @@ struct RelativePathWithMetadata
     bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
-    /// When set, the read of this object must be pinned to the generation named by
-    /// `metadata->etag`, whatever the read settings say. It is set by a caller that acts on the
-    /// generation it ingested after the read (the Azure `MOVE`/`DELETE` of `ObjectStorageQueue`),
-    /// for which reading another generation than the one the post-processing moves or deletes is
-    /// a lost file rather than a torn read.
-    bool require_read_pinned_to_generation = false;
 
     RelativePathWithMetadata() = default;
 
@@ -348,20 +341,10 @@ public:
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
 
     /// Remove objects on path if exists
-    virtual void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & object,
-        StoredObjects * successful_objects = nullptr) = 0;
+    virtual void removeObjectsIfExist(const StoredObjects & object) = 0;
 
-    /// Copy object with different attributes if required.
-    ///
-    /// Returns the `ETag` of the generation the copy created at `object_to`, as the endpoint reported
-    /// it in the response to the write that created it (the `CopyObject`, `PutObject` or
-    /// `CompleteMultipartUpload` on S3, the `Copy Blob`, `Put Blob` or `Put Block List` on Azure), or
-    /// an empty string when the endpoint reported none or the object storage does not name
-    /// generations. A caller that has to address exactly that generation afterwards - a rollback
-    /// that deletes what the copy wrote - uses it instead of a `HEAD` of the key, which names
-    /// whatever generation is there by the time it runs.
-    virtual String copyObject( /// NOLINT
+    /// Copy object with different attributes if required
+    virtual void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
@@ -429,10 +412,8 @@ public:
     /// such storages instead of failing close at read time.
     virtual bool supportsObjectGenerationComparison() const { return true; }
 
-    void setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_);
-    std::pair<String, String> getIOSchedulingResourceNames() const;
-
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
     virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
@@ -472,11 +453,7 @@ public:
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
-    virtual void tagObjects( /// NOLINT
-        const StoredObjects &,
-        const std::string &,
-        const std::string &,
-        [[ maybe_unused ]] StoredObjects * successful_objects = nullptr)
+    virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }
@@ -485,11 +462,6 @@ public:
     /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
-
-private:
-    mutable std::mutex io_scheduling_mutex;
-    String read_resource_name;
-    String write_resource_name;
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
