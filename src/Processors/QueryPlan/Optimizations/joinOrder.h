@@ -103,6 +103,10 @@ struct QueryGraph
     bool use_conflict_detector_a = false;
     bool use_conflict_detector_c = false;
 
+    /// Whether a semi/anti join actually joined this set of tables. `conflict_ops` lists every join
+    /// of the original query whatever the settings, so it cannot answer this on its own.
+    bool semi_anti_flattened = false;
+
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).
     /// The relation may be joined (as a singleton side) only against a set that contains all
