@@ -23,6 +23,39 @@ ENGINE = MergeTree
 ORDER BY (x, sipHash64(_block_number))
 SETTINGS enable_block_number_column = 1; -- { serverError BAD_ARGUMENTS }
 
+-- The same holds when `_block_number` is hidden behind a SQL user-defined function: the check
+-- runs on the expanded key expression, not on its spelling.
+CREATE FUNCTION f_05023_block_number_plus AS x -> x + _block_number;
+CREATE FUNCTION f_05023_block_number_bare AS () -> _block_number;
+
+CREATE TABLE sorting_key_block_virtual_udf (x UInt8)
+ENGINE = MergeTree
+ORDER BY f_05023_block_number_plus(x)
+SETTINGS enable_block_number_column = 1; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE sorting_key_block_virtual_udf_mixed (x UInt8)
+ENGINE = MergeTree
+ORDER BY (x, f_05023_block_number_plus(x))
+SETTINGS enable_block_number_column = 1; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE sorting_key_block_virtual_udf_nested (x UInt8)
+ENGINE = MergeTree
+ORDER BY sipHash64(f_05023_block_number_bare())
+SETTINGS enable_block_number_column = 1; -- { serverError BAD_ARGUMENTS }
+
+-- A user-defined function that expands to the bare column is a bare key column.
+CREATE TABLE sorting_key_block_virtual_udf_bare (x UInt8)
+ENGINE = MergeTree
+ORDER BY f_05023_block_number_bare()
+SETTINGS enable_block_number_column = 1;
+SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 'sorting_key_block_virtual_udf_bare';
+INSERT INTO sorting_key_block_virtual_udf_bare VALUES (1);
+SELECT x FROM sorting_key_block_virtual_udf_bare;
+DROP TABLE sorting_key_block_virtual_udf_bare;
+
+DROP FUNCTION f_05023_block_number_plus;
+DROP FUNCTION f_05023_block_number_bare;
+
 CREATE TABLE sorting_key_block_virtual_enabled (x UInt8)
 ENGINE = MergeTree
 ORDER BY (_block_number, _block_offset)

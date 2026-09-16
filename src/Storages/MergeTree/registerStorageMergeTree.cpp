@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
@@ -44,6 +45,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
@@ -1359,21 +1362,24 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// `_block_number + 1`, or one that mixes it with real columns) cannot be recomputed from
         /// the stored index values, and the part would keep an index built from the placeholder,
         /// silently breaking key-condition pruning. Reject such keys instead.
+        ///
+        /// The dependency is checked on the resolved expression of every key element, not on its
+        /// spelling: each element is analyzed the same way `KeyDescription::getKeyFromAST` analyzes
+        /// the whole key, so a `_block_number` hidden behind a rewrite that `TreeRewriter` expands
+        /// (for example a SQL user-defined function) is detected as well.
         const auto & sorting_key_elements = metadata.sorting_key.expression_list_ast->children;
+        const auto columns_for_key_analysis = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(metadata.columns, metadata.virtuals);
         for (size_t i = 0; i < sorting_key_elements.size(); ++i)
         {
             if (i < metadata.sorting_key.column_names.size()
                 && metadata.sorting_key.column_names[i] == BlockNumberColumn::name)
                 continue;
 
-            std::function<bool(const IAST &)> mentions_block_number = [&](const IAST & ast) -> bool
-            {
-                if (const auto * identifier = ast.as<ASTIdentifier>())
-                    return identifier->name() == BlockNumberColumn::name;
-                return std::ranges::any_of(ast.children, [&](const ASTPtr & child) { return mentions_block_number(*child); });
-            };
+            auto element = sorting_key_elements[i]->clone();
+            auto element_syntax = TreeRewriter(context).analyze(element, columns_for_key_analysis);
+            const auto element_required_columns = ExpressionAnalyzer(element, element_syntax, context).getActions(false)->getRequiredColumns();
 
-            if (mentions_block_number(*sorting_key_elements[i]))
+            if (std::ranges::find(element_required_columns, BlockNumberColumn::name) != element_required_columns.end())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Sorting key can use `_block_number` only as a bare key column, not inside an expression: "
