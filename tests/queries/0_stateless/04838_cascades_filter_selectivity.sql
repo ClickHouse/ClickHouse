@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- Integration of the filter selectivity estimate into the Cascades memo. The per-predicate
 -- formulas are covered by `gtest_cascades_filter_selectivity`; here `EXPLAIN estimates = 1`
 -- shows the memo row estimates. The outer probe queries turn distributed planning off
