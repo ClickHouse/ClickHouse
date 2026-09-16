@@ -242,4 +242,4 @@ encoding in `NativeReader` / `NativeWriter`. Refactors, bug fixes that keep the 
 
 When it fires, check that the matching spec is updated: `docs/reference/interfaces/specs/NativeProtocol.mdx`
 for the protocol, `docs/reference/interfaces/specs/NativeFormat.mdx` for the format. Third-party
-clients are built against these specs. A missing update is a **Minor** finding naming what changed.
+clients are built against these specs. A missing update is a **Major** finding naming what changed.
