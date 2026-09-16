@@ -6,18 +6,12 @@
 -- runner shared with 24 workers. No sanitizer is excluded: the slowest single guarded query measured
 -- 0.48 s server-side on that same build, so even a 20x sanitizer multiplier stays 12x under 120 s.
 --
--- Regression test for a quadratic blowup in aggregation in order with a fixed-size GROUP BY key.
---
--- When the table is sorted by a prefix of the GROUP BY keys (here `a`, grouping by `a, b`),
--- `AggregatingInOrderTransform` builds a fresh hashing state for every run of equal `a`. Two UInt64
--- keys select the `keys128` method, whose state batch-packs the grouping key of the whole block on
--- construction, so one block cost O(runs * block_size) - quadratic in `max_block_size` when `a` is
--- near-unique. The fix skips that batch entirely in a state that will be asked about only a sub-range
--- of the block, packing each key on demand in the same longest-first byte layout the batch packer
--- produces; `Aggregator::method_chosen_for_in_order` makes the same trade for serialized keys.
--- DISTINCT in order (`DistinctSortedStreamTransform::buildFilterForRange`) and a pre-aggregated
--- in-order input (`Aggregator::mergeOnBlockSmall`) build one state per run the same way, so each gets
--- its own guard.
+-- Regression test for a quadratic blowup in aggregation in order and DISTINCT in order with a
+-- fixed-size GROUP BY key: a hashing state built per run of the sorting prefix batch-packed the whole
+-- block's grouping key, so one block cost O(runs * block_size). Root cause and fix: see the commit
+-- message. Each of the five ranged state constructions a query can select gets its own timed guard,
+-- and every timed and identity statement has an `EXPLAIN PIPELINE` mirror so it cannot go vacuously
+-- green when the optimizer stops choosing the in-order plan.
 --
 -- How every timed guard below is sized, stated once for all of them:
 --
@@ -56,12 +50,14 @@ OPTIMIZE TABLE t_agg_in_order_fixed_keys FINAL;
 SELECT count() FROM (SELECT a, b FROM t_agg_in_order_fixed_keys GROUP BY a, b)
 SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
          max_threads = 1, max_block_size = 800000,
+         aggregation_in_order_max_block_bytes = 50000000,
          preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0,
          max_execution_time = 120;
 
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT a, b FROM t_agg_in_order_fixed_keys GROUP BY a, b
     SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
              max_threads = 1, max_block_size = 800000,
+             aggregation_in_order_max_block_bytes = 50000000,
              preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0)
 WHERE explain ILIKE '%AggregatingInOrderTransform%';
 
@@ -71,12 +67,14 @@ WHERE explain ILIKE '%AggregatingInOrderTransform%';
 SELECT sum(n) FROM (SELECT a, b, count() AS n FROM t_agg_in_order_fixed_keys GROUP BY a, b)
 SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
          max_threads = 1, max_block_size = 800000,
+         aggregation_in_order_max_block_bytes = 50000000,
          preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0,
          max_execution_time = 120;
 
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT a, b, count() AS n FROM t_agg_in_order_fixed_keys GROUP BY a, b
     SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
              max_threads = 1, max_block_size = 800000,
+             aggregation_in_order_max_block_bytes = 50000000,
              preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0)
 WHERE explain ILIKE '%AggregatingInOrderTransform%';
 
@@ -193,27 +191,29 @@ OPTIMIZE TABLE t_agg_in_order_fixed_keys_merge FINAL;
 SELECT count() FROM (SELECT a, b, sum(v) FROM t_agg_in_order_fixed_keys_merge GROUP BY a, b)
 SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, optimize_use_projections = 1,
          force_optimize_projection = 1, enable_parallel_replicas = 0, max_threads = 1,
-         max_block_size = 800000, preferred_block_size_bytes = 0,
-         preferred_max_column_in_block_size_bytes = 0, max_execution_time = 120;
+         max_block_size = 800000, aggregation_in_order_max_block_bytes = 50000000,
+         preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0,
+         max_execution_time = 120;
 
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT a, b, sum(v) FROM t_agg_in_order_fixed_keys_merge GROUP BY a, b
     SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, optimize_use_projections = 1,
              force_optimize_projection = 1, enable_parallel_replicas = 0, max_threads = 1,
-             max_block_size = 800000, preferred_block_size_bytes = 0,
-             preferred_max_column_in_block_size_bytes = 0)
+             max_block_size = 800000, aggregation_in_order_max_block_bytes = 50000000,
+             preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0)
 WHERE explain ILIKE '%AggregatingInOrderTransform%';
 
 SELECT sum(n) FROM (SELECT a, b, count() AS n FROM t_agg_in_order_fixed_keys_merge GROUP BY a, b)
 SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, optimize_use_projections = 1,
          force_optimize_projection = 1, enable_parallel_replicas = 0, max_threads = 1,
-         max_block_size = 800000, preferred_block_size_bytes = 0,
-         preferred_max_column_in_block_size_bytes = 0, max_execution_time = 120;
+         max_block_size = 800000, aggregation_in_order_max_block_bytes = 50000000,
+         preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0,
+         max_execution_time = 120;
 
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT a, b, count() AS n FROM t_agg_in_order_fixed_keys_merge GROUP BY a, b
     SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1, optimize_use_projections = 1,
              force_optimize_projection = 1, enable_parallel_replicas = 0, max_threads = 1,
-             max_block_size = 800000, preferred_block_size_bytes = 0,
-             preferred_max_column_in_block_size_bytes = 0)
+             max_block_size = 800000, aggregation_in_order_max_block_bytes = 50000000,
+             preferred_block_size_bytes = 0, preferred_max_column_in_block_size_bytes = 0)
 WHERE explain ILIKE '%AggregatingInOrderTransform%';
 
 DROP TABLE t_agg_in_order_fixed_keys_merge;
