@@ -10,7 +10,7 @@ keywords: ['مجموعة بيانات مثال', 'قوائم الطعام', 'ب�
 
 أعدّت مكتبة نيويورك العامة مجموعة البيانات هذه. وهي تضم بيانات تاريخية عن قوائم طعام الفنادق والمطاعم والمقاهي، بما في ذلك الأطباق وأسعارها.
 
-المصدر: https://www.nypl.org/research/support/whats-on-the-menu
+المصدر: http://menus.nypl.org/data
 البيانات متاحة ضمن الملك العام.
 
 البيانات مأخوذة من أرشيف المكتبة، وقد تكون غير مكتملة ويصعب استخدامها في التحليل الإحصائي. ومع ذلك، فهي شهية جدًا أيضًا.
@@ -29,7 +29,7 @@ md5sum 2021_08_01_07_01_17_data.tgz
 # Checksum should be equal to: db6126724de939a5481e3160a2d67d15
 ```
 
-استبدل الرابط بالرابط المُحدَّث من https://www.nypl.org/research/support/whats-on-the-menu إذا لزم الأمر.
+استبدل الرابط بالرابط المُحدَّث من http://menus.nypl.org/data إذا لزم الأمر.
 يبلغ حجم التنزيل نحو 35 ميغابايت.
 
 <div id="unpack-dataset">
@@ -135,9 +135,9 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 
 نعطّل `format_csv_allow_single_quotes` لأن حقول البيانات تستخدم علامات الاقتباس المزدوجة فقط، بينما قد تظهر علامات الاقتباس المفردة داخل القيم، ويجب ألا تؤدي إلى إرباك محلّل CSV.
 
-نعطّل [input&#95;format&#95;null&#95;as&#95;default](/ar/reference/settings/formats/input-format#input_format_null_as_default) لأن بياناتنا لا تحتوي على [NULL](/ar/reference/settings/formats/input-format#input_format_null_as_default). وإلا فسيحاول ClickHouse تحليل تسلسلات `\N`، وقد يلتبس عليه الأمر بينها وبين `\` داخل البيانات.
+نعطّل [input&#95;format&#95;null&#95;as&#95;default](/ar/reference/settings/formats#input_format_null_as_default) لأن بياناتنا لا تحتوي على [NULL](/ar/reference/settings/formats#input_format_null_as_default). وإلا فسيحاول ClickHouse تحليل تسلسلات `\N`، وقد يلتبس عليه الأمر بينها وبين `\` داخل البيانات.
 
-يتيح الإعداد [date&#95;time&#95;input&#95;format best&#95;effort](/ar/reference/settings/formats/date-time#date_time_input_format) تحليل حقول [DateTime](/ar/reference/data-types/datetime) ضمن نطاق واسع من التنسيقات. على سبيل المثال، سيتعرّف على ISO-8601 من دون ثوانٍ مثل &#39;2000-01-01 01:02&#39;. ومن دون هذا الإعداد، لا يُسمح إلا بتنسيق DateTime ثابت.
+يتيح الإعداد [date&#95;time&#95;input&#95;format best&#95;effort](/ar/reference/settings/formats#date_time_input_format) تحليل حقول [DateTime](/ar/reference/data-types/datetime) ضمن نطاق واسع من التنسيقات. على سبيل المثال، سيتعرّف على ISO-8601 من دون ثوانٍ مثل &#39;2000-01-01 01:02&#39;. ومن دون هذا الإعداد، لا يُسمح إلا بتنسيق DateTime ثابت.
 
 <div id="denormalize-data">
   ## إلغاء تطبيع البيانات

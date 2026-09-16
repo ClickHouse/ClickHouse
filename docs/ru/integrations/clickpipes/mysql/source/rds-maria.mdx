@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 Это пошаговое руководство по настройке экземпляра RDS MariaDB для репликации данных через ClickPipe для MySQL.
 
@@ -22,30 +21,32 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
 </Info>
 
 <div id="enable-binlog-retention-rds">
-  ## Включение срока хранения бинарного лога
+  ## Включите хранение бинарного лога
 </div>
 
-Бинарный лог — это набор файлов журналов, содержащих информацию об изменениях данных, внесённых в экземпляр сервера MySQL. Файлы бинарного лога необходимы для репликации. Необходимо выполнить оба следующих шага:
+Бинарный лог — это набор файлов журнала, содержащих сведения об изменениях данных на экземпляре сервера MySQL. Файлы бинарного лога необходимы для репликации. Необходимо выполнить оба шага ниже:
 
-<Steps>
-  <Step title="Включите binary logging через автоматическое резервное копирование" id="enable-binlog-logging-rds">
-    Функция автоматического резервного копирования определяет, включено ли binary logging для MySQL. Это можно настроить в консоли AWS:
+<div id="enable-binlog-logging-rds">
+  ### 1. Включите бинарное логирование с помощью автоматического резервного копирования
+</div>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в RDS" size="lg" border />
+Функция автоматического резервного копирования определяет, включено ли бинарное логирование в MySQL. Это можно настроить в консоли AWS:
 
-    Рекомендуется установить срок хранения резервных копий на достаточно длительный период в зависимости от сценария репликации.
-  </Step>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в RDS" size="lg" border />
 
-  <Step title="Срок хранения binlog в часах" id="binlog-retention-hours-rds">
-    В Amazon RDS for MariaDB срок хранения binlog задаётся иначе: это время, в течение которого сохраняется файл binlog, содержащий изменения. Если какие-либо изменения не будут прочитаны до удаления файла binlog, репликация не сможет продолжиться. Значение по умолчанию для срока хранения binlog в часах — NULL, то есть бинарные логи не сохраняются.
+Рекомендуется установить срок хранения резервных копий достаточно большим — в зависимости от сценария репликации.
 
-    Чтобы указать, сколько часов нужно хранить бинарные логи в экземпляре DB, используйте функцию mysql.rds&#95;set&#95;configuration, задав период хранения binlog, достаточный для выполнения репликации. `24 hours` — рекомендуемый минимум.
+<div id="binlog-retention-hours-rds">
+  ### 2. Срок хранения binlog в часах
+</div>
 
-    ```text
-    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
-    ```
-  </Step>
-</Steps>
+В Amazon RDS for MariaDB срок хранения binlog задаётся иначе: это время, в течение которого сохраняется файл binlog, содержащий изменения. Если какие-либо изменения не будут прочитаны до удаления файла binlog, репликация не сможет продолжиться. Значение по умолчанию для срока хранения binlog в часах — NULL, то есть бинарные логи не сохраняются.
+
+Чтобы указать, сколько часов нужно хранить бинарные логи в экземпляре DB, используйте функцию mysql.rds&#95;set&#95;configuration, задав период хранения binlog, достаточный для выполнения репликации. `24 hours` — рекомендуемый минимум.
+
+```text
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+```
 
 <div id="binlog-parameter-group-rds">
   ## Настройте параметры binlog в группе параметров
@@ -112,16 +113,6 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
-<div id="iam-authentication">
-  ### Использование IAM-аутентификации (необязательно)
-</div>
-
-<Note>
-  AWS [добавила IAM-аутентификацию базы данных для RDS for MariaDB в версии 10.6.5](https://aws.amazon.com/blogs/database/iam-authentication-with-amazon-rds-for-mariadb/). Поддержка зависит от конкретной версии движка и региона AWS. Перед использованием этого варианта проверьте [актуальный список поддерживаемых регионов и версий движка AWS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html).
-</Note>
-
-<IAMAuthentication engine="mysql" service="rds" />
-
 <div id="configure-network-access">
   ## Настройте сетевой доступ
 </div>
@@ -130,14 +121,14 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
   ### Управление доступом по IP
 </div>
 
-Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [указанные в документации статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в `Inbound rules` группы безопасности RDS.
+Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [указанные в документации статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в `Inbound rules` группы безопасности RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Где найти группу безопасности в RDS?" size="lg" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение inbound rules для указанной выше группы безопасности" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
-  ### Доступ через частную сеть с помощью AWS PrivateLink
+  ### Частный доступ через AWS PrivateLink
 </div>
 
-Чтобы подключиться к вашему экземпляру RDS через частную сеть, можно использовать AWS PrivateLink. Чтобы настроить подключение, воспользуйтесь нашим [руководством по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).
+Чтобы подключиться к вашему экземпляру RDS по частной сети, можно использовать AWS PrivateLink. Чтобы настроить подключение, следуйте нашему [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).

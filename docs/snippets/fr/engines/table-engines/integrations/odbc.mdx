@@ -6,8 +6,6 @@ title: 'Moteur de table ODBC'
 doc_type: 'référence'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
 <CloudNotSupportedBadge />
 
 Permet à ClickHouse de se connecter à des bases de données externes via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
@@ -36,7 +34,7 @@ La structure de la table peut différer de celle de la table source :
 
 * Les noms des colonnes doivent être les mêmes que dans la table source, mais vous pouvez n’utiliser que certaines d’entre elles, dans n’importe quel ordre.
 * Les types de colonnes peuvent différer de ceux de la table source. ClickHouse tente de [convertir](/fr/reference/functions/regular-functions/type-conversion-functions#CAST) les valeurs en types de données ClickHouse.
-* Le paramètre [external&#95;table&#95;functions&#95;use&#95;nulls](/fr/reference/settings/session-settings/external-table#external_table_functions_use_nulls) définit la manière de gérer les colonnes Nullable. Valeur par défaut : 1. Si sa valeur est 0, la fonction table ne crée pas de colonnes Nullable et insère des valeurs par défaut à la place des valeurs nulles. Cela s’applique également aux valeurs NULL à l’intérieur des tableaux.
+* Le paramètre [external&#95;table&#95;functions&#95;use&#95;nulls](/fr/reference/settings/session-settings#external_table_functions_use_nulls) définit la manière de gérer les colonnes Nullable. Valeur par défaut : 1. Si sa valeur est 0, la fonction de table ne crée pas de colonnes Nullable et insère des valeurs par défaut à la place des valeurs nulles. Cela s’applique également aux valeurs NULL à l’intérieur des tableaux.
 
 **Paramètres du moteur**
 
