@@ -65,8 +65,8 @@ public:
     bool hasNext() const;
 
 private:
-    /// Element-space filtered variant of next(): applies array_join->element_filter to the nested
-    /// element columns of one window and expands only the surviving elements.
+    /// Element-space filtered variant of next(): runs the element filter over one window (row columns
+    /// it reads are broadcast to the elements) and expands only the survivors.
     Block nextWithElementFilter();
 
     const ArrayJoinAction * array_join;

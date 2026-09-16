@@ -46,6 +46,10 @@ docs/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigque
 # The name of a third-party client library, as published by its author.
 docs/integrations/language-clients/third-party/client-libraries.mdx	php-click-house-client
 
+# The C# client documentation is synced from `ClickHouse/clickhouse-cs`; preserve its public
+# `clickHouseType` parameter name.
+docs/integrations/language-clients/csharp/overview.mdx	clickHouseType
+
 # Tests that feed misspellings to the server on purpose: case variants for `LIKE` / `ILIKE`, a
 # two-word phrase that must not match the one-word name, a token separator, an unknown URI scheme.
 tests/queries/0_stateless/02346_text_index_function_like.sql	ClickhouseSQL
