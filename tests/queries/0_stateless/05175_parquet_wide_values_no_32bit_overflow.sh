@@ -75,3 +75,16 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT count(), sum(length(toString(a[1]))), uniqExact(cityHash64(toString(a[1]))) FROM file('$FILE', Parquet)
 "
+
+# A record of several `JSON` values that crosses the budget before it ends. The converter stops
+# inside the first row, which cannot be cut, so that row alone is converted again without the
+# budget - not the rest of the batch behind it.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT arrayMap(j -> concat('{', arrayStringConcat(arrayMap(i -> concat(char(34), repeat('k', 700), toString(i), char(34), ':', toString(j)), range(1000)), ','), '}')::JSON, range(100)) AS a
+    FROM numbers(3)
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), length(a), sum(length(toString(a[1]))) FROM file('$FILE', Parquet) GROUP BY length(a)
+"
