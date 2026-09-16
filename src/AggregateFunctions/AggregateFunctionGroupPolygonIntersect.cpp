@@ -11,6 +11,7 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/index/rtree.hpp>
 
+#include <algorithm>
 #include <vector>
 
 
@@ -31,6 +32,65 @@ namespace
 
 /// Keep accepting version-1 states emitted by the previous chunked implementation.
 constexpr size_t MAX_SERIALIZED_INTERSECT_CHUNKS = 8;
+
+/// Compare exact vertex cycles without changing the stored ring or allocating a rotated copy.
+/// Rings have already been oriented and checked for finite coordinates.
+bool equalExteriorCycles(const CartesianRing & left, const CartesianRing & right)
+{
+    if (left.size() != right.size())
+        return false;
+
+    auto equal = [](const auto & first, const auto & second)
+    {
+        return first.template get<0>() == second.template get<0>() && first.template get<1>() == second.template get<1>();
+    };
+    if (std::equal(left.begin(), left.end(), right.begin(), equal))
+        return true;
+
+    /// Boost may accept an approximately closed ring. Only an exact closing point is redundant.
+    if (!equal(left.front(), left.back()) || !equal(right.front(), right.back()))
+        return false;
+
+    /// Exclude only the closing point; repeated vertices remain part of the cycle.
+    const size_t size = left.size() - 1;
+    auto least_rotation = [&](const CartesianRing & ring)
+    {
+        size_t first = 0;
+        size_t second = 1;
+        size_t matched = 0;
+        while (first < size && second < size && matched < size)
+        {
+            const auto & a = ring[(first + matched) % size];
+            const auto & b = ring[(second + matched) % size];
+            if (equal(a, b))
+            {
+                ++matched;
+                continue;
+            }
+            if (a.get<0>() > b.get<0>() || (a.get<0>() == b.get<0>() && a.get<1>() > b.get<1>()))
+            {
+                first += matched + 1;
+                if (first == second)
+                    ++first;
+            }
+            else
+            {
+                second += matched + 1;
+                if (first == second)
+                    ++second;
+            }
+            matched = 0;
+        }
+        return std::min(first, second);
+    };
+
+    const size_t first = least_rotation(left);
+    const size_t second = least_rotation(right);
+    for (size_t i = 0; i < size; ++i)
+        if (!equal(left[(first + i) % size], right[(second + i) % size]))
+            return false;
+    return true;
+}
 
 
 enum class IntersectMode : UInt8
@@ -67,15 +127,13 @@ struct GroupPolygonIntersectData
 
         auto & current = chunks[0][0];
         const auto & next = incoming[0];
-        if (current.outer().size() != next.outer().size())
+        if (!equalExteriorCycles(current.outer(), next.outer()))
             return false;
-        for (size_t i = 0; i < current.outer().size(); ++i)
+        for (const auto & point : current.outer())
         {
-            if (current.outer()[i].get<0>() != next.outer()[i].get<0>() || current.outer()[i].get<1>() != next.outer()[i].get<1>())
-                return false;
             /// R-tree splitting uses box areas. Keep those products within `Float64`;
             /// geometries outside this range use the existing wide overlay path.
-            if (std::abs(current.outer()[i].get<0>()) > 0x1p128 || std::abs(current.outer()[i].get<1>()) > 0x1p128)
+            if (std::abs(point.get<0>()) > 0x1p128 || std::abs(point.get<1>()) > 0x1p128)
                 return false;
         }
 

@@ -12,9 +12,11 @@
 #include <boost/geometry/strategies/relate/services.hpp>
 #include <boost/iterator/indirect_iterator.hpp>
 
+#include <algorithm>
 #include <deque>
 #include <memory>
 #include <sstream>
+#include <type_traits>
 #include <vector>
 
 
@@ -32,6 +34,37 @@ class GeoMultiPolygonValidity
 
     template <typename T>
     using Vector = std::vector<T, Allocator<T>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    template <typename Strategy>
+    struct InteriorVisitor : Base::template item_visitor_type<Strategy>
+    {
+        using Parent = typename Base::template item_visitor_type<Strategy>;
+
+        explicit InteriorVisitor(const Strategy & strategy) : Parent(strategy)
+        {
+        }
+
+        template <typename Item>
+        bool apply(const Item & first, const Item & second)
+        {
+            namespace bg = boost::geometry;
+            if constexpr (std::is_same_v<typename Strategy::cs_tag, bg::cartesian_tag> && bg::dimension<MultiPolygon>::value == 2)
+            {
+                const auto & first_box = first.get_envelope(this->m_strategy);
+                const auto & second_box = second.get_envelope(this->m_strategy);
+                auto separated = [&]<size_t Dimension>()
+                {
+                    return bg::get<bg::max_corner, Dimension>(first_box) <= bg::get<bg::min_corner, Dimension>(second_box)
+                        || bg::get<bg::max_corner, Dimension>(second_box) <= bg::get<bg::min_corner, Dimension>(first_box);
+                };
+                /// In phase 5, a boundary-only box contact cannot satisfy any of the three
+                /// interior/interior or interior/boundary masks. Earlier phases reject invalid contacts.
+                if (separated.template operator()<0>() || separated.template operator()<1>())
+                    return true;
+            }
+            return Parent::apply(first, second);
+        }
+    };
 
     template <typename Turns, typename Visitor, typename Strategy>
     static bool disjointInteriors(const MultiPolygon & geometry, const Turns & turns, Visitor & visitor, const Strategy & strategy)
@@ -59,7 +92,7 @@ class GeoMultiPolygonValidity
             if (!crossing[index])
                 items.emplace_back(it);
 
-        typename Base::template item_visitor_type<Strategy> item_visitor(strategy);
+        InteriorVisitor<Strategy> item_visitor(strategy);
         bg::partition<Box>::apply(
             items,
             item_visitor,
@@ -92,13 +125,26 @@ public:
             return false;
 
         /// Compressed row index: O(P + T) work/storage, with no copies of turn records.
-        Vector<size_t> offsets(geometry.size() + 1, 0);
         auto intra_polygon = [&](const Turn & turn)
         {
             const auto index = turn.operations[0].seg_id.multi_index;
             return index >= 0 && static_cast<size_t>(index) < geometry.size()
                 && index == turn.operations[1].seg_id.multi_index;
         };
+        if (std::none_of(turns.begin(), turns.end(), intra_polygon))
+        {
+            /// With no intra-polygon turns, every per-polygon turn range is empty.
+            /// Keep hole placement and the visitor sequence, but avoid the empty index and graphs.
+            for (const auto & polygon : geometry)
+                if (!Base::has_holes_inside::apply(polygon, turns.begin(), turns.begin(), visitor, strategy))
+                    return false;
+            for (size_t i = 0; i < geometry.size(); ++i)
+                if (!visitor.template apply<bg::no_failure>())
+                    return false;
+            return disjointInteriors(geometry, turns, visitor, strategy);
+        }
+
+        Vector<size_t> offsets(geometry.size() + 1, 0);
         for (const auto & turn : turns)
             if (intra_polygon(turn))
                 ++offsets[turn.operations[0].seg_id.multi_index + 1];
