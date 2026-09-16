@@ -321,15 +321,6 @@ void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
     getOffsets().push_back(getOffsets().back() + array_size);
 }
 
-void ColumnArray::skipSerializedInArena(ReadBuffer & in) const
-{
-    size_t array_size = 0;
-    readBinaryLittleEndian<size_t>(array_size, in);
-
-    for (size_t i = 0; i < array_size; ++i)
-        getData().skipSerializedInArena(in);
-}
-
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
 {
     size_t array_size = sizeAt(n);

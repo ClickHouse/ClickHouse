@@ -65,4 +65,12 @@ SELECT (SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTIN
 SELECT (SELECT groupArray((l, e)) FROM (SELECT length(a) AS l, arrayJoin(a) AS e FROM t_laj ORDER BY e) SETTINGS query_plan_lower_array_join_function = 1)
      = (SELECT groupArray((l, e)) FROM (SELECT length(a) AS l, arrayJoin(a) AS e FROM t_laj ORDER BY e) SETTINGS query_plan_lower_array_join_function = 0);
 
+-- independent arrayJoins keep their nesting: the first one written is the outer loop
+SELECT (SELECT groupArray((a, b)) FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b) SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT groupArray((a, b)) FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b) SETTINGS query_plan_lower_array_join_function = 0);
+SELECT (SELECT groupArray((a, b, c)) FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b, arrayJoin([100, 200]) AS c) SETTINGS query_plan_lower_array_join_function = 1)
+     = (SELECT groupArray((a, b, c)) FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b, arrayJoin([100, 200]) AS c) SETTINGS query_plan_lower_array_join_function = 0);
+-- and pin the order itself
+SELECT groupArray((a, b)) FROM (SELECT arrayJoin([1, 2]) AS a, arrayJoin([10, 20]) AS b) SETTINGS query_plan_lower_array_join_function = 1;
+
 DROP TABLE t_laj;

@@ -2,6 +2,7 @@
 
 import configparser
 import datetime
+import json
 import logging
 import os
 import re
@@ -23,6 +24,95 @@ SKIP_MERGE = int(os.getenv("SKIP_MERGE", "0"))
 MINIMIZE_ONLY = int(os.getenv("MINIMIZE_ONLY", "0"))
 
 INPUT_TIMEOUT = 0 # for debugging, set 0 when not debugging
+
+# The fuzzer output is only useful if somebody can read it. Keep the whole file
+# when the run produced findings, otherwise keep the head and the tail so that a
+# long run cannot upload hundreds of megabytes of libFuzzer progress lines.
+MAX_KEPT_OUTPUT_BYTES = 8 * 1024 * 1024
+KEPT_OUTPUT_HEAD_BYTES = 1024 * 1024
+
+
+# libFuzzer reports progress as lines like
+#   #4096  pulse  cov: 1234 ft: 5678 corp: 900/12Kb exec/s: 512 rss: 300Mb
+# where the leading number is the count of executed inputs and the second field
+# is the event: NEW for a new corpus unit, INITED once the initial corpus has
+# been replayed and mutation starts, pulse for a periodic report.
+def parse_libfuzzer_output(output_log: Path):
+    stats = {"new_units": 0}
+
+    def parse_fields(fields):
+        result = {}
+        i = 0
+        while i < len(fields) - 1:
+            if fields[i].endswith(":"):
+                result[fields[i][:-1]] = fields[i + 1]
+                i += 2
+            else:
+                i += 1
+        return result
+
+    # libFuzzer announces every input directory it is about to replay as
+    #   INFO: 4436 files found in corpus/clickhouse_fuzzer
+    inputs_found = re.compile(r"^INFO:\s+(\d+) files found in (\S+)")
+
+    # A progress line starts at the very beginning of the line and its event is a word. Both
+    # anchors matter: a sanitizer stack trace is a series of lines like
+    #   "    #140 0xaada2314ee40 in DB::ParserCollectionOfLiterals<DB::Tuple>::parseImpl(...)"
+    # and taking those for progress lines made the report describe a five-hour run that had
+    # executed 34930 inputs as one that "executed 140 inputs" - the depth of the stack that
+    # libFuzzer printed last - with every other statistic missing.
+    progress = re.compile(r"^#(\d+)\s+([A-Za-z_]+)\b")
+
+    with open(output_log, "r", encoding="utf-8", errors="replace") as file:
+        for line in file:
+            match = inputs_found.match(line)
+            if match:
+                stats.setdefault("input_files", {})[match.group(2)] = int(match.group(1))
+                continue
+
+            match = progress.match(line)
+            if not match:
+                continue
+            executed = int(match.group(1))
+            event = match.group(2)
+            values = parse_fields(line.split()[2:])
+            values["executed"] = executed
+
+            if event == "NEW":
+                stats["new_units"] += 1
+                stats.setdefault("first_new_unit_executed", executed)
+            if event == "INITED":
+                stats["inited"] = values
+            stats["last"] = values
+
+    return stats
+
+
+def write_stats(stats_path: str, stats: dict):
+    with open(stats_path, "w", encoding="utf-8") as file:
+        json.dump(stats, file, indent=1, sort_keys=True)
+
+
+def read_status_line(status_path: str) -> str:
+    with open(status_path, "r", encoding="utf-8") as file:
+        return file.readline().strip()
+
+
+def truncate_output(output_log: Path):
+    size = output_log.stat().st_size
+    if size <= MAX_KEPT_OUTPUT_BYTES:
+        return
+    tail_size = MAX_KEPT_OUTPUT_BYTES - KEPT_OUTPUT_HEAD_BYTES
+    with open(output_log, "rb") as file:
+        head = file.read(KEPT_OUTPUT_HEAD_BYTES)
+        file.seek(-tail_size, os.SEEK_END)
+        tail = file.read()
+    marker = f"\n\n[... {size - MAX_KEPT_OUTPUT_BYTES} bytes skipped ...]\n\n".encode()
+    with open(output_log, "wb") as file:
+        file.write(head)
+        file.write(marker)
+        file.write(tail)
+
 
 # Run merge fuzzer process with timeout. On timeout send SIGUSR1 graceful termination signal.
 # If process does not exit, SIGKILL is issued after additional kill_timeout time.
@@ -341,6 +431,20 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
             logging.info("Successful run, corpus minimization for %s, original corpus size %d, processed %d, not processed %d, minimized size %d, reduced to %d%%",
                 fuzzer, orig_corpus_size, len(processed_files), not_processed_size, mini_corpus_size, reduction)
+
+            write_stats(
+                f"{results_path}/stats_mini.txt",
+                {
+                    "original_corpus_size": orig_corpus_size,
+                    "processed": len(processed_files),
+                    "not_processed": not_processed_size,
+                    "minimized_corpus_size": mini_corpus_size,
+                    "reduction_percent": round(reduction),
+                },
+            )
+            # A successful minimization can spend the whole budget printing
+            # progress lines; keep its output bounded like the fuzzing output.
+            truncate_output(Path(out_path))
         else:
             # Delete minimized corpus directory
             shutil.rmtree(mini_corpus_dir)
@@ -371,6 +475,8 @@ def run_fuzzer(fuzzer: str, timeout: int):
     libfuzzer_options += f" -artifact_prefix={artifact_prefix}"
 
     libfuzzer_corpora = f"{active_corpus_dir} {seed_corpus_dir}"
+
+    corpus_size_before = len(list(Path(active_corpus_dir).glob("*")))
 
     env_fuzzer = {}
     cmd_line = f"{DEBUGGER} ./{fuzzer}"
@@ -429,6 +535,17 @@ def run_fuzzer(fuzzer: str, timeout: int):
             status.write(
                 f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
             )
+
+    output_log = Path(out_path)
+    if output_log.exists():
+        stats = parse_libfuzzer_output(output_log)
+        stats["corpus_size_before"] = corpus_size_before
+        stats["corpus_size_after"] = len(list(Path(active_corpus_dir).glob("*")))
+        stats["duration_seconds"] = round(stopwatch.duration_seconds)
+        write_stats(f"{results_path}/stats.txt", stats)
+        logging.info("Fuzzing statistics for %s: %s", fuzzer, json.dumps(stats, sort_keys=True))
+        if read_status_line(status_path) == "OK":
+            truncate_output(output_log)
 
 
 def main():
