@@ -317,6 +317,19 @@ void Context::init(const Params& params)
 		else
 			SSL_CTX_set_verify(_pSSLContext, params.verificationMode, &SSLManager::verifyClientCallback);
 
+		// An empty suite list is valid for TLS 1.3 and selects none of them, so an unset value
+		// has to skip the call instead of passing the empty string through.
+		std::string cipherSuites = Poco::trim(params.cipherSuites);
+		if (!cipherSuites.empty())
+		{
+			ERR_clear_error();
+			if (SSL_CTX_set_ciphersuites(_pSSLContext, cipherSuites.c_str()) != 1)
+			{
+				std::string msg = Utility::getLastError();
+				throw SSLContextException(std::string("Cannot set cipher suites ") + cipherSuites, msg);
+			}
+		}
+
 		// Only ':', ' ', ';' and ',' separate items in an OpenSSL cipher list, so a newline or
 		// tab is a lexing error rather than padding.
 		std::string cipherList = Poco::trim(params.cipherList);

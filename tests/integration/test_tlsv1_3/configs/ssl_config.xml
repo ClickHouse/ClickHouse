@@ -5,6 +5,9 @@
     -->
     <https_port>8443</https_port>
 
+    <!-- Builds its own TLS context out of the openSSL.server section below. -->
+    <postgresql_port>5433</postgresql_port>
+
     <!-- Native interface with TLS.
          You have to configure certificate to enable this interface.
          See the openSSL section below.

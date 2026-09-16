@@ -12,14 +12,30 @@ from helpers.ssl_context import WrapSSLContextWithSNI
 # The client has to verify server certificate against that name. Client uses SNI
 SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
+POSTGRESQL_PORT = 5433
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 MAX_RETRY = 5
+
+ALLOWED_TLS13_SUITE = "TLS_AES_256_GCM_SHA384"
+EXCLUDED_TLS13_SUITE = "TLS_CHACHA20_POLY1305_SHA256"
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "node",
     main_configs=[
         "configs/ssl_config.xml",
+        "certs/server-key.pem",
+        "certs/server-cert.pem",
+        "certs/ca-cert.pem",
+        "certs/dhparam4096.pem",
+    ],
+    user_configs=["configs/users_with_ssl_auth.xml"],
+)
+instance_with_suites = cluster.add_instance(
+    "node_with_cipher_suites",
+    main_configs=[
+        "configs/ssl_config.xml",
+        "configs/ssl_config_tls13_suites.xml",
         "certs/server-key.pem",
         "certs/server-cert.pem",
         "certs/ca-cert.pem",
@@ -227,3 +243,53 @@ def test_create_user():
     )
 
     instance.query("DROP USER IF EXISTS emma")
+
+
+def offer_single_tls13_suite(node, suite):
+    """Hand the HTTPS port exactly one TLS 1.3 cipher suite and report whether it was accepted.
+
+    Reads the negotiated suite rather than the exit status, because s_client also reports a
+    verification failure for the server certificate.
+    """
+    result = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"openssl s_client -connect 127.0.0.1:{HTTPS_PORT} -tls1_3 "
+            f"-ciphersuites {suite} -brief </dev/null 2>&1 || true",
+        ]
+    )
+    return f"Ciphersuite: {suite}" in result
+
+
+def offer_single_tls13_suite_postgres(node, suite):
+    """The same probe against the PostgreSQL port, which builds its own context.
+
+    Reads the negotiated suite rather than the exit status, because s_client also reports a
+    verification failure for the server certificate.
+    """
+    result = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"openssl s_client -starttls postgres -connect 127.0.0.1:{POSTGRESQL_PORT} "
+            f"-tls1_3 -ciphersuites {suite} -brief </dev/null 2>&1 || true",
+        ]
+    )
+    return f"Ciphersuite: {suite}" in result
+
+
+def test_tls13_cipher_suites():
+    # The excluded suite has to be available when the setting is absent, or its refusal on
+    # the configured node would not be attributable to the setting.
+    assert offer_single_tls13_suite(instance, EXCLUDED_TLS13_SUITE)
+    assert offer_single_tls13_suite(instance_with_suites, ALLOWED_TLS13_SUITE)
+    assert not offer_single_tls13_suite(instance_with_suites, EXCLUDED_TLS13_SUITE)
+
+
+def test_tls13_cipher_suites_postgres_port():
+    # The excluded suite has to be available when the setting is absent, or its refusal on
+    # the configured node would not be attributable to the setting.
+    assert offer_single_tls13_suite_postgres(instance, EXCLUDED_TLS13_SUITE)
+    assert offer_single_tls13_suite_postgres(instance_with_suites, ALLOWED_TLS13_SUITE)
+    assert not offer_single_tls13_suite_postgres(instance_with_suites, EXCLUDED_TLS13_SUITE)
