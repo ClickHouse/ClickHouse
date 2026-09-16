@@ -14,6 +14,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -48,14 +49,20 @@ bool indexFileExistsInChecksums(
     if (checksums.files.contains(hash + extension))
         return true;
 
-    /// Packed substreams: not listed in checksums.txt as individual entries, but the
-    /// storage overlay reports their existence via the skp_idx.packed index.
+    /// Packed substreams: not listed in checksums.txt as individual entries, but the archive
+    /// itself is, and its index names the members. Ask for archive membership specifically:
+    /// `IDataPartStorage::existsFile` falls back to the loose file on disk when the archive does
+    /// not hold the name, and a loose `skp_idx_*` file next to `skp_idx.packed` that is in neither
+    /// `checksums.txt` nor the archive is an orphan the part does not own (#109595).
     if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
     {
-        if (storage->existsFile(path_prefix + extension))
-            return true;
-        if (storage->existsFile(hash + extension))
-            return true;
+        if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage))
+        {
+            if (disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
+                return true;
+            if (disk_storage->isFileInPackedSkipIndicesArchive(hash + extension))
+                return true;
+        }
     }
 
     return false;

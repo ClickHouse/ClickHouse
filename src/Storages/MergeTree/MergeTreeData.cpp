@@ -5494,7 +5494,17 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// table in a state where the index cannot be named at all - every read path and
     /// `system.parts.secondary_indices_materialized` would surface a filename-encoding exception
     /// instead of using the index - so reject the settings change instead of reaching that state.
+    ///
+    /// Only the initial ALTER is rejected. Under a Replicated database every replica re-runs this
+    /// check over an entry the initiator already accepted and committed; a replica catching up on
+    /// an ALTER that an older version let through must apply it rather than wedge its DDL queue on
+    /// an entry it cannot skip (the sort-direction check above follows the same rule). A table that
+    /// did reach that state is handled without throwing by `hasMaterializedSecondaryIndex`.
     {
+        bool is_initial_alter = true;
+        if (auto txn = local_context->getZooKeeperMetadataTransaction())
+            is_initial_alter = txn->isInitialQuery();
+
         bool touches_escape_index_filenames = false;
         for (const auto & command : commands)
         {
@@ -5506,7 +5516,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             }
         }
 
-        if (touches_escape_index_filenames)
+        if (is_initial_alter && touches_escape_index_filenames)
         {
             /// Resolve the value the same way `changeSettings` does: it rebuilds from the defaults and
             /// applies the metadata's whole settings list, so a RESET lands on the configured default.

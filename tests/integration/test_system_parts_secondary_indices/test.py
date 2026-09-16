@@ -156,6 +156,120 @@ def test_packed_index(started_cluster):
     node.query("DROP TABLE t_packed SYNC")
 
 
+def test_packed_orphan_file(started_cluster):
+    # A packed part must own its index data through the archive, not through whatever
+    # `skp_idx_*` file happens to lie next to `skp_idx.packed`. The archive fallback of
+    # the ownership check has to ask for archive membership specifically: the generic
+    # `existsFile` of the part storage falls back to a loose file on disk when the archive
+    # does not hold the name, which would make a stray copy of another part's index files
+    # -- listed neither in `checksums.txt` nor in the archive -- count as materialized and
+    # route queries into those orphan bytes.
+    node.query("DROP TABLE IF EXISTS t_packed_orphan SYNC")
+    node.query("DROP TABLE IF EXISTS t_loose_donor SYNC")
+    node.query("""
+        CREATE TABLE t_packed_orphan
+        (
+            k UInt64,
+            v UInt64,
+            w UInt64,
+            INDEX mm_v v TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 index_granularity = 100, replace_long_file_name_to_hash = 0,
+                 packed_skip_index_max_bytes = 1048576,
+                 columns_and_secondary_indices_sizes_lazy_calculation = 0
+        """)
+    node.query(
+        "INSERT INTO t_packed_orphan (k, v, w) SELECT number, number, number FROM numbers(2000)"
+    )
+    node.query("SYSTEM STOP MERGES t_packed_orphan")
+
+    # A second index, on a column outside the primary key so that only this index could prune
+    # granules for a filter on it, declared but not materialized in the existing part.
+    node.query("ALTER TABLE t_packed_orphan ADD INDEX mm_w w TYPE minmax GRANULARITY 1")
+    assert materialized_indices(node, "t_packed_orphan") == "['mm_v']"
+
+    # Real, decodable per-file index files for `mm_w` come from a donor table with the
+    # same data and layout, written without packing.
+    node.query("""
+        CREATE TABLE t_loose_donor
+        (
+            k UInt64,
+            v UInt64,
+            w UInt64,
+            INDEX mm_w w TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+                 index_granularity = 100, replace_long_file_name_to_hash = 0,
+                 packed_skip_index_max_bytes = 0,
+                 columns_and_secondary_indices_sizes_lazy_calculation = 0
+        """)
+    node.query(
+        "INSERT INTO t_loose_donor (k, v, w) SELECT number, number, number FROM numbers(2000)"
+    )
+    donor_part = get_active_part_path(node, "t_loose_donor")
+    packed_part = get_active_part_path(node, "t_packed_orphan")
+    assert (
+        bash(
+            node,
+            f"test -f {shlex.quote(packed_part + 'skp_idx.packed')} && echo yes || echo no",
+        ).strip()
+        == "yes"
+    )
+
+    # Drop the loose orphans next to the archive: on disk, but in neither `checksums.txt`
+    # nor `skp_idx.packed`.
+    bash(node, f"cp {shlex.quote(donor_part)}skp_idx_mm_w.* {shlex.quote(packed_part)}")
+    assert (
+        bash(
+            node,
+            f"ls {shlex.quote(packed_part)}skp_idx_mm_w.* > /dev/null 2>&1 && echo yes || echo no",
+        ).strip()
+        == "yes"
+    )
+
+    # Still only the archived index is materialized; the orphans are not owned by the part.
+    assert materialized_indices(node, "t_packed_orphan") == "['mm_v']"
+
+    # The read path shares the gate: a query on the not-yet-materialized index answers from the
+    # data without applying it, so all 20 granules of the 2000-row part stay. The orphan files
+    # hold a valid minmax index of the very same data, so had they been taken for the part's own,
+    # the plan would show a single granule instead. `MATERIALIZE INDEX` afterwards is what makes
+    # the index materialized -- so the check is not vacuously false.
+    plan = node.query(
+        "EXPLAIN indexes = 1 SELECT count() FROM t_packed_orphan WHERE w = 1500"
+    )
+    assert "Name: mm_w" in plan, plan
+    assert "Granules: 20/20" in plan, plan
+    assert (
+        node.query("SELECT count() FROM t_packed_orphan WHERE w = 1500").strip() == "1"
+    )
+
+    # As in test_orphan_index_file, the first `MATERIALIZE INDEX` only removes the orphan files
+    # (04427), the second one rebuilds the index -- and only then is it materialized.
+    node.query("SYSTEM START MERGES t_packed_orphan")
+    node.query(
+        "ALTER TABLE t_packed_orphan MATERIALIZE INDEX mm_w SETTINGS mutations_sync = 2"
+    )
+    assert (
+        bash(
+            node,
+            f"ls {shlex.quote(get_active_part_path(node, 't_packed_orphan'))}skp_idx_mm_w.* > /dev/null 2>&1 && echo yes || echo no",
+        ).strip()
+        == "no"
+    )
+    assert materialized_indices(node, "t_packed_orphan") == "['mm_v']"
+    node.query(
+        "ALTER TABLE t_packed_orphan MATERIALIZE INDEX mm_w SETTINGS mutations_sync = 2"
+    )
+    assert materialized_indices(node, "t_packed_orphan") == "['mm_v','mm_w']"
+
+    node.query("DROP TABLE t_loose_donor SYNC")
+    node.query("DROP TABLE t_packed_orphan SYNC")
+
+
 def rewrite_checksums_without_file(node, part_path, file_to_drop):
     """Re-emit the part's `checksums.txt` without the entry for `file_to_drop`.
 
