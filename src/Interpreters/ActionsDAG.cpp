@@ -3053,12 +3053,21 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     ActionsDAG before = std::move(split_res.first);
     ActionsDAG after = std::move(split_res.second);
     const Node * aj_before = split_res.split_nodes_mapping.at(array_join);
-    const std::string name = aj_before->result_name;
     const Node * arg_before = aj_before->children.at(0);
+    std::string name = aj_before->result_name;
 
-    /// Nobody reads the result, but the rows are still multiplied.
-    if (std::ranges::none_of(after.inputs, [&](const Node * input) { return input->result_name == name; }))
+    /// Nobody reads the result, but the rows are still multiplied: pass the element under a name no passenger has.
+    bool used = std::ranges::contains(outputs, array_join);
+    for (const auto & node : nodes)
+        used = used || std::ranges::contains(node.children, array_join);
+    if (!used)
+    {
+        auto taken = [&](const std::string & candidate)
+        { return std::ranges::any_of(after.inputs, [&](const Node * input) { return input->result_name == candidate; }); };
+        for (size_t i = 0; taken(name); ++i)
+            name = fmt::format("{}_{}", aj_before->result_name, i);
         after.addInput(name, array_join->result_type);
+    }
 
     /// The step gets the array under the join's name. Erase the node by hand, removeUnusedActions keeps array joins.
     const Node * arg_out = arg_before->result_name == name ? arg_before : &before.addAlias(*arg_before, name);
