@@ -525,12 +525,12 @@ TEST(SchedulerSpaceShared, SelfKillDoesNotBlockNextAllocation)
     ResourceLink link;
     link.allocation_queue = queue;
 
-    // Drives a never-admitted reservation over the limit; it must kill itself and throw.
+    // Drives a zero-size reservation over the limit; admitted at zero size, it self-kills on its first increase.
     auto run_over_limit = [&](const String & id)
     {
         MemoryTracker tracker;
         tracker.adjustWithUntrackedMemory(20000); // 20KB > 10KB limit
-        MemoryReservation res(link, id, 0); // reserved_size == 0 -> never admitted
+        MemoryReservation res(link, id, 0); // reserved_size == 0: admitted at zero size, grows on syncWithMemoryTracker
         res.syncWithMemoryTracker(&tracker);
         tracker.adjustWithUntrackedMemory(-20000);
     };
