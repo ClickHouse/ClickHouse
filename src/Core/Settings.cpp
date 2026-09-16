@@ -6088,11 +6088,19 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
     DECLARE(Int64, iceberg_expire_default_max_ref_age_ms, std::numeric_limits<Int64>::max(), R"(
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 10_MiB, R"(
-Threshold for compaction data files in iceberg.
+    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
+Data files smaller than this are selected for compaction.
+
+The default is `0.75` of the documented default of the Iceberg table property `write.target-file-size-bytes`
+(512 MiB), which is how the `rewrite_data_files` procedure derives its `min-file-size-bytes` option,
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
-Threshold for compaction data files in iceberg.
+    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
+Data files larger than this are selected for compaction.
+
+The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
+(512 MiB), which is how the `rewrite_data_files` procedure derives its `max-file-size-bytes` option,
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", 0) \
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Threshold for compaction data files in iceberg.
@@ -8693,14 +8701,26 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
     DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
-    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
+    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 512_MiB, R"(
 Max bytes of iceberg parquet data file on insert operation.
+
+The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
+see https://iceberg.apache.org/docs/1.5.2/configuration/. Note that ClickHouse compares the limit against the
+uncompressed size of the data written into the file so far, while the Iceberg property targets the size of the
+resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file independently of its size.
 )", 0) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum so that compaction merges eligible files into as few output files as possible. Keeping this above the size compaction can actually produce would make every output file stay below `iceberg_data_file_size_lower_threshold_compaction` and be re-selected forever.
+Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
+`iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
+Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
 )", 0) \
-    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Max bytes of an iceberg parquet data file produced by compaction. Defaults to the maximum so that compaction merges eligible files into as few output files as possible.
+    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
+Max bytes of an iceberg parquet data file produced by compaction.
+
+The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
+see https://iceberg.apache.org/docs/1.5.2/configuration/. Keep it above
+`iceberg_data_file_size_lower_threshold_compaction`, otherwise every output file stays below the lower threshold
+and is selected for compaction again.
 )", 0) \
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
@@ -9186,10 +9206,13 @@ Allow to clean up old data files during Iceberg compaction.
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 30, R"(
+    DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
 Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
 If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
 Requires allow_experimental_iceberg_compaction to be enabled.
+
+The default mirrors the documented default of the Iceberg table property `commit.manifest.min-count-to-merge` (100),
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_iceberg_remove_orphan_files, false, R"(
 Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
@@ -9212,7 +9235,6 @@ Make distributed query plan.
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
-- `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
 )", PRIVATE_PREVIEW) \
