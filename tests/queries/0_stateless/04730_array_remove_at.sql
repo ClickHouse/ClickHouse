@@ -22,8 +22,10 @@ FROM numbers(4)
 ORDER BY number;
 
 SELECT arrayRemoveAt([1, 2, 3], toUInt64(18446744073709551615));
+SELECT arrayRemoveAt([1, 2, 3], toInt64(-9223372036854775807) - 1);
 SELECT toTypeName(arrayRemoveAt(CAST([1, 2, 3], 'Array(UInt8)'), toInt8(2)));
 
 SELECT arrayRemoveAt([1, 2, 3], 0); -- { serverError ZERO_ARRAY_OR_TUPLE_INDEX }
 SELECT arrayRemoveAt(1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayRemoveAt([1, 2, 3], 1.5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayRemoveAt([1, 2, 3], toNullable(toInt8(2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
