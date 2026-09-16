@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/ReadRoundContext.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -15,11 +17,20 @@ namespace DB
 namespace
 {
 
-ContextPtr makeStreamingContext(ContextPtr context_)
+ContextPtr makeStreamingContext(ContextPtr context_, const ProjectionDescription * projection)
 {
     auto copy = Context::createCopy(context_);
     copy->makeQueryContext();
     copy->setQueryMetadataCache(nullptr);
+
+    if (projection)
+    {
+        copy->setSetting("preferred_optimize_projection_name", projection->name);
+        copy->setSetting("force_optimize_projection", true);
+        copy->setSetting("force_optimize_projection_name", projection->name);
+        copy->setSetting("optimize_use_implicit_projections", false);
+    }
+
     return copy;
 }
 
@@ -103,6 +114,58 @@ Names filterStreamingVirtualColumns(Names columns)
     return columns;
 }
 
+const ProjectionDescription * chooseCommitOrderProjection(const StorageInMemoryMetadata & metadata, const Names & columns)
+{
+    for (const auto & projection : metadata.projections)
+    {
+        if (projection.type != ProjectionDescription::Type::Normal)
+            continue;
+
+        const auto sorting_key = projection.metadata->getSortingKeyColumns();
+        if (sorting_key.size() < 2 || sorting_key[0] != BlockNumberColumn::name || sorting_key[1] != BlockOffsetColumn::name)
+            continue;
+
+        auto has_column = [&](const String & column) { return projection.sample_block.findColumnOrSubcolumnByName(column) || projection.metadata->virtuals.has(column); };
+        if (std::ranges::all_of(columns, has_column))
+            return &projection;
+    }
+
+    return nullptr;
+}
+
+}
+
+Names extendWithAuxiliaryColumns(
+    Names columns,
+    const StreamSettings & stream_settings,
+    const FilterDAGInfoPtr & row_level_filter,
+    const StorageMetadataPtr & metadata,
+    const ContextPtr & context)
+{
+    for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
+        if (!std::ranges::contains(columns, aux_name))
+            columns.push_back(aux_name);
+
+    if (stream_settings.watermark)
+    {
+        if (!std::ranges::contains(columns, stream_settings.watermark->column))
+            columns.push_back(stream_settings.watermark->column);
+
+        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
+        for (const auto & source_column : source_columns)
+            if (!std::ranges::contains(columns, source_column))
+                columns.push_back(source_column);
+    }
+
+    if (row_level_filter)
+    {
+        const auto source_columns = row_level_filter->actions.getRequiredColumnsNames();
+        for (const auto & source_column : source_columns)
+            if (!std::ranges::contains(columns, source_column))
+                columns.push_back(source_column);
+    }
+
+    return columns;
 }
 
 ReadRoundContext makeReadRoundContext(
@@ -115,15 +178,20 @@ ReadRoundContext makeReadRoundContext(
     SharedHeader output_header)
 {
     const auto & stream_settings = *query_info.table_expression_modifiers->getStreamSettings();
+    const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+
+    auto row_level_filter = makeReadRoundRowLevelFilter(query_info.row_level_filter, stream_settings, storage, context);
+    auto columns = filterStreamingVirtualColumns(std::move(user_requested_columns));
+    const auto * projection = chooseCommitOrderProjection(*metadata, extendWithAuxiliaryColumns(columns, stream_settings, row_level_filter, metadata, context));
 
     return ReadRoundContext{
         .storage = storage,
         .query_info = makeStreamingSelectQueryInfo(query_info),
         .prewhere_info = makeReadRoundPrewhereInfo(query_info.prewhere_info, stream_settings, storage, context),
-        .row_level_filter = makeReadRoundRowLevelFilter(query_info.row_level_filter, stream_settings, storage, context),
+        .row_level_filter = std::move(row_level_filter),
         .stream_settings = stream_settings,
-        .context = makeStreamingContext(std::move(context)),
-        .user_requested_columns = filterStreamingVirtualColumns(std::move(user_requested_columns)),
+        .context = makeStreamingContext(std::move(context), projection),
+        .user_requested_columns = std::move(columns),
         .requested_num_streams = requested_num_streams,
         .max_block_size = max_block_size,
         .output_header = std::move(output_header)};
