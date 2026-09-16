@@ -297,8 +297,9 @@ String ASTBackupQuery::getID(char) const
 void ASTBackupQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
-    /// `ASTBackupQuery` keeps almost all of its semantic state outside `children` (it is empty), and
-    /// `getID` only distinguishes `BACKUP` from `RESTORE`. Fold every distinguishing field in so that
+    /// `ASTBackupQuery` keeps most of its semantic state outside `children` (only the destination
+    /// and the base backup / snapshot names are attached through `set`), and `getID` only
+    /// distinguishes `BACKUP` from `RESTORE`. Fold every distinguishing field in so that
     /// e.g. `BACKUP TABLE a TO Disk('d', 'p')` and `BACKUP TABLE b TO Disk('d', 'p')` (differ in the
     /// object list), or two backups to different destinations, do not share a tree hash. The
     /// rewrite-rule matcher treats an equal `getTreeHash(true)` as semantic equality, so an
@@ -335,22 +336,13 @@ void ASTBackupQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
             hash_state.update(except_database);
     }
 
-    /// The destination, base backup / snapshot and settings are plain (non-`children`) AST members.
-    hash_state.update(backup_name != nullptr);
-    if (backup_name)
-        backup_name->updateTreeHash(hash_state, ignore_aliases);
-
+    /// `backup_name`, `base_backup_name` and `base_snapshot_name` are attached through `set`, so they
+    /// live in `children` and are already folded by the base class (and reached by every
+    /// `children` walk, including the rewrite-rule placeholder screening and AST-limit checks).
+    /// `settings` is a plain (non-`children`) AST member and has to be folded here.
     hash_state.update(settings != nullptr);
     if (settings)
         settings->updateTreeHash(hash_state, ignore_aliases);
-
-    hash_state.update(base_backup_name != nullptr);
-    if (base_backup_name)
-        base_backup_name->updateTreeHash(hash_state, ignore_aliases);
-
-    hash_state.update(base_snapshot_name != nullptr);
-    if (base_snapshot_name)
-        base_snapshot_name->updateTreeHash(hash_state, ignore_aliases);
 
     /// `cluster_host_ids` is only populated during `ON CLUSTER` expansion, never by the parser, so a
     /// user-submitted (parsed) query always has it null; folded for completeness.
