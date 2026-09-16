@@ -32,7 +32,7 @@ std::optional<PrometheusQueryDistributedTarget> resolvePrometheusQueryTarget(con
 bool prometheusQueryReadsTimeSeries(const PrometheusQueryTree & promql_query);
 
 /// The TimeSeries version naming this table's outer samples column: its own for a TimeSeries table, and for a
-/// Distributed wrapper, which has none, the one implied by the column it declares (the probe makes the shards agree).
+/// Distributed wrapper, which has none, the one implied by the column it declares (a write holds the shards to it).
 UInt64 outerSamplesVersion(const IStorage & storage, const StorageInMemoryMetadata & metadata);
 
 /// Refuses `operation`, which reads the table through `rewrite` rather than as itself, while the caller's row policy

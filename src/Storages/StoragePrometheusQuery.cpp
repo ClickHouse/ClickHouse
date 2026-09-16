@@ -242,6 +242,8 @@ void StoragePrometheusQuery::readImpl(
     {
         query_context->setSetting("prefer_localhost_replica", true);
         query_context->setSetting("enable_parallel_replicas", false);
+        /// Also stated on the generated cluster() call, where a readonly profile may drop it.
+        query_context->setSetting("serialize_query_plan", false);
     }
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);

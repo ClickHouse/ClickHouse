@@ -269,6 +269,25 @@ Block makeBlock(
     return block;
 }
 
+/// Delivered to the shards by the INSERT itself: a batch queued on the initiator, by the sink or the async
+/// insert queue, would be flushed after the shard-target check, into whatever answers to the name by then.
+void forceDeliveryToShards(const IStorage & storage, const StorageInMemoryMetadata & metadata, const ContextMutablePtr & context)
+{
+    context->setSetting("distributed_foreground_insert", true);
+    context->setSetting("async_insert", false);
+    /// A shard the sink skipped is a silent drop under a 204: fail the write closed, as the check does.
+    context->setSetting("skip_unavailable_shards", false);
+    /// A shard that is this server itself is always written in-process, as the shard-target check assumes.
+    context->setSetting("prefer_localhost_replica", true);
+    /// Each shard's insert refuses the table it resolves unless it is still a TimeSeries table of this type: the
+    /// check on the initiator runs first, so a table swapped in under the name after it is not taken.
+    context->setSetting("insert_expected_table_engine", String("TimeSeries"));
+    /// Named as the wrapper declares it, which is the name the sink sends and the probe holds every shard to.
+    const auto * samples_column = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(storage, metadata));
+    const auto & samples_type = metadata.columns.get(samples_column).type;
+    context->setSetting("insert_expected_column_types", Field{Map{Tuple{String(samples_column), samples_type->getName()}}});
+}
+
 void insertBlock(Block block, const IStorage & storage, const ContextMutablePtr & context)
 {
     if (!block.rows())
@@ -337,32 +356,6 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     , time_series_storage(std::move(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
-    /// Grant before existence: a probe without the right must not learn whether the name exists.
-    context_->checkAccess(AccessType::INSERT, time_series_storage->getStorageID());
-    /// Delivered to the shards by the INSERT itself: a batch queued on the initiator, by the sink or the
-    /// async insert queue, would be flushed after the check in write(), into whatever answers by then.
-    if (resolvePrometheusQueryTarget(*time_series_storage))
-    {
-        context_->setSetting("distributed_foreground_insert", true);
-        context_->setSetting("async_insert", false);
-        /// A shard the sink skipped is a silent drop under a 204: fail the write closed, as the check does.
-        context_->setSetting("skip_unavailable_shards", false);
-        /// A shard that is this server itself is always written in-process, as the shard-target check assumes.
-        context_->setSetting("prefer_localhost_replica", true);
-        /// Each shard's insert refuses the table it resolves unless it is still a TimeSeries table of this type: the
-        /// check in write() runs first, on the initiator, so a table swapped in under the name after it is not taken.
-        context_->setSetting("insert_expected_table_engine", String("TimeSeries"));
-        const auto metadata = time_series_storage->getInMemoryMetadataPtr(context_, false);
-        /// Named as the wrapper declares it, which is the name the sink sends and the probe holds every shard to.
-        const auto * samples_column
-            = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(*time_series_storage, *metadata));
-        const auto & samples_type = metadata->columns.get(samples_column).type;
-        context_->setSetting(
-            "insert_expected_column_types", Field{Map{Tuple{String(samples_column), samples_type->getName()}}});
-    }
-    else
-        /// A shard-local table's version is checked by its own write on the shard.
-        checkTimeSeriesVersionIsWritable(*storagePtrToTimeSeries(time_series_storage));
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
@@ -380,20 +373,38 @@ void PrometheusRemoteWriteProtocol::write(
         time_series.size(),
         metrics_metadata.size());
 
+    /// Asked first, so a target of the wrong engine is named as such rather than as a missing column.
+    const auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    /// A shard-local table's version is checked by its own write on the shard.
+    if (!distributed_target)
+        checkTimeSeriesVersionIsWritable(*storagePtrToTimeSeries(time_series_storage));
+
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     /// Refused before the shards are asked anything: no wrapper of that shape could take this request.
     if (!metrics_metadata.empty())
         checkTableAcceptsMetricsMetadata(*metadata, storage_id);
+
+    /// A Distributed wrapper has no version of its own, so the column it declares names it.
+    const auto * samples_column_name
+        = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(*time_series_storage, *metadata));
+    auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
+    /// Nothing to write, so no grant to ask for and no shard to ask about.
+    if (!block.rows())
+        return;
+
+    /// The grant the INSERT below makes, named column by column as it names them, and asked for before
+    /// the shard-target check can report on a shard-local table.
+    getContext()->checkAccess(AccessType::INSERT, storage_id, block.getNames());
+
+    if (distributed_target)
+        forceDeliveryToShards(*time_series_storage, *metadata, getContext());
 
     /// The sink would accept shard targets no prometheus read surface can answer from, and a caller's
     /// own shard choice; checked here, not on construction, with no request body read in between.
     checkPrometheusQueryDistributedWrite(*time_series_storage, getContext());
 
     FailPointInjection::pauseFailPoint(FailPoints::prometheus_remote_write_before_insert);
-    /// A Distributed wrapper has no version of its own, so the column it declares names it.
-    const auto * samples_column_name
-        = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(*time_series_storage, *metadata));
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
+    insertBlock(std::move(block), *time_series_storage, getContext());
 
     LOG_TRACE(
         log,

@@ -56,6 +56,11 @@ RESTRICTED_CALLERS = [
     (NO_SHARD_SELECT_USER, SHARD_SELECT_GRANT),
 ]
 
+# Granted exactly the columns a samples-only remote write names, and its own default database, so
+# that it resolves the shard-local table the same way `prom_metrics` does.
+COLUMN_INSERT_USER = "prom_column_insert"
+SAMPLE_COLUMNS = "metric_name, tags, samples"
+
 # What the shard probe says about that table, in the words no denied caller may see.
 SHARD_LOCAL_LEAK = ["shard-local", "not TimeSeries", "UNEXPECTED_TABLE_ENGINE"]
 
@@ -114,6 +119,14 @@ def start_cluster():
         node.query(f"GRANT SELECT ON *.* TO {NO_TEMP_TABLE_USER}")
         node.query(f"GRANT SELECT ON metrics.prom_local TO {NO_SHARD_SELECT_USER}")
         node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {NO_SHARD_SELECT_USER}")
+
+        node.query(
+            f"CREATE USER {COLUMN_INSERT_USER} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
+        )
+        for table in ("metrics.prom_local", "metrics.ts_local"):
+            node.query(
+                f"GRANT INSERT({SAMPLE_COLUMNS}) ON {table} TO {COLUMN_INSERT_USER}"
+            )
         yield cluster
     finally:
         cluster.shutdown()
@@ -165,6 +178,37 @@ def test_remote_write_is_refused_when_only_the_probes_database_is_healthy():
     assert "UNEXPECTED_TABLE_ENGINE" in response.text
     assert int(node.query("SELECT count() FROM metrics.ts_swap")) == 0
     assert int(node.query("SELECT count() FROM timeSeriesTags(default.ts_swap)")) == 0
+
+
+def test_the_local_shard_preflight_asks_for_the_grant_the_sink_asks_for():
+    """The sink sends every column the wrapper declares, so the shard-local insert asks for INSERT on
+    all of them: remote write is refused exactly where a plain INSERT through the wrapper is.
+    """
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        f"/local/write?user={COLUMN_INSERT_USER}&password=",
+        one_sample("column_grant_metric"),
+    )
+    assert response.status_code == 403, response.text
+    assert "metrics.ts_local" in response.text, response.text
+
+    values = f"('column_grant_metric', map('host', 'h0'), [(toDateTime64({START_TIME}, 3), 1)])"
+    sql_error = node.query_and_get_error(
+        f"INSERT INTO metrics.prom_local ({SAMPLE_COLUMNS}) VALUES {values}",
+        user=COLUMN_INSERT_USER,
+        settings={"distributed_foreground_insert": 1},
+    )
+    assert "metrics.ts_local" in sql_error, sql_error
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM timeSeriesTags(metrics.ts_local) "
+                "WHERE metric_name = 'column_grant_metric'"
+            )
+        )
+        == 0
+    )
 
 
 def query_as(endpoint, user, settings=None):

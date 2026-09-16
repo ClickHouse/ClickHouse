@@ -126,6 +126,8 @@ private:
     void writeScalar(WriteBuffer & response, Float64 value);
 
     ConstStoragePtr time_series_storage;
+    /// Read once: the generated query and the response reader must name the same outer samples column.
+    UInt64 outer_samples_version;
     FormatSettings format_settings;
     LoggerPtr log;
 };

@@ -37,6 +37,13 @@
                     <table>default.prom_rep</table>
                 </handler>
             </rep_write>
+            <irep_write>
+                <url>/irep/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_irep</table>
+                </handler>
+            </irep_write>
             <missing_write>
                 <url>/missing/write</url>
                 <handler>

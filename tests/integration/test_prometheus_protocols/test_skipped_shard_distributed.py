@@ -72,6 +72,16 @@ def start_cluster():
             "CREATE TABLE prom_rep AS ts_local "
             "ENGINE = Distributed(one_shard_two_replicas, default, ts_rep)"
         )
+        # The same two replicas, replicating internally: the sink writes one of them.
+        node1.query("CREATE TABLE ts_irep ENGINE = TimeSeries")
+        node2.query("CREATE TABLE ts_irep ENGINE = TimeSeries")
+        node2.query(
+            "CREATE TABLE mt_irep AS ts_irep ENGINE = MergeTree ORDER BY tuple()"
+        )
+        node1.query(
+            "CREATE TABLE prom_irep AS ts_local "
+            "ENGINE = Distributed(one_shard_replicated, default, ts_irep)"
+        )
         # Its second shard loses its table for a while.
         node1.query("CREATE TABLE ts_missing ENGINE = TimeSeries")
         node2.query("CREATE TABLE ts_missing ENGINE = TimeSeries")
@@ -241,6 +251,30 @@ def test_every_replica_is_checked_not_one_per_shard():
     assert_eq_with_retry(node1, series_count("two_replicas", "ts_rep"), "1")
     assert_eq_with_retry(node2, series_count("two_replicas", "ts_rep"), "1")
     assert node2.query("SELECT count() FROM mt_rep").strip() == "0"
+
+
+def test_an_internally_replicated_shard_needs_one_verified_replica_not_all():
+    """The sink writes one replica of such a shard, picked by failover, so a replica that is down is
+    not a target the write needs; one of the wrong engine still is, because failover could pick it.
+    """
+    with PartitionManager() as pm:
+        pm.partition_instances(
+            node1, node2, port=9000, action="REJECT --reject-with tcp-reset"
+        )
+        assert write("replica_down", "/irep/write").status_code == 204
+        assert_eq_with_retry(node1, series_count("replica_down", "ts_irep"), "1")
+
+    # A replica that answers with another engine is refused, whichever one the sink would pick.
+    node2.query("EXCHANGE TABLES ts_irep AND mt_irep")
+    response = write("replica_swapped", "/irep/write")
+    assert response.status_code >= 400, response.text
+    assert "UNEXPECTED_TABLE_ENGINE" in response.text
+    assert node1.query(series_count("replica_swapped", "ts_irep")).strip() == "0"
+    assert node2.query("SELECT count() FROM mt_irep").strip() == "0"
+
+    node2.query("EXCHANGE TABLES ts_irep AND mt_irep")
+    assert write("replica_restored", "/irep/write").status_code == 204
+    assert_eq_with_retry(node1, series_count("replica_restored", "ts_irep"), "1")
 
 
 def test_a_missing_shard_table_is_refused_for_a_write_and_never_validated():

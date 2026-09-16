@@ -215,6 +215,9 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     /// The shard-local tables' versions are checked by the selector on each shard.
     if (!resolvePrometheusQueryTarget(*time_series_storage))
         checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
+
+    const auto metadata = time_series_storage->getInMemoryMetadataPtr(context_, false);
+    outer_samples_version = outerSamplesVersion(*time_series_storage, *metadata);
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
@@ -237,7 +240,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     /// A Distributed table created `AS <TimeSeries table>` declares the same outer samples column,
     /// so the data types are taken from the target's own metadata in both cases.
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    evaluation_settings.time_series_version = outerSamplesVersion(*time_series_storage, *time_series_metadata);
+    evaluation_settings.time_series_version = outer_samples_version;
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(evaluation_settings.time_series_version);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
         = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type);
@@ -510,9 +513,8 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
 void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
     /// The evaluation named the column after what the target declares, Distributed wrapper or TimeSeries table.
-    const auto target_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    const auto & time_series_column_with_type = result_block.getByName(
-        TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(*time_series_storage, *target_metadata)));
+    const auto & time_series_column_with_type
+        = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(outer_samples_version));
     const auto & time_series_column = time_series_column_with_type.column;
     const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
     const auto & offsets = array_column.getOffsets();
@@ -573,8 +575,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const String & end_param)
 {
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    const auto * samples_column_name
-        = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(*time_series_storage, *time_series_metadata));
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(outer_samples_version);
     auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 

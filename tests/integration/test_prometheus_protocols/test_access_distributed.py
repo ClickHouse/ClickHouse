@@ -45,6 +45,7 @@ COARSE = "/coarse/api/v1"
 
 NO_SELECT_USER = "prom_no_select"
 NO_INSERT_USER = "prom_no_insert"
+COLUMN_INSERT_USER = "prom_column_insert"
 NO_REMOTE_USER = "prom_no_remote"
 NO_TEMP_TABLE_USER = "prom_no_temp_table"
 
@@ -243,6 +244,26 @@ def test_remote_write_needs_the_insert_grant():
     )
     assert_eq_with_retry(node, series_count("allowed_metric"), "1")
     assert node.query(series_count("denied_metric")).strip() == "0"
+
+
+def test_remote_write_accepts_a_column_level_insert_grant():
+    """The INSERT the request makes names `metric_name`, `tags` and `samples`, so a grant on those
+    three columns is the whole grant it needs: the shards are written as the cluster's own user.
+    """
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        f"{DIST}/write{credentials_in_url(COLUMN_INSERT_USER)}",
+        convert_time_series_to_protobuf(
+            [
+                (
+                    {"__name__": "column_grant_metric", "host": "h0"},
+                    {EVALUATION_TIME: 1.0},
+                )
+            ]
+        ),
+    )
+    assert_eq_with_retry(node, series_count("column_grant_metric"), "1")
 
 
 def test_dynamic_table_hides_whether_the_table_exists():

@@ -331,7 +331,9 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
-        auto table = getTimeSeriesTable(AccessType::INSERT);
+        /// Only the right to know the name exists, which any grant on the table carries: the INSERT grant
+        /// is asked for in write(), with the columns this request turns out to name.
+        auto table = getTimeSeriesTable(AccessType::SHOW_TABLES);
         PrometheusRemoteWriteProtocol protocol{table, context};
 
         prometheus::WriteRequest write_request;

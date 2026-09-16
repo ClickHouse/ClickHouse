@@ -125,7 +125,7 @@ UInt64 outerSamplesVersion(const IStorage & storage, const StorageInMemoryMetada
     if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&storage))
         return time_series->getVersion();
     /// A Distributed table is created `AS <TimeSeries table>` or declares the columns itself, so the name it
-    /// carries is the only statement it makes about the version: the probe refuses a shard that names it otherwise.
+    /// carries is the only statement it makes about the version, and a write to a shard naming the other is refused.
     return metadata.columns.has(TimeSeriesColumnNames::Samples) ? TimeSeriesVersion::MIN_WITH_SAMPLES_OUTER_COLUMN
                                                                 : TimeSeriesVersion::MIN_SUPPORTED;
 }
@@ -201,33 +201,42 @@ namespace
         std::set<String> wrong_types;
         /// Unreachable, or without the table: the sink cannot use them either, and what answers to the name later is unchecked.
         Strings unavailable_replicas;
+        Strings unavailable_on_shard;
+        UInt64 verified_on_shard = 0;
         auto judge = [&](const String & replica, const String & engine, const String & ts_type, const String & unavailable)
         {
             if (!unavailable.empty())
-                unavailable_replicas.push_back(fmt::format("{} ({})", replica, unavailable));
+                unavailable_on_shard.push_back(fmt::format("{} ({})", replica, unavailable));
             /// A replica that answered but names no engine of its own holds a view or a dictionary.
             else if (engine != "TimeSeries")
                 ++wrong_engine_replicas;
             /// Not exposed to the probe, or not there at all: the type went unchecked either way.
             else if (ts_type.empty())
-                unavailable_replicas.push_back(fmt::format(
+                unavailable_on_shard.push_back(fmt::format(
                     "{} (no `{}` column on {})", replica, samples_column, backQuoteIfNeed(remote_id.table_name)));
             else if (ts_type != time_series_type)
             {
                 ++wrong_type_replicas;
                 wrong_types.insert(ts_type);
             }
+            else
+                ++verified_on_shard;
         };
 
         /// One service query on the replica's own connection, block by block.
         auto ask = [&](const auto & pool, const String & query, const auto & header, auto && on_block)
         {
+            /// Its own query id, so the shards do not log every probe of one request under one.
+            probe_context->setCurrentQueryId("");
             RemoteQueryExecutor probe(pool, query, header, probe_context);
             for (Block block = probe.readBlock(); !block.empty(); block = probe.readBlock())
                 on_block(convertBLOBColumns(block));
         };
 
         for (const auto [shard_info, shard_addresses] : std::views::zip(cluster->getShardsInfo(), cluster->getShardsAddresses()))
+        {
+            unavailable_on_shard.clear();
+            verified_on_shard = 0;
             for (const auto [pool, address] : std::views::zip(shard_info.per_replica_pools, shard_addresses))
             {
                 /// A replica that is this server itself is read and written in-process on this context (both pin
@@ -292,6 +301,12 @@ namespace
                 judge(pool->getAddress(), engine, ts_type, unavailable);
             }
 
+            /// An internally replicated shard takes the batch on one replica, which the sink picks by
+            /// failover, so one verified target is a target; otherwise every replica is written and must be one.
+            if (!shard_info.hasInternalReplication() || !verified_on_shard)
+                unavailable_replicas.insert(unavailable_replicas.end(), unavailable_on_shard.begin(), unavailable_on_shard.end());
+        }
+
         if (wrong_engine_replicas)
             throw Exception(
                 ErrorCodes::UNEXPECTED_TABLE_ENGINE,
@@ -327,8 +342,8 @@ void checkNoBypassedReadRestriction(
             "{} is not supported on table {} while a row policy applies to it: {} and the policy would not be applied",
             operation, storage_id.getNameForLogs(), rewrite);
 
-    /// Matched the way the planner matches filter keys: the short name only from the same current
-    /// database, the full unquoted name from anywhere.
+    /// Matched by the names the planner matches on: the short name only from the same current database,
+    /// the full unquoted name from anywhere. Every entry is judged, where the planner applies the first.
     for (const auto & filter_entry : context->getSettingsRef()[Setting::additional_table_filters].value)
     {
         const auto & name_and_filter = filter_entry.safeGet<Tuple>();
@@ -399,6 +414,8 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
         /// A name that resolves to nothing is left to the probe, which refuses the write as having no target here.
         if (const auto local_id = context->tryResolveStorageID(target->remote_time_series_storage_id))
         {
+            /// The sink sends the wrapper's whole sample block, so its INSERT on the shard-local table asks for
+            /// every column the wrapper declares, not only those this request fills (StorageDistributed::write).
             const auto metadata = storage.getInMemoryMetadataPtr(context, false);
             const auto columns_to_send = settings[Setting::insert_allow_materialized_columns]
                 ? metadata->getSampleBlock().getNames()
