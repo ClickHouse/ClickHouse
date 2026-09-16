@@ -300,12 +300,6 @@ private:
       */
     bool finished = false;
 
-    /** Test-only. True only while this executor's reading thread is parked at the
-      * `remote_query_executor_receive_packet_pause` failpoint, so that the drain pause in
-      * `finish` cannot be satisfied by a sibling shard. False unless the failpoints are enabled.
-      */
-    std::atomic_bool in_receive_packet_window = false;
-
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
@@ -313,11 +307,6 @@ private:
       */
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
-
-    /// True only while `finish` is between its completed `tryCancel` and the end of its packet drain,
-    /// so the Cancel packet is already sent there. Deliberately not guarded by `was_cancelled_mutex`:
-    /// `finish` holds that mutex across a blocking network read, so a reader of it could not proceed.
-    std::atomic_bool drain_in_progress = false;
 
     /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
     /// owe us is that announcement - see `tryCancel`.

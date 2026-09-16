@@ -578,7 +578,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        bool & out_is_injective);
+        bool & out_atom_is_exact);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
@@ -674,11 +674,17 @@ private:
     };
     static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
 
+    struct SpaceFillingCurveArgument
+    {
+        String name;
+        DataTypePtr type;
+    };
+
     struct SpaceFillingCurveDescription
     {
         size_t key_column_pos{};
         String function_name;
-        std::vector<String> arguments;
+        std::vector<SpaceFillingCurveArgument> arguments;
         SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
