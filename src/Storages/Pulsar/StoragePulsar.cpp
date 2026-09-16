@@ -26,6 +26,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
 #include <base/scope_guard.h>
@@ -68,6 +69,11 @@ namespace PulsarSetting
     extern const PulsarSettingsString pulsar_service_url;
     extern const PulsarSettingsUInt64 pulsar_skip_broken_messages;
     extern const PulsarSettingsString pulsar_topic_list;
+}
+
+namespace FailPoints
+{
+    extern const char pulsar_streaming_pause_before_insert[];
 }
 
 namespace ErrorCodes
@@ -705,6 +711,10 @@ bool StoragePulsar::streamToViews(UInt64 cycle_epoch)
     auto pulsar_context = addSettings(getContext());
     pulsar_context->makeQueryContext();
 
+    /// Lets a test drop the dependent views in the window between the readiness check
+    /// in `streaming` and the resolution of the view chain below.
+    FailPointInjection::pauseFailPoint(FailPoints::pulsar_streaming_pause_before_insert);
+
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
@@ -714,6 +724,17 @@ bool StoragePulsar::streamToViews(UInt64 cycle_epoch)
         /* no_destination */ true,
         /* async_insert */ false);
     auto block_io = interpreter.execute();
+
+    /// `streaming` checked the dependent views before this cycle, but `InterpreterInsertQuery::execute`
+    /// has just resolved the view chain again. If the last view was dropped or detached in between,
+    /// the chain ends in a `NullSinkToStorage`: the polled messages would be discarded and then
+    /// acknowledged below, so they would be lost. The chain built by `execute` keeps the resolved
+    /// storages alive, so a view removed after this point still receives (or rejects) the blocks.
+    if (DatabaseCatalog::instance().getDependentViews(table_id).empty() || !checkDependencies(table_id))
+    {
+        LOG_DEBUG(log, "The dependent views of {} were dropped or detached while the streaming cycle was being prepared, skipping it", table_id.getNameForLogs());
+        return true;
+    }
 
     // Create a stream for each consumer and join them in a union stream
     std::vector<std::shared_ptr<PulsarSource>> sources;

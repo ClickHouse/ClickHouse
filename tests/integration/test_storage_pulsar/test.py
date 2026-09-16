@@ -1,3 +1,4 @@
+import concurrent.futures
 import subprocess
 import time
 
@@ -280,6 +281,70 @@ def test_produce_consume_via_materialized_view(pulsar_cluster):
     )
 
     expected = "\n".join(f"{i}\t{i * i}" for i in range(num_rows))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+
+def wait_failpoint_paused(failpoint, timeout=120):
+    # `SYSTEM WAIT FAILPOINT ... PAUSE` blocks until a thread parks at the failpoint,
+    # so run it on a worker thread: a failpoint that is never reached must fail the
+    # test instead of hanging it. The executor is not joined on the failure path,
+    # because its worker is still stuck inside the blocking query.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(instance.query, f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    done, _ = concurrent.futures.wait([future], timeout=timeout)
+    if not done:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise AssertionError(f"failpoint {failpoint} was not reached within {timeout}s")
+    pool.shutdown(wait=False)
+    future.result()
+
+
+def test_view_dropped_during_streaming_cycle_keeps_messages(pulsar_cluster):
+    # The streaming thread checks the dependent views, then `INSERT` resolves the view
+    # chain again. If the only view is dropped in between, the chain ends in a null sink:
+    # the cycle must not poll and acknowledge messages that reach no table. Park the
+    # thread exactly in that window with a failpoint, drop the view, publish, resume,
+    # and check that a re-created view still receives every message.
+    failpoint = "pulsar_streaming_pause_before_insert"
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "drop_view_topic", "drop_view_group"))
+    instance.query(pulsar_table("test.pulsar_writer", "drop_view_topic", "drop_view_writer_group"))
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        wait_failpoint_paused(failpoint)
+
+        instance.query("DROP TABLE test.consumer SYNC")
+
+        num_rows = 20
+        instance.query(
+            f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+        )
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # With the guard missing, the resumed cycle would poll the published messages into
+    # the null sink and acknowledge them, so the re-created view would never see them.
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
 
 
