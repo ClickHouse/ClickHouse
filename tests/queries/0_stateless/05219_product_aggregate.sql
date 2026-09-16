@@ -95,6 +95,11 @@ FROM numbers(200);
 
 SELECT product(x) FROM product_sparse;
 SELECT if(id < 3, 0, 1), product(x) FROM product_sparse GROUP BY if(id < 3, 0, 1) ORDER BY if(id < 3, 0, 1);
+SELECT product(x), finalizeAggregation(productState(x)) FROM product_sparse;
+SELECT if(id < 3, 0, 1), product(x), finalizeAggregation(productState(x))
+FROM product_sparse
+GROUP BY if(id < 3, 0, 1)
+ORDER BY if(id < 3, 0, 1);
 
 OPTIMIZE TABLE product_sparse FINAL;
 
@@ -103,5 +108,10 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'product_sparse' AND column = 'x' AND active;
 SELECT product(x) FROM product_sparse;
 SELECT if(id < 3, 0, 1), product(x) FROM product_sparse GROUP BY if(id < 3, 0, 1) ORDER BY if(id < 3, 0, 1);
+SELECT product(x), finalizeAggregation(productState(x)) FROM product_sparse;
+SELECT if(id < 3, 0, 1), product(x), finalizeAggregation(productState(x))
+FROM product_sparse
+GROUP BY if(id < 3, 0, 1)
+ORDER BY if(id < 3, 0, 1);
 
 DROP TABLE product_sparse;
