@@ -36,9 +36,9 @@ Ignores case.
         "Usage example",
         "SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);",
         R"(
-┌─multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello'])─┐
-│                                                                       1 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯, 'Hello'])─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };

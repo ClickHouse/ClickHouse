@@ -19,9 +19,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ErrnoException.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
-#if USE_AZURE_BLOB_STORAGE
-#include <azure/core/credentials/credentials.hpp>
-#endif
 #include <Poco/Net/NetException.h>
 
 
@@ -86,11 +83,6 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     catch (const Azure::Core::RequestFailedException & e)
     {
         return isRetryableAzureException(e);
-    }
-    catch (const Azure::Core::Credentials::AuthenticationException &)
-    {
-        /// AuthenticationException (token/RBAC not ready) is transient; separate catch — it isn't a RequestFailedException.
-        return true;
     }
 #endif
     catch (const ErrnoException & e)
@@ -437,55 +429,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     /// Handle unknown projections: on disk and in checksums but not in the
     /// part's projection list (e.g. a projection was dropped while the part
-    /// was detached, then re-attached, or an INSERT that had started before
-    /// `DROP PROJECTION` committed wrote the part afterwards).  Remove them
-    /// from checksums_txt so that the checkEqual below does not fail, and mark
-    /// the part as having a broken projection so the caller can handle it
-    /// gracefully.
+    /// was detached, then re-attached).  Remove them from checksums_txt so
+    /// that the checkEqual below does not fail, and mark the part as having
+    /// a broken projection so the caller can handle it gracefully.
     if (!projections_on_disk.empty())
     {
         is_broken_projection = true;
-
-        for (auto it = projections_on_disk.begin(); it != projections_on_disk.end();)
-        {
-            /// A directory the part itself lists in its `checksums.txt` was written deliberately, with
-            /// a projection the table has since dropped; the part is intact and has to keep passing the
-            /// check. Drop it from the unexpected set as well, or the `require_checksums` branch below
-            /// reports the part as broken - which is what happens to every mutation descendant of such
-            /// a part, because a mutation hardlinks the directory and is checked with checksums
-            /// required. A directory that the part does not list is a leftover nobody wrote as part of
-            /// it, so it stays unexpected.
-            if (checksums_txt.files.contains(*it))
-            {
-                checksums_txt.remove(*it);
-                it = projections_on_disk.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
-
-    /// Also handle leftover checksums entries for projections that are unknown to the current metadata
-    /// and were not found on disk either: their directory can legitimately be absent (a projection
-    /// dropped while the part was detached and re-attached, or a fetched part whose dropped-projection
-    /// directory was not transferred), while the stale entry survives in checksums.txt. Known
-    /// projections were validated above and left a computed checksum, so any .proj still listed without
-    /// one refers to such a removed projection. Drop it so the base-part checkEqual below does not fail,
-    /// while base files (and known projections) keep their mismatches fatal.
-    {
-        Names removed_projection_files;
-        for (const auto & [name, _] : checksums_txt.files)
-            if (name.ends_with(".proj") && !checksums_data.files.contains(name))
-                removed_projection_files.push_back(name);
-
-        if (!removed_projection_files.empty())
-        {
-            is_broken_projection = true;
-            for (const auto & projection_file : removed_projection_files)
-                checksums_txt.remove(projection_file);
-        }
+        for (const auto & projection_file : projections_on_disk)
+            checksums_txt.remove(projection_file);
     }
 
     if (throw_on_broken_projection)

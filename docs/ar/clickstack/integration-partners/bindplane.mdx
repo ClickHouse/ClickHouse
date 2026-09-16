@@ -9,7 +9,7 @@ keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'الإدارة �
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -71,7 +71,9 @@ Bindplane هو مسار بيانات القياس عن بُعد مبني على 
 </div>
 
 <Steps>
-  <Step title="تهيئة ClickStack كوجهة" id="configure-destination">
+  <Step>
+    #### تهيئة ClickStack كوجهة
+
     1. سجّل الدخول إلى حسابك في Bindplane
     2. انتقل إلى **Library**
     3. انقر على **Add Destination**
@@ -80,7 +82,7 @@ Bindplane هو مسار بيانات القياس عن بُعد مبني على 
        * **Protocol**: اختر HTTP أو gRPC (الافتراضي: HTTP على المنفذ `4318`)
        * **Hostname**: أدخل اسم مضيف نقطة نهاية OTLP الخاصة بـ ClickStack أو عنوان IP
        * **Port**: أدخل المنفذ (`4318` لـ HTTP و`4317` لـ gRPC)
-       * **API Ingestion Key**: أدخل مفتاح API لإدخال البيانات في ClickStack
+       * **API Ingestion Key**: أدخل مفتاح API لإدخال البيانات الخاص بـ ClickStack
     6. سمِّ الوجهة (على سبيل المثال: &quot;ClickStack Production&quot;)
     7. انقر على **Save** لإنشاء الوجهة
 
@@ -91,7 +93,9 @@ Bindplane هو مسار بيانات القياس عن بُعد مبني على 
     </Tip>
   </Step>
 
-  <Step title="إنشاء تهيئة" id="create-configuration">
+  <Step>
+    #### إنشاء تهيئة
+
     بعد تهيئة وجهة ClickStack، أنشئ تهيئة لمعالجة بيانات القياس عن بُعد وتوجيهها:
 
     1. انتقل إلى **Configurations** → **Create Configuration**
@@ -113,8 +117,10 @@ Bindplane هو مسار بيانات القياس عن بُعد مبني على 
     </Tip>
   </Step>
 
-  <Step title="إضافة المعالجات (اختياري)" id="add-processors">
-    يوفّر Bindplane إمكانات ذكاء المسارات وتوصيات للمعالجات. يمكنك إضافة معالجات من أجل:
+  <Step>
+    #### إضافة المعالجات (اختياري)
+
+    يوفّر Bindplane إمكانات pipeline intelligence وتوصيات للمعالجات. يمكنك إضافة معالجات من أجل:
 
     * **Filter**: تقليل حجم البيانات عبر استبعاد بيانات القياس عن بُعد غير الضرورية
     * **Sample**: تطبيق استراتيجيات أخذ العينات على التتبعات ذات الحجم الكبير
@@ -125,8 +131,10 @@ Bindplane هو مسار بيانات القياس عن بُعد مبني على 
     تُطبَّق هذه المعالجات بشكل متسق على جميع المجمّعات لديك قبل وصول البيانات إلى ClickStack.
   </Step>
 
-  <Step title="نشر المجمّعات وبدء الطرح" id="deploy-collectors">
-    1. أضف مجمّعًا (BDOT مجمّع) إلى التهيئة الخاصة بك:
+  <Step>
+    #### نشر المجمّعات وبدء الطرح
+
+    1. أضف مجمّعًا (BDOT Collector) إلى التهيئة الخاصة بك:
        * انتقل إلى **Agents** في Bindplane
        * ثبّت مجمّع Bindplane على أنظمتك المستهدفة [باتباع تعليمات التثبيت الخاصة بـ Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
        * سيظهر المجمّع في قائمة المجمّعات لديك بمجرد اتصاله
@@ -149,7 +157,9 @@ Bindplane هو مسار بيانات القياس عن بُعد مبني على 
     <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="إشارات بيانات القياس عن بُعد في ClickStack عبر Bindplane" size="lg" />
   </Step>
 
-  <Step title="التحقق من بيانات القياس عن بُعد في ClickStack" id="verify-telemetry">
+  <Step>
+    #### التحقق من بيانات القياس عن بُعد في ClickStack
+
     بمجرد طرح التهيئة، تبدأ بيانات القياس عن بُعد بالتدفق إلى ClickStack من مجموعة المجمّعات المُدارة لديك:
 
     1. سجّل الدخول إلى مثيل ClickStack لديك (واجهة HyperDX)

@@ -3,7 +3,6 @@
 #include <Common/setThreadName.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ObjectStorageKey.h>
-#include <Common/FullyQualifiedObjectPath.h>
 
 #if USE_AWS_S3
 
@@ -36,8 +35,6 @@
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
-
-#include <ranges>
 
 #include <aws/s3/model/Tag.h>
 #include <aws/s3/model/Tagging.h>
@@ -232,32 +229,10 @@ private:
 
 }
 
-std::pair<std::string, std::string> S3ObjectStorage::splitBucketAndKey(const std::string & remote_path) const
-{
-    if (auto qualified = trySplitFullyQualifiedObjectPath(remote_path))
-        return {std::string(qualified->object_namespace), std::string(qualified->key)};
-
-    return {uri.bucket, remote_path};
-}
-
-std::map<std::string, StoredObjects> S3ObjectStorage::groupByBucket(const StoredObjects & objects) const
-{
-    std::map<std::string, StoredObjects> result;
-    for (const auto & object : objects)
-    {
-        auto [bucket, key] = splitBucketAndKey(object.remote_path);
-        StoredObject in_bucket = object;
-        in_bucket.remote_path = std::move(key);
-        result[std::move(bucket)].push_back(std::move(in_bucket));
-    }
-    return result;
-}
-
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
     auto settings_ptr = s3_settings.get();
-    const auto [bucket, key] = splitBucketAndKey(object.remote_path);
-    return S3::objectExists(*client.get(), bucket, key, {});
+    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {});
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
@@ -287,12 +262,10 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
             blob_storage_log->local_path = object.local_path;
     }
 
-    const auto [bucket, key] = splitBucketAndKey(object.remote_path);
-
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
-        bucket,
-        key,
+        uri.bucket,
+        object.remote_path,
         uri.version_id,
         request_settings,
         patchSettings(read_settings),
@@ -357,12 +330,10 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
 
-    const auto [bucket, key] = splitBucketAndKey(object.remote_path);
-
     return std::make_unique<WriteBufferFromS3>(
         client.get(),
-        bucket,
-        key,
+        uri.bucket,
+        object.remote_path,
         write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
         request_settings,
         std::move(blob_storage_log),
@@ -444,74 +415,39 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
-    const auto [bucket, key] = splitBucketAndKey(object.remote_path);
 
-    /// A `StoredObject` that carries an `ETag` names one generation of the object, not just a key:
-    /// the delete is then pinned to that generation with `If-Match`, so an object that was written
-    /// over after the caller looked at it (a move copies the generation it selected, then deletes)
-    /// is left in place, with `FILE_CHANGED_DURING_READ`, instead of being deleted without the newer
-    /// generation having been seen.
-    deleteFileFromS3(client.get(), bucket, key, if_exists,
+    deleteFileFromS3(client.get(), uri.bucket, object.remote_path, if_exists,
                       blob_storage_log, object.local_path, object.bytes_size,
-                      ProfileEvents::DiskS3DeleteObjects, object.etag);
+                      ProfileEvents::DiskS3DeleteObjects);
 }
 
-void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects)
+void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
 {
     if (objects.empty())
         return;
 
+    Strings keys = collectRemotePaths(objects);
+
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    Strings local_paths_for_blob_storage_log;
+    VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
+    if (blob_storage_log)
+    {
+        local_paths_for_blob_storage_log.reserve(objects.size());
+        file_sizes_for_blob_storage_log.reserve(objects.size());
+        for (const auto & object : objects)
+        {
+            local_paths_for_blob_storage_log.push_back(object.local_path);
+            file_sizes_for_blob_storage_log.push_back(object.bytes_size);
+        }
+    }
+
     auto settings_ptr = s3_settings.get();
 
-    Strings successful_keys;
-
-    SCOPE_EXIT({
-        if (successful_objects)
-        {
-            UnorderedSetWithMemoryTracking<std::string_view> successful_keys_set(successful_keys.begin(), successful_keys.end());
-
-            for (const auto & object : objects)
-            {
-                if (successful_keys_set.contains(object.remote_path))
-                    successful_objects->emplace_back(object);
-            }
-        }
-    });
-
-    for (const auto & [bucket, objects_in_bucket] : groupByBucket(objects))
-    {
-        Strings keys = collectRemotePaths(objects_in_bucket);
-
-        /// The objects that name a generation are deleted pinned to it, see `removeObjectImpl`.
-        Strings etags_to_match;
-        if (std::ranges::any_of(objects_in_bucket, [](const StoredObject & object) { return !object.etag.empty(); }))
-        {
-            etags_to_match.reserve(objects_in_bucket.size());
-            for (const auto & object : objects_in_bucket)
-                etags_to_match.push_back(object.etag);
-        }
-
-        auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
-        Strings local_paths_for_blob_storage_log;
-        VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
-        if (blob_storage_log)
-        {
-            local_paths_for_blob_storage_log.reserve(objects_in_bucket.size());
-            file_sizes_for_blob_storage_log.reserve(objects_in_bucket.size());
-            for (const auto & object : objects_in_bucket)
-            {
-                local_paths_for_blob_storage_log.push_back(object.local_path);
-                file_sizes_for_blob_storage_log.push_back(object.bytes_size);
-            }
-        }
-
-        deleteFilesFromS3(client.get(), bucket, keys, if_exists,
-                          s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
-                          blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
-                          ProfileEvents::DiskS3DeleteObjects,
-                          &successful_keys,
-                          etags_to_match);
-    }
+    deleteFilesFromS3(client.get(), uri.bucket, keys, if_exists,
+                      s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
+                      blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
+                      ProfileEvents::DiskS3DeleteObjects);
 }
 
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
@@ -519,28 +455,23 @@ void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObjectImpl(object, true);
 }
 
-void S3ObjectStorage::removeObjectsIfExist( /// NOLINT
-    const StoredObjects & objects,
-    StoredObjects * successful_objects)
+void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
-    removeObjectsImpl(objects, true, successful_objects);
+    removeObjectsImpl(objects, true);
 }
 
 static void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
-    const StoredObjects & objects,
+    const Strings & object_keys,
     const String & tag_key,
-    const String & tag_value,
-    StoredObjects * successful_objects
+    const String & tag_value
 )
 {
     auto log = getLogger("putObjectsTagOnS3");
 
-    for (const StoredObject & object : objects)
+    for (const String & object_key : object_keys)
     {
-        const String & object_key = object.remote_path;
-
         S3::GetObjectTaggingRequest get_request;
         get_request.SetBucket(bucket);
         get_request.SetKey(object_key);
@@ -565,9 +496,6 @@ static void putObjectsTagOnS3(
             != existing_tag_set.end());
         if (present)
         {
-            if (successful_objects)
-                successful_objects->emplace_back(object);
-
             LOG_TRACE(log, "S3 object path {} skipped as it already had the tag {}={}", object_key, tag_key, tag_value);
             continue;
         }
@@ -586,9 +514,6 @@ static void putObjectsTagOnS3(
         if (put_outcome.IsSuccess())
         {
             LOG_TRACE(log, "Tags of S3 object {} updated", object_key);
-
-            if (successful_objects)
-                successful_objects->emplace_back(object);
         }
         else
         {
@@ -600,21 +525,16 @@ static void putObjectsTagOnS3(
 
 }
 
-void S3ObjectStorage::tagObjects( /// NOLINT
-    const StoredObjects & objects,
-    const std::string & tag_key,
-    const std::string & tag_value,
-    StoredObjects * successful_objects)
+void S3ObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
 {
-    for (const auto & [bucket, objects_in_bucket] : groupByBucket(objects))
-        putObjectsTagOnS3(client.get(), bucket, objects_in_bucket, tag_key, tag_value, successful_objects);
+    Strings keys = collectRemotePaths(objects);
+    putObjectsTagOnS3(client.get(), uri.bucket, keys, tag_key, tag_value);
 }
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 {
     auto settings_ptr = s3_settings.get();
-    const auto [bucket, key] = splitBucketAndKey(path);
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), bucket, key, {}, /* with_metadata= */ true, with_tags);
+    auto object_info = S3::getObjectInfoIfExists(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -633,11 +553,10 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
 {
     auto settings_ptr = s3_settings.get();
-    const auto [bucket, key] = splitBucketAndKey(path);
     S3::ObjectInfo object_info;
     try
     {
-        object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
     catch (DB::Exception & e)
     {
@@ -648,13 +567,13 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
             if (new_client)
             {
                 client.set(std::move(new_client));
-                object_info = S3::getObjectInfo(*client.get(), bucket, key, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+                object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
                 updated = true;
             }
         }
         if (!updated)
         {
-            e.addMessage("while reading '{}' in bucket '{}' on disk '{}'", key, bucket, disk_name);
+            e.addMessage("while reading '{}' in bucket '{}' on disk '{}'", path, uri.bucket, disk_name);
             throw;
         }
     }
@@ -683,9 +602,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     {
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
-        const auto [src_bucket, src_key] = splitBucketAndKey(object_from.remote_path);
-        const auto [dest_bucket, dest_key] = dest_s3->splitBucketAndKey(object_to.remote_path);
-        auto size = S3::getObjectSize(*client.get(), src_bucket, src_key, {});
+        auto size = S3::getObjectSize(*client.get(), uri.bucket, object_from.remote_path, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
         const auto read_settings_to_use = patchSettings(read_settings);
 
@@ -693,14 +610,13 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         {
             copyS3File(
                 /*src_s3_client=*/current_client,
-                /*src_bucket=*/src_bucket,
-                /*src_key=*/src_key,
+                /*src_bucket=*/uri.bucket,
+                /*src_key=*/object_from.remote_path,
+                /*src_offset=*/0,
                 /*src_size=*/size,
-                /*src_etag=*/object_from.etag,
-                /*src_version_id=*/"",
                 /*dest_s3_client=*/current_client,
-                /*dest_bucket=*/dest_bucket,
-                /*dest_key=*/dest_key,
+                /*dest_bucket=*/dest_s3->uri.bucket,
+                /*dest_key=*/object_to.remote_path,
                 settings_ptr->request_settings,
                 read_settings_to_use,
                 BlobStorageLogWriter::create(disk_name),
@@ -738,7 +654,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
-String S3ObjectStorage::copyObject( // NOLINT
+void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -747,27 +663,19 @@ String S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    const auto [src_bucket, src_key] = splitBucketAndKey(object_from.remote_path);
-    const auto [dest_bucket, dest_key] = splitBucketAndKey(object_to.remote_path);
-    auto size = S3::getObjectSize(*current_client, src_bucket, src_key, {});
+    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
-    /// A source that carries an `ETag` names the generation the caller has seen (a queue copies the
-    /// generation it ingested); the copy is pinned to it and transfers that generation or fails with
-    /// `S3_OBJECT_CHANGED_DURING_READ`. The read-and-write fallback reads the source through
-    /// `readObject`, which pins its `GET`s to the same `ETag`. The generation the copy created is
-    /// the one the response to the write names; see `copyObject`.
-    return copyS3File(
+    copyS3File(
         /*src_s3_client=*/current_client,
-        /*src_bucket=*/src_bucket,
-        /*src_key=*/src_key,
+        /*src_bucket=*/uri.bucket,
+        /*src_key=*/object_from.remote_path,
+        /*src_offset=*/0,
         /*src_size=*/size,
-        /*src_etag=*/object_from.etag,
-        /*src_version_id=*/"",
         /*dest_s3_client=*/current_client,
-        /*dest_bucket=*/dest_bucket,
-        /*dest_key=*/dest_key,
+        /*dest_bucket=*/uri.bucket,
+        /*dest_key=*/object_to.remote_path,
         settings_ptr->request_settings,
         read_settings_to_use,
         BlobStorageLogWriter::create(disk_name),

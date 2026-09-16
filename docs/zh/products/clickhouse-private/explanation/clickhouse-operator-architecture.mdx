@@ -1,0 +1,160 @@
+---
+noindex: true
+title: "ClickHouse Operator 架构"
+sidebarTitle: "架构"
+description: "本文档介绍 clickhouse-operator 的架构和内部机制，它负责管理运行在 Kubernetes 上的 ClickHouse 集群的生命周期"
+---
+
+本文档介绍了 clickhouse-operator 的架构和内部机制，它负责管理运行在 Kubernetes 上的 ClickHouse 集群生命周期。
+
+<div id="operator-overview">
+  ## Operator 概述
+</div>
+
+clickhouse-operator 负责已注册的 `ClickHouseCluster` 自定义资源的预配、协调以及整个集群生命周期管理。其职责包括：
+
+* **部署和终止** server 和 Keeper 组件
+* **控制集群状态** (运行、停止等) 
+* **处理备份请求**
+* **在缩容或移除副本后清理 PVC** (PersistentVolumeClaims) 
+* **通过添加或移除副本对集群进行水平扩缩容**
+
+operator 会监视 `ClickHouseCluster` 自定义资源的变更，并协调实际集群状态，使其与 CR 中声明的期望状态保持一致。
+
+<div id="instance-lifecycle">
+  ## 实例生命周期
+</div>
+
+ClickHouse 实例从创建到终止会经历一组明确定义的状态。下图展示了这些状态之间的转换：
+
+<Frame caption="实例生命周期">
+  ![实例生命周期](/images/instance-lifecycle.png)
+</Frame>
+
+无论是排查集群为何可能处于异常状态，还是规划扩缩容、升级等操作，理解这一生命周期都非常重要。
+
+<div id="one-clickhousecluster-per-namespace">
+  ## 每个命名空间一个 ClickHouseCluster
+</div>
+
+Operator 假定每个 Kubernetes 命名空间中恰好只有一个 `ClickHouseCluster` 自定义资源。在同一命名空间中部署多个 `ClickHouseCluster` 实例会导致协调冲突，因为 Operator 无法区分哪些资源属于哪个集群。
+
+`onprem-clickhouse-cluster` Helm 图表通过创建一个 `ResourceQuota`，在 Kubernetes API 服务器层面强制实施这一限制，将该命名空间限制为只能有一个 `ClickHouseCluster`：
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+spec:
+  hard:
+    count/clickhouseclusters.clickhouse.com: "1"
+```
+
+此配额默认处于启用状态 (在 Helm 配置值中为 `resourceQuota.enabled: true`) 。请勿将其禁用。否则会导致集群状态恶化，因为 Operator 无法对集群进行协调。
+
+如果您需要运行多个 ClickHouse 集群，请将每个集群部署在各自的命名空间中。
+
+<div id="statefulset-architecture-multists">
+  ## StatefulSet 架构 (MultiSTS)
+</div>
+
+operator 采用 **MultiStatefulSet (MultiSTS)&#x20;**&#x20;模型，其中 **每个副本都由各自专属的 StatefulSet 管理** (即每个 ClickHouse server pod (容器组) 对应一个 StatefulSet) 。这种设计可以对单个副本进行更细粒度的控制，这对于缩容等操作至关重要，因为此类操作需要移除特定副本而不影响其他副本。
+
+<Frame caption="MultiSTS 布局">
+  ![MultiSTS 布局](/images/multists-layout.png)
+</Frame>
+
+MultiSTS 将副本与基于序号的身份解耦，使 operator 能够独立管理每个副本。
+
+<div id="replicastatemap">
+  ## ReplicaStateMap
+</div>
+
+由于 MultiSTS 的副本无法依赖序号索引作为判断 pod (容器组) 年龄或生命周期的可靠确定性依据，因此 operator 会在存储于 CR 的 `.status.replicaStateMap` 字段中的映射里，跟踪每个 StatefulSet 的状态。
+
+一个 ReplicaStateMap 样本如下：
+
+```yaml
+replicaStateMap:
+  c-navy-wl-64-server-5hvvzxe:
+    createdAt: "2023-08-03T13:25:40Z"
+    isBackupPod: true
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-fvnytjb:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-un85gpo:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+```
+
+<div id="replica-states">
+  ### 副本状态
+</div>
+
+每个副本都可能处于以下状态之一：
+
+| State               | Description                                          |
+| ------------------- | ---------------------------------------------------- |
+| **Pending**         | 副本已在映射中注册，但尚未达到健康的运行状态。添加后，operator 会将其推进到 Ready 状态。 |
+| **Ready**           | 副本正在运行且状态健康。                                         |
+| **Stopped**         | 副本已被主动停止。                                            |
+| **废弃**       | 副本在缩容操作期间已被标记为待删除。                                   |
+| **Dropped**         | 副本已被完全移除。                                            |
+| **VolumeRestoring** | 副本的持久卷正在从备份中恢复。                                      |
+| **VolumeRestored**  | 副本的持久卷已恢复，并可供使用。                                     |
+
+<div id="backup-pod-designation">
+  ### 备份 pod (容器组) 的指定
+</div>
+
+在任意时刻，恰好只有一个副本会被指定为**备份 pod (容器组)&#x20;**&#x20;(`isBackupPod: true`) 。备份操作就在这个副本上执行。为避免干扰备份操作，operator 在缩容期间会避免将备份副本标记为“废弃”；不过，即使确实出现这种边缘情况，代码也会以防御式方式进行处理。
+
+> **警告：** ReplicaStateMap 中的状态跟踪仅用于 operator 的内部状态管理，不应被外部组件使用。
+
+<div id="parallel-vs-rolling-reconciliation">
+  ## 并行协调与滚动协调
+</div>
+
+operator 会根据变更的性质采用两种不同的协调策略：
+
+* **并行协调**用于 StatefulSet spec 中唯一的变更只是副本数量变化的情况。在这种情况下，所有 StatefulSet 都可以同时更新，因为这不会对现有 pod (容器组) 造成中断性变更。
+
+* **滚动协调**用于所有其他 spec 变更 (配置更新、镜像变更、资源调整等) 。在这种情况下，会启动一个次级升级循环，逐个协调 StatefulSet，并遵循 PodDisruptionBudget 的 `maxUnavailable` 设置，确保集群在滚动发布期间始终不会超出允许的中断预算。
+
+<div id="horizontal-scaling">
+  ## 横向扩缩容
+</div>
+
+<div id="scale-out">
+  ### 扩容
+</div>
+
+在 MultiSTS 模式下进行扩容非常直接。向 ReplicaStateMap 添加新的副本名称后，operator 会创建相应的 StatefulSet 并进行 协调。后续的 协调 循环会确保新创建的副本及时与集群中的其他副本保持一致。
+
+<div id="scale-in">
+  ### 缩容
+</div>
+
+缩容的复杂度要高得多，因为要移除的副本可能仍在接收流量，或者持有需要同步的数据。为安全移除副本，operator 会遵循一个分步骤的流程。
+
+<div id="condemned-replicas">
+  #### 废弃副本
+</div>
+
+当实际副本数超过期望数量时，多出的副本会被标记为 **废弃**。它们在 ReplicaStateMap 中的状态会从 Ready 变为 废弃，以告知 Operator 哪些副本需要安全删除。
+
+<div id="scale-in-flow">
+  #### 缩容流程
+</div>
+
+缩容过程按以下步骤进行：
+
+1. **移除拓扑键** -- 废弃副本会从 `TopologySpreadConstraint` 的偏斜计算中移除，因此不再影响 pod (容器组) 调度决策。
+2. **等待所有 StatefulSet 就绪** -- 如果任何 StatefulSet 未处于 Ready 状态，则会暂缓缩容，并将协调过程重新加入队列。
+3. **执行 [`SYSTEM SYNC REPLICA ... LIGHTWEIGHT`](https://clickhouse.com/docs/sql-reference/statements/system#sync-replica)** -- 确保废弃副本上的所有数据在移除前都已完成同步。该操作在备份 pod (容器组) 上运行。
+4. **删除废弃的 StatefulSet** -- 删除这些 StatefulSet，并从 ReplicaStateMap 中移除其条目。
+5. **执行 [`SYSTEM DROP REPLICA`](https://clickhouse.com/docs/sql-reference/statements/system#drop-replica)** -- 从其余处于 Ready 状态的副本对应的 ClickHouse Keeper 中移除已删除副本的元数据。
+6. **为 PVC 添加清理标签** -- 属于已删除 StatefulSet 的 PVC 会被添加 `clickhouse.com/delete-pvc` 标签。这被称为“PVC 泄漏”，此时 operator 的职责即告结束，后续将由 PersistentVolumeClaimCleaner 组件接管并执行实际的 PVC 删除。
