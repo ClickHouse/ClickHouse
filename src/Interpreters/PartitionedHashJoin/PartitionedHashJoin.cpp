@@ -412,8 +412,10 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         /// One block at a time under the storage's write lock: stored, then inserted straight into the
         /// table, which is probe-ready again when this returns. No routes, no sketch, no barrier. The
         /// limits are the storage's `max_rows_in_join` / `max_bytes_in_join`, checked as `HashJoin` does.
-        storeBlockInRowStore(fill);
-        clause.insertJoinTableBlock(fill);
+        const bool nullmap_saved = storeBlockInRowStore(fill);
+        const bool any_row_stored = clause.insertJoinTableBlock(fill);
+        if (!any_row_stored && !nullmap_saved)
+            dropLastStoredBlock();
 
         if (!check_limits)
             return true;
@@ -490,13 +492,19 @@ const Block & PartitionedHashJoin::getTotals() const
     return totals;
 }
 
-void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
+bool PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
 {
     auto & data = *hash_join->data;
-    auto & stored = storedBlocks().emplace_back(std::move(fill.stored));
+    /// Registered and accounted while a local list still owns it, as `HashJoin::addBlockToJoin` does:
+    /// a registration that throws leaves no unregistered block behind, and `splice` cannot throw. A
+    /// list node keeps its address across the splice.
+    HashJoin::StoredBlocksList new_block;
+    new_block.push_back(std::move(fill.stored));
+    StoredBlock & stored = new_block.back();
     stored.block_no = data.stored_columns_index->add(&stored);
     data.addBytes(data.allocated_size, stored.allocatedBytes());
     data.rows_to_join.fetch_add(fill.rows, std::memory_order_relaxed);
+    storedBlocks().splice(storedBlocks().end(), new_block);
     fill.block_no = stored.block_no;
     fill.stored = StoredBlock{};
     if (stored.hasRowStore())
@@ -506,7 +514,7 @@ void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
     }
 
     if (!isRightOrFull(hash_join->getKind()))
-        return;
+        return false;
 
     /// RIGHT/FULL output needs the rows that never made it into the table - null keys and rows the
     /// ON condition filtered - exactly as the standard build saves them.
@@ -514,10 +522,12 @@ void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
     if (fill.null_map)
         for (size_t i = 0; i < fill.rows && !save_nullmap; ++i)
             save_nullmap = (*fill.null_map)[i];
+    bool nullmap_saved = false;
     if (save_nullmap)
     {
         auto & holder = storedNullmaps().emplace_back(&stored, fill.null_map_holder);
         data.addBytes(data.nullmaps_allocated_size, holder.allocatedBytes());
+        nullmap_saved = true;
     }
 
     if (fill.join_mask.hasData() && fill.join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
@@ -537,8 +547,23 @@ void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
         {
             auto & holder = storedNullmaps().emplace_back(&stored, std::move(not_joined_map));
             data.addBytes(data.nullmaps_allocated_size, holder.allocatedBytes());
+            nullmap_saved = true;
         }
     }
+    return nullmap_saved;
+}
+
+void PartitionedHashJoin::dropLastStoredBlock()
+{
+    /// The engine stores one block at a time, so the block just stored is the list's last. Its rows
+    /// went through the insert, so the key count stands; the row count and the bytes must not include it.
+    auto & data = *hash_join->data;
+    StoredBlock & stored = storedBlocks().back();
+    data.subBytes(data.allocated_size, stored.allocatedBytes());
+    data.rows_to_join.fetch_sub(stored.selector.size(), std::memory_order_relaxed);
+    /// No cell refers to the block; the nulled entry makes a stale ref fail loudly.
+    data.stored_columns_index->clearEntry(stored.block_no);
+    storedBlocks().pop_back();
 }
 
 void PartitionedHashJoin::onBuildPhaseFinish()
@@ -828,7 +853,8 @@ StepAnalysisReport PartitionedHashJoin::getAnalysisReport() const
     StepAnalysisReport report;
 
     MetricList right_metrics;
-    right_metrics.emplace_back(MetricKey::Rows, join_table_mode ? storedData().rows_to_join.load() : accumulated_rows.load(std::memory_order_relaxed));
+    const size_t right_rows = join_table_mode ? storedData().rows_to_join.load() : accumulated_rows.load(std::memory_order_relaxed);
+    right_metrics.emplace_back(MetricKey::Rows, right_rows);
     report.push_back({MetricGroupKey::Right, std::move(right_metrics)});
 
     MetricList hash_table_metrics;

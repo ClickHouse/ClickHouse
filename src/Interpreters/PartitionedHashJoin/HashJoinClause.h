@@ -185,7 +185,10 @@ public:
     /// insert, which leaves the table probe-ready. Its keys and `RowRefList` chains live in
     /// `join_table_arena`, shared by pointer with the per-query instances like the table itself.
     void createJoinTable();
-    void insertJoinTableBlock(FillBlock & fill);
+    /// Returns whether a cell refers to the block: always for the list-valued shapes, and for the
+    /// single-row ones when a row was the first of its key or replaced the row under
+    /// `join_any_take_last_row`.
+    bool insertJoinTableBlock(FillBlock & fill);
     /// Makes this clause a query's view of a Join table's: the table, its arena and its geometry are
     /// shared by pointer with `source`, the storage's clause.
     void shareTable(const HashJoinClause & source);

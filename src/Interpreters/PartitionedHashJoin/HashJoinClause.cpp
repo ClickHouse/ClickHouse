@@ -592,12 +592,13 @@ void insertSectionFixed(
     }
 }
 
-/// The Join table engine's insert of one stored block: `emplaceKey` per row, the first row of a key
-/// initializing the cell and every later one appending to its `RowRefList` (a `Batch` chain, as
-/// `HashJoin` builds it) or, under `any_take_last_row`, replacing its `RowRef`. Rows the null map
-/// skips are stored but never inserted. The table grows inside `emplace`.
+/// The Join table engine's insert of one stored block: `emplaceKey` per row. The first row of a key
+/// initializes the cell; every later row appends to its `RowRefList` (a `Batch` chain, as `HashJoin`
+/// builds it) or, under `any_take_last_row`, replaces its `RowRef`. Rows the null map skips are stored
+/// but never inserted. The table grows inside `emplace`. Returns whether a cell refers to the block,
+/// by `HashJoin`'s rule: a list-valued shape always does, a single-row one when a row was stored.
 template <typename KeyGetter, typename Table>
-void insertJoinTableRows(
+bool insertJoinTableRows(
     Table & table,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
@@ -614,6 +615,7 @@ void insertJoinTableRows(
     }
     else
     {
+        bool any_row_stored = !std::is_same_v<Mapped, RowRef>;
         KeyGetter key_getter(key_columns, key_sizes, nullptr);
         for (size_t i = 0; i < rows; ++i)
         {
@@ -625,8 +627,10 @@ void insertJoinTableRows(
             const UInt64 ref = RowRef(block_no, i).encode();
             if constexpr (std::is_same_v<Mapped, RowRef>)
             {
-                if (emplace_result.isInserted() || any_take_last_row)
+                const bool store_row = emplace_result.isInserted() || any_take_last_row;
+                if (store_row)
                     mapped = RowRef::fromWord(ref);
+                any_row_stored |= store_row;
             }
             else
             {
@@ -634,6 +638,7 @@ void insertJoinTableRows(
                 mapped.insert(ref, pool);
             }
         }
+        return any_row_stored;
     }
 }
 
@@ -1675,10 +1680,11 @@ void HashJoinClause::createJoinTable()
     join_table_arena = std::make_shared<Arena>();
 }
 
-void HashJoinClause::insertJoinTableBlock(FillBlock & fill)
+bool HashJoinClause::insertJoinTableBlock(FillBlock & fill)
 {
     const HashJoin::Type type = hash_join.data->type;
     const Sizes & key_sizes = hash_join.key_sizes[0];
+    bool any_row_stored = false;
     std::visit(
         [&](auto & shape_maps)
         {
@@ -1688,7 +1694,7 @@ void HashJoinClause::insertJoinTableBlock(FillBlock & fill)
     case HashJoin::Type::TYPE: { \
         using Table = typename decltype(shape_maps.TYPE)::element_type; \
         using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table, /*use_offset=*/false>::Type; \
-        insertJoinTableRows<KeyGetter, Table>( \
+        any_row_stored = insertJoinTableRows<KeyGetter, Table>( \
             *shape_maps.TYPE, fill.key_columns, key_sizes, fill.rows, fill.block_no, fill.skipData(), *join_table_arena, any_take_last_row); \
         break; \
     }
@@ -1706,15 +1712,14 @@ void HashJoinClause::insertJoinTableBlock(FillBlock & fill)
     hash_join.data->keys_to_join = table_maps->getTotalRowCount(type);
     /// The table may have doubled; the probe's prefetch heuristics read the size.
     ht_total_bytes = table_maps->getBufferSizeInBytes(type);
-    forHashJoinTable(*table_maps, type, [&](const auto & table) { size_degree = table.sizeDegree(); });
     fill.releaseInputs();
+    return any_row_stored;
 }
 
 void HashJoinClause::shareTable(const HashJoinClause & source)
 {
     table_maps = source.table_maps;
     join_table_arena = source.join_table_arena;
-    size_degree = source.size_degree;
     ht_total_bytes = source.ht_total_bytes;
 }
 

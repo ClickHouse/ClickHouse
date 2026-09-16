@@ -294,8 +294,11 @@ private:
     FillLane & getFillLane();
     FillLane & getFillLane(size_t worker_id);
     /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and
-    /// filtered rows for RIGHT/FULL output.
-    void storeBlockInRowStore(FillBlock & fill);
+    /// filtered rows for RIGHT/FULL output. Returns whether a saved null map refers to the block.
+    bool storeBlockInRowStore(FillBlock & fill);
+    /// A block that nothing refers to is not kept, as `HashJoin` does not keep it: `ANY` tables see
+    /// their repeated keys re-inserted without growing. Join-engine mode only.
+    void dropLastStoredBlock();
     /// The saved-block form of one stored block, for the drains that hand blocks to another join.
     Block storedBlockToBlock(StoredBlock && stored) const;
     size_t liveDistinctEstimate() const;
