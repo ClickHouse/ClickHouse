@@ -1,14 +1,12 @@
 #include <Functions/FunctionReverseBySeparator.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/StringSearcher.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/PODArray.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/MemorySanitizer.h>
 #include <IO/WriteHelpers.h>
 #include <string_view>
@@ -144,7 +142,7 @@ ColumnPtr FunctionReverseBySeparator::executeImpl(const ColumnsWithTypeAndName &
     res_data.reserve(total_size_estimate);
 
     /// Collect tokens in reverse order
-    VectorWithMemoryTracking<std::string_view> tokens;
+    std::vector<std::string_view> tokens;
     tokens.reserve(8); /// Initial capacity
 
     /// Main processing loop - vectorized execution
@@ -216,7 +214,7 @@ ColumnPtr FunctionReverseBySeparator::executeImpl(const ColumnsWithTypeAndName &
         else
         {
             /// For multi-character separators, use StringSearcher
-            CaseSensitiveStringSearcher searcher(reinterpret_cast<const UInt8 *>(separator.data()), separator.size());
+            ASCIICaseSensitiveStringSearcher searcher(reinterpret_cast<const UInt8*>(separator.data()), separator.size());
             TokenSplitter<decltype(searcher)> splitter(haystack, searcher, separator.size());
 
             tokens.clear();
@@ -258,12 +256,12 @@ REGISTER_FUNCTION(ReverseBySeparator)
     };
 
     FunctionDocumentation::Examples examples = {
-        {"Basic domain reversal", "SELECT reverseBySeparator('www.google.com')", "com.google.www"},
-        {"Path reversal", "SELECT reverseBySeparator('a/b/c', '/')", "c/b/a"},
-        {"Custom separator", "SELECT reverseBySeparator('x::y::z', '::')", "z::y::x"},
-        {"Edge case with dots", "SELECT reverseBySeparator('.a.b.', '.')", ".b.a."},
-        {"Single element", "SELECT reverseBySeparator('single')", "single"},
-        {"Empty separator", "SELECT reverseBySeparator('abcde', '')", "edcba"}
+        {"Basic domain reversal", "SELECT reverseBySeparator('www.google.com')", "'com.google.www'"},
+        {"Path reversal", "SELECT reverseBySeparator('a/b/c', '/')", "'c/b/a'"},
+        {"Custom separator", "SELECT reverseBySeparator('x::y::z', '::')", "'z::y::x'"},
+        {"Edge case with dots", "SELECT reverseBySeparator('.a.b.', '.')", "'.b.a.'"},
+        {"Single element", "SELECT reverseBySeparator('single')", "'single'"},
+        {"Empty separator", "SELECT reverseBySeparator('abcde', '')", "'edcba'"}
     };
 
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
