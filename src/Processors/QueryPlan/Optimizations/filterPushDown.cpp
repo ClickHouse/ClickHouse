@@ -1280,9 +1280,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
-        /// A conjunct probing a large or not-yet-built set stays above: below the step it reaches index
-        /// analysis, which materializes the whole set in sorted order, and it is merged into the source
-        /// filter, where `in` is not evaluated lazily. LIMIT BY only trims groups.
         if (auto updated_steps = tryAddNewFilterStep(
                 parent_node, true, nodes, keys, /*child_idx=*/0,
                 settings.max_set_size_for_filter_push_down_below_limit_by))

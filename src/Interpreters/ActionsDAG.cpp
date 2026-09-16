@@ -3578,8 +3578,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
     return ActionsForFilterPushDown{std::move(actions), filter_pos, remove_filter, false};
 }
 
-/// A set whose cost the plan cannot bound: not built yet, so its size is only the subquery's to know, or
-/// larger than `max_set_rows`. A set inside a lambda body lives in that body's own DAG and is not seen here.
+/// A set inside a lambda body lives in that body's own DAG and is not seen here.
 static bool conjunctProbesUnboundedSet(const ActionsDAG::Node * conjunct, size_t max_set_rows)
 {
     std::vector<const ActionsDAG::Node *> to_visit{conjunct};
