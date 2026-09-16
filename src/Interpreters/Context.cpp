@@ -3955,11 +3955,19 @@ UInt64 Context::getBernoulliSampleSeed() const
         /// Every read of one query must sample with the same seed, including reads that happen on
         /// remote shards and replicas. Those nodes do not share this query context - they receive
         /// only the settings, and the setting still holds the `0` marker - so a locally drawn random
-        /// number could not be shared with them. The initial query id is unique per query and is
-        /// forwarded to every node, so hashing it gives one shared random seed for free.
-        UInt64 seed = client_info.initial_query_id.empty()
-            ? thread_local_rng()
-            : sipHash64(client_info.initial_query_id.data(), client_info.initial_query_id.size());
+        /// number could not be shared with them. The initial query id and the initial query start
+        /// time are both forwarded to every node, so hashing them gives one shared random seed for
+        /// free. The start time is mixed in because a client may deliberately reuse a `query_id`
+        /// (retries, idempotent submissions), and the zero seed promises a fresh sample per query,
+        /// not per query id.
+        UInt64 seed = 0;
+        if (!client_info.initial_query_id.empty())
+        {
+            SipHash hash;
+            hash.update(client_info.initial_query_id);
+            hash.update(client_info.initial_query_start_time_microseconds.value);
+            seed = hash.get64();
+        }
         while (seed == 0)
             seed = thread_local_rng();
         bernoulli_sample_seed = seed;
