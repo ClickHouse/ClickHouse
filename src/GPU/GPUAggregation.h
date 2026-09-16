@@ -14,7 +14,6 @@
 
 namespace DB::GPU
 {
-
 const String & deviceProbeError();
 
 std::optional<int> elementTypeOf(const IDataType & type);
@@ -52,7 +51,6 @@ private:
     UInt64 integer_sum = 0;
     Float64 float_sum = 0;
 };
-
 
 
 bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types);
@@ -96,7 +94,6 @@ private:
 
     std::optional<size_t> num_groups;
 };
-
 }
 
 #endif

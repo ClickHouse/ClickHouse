@@ -25,7 +25,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int GPU_ERROR;
@@ -34,13 +33,10 @@ namespace ErrorCodes
 
 namespace GPU
 {
-
 namespace
 {
-
 /// Room for a message coming back over the boundary. cuDF's are a line or two.
 constexpr size_t error_buffer_size = 1024;
-
 }
 
 std::optional<int> elementTypeOf(const IDataType & type)
@@ -86,7 +82,6 @@ size_t elementSizeOf(int element_type)
 
 namespace
 {
-
 /// What ClickHouse's own `sum` returns for such an argument: `UInt64` for any unsigned integer,
 /// `Int64` for any signed one, `Float64` for both floats. The device is asked for exactly that
 /// type, so a batch's sum needs no conversion on the way back.
@@ -111,7 +106,6 @@ std::optional<int> sumTypeFor(int element_type)
             return {};
     }
 }
-
 }
 
 std::optional<int> sumTypeOf(const IDataType & type)
@@ -150,7 +144,6 @@ bool canSumOnDevice(const IDataType & argument_type, const IDataType & result_ty
 
 namespace
 {
-
 int elementTypeOrThrow(const IDataType & argument_type, const IDataType & result_type)
 {
     if (const auto element_type = elementTypeOf(argument_type); element_type && canSumOnDevice(argument_type, result_type))
@@ -170,7 +163,6 @@ int sumTypeOrThrow(const IDataType & result_type)
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "A sum of {} cannot come back from a GPU", result_type.getName());
 }
-
 }
 
 SumAccumulator::SumAccumulator(const IDataType & argument_type, const IDataType & result_type, size_t batch_bytes_)
@@ -247,9 +239,6 @@ Field SumAccumulator::finalize()
 }
 
 
-
-
-
 bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types)
 {
     if (key_types.empty() || argument_types.empty() || argument_types.size() != result_types.size())
@@ -276,7 +265,6 @@ bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argume
 
 namespace
 {
-
 template <typename T>
 void * resizeAndGetValueBytes(IColumn & column, size_t num_rows)
 {
@@ -296,7 +284,6 @@ void * resizeAndGetValueBytes(IColumn & column, size_t num_rows)
     data.resize(num_rows);
     return data.data();
 }
-
 }
 
 void * resizeForElementType(IColumn & column, size_t num_rows, int element_type)
@@ -319,7 +306,6 @@ void * resizeForElementType(IColumn & column, size_t num_rows, int element_type)
 
 namespace
 {
-
 void * resizeForSumType(IColumn & column, size_t num_rows, int sum_type)
 {
     switch (sum_type)
@@ -393,7 +379,6 @@ size_t rowBytesOf(const std::vector<size_t> & key_element_sizes, const std::vect
     return std::accumulate(key_element_sizes.begin(), key_element_sizes.end(), size_t{0})
         + std::accumulate(value_element_sizes.begin(), value_element_sizes.end(), size_t{0});
 }
-
 }
 
 GroupBySumAccumulator::GroupBySumAccumulator(
@@ -556,9 +541,7 @@ void GroupBySumAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
     if (status != 0)
         throw Exception(ErrorCodes::GPU_ERROR, "Cannot copy {} groups back from the device: {}", *num_groups, error);
 }
-
 }
-
 }
 
 #endif

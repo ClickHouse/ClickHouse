@@ -242,6 +242,8 @@ void checkRowCountFitsCudf(size_t num_rows, const std::string & what)
         throw std::logic_error(what + " of " + std::to_string(num_rows) + " rows is too large for cuDF");
 }
 
+}
+
 extern "C"
 {
 
