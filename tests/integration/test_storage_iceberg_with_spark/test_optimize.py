@@ -393,3 +393,58 @@ def test_optimize_uses_current_schema_with_pinned_metadata(started_cluster_icebe
     current_table = spark.read.format("iceberg").load(table_dir)
     assert current_table.count() == 81
     assert current_table.where("id = 100").select("newer_col").collect()[0][0] == "important"
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_uses_latest_metadata_compression(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_metadata_compression_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'gc.enabled' = 'true',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(0, 100)")
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    default_upload_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )
+
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    latest_metadata_file = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
+    ).strip()
+    compressed_metadata_file = latest_metadata_file.replace(".metadata.json", ".gz.metadata.json")
+    instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"gzip '{latest_metadata_file}' && mv '{latest_metadata_file}.gz' '{compressed_metadata_file}'",
+        ]
+    )
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+    compacted_metadata_file = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.gz.metadata.json | tail -1"]
+    ).strip()
+    instance.exec_in_container(["gzip", "-t", compacted_metadata_file])
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80

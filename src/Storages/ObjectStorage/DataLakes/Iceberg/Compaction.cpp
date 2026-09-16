@@ -190,15 +190,11 @@ static Plan getPlan(
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
     const String & write_format,
-    ContextPtr context,
-    CompressionMethod compression_method)
+    ContextPtr context)
 {
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
-    Plan plan;
-    plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
-
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [_, metadata_file_path, metadata_compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -210,8 +206,19 @@ static Plan getPlan(
         /* force_fetch_latest_metadata */ true,
         /* ignore_metadata_pointer_overrides */ true);
 
+    Plan plan;
+    plan.generator = FileNamesGenerator(
+        persistent_table_components.path_resolver.getTableLocation(), false, metadata_compression_method, write_format);
+
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        = getMetadataJSONObject(
+            metadata_file_path,
+            object_storage,
+            persistent_table_components.metadata_cache,
+            context,
+            log,
+            metadata_compression_method,
+            persistent_table_components.table_uuid);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -1337,16 +1344,14 @@ static void writeMetadataFiles(
 
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
-
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(path_resolver.resolve(generated_metadata_info.path)),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
+        writeMessageToFile(
+            json_representation,
+            path_resolver.resolve(generated_metadata_info.path),
+            object_storage,
+            context,
+            "",
+            "",
+            generated_metadata_info.compression_method);
     }
 }
 
@@ -1478,8 +1483,7 @@ void compactIcebergTable(
         persistent_table_components,
         object_storage_,
         write_format,
-        context_,
-        persistent_table_components.metadata_compression_method);
+        context_);
     if (plan.need_optimize)
     {
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
