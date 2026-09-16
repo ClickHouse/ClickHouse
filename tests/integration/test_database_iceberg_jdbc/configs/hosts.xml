@@ -1,0 +1,6 @@
+<clickhouse>
+    <remote_url_allow_hosts>
+        <host>postgres1</host>
+        <host>minio1</host>
+    </remote_url_allow_hosts>
+</clickhouse>

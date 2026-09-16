@@ -788,6 +788,8 @@ Pipe IcebergMetadata::executeCommand(
             "To allow their usage, enable setting allow_insert_into_iceberg");
     }
 
+    DataLake::throwIfTableWritesUnsupported(catalog_, "EXECUTE");
+
     if (command_name == "expire_snapshots")
     {
         if (!context->getSettingsRef()[Setting::allow_experimental_expire_snapshots].value)
