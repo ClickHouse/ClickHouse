@@ -46,6 +46,7 @@ struct BaseSettingsHelpers
     /// A URI-typed setting may carry basic-auth credentials, so a password of the form `scheme://user:password@`
     /// is masked the same way it is masked in queries.
     static String formatValueForErrorMessage(const Field & value);
+    static String formatValueForErrorMessage(String str);
 
     /// Serialization helpers
     static void writeString(std::string_view str, WriteBuffer & out);
@@ -719,7 +720,8 @@ Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const Stri
     }
     catch (Exception & e)
     {
-        e.addMessage("while parsing value '{}' for setting '{}'", str, name);
+        /// Settings profiles and constraints from `users.xml` arrive here as strings; a URI value may carry a password.
+        e.addMessage("while setting '{}' to value '{}'", name, BaseSettingsHelpers::formatValueForErrorMessage(str));
         throw;
     }
 }

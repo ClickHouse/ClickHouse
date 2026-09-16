@@ -89,14 +89,18 @@ void BaseSettingsHelpers::throwValuelessSettingHasValue(std::string_view name)
         "but it carries a different value", String{name}, String{name});
 }
 
-/// Log the summary of unknown settings as a warning instead of warning for each one separately.
 String BaseSettingsHelpers::formatValueForErrorMessage(const Field & value)
 {
-    String str = applyVisitor(FieldVisitorToString(), value);
+    return formatValueForErrorMessage(applyVisitor(FieldVisitorToString(), value));
+}
+
+String BaseSettingsHelpers::formatValueForErrorMessage(String str)
+{
     maskURIPassword(&str);
     return str;
 }
 
+/// Log the summary of unknown settings as a warning instead of warning for each one separately.
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
     unknown_settings.push_back(fmt::format("`{}`", name));
