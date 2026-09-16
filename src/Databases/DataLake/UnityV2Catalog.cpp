@@ -588,20 +588,27 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getCredentialsConfiguration
 
 std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_refresh) const
 {
-    std::lock_guard lock(token_mutex);
-    if (iceberg_rest_catalog && !force_refresh)
-        return iceberg_rest_catalog;
+    std::string token;
+    {
+        std::lock_guard lock(token_mutex);
+        if (iceberg_rest_catalog && !force_refresh)
+            return iceberg_rest_catalog;
+
+        /// On `force_refresh` this resets `iceberg_rest_catalog`, so the catalog below embeds the new token.
+        ensureBearerToken(force_refresh);
+        token = access_token->token;
+    }
 
     std::string iceberg_rest_url = std::filesystem::path(base_url_str) / "iceberg-rest";
 
-    /// On `force_refresh` this resets `iceberg_rest_catalog`, so the catalog below embeds the new token.
-    ensureBearerToken(force_refresh);
     /// An empty token means an anonymous Unity deployment, so keep the embedded catalog anonymous too.
-    std::string rest_auth_header = access_token->token.empty() ? "" : "Authorization: Bearer " + access_token->token;
+    std::string rest_auth_header = token.empty() ? "" : "Authorization: Bearer " + token;
 
+    /// Built outside `token_mutex`: the `RestCatalog` ctor fetches `/v1/config` over the network,
+    /// and holding the lock there would stall every Delta request waiting in `getBearerToken`.
     /// With a token, the RestCatalog authenticates via the ready-made auth header, which puts it in header mode.
     /// It never mints a token of its own, so every other auth parameter is left empty.
-    iceberg_rest_catalog = std::make_shared<RestCatalog>(
+    auto catalog = std::make_shared<RestCatalog>(
         warehouse,
         iceberg_rest_url,
         /* catalog_credential= */ "",
@@ -611,7 +618,12 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
         /* oauth_server_use_request_body= */ false,
         getContext());
 
-    return iceberg_rest_catalog;
+    std::lock_guard lock(token_mutex);
+    /// A concurrent refresh may have replaced the token meanwhile; a catalog built on the old one must not be cached.
+    if (access_token && access_token->token == token)
+        iceberg_rest_catalog = catalog;
+
+    return catalog;
 }
 
 CatalogTables UnityV2Catalog::getTablesForSchema(const std::string & schema, size_t limit) const
