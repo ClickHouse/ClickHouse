@@ -66,7 +66,8 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         data_file_size,
         std::move(marks_loader),
         ReadBufferFromFileBase::ProfileCallback{},
-        CLOCK_MONOTONIC_COARSE);
+        CLOCK_MONOTONIC_COARSE,
+        getLastMark(all_mark_ranges));
 }
 
 MergeTreeIndexReader::MergeTreeIndexReader(
@@ -99,7 +100,6 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     const auto & checksums = data_part_info->getChecksums();
     auto index_format = index->getDeserializedFormat(*data_part_info, index->getFileName());
     auto index_name = index->getFileName();
-    auto last_mark = getLastMark(all_mark_ranges);
 
     for (const auto & substream : index_format.substreams)
     {
@@ -120,9 +120,6 @@ void MergeTreeIndexReader::initStreamIfNeeded()
             mark_cache,
             uncompressed_cache,
             patchSettings(settings, substream.type));
-
-        stream->adjustRightMark(last_mark);
-        stream->seekToStart();
 
         streams[substream.type] = stream.get();
         stream_holders.emplace_back(std::move(stream));
