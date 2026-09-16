@@ -8,6 +8,10 @@
 -- being deterministic, which `__topKFilter` deliberately is not. They are now recorded under the
 -- key of the query's whole filter, salted with the TopK plan parameters and the part set.
 
+-- Pinned to its default: CI setting randomization may lower it to 1, and then `LIMIT 3` is not served
+-- by the `__topKFilter` PREWHERE at all, so the second run has nothing to reuse from the cache.
+SET query_plan_max_limit_for_top_k_optimization = 1000;
+
 DROP TABLE IF EXISTS t_topk_qcc;
 
 CREATE TABLE t_topk_qcc (k UInt64, v UInt64)
