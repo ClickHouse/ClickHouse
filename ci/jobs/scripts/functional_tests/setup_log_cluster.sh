@@ -14,8 +14,7 @@ set -e
 # Pre-configured destination cluster, where to export the data
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 
-EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
-EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
+LOG_EXPORT_DATABASE=${LOG_EXPORT_DATABASE:-ci_logs_export}
 
 # The server to export the logs from. The performance comparison runs two
 # servers side by side (see ci/jobs/performance_tests.py), so every query to the
@@ -23,11 +22,12 @@ EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 # port. The `xargs` lines below run in another process and cannot take the
 # array, they expand ${LOG_EXPORT_SERVER_PORT:+...} instead.
 LOG_EXPORT_SERVER_PORT=${LOG_EXPORT_SERVER_PORT:-}
-LOCAL_ARGS=()
+# The export harness is plumbing, not a fuzz target: a server-side fuzzed CREATE is renamed
+# but keeps a materialized view's TO target, so a clone would keep feeding the real sender.
+LOCAL_ARGS=(--ast_fuzzer_runs 0)
 if [[ -n "$LOG_EXPORT_SERVER_PORT" ]]; then
-    LOCAL_ARGS=(--port "$LOG_EXPORT_SERVER_PORT")
+    LOCAL_ARGS+=(--port "$LOG_EXPORT_SERVER_PORT")
 fi
-
 function __set_connection_args()
 {
     # It's impossible to use a generic $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
@@ -98,7 +98,13 @@ function setup_logs_replication()
     # exported values
     set +x
 
+    # Only the setup path needs these, so the stop path can run without them.
+    # Both are built from LogCluster.META_COLUMNS (ci/jobs/scripts/log_cluster.py)
+    # and exported by the job that runs this script. A default here would be a
+    # second definition free to drift from the expression it must match.
+    echo "EXTRA_COLUMNS=${EXTRA_COLUMNS:?}"
     echo "EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:?}"
+    EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 
     if [[ -n "$CLICKHOUSE_CI_LOGS_HOST" ]]; then
         check_logs_credentials
@@ -113,6 +119,8 @@ function setup_logs_replication()
 
     debug_or_sanitizer_build=$(clickhouse-client "${LOCAL_ARGS[@]}" -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
+
+    clickhouse-client "${LOCAL_ARGS[@]}" --query "CREATE DATABASE IF NOT EXISTS ${LOG_EXPORT_DATABASE}"
 
     # For each system log table:
     echo 'Create %_log tables'
@@ -166,11 +174,11 @@ function setup_logs_replication()
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
             "${CONNECTION_ARGS[@]:?}" || continue
 
-        echo "Creating table system.${table}_sender" >&2
+        echo "Creating table ${LOG_EXPORT_DATABASE}.${table}_sender" >&2
 
         # Create Distributed table and materialized view to watch on the original table:
         clickhouse-client "${LOCAL_ARGS[@]}" --query "
-            CREATE TABLE system.${table}_sender
+            CREATE TABLE ${LOG_EXPORT_DATABASE}.${table}_sender
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
             SETTINGS flush_on_detach=0
             EMPTY AS
@@ -178,11 +186,11 @@ function setup_logs_replication()
             FROM system.${table}
         " || continue
 
-        echo "Creating materialized view system.${table}_watcher" >&2
+        echo "Creating materialized view ${LOG_EXPORT_DATABASE}.${table}_watcher" >&2
 
         clickhouse-client "${LOCAL_ARGS[@]}" --query "
-            CREATE MATERIALIZED VIEW system.${table}_watcher
-            TO system.${table}_sender
+            CREATE MATERIALIZED VIEW ${LOG_EXPORT_DATABASE}.${table}_watcher
+            TO ${LOG_EXPORT_DATABASE}.${table}_sender
             DEFINER = ci_logs_sender
             AS
             SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, * FROM system.${table}
@@ -202,18 +210,23 @@ function stop_logs_replication()
     # same `timeout` pattern as the drop step so an unreachable cluster cannot
     # block teardown indefinitely.
     echo "Flush pending log records to the remote cluster"
-    ( clickhouse-client "${LOCAL_ARGS[@]}" --query "select database||'.'||table from system.tables where database = 'system' and table like '%_sender'" | {
+    ( clickhouse-client "${LOCAL_ARGS[@]}" --query "select database||'.'||table from system.tables where database = '${LOG_EXPORT_DATABASE}' and table like '%_sender'" | {
         tee /dev/stderr
     } | {
         timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m xargs -n1 -P10 -r -i clickhouse-client ${LOG_EXPORT_SERVER_PORT:+--port $LOG_EXPORT_SERVER_PORT} --query "SYSTEM FLUSH DISTRIBUTED {}"
     } ) || echo "WARNING: failed to flush pending log records, some rows may be lost"
 
     echo "Detach all logs replication"
-    clickhouse-client "${LOCAL_ARGS[@]}" --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+    clickhouse-client "${LOCAL_ARGS[@]}" --query "select database||'.'||table from system.tables where database = '${LOG_EXPORT_DATABASE}' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
         timeout --verbose --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client ${LOG_EXPORT_SERVER_PORT:+--port $LOG_EXPORT_SERVER_PORT} --query "drop table {}"
     }
+
+    echo "Drop the ${LOG_EXPORT_DATABASE} database"
+    timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m \
+        clickhouse-client "${LOCAL_ARGS[@]}" --query "DROP DATABASE IF EXISTS ${LOG_EXPORT_DATABASE}" \
+        || echo "WARNING: failed to drop the ${LOG_EXPORT_DATABASE} database"
 }
 
 

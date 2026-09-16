@@ -86,11 +86,15 @@ engine = create_engine(
 
 Dans ce mode, chaque valeur liée doit avoir un type SQLAlchemy compatible avec ClickHouse. Les listes `IN` prises en charge deviennent des paramètres ClickHouse `Array` typés. Le compilateur lève une `CompileError` lorsqu’il ne peut pas déduire un type compatible ni traiter un bind en toute sécurité.
 
+Les noms de bind doivent être des noms BareWord ASCII ClickHouse. Les noms qui commencent et se terminent par `$` sont rejetés, car le pilote principal les réserve aux paramètres de requête binaires bruts.
+
 <div id="sqlalchemy-core-queries">
   ## Requêtes Core
 </div>
 
-Le dialecte prend en charge les requêtes `SELECT` de SQLAlchemy Core avec des jointures, des filtres, le tri, des clauses LIMIT et OFFSET, et `DISTINCT`.
+Le dialecte prend en charge les requêtes `SELECT` de SQLAlchemy Core avec des jointures, des filtres, le tri, des clauses LIMIT et OFFSET, `DISTINCT` et des sélections composées.
+
+Les fonctions SQLAlchemy `union()`, `intersect()` et `except_()` sont compilées en `UNION DISTINCT`, `INTERSECT DISTINCT` et `EXCEPT DISTINCT` de ClickHouse. Leurs équivalents `union_all()`, `intersect_all()` et `except_all()` sont compilés en opérateurs `ALL` correspondants. Cette correspondance explicite préserve la sémantique des doublons de SQLAlchemy, quels que soient les paramètres par défaut de ClickHouse pour les opérations sur les ensembles.
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -120,6 +124,12 @@ stmt = delete(users).where(users.c.name.like("%temporary%"))
 with engine.connect() as conn:
     conn.execute(stmt)
 ```
+
+<div id="sqlalchemy-literal-rendering">
+  ### Rendu des littéraux
+</div>
+
+Lorsque SQLAlchemy intègre une valeur liée directement dans la requête via `literal_binds` ou `literal_execute`, le dialecte utilise les règles de guillemetage de ClickHouse pour les types de chaînes génériques et les types ClickHouse. Cela s&#39;applique également aux wrappers `TypeDecorator` et aux sélections `with_variant()`. Les valeurs de chaîne conservent les signes de pourcentage et les barres obliques inverses, même lorsque d&#39;autres paramètres liés sont présents.
 
 <div id="sqlalchemy-json-subcolumns">
   ### Sous-colonnes JSON
@@ -200,6 +210,20 @@ Les méthodes `Select` de ClickHouse sont :
 | `.ch_join(...)`                          | jointures ClickHouse avec les options `strictness`, `distribution`, `using` et `cross` |
 | `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                                      |
 
+`Select.with_hint()` de SQLAlchemy est une API d’indication de table. Le dialecte ClickHouse ne génère pas d’indications de table. Une indication générique ou `clickhousedb` applicable émet un `SAWarning` et laisse le SQL généré inchangé. Utilisez `final()`, `sample()`, `prewhere()` ou `limit_by()` pour ces clauses ClickHouse.
+
+`Select.with_statement_hint()` est une API de directive brute de fin. Elle ajoute le texte fourni à la fin du `SELECT` sans validation spécifique à ClickHouse. Elle reste disponible pour du SQL statique de confiance, tel que `SETTINGS max_threads=1` :
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+Pour les paramètres ClickHouse, privilégiez les options d’exécution afin que le driver les gère séparément du texte SQL :
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
+
 Par exemple, un `GLOBAL ANY LEFT JOIN` ClickHouse peut être chaîné sans avoir à imbriquer une `FromClause` personnalisée :
 
 ```python
@@ -278,7 +302,7 @@ Le mot-clé est généré uniquement avec le dialecte ClickHouse. Une instructio
 ClickHouse ne prend pas en charge les CTE matérialisées récursives. Les helpers SQLAlchemy lèvent une `ValueError` lorsque `recursive=True` et `materialized=True` sont tous deux définis.
 
 <div id="sqlalchemy-ddl-reflection">
-  ## DDL et introspection
+  ## DDL et réflexion
 </div>
 
 ClickHouse Connect fournit les types de données ClickHouse, les moteurs de table, les structures de dictionnaire, le DDL des bases de données et l’introspection des tables.
@@ -310,6 +334,8 @@ with engine.connect() as conn:
 ```
 
 Les colonnes introspectées utilisent `server_default` pour les expressions `DEFAULT`, ainsi que des attributs propres au dialecte tels que `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized` et `clickhouse_alias`, lorsqu’ils sont présents.
+
+Les valeurs de chaîne dans les clauses `DEFAULT`, `MATERIALIZED`, `ALIAS` et `TTL` utilisent les règles d’échappement des chaînes de caractères de ClickHouse. Le même échappement s’applique aux commentaires de tables, de dictionnaires et de colonnes, y compris aux commentaires générés par Alembic.
 
 Les arguments de clé MergeTree tels que `order_by`, `partition_by`, `primary_key`, `sample_by` et `ttl` acceptent des colonnes SQLAlchemy, des expressions SQL ainsi que de simples chaînes de caractères.
 
