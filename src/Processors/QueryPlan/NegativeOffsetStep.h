@@ -25,6 +25,9 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// Like `OffsetStep`: a negative `OFFSET` applies to the whole result, so it runs on the initiator.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
 
