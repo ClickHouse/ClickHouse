@@ -847,12 +847,16 @@ def _drop_randomize_objects():
     node.query("DROP TABLE IF EXISTS randomize_multi_rmv ON CLUSTER default SYNC")
 
 
-def _next_refresh_time(n, view):
+def _next_refresh_time(n, view, after=None):
     """next_refresh_time once the view has actually picked one.
 
     Waiting for a non-empty value is not enough: the row appears in system.view_refreshes as soon as
     startup() registers the view, while next_refresh_time is only assigned by the first scheduling
     pass, and until then it holds its default of epoch 0, which renders as a non-empty timestamp.
+
+    `after` additionally waits for a value later than the given timestamp. A refresh keeps the
+    next_refresh_time it was started for until it completes, so a caller that has just made a
+    refresh come due needs this to avoid reading the deadline the refresh is already serving.
     """
 
     def query():
@@ -869,11 +873,9 @@ def _next_refresh_time(n, view):
         if len(parts) != 2:
             return False
         status, next_time = parts
-        return status != "Scheduling" and next_time not in (
-            "",
-            "\\N",
-            "1970-01-01 00:00:00",
-        )
+        if status == "Scheduling" or next_time in ("", "\\N", "1970-01-01 00:00:00"):
+            return False
+        return after is None or next_time > after
 
     return wait_condition(query, picked, max_attempts=200, delay=0.3).split("\t")[1]
 
@@ -895,23 +897,24 @@ def test_randomize_for_is_per_replica(module_setup_tables):
 
         time1 = _next_refresh_time(node, "randomize_rmv")
         time2 = _next_refresh_time(node2, "randomize_rmv")
-        if time1 == time2:
-            break # success
+        if time1 != time2:
+            break  # success
         assert attempt == 0, f"both replicas scheduled the refresh for {time1}, so the random offset is still shared"
 
     _drop_randomize_objects()
 
 
 def test_randomize_for_is_redrawn_on_every_replica(module_setup_tables):
-    """Every replica has to draw a new offset after each refresh, not just the one that performed it.
+    """Every replica has to draw a new offset for each timeslot, not just the one that refreshed.
 
     A replica that keeps its first draw forever would keep winning whenever that draw happened to be
     the earliest, which is what per-replica randomization exists to avoid. Two assertions are needed:
-    that each replica's own deadline MOVED, which a frozen per-process draw fails, and that they still
-    DISAGREE, which a shared redraw fails. Neither implies the other.
+    that the replicas DISAGREE in each timeslot, which a shared draw fails, and that each replica's
+    own offset CHANGES between timeslots, which a draw frozen at construction fails. Neither implies
+    the other.
 
-    SYSTEM REFRESH VIEW is out of schedule, so `EVERY 1 YEAR` keeps the same timeslot across it; the
-    redraw therefore has to be triggered by the refresh itself, not by the timeslot moving.
+    The fake clock jumps a year per round, so the scheduled refresh falls due and each replica has to
+    pick an offset for the next timeslot.
     """
     _drop_randomize_objects()
 
@@ -921,20 +924,26 @@ def test_randomize_for_is_redrawn_on_every_replica(module_setup_tables):
         "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
     )
 
-    failed_rounds = 0
+    coinciding_rounds = 0
+    offsets = {n.name: set() for n in nodes}
     for round_number in range(3):
-        before = {n.name: _next_refresh_time(n, "randomize_multi_rmv") for n in nodes}
-
+        fake_time = f"20{45+round_number}-07-04 00:00:00"
         for n in nodes:
-            n.query(f"SYSTEM TEST VIEW randomize_multi_rmv SET FAKE TIME '20{45+round_number}-07-04 00:00:00'")
+            n.query(f"SYSTEM TEST VIEW randomize_multi_rmv SET FAKE TIME '{fake_time}'")
 
-        time.sleep(1)
+        times = {
+            n.name: _next_refresh_time(n, "randomize_multi_rmv", after=fake_time) for n in nodes
+        }
+        for name, t in times.items():
+            # The schedule is yearly, so everything after the year is the offset that was drawn.
+            offsets[name].add(t.split("-", 1)[1])
 
-        time1 = _next_refresh_time(node, "randomize_multi_rmv")
-        time2 = _next_refresh_time(node2, "randomize_multi_rmv")
-        if time1 != time2:
-            failed_rounds += 1
+        if len(set(times.values())) == 1:
+            coinciding_rounds += 1
             # Ignore if there's only one coincidence.
-            assert failed_rounds == 1, f"both replicas scheduled the refresh for {time1} on round {round_number}, so the random offset is still shared"
+            assert coinciding_rounds == 1, f"both replicas scheduled the refresh for {times} on round {round_number}, so the random offset is still shared"
+
+    for name, seen in offsets.items():
+        assert len(seen) > 1, f"{name} drew offset {sorted(seen)} in every timeslot, so its offset is frozen rather than redrawn"
 
     _drop_randomize_objects()
