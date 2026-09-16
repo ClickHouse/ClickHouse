@@ -343,6 +343,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
     format_settings.arrow.input_use_native_reader = settings[Setting::input_format_arrow_use_native_reader];
     format_settings.arrow.output_use_native_writer = settings[Setting::output_format_arrow_use_native_writer];
+    format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
+    format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];

@@ -192,6 +192,8 @@ struct FormatSettings
         bool output_unsupported_types_as_binary = true;
         bool input_use_native_reader = true;
         bool output_use_native_writer = true;
+        UInt64 output_record_batch_rows = 0;
+        UInt64 output_record_batch_bytes = 0;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
