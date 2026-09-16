@@ -96,8 +96,9 @@ void CollapsingSortedAlgorithm::bufferInvalidSignRow(const RowRef & row, size_t 
     invalid_sign_rows.push_back({pos, row.owned_chunk->getNumRows()});
 }
 
-/// A key's rows must reach `merged_data` in one run to stay in read order, so this cannot pull a
-/// block mid-key: a long run of invalid signs overshoots `max_block_size`, drained on the next pass.
+/// Does not pull mid-key: `insertRows` hands back one chunk per call, so a second pull would be
+/// dropped. A key holding a long run of invalid signs therefore overshoots `max_block_size`, and
+/// `merge` drains the oversized block on its next pass.
 void CollapsingSortedAlgorithm::insertBufferedInvalidSignRowsBefore(size_t pos)
 {
     if (next_invalid_sign_index >= invalid_sign_rows.size()
