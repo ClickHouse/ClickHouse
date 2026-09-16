@@ -97,12 +97,6 @@ namespace FailPoints
 namespace
 {
 
-/// `moveFileBetweenDisks` gives up once its retries run out, so this can return
-/// without the file having moved. Safe, because the callback below repoints
-/// `description` only after the copy succeeded, so `description` always names the
-/// disk the file is really on. Not self-healing, though: unlike a snapshot, an
-/// abandoned changelog move is only re-attempted at the next restart, by
-/// `finalizeChangelogsAfterRead`.
 void moveChangelogBetweenDisks(
     DiskPtr disk_from,
     ChangelogFileDescriptionPtr description,
