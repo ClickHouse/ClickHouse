@@ -1321,7 +1321,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join->getTempDataOnDisk(),
                 params.join_any_take_last_row,
                 /*external_join_threshold_=*/0,
-                params.max_threads);
+                params.max_threads,
+                /*partitioned_buckets_=*/table_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH)
+                    && PartitionedHashJoin::isSupported(*table_join));
         }
     }
 

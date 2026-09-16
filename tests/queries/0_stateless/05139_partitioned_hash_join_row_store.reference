@@ -47,5 +47,5 @@ spill below threshold	150000	1
 05139 left any	0	1	0
 05139 right all no store	0	1	0
 05139 right all nullable	1	1	0
-05139 spill	0	0	1
+05139 spill	1	1	1
 05139 spill below threshold	1	1	1

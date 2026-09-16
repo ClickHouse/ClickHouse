@@ -881,6 +881,9 @@ public:
 
     RightTableDataPtr getJoinedData() const { return data; }
     BlocksList releaseJoinedBlocks(bool restructure);
+    /// One saved right block back in the structure of the right input, for an algorithm that takes
+    /// the blocks over: the columns of `right_sample_block` by name, their nullability restored.
+    static Block restoreRightBlock(const Block & saved_block, const Block & right_sample_block);
     size_t getNumReleaseChunks() const;
     BlocksList releaseJoinedBlocksChunk(size_t chunk_idx);
     void releaseJoinMaps();

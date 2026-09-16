@@ -168,10 +168,12 @@ SET parallel_hash_join_threshold = DEFAULT;
 
 SYSTEM FLUSH LOGS query_log;
 
+-- The spill queries switched to grace, whose buckets are partitioned builds too; their bucket count follows the byte
+-- predictions, so for them only the presence of partitioned builds is asserted.
 SELECT '-- one partition, rows inserted, table growth only for the low hint, the spill queries switched to grace';
 SELECT
     log_comment,
-    ProfileEvents['HashJoinPartitions'],
+    if(log_comment LIKE '% spill%', toUInt64(ProfileEvents['HashJoinPartitions'] > 0), ProfileEvents['HashJoinPartitions']),
     ProfileEvents['HashJoinInsertedRows'] > 0,
     ProfileEvents['HashJoinTableResizes'] > 0,
     ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0

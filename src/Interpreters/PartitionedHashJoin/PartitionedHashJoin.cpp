@@ -856,6 +856,42 @@ Block PartitionedHashJoin::releaseNextStoredBlock()
     return out;
 }
 
+BlocksList PartitionedHashJoin::releaseJoinedBlocks(bool restructure)
+{
+    if (delegate_mode)
+        return hash_join->releaseJoinedBlocks(restructure);
+
+    if (build_phase_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: the right blocks were asked for after the build phase finished");
+
+    dropFillAuxiliary();
+    BlocksList blocks;
+    for (size_t lane = 0; lane < lanes.size(); ++lane)
+        for (Block block = releaseNextFillLaneBlock(lane); !block.empty(); block = releaseNextFillLaneBlock(lane))
+            blocks.push_back(std::move(block));
+    /// A single fill thread stores as it goes and keeps no lanes.
+    beginStoredBlockDrain();
+    for (Block block = releaseNextStoredBlock(); !block.empty(); block = releaseNextStoredBlock())
+        blocks.push_back(std::move(block));
+
+    if (restructure)
+        for (auto & block : blocks)
+            block = HashJoin::restoreRightBlock(block, *right_sample_block);
+    return blocks;
+}
+
+const Block & PartitionedHashJoin::savedBlockSample() const
+{
+    return hash_join->savedBlockSample();
+}
+
+size_t PartitionedHashJoin::getRightTableRowCount() const
+{
+    if (delegate_mode)
+        return hash_join->getRightTableRowCount();
+    return accumulated_rows.load(std::memory_order_relaxed);
+}
+
 void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
 {
     chassert(stored_blocks_released);

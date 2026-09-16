@@ -45,12 +45,12 @@ parallel spill	50000	1
 05141 one row	1	1	0	0
 05141 one row right	1	1	0	0
 05141 parallel inner	4	1	0	0
-05141 parallel spill	0	0	0	1
+05141 parallel spill	1	1	0	1
 05141 right	1	1	0	0
 05141 right nullable	1	1	0	0
 05141 semi	1	1	0	0
-05141 spill	0	1	0	1
-05141 spill full one stream	0	1	0	1
-05141 spill right	0	1	0	1
-05141 spill right one stream	0	1	0	1
+05141 spill	1	1	0	1
+05141 spill full one stream	1	1	0	1
+05141 spill right	1	1	0	1
+05141 spill right one stream	1	1	0	1
 05141 string	1	1	0	0

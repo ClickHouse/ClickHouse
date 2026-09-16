@@ -203,6 +203,16 @@ public:
     /// `GraceHashJoin` does.
     void drainStoredBlocksInto(IJoin & target);
 
+    /// Every right block stored so far, for an algorithm that takes them over during the fill
+    /// (`JoinSwitcher`, `GraceHashJoin`): the fill lanes, or the row store of a single fill thread. With
+    /// `restructure` the blocks come back in the right input's structure. Only before the build phase
+    /// finished, and nothing but destruction may follow.
+    BlocksList releaseJoinedBlocks(bool restructure);
+    /// The structure the right blocks are stored in.
+    const Block & savedBlockSample() const;
+    /// Right rows stored so far. `getTotalRowCount` reports the distinct keys once the table is built.
+    size_t getRightTableRowCount() const;
+
 private:
     friend class NotJoinedPartitioned;
 
