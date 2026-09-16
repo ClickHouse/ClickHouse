@@ -311,43 +311,53 @@ std::optional<Range> closedRange(std::optional<Interval> interval, std::optional
     return Range(interval->first, true, last, true);
 }
 
-/// The calendar is `UTC` because that is the one the Iceberg specification counts the `day`, `month`
-/// and `year` transforms in: their value is derived from the stored number of days or microseconds
-/// since 1970-01-01, with no timezone applied. The declared timezone of the `DateTime64` a
-/// `timestamp` column is read into only affects how ClickHouse renders and does calendar arithmetic
-/// on that column, not the number the writer put into the partition value, so it must not be taken
-/// into account when that number is inverted back into a range.
-std::optional<Interval> dayIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
+std::optional<Interval> dayIntervalOfMonthNum(Int64 month)
 {
-    if (kind == PartitionTransformKind::Day)
-        return unitInterval(value);
-
-    auto own_unit = unitInterval(value);
-    if (!own_unit)
+    auto months = unitInterval(month);
+    if (!months)
         return {};
 
     const auto & utc = DateLUT::instance("UTC");
     const auto epoch = ExtendedDayNum(0);
+    const auto first = utc.addMonths(epoch, months->first);
+    const auto past_last = utc.addMonths(epoch, months->past_last);
+    if (utc.toMonthNumSinceEpoch(first) != months->first || utc.toMonthNumSinceEpoch(past_last) != months->past_last)
+        return {};
 
-    if (kind == PartitionTransformKind::Month)
+    return Interval{Int64{first}, Int64{past_last}};
+}
+
+std::optional<Interval> dayIntervalOfYearNum(Int64 year)
+{
+    auto years = unitInterval(year);
+    if (!years)
+        return {};
+
+    const auto & utc = DateLUT::instance("UTC");
+    const auto epoch = ExtendedDayNum(0);
+    const auto first = utc.addYears(epoch, years->first);
+    const auto past_last = utc.addYears(epoch, years->past_last);
+    if (utc.toYearSinceEpoch(first) != years->first || utc.toYearSinceEpoch(past_last) != years->past_last)
+        return {};
+
+    return Interval{Int64{first}, Int64{past_last}};
+}
+
+std::optional<Interval> dayIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
+{
+    switch (kind)
     {
-        const auto first = utc.addMonths(epoch, own_unit->first);
-        const auto past_last = utc.addMonths(epoch, own_unit->past_last);
-        if (utc.toMonthNumSinceEpoch(first) != own_unit->first || utc.toMonthNumSinceEpoch(past_last) != own_unit->past_last)
+        case PartitionTransformKind::Day:
+            return unitInterval(value);
+        case PartitionTransformKind::Month:
+            return dayIntervalOfMonthNum(value);
+        case PartitionTransformKind::Year:
+            return dayIntervalOfYearNum(value);
+        case PartitionTransformKind::Hour:
+        case PartitionTransformKind::NotInvertible:
             return {};
-        return Interval{Int64{first}, Int64{past_last}};
     }
-
-    if (kind == PartitionTransformKind::Year)
-    {
-        const auto first = utc.addYears(epoch, own_unit->first);
-        const auto past_last = utc.addYears(epoch, own_unit->past_last);
-        if (utc.toYearSinceEpoch(first) != own_unit->first || utc.toYearSinceEpoch(past_last) != own_unit->past_last)
-            return {};
-        return Interval{Int64{first}, Int64{past_last}};
-    }
-
-    return {};
+    UNREACHABLE();
 }
 
 std::optional<Interval> secondIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
@@ -355,9 +365,18 @@ std::optional<Interval> secondIntervalOfPartitionValue(PartitionTransformKind ki
     static constexpr Int64 seconds_per_hour = 3600;
     static constexpr Int64 seconds_per_day = 86400;
 
-    if (kind == PartitionTransformKind::Hour)
-        return refineInterval(unitInterval(value), seconds_per_hour);
-    return refineInterval(dayIntervalOfPartitionValue(kind, value), seconds_per_day);
+    switch (kind)
+    {
+        case PartitionTransformKind::Hour:
+            return refineInterval(unitInterval(value), seconds_per_hour);
+        case PartitionTransformKind::Day:
+        case PartitionTransformKind::Month:
+        case PartitionTransformKind::Year:
+            return refineInterval(dayIntervalOfPartitionValue(kind, value), seconds_per_day);
+        case PartitionTransformKind::NotInvertible:
+            return {};
+    }
+    UNREACHABLE();
 }
 
 std::optional<Int64> partitionValueAsInt64(const Field & partition_value)

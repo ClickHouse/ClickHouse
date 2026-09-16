@@ -64,7 +64,7 @@ std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
 
     std::optional<Field> lower;
     std::optional<Field> upper;
-    if (which.isInt() || which.isUInt())
+    if (which.isUInt())
     {
         lower = deserializeIntegerBound(*summary.lower_bound, *non_nullable_type);
         upper = deserializeIntegerBound(*summary.upper_bound, *non_nullable_type);
