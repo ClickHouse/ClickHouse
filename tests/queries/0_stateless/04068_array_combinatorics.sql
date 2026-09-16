@@ -70,7 +70,7 @@ SELECT arrayPermutations([1, 2, 3, 4]) SETTINGS function_range_max_elements_in_b
 
 SELECT arrayCombinations([1, 2, 3], toUInt8(number + 2))
 FROM numbers(2)
-SETTINGS function_range_max_elements_in_block = 8, max_block_size = 1;
+SETTINGS function_range_max_elements_in_block = 9, max_block_size = 1;
 
 SELECT arrayPermutations(arr)
 FROM
@@ -78,11 +78,11 @@ FROM
     SELECT materialize([1, 2]) AS arr
     FROM numbers(2)
 )
-SETTINGS function_range_max_elements_in_block = 5, max_block_size = 1;
+SETTINGS function_range_max_elements_in_block = 6, max_block_size = 1;
 
 SELECT arrayCombinations([1, 2, 3], toUInt8(number + 2))
 FROM numbers(2)
-SETTINGS function_range_max_elements_in_block = 8, max_block_size = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SETTINGS function_range_max_elements_in_block = 9, max_block_size = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 SELECT arrayPermutations(arr)
 FROM
@@ -90,18 +90,40 @@ FROM
     SELECT materialize([1, 2]) AS arr
     FROM numbers(2)
 )
-SETTINGS function_range_max_elements_in_block = 5, max_block_size = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SETTINGS function_range_max_elements_in_block = 6, max_block_size = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 SELECT '-- constant arguments per-block limit';
 SELECT arrayPermutations([1, 2]) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 5; -- { serverError TOO_LARGE_ARRAY_SIZE }
-SELECT arrayPermutations([1, 2]) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 8;
+SELECT arrayPermutations([1, 2]) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 11; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayPermutations([1, 2]) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 12;
 SELECT arrayCombinations([1, 2, 3], 2) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 8; -- { serverError TOO_LARGE_ARRAY_SIZE }
-SELECT arrayCombinations([1, 2, 3], 2) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 12;
+SELECT arrayCombinations([1, 2, 3], 2) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 17; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayCombinations([1, 2, 3], 2) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 18;
 SELECT arrayPartialPermutations([1, 2, 3], 2) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 12; -- { serverError TOO_LARGE_ARRAY_SIZE }
-SELECT arrayPartialPermutations([1, 2, 3], 2) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 24;
+SELECT arrayPartialPermutations([1, 2, 3], 2) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 35; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayPartialPermutations([1, 2, 3], 2) FROM numbers(2) SETTINGS function_range_max_elements_in_block = 36;
 
 SELECT '-- constant array is not materialized for the whole block';
 SELECT DISTINCT arrayCombinations(range(100000), 0) FROM numbers(65505) SETTINGS max_memory_usage = 100000000;
 SELECT DISTINCT arrayPartialPermutations(range(100000), 0) FROM numbers(65505) SETTINGS max_memory_usage = 100000000;
 SELECT arrayPermutations(range(100000)) FROM numbers(65505) SETTINGS max_memory_usage = 100000000; -- { serverError TOO_LARGE_ARRAY_SIZE }
 SELECT DISTINCT arrayCombinations(range(3), 1) FROM numbers(65505) SETTINGS max_memory_usage = 100000000;
+
+SELECT '-- inner arrays are counted towards the per-block limit';
+SELECT arrayCombinations([1, 2, 3], 1) SETTINGS function_range_max_elements_in_block = 5; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayCombinations([1, 2, 3], 1) SETTINGS function_range_max_elements_in_block = 6;
+SELECT arrayPartialPermutations([1, 2, 3], 1) SETTINGS function_range_max_elements_in_block = 5; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayPartialPermutations([1, 2, 3], 1) SETTINGS function_range_max_elements_in_block = 6;
+SELECT arrayPermutations([1]) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 5; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayPermutations([1]) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 6;
+
+SELECT '-- zero-length results are counted towards the per-block limit';
+SELECT arrayPermutations([]) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayPermutations([]) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 3;
+SELECT arrayPermutations(materialize(emptyArrayUInt8())) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayCombinations([1], 0) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayCombinations([1], 0) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 3;
+SELECT arrayCombinations(materialize([1]), 0) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayPartialPermutations([1], 0) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT arrayPartialPermutations([1], 0) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 3;
+SELECT arrayPartialPermutations(materialize([1]), 0) FROM numbers(3) SETTINGS function_range_max_elements_in_block = 2; -- { serverError TOO_LARGE_ARRAY_SIZE }

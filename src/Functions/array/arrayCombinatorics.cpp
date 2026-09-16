@@ -144,6 +144,14 @@ private:
     size_t total_generated_elements = 0;
 };
 
+/// Every generated inner array occupies its `size` values in the nested data column plus one entry in the
+/// inner offsets stream. Charging that entry keeps zero-length results (`[[]]`) and small `k` within
+/// `function_range_max_elements_in_block` instead of letting the `Array(Array(T))` block grow unbounded.
+size_t getVariantCost(size_t size)
+{
+    return size + 1;
+}
+
 /// Returns true if n! fits into count_limit and writes it to result.
 bool tryCalculatePermutationsCount(size_t n, size_t count_limit, size_t & result)
 {
@@ -254,14 +262,9 @@ public:
             const size_t current_array_offset = array_is_const ? array_offsets[0] : array_offsets[row];
             const size_t n = current_array_offset - source_row_begin;
 
-            if (n == 0)
-            {
-                builder.appendEmptyRow(current_array_offset);
-                continue;
-            }
-
             const size_t remaining = builder.getRemainingElementBudget(max_elements);
-            const size_t count_limit = remaining / n;
+            const size_t variant_cost = getVariantCost(n);
+            const size_t count_limit = remaining / variant_cost;
             size_t row_result_count = 0;
             const bool fits_row_limit = tryCalculatePermutationsCount(n, count_limit, row_result_count);
 
@@ -269,7 +272,7 @@ public:
                 throw Exception(
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "Result of function {} is too large in row {}: more than {} "
-                    "arrays of size {} would be generated, "
+                    "arrays of size {} would be generated (each array is counted as its size plus one), "
                     "maximum remaining elements in block: {}",
                     getName(),
                     row,
@@ -277,7 +280,13 @@ public:
                     n,
                     remaining);
 
-            builder.addGeneratedElements(row_result_count * n);
+            builder.addGeneratedElements(row_result_count * variant_cost);
+
+            if (n == 0)
+            {
+                builder.appendEmptyRow(current_array_offset);
+                continue;
+            }
 
             permutation_indexes.resize(n);
             std::iota(permutation_indexes.begin(), permutation_indexes.end(), 0);
@@ -382,22 +391,18 @@ public:
                     k,
                     n);
 
-            if (k == 0)
-            {
-                builder.appendEmptyRow(current_array_offset);
-                continue;
-            }
-
             const size_t remaining = builder.getRemainingElementBudget(max_elements);
-            const size_t count_limit = remaining / k;
-            size_t row_result_count = 0;
-            const bool fits_row_limit = tryCalculateKResultCount<mode>(n, k, count_limit, row_result_count);
+            const size_t variant_cost = getVariantCost(k);
+            const size_t count_limit = remaining / variant_cost;
+            /// For `k = 0` the only result is the single empty variant `[[]]`.
+            size_t row_result_count = 1;
+            const bool fits_row_limit = k == 0 || tryCalculateKResultCount<mode>(n, k, count_limit, row_result_count);
 
             if (!fits_row_limit || row_result_count > count_limit)
                 throw Exception(
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "Result of function {} is too large in row {}: more than {} "
-                    "arrays of size {} would be generated, "
+                    "arrays of size {} would be generated (each array is counted as its size plus one), "
                     "maximum remaining elements in block: {}",
                     getName(),
                     row,
@@ -405,7 +410,13 @@ public:
                     k,
                     remaining);
 
-            builder.addGeneratedElements(row_result_count * k);
+            builder.addGeneratedElements(row_result_count * variant_cost);
+
+            if (k == 0)
+            {
+                builder.appendEmptyRow(current_array_offset);
+                continue;
+            }
 
             if constexpr (mode == ArrayKCombinatoricsMode::PartialPermutations)
             {
@@ -496,7 +507,7 @@ REGISTER_FUNCTION(ArrayCombinatorics)
     FunctionDocumentation::Description permutations_description
         = "Returns all permutations of elements from the source array. Enumeration is done by indexes, so equal values may produce "
           "duplicate rows in the result. For an empty source array, returns `[[]]`. The total result size per block is limited by "
-          "`function_range_max_elements_in_block`.";
+          "`function_range_max_elements_in_block`; every generated array counts as its size plus one.";
     FunctionDocumentation::Syntax permutations_syntax = "arrayPermutations(arr)";
     FunctionDocumentation::Arguments permutations_arguments = {
         {"arr", "Source array.", {"Array(T)"}},
@@ -520,7 +531,8 @@ REGISTER_FUNCTION(ArrayCombinatorics)
     FunctionDocumentation::Description partial_permutations_description
         = "Returns all partial permutations (ordered selections without repeated indexes) of length `k` from the source array. "
           "Enumeration is done by indexes, so equal values may produce duplicate rows in the result. For `k = 0`, returns `[[]]`. "
-          "The total result size per block is limited by `function_range_max_elements_in_block`.";
+          "The total result size per block is limited by `function_range_max_elements_in_block`; "
+          "every generated array counts as its size plus one.";
     FunctionDocumentation::Syntax partial_permutations_syntax = "arrayPartialPermutations(arr, k)";
     FunctionDocumentation::Arguments partial_permutations_arguments = {
         {"arr", "Source array.", {"Array(T)"}},
@@ -550,7 +562,8 @@ REGISTER_FUNCTION(ArrayCombinatorics)
     FunctionDocumentation::Description combinations_description
         = "Returns all combinations (unordered selections without repeated indexes) of length `k` from the source array. "
           "Enumeration is done by indexes, so equal values may produce duplicate rows in the result. For `k = 0`, returns `[[]]`. "
-          "The total result size per block is limited by `function_range_max_elements_in_block`.";
+          "The total result size per block is limited by `function_range_max_elements_in_block`; "
+          "every generated array counts as its size plus one.";
     FunctionDocumentation::Syntax combinations_syntax = "arrayCombinations(arr, k)";
     FunctionDocumentation::Arguments combinations_arguments = {
         {"arr", "Source array.", {"Array(T)"}},
