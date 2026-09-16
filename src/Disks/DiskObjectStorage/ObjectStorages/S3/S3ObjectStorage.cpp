@@ -766,11 +766,15 @@ String S3ObjectStorage::copyObject( // NOLINT
     const bool guarded_copy = !write_settings.object_storage_write_if_none_match.empty();
     const auto [src_bucket, src_key] = splitBucketAndKey(object_from.remote_path);
     const auto [dest_bucket, dest_key] = splitBucketAndKey(object_to.remote_path);
+    /// A caller that has already inspected the source names the version it saw, so this lookup and
+    /// everything it feeds describe that generation rather than whatever the key points at now.
+    const String & pinned_version_id = write_settings.object_storage_copy_source_version_id;
     auto source_info
-        = S3::getObjectInfo(*current_client, src_bucket, src_key, /*version_id=*/{}, /*with_metadata=*/false, /*with_tags=*/false);
+        = S3::getObjectInfo(*current_client, src_bucket, src_key, pinned_version_id, /*with_metadata=*/false, /*with_tags=*/false);
     /// Everything below must describe the generation this HEAD saw, so a same-key re-upload cannot
     /// mix another version's bytes into a guarded copy. Empty on unversioned buckets.
-    const String source_version_id = guarded_copy ? source_info.version_id : String{};
+    const String source_version_id
+        = pinned_version_id.empty() ? (guarded_copy ? source_info.version_id : String{}) : pinned_version_id;
     /// A caller that already built provenance from an earlier lookup pins that generation here, so the
     /// copy fails rather than stamping it onto bytes from a newer one; otherwise the source object's
     /// own `ETag` names the generation the caller listed. One value, so the native copy and the

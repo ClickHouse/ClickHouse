@@ -902,6 +902,9 @@ def test_move_retry_recognizes_committed_copy(
 
 
 PAUSE_BEFORE_POST_PROCESS_FAILPOINT = "object_storage_queue_pause_before_post_process"
+PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT = (
+    "object_storage_queue_pause_after_move_source_lookup"
+)
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -1152,6 +1155,87 @@ def test_move_does_not_remove_rewritten_source(started_cluster):
     bucket = started_cluster.minio_bucket
     assert read_s3_object(started_cluster, bucket, destination_key) == copied
     assert read_s3_object(started_cluster, bucket, source_key) == rewritten
+
+
+def test_move_copies_the_generation_its_provenance_names(started_cluster):
+    """The move inspects the source, then the copy resolves the key again. A re-upload of the same
+    bytes in between shares the `ETag` the copy is pinned to, so only the version keeps the copied
+    bytes, the provenance and the deleted generation to the one the inspection saw."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"move_same_etag_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    data = b"1,2,3\n"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    ingested = client.put_object(
+        Bucket=bucket, Key=source_key, Body=data, ContentType="text/csv"
+    )["VersionId"]
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        bucket=bucket,
+    )
+    collisions_before = move_collisions(node)
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT)
+        # The provenance is built and the copy has not run yet. The same bytes under a new version
+        # carry the same `ETag`, so the generation the copy picks is decided by the version alone.
+        rewritten = client.put_object(
+            Bucket=bucket, Key=source_key, Body=data, ContentType="text/plain"
+        )["VersionId"]
+        assert rewritten != ingested
+        assert (
+            client.head_object(Bucket=bucket, Key=source_key, VersionId=rewritten)[
+                "ETag"
+            ]
+            == client.head_object(Bucket=bucket, Key=source_key, VersionId=ingested)[
+                "ETag"
+            ]
+        )
+    finally:
+        node.query(
+            f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT}"
+        )
+
+    wait_until(
+        lambda: count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    )
+    head = client.head_object(Bucket=bucket, Key=destination_key)
+    # The copied generation is the one the provenance names, so the headers of the newer one are
+    # nowhere on the destination.
+    assert head["ContentType"] == "text/csv"
+    assert head["Metadata"]["clickhouse_move_source_version_id"] == ingested
+    assert read_s3_object(started_cluster, bucket, destination_key) == data
+    # The delete removed the generation that was copied, and only it.
+    versions = {
+        version["VersionId"]
+        for version in client.list_object_versions(
+            Bucket=bucket, Prefix=source_key
+        ).get("Versions", [])
+    }
+    assert versions == {rewritten}
+    assert move_collisions(node) == collisions_before
 
 
 def test_move_after_processing_many_objects(started_cluster):

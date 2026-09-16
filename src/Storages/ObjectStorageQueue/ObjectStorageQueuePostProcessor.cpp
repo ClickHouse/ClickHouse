@@ -41,6 +41,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_delete[];
     extern const char object_storage_queue_fail_after_move_copy[];
     extern const char object_storage_queue_pause_after_move_copy[];
+    extern const char object_storage_queue_pause_after_move_source_lookup[];
     extern const char object_storage_queue_pause_before_post_process[];
 }
 
@@ -131,6 +132,8 @@ bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & prove
 {
     if (!provenance)
         return false;
+    /// The token digests the source version id too, so a destination stamped for another generation
+    /// of the same key does not match one built for this generation.
     for (const auto * key :
          {move_source_path_attribute, move_source_etag_attribute, move_source_last_modified_attribute, move_token_attribute})
     {
@@ -139,13 +142,6 @@ bool destinationIsOwnCommittedCopy(const std::optional<ObjectAttributes> & prove
         if (expected == provenance->end() || actual == destination_attributes.end() || actual->second != expected->second)
             return false;
     }
-    /// Compared only when both sides carry one, so a destination stamped before this field existed
-    /// still completes its interrupted move after an upgrade.
-    auto expected_version = provenance->find(move_source_version_id_attribute);
-    auto actual_version = destination_attributes.find(move_source_version_id_attribute);
-    if (expected_version != provenance->end() && actual_version != destination_attributes.end()
-        && actual_version->second != expected_version->second)
-        return false;
     return true;
 }
 
@@ -535,6 +531,13 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                     /// provenance describes: a rewrite in between fails the copy instead of
                                     /// stamping these attributes onto newer bytes.
                                     write_settings.object_storage_copy_source_if_match = source_metadata->etag;
+                                    /// Two generations of one key can share an `ETag`, so only the version
+                                    /// names the one the provenance, the copy and the delete all describe.
+                                    write_settings.object_storage_copy_source_version_id = source_metadata->version_id;
+                                    /// Park between the source lookup and the copy. No-op unless
+                                    /// explicitly enabled.
+                                    FailPointInjection::pauseFailPoint(
+                                        FailPoints::object_storage_queue_pause_after_move_source_lookup);
                                 }
                             }
 

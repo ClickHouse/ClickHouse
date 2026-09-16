@@ -47,6 +47,10 @@ struct WriteSettings
     /// instead of silently carrying a newer one. Empty means no pin.
     std::string object_storage_copy_source_if_match;
 
+    /// The source version the caller inspected. Two generations of one key can share an `ETag`, so
+    /// only this names the one the copy must read. Empty lets the copy resolve the key itself.
+    std::string object_storage_copy_source_version_id;
+
     /// Whether a guarded copy restates the source object's tags, which needs permission to read them.
     /// When false the copy keeps the pre-guard permission set and does not carry the tags over.
     bool object_storage_copy_preserve_source_tags = true;
