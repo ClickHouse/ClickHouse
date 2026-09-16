@@ -125,6 +125,11 @@ void assertFileNameIsRelativeAndContained(const String & name)
     if (name.starts_with('/'))
         throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Absolute file name '{}' in checksums of data part", name);
 
+    /// A NUL byte would be kept inside a single path component here, but the local disk layer
+    /// passes the joined path to C APIs which truncate at the first NUL, so "..\0/x" would act as "..".
+    if (name.contains('\0'))
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "File name '{}' in checksums of data part contains a NUL byte", name);
+
     for (const auto & component : std::filesystem::path(name))
     {
         if (component == "." || component == "..")
