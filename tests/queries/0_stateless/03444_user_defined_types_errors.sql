@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: user-defined types live in a single process-wide namespace.
 DROP TYPE IF EXISTS TestType;
 
 CREATE TYPE TestType AS InvalidType; -- { serverError UNKNOWN_TYPE }

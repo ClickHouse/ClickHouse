@@ -1,546 +1,409 @@
 #include <DataTypes/UserDefinedTypeFactory.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Parsers/IAST.h>
-#include <Parsers/IParser.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserDataType.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <Core/Defines.h>
-#include <Core/QueryProcessingStage.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/QueryFlags.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Common/quoteString.h>
-#include <Storages/IStorage.h>
-#include <Storages/StorageFactory.h>
-#include <Databases/IDatabase.h>
 
-#include <fmt/format.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTCreateTypeQuery.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Poco/String.h>
 
 #include <algorithm>
+#include <unordered_set>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int UNKNOWN_TYPE;
-    extern const int TYPE_ALREADY_EXISTS;
 }
+
+namespace
+{
+
+const ASTCreateTypeQuery & getCreateTypeQuery(const IAST & ast)
+{
+    const auto * create = ast.as<ASTCreateTypeQuery>();
+    if (!create)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Expected a CREATE TYPE query, got: {}", ast.formatForErrorMessage());
+    return *create;
+}
+
+size_t getNumberOfParameters(const ASTCreateTypeQuery & create)
+{
+    if (!create.type_parameters)
+        return 0;
+    return create.type_parameters->children.size();
+}
+
+/// The formal parameters of a definition, checked to be distinct identifiers.
+std::unordered_set<String> getParameterNames(const ASTCreateTypeQuery & create)
+{
+    std::unordered_set<String> names;
+    if (!create.type_parameters)
+        return names;
+
+    const auto * params_list = create.type_parameters->as<ASTExpressionList>();
+    if (!params_list)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                        "Type parameters of user-defined type {} are not an expression list", backQuote(create.name));
+
+    for (const auto & param_ast : params_list->children)
+    {
+        const auto * param_ident = param_ast->as<ASTIdentifier>();
+        if (!param_ident)
+            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+                            "Type parameter of user-defined type {} is not an identifier", backQuote(create.name));
+
+        /// `DataTypeFactory` substitutes the actual arguments through a map keyed by the parameter name, so a
+        /// repeated name would silently take the value of its last occurrence:
+        /// `CREATE TYPE Pair(T, T) AS Tuple(T, T)` would ignore the first argument.
+        if (!names.insert(param_ident->name()).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Duplicate type parameter {} in the definition of user-defined type {}",
+                            backQuote(param_ident->name()), backQuote(create.name));
+    }
+    return names;
+}
+
+/// A reference to a type by name inside a definition: `UInt64`, `Array(T)`, `MyType(String, 2)` ...
+struct TypeReference
+{
+    String name;
+    size_t num_arguments = 0;
+    ASTPtr node;
+    ASTPtr arguments;
+};
+
+/// Calls `callback` for every name that is used as a type inside `node`, in the order of occurrence.
+/// If the callback returns false, the arguments of that type are not descended into.
+template <typename Callback>
+void forEachTypeReference(const ASTPtr & node, Callback && callback)
+{
+    if (!node)
+        return;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        callback(TypeReference{.name = identifier->name(), .num_arguments = 0, .node = node, .arguments = nullptr});
+        return;
+    }
+
+    if (const auto * data_type = node->as<ASTDataType>())
+    {
+        ASTPtr arguments = data_type->getArguments();
+        size_t num_arguments = arguments ? arguments->children.size() : 0;
+        if (!callback(TypeReference{.name = data_type->name, .num_arguments = num_arguments, .node = node, .arguments = arguments}))
+            return;
+
+        if (arguments)
+            for (const auto & argument : arguments->children)
+                forEachTypeReference(argument, callback);
+        return;
+    }
+
+    /// Functions (e.g. the `equals` of an `Enum8('a' = 1)` element) and other nodes: only descend.
+    for (const auto & child : node->children)
+        forEachTypeReference(child, callback);
+}
+
+/// Checks that every type the definition refers to exists and is used with a valid number of arguments,
+/// and records the user-defined types it references.
+void validateDefinition(
+    const ASTCreateTypeQuery & create,
+    const std::unordered_set<String> & parameter_names,
+    const UserDefinedTypeFactory & udt_factory,
+    std::unordered_set<String> & referenced_user_defined_types)
+{
+    const auto & data_type_factory = DataTypeFactory::instance();
+
+    forEachTypeReference(create.base_type, [&](const TypeReference & ref) -> bool
+    {
+        /// A parameter is substituted with an actual argument when the type is used, so it can not be checked here.
+        /// `Array(T)` is a family applied to a parameter, `T` alone is the parameter itself.
+        if (ref.num_arguments == 0 && parameter_names.contains(ref.name))
+            return false;
+
+        if (auto referenced = udt_factory.tryGet(ref.name))
+        {
+            referenced_user_defined_types.insert(ref.name);
+
+            size_t expected = getNumberOfParameters(getCreateTypeQuery(*referenced));
+            if (expected != ref.num_arguments)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "User-defined type {} expects {} argument(s), but {} provided in the definition of user-defined type {}",
+                                backQuote(ref.name), expected, ref.num_arguments, backQuote(create.name));
+            return true;
+        }
+
+        if (ref.num_arguments == 0)
+        {
+            /// A complete built-in type without arguments (`UInt64`, `String`, an alias like `INT`, ...).
+            if (data_type_factory.tryGet(ref.node))
+                return false;
+
+            throw Exception(ErrorCodes::UNKNOWN_TYPE,
+                            "Unknown type or type parameter {} in the definition of user-defined type {}",
+                            backQuote(ref.name), backQuote(create.name));
+        }
+
+        /// A family with arguments. The arguments may contain parameters, so only the family itself can be checked
+        /// here; a definition without parameters is additionally instantiated as a whole by the caller.
+        /// `hasNameOrAlias` looks the alias up as written, so the lower-cased name is needed for the
+        /// case-insensitive aliases (`INT`, `int`, ...).
+        if (!data_type_factory.hasNameOrAlias(ref.name) && !data_type_factory.hasNameOrAlias(Poco::toLower(ref.name)))
+            throw Exception(ErrorCodes::UNKNOWN_TYPE,
+                            "Unknown type family {} in the definition of user-defined type {}",
+                            backQuote(ref.name), backQuote(create.name));
+        return true;
+    });
+}
+
+/// The user-defined types a stored definition refers to (its own parameters excluded).
+void collectReferencedUserDefinedTypes(const ASTCreateTypeQuery & create, const UserDefinedTypeFactory & udt_factory, std::unordered_set<String> & result)
+{
+    auto parameter_names = getParameterNames(create);
+    forEachTypeReference(create.base_type, [&](const TypeReference & ref) -> bool
+    {
+        if (ref.num_arguments == 0 && parameter_names.contains(ref.name))
+            return false;
+        if (udt_factory.has(ref.name))
+            result.insert(ref.name);
+        return true;
+    });
+}
+
+/// Throws if `create` (a new definition of `create.name`) refers, directly or through other user-defined
+/// types, to `create.name` itself: `DataTypeFactory` would never finish expanding such a type.
+void checkNoCycle(const ASTCreateTypeQuery & create, const std::unordered_set<String> & directly_referenced, const UserDefinedTypeFactory & udt_factory)
+{
+    std::unordered_set<String> visited;
+    std::vector<String> to_visit(directly_referenced.begin(), directly_referenced.end());
+
+    while (!to_visit.empty())
+    {
+        String current = std::move(to_visit.back());
+        to_visit.pop_back();
+
+        if (current == create.name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot create user-defined type {}: its definition refers to itself through other user-defined types",
+                            backQuote(create.name));
+
+        if (!visited.insert(current).second)
+            continue;
+
+        /// A type may disappear concurrently; then there is nothing to follow.
+        auto referenced = udt_factory.tryGet(current);
+        if (!referenced)
+            continue;
+
+        std::unordered_set<String> next;
+        collectReferencedUserDefinedTypes(getCreateTypeQuery(*referenced), udt_factory, next);
+        to_visit.insert(to_visit.end(), next.begin(), next.end());
+    }
+}
+
+/// A use of the type `type_name` in the definition of another user-defined type.
+struct DependentUse
+{
+    String dependent_type_name;
+    size_t num_arguments = 0;
+};
+
+std::vector<DependentUse> findDependentUses(const IUserDefinedSQLObjectsStorage & storage, const String & type_name)
+{
+    std::vector<DependentUse> uses;
+    for (const auto & [dependent_name, create_query] : storage.getAllObjects())
+    {
+        if (dependent_name == type_name)
+            continue;
+
+        const auto & dependent = getCreateTypeQuery(*create_query);
+        auto parameter_names = getParameterNames(dependent);
+        forEachTypeReference(dependent.base_type, [&](const TypeReference & ref) -> bool
+        {
+            if (ref.num_arguments == 0 && parameter_names.contains(ref.name))
+                return false;
+            if (ref.name == type_name)
+                uses.push_back(DependentUse{.dependent_type_name = dependent_name, .num_arguments = ref.num_arguments});
+            return true;
+        });
+    }
+    std::sort(uses.begin(), uses.end(), [](const auto & lhs, const auto & rhs) { return lhs.dependent_type_name < rhs.dependent_type_name; });
+    return uses;
+}
+
+}
+
+
+ASTPtr normalizeCreateTypeQuery(const IAST & create_type_query)
+{
+    auto ptr = create_type_query.clone();
+    auto & create = ptr->as<ASTCreateTypeQuery &>();
+    create.if_not_exists = false;
+    create.or_replace = false;
+    return ptr;
+}
+
 
 UserDefinedTypeFactory & UserDefinedTypeFactory::instance()
 {
-    static UserDefinedTypeFactory udt_factory;
-    return udt_factory;
-}
-
-void UserDefinedTypeFactory::ensureTypesLoaded(ContextPtr context) const
-{
-    if (types_loaded_from_db)
-        return;
-
-    std::unique_lock lock(mutex);
-    if (!types_loaded_from_db)
-    {
-        const_cast<UserDefinedTypeFactory*>(this)->loadTypesFromSystemTableUnsafe(context);
-    }
-}
-
-void UserDefinedTypeFactory::registerType(
-    ContextPtr context,
-    const String & name,
-    const ASTPtr & base_type_ast,
-    ASTPtr type_parameters,
-    const std::optional<String> & input_expression,
-    const std::optional<String> & output_expression,
-    const std::optional<String> & default_expression,
-    const String & create_query_string)
-{
-    TypeInfo info;
-    info.base_type_ast = base_type_ast;
-    info.type_parameters = type_parameters;
-    info.input_expression = input_expression;
-    info.output_expression = output_expression;
-    info.default_expression = default_expression;
-    info.create_query_string = create_query_string;
-
-    bool should_store_in_system_table = false;
-
-    {
-        std::unique_lock lock(mutex);
-
-        /// A concurrent `CREATE TYPE` may have registered the same name between the interpreter's
-        /// existence check and this point; `registerType` is the atomic authority, so surface a
-        /// regular user error rather than a logical error.
-        if (types.contains(name))
-            throw Exception(ErrorCodes::TYPE_ALREADY_EXISTS, "Type '{}' already exists", name);
-
-        types[name] = info;
-        should_store_in_system_table = (context && types_loaded_from_db);
-    }
-
-    if (should_store_in_system_table)
-    {
-        try
-        {
-            storeTypeInSystemTable(context, name, info);
-        }
-        catch (const DB::Exception & e)
-        {
-            LOG_ERROR(&Poco::Logger::get("UserDefinedTypeFactory"),
-                     "Failed to store type '{}' in system table. Rolling back in-memory registration. Error: {}",
-                     name, e.what());
-
-            {
-                std::unique_lock rollback_lock(mutex);
-                types.erase(name);
-            }
-            throw;
-        }
-    }
-}
-
-void UserDefinedTypeFactory::removeType(ContextPtr context, const String & name, bool if_exists)
-{
-    TypeInfo saved_info;
-    bool type_existed = false;
-    bool should_remove_from_system_table = false;
-
-    /// Without this, `DROP TYPE` right after a restart would look only at the (still empty) in-memory
-    /// map: it would throw `UNKNOWN_TYPE` for a persisted type, and `DROP TYPE IF EXISTS` would
-    /// silently do nothing while leaving the row in `udt.user_defined_types`.
-    ensureTypesLoaded(context);
-
-    {
-        std::unique_lock lock(mutex);
-
-        auto it = types.find(name);
-        if (it == types.end())
-        {
-            if (if_exists)
-                return;
-            else
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {}", name);
-        }
-
-        saved_info = it->second;
-        type_existed = true;
-
-        types.erase(it);
-        should_remove_from_system_table = (context && types_loaded_from_db);
-    }
-
-    if (should_remove_from_system_table && type_existed)
-    {
-        try
-        {
-            removeTypeFromSystemTable(context, name);
-        }
-        catch (const DB::Exception & e)
-        {
-            LOG_ERROR(&Poco::Logger::get("UserDefinedTypeFactory"),
-                     "Failed to remove type '{}' from system table. Rolling back in-memory removal. Error: {}",
-                     name, e.what());
-
-            {
-                std::unique_lock rollback_lock(mutex);
-                types[name] = saved_info;
-            }
-            throw;
-        }
-    }
-}
-
-UserDefinedTypeFactory::TypeInfo UserDefinedTypeFactory::getTypeInfo(const String & name, ContextPtr context) const
-{
-    ensureTypesLoaded(context);
-    std::shared_lock lock(mutex);
-
-    auto it = types.find(name);
-    if (it == types.end())
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {}", name);
-
-    return it->second;
-}
-
-bool UserDefinedTypeFactory::isTypeRegistered(const String & name, ContextPtr context) const
-{
-    ensureTypesLoaded(context);
-    std::shared_lock lock(mutex);
-    return types.contains(name);
-}
-
-std::vector<String> UserDefinedTypeFactory::getAllTypeNames(ContextPtr context) const
-{
-    ensureTypesLoaded(context);
-    std::shared_lock lock(mutex);
-
-    std::vector<String> result;
-    result.reserve(types.size());
-
-    for (const auto & [typeName, _] : types)
-        result.push_back(typeName);
-
-    /// `types` is an unordered map, so sort for a deterministic `SHOW TYPES` order.
-    std::sort(result.begin(), result.end());
-
+    static UserDefinedTypeFactory result;
     return result;
 }
 
-void UserDefinedTypeFactory::loadTypesFromSystemTable(ContextPtr context_ptr)
+const IUserDefinedSQLObjectsStorage * UserDefinedTypeFactory::tryGetStorage() const
 {
-    std::unique_lock lock(mutex);
-    if (types_loaded_from_db)
-        return;
-
-    loadTypesFromSystemTableUnsafe(context_ptr);
-    types_loaded_from_db = true;
+    auto global_context = Context::getGlobalContextInstance();
+    if (!global_context)
+        return nullptr;
+    return &global_context->getUserDefinedTypesStorage();
 }
 
-void UserDefinedTypeFactory::loadTypesFromSystemTableUnsafe(ContextPtr context_ptr)
+bool UserDefinedTypeFactory::registerType(
+    const ContextMutablePtr & current_context,
+    const String & type_name,
+    const ASTPtr & create_type_query,
+    bool throw_if_exists,
+    bool replace_if_exists)
 {
-    if (types_loaded_from_db)
-        return;
+    auto & storage = current_context->getUserDefinedTypesStorage();
 
-    auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
+    /// `IF NOT EXISTS` for an existing type is a no-op: the new definition is not even validated, like for
+    /// `CREATE TABLE IF NOT EXISTS`. The storage re-checks the existence under its lock.
+    if (!throw_if_exists && !replace_if_exists && storage.has(type_name))
+        return false;
 
-    if (!context_ptr)
+    const auto & create = getCreateTypeQuery(*create_type_query);
+    if (create.name != type_name)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "The CREATE TYPE query defines type {}, not {}", backQuote(create.name), backQuote(type_name));
+    if (!create.base_type)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Base type not specified for user-defined type {}", backQuote(type_name));
+
+    /// `DataTypeFactory` resolves user-defined types before the built-in ones, so a user-defined type named after
+    /// a built-in type, alias or family would hijack every later use of that name: `CREATE TYPE UInt64 AS String`
+    /// would change the meaning of `UInt64` everywhere.
+    const auto & data_type_factory = DataTypeFactory::instance();
+    if (data_type_factory.hasNameOrAlias(type_name) || data_type_factory.hasNameOrAlias(Poco::toLower(type_name)))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot create user-defined type {}: a built-in data type with this name already exists",
+                        backQuote(type_name));
+
+    auto parameter_names = getParameterNames(create);
+
+    std::unordered_set<String> referenced_user_defined_types;
+    validateDefinition(create, parameter_names, *this, referenced_user_defined_types);
+
+    /// `CREATE TYPE A AS A` is rejected above as unknown (`A` does not exist yet), but a replacement can close a
+    /// cycle through other types: `CREATE TYPE B AS A; CREATE TYPE OR REPLACE A AS B`.
+    checkNoCycle(create, referenced_user_defined_types, *this);
+
+    /// A definition without parameters is a complete data type expression, so it can be checked exactly by
+    /// instantiating it. This rejects definitions like `Map(String)` that name a known family with a wrong
+    /// number of arguments. (Referenced user-defined types still expand to their current definitions here.)
+    if (parameter_names.empty())
+        data_type_factory.get(create.base_type);
+
+    /// Other types keep using the replaced type with the number of arguments they were defined with.
+    if (replace_if_exists)
     {
-        LOG_ERROR(log, "Context pointer is null in loadTypesFromSystemTableUnsafe. Cannot load UDTs.");
-        types_loaded_from_db = true;
-        return;
+        size_t new_num_parameters = parameter_names.size();
+        for (const auto & use : findDependentUses(storage, type_name))
+        {
+            if (use.num_arguments != new_num_parameters)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot replace user-defined type {} with a definition taking {} parameter(s): "
+                                "user-defined type {} uses it with {} argument(s)",
+                                backQuote(type_name), new_num_parameters, backQuote(use.dependent_type_name), use.num_arguments);
+        }
     }
 
     try
     {
-        auto storage = getSystemTable(context_ptr);
-        if (!storage)
-        {
-            types_loaded_from_db = true;
-            return;
-        }
-
-        loadTypesFromStorage(context_ptr, storage);
+        return storage.storeObject(
+            current_context,
+            UserDefinedSQLObjectType::Type,
+            type_name,
+            normalizeCreateTypeQuery(create),
+            throw_if_exists,
+            replace_if_exists,
+            current_context->getSettingsRef());
     }
-    catch (const DB::Exception & e)
+    catch (Exception & exception)
     {
-        LOG_ERROR(log, "Failed to load user-defined types from system table. Error: {}. Code: {}.",
-                    e.what(), e.code());
-    }
-    catch (...)
-    {
-        LOG_ERROR(log, "Failed to load user-defined types from system table due to an unknown exception.");
-    }
-
-    types_loaded_from_db = true;
-}
-
-void UserDefinedTypeFactory::ensureSystemTableExists(ContextPtr context_ptr)
-{
-    auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
-
-    try
-    {
-        auto & database_catalog = DatabaseCatalog::instance();
-
-        if (!database_catalog.isDatabaseExist("udt"))
-        {
-            ContextMutablePtr mutable_context = Context::createCopy(context_ptr);
-            mutable_context->makeQueryContext();
-            /// Empty string means the query id will be autogenerated. Otherwise the nested query would
-            /// reuse the outer query's id and `ProcessList::insert` throws QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING.
-            mutable_context->setCurrentQueryId("");
-            String create_database_query = "CREATE DATABASE IF NOT EXISTS udt";
-
-            auto res = executeQuery(create_database_query, mutable_context, QueryFlags{.internal = true});
-            if (res.second.pipeline.initialized())
-            {
-                QueryPipeline pipeline = std::move(res.second.pipeline);
-                CompletedPipelineExecutor executor(pipeline);
-                executor.execute();
-            }
-        }
-
-        StorageID table_id("udt", "user_defined_types");
-        if (!database_catalog.isTableExist(table_id, context_ptr))
-        {
-            createSystemTable(context_ptr);
-        }
-    }
-    catch (const Exception & e)
-    {
-        LOG_ERROR(log, "Failed to ensure system table exists. Error: {}. Code: {}.", e.what(), e.code());
+        exception.addMessage(fmt::format("while adding user-defined type {}", backQuote(type_name)));
         throw;
     }
 }
 
-void UserDefinedTypeFactory::createSystemTable(ContextPtr context_ptr)
+bool UserDefinedTypeFactory::unregisterType(const ContextMutablePtr & current_context, const String & type_name, bool throw_if_not_exists)
 {
-    ContextMutablePtr mutable_context = Context::createCopy(context_ptr);
-    mutable_context->makeQueryContext();
-    mutable_context->setCurrentQueryId("");
+    auto & storage = current_context->getUserDefinedTypesStorage();
 
-    String create_table_query = R"(
-        CREATE TABLE IF NOT EXISTS udt.user_defined_types
-        (
-            name String,
-            base_type_ast_string String,
-            type_parameters_ast_string Nullable(String),
-            input_expression Nullable(String),
-            output_expression Nullable(String),
-            default_expression Nullable(String),
-            create_query_string String
-        )
-        ENGINE = MergeTree()
-        ORDER BY name
-        PRIMARY KEY name
-        SETTINGS index_granularity = 8192
-    )";
-
-    auto res = executeQuery(create_table_query, mutable_context, QueryFlags{.internal = true});
-    if (res.second.pipeline.initialized())
-    {
-        QueryPipeline pipeline = std::move(res.second.pipeline);
-        CompletedPipelineExecutor executor(pipeline);
-        executor.execute();
-    }
-}
-
-StoragePtr UserDefinedTypeFactory::getSystemTable(ContextPtr context_ptr) const
-{
-    /// The persistence table `udt.user_defined_types` may not exist yet (for example, on a fresh
-    /// server before any user-defined type has been created). Use `tryGetTable` (not `getTable`) so
-    /// that its absence returns nullptr instead of constructing an `UNKNOWN_TABLE` exception.
-    /// Constructing any exception on this path would abort the server under
-    /// `CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION` (see `02815_no_throw_in_simple_queries`), because type
-    /// resolution in `DataTypeFactory` consults this factory for every named data type.
-    StorageID table_id("udt", "user_defined_types");
-    return DatabaseCatalog::instance().tryGetTable(table_id, context_ptr);
-}
-
-void UserDefinedTypeFactory::loadTypesFromStorage(ContextPtr context_ptr, StoragePtr /*storage*/)
-{
-    auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
+    /// Dropping a type another type is defined through would leave that type registered but unusable.
+    auto dependent_uses = findDependentUses(storage, type_name);
+    if (!dependent_uses.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot drop user-defined type {}: it is used in the definition of user-defined type {}",
+                        backQuote(type_name), backQuote(dependent_uses.front().dependent_type_name));
 
     try
     {
-        ContextMutablePtr mutable_context = Context::createCopy(context_ptr);
-        mutable_context->makeQueryContext();
-        mutable_context->setCurrentQueryId("");
-        String query = "SELECT name, base_type_ast_string, type_parameters_ast_string, input_expression, output_expression, default_expression, create_query_string FROM udt.user_defined_types";
-
-        auto res = executeQuery(query, mutable_context, QueryFlags{.internal = true});
-        if (!res.second.pipeline.initialized())
-        {
-            LOG_WARNING(log, "Pipeline for loading UDTs not initialized.");
-            return;
-        }
-
-        QueryPipeline pipeline = std::move(res.second.pipeline);
-        PullingPipelineExecutor executor(pipeline);
-        Block block;
-        ParserDataType data_type_parser;
-        ParserExpressionList expression_list_parser(false);
-
-        while (executor.pull(block))
-        {
-            if (block.empty() || block.rows() == 0)
-                continue;
-
-            processUDTBlock(block, data_type_parser, expression_list_parser, log);
-        }
+        return storage.removeObject(current_context, UserDefinedSQLObjectType::Type, type_name, throw_if_not_exists);
     }
-    catch (const Exception & e)
+    catch (Exception & exception)
     {
-        LOG_ERROR(log, "Failed to load types from storage. Error: {}. Code: {}.", e.what(), e.code());
+        exception.addMessage(fmt::format("while removing user-defined type {}", backQuote(type_name)));
         throw;
     }
 }
 
-void UserDefinedTypeFactory::processUDTBlock(
-    const Block & block,
-    ParserDataType & data_type_parser,
-    ParserExpressionList & expression_list_parser,
-    Poco::Logger * log)
+ASTPtr UserDefinedTypeFactory::tryGet(const String & type_name) const
 {
-    const auto & columns = block.getColumnsWithTypeAndName();
-    if (columns.size() != 7)
-    {
-        LOG_ERROR(log, "Unexpected number of columns in UDT table: {}", columns.size());
-        return;
-    }
-
-    const auto & name_col = columns[0].column;
-    const auto & base_ast_col = columns[1].column;
-    const auto & params_ast_col = columns[2].column;
-    const auto & input_expr_col = columns[3].column;
-    const auto & output_expr_col = columns[4].column;
-    const auto & default_expr_col = columns[5].column;
-    const auto & create_query_col = columns[6].column;
-
-    for (size_t i = 0; i < name_col->size(); ++i)
-    {
-        try
-        {
-            String type_name = String(name_col->getDataAt(i));
-            String base_ast_str = String(base_ast_col->getDataAt(i));
-
-            String params_ast_str = getNullableString(params_ast_col, i).value_or("");
-            std::optional<String> input_expr_str = getNullableString(input_expr_col, i);
-            std::optional<String> output_expr_str = getNullableString(output_expr_col, i);
-            std::optional<String> default_expr_str = getNullableString(default_expr_col, i);
-            String create_query_str = String(create_query_col->getDataAt(i));
-
-            ASTPtr base_type_ast = stringToAst(base_ast_str, data_type_parser);
-            if (!base_type_ast)
-            {
-                LOG_WARNING(log, "Failed to parse base_type_ast for type '{}'. Skipping.", type_name);
-                continue;
-            }
-
-            ASTPtr params_ast = nullptr;
-            if (!params_ast_str.empty())
-            {
-                params_ast = stringToAst(params_ast_str, expression_list_parser);
-                if (!params_ast)
-                {
-                    LOG_WARNING(log, "Failed to parse type_parameters_ast for type '{}'. Skipping parameters.", type_name);
-                }
-            }
-
-            TypeInfo info;
-            info.base_type_ast = base_type_ast;
-            info.type_parameters = params_ast;
-            info.input_expression = input_expr_str;
-            info.output_expression = output_expr_str;
-            info.default_expression = default_expr_str;
-            info.create_query_string = create_query_str;
-            types[type_name] = info;
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(log, "Failed to process UDT row {}. Error: {}. Code: {}.", i, e.what(), e.code());
-        }
-    }
+    const auto * storage = tryGetStorage();
+    if (!storage)
+        return nullptr;
+    return storage->tryGet(type_name);
 }
 
-std::optional<String> UserDefinedTypeFactory::getNullableString(const ColumnPtr & column, size_t index) const
+ASTPtr UserDefinedTypeFactory::get(const String & type_name) const
 {
-    if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
-    {
-        if (!col_nullable->isNullAt(index))
-            return String(col_nullable->getNestedColumn().getDataAt(index));
-    }
-    return std::nullopt;
-}
-
-void UserDefinedTypeFactory::storeTypeInSystemTable(ContextPtr context, const String & name, const TypeInfo & info)
-{
-    auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
-
-    try
-    {
-        ensureSystemTableExists(context);
-
-        ContextMutablePtr mutable_context = Context::createCopy(context);
-        mutable_context->makeQueryContext();
-        mutable_context->setCurrentQueryId("");
-
-        String query = fmt::format(
-            "INSERT INTO udt.user_defined_types (name, base_type_ast_string, type_parameters_ast_string, input_expression, output_expression, default_expression, create_query_string) VALUES ({}, {}, {}, {}, {}, {}, {})",
-            quoteString(name),
-            quoteString(astToString(info.base_type_ast)),
-            (info.type_parameters ? quoteString(astToString(info.type_parameters)) : "NULL"),
-            (info.input_expression ? quoteString(*info.input_expression) : "NULL"),
-            (info.output_expression ? quoteString(*info.output_expression) : "NULL"),
-            (info.default_expression ? quoteString(*info.default_expression) : "NULL"),
-            quoteString(info.create_query_string)
-        );
-
-        auto res = executeQuery(query, mutable_context, QueryFlags{.internal = true});
-        if (res.second.pipeline.initialized())
-        {
-            QueryPipeline pipeline = std::move(res.second.pipeline);
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
-        }
-    }
-    catch (const DB::Exception & e)
-    {
-        LOG_ERROR(log, "Failed to insert user-defined type '{}' into system table. Error: {}. Code: {}.", name, e.what(), e.code());
-    }
-}
-
-void UserDefinedTypeFactory::removeTypeFromSystemTable(ContextPtr context, const String & name)
-{
-    auto * log = &Poco::Logger::get("UserDefinedTypeFactory");
-
-    try
-    {
-        ensureSystemTableExists(context);
-
-        ContextMutablePtr mutable_context = Context::createCopy(context);
-        mutable_context->makeQueryContext();
-        mutable_context->setCurrentQueryId("");
-        String query = fmt::format("DELETE FROM udt.user_defined_types WHERE name = {}", quoteString(name));
-
-        auto res = executeQuery(query, mutable_context, QueryFlags{.internal = true});
-        if (res.second.pipeline.initialized())
-        {
-            QueryPipeline pipeline = std::move(res.second.pipeline);
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
-        }
-    }
-    catch (const DB::Exception & e)
-    {
-        LOG_ERROR(log, "Failed to delete user-defined type '{}' from system table. Error: {}. Code: {}.", name, e.what(), e.code());
-    }
-}
-
-String UserDefinedTypeFactory::astToString(const ASTPtr & ast)
-{
+    auto ast = tryGet(type_name);
     if (!ast)
-        return "";
-
-    WriteBufferFromOwnString ostr_buf;
-    IAST::FormatSettings settings(true /*one_line*/);
-    settings.show_secrets = false;
-
-    ast->format(ostr_buf, settings);
-    return ostr_buf.str();
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {}", backQuote(type_name));
+    return ast;
 }
 
-ASTPtr UserDefinedTypeFactory::stringToAst(const String & str, IParser & parser)
+bool UserDefinedTypeFactory::has(const String & type_name) const
 {
-    if (str.empty())
-        return nullptr;
+    return tryGet(type_name) != nullptr;
+}
 
-    try
-    {
-        return parseQuery(parser, str, "UserDefinedTypeFactory AST deserialization",
-                        0, DBMS_DEFAULT_MAX_PARSER_DEPTH,
-                        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    }
-    catch (const DB::Exception & e)
-    {
-        LOG_WARNING(&Poco::Logger::get("UserDefinedTypeFactory"),
-                    "Failed to deserialize AST. Error: {}. Input string: '{}'", e.what(), str);
-        return nullptr;
-    }
+std::vector<String> UserDefinedTypeFactory::getAllRegisteredNames() const
+{
+    std::vector<String> names;
+
+    const auto * storage = tryGetStorage();
+    if (!storage)
+        return names;
+
+    auto all_names = storage->getAllObjectNames();
+    names.assign(all_names.begin(), all_names.end());
+    /// The storage keeps the objects in a hash map; sort for a deterministic `SHOW TYPES`.
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 }

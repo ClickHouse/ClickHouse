@@ -10,6 +10,7 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
@@ -42,7 +43,9 @@ void backupUserDefinedSQLObjects(
             escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(create_object_query->formatWithSecretsOneLine()));
 
     auto context = backup_entries_collector.getContext();
-    const auto & storage = context->getUserDefinedSQLObjectsStorage();
+    const auto & storage = (object_type == UserDefinedSQLObjectType::Type)
+        ? context->getUserDefinedTypesStorage()
+        : context->getUserDefinedSQLObjectsStorage();
 
     if (!storage.isReplicated())
     {
@@ -85,7 +88,9 @@ VectorWithMemoryTracking<std::pair<String, ASTPtr>>
 restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type)
 {
     auto context = restorer.getContext();
-    const auto & storage = context->getUserDefinedSQLObjectsStorage();
+    const auto & storage = (object_type == UserDefinedSQLObjectType::Type)
+        ? context->getUserDefinedTypesStorage()
+        : context->getUserDefinedSQLObjectsStorage();
 
     if (storage.isReplicated() && !restorer.getRestoreCoordination()->acquireReplicatedSQLObjects(storage.getReplicationID(), object_type))
         return {}; /// Other replica is already restoring user-defined SQL objects.
@@ -120,21 +125,31 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
         String statement_def;
         readStringUntilEOF(statement_def, *in);
 
-        ASTPtr ast;
+        auto parse = [&](IParser & parser)
+        {
+            return parseQuery(
+                parser,
+                statement_def.data(),
+                statement_def.data() + statement_def.size(),
+                "in file " + filepath + " from backup " + backup->getNameForLogging(),
+                0,
+                context->getSettingsRef()[Setting::max_parser_depth],
+                context->getSettingsRef()[Setting::max_parser_backtracks]);
+        };
 
+        ASTPtr ast;
         switch (object_type)
         {
             case UserDefinedSQLObjectType::Function:
             {
                 ParserCreateFunctionQuery parser;
-                ast = parseQuery(
-                    parser,
-                    statement_def.data(),
-                    statement_def.data() + statement_def.size(),
-                    "in file " + filepath + " from backup " + backup->getNameForLogging(),
-                    0,
-                    context->getSettingsRef()[Setting::max_parser_depth],
-                    context->getSettingsRef()[Setting::max_parser_backtracks]);
+                ast = parse(parser);
+                break;
+            }
+            case UserDefinedSQLObjectType::Type:
+            {
+                ParserCreateTypeQuery parser;
+                ast = parse(parser);
                 break;
             }
         }

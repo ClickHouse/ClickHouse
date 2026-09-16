@@ -1,10 +1,8 @@
 #include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/ASTCreateTypeQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 
@@ -18,21 +16,14 @@ bool ParserCreateTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
     ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_as(Keyword::AS);
-    auto s_input = ParserKeyword::createDeprecated("INPUT");
-    auto s_output = ParserKeyword::createDeprecated("OUTPUT");
-    ParserKeyword s_default(Keyword::DEFAULT);
 
     ParserIdentifier name_p;
     ParserDataType type_p;
-    ParserExpression expression_p;
     ParserExpressionList params_p(false);
 
     ASTPtr name;
     ASTPtr base_type;
     ASTPtr params_ast;
-    ASTPtr input_expression;
-    ASTPtr output_expression;
-    ASTPtr default_expression;
     bool if_not_exists = false;
     bool or_replace = false;
 
@@ -64,33 +55,17 @@ bool ParserCreateTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!type_p.parse(pos, base_type, expected))
         return false;
 
-    if (s_input.ignore(pos, expected))
-    {
-        if (!expression_p.parse(pos, input_expression, expected))
-            return false;
-    }
-
-    if (s_output.ignore(pos, expected))
-    {
-        if (!expression_p.parse(pos, output_expression, expected))
-            return false;
-    }
-
-    if (s_default.ignore(pos, expected))
-    {
-        if (!expression_p.parse(pos, default_expression, expected))
-            return false;
-    }
-
     auto query = make_intrusive<ASTCreateTypeQuery>();
     query->name = typeid_cast<ASTIdentifier &>(*name).name();
     query->base_type = base_type;
     query->type_parameters = params_ast;
-    query->input_expression = input_expression;
-    query->output_expression = output_expression;
-    query->default_expression = default_expression;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
+
+    if (query->base_type)
+        query->children.push_back(query->base_type);
+    if (query->type_parameters)
+        query->children.push_back(query->type_parameters);
 
     node = query;
     return true;

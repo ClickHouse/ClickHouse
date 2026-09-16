@@ -14,24 +14,24 @@ Contains a list of all user-defined types created with
 ## Columns {#columns}
 
 - `name` ([String](/reference/data-types/string)) — Name of the user-defined type.
-- `base_type_ast_string` ([String](/reference/data-types/string)) — The base type the user-defined type expands to.
-- `type_parameters_ast_string` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The formal parameters of a parameterized type, or `NULL` if the type has none.
-- `input_expression` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The `INPUT` expression recorded with the type, if any.
-- `output_expression` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The `OUTPUT` expression recorded with the type, if any.
-- `default_expression` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The `DEFAULT` expression recorded with the type, if any.
-- `create_query_string` ([String](/reference/data-types/string)) — The `CREATE TYPE` query that was used to create the type.
+- `base_type` ([String](/reference/data-types/string)) — The data type expression the user-defined type expands to.
+- `type_parameters` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The formal parameters of a parameterized type, or `NULL` if the type has none.
+- `create_query` ([String](/reference/data-types/string)) — The `CREATE TYPE` query defining the type.
+
+Reading the table requires the `SHOW USER DEFINED TYPES` privilege, the same one that
+[`SHOW TYPES`](/reference/statements/show) and `SHOW TYPE` require.
 
 **Example**
 
 ```sql
 CREATE TYPE KeyValue(K, V) AS Tuple(K, V);
-SELECT name, base_type_ast_string, type_parameters_ast_string FROM system.user_defined_types;
+SELECT name, base_type, type_parameters FROM system.user_defined_types;
 ```
 
 ```text
-┌─name─────┬─base_type_ast_string─┬─type_parameters_ast_string─┐
-│ KeyValue │ Tuple(K, V)          │ K, V                       │
-└──────────┴──────────────────────┴────────────────────────────┘
+┌─name─────┬─base_type───┬─type_parameters─┐
+│ KeyValue │ Tuple(K, V) │ K, V            │
+└──────────┴─────────────┴─────────────────┘
 ```
 
 **See also**

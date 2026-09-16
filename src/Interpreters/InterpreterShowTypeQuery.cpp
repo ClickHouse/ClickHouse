@@ -1,27 +1,23 @@
 #include <Interpreters/InterpreterShowTypeQuery.h>
-#include <Parsers/ASTShowTypeQuery.h>
-#include <DataTypes/UserDefinedTypeFactory.h>
+
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/UserDefinedTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Parsers/ASTCreateTypeQuery.h>
+#include <Parsers/ASTShowTypeQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Common/logger_useful.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_TYPE;
-}
 
 BlockIO InterpreterShowTypeQuery::execute()
 {
@@ -30,72 +26,33 @@ BlockIO InterpreterShowTypeQuery::execute()
     auto current_context = getContext();
     current_context->checkAccess(AccessType::SHOW_USER_DEFINED_TYPES);
 
-    auto & udt_factory = UserDefinedTypeFactory::instance();
+    /// Throws `UNKNOWN_TYPE` for a type that does not exist.
+    auto create_query = UserDefinedTypeFactory::instance().get(show_query.type_name);
+    const auto & create = create_query->as<const ASTCreateTypeQuery &>();
 
-    if (!udt_factory.isTypeRegistered(show_query.type_name, current_context))
+    auto name_column = ColumnString::create();
+    auto base_type_column = ColumnString::create();
+    auto type_parameters_column = ColumnNullable::create(ColumnString::create(), ColumnUInt8::create());
+    auto create_query_column = ColumnString::create();
+
+    name_column->insert(show_query.type_name);
+    base_type_column->insert(create.base_type->formatWithSecretsOneLine());
+    if (create.type_parameters)
+        type_parameters_column->insert(create.type_parameters->formatWithSecretsOneLine());
+    else
+        type_parameters_column->insertDefault();
+    create_query_column->insert(create_query->formatWithSecretsOneLine());
+
+    Block result_block
     {
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type {}", show_query.type_name);
-    }
-
-    auto type_info = udt_factory.getTypeInfo(show_query.type_name, current_context);
-
-    MutableColumns result_columns;
-    result_columns.emplace_back(ColumnString::create());
-    result_columns.emplace_back(ColumnString::create());
-    result_columns.emplace_back(ColumnNullable::create(ColumnString::create(), ColumnUInt8::create()));
-    result_columns.emplace_back(ColumnNullable::create(ColumnString::create(), ColumnUInt8::create()));
-    result_columns.emplace_back(ColumnNullable::create(ColumnString::create(), ColumnUInt8::create()));
-    result_columns.emplace_back(ColumnNullable::create(ColumnString::create(), ColumnUInt8::create()));
-    result_columns.emplace_back(ColumnString::create());
-
-    result_columns[0]->insert(show_query.type_name);
-    result_columns[1]->insert(UserDefinedTypeFactory::astToString(type_info.base_type_ast));
-
-    if (type_info.type_parameters)
-        result_columns[2]->insert(UserDefinedTypeFactory::astToString(type_info.type_parameters));
-    else
-        result_columns[2]->insertDefault();
-
-    if (type_info.input_expression)
-        result_columns[3]->insert(*type_info.input_expression);
-    else
-        result_columns[3]->insertDefault();
-
-    if (type_info.output_expression)
-        result_columns[4]->insert(*type_info.output_expression);
-    else
-        result_columns[4]->insertDefault();
-
-    if (type_info.default_expression)
-        result_columns[5]->insert(*type_info.default_expression);
-    else
-        result_columns[5]->insertDefault();
-
-    result_columns[6]->insert(type_info.create_query_string);
-
-    NamesAndTypes headers = {
-        {"name", std::make_shared<DataTypeString>()},
-        {"base_type_ast_string", std::make_shared<DataTypeString>()},
-        {"type_parameters_ast_string", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"input_expression", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"output_expression", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"default_expression", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"create_query_string", std::make_shared<DataTypeString>()}
+        ColumnWithTypeAndName(std::move(name_column), std::make_shared<DataTypeString>(), "name"),
+        ColumnWithTypeAndName(std::move(base_type_column), std::make_shared<DataTypeString>(), "base_type"),
+        ColumnWithTypeAndName(std::move(type_parameters_column), std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "type_parameters"),
+        ColumnWithTypeAndName(std::move(create_query_column), std::make_shared<DataTypeString>(), "create_query"),
     };
-
-    Block result_block;
-    for (size_t i = 0; i < headers.size(); ++i)
-    {
-        result_block.insert(ColumnWithTypeAndName(
-            std::move(result_columns[i]),
-            headers[i].type,
-            headers[i].name
-        ));
-    }
 
     BlockIO res;
     res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(result_block))));
-
     return res;
 }
 

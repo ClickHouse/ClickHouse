@@ -1,8 +1,5 @@
 #include <Parsers/ASTCreateTypeQuery.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
 
 namespace DB
@@ -30,21 +27,6 @@ ASTPtr ASTCreateTypeQuery::clone() const
         res->type_parameters = type_parameters->clone();
         res->children.push_back(res->type_parameters);
     }
-    if (input_expression)
-    {
-        res->input_expression = input_expression->clone();
-        res->children.push_back(res->input_expression);
-    }
-    if (output_expression)
-    {
-        res->output_expression = output_expression->clone();
-        res->children.push_back(res->output_expression);
-    }
-    if (default_expression)
-    {
-        res->default_expression = default_expression->clone();
-        res->children.push_back(res->default_expression);
-    }
     return res;
 }
 
@@ -70,24 +52,6 @@ void ASTCreateTypeQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s
 
     if (base_type)
         base_type->format(ostr, settings, state, frame);
-
-    if (input_expression)
-    {
-        ostr << " INPUT ";
-        input_expression->format(ostr, settings, state, frame);
-    }
-
-    if (output_expression)
-    {
-        ostr << " OUTPUT ";
-        output_expression->format(ostr, settings, state, frame);
-    }
-
-    if (default_expression)
-    {
-        ostr << " DEFAULT ";
-        default_expression->format(ostr, settings, state, frame);
-    }
 }
 
 }

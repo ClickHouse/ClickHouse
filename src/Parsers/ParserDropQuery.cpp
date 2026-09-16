@@ -356,7 +356,8 @@ DROP TYPE [IF EXISTS] name
 
 Dropping a non-existent type without `IF EXISTS` raises the `UNKNOWN_TYPE` exception.
 Tables that already use the type are not affected, because the type is expanded to its
-definition when a table is created.
+definition when a table is created. A type that is used in the definition of another
+user-defined type can not be dropped until that type is dropped or redefined.
 
 **Example**
 

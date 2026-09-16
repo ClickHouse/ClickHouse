@@ -1,0 +1,3 @@
+<clickhouse>
+    <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path>
+</clickhouse>

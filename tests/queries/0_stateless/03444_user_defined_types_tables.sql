@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: user-defined types live in a single process-wide namespace.
 DROP TYPE IF EXISTS ProductId;
 DROP TYPE IF EXISTS ProductName;
 DROP TYPE IF EXISTS ProductList;
@@ -7,8 +8,8 @@ DROP TYPE IF EXISTS NestedData;
 DROP TABLE IF EXISTS test.products;
 DROP TABLE IF EXISTS test.complex_products;
 
-CREATE TYPE ProductId AS UInt64 DEFAULT '0';
-CREATE TYPE ProductName AS String DEFAULT 'Unknown Product';
+CREATE TYPE ProductId AS UInt64;
+CREATE TYPE ProductName AS String;
 
 CREATE TYPE ProductList(T) AS Array(T);
 CREATE TYPE KeyValue(K, V) AS Tuple(K, V);

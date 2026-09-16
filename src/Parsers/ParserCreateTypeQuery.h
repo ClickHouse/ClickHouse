@@ -5,12 +5,8 @@
 namespace DB
 {
 
-/** Parser for CREATE TYPE query.
-  * Example:
-  * CREATE TYPE type_name AS base_type
-  *     INPUT input_expression
-  *     OUTPUT output_expression
-  *     DEFAULT default_expression;
+/** Parser for CREATE TYPE query:
+  *     CREATE TYPE [IF NOT EXISTS | OR REPLACE] type_name[(parameter, ...)] AS base_type
   */
 class ParserCreateTypeQuery : public IParserBase
 {

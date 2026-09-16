@@ -34,13 +34,27 @@ There are a few restrictions:
 
 - The `base_type` must resolve to a valid data type. Referencing an unknown type
   (including a recursive reference to the type being defined) raises the `UNKNOWN_TYPE`
-  exception, and naming a known type family with a wrong number of arguments (for
-  example `Map(String)`) is rejected as well.
+  exception, and naming a known type family or a parameterized user-defined type with a
+  wrong number of arguments (for example `Map(String)`) is rejected as well.
 - All parameters used in `base_type` must be listed in the parameter list, and a
   parameter name may not be repeated.
 - The `name` must not be the name of a built-in data type, of one of its aliases, or of
   a type family. User-defined types are resolved before the built-in types, so such a
   name would change the meaning of that built-in type everywhere.
+- A type may reference other user-defined types, but the definitions may not form a
+  cycle: `CREATE TYPE OR REPLACE` is rejected if the new definition would refer, directly
+  or through other types, to the type being defined. A type that other types are defined
+  through can only be replaced by a definition with the same number of parameters, and
+  can not be dropped with [`DROP TYPE`](/reference/statements/drop) until those types are
+  dropped or redefined.
+
+## Persistence {#persistence}
+
+User-defined types are stored like [user-defined functions](/reference/statements/create/function):
+either on the local disk in the `user_defined_path` directory of the server (by default
+`user_defined/` inside the server data path), or, if `user_defined_zookeeper_path` is
+configured, in ZooKeeper, in which case they are replicated to all servers sharing that
+path. They survive server restarts.
 
 **Example: a simple alias**
 

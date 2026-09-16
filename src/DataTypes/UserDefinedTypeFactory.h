@@ -1,114 +1,71 @@
 #pragma once
 
-#include <atomic>
-#include <optional>
-#include <unordered_map>
-#include <DataTypes/IDataType.h>
-#include <Parsers/IAST.h>
-#include <Common/SharedMutex.h>
-#include <Common/ThreadPool.h>
-#include <Storages/IStorage.h>
+#include <Core/Types.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <vector>
 
 
 namespace DB
 {
-class IParser;
-class Context;
-class Block;
-class ParserDataType;
-class ParserExpressionList;
-using ContextPtr = std::shared_ptr<const Context>;
-using ContextMutablePtr = std::shared_ptr<Context>;
-using StoragePtr = std::shared_ptr<IStorage>;
-}
 
-namespace Poco
-{
-class Logger;
-}
+class IUserDefinedSQLObjectsStorage;
 
-namespace DB
-{
+/// Prepares a `CREATE TYPE` query for storing: the `IF NOT EXISTS` / `OR REPLACE` flags are stripped,
+/// so the stored definition does not depend on how the type was created.
+ASTPtr normalizeCreateTypeQuery(const IAST & create_type_query);
 
+/// The registry of user-defined types, created with
+///     CREATE TYPE name[(parameters)] AS base_type
+/// A user-defined type is a named, optionally parameterized alias for a data type expression: `DataTypeFactory`
+/// expands it to `base_type` (with the actual arguments substituted for the parameters) whenever the type is
+/// resolved, so tables store the expanded built-in type, and the alias is never needed to read them back.
+///
+/// The definitions are the normalized `CREATE TYPE` queries and are persisted in the user-defined SQL objects
+/// storage of the server (on disk or in ZooKeeper, like user-defined functions), see
+/// `Context::getUserDefinedTypesStorage`.
 class UserDefinedTypeFactory final : private boost::noncopyable
 {
 public:
-    /// Describes a single user-defined type. For example, for
-    ///     CREATE TYPE CustomType(T, U) AS Tuple(T, Array(U))
-    /// the fields are:
-    struct TypeInfo
-    {
-        /// The base type the user-defined type expands to: `Tuple(T, Array(U))`.
-        /// It may reference the formal parameters and other user-defined types.
-        ASTPtr base_type_ast;
-        /// The formal parameters of a parameterized type as an expression list: `T, U`.
-        /// `nullptr` for a non-parameterized type.
-        ASTPtr type_parameters;
-        /// The `INPUT` / `OUTPUT` / `DEFAULT` clauses, if specified. Currently they are
-        /// only recorded here (and exposed in `system.user_defined_types`); they do not
-        /// yet affect parsing, formatting, or the column default.
-        /// `std::nullopt` means the clause was absent; an engaged empty string means the
-        /// clause was specified with an empty literal (e.g. `INPUT ''`), so the two
-        /// round-trip differently through persistence and `SHOW TYPE`.
-        std::optional<String> input_expression;
-        std::optional<String> output_expression;
-        std::optional<String> default_expression;
-        /// The original `CREATE TYPE` query text, as shown by `SHOW TYPE`.
-        String create_query_string;
-    };
-
     static UserDefinedTypeFactory & instance();
 
-    void registerType(
-        ContextPtr context,
-        const String & name,
-        const ASTPtr & base_type_ast,
-        ASTPtr type_parameters,
-        const std::optional<String> & input_expression,
-        const std::optional<String> & output_expression,
-        const std::optional<String> & default_expression = std::nullopt,
-        const String & create_query_string = "");
+    /// Validates the definition and stores the type. Returns false if the type already exists and the caller
+    /// asked neither to throw nor to replace it (`IF NOT EXISTS`).
+    ///
+    /// The definition is rejected when the name is a built-in type, alias or type family; when it references an
+    /// unknown type, a known type family with a wrong number of arguments, or a user-defined type with a wrong
+    /// number of arguments; and when it would make the type depend on itself. Replacing a type that other types
+    /// use is only allowed if the new definition keeps the number of parameters those uses rely on.
+    bool registerType(
+        const ContextMutablePtr & current_context,
+        const String & type_name,
+        const ASTPtr & create_type_query,
+        bool throw_if_exists,
+        bool replace_if_exists);
 
-    void removeType(ContextPtr context, const String & name, bool if_exists = false);
+    /// Removes the type. Rejected while another user-defined type references it. Returns false if the type does
+    /// not exist and `throw_if_not_exists` is false (`IF EXISTS`).
+    bool unregisterType(const ContextMutablePtr & current_context, const String & type_name, bool throw_if_not_exists);
 
-    TypeInfo getTypeInfo(const String & name, ContextPtr context) const;
+    /// The normalized `CREATE TYPE` query (an `ASTCreateTypeQuery`) of the type, or nullptr if there is no such type.
+    ASTPtr tryGet(const String & type_name) const;
 
-    bool isTypeRegistered(const String & name, ContextPtr context) const;
+    /// Same as `tryGet`, but throws `UNKNOWN_TYPE` if there is no such type.
+    ASTPtr get(const String & type_name) const;
 
-    std::vector<String> getAllTypeNames(ContextPtr context) const;
+    bool has(const String & type_name) const;
 
-    static String astToString(const ASTPtr & ast);
-    static ASTPtr stringToAst(const String & str, IParser & parser);
+    /// The names of all user-defined types, sorted.
+    std::vector<String> getAllRegisteredNames() const;
 
 private:
     UserDefinedTypeFactory() = default;
 
-    void ensureTypesLoaded(ContextPtr context) const;
-
-    void loadTypesFromSystemTable(ContextPtr context);
-    void loadTypesFromSystemTableUnsafe(ContextPtr context);
-    void ensureSystemTableExists(ContextPtr context);
-    void createSystemTable(ContextPtr context);
-    StoragePtr getSystemTable(ContextPtr context) const;
-
-    void loadTypesFromStorage(ContextPtr context, StoragePtr storage);
-    void processUDTBlock(
-        const Block & block,
-        ParserDataType & data_type_parser,
-        ParserExpressionList & expression_list_parser,
-        Poco::Logger * log);
-
-    void storeTypeInSystemTable(ContextPtr context, const String & name, const TypeInfo & info);
-    void removeTypeFromSystemTable(ContextPtr context, const String & name);
-
-    std::optional<String> getNullableString(const ColumnPtr & column, size_t index) const;
-
-    /// `ensureTypesLoaded` reads this flag before taking `mutex` (double-checked locking), so it has to
-    /// be atomic: `DataTypeFactory` consults this factory for every named data type, from any thread.
-    mutable std::atomic<bool> types_loaded_from_db = false;
-
-    mutable SharedMutex mutex;
-    std::unordered_map<String, TypeInfo> types;
+    /// The storage of the server, or nullptr when there is no global context (e.g. in tools that never load types).
+    const IUserDefinedSQLObjectsStorage * tryGetStorage() const;
 };
 
 }

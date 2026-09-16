@@ -261,6 +261,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
+
+        if (max_flags.contains(AccessType::SHOW_USER_DEFINED_TYPES))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "user_defined_types");
     }
     else
     {

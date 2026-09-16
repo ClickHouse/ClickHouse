@@ -11,6 +11,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTCreateTypeQuery.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Common/StringUtils.h>
@@ -19,7 +20,6 @@
 #include <Core/Settings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 template <typename FieldType>
@@ -279,23 +280,50 @@ public:
     }
 };
 
+namespace
+{
+
+/// User-defined types expand to their definitions recursively. The registry rejects cyclic definitions, but a
+/// definition file edited by hand (or a replicated definition from another version) could still form a cycle,
+/// which must not overflow the stack.
+constexpr size_t max_user_defined_type_expansion_depth = 100;
+
+thread_local size_t user_defined_type_expansion_depth = 0;
+
+struct UserDefinedTypeExpansionDepthGuard
+{
+    UserDefinedTypeExpansionDepthGuard() { ++user_defined_type_expansion_depth; }
+    ~UserDefinedTypeExpansionDepthGuard() { --user_defined_type_expansion_depth; }
+};
+
+}
+
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const ASTPtr & parameters) const
 {
     String family_name = getAliasToOrName(family_name_param);
     auto query_context = CurrentThread::tryGetQueryContext();
 
-    if (query_context && UserDefinedTypeFactory::instance().isTypeRegistered(family_name, query_context))
+    if (auto create_type_query = UserDefinedTypeFactory::instance().tryGet(family_name))
     {
-        auto udt_type_info = UserDefinedTypeFactory::instance().getTypeInfo(family_name, query_context);
-        ASTPtr udt_formal_params_ast = udt_type_info.type_parameters;
-        ASTPtr udt_base_type_definition_ast = udt_type_info.base_type_ast;
+        const auto & create = create_type_query->as<const ASTCreateTypeQuery &>();
+        const ASTPtr & udt_formal_params_ast = create.type_parameters;
+        const ASTPtr & udt_base_type_definition_ast = create.base_type;
 
         if (!udt_base_type_definition_ast)
         {
             if constexpr (nullptr_on_error) return nullptr;
             throw Exception(ErrorCodes::LOGICAL_ERROR, "User-defined type '{}' has no base type definition AST.", family_name);
         }
+
+        if (user_defined_type_expansion_depth >= max_user_defined_type_expansion_depth)
+        {
+            if constexpr (nullptr_on_error) return nullptr;
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+                            "Too deep nesting of user-defined types while expanding '{}' (the definitions probably form a cycle)",
+                            family_name);
+        }
+        UserDefinedTypeExpansionDepthGuard depth_guard;
 
         const auto * actual_args_list_node = parameters ? parameters->as<ASTExpressionList>() : nullptr;
         size_t num_actual_args = actual_args_list_node ? actual_args_list_node->children.size() : 0;

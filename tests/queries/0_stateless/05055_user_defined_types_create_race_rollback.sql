@@ -9,6 +9,6 @@ CREATE TYPE RollbackUserId AS UInt64;
 CREATE TYPE RollbackUserId AS String; -- { serverError TYPE_ALREADY_EXISTS }
 
 SHOW TYPE RollbackUserId;
-SELECT name, base_type_ast_string FROM system.user_defined_types WHERE name = 'RollbackUserId';
+SELECT name, base_type FROM system.user_defined_types WHERE name = 'RollbackUserId';
 
 DROP TYPE RollbackUserId;

@@ -1,16 +1,11 @@
 #include <Interpreters/InterpreterDropTypeQuery.h>
-#include <Parsers/ASTDropTypeQuery.h>
+
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <DataTypes/UserDefinedTypeFactory.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/QueryFlags.h>
-#include <Core/QueryProcessingStage.h>
-#include <Common/quoteString.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Parsers/ASTDropTypeQuery.h>
 
 namespace DB
 {
@@ -18,27 +13,16 @@ namespace DB
 BlockIO InterpreterDropTypeQuery::execute()
 {
     const auto & drop_query = query_ptr->as<const ASTDropTypeQuery &>();
-    auto * log = &Poco::Logger::get("InterpreterDropTypeQuery");
-    auto current_context = getContext();
 
+    auto current_context = getContext();
     current_context->checkAccess(AccessType::DROP_TYPE);
 
-    auto & udt_factory = UserDefinedTypeFactory::instance();
-
-    const String & type_name = drop_query.type_name;
-
-    try
-    {
-        udt_factory.removeType(current_context, type_name, drop_query.if_exists);
-    }
-    catch (const DB::Exception & e)
-    {
-        LOG_ERROR(log, "Failed to drop type '{}'. Error: {}. Code: {}.", type_name, e.what(), e.code());
-        throw;
-    }
+    bool throw_if_not_exists = !drop_query.if_exists;
+    UserDefinedTypeFactory::instance().unregisterType(current_context, drop_query.type_name, throw_if_not_exists);
 
     return {};
 }
+
 void registerInterpreterDropTypeQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
