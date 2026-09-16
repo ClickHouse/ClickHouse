@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/HashTable/StringHashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/quoteString.h>
 
