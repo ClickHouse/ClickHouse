@@ -187,6 +187,7 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
         using LocalObjectStorage::LocalObjectStorage;
         mutable std::atomic<size_t> reads = 0;
         bool expose_etags = true;
+        bool etags_are_strong = true;
 
         std::unique_ptr<ReadBufferFromFileBase> readObject(
             const StoredObject & object, const ReadSettings & settings, std::optional<size_t> hint,
@@ -199,9 +200,12 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
         void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override
         {
             LocalObjectStorage::listObjects(path, children, max_keys);
-            if (!expose_etags)
-                for (const auto & child : children)
+            for (const auto & child : children)
+            {
+                child->metadata->etag_is_strong = etags_are_strong;
+                if (!expose_etags)
                     child->metadata->etag.clear();
+            }
         }
     };
 
@@ -248,23 +252,28 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
     reader.refresh(0);
     EXPECT_EQ(object_storage->reads, 4);
 
+    /// Weak ETags are not sufficient to skip reading directory bodies.
+    object_storage->etags_are_strong = false;
+    reader.refresh(0);
+    EXPECT_EQ(object_storage->reads, 6);
+
     /// Without ETags, read the body to detect renames even after an unchanged refresh.
     object_storage->expose_etags = false;
     reader.refresh(0);
-    EXPECT_EQ(object_storage->reads, 6);
+    EXPECT_EQ(object_storage->reads, 8);
     {
         auto tx = writer->createTransaction();
         tx->moveDirectory("C", "D");
         tx->commit(DB::NoCommitOptions{});
     }
     reader.refresh(0);
-    EXPECT_EQ(object_storage->reads, 8);
+    EXPECT_EQ(object_storage->reads, 10);
     EXPECT_FALSE(reader.existsDirectory("C"));
     EXPECT_EQ(reader.getFileSize("D/file"), 4);
 
     /// A forced reload must still read all directory bodies.
     reader.dropCache();
-    EXPECT_EQ(object_storage->reads, 10);
+    EXPECT_EQ(object_storage->reads, 12);
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, Ls)
