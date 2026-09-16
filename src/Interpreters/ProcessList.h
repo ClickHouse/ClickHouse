@@ -567,6 +567,10 @@ public:
         return max_waiting_queries_amount.load();
     }
 
+    /// The text of the running query registered as (current_user, current_query_id), if there is one.
+    /// The lookup is keyed by user first, so it can never return another user's query.
+    std::optional<String> tryGetQueryTextOfUserQuery(const String & current_query_id, const String & current_user);
+
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);

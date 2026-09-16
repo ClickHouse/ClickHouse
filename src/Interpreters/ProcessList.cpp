@@ -767,6 +767,18 @@ QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_quer
 }
 
 
+std::optional<String> ProcessList::tryGetQueryTextOfUserQuery(const String & current_query_id, const String & current_user)
+{
+    LockAndBlocker lock(mutex);
+
+    /// `query` is set by the constructor and never mutated afterwards, so plain reads are safe.
+    if (auto elem = tryGetProcessListElement(current_query_id, current_user))
+        return elem->query;
+
+    return {};
+}
+
+
 CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
 {
     QueryStatusPtr elem;
