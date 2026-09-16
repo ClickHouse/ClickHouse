@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -24,9 +25,25 @@ node_offset = cluster.add_instance(
     main_configs=[
         "configs/config.d/ports_offset.xml",
         "configs/config.d/port_offset.xml",
+        "configs/config.d/secure_discovery.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
     ],
     macros={"shard": 1, "replica": 1},
     with_zookeeper=True,
+)
+
+# Node with port_offset=100 and an *embedded* Keeper (`keeper_server`, no `<zookeeper>` section):
+# the server's own Keeper client must follow the offset listener.
+node_embedded_keeper = cluster.add_instance(
+    "node_embedded_keeper",
+    main_configs=[
+        "configs/config.d/ports_offset.xml",
+        "configs/config.d/port_offset.xml",
+        "configs/config.d/embedded_keeper.xml",
+    ],
+    macros={"shard": 1, "replica": 1},
 )
 
 
@@ -254,3 +271,53 @@ def test_port_offset_replicated_database_replica_is_local(start_cluster):
         )
     finally:
         node_offset.query("DROP DATABASE db_port_offset SYNC")
+
+
+def test_port_offset_embedded_keeper_client_uses_shifted_port(start_cluster):
+    """The server's own Keeper client dials the embedded Keeper on the *shifted* port.
+
+    With `keeper_server` and the default `use_cluster = 1` (and no `<zookeeper>` section) the
+    server synthesizes its Keeper endpoints from `keeper_server.tcp_port`. The embedded Keeper
+    binds `9181` + the `100` offset = `9281`, so the client must dial `9281` as well - otherwise
+    replicated tables and distributed DDL lose access to the embedded Keeper.
+    """
+    assert (
+        node_embedded_keeper.query(
+            "SELECT port FROM system.zookeeper_connection WHERE name = 'default'"
+        ).strip()
+        == "9281"
+    )
+
+    node_embedded_keeper.query(
+        "CREATE TABLE rmt_port_offset (id UInt32) ENGINE = ReplicatedMergeTree('/test/rmt_port_offset', '{replica}') ORDER BY id"
+    )
+    try:
+        node_embedded_keeper.query("INSERT INTO rmt_port_offset VALUES (1), (2), (3)")
+        assert (
+            node_embedded_keeper.query("SELECT sum(id) FROM rmt_port_offset").strip()
+            == "6"
+        )
+        assert (
+            node_embedded_keeper.query(
+                "SELECT count() FROM system.zookeeper WHERE path = '/test/rmt_port_offset/replicas'"
+            ).strip()
+            == "1"
+        )
+    finally:
+        node_embedded_keeper.query("DROP TABLE rmt_port_offset SYNC")
+
+
+def test_port_offset_secure_discovery_advertises_secure_port(start_cluster):
+    """Secure cluster discovery registers the bound *secure* port, not the plain one.
+
+    With `discovery.secure = 1` peers connect over TLS, so the node must advertise
+    `tcp_port_secure` + `port_offset` = `9340` + `100` = `9440`. Advertising the plain
+    (or the unshifted) port would make every peer attempt TLS to an unreachable endpoint.
+    The node still recognizes its own entry as local.
+    """
+    # Discovery registers the node and refreshes `system.clusters` asynchronously.
+    assert_eq_with_retry(
+        node_offset,
+        "SELECT host_name, port, is_local FROM system.clusters WHERE cluster = 'secure_discovery'",
+        "node_offset\t9440\t1",
+    )

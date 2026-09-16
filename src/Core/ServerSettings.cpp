@@ -1880,10 +1880,12 @@ sources keep defaulting to the configured `tcp_port` / `tcp_port_secure`, since 
 destination is a different server whose offset is unknown.
 
 Ports of remote servers are derived from the local configuration only where the cluster
-entry does not specify them, which assumes a uniformly configured cluster. In a cluster
-where nodes use different offsets, configure the actual port of every node explicitly - for
-stateless-worker distributed plans, each worker's shifted `streaming_exchange_port` in the
-worker cluster configuration.
+entry does not specify them, which assumes a uniformly configured cluster. The same applies
+to the embedded Keeper: with `keeper_server.use_cluster` enabled and no `zookeeper` section,
+the server's own Keeper client dials every Raft member on `keeper_server.tcp_port` shifted
+by the local offset. In a cluster where nodes use different offsets, configure the actual
+port of every node explicitly - for stateless-worker distributed plans, each worker's
+shifted `streaming_exchange_port` in the worker cluster configuration.
 
 **Example**
 

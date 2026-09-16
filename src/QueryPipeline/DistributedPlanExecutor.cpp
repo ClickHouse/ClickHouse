@@ -758,7 +758,7 @@ ExchangeLookupPtr createExchangeLookup(
     /// explicitly in the cluster configuration; it cannot be derived from the local config.
     const auto peer_exchange_port = applyPortOffset(
         static_cast<UInt16>(streaming_exchange_port),
-        static_cast<Int32>(context->getConfigRef().getInt64("port_offset", 0)));
+        getPortOffsetFromConfig(context->getConfigRef()));
 
     ExchangeStreamSources sources_with_ports = exchange_stream_sources;
     for (auto & [stream, address] : sources_with_ports.stream_hosts)
@@ -1158,8 +1158,7 @@ static WorkerAddress resolveWorkerAddress(
     /// talking to shifted ones. A cluster whose nodes use different offsets cannot be resolved
     /// from the local configuration at all: there, every worker must advertise its actual
     /// `streaming_exchange_port` in the cluster entry.
-    const Int32 port_offset = static_cast<Int32>(
-        context->getConfigRef().getInt64("port_offset", 0));
+    const Int32 port_offset = getPortOffsetFromConfig(context->getConfigRef());
 
     address.streaming_exchange_port = cluster_streaming_exchange_port != 0
         ? cluster_streaming_exchange_port

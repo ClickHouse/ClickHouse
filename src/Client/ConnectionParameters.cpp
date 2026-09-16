@@ -432,11 +432,7 @@ UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfigu
     /// The port was derived from the server-side `tcp_port` / `tcp_port_secure` settings, so apply
     /// the same `port_offset` the server applies to its listeners (this matters for `clickhouse-local`
     /// and for a client reading a server configuration file).
-    if (config.has("port_offset"))
-    {
-        Int32 offset = static_cast<Int32>(config.getInt64("port_offset"));
-        port = applyPortOffset(port, offset);
-    }
+    port = applyPortOffset(port, getPortOffsetFromConfig(config));
 
     return port;
 }

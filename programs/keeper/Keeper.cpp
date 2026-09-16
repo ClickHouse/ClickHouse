@@ -135,7 +135,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     /// Shift the configured port by `port_offset` (0 by default), matching `clickhouse-server` and the
     /// Raft endpoint handling in `KeeperStateManager`, so all listeners of a standalone keeper move
     /// together. An unset / OS-assigned (`0`) port is never offset.
-    const Int32 port_offset = static_cast<Int32>(config().getInt64("port_offset", 0));
+    const Int32 port_offset = getPortOffsetFromConfig(config());
     const UInt16 port = applyPortOffset(static_cast<UInt16>(configured_port), port_offset);
     try
     {

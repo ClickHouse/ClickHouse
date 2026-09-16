@@ -2,6 +2,11 @@
 
 #include <Common/Exception.h>
 
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
+
 namespace DB
 {
 
@@ -34,5 +39,12 @@ inline UInt16 applyPortOffset(UInt16 port, Int32 offset)
 
     return static_cast<UInt16>(effective_port);
 }
+
+/// Read `port_offset` from a raw configuration (0 when absent), rejecting values that do not fit
+/// the `Int32` type of the setting. A plain `static_cast<Int32>(config.getInt64(...))` would wrap
+/// silently, so e.g. `4294967297` would turn into an offset of `1` and the process would bind or
+/// connect to the wrong port instead of refusing the configuration. Use it everywhere the offset is
+/// read from the configuration directly rather than through `ServerSettings`.
+Int32 getPortOffsetFromConfig(const Poco::Util::AbstractConfiguration & config);
 
 }

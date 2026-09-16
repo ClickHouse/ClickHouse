@@ -6671,7 +6671,7 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 UInt16 Context::getBoundTCPPort() const
 {
     const auto & config = getConfigRef();
-    return applyPortOffset(getTCPPort(), static_cast<Int32>(config.getInt64("port_offset", 0)));
+    return applyPortOffset(getTCPPort(), getPortOffsetFromConfig(config));
 }
 
 std::optional<UInt16> Context::getBoundTCPPortSecure() const
@@ -6680,7 +6680,7 @@ std::optional<UInt16> Context::getBoundTCPPortSecure() const
     auto port = getTCPPortSecure();
     if (!port)
         return {};
-    return applyPortOffset(*port, static_cast<Int32>(config.getInt64("port_offset", 0)));
+    return applyPortOffset(*port, getPortOffsetFromConfig(config));
 }
 
 void Context::registerServerPort(String port_name, UInt16 port)

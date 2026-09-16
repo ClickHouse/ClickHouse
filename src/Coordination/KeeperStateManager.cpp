@@ -85,7 +85,7 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
         "prometheus.port"s,
     };
 
-    Int32 port_offset = static_cast<Int32>(config.getInt64("port_offset", 0));
+    Int32 port_offset = getPortOffsetFromConfig(config);
     std::unordered_map<UInt64, std::string> ports;
     for (const auto & config_port_name : config_port_names)
     {
@@ -205,7 +205,7 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         /// same host in a multi-instance deployment but use their own `port_offset`.
         if (new_server_id == my_server_id)
         {
-            const Int32 port_offset = static_cast<Int32>(config.getInt64("port_offset", 0));
+            const Int32 port_offset = getPortOffsetFromConfig(config);
             port = applyPortOffset(static_cast<UInt16>(port), port_offset);
         }
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
