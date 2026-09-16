@@ -990,6 +990,12 @@ struct ContextSharedPart : boost::noncopyable
         return config ? *config : Poco::Util::Application::instance().config();
     }
 
+    const ConfigurationPtr & getConfigPtr() const
+    {
+        SharedLockGuard lock(mutex);
+        return config;
+    }
+
     ConfigurationPtr getConfig() const
     {
         SharedLockGuard lock(mutex);
@@ -7433,10 +7439,10 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     callOnce(shared->compression_codec_selector_initialized, [&]
     {
         constexpr auto config_name = "compression";
-        const auto & config = getConfigRef();
+        auto config = shared->getConfigPtr();
 
-        if (config.has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, config_name);
+        if (config->has(config_name))
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(*config, config_name);
         else
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
     });
