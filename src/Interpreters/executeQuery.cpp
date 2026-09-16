@@ -173,7 +173,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
-    extern const SettingsBool allow_experimental_trino_dialect;
+    extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -2363,7 +2363,7 @@ static BlockIO executeQueryImpl(
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks],
                 end,
-                settings[Setting::allow_experimental_trino_dialect],
+                settings[Setting::enable_trino_dialect],
                 settings[Setting::allow_settings_after_format_in_insert],
                 settings[Setting::implicit_select]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -3248,14 +3248,19 @@ static BlockIO executeQueryImpl(
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
 
             plan.resolveStorages(context);
-            plan.optimize(QueryPlanOptimizationSettings(context));
+
+            /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
+            /// plan to a distributed one.
+            QueryPlanOptimizationSettings optimization_settings(context);
+            plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+            plan.optimize(optimization_settings);
 
             WriteBufferFromOwnString buf;
             plan.explainPlan(buf, {.header=true, .actions=true});
             LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
 
             auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings(context),
+                    optimization_settings,
                     BuildQueryPipelineSettings(context),
                     /*do_optimize=*/ false);
 
