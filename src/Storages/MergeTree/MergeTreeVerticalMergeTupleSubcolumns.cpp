@@ -419,6 +419,23 @@ void tryFlattenGatheringColumns(
     gathering_columns = std::move(new_gathering);
 }
 
+void addVerticalMergeTupleSubcolumnSizes(
+    const NamesAndTypesList & gathering_columns,
+    const MergeTreeDataPartsVector & parts,
+    std::map<String, UInt64> & column_sizes)
+{
+    for (const auto & column : gathering_columns)
+    {
+        if (!column.isSubcolumn())
+            continue;
+
+        UInt64 size = 0;
+        for (const auto & part : parts)
+            size += part->getSubcolumnSize(column.name).data_compressed;
+        column_sizes[column.name] = size;
+    }
+}
+
 namespace
 {
 
@@ -494,8 +511,6 @@ ColumnsSubstreams synthesizeParentColumnsSubstreams(
     return result;
 }
 
-}
-
 void commitFlattenedTupleGroupMetadata(
     const NameAndTypePair & parent,
     const SerializationPtr & parent_serialization,
@@ -525,6 +540,76 @@ void commitFlattenedTupleGroupMetadata(
         foldLeafDataIntoParent(*parent_info, parent.type, parent.name, leaf_name, *leaf_info);
 
     setTupleNodesInexact(*parent_info, parent.type, gathered_rows);
+}
+
+}
+
+void VerticalMergeTupleSubcolumnsState::addLeaf(
+    const NameAndTypePair & leaf,
+    const SerializationInfoByName & leaf_infos)
+{
+    const String parent_name = leaf.getNameInStorage();
+    if (pending_parent.empty())
+        pending_parent = parent_name;
+    else if (pending_parent != parent_name)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Flattened Tuple units must be consecutive, got parent {} after {}",
+            parent_name,
+            pending_parent);
+
+    for (const auto & [name, info] : leaf_infos)
+        pending_leaf_infos[name] = info->clone();
+}
+
+bool VerticalMergeTupleSubcolumnsState::commitIfComplete(
+    const NameAndTypePair * next_column,
+    const NamesAndTypesList & storage_columns,
+    const MergeTreeMutableDataPartPtr & new_data_part,
+    size_t gathered_rows,
+    const MergeTreeSettings & settings,
+    ColumnsSubstreams & gathered_columns_substreams,
+    Int32 metadata_version)
+{
+    const bool group_complete =
+        !next_column
+        || !next_column->isSubcolumn()
+        || next_column->getNameInStorage() != pending_parent;
+    if (!group_complete)
+        return false;
+
+    auto parent = storage_columns.tryGetByName(pending_parent);
+    if (!parent)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot commit flattened Tuple group: storage column {} is missing",
+            pending_parent);
+
+    auto serialization_infos = new_data_part->getSerializationInfos();
+    commitFlattenedTupleGroupMetadata(
+        *parent,
+        new_data_part->getSerialization(pending_parent),
+        pending_leaf_infos,
+        gathered_rows,
+        settings,
+        gathered_columns_substreams,
+        serialization_infos,
+        new_data_part->getColumns().getNames());
+
+    new_data_part->setColumns(new_data_part->getColumns(), serialization_infos, metadata_version);
+
+    pending_leaf_infos = SerializationInfoByName{{}};
+    pending_parent.clear();
+    return true;
+}
+
+void VerticalMergeTupleSubcolumnsState::assertComplete() const
+{
+    if (!pending_parent.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Flattened Tuple group {} was not committed after the Vertical stage",
+            pending_parent);
 }
 
 }

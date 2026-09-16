@@ -18,7 +18,6 @@
 
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Storages/MergeTree/MergeTreeVerticalMergeTupleSubcolumns.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
@@ -46,6 +45,7 @@ namespace DB
 class MergeTask;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
 class RowsSourcesTemporaryFile;
+class VerticalMergeTupleSubcolumnsState;
 
 class MergedPartOffsets;
 using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
@@ -449,11 +449,7 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
-
-        /// Accumulated leaf SerializationInfo for the current flattened Tuple group.
-        /// Committed once, at group end, so a failed unit cannot publish parent metadata.
-        SerializationInfoByName pending_tuple_leaf_infos{{}};
-        String pending_tuple_parent;
+        std::shared_ptr<VerticalMergeTupleSubcolumnsState> tuple_subcolumns_state;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -492,7 +488,6 @@ private:
         void finalizeVerticalMergeForOneColumn() const;
 
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
-        void commitPendingTupleGroupIfComplete(bool force) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;

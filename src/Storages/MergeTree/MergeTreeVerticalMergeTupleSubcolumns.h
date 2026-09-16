@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <map>
 #include <unordered_map>
 
 namespace DB
@@ -31,16 +32,36 @@ void tryFlattenGatheringColumns(
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
     LoggerPtr log);
 
-/// Synthesize the parent `t` columns_substreams entry and fold leaf SerializationInfo::Data
-/// into the existing parent tree. Does not call `setColumns`.
-void commitFlattenedTupleGroupMetadata(
-    const NameAndTypePair & parent,
-    const SerializationPtr & parent_serialization,
-    const SerializationInfoByName & leaf_infos,
-    size_t gathered_rows,
-    const MergeTreeSettings & settings,
-    ColumnsSubstreams & gathered_columns_substreams,
-    SerializationInfoByName & part_serialization_infos,
-    const Names & storage_column_names);
+/// Add compressed sizes for flattened gathering leaves. Ordinary storage columns
+/// are already covered by `accumulateColumnSizes`.
+void addVerticalMergeTupleSubcolumnSizes(
+    const NamesAndTypesList & gathering_columns,
+    const MergeTreeDataPartsVector & parts,
+    std::map<String, UInt64> & column_sizes);
+
+/// Accumulates per-leaf serialization data and commits it to the parent once all
+/// consecutive gathering leaves of that parent have been written.
+class VerticalMergeTupleSubcolumnsState
+{
+public:
+    void addLeaf(
+        const NameAndTypePair & leaf,
+        const SerializationInfoByName & leaf_infos);
+
+    bool commitIfComplete(
+        const NameAndTypePair * next_column,
+        const NamesAndTypesList & storage_columns,
+        const MergeTreeMutableDataPartPtr & new_data_part,
+        size_t gathered_rows,
+        const MergeTreeSettings & settings,
+        ColumnsSubstreams & gathered_columns_substreams,
+        Int32 metadata_version);
+
+    void assertComplete() const;
+
+private:
+    SerializationInfoByName pending_leaf_infos{{}};
+    String pending_parent;
+};
 
 }
