@@ -1871,11 +1871,13 @@ x: Ivanov
 y: 993
 ```
 
-### DROP PARTITION {#iceberg-writes-drop-partition}
+### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
 `ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is currently supported for local and object-storage Iceberg tables, but not for catalog-backed tables.
 
-The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. Support for rewriting such partially matched manifests is planned separately.
+Enable `allow_insert_into_iceberg` to use this operation.
+
+The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
 
 The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
 
@@ -1891,7 +1893,9 @@ ALTER TABLE iceberg_table DROP PARTITION 0;
 ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
 ```
 
-The `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms are not supported. Dropping a partition that does not exist is a no-op. Earlier snapshots still contain the removed rows and remain available to time-travel queries.
+The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot or an explicitly selected metadata version.
+
+The `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms are not supported. Dropping a partition that does not exist is a no-op. The operation does not physically delete the data files. Earlier snapshots retain access to the removed rows and remain available to time-travel queries until those snapshots expire and their files are cleaned up.
 
 ### Schema evolution {#iceberg-writes-schema-evolution}
 
