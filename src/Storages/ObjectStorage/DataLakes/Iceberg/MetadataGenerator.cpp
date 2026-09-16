@@ -202,18 +202,12 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     {
         Int64 added_records = 0;
 
-        /// TODO: should be easier
-        std::visit(
-            [&]<typename T>(const T & update)
-            {
-                using namespace Iceberg;
-                if constexpr ((std::is_same_v<SnapshotSummaryUpdateDelete, T>) || (std::is_same_v<std::monostate, T>))
-                    return;
-                else
-                    added_records = update.added_records;
-            },
-            snapshot_summary_update
-        );
+        if (const auto * append = std::get_if<Iceberg::SnapshotSummaryUpdateAppend>(&snapshot_summary_update))
+            added_records = append->added_records;
+        else if (const auto * overwrite = std::get_if<Iceberg::SnapshotSummaryUpdateOverwrite>(&snapshot_summary_update))
+            added_records = overwrite->added_records;
+        else if (const auto * replace = std::get_if<Iceberg::SnapshotSummaryUpdateReplace>(&snapshot_summary_update))
+            added_records = replace->added_records;
 
         Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
             ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
