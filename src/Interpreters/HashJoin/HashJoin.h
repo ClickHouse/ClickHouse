@@ -307,8 +307,8 @@ public:
 
     bool isFilled() const override { return from_storage_join; }
 
-    /// Only the parallel layout has the slots that make concurrent fill safe, and keeping `hash`'s
-    /// single lane is what keeps a serial-layout join's output row order reproducible.
+    /// Only the parallel layout has the slots that make a concurrent fill safe. A serial-layout join
+    /// keeps `hash`'s single lane, so its output row order stays reproducible.
     bool supportParallelJoin() const override { return use_parallel_layout && max_threads > 1; }
     size_t getMaxBuildThreads() const override { return max_threads; }
 
@@ -525,6 +525,8 @@ public:
         std::shared_ptr<JoinFixedHashMap<UInt64, Mapped, 17>> range17_key64;
         std::shared_ptr<JoinFixedHashMap<UInt64, Mapped, 18>> range18_key64;
 
+        /// Every variant, the set flavour included: a semi/anti join would otherwise silently fall
+        /// back to a single-level table.
 #define M(NAME) static_assert(BucketPartitionedMap<typename decltype(NAME)::element_type>);
         APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -767,8 +769,8 @@ public:
                     position.reset();
             }
 
-            /// By reference: the emitters advance the saved iterator in place, which is what lets a
-            /// partially filled block resume where the previous one stopped.
+            /// By reference: the emitters advance the saved iterator in place, so a partially filled
+            /// block resumes where the previous one stopped.
             typename List::const_iterator & current() { return *position; }
 
             const List & currentList(const std::vector<WorkerStoredData> & all_workers) const { return all_workers[worker].*member; }

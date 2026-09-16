@@ -1,5 +1,5 @@
--- Row store must stay disabled when right-table rerange can fire. Constructor used to
--- call initRowStore before maps.resize, so maps.size()==0 skipped that check.
+-- Row store must stay disabled when right-table rerange can fire: `initRowStore` must run after
+-- `maps.resize`, or `isRightTableRerangeEnabled` sees no maps and the check is skipped.
 
 SELECT r.p1, r.p2
 FROM (SELECT number % 4 AS k FROM numbers(8)) AS l

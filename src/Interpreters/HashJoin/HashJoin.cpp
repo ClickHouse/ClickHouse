@@ -3246,9 +3246,7 @@ void HashJoin::onBuildPhaseFinish()
 
     build_phase_finished = true;
 
-    /// The plan prints `HashJoin` for both layouts now that `ConcurrentHashJoin` is gone, so record
-    /// which one this join built on. `data->type` is promoted to its two-level variant exactly when
-    /// `use_parallel_layout` holds, so this is the bucket split the reader is after.
+    /// The plan prints `HashJoin` for both layouts, so record which one this join built on.
     ProfileEvents::increment(
         use_parallel_layout ? ProfileEvents::HashJoinBuiltWithParallelLayout : ProfileEvents::HashJoinBuiltWithSerialLayout);
 

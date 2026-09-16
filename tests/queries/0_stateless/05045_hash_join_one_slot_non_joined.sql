@@ -1,7 +1,7 @@
 -- `hash` with `parallel_hash_join_threshold` hit still builds a parallel map, but
 -- `max_threads = 1` is one slot. Unmatched RIGHT/FULL rows must stay on the serial
 -- JoiningTransform path: wiring NonJoinedBlocksTransform here has nothing to split.
--- Random settings limits: parallel_hash_join_threshold=(1, 1); max_threads=(1, 1); enable_analyzer=(1, 1)
+-- Random settings limits: parallel_hash_join_threshold=(1, 1); max_threads=(1, 1)
 
 SET enable_analyzer = 1;
 

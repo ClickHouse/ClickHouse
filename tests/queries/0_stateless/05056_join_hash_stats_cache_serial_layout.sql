@@ -3,7 +3,7 @@
 -- `totalRows` (and a pushed filter is treated as unknown), so the cold plan is
 -- parallel. After a filtered run the cache holds the smaller `source_rows`;
 -- the same query then fills with one `FillingRightJoinSide`.
--- Random settings limits: max_threads=(8, 8); parallel_hash_join_threshold=(5001, 5001); collect_hash_table_stats_during_joins=(1, 1); use_hash_table_stats_for_join_reordering=(1, 1); use_statistics=(0, 0); enable_analyzer=(1, 1)
+-- Random settings limits: max_threads=(8, 8); parallel_hash_join_threshold=(5001, 5001); collect_hash_table_stats_during_joins=(1, 1); use_hash_table_stats_for_join_reordering=(1, 1); use_statistics=(0, 0)
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0;

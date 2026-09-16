@@ -3,7 +3,7 @@
 -- therefore false at plan time, and `topKThroughJoin` must inject its own
 -- `Sort + Limit` instead of deferring to read-in-order through the join.
 -- See issue 110662.
--- Random settings limits: max_bytes_before_external_join=(0, 0); max_bytes_ratio_before_external_join=(0, 0); max_rows_in_join=(50, 50); max_bytes_in_join=(0, 0); enable_analyzer=(1, 1); query_plan_top_k_through_join=(1, 1)
+-- Random settings limits: max_bytes_before_external_join=(0, 0); max_bytes_ratio_before_external_join=(0, 0); max_rows_in_join=(50, 50); max_bytes_in_join=(0, 0); query_plan_top_k_through_join=(1, 1)
 
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;

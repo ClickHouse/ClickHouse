@@ -1,5 +1,4 @@
--- `join_algorithm = 'auto'` used to construct `JoinSwitcher` with `max_threads = 1`.
--- The hash phase now follows the same threshold as a bare `HashJoin`.
+-- The hash phase of `join_algorithm = 'auto'` follows `parallel_hash_join_threshold` like a bare `HashJoin`.
 --
 -- Join-order stats stay on so the planner AUTO path gets MergeTree `totalRows` (200).
 -- `missing_estimate_parallel` turns join-order off: no rhs estimate, high threshold still parallel.

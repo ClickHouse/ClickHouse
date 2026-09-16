@@ -187,7 +187,7 @@ private:
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
 
-    /// Or every probe thread contends on `hash_join_mutex` once per block to learn it already ran.
+    /// Without it every probe thread would take `hash_join_mutex` once per block to learn the phase already ran.
     std::atomic<bool> post_build_phase_ran = false;
 
     GraceHashJoinStats stats;

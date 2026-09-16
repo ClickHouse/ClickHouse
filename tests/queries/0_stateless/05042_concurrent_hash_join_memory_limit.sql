@@ -3,8 +3,8 @@
 
 -- A join whose right side has no row-count estimate builds the bucketed layout. That layout costs
 -- about a megabyte, so sixteen nested joins need around 16 MiB before a single row is read.
--- An 8 MiB limit has to stop them. `hash` and `parallel_hash` are one algorithm now, so both
--- names have to hit that limit.
+-- An 8 MiB limit has to stop them. `hash` and `parallel_hash` are one algorithm, so both names
+-- have to hit that limit.
 
 SET max_threads = 8;
 

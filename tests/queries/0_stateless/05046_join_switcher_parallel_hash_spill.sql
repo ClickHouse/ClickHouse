@@ -3,7 +3,7 @@
 -- correct for INNER/LEFT/RIGHT/FULL, including unmatched right rows.
 -- Pin a small `max_block_size` so the left side is several blocks after the drain.
 -- Several `JoiningTransform`s then probe `MergeJoin` under `ExclusiveJoinResult`.
--- Random settings limits: max_rows_in_join=(50, 50); max_bytes_in_join=(0, 0); max_bytes_before_external_join=(0, 0); max_bytes_ratio_before_external_join=(0, 0); max_block_size=(16, 16); enable_analyzer=(1, 1)
+-- Random settings limits: max_rows_in_join=(50, 50); max_bytes_in_join=(0, 0); max_bytes_before_external_join=(0, 0); max_bytes_ratio_before_external_join=(0, 0); max_block_size=(16, 16)
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0;

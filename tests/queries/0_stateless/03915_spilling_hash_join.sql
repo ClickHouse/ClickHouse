@@ -123,7 +123,7 @@ SETTINGS log_comment = 'query_03915_10';
 SET max_bytes_before_external_join = 1000000000;
 SET join_algorithm = 'parallel_hash';
 SET max_threads = 4;
--- The name no longer selects a layout, so ask for the parallel one by its threshold; without
+-- The name does not select a layout, so ask for the parallel one by its threshold; without
 -- this the right sides below are too small for it and the join would fill a single slot.
 SET parallel_hash_join_threshold = 0;
 

@@ -513,7 +513,7 @@ public:
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
-/// Covers both `hash` and `parallel_hash`, because which of the two was listed decides nothing now.
+/// Both `hash` and `parallel_hash` name the same join, so either one enables the cache keys.
 bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
