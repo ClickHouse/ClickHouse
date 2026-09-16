@@ -55,7 +55,6 @@ void ASTSystemQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     /// header comment for why the rewrite-rule matcher needs this.
     hash_state.update(type);
     hash_state.update(if_exists);
-    hash_state.update(target_model);
     hash_state.update(target_function);
     hash_state.update(replica);
     hash_state.update(shard);
