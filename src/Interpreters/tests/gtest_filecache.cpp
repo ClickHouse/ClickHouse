@@ -3299,8 +3299,13 @@ TEST_F(FileCacheTest, UsageMetricsSettingIsStartupOnly)
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
+    /// These caches live outside the fixture-managed `cache_base_path*` directories, and
+    /// `load_metadata_asynchronously = false` picks up whatever a previous run left on disk,
+    /// which would make `download` find already downloaded segments. Start from empty dirs.
     auto make_settings = [&](const std::string & path, bool expose)
     {
+        fs::remove_all(path);
+
         DB::FileCacheSettings settings;
         settings[FileCacheSetting::path] = path;
         settings[FileCacheSetting::max_size] = 100;
@@ -4001,6 +4006,13 @@ TEST_F(FileCacheTest, UsageSnapshotNeverExceedsCacheSize)
         while (!done.load(std::memory_order_relaxed))
         {
             auto lock = state_guard.lock();
+
+            /// Read the queue state first and the per-client counters second. The writer discharges
+            /// the counters before the queue state, so this read order is the one that can never
+            /// observe a stale (larger) counter next to an already shrunk queue size. Reading in the
+            /// opposite order would make the sample itself racy and not test the writer ordering.
+            const size_t cache_size = priority.getSize(lock);
+            const size_t cache_elements = priority.getElementsCount(lock);
             const auto usage = priority.getUsageStatPerClient(lock);
 
             size_t usage_size = 0;
@@ -4011,7 +4023,7 @@ TEST_F(FileCacheTest, UsageSnapshotNeverExceedsCacheSize)
                 usage_elements += stat.elements;
             }
 
-            if (usage_size > priority.getSize(lock) || usage_elements > priority.getElementsCount(lock))
+            if (usage_size > cache_size || usage_elements > cache_elements)
                 violations.fetch_add(1, std::memory_order_relaxed);
             samples.fetch_add(1, std::memory_order_relaxed);
         }
