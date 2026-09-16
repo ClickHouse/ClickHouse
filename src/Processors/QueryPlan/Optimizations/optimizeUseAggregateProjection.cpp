@@ -1414,7 +1414,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 candidate.stat = &stat;
 
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-                if (candidate.sum_marks > parent_reading_marks)
+                if (!force_optimize_projection && candidate.sum_marks > parent_reading_marks)
                 {
                     stat.description = fmt::format(
                         "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
