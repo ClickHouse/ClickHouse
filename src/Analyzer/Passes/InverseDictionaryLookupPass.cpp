@@ -536,11 +536,12 @@ public:
         /// expressions must also use functions understood by remote servers, which reanalyze generated SQL.
         /// Comparisons that only widen key values need no cast and keep the expression usable for indices.
         ///
-        /// The one conversion that is mirrored is an integer probe of a simple key, whose lookup type is
+        /// The one conversion that is mirrored is a signed probe of a simple key, whose lookup type is
         /// `UInt64` by construction (`key_cols` above): a dictionary declared with a signed key and probed
         /// with that very type is the common case, and skipping it would switch the optimization off for
         /// all such dictionaries (`03906_dict_case_distributed_predicate_pushdown` depends on it firing).
-        /// `convertSimpleKeyProbe` explains why `accurateCast` is exact there.
+        /// `convertSimpleKeyProbe` explains why `accurateCast` is exact there. Only the constant-fold
+        /// rewrites are applied with an inserted conversion, see the subquery rewrite below.
         bool key_conversion_inserted = false;
         if (!canCompareKeysWithoutCasts(dictget_function_info.key_expr_node, key_cols))
         {
@@ -703,6 +704,13 @@ public:
                 return;
             }
         }
+
+        /// An inserted conversion is preserved by the constant-fold rewrites only. The subquery form
+        /// below builds its set at execution, and when that set turns out empty `FunctionIn` returns a
+        /// constant without evaluating its left operand, so the conversion error would disappear for a
+        /// predicate that matches no key. Such a query keeps the lookup.
+        if (key_conversion_inserted)
+            return;
 
         /// The `IN (SELECT ... FROM dictionary(...))` rewrite below conflicts with a forced IN->JOIN
         /// rewrite and with the Cascades distributed planner's own IN handling, so skip it in those

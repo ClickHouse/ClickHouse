@@ -18,14 +18,16 @@ PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'simple_signed_source')) LAYOUT(FLAT()) L
 CREATE TABLE simple_signed_probes (id Int64, narrow Int32, wide UInt32, s String) ENGINE = Memory;
 INSERT INTO simple_signed_probes VALUES (1, 1, 1, '1'), (2, 2, 2, '2'), (4, 4, 4, '4');
 
--- Signed probes are converted to the `UInt64` lookup type, through the constant fold and the
--- dictionary subquery alike.
+-- Signed probes are converted to the `UInt64` lookup type in the constant-fold rewrites.
 SELECT 'declared type, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes = 1
 SELECT id FROM simple_signed_probes WHERE dictGet('simple_signed', 'attr', id) = 'alpha';
 SELECT 'narrower signed type, equals - plan';
 EXPLAIN SYNTAX run_query_tree_passes = 1
 SELECT id FROM simple_signed_probes WHERE dictGet('simple_signed', 'attr', narrow) = 'beta';
+
+-- The dictionary subquery form keeps the lookup: an empty set built at execution would skip the
+-- conversion inserted into its left operand.
 SELECT 'declared type, like - plan';
 EXPLAIN SYNTAX run_query_tree_passes = 1
 SELECT id FROM simple_signed_probes WHERE dictGet('simple_signed', 'attr', id) LIKE 'be%';
@@ -66,7 +68,8 @@ SELECT id,
 FROM simple_signed_probes ORDER BY id SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 -- A negative probe value does not fit the `UInt64` lookup type: `dictGet` throws, and so does
--- the rewrite, for a single match, several matches, the dictionary subquery, and no match.
+-- the rewrite, for a single match, several matches, no match, and the predicates that would
+-- have used the dictionary subquery, whether they match a key or not.
 CREATE TABLE simple_signed_negative (id Int64) ENGINE = Memory;
 INSERT INTO simple_signed_negative VALUES (1), (-1);
 
@@ -78,6 +81,9 @@ SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr', id) LIKE 'be%'; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr', id) LIKE 'be%'
+SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr', id) LIKE 'zz%'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr', id) LIKE 'zz%'
 SETTINGS optimize_inverse_dictionary_lookup = 0; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr', id) = 'missing'; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT count() FROM simple_signed_negative WHERE dictGet('simple_signed', 'attr', id) = 'missing'

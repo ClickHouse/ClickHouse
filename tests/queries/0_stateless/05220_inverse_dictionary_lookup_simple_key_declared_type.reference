@@ -3,7 +3,7 @@ SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE e
 narrower signed type, equals - plan
 SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE in(accurateCast(__table1.narrow, \'UInt64\'), _CAST([2, 3], \'Array(UInt64)\'))
 declared type, like - plan
-SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE in(accurateCast(__table1.id, \'UInt64\'), (\n    SELECT id AS id\n    FROM dictionary(\'default.simple_signed\')\n    WHERE like(attr, \'be%\')\n))
+SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE like(dictGet(\'default.simple_signed\', \'attr\', __table1.id), \'be%\')
 declared type, no match - plan
 SELECT __table1.id AS id\nFROM default.simple_signed_probes AS __table1\nWHERE equals(accurateCast(__table1.id, \'UInt64\'), 18446744073709551615)
 unsigned probe, equals - plan
