@@ -327,9 +327,10 @@ When set to `with_size_stream`, top-level `String` columns are serialized with a
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.
 
-Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
-are not affected, except when they appear in a `Tuple` or a declared `JSON` path with
-`propagate_types_serialization_versions_to_nested_types = 1`.
+Nested `String` types inside a `Tuple` are always affected. Nested `String` types inside
+`Array`, `Map`, `Nullable`, and declared `JSON` paths are affected when
+`propagate_types_serialization_versions_to_nested_types = 1`. Nested `String` types inside
+`LowCardinality` are not affected.
 
 Possible values:
 
