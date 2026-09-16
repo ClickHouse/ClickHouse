@@ -4,8 +4,9 @@
 
 -- The exchange between the tasks of a distributed plan compresses its packets with the codec of
 -- `network_compression_method`. The setting reaches the sending tasks on the workers, not only the
--- initiator. The check reads the bytes the serializers of the tasks produce: with `NONE` the packets
--- are bigger than with `LZ4` or `ZSTD`.
+-- initiator. A serializer on every stream ahead of the sinks makes the packets, also on the one
+-- stream left after the merge of a sorted gather. The checks compare the bytes the serializers
+-- produce: with `NONE` the packets are bigger than with `LZ4` or `ZSTD`.
 
 DROP TABLE IF EXISTS t_exchange_codec;
 CREATE TABLE t_exchange_codec (k String, v UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -22,27 +23,47 @@ SELECT count() FROM (SELECT k, count() FROM t_exchange_codec GROUP BY k)
 SELECT count() FROM (SELECT k, count() FROM t_exchange_codec GROUP BY k)
   SETTINGS network_compression_method = 'ZSTD', network_zstd_compression_level = 1, log_comment = '05218_codec_zstd';
 
+-- The window runs on the shuffle buckets with several threads and sends its sorted result to the
+-- initiator through a sorted gather: the sending task merges its streams and serializes after the merge.
+SET max_threads = 4;
+SELECT k, v, row_number() OVER (PARTITION BY k ORDER BY v) AS rn FROM t_exchange_codec
+  SETTINGS network_compression_method = 'NONE', log_comment = '05218_codec_sink_none' FORMAT Null;
+SELECT k, v, row_number() OVER (PARTITION BY k ORDER BY v) AS rn FROM t_exchange_codec
+  SETTINGS network_compression_method = 'LZ4', log_comment = '05218_codec_sink_lz4' FORMAT Null;
+
 -- The log queries below are not the subject of the test; they run without the distributed plan.
 SET make_distributed_plan = 0;
 
 SYSTEM FLUSH LOGS processors_profile_log, query_log;
 
--- The scan of the processor log starts at the first of the three queries: in a busy test run the log
+-- The scan of the processor log starts at the first of the queries above: in a busy test run the log
 -- holds millions of rows per minute, and a wider scan would hit the read limit of the test profile.
-WITH roots AS (
-    SELECT query_id, log_comment, query_start_time FROM system.query_log
+CREATE VIEW v_exchange_codec AS
+SELECT roots.log_comment AS run, profiles.query_id AS task,
+    countIf(name = 'StreamingExchangeSerializingTransform') AS serializers,
+    countIf(name LIKE 'StreamingExchangeSink%') AS sinks,
+    sumIf(output_bytes, name = 'StreamingExchangeSerializingTransform') AS serializer_bytes
+FROM system.processors_profile_log AS profiles
+INNER JOIN (
+    SELECT query_id, log_comment FROM system.query_log
     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
-      AND log_comment IN ('05218_codec_none', '05218_codec_lz4', '05218_codec_zstd') AND type = 'QueryFinish'),
-packet_bytes AS (
-    SELECT roots.log_comment AS run, sum(output_bytes) AS bytes
-    FROM system.processors_profile_log AS profiles
-    INNER JOIN roots ON profiles.initial_query_id = roots.query_id
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE
-      AND event_time >= (SELECT min(query_start_time) FROM roots)
-      AND name = 'StreamingExchangeSerializingTransform'
-    GROUP BY run)
-SELECT 'uncompressed packets are bigger than LZ4 and ZSTD:',
-    (SELECT bytes FROM packet_bytes WHERE run = '05218_codec_none') > (SELECT bytes FROM packet_bytes WHERE run = '05218_codec_lz4'),
-    (SELECT bytes FROM packet_bytes WHERE run = '05218_codec_none') > (SELECT bytes FROM packet_bytes WHERE run = '05218_codec_zstd');
+      AND log_comment IN ('05218_codec_none', '05218_codec_lz4', '05218_codec_zstd', '05218_codec_sink_none', '05218_codec_sink_lz4')
+      AND type = 'QueryFinish') AS roots ON profiles.initial_query_id = roots.query_id
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE
+  AND event_time >= (
+    SELECT min(query_start_time) FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
+      AND log_comment IN ('05218_codec_none', '05218_codec_lz4', '05218_codec_zstd', '05218_codec_sink_none', '05218_codec_sink_lz4')
+      AND type = 'QueryFinish')
+GROUP BY run, task;
 
+SELECT 'serializers: uncompressed packets are bigger than LZ4 and ZSTD:',
+    (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_none') > (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_lz4'),
+    (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_none') > (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_zstd');
+
+SELECT 'sorted gather: every task with a sink has a serializer, and uncompressed is bigger than LZ4:',
+    (SELECT countIf(sinks > 0 AND serializers = 0) FROM v_exchange_codec) = 0,
+    (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_sink_none') > (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_sink_lz4');
+
+DROP VIEW v_exchange_codec;
 DROP TABLE t_exchange_codec;

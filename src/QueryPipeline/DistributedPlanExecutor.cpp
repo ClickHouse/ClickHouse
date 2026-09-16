@@ -185,16 +185,13 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
         if (!temporary_files)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
                 exchange_stream_id.toString());
-        if (input_is_serialized)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Persisted exchange {} has no serializer, its sink takes data chunks", exchange_stream_id.toString());
-
         auto file_name = exchange_stream_id.toString();
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
@@ -400,11 +397,8 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        if (input_is_serialized)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no serializer, its sink takes data chunks", exchange_stream_id.toString());
-
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
@@ -568,9 +562,9 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id, input_is_serialized);
+        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id);
     }
 
     std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override

@@ -62,11 +62,11 @@ public:
     {
     }
 
-    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool input_is_serialized) override
+    std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
         auto stream_name = exchange_stream_id.toString();
         auto future_connection = connections->getConnection(query_id, stream_name);
-        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name, input_is_serialized, codec);
+        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String &) override
