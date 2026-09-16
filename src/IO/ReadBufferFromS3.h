@@ -68,7 +68,7 @@ public:
         const String & expected_etag_ = {}
         );
 
-    ~ReadBufferFromS3() override;
+    ~ReadBufferFromS3() override = default;
 
     bool nextImpl() override;
 
@@ -109,9 +109,6 @@ private:
 
     /// If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
-
-    /// Completes a small already buffered HTTP response before discarding it, without network I/O.
-    void drainBufferedRemainderBeforeRelease() noexcept;
 
     /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
     /// Returns true if the error looks retriable.

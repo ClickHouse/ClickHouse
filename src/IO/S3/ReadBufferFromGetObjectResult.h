@@ -30,10 +30,6 @@ public:
 
     void releaseResult();
 
-    /// Completes a small fixed-length HTTP body only when all remaining bytes are already buffered
-    /// by Poco. Does not touch the read buffer or wait for the network; returns the discarded bytes.
-    size_t tryDrainBufferedRemainder(size_t max_bytes);
-
     bool isResultReleased() const { return !result; }
 
     ObjectMetadata getObjectMetadata() const { return metadata; }

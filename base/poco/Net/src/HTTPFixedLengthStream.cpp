@@ -16,8 +16,6 @@
 #include "Poco/Net/HTTPSession.h"
 #include "Poco/Net/NetException.h"
 
-#include <algorithm>
-
 
 using Poco::BufferedStreamBuf;
 
@@ -48,25 +46,6 @@ HTTPFixedLengthStreamBuf::~HTTPFixedLengthStreamBuf()
 bool HTTPFixedLengthStreamBuf::isComplete() const
 {
     return _count == _length;
-}
-
-
-std::size_t HTTPFixedLengthStreamBuf::tryDrainBufferedRemainder(std::size_t max_bytes)
-{
-    if (_count >= _length)
-        return 0;
-
-    const auto remaining = static_cast<std::size_t>(_length - _count);
-    if (remaining > max_bytes || remaining > static_cast<std::size_t>(_session.buffered()))
-        return 0;
-
-    /// Do not call through the consumer's stream buffer: its memory may have been released or
-    /// may still contain data being consumed by an asynchronous reader.
-    char scratch[1024];
-    std::size_t drained = 0;
-    while (drained < remaining)
-        drained += readFromDevice(scratch, std::min(sizeof(scratch), remaining - drained));
-    return drained;
 }
 
 

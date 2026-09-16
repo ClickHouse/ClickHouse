@@ -50,11 +50,6 @@ namespace Net
 
         bool isComplete() const;
 
-        /// Discards the remaining body only if it fits within `max_bytes` and is already entirely
-        /// buffered by the HTTP session. Never reads from the socket or uses the consumer's buffer.
-        /// Returns the number of discarded bytes; zero leaves the stream unchanged.
-        std::size_t tryDrainBufferedRemainder(std::size_t max_bytes);
-
     protected:
         int readFromDevice(char * buffer, std::streamsize length);
         int writeToDevice(const char * buffer, std::streamsize length);
