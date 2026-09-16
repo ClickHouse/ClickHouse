@@ -381,3 +381,25 @@ SELECT name, default_expression, comment, compression_codec FROM system.columns
     WHERE database = currentDatabase() AND table = 're_add_full_desc' AND name = 'x';
 
 DROP TABLE re_add_full_desc;
+
+-- `MODIFY COLUMN IF EXISTS n` on a flattened Nested parent is a no-op: there is no exact column
+-- `n`. Nested-aware existence must not promote it into `columns.get(n)`, which throws.
+DROP TABLE IF EXISTS modify_if_exists_nested;
+CREATE TABLE modify_if_exists_nested (a Int64, n Nested(x Enum8('a' = 1))) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE modify_if_exists_nested MODIFY COLUMN IF EXISTS n ADD ENUM VALUES('b' = 2);
+SELECT 'modify if exists nested is a noop', name, type FROM system.columns
+    WHERE database = currentDatabase() AND table = 'modify_if_exists_nested' ORDER BY name;
+DROP TABLE modify_if_exists_nested;
+
+-- Independent scalar `n` and dotted `n.a` with `share_nested_offsets = 0`: `DROP COLUMN n` must
+-- not delete `n.a` files on a wide part written before `n` existed.
+DROP TABLE IF EXISTS drop_independent_dotted;
+CREATE TABLE drop_independent_dotted (id UInt64, `n.a` Array(UInt32))
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS share_nested_offsets = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO drop_independent_dotted VALUES (1, [10, 20]);
+ALTER TABLE drop_independent_dotted ADD COLUMN n String;
+INSERT INTO drop_independent_dotted VALUES (2, [30], 'hello');
+ALTER TABLE drop_independent_dotted DROP COLUMN n SETTINGS mutations_sync = 2;
+SELECT 'drop independent dotted', id, `n.a` FROM drop_independent_dotted ORDER BY id;
+DROP TABLE drop_independent_dotted;

@@ -271,6 +271,7 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
+    const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
     auto nameInPart = [&](String name)
     {
         if (alter_conversions->isColumnRenamed(name))
@@ -288,7 +289,7 @@ static void splitAndModifyMutationCommands(
     {
         if (auto it = renamed_in_batch.find(name); it != renamed_in_batch.end())
             return it->second;
-        if (part_columns.has(name) || part_columns.hasNested(name))
+        if (part_columns.has(name) || (share_nested && part_columns.hasNested(name)))
             return name;
         return nameInPart(name);
     };
@@ -426,7 +427,6 @@ static void splitAndModifyMutationCommands(
                      || command.type == MutationCommand::Type::RENAME_COLUMN)
             {
                 const String name_in_part = nameStoredInPart(command.column_name, renamed_in_batch);
-                const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
                 const bool has_column = part_columns.has(name_in_part);
                 const bool has_nested_column = share_nested && part_columns.hasNested(name_in_part);
 
@@ -771,9 +771,12 @@ static void splitAndModifyMutationCommands(
                     dropped_column_names_in_part.emplace(stored);
                     for_file_renames.push_back(std::move(command_for_renames));
                 }
-                else if (part_columns.hasNested(stored))
+                else if (share_nested && part_columns.hasNested(stored))
                 {
                     /// A Nested parent matches no flattened column (`n` is stored as `n.x`, ...).
+                    /// Gated by `share_nested_offsets`: with sharing off, a scalar `n` and dotted
+                    /// `n.a` are independent, so `DROP COLUMN n` on a part that only has `n.a`
+                    /// (written before `n` was added) must not delete the dotted files.
                     for (const auto & nested_member : part_columns.getNested(stored))
                     {
                         auto member_command = command;

@@ -5795,7 +5795,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 dropped_columns.emplace(command.column_name);
             }
-            else
+            else if (share_nested_offsets)
             {
                 const auto & nested = old_metadata.columns.getNested(command.column_name);
                 for (const auto & nested_column : nested)

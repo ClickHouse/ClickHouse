@@ -90,3 +90,7 @@ rename replaces the stale index	auto_minmax_index_n.z	`n.z`	Implicit
 1	0	0
 all_1_1_0_4	1	
 x			
+modify if exists nested is a noop	a	Int64
+modify if exists nested is a noop	n.x	Array(Enum8(\'a\' = 1))
+drop independent dotted	1	[10,20]
+drop independent dotted	2	[30]

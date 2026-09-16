@@ -1946,7 +1946,12 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        bool has_column = columnExists(columns, command.column_name, share_nested_offsets);
+        /// Nested-parent existence is only the ADD/DROP special case. MODIFY/COMMENT/RENAME still
+        /// require an exact column name; otherwise `MODIFY COLUMN IF EXISTS n` against a flattened
+        /// Nested group would skip the ignore path and then `columns.get(n)` would throw.
+        const bool has_column = (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::DROP_COLUMN)
+            ? columnExists(columns, command.column_name, share_nested_offsets)
+            : columns.has(command.column_name);
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!has_column && command.if_exists)
