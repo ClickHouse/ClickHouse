@@ -15,7 +15,7 @@ With ClickHouse Cloud [warehouses](/products/cloud/features/infrastructure/wareh
 
 <ScalePlanFeatureBadge feature="Compute-compute separation"/>
 
-Warehouses are a ClickHouse Cloud feature, so the setup described here applies to ClickStack running against ClickHouse Cloud. Self-managed deployments can separate the two workloads by pointing ingestion and queries at different endpoints of a replicated cluster; what the warehouse adds is doing so over a single copy of the data, with each side sized, scaled and idled on its own.
+Warehouses are a ClickHouse Cloud feature, so the setup described here applies to ClickStack running against ClickHouse Cloud, with each side of the split sized, scaled and idled on its own over a single copy of the data.
 
 <Note>
 **When isolation is worth it**
@@ -104,8 +104,6 @@ Dashboards, saved searches, alerts and sources belong to the service ClickStack 
 
 Choose the service you want to run ClickStack from before building dashboards. If you're switching an established deployment, note that alerts created on the previous service keep evaluating there - on that service's compute - until you delete them.
 </Warning>
-
-If individual data sources need to target a different service, the connection used by each source can be overridden with its [`Server Connection` setting](/clickstack/managing/config#datasource-settings).
 </Step>
 <Step title="Verify the split" id="verify">
 
@@ -237,7 +235,7 @@ The MCP server can create dashboards, alerts and saved searches as well as run q
 
 ## Alerts {#alerts}
 
-ClickStack evaluates an alert using the connection of the source it's attached to. When every source shares one connection - the default - alerts therefore run on the same compute as the UI, the read-only service in this topology. A source with an overridden [`Server Connection`](/clickstack/managing/config#datasource-settings) evaluates its alerts on whichever service that connection points to instead, so include that load in the sizing for the service concerned.
+ClickStack evaluates an alert on the service the alert was created from, so alerts run on the same compute as the UI - the read-only service in this topology.
 
 <Note>
 **Managed ClickStack**
