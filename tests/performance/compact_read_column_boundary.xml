@@ -1,8 +1,7 @@
-<test run_all_queries="1">
+<test run_all_queries="1" requires_s3="1">
     <!-- `0` writes the shared-block layout used before 26.4; `1` writes per-column blocks.
          Both layouts are created by each tested binary, independently of its defaults.
-         Storage is inherited: run locally in performance CI, or configure the compared
-         servers with an S3-backed default `MergeTree` storage policy. -->
+         Performance CI starts a local SeaweedFS endpoint for this benchmark. -->
     <settings>
         <max_threads>1</max_threads>
         <max_insert_threads>1</max_insert_threads>
@@ -104,7 +103,12 @@
             c63 UInt64 DEFAULT seq + 63
         )
         ENGINE = MergeTree ORDER BY seq
-        SETTINGS index_granularity = 8, index_granularity_bytes = 10485760,
+        SETTINGS disk = disk(
+                type = s3,
+                endpoint = 'http://localhost:11111/test/compact-read-column-boundary/',
+                access_key_id = 'clickhouse',
+                secret_access_key = 'clickhouse'),
+            index_granularity = 8, index_granularity_bytes = 10485760,
             min_bytes_for_wide_part = 1073741824,
             min_bytes_for_full_part_storage = 0,
             write_marks_for_substreams_in_compact_parts = 0,
@@ -136,7 +140,12 @@
             payload String CODEC(NONE)
         )
         ENGINE = MergeTree PARTITION BY seq ORDER BY tuple()
-        SETTINGS min_bytes_for_wide_part = 1073741824,
+        SETTINGS disk = disk(
+                type = s3,
+                endpoint = 'http://localhost:11111/test/compact-read-column-boundary/',
+                access_key_id = 'clickhouse',
+                secret_access_key = 'clickhouse'),
+            min_bytes_for_wide_part = 1073741824,
             min_bytes_for_full_part_storage = 1073741824,
             write_marks_for_substreams_in_compact_parts = 0,
             compress_per_column_in_compact_parts = {per_column},
