@@ -6,6 +6,9 @@ DROP TABLE IF EXISTS tuple_element_codec_full_attach;
 DROP TABLE IF EXISTS tuple_element_codec_as_source;
 DROP TABLE IF EXISTS tuple_element_codec_clone_source;
 DROP TABLE IF EXISTS tuple_element_codec_existing_destination;
+DROP TABLE IF EXISTS tuple_element_codec_inherited_gate;
+DROP TABLE IF EXISTS tuple_element_codec_nested_inherited_gate;
+DROP TABLE IF EXISTS tuple_element_codec_symbolic_restatement;
 DROP TEMPORARY TABLE IF EXISTS tuple_element_codec_existing_temporary;
 
 -- Root-only codecs are outside the experimental gate.
@@ -117,3 +120,78 @@ ALTER TABLE tuple_element_codec_gate
     MODIFY COLUMN value Tuple(number UInt64 REMOVE CODEC, retained Int64, text String);
 
 DROP TABLE tuple_element_codec_gate;
+
+-- Removing an override makes the inherited root codec effective for future writes.
+-- The inherited codec must pass its dedicated gate in the current session.
+SET enable_tuple_element_codecs = 1;
+SET enable_alp_codec = 1;
+CREATE TABLE tuple_element_codec_inherited_gate
+(
+    value Tuple(a Float64 CODEC(LZ4), b Float64 CODEC(LZ4)) CODEC(ALP)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+CREATE TABLE tuple_element_codec_nested_inherited_gate
+(
+    value Tuple(
+        g Tuple(a Float64 CODEC(LZ4), b Float64) CODEC(ALP),
+        z UInt64
+    )
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+SET enable_alp_codec = 0;
+ALTER TABLE tuple_element_codec_inherited_gate
+    MODIFY COLUMN value Tuple(a Float64 REMOVE CODEC, b Float64 CODEC(LZ4)); -- { serverError BAD_ARGUMENTS }
+
+SET enable_alp_codec = 1;
+ALTER TABLE tuple_element_codec_inherited_gate
+    MODIFY COLUMN value Tuple(a Float64 REMOVE CODEC, b Float64 CODEC(LZ4));
+DROP TABLE tuple_element_codec_inherited_gate;
+
+-- REMOVE CODEC remains allowed with the Tuple feature gate disabled. The existing
+-- inherited declaration is checked only by its own codec gate.
+SET enable_tuple_element_codecs = 0;
+ALTER TABLE tuple_element_codec_nested_inherited_gate MODIFY COLUMN value Tuple(
+    g Tuple(a Float64 REMOVE CODEC, b Float64),
+    z UInt64
+);
+DROP TABLE tuple_element_codec_nested_inherited_gate;
+SET enable_alp_codec = 0;
+
+-- A shadowed type-dependent codec keeps its symbolic form. Removing an override
+-- may normalize it, but restating the same declaration does not require the Tuple gate.
+SET enable_tuple_element_codecs = 1;
+SET allow_suspicious_codecs = 1;
+CREATE TABLE tuple_element_codec_symbolic_restatement
+(
+    value Tuple(
+        g Tuple(
+            a UInt64 CODEC(LZ4),
+            b UInt64 CODEC(LZ4)
+        ) CODEC(Delta),
+        z UInt64
+    )
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+SET enable_tuple_element_codecs = 0;
+SET allow_suspicious_codecs = 0;
+ALTER TABLE tuple_element_codec_symbolic_restatement MODIFY COLUMN value Tuple(
+    g Tuple(
+        a UInt64 REMOVE CODEC,
+        b UInt64 CODEC(LZ4)
+    ) CODEC(Delta),
+    z UInt64
+); -- { serverError BAD_ARGUMENTS }
+
+SET allow_suspicious_codecs = 1;
+ALTER TABLE tuple_element_codec_symbolic_restatement MODIFY COLUMN value Tuple(
+    g Tuple(
+        a UInt64 REMOVE CODEC,
+        b UInt64 CODEC(LZ4)
+    ) CODEC(Delta),
+    z UInt64
+);
+DROP TABLE tuple_element_codec_symbolic_restatement;
+SET allow_suspicious_codecs = 0;

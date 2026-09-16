@@ -799,14 +799,23 @@ static void applyCodecPatch(
     }
 }
 
-/// Return CODEC operations whose normalized value differs from the stored value.
-/// Only these operations need checks based on the current session settings.
-static std::map<CodecPath, ASTPtr> getChangedCodecDeclarations(
+struct CodecAdmissionChanges
+{
+    ColumnCodecDescription::CodecsByPath declarations_to_admit;
+    /// REMOVE CODEC does not require the experimental Tuple feature gate.
+    bool requires_tuple_element_codec_gate = false;
+};
+
+/// Collect declarations requiring full session validation: declarations newly set or made effective
+/// by REMOVE CODEC. Also record whether a changed non-root Set requires the Tuple feature gate.
+/// Unchanged explicit Set operations still receive dedicated codec-family validation separately.
+static CodecAdmissionChanges collectCodecAdmissionChanges(
     const ColumnCodecDescription & current_policy,
     const ColumnCodecPatch & patch,
-    const ColumnCodecDescription & normalized_resulting_policy)
+    const ColumnCodecDescription & normalized_resulting_policy,
+    const DataTypePtr & resulting_type)
 {
-    std::map<CodecPath, ASTPtr> changed;
+    CodecAdmissionChanges changes;
     for (const auto & [path, operation] : patch)
     {
         if (operation.kind != ColumnCodecPatchKind::Set)
@@ -818,12 +827,54 @@ static std::map<CodecPath, ASTPtr> getChangedCodecDeclarations(
                 "Normalized codec policy has no explicitly declared path {}",
                 formatCodecPath(path));
 
-        auto current = current_policy.getCodecs().find(path);
-        if (current == current_policy.getCodecs().end()
-            || current->second->formatWithSecretsOneLine() != normalized->second->formatWithSecretsOneLine())
-            changed.emplace(path, normalized->second);
+        const auto current = current_policy.getCodecs().find(path);
+        bool changed = current == current_policy.getCodecs().end();
+        if (!changed)
+        {
+            const auto stored_text = current->second->formatWithSecretsOneLine();
+            const auto declared_text = operation.codec->formatWithSecretsOneLine();
+            const auto normalized_text = normalized->second->formatWithSecretsOneLine();
+            /// A dormant symbolic declaration such as Delta can normalize to Delta(8) when another
+            /// declaration is removed. Its explicit restatement is unchanged.
+            changed = stored_text != declared_text && stored_text != normalized_text;
+        }
+
+        if (changed)
+        {
+            changes.declarations_to_admit.emplace(path, normalized->second);
+            changes.requires_tuple_element_codec_gate |= !path.empty();
+        }
     }
-    return changed;
+
+    const bool has_removals = std::ranges::any_of(
+        patch, [](const auto & entry) { return entry.second.kind == ColumnCodecPatchKind::Remove; });
+    if (!has_removals)
+        return changes;
+
+    /// A removed declaration can expose an inherited codec without changing that codec's declaration.
+    /// Admit the inherited declaration only if it takes ownership of a real stream.
+    resulting_type->getDefaultSerialization()->enumerateStreams(
+        [&](const ISerialization::SubstreamPath & stream_path)
+        {
+            if (stream_path.empty() || ISerialization::isEphemeralSubcolumn(stream_path, stream_path.size()))
+                return;
+
+            const auto logical_path = getCodecPath(stream_path);
+            const auto current = current_policy.find(logical_path);
+            if (!current.codec)
+                return;
+
+            const auto operation = patch.find(current.declaration_path);
+            if (operation == patch.end() || operation->second.kind != ColumnCodecPatchKind::Remove)
+                return;
+
+            const auto resulting = normalized_resulting_policy.find(logical_path);
+            if (resulting.codec)
+                changes.declarations_to_admit.emplace(resulting.declaration_path, resulting.codec);
+        },
+        resulting_type);
+
+    return changes;
 }
 
 void AlterCommand::apply(
@@ -2328,11 +2379,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 /// may describe the same codec and should not be treated as a change.
                 resulting_codec = validateColumnCodecDescription(
                     resulting_codec, resulting_type, CodecValidationSettings::trusted());
-                const auto changed_codec_declarations = getChangedCodecDeclarations(
-                    current_owner.codec, command.codec_patch, resulting_codec);
-                const bool changes_tuple_element_codec = std::any_of(
-                    changed_codec_declarations.begin(), changed_codec_declarations.end(), [](const auto & entry) { return !entry.first.empty(); });
-                if (changes_tuple_element_codec
+                const auto codec_admission = collectCodecAdmissionChanges(
+                    current_owner.codec, command.codec_patch, resulting_codec, resulting_type);
+                /// REMOVE CODEC may expose an inherited codec, but it does not add Tuple codec metadata.
+                if (codec_admission.requires_tuple_element_codec_gate
                     && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -2347,9 +2397,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         CompressionCodecFactory::instance().validateCodecDeclaration(operation.codec, codec_validation_settings);
                 }
 
-                if (!changed_codec_declarations.empty())
+                if (!codec_admission.declarations_to_admit.empty())
                     resulting_codec = validateColumnCodecDescriptionForAlter(
-                        resulting_codec, resulting_type, changed_codec_declarations, codec_validation_settings);
+                        resulting_codec, resulting_type, codec_admission.declarations_to_admit, codec_validation_settings);
             }
 
             if (!command.codec_patch.empty() && resulting_codec.hasSubcolumns() && !table->supportsPerSubcolumnCodecs())
