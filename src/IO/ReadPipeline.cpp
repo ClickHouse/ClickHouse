@@ -45,6 +45,12 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+LoggerPtr getReadPipelineLogger()
+{
+    static LoggerPtr log = getLogger("ReadPipeline");
+    return log;
+}
+
 namespace
 {
     /// Helper for std::visit with multiple lambdas.

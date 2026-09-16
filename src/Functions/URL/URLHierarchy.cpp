@@ -60,7 +60,7 @@ public:
             /// Let's parse everything that goes before the path
 
             /// Assume that the protocol has already been changed to lowercase.
-            while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
+            while (pos < end && ((*pos >= 'a' && *pos <= 'z') || (*pos >= '0' && *pos <= '9')))
                 ++pos;
 
             /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.

@@ -32,6 +32,9 @@ using FileCachePtr = std::shared_ptr<FileCache>;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
 
+/// Cached: `getLogger` takes a process-global mutex, and a read pipeline is built per read buffer.
+LoggerPtr getReadPipelineLogger();
+
 /// Declarative specification for a read buffer chain: subsystems annotate the
 /// pipeline with their requirements (stages) and `build` assembles the chain.
 ///
@@ -252,7 +255,7 @@ private:
     /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
     std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
 
-    LoggerPtr log = getLogger("ReadPipeline");
+    LoggerPtr log = getReadPipelineLogger();
 
     /// Whether the memory (page) cache stage will actually be applied. It is requested via
     /// `needMemoryCache`, but is skipped for objects of unknown size: the page cache addresses
