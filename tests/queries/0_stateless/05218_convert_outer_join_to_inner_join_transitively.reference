@@ -25,6 +25,8 @@ Type: INNER
 -- Without the transitive pass the same filter does not allow converting.
 Type: INNER
 Type: LEFT
+-- A stateful function in the filter does not allow converting.
+Type: LEFT
 -- A RIGHT join below allows converting.
 20	890
 Type: INNER

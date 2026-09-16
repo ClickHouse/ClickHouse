@@ -244,15 +244,15 @@ std::pair<NameSet, NameSet> splitNullRejectedColumnsOnJoin(const JoinStepLogical
     return {std::move(left), std::move(right)};
 }
 
-bool convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameSet & left_null_rejected_columns, const NameSet & right_null_rejected_columns)
+void convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameSet & left_null_rejected_columns, const NameSet & right_null_rejected_columns)
 {
     auto & join_operator = join.getJoinOperator();
     const auto kind = join_operator.kind;
     if (kind != JoinKind::Left && kind != JoinKind::Right && kind != JoinKind::Full)
-        return false;
+        return;
 
     if (join_operator.strictness != JoinStrictness::All)
-        return false;
+        return;
 
     /// A `JoinStepLogicalLookup` source expects a particular join kind.
     auto is_storage_join = [&]()
@@ -269,7 +269,7 @@ bool convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
         return false;
     }();
     if (is_storage_join)
-        return false;
+        return;
 
     /// A side is "safe" when the rows this join would null-extend on it cannot survive above.
     const bool left_stream_safe = !left_null_rejected_columns.empty();
@@ -288,8 +288,6 @@ bool convertJoinKind(JoinStepLogical & join, QueryPlan::Node & node, const NameS
         join_operator.kind = JoinKind::Inner;
     else if (kind == JoinKind::Right && left_stream_safe)
         join_operator.kind = JoinKind::Inner;
-
-    return join_operator.kind != kind;
 }
 
 void visit(QueryPlan::Node & root)
@@ -359,6 +357,12 @@ void visit(QueryPlan::Node & root)
 
         if (const auto * filter = typeid_cast<const FilterStep *>(&step))
         {
+            if (filter->getExpression().hasStatefulFunctions())
+            {
+                stack.push_back({node.children.front(), {}});
+                continue;
+            }
+            
             auto child_null_rejected_columns = remapNullRejectedColumnsThroughActions(filter->getExpression(), null_rejected_columns);
             collectNullRejectedColumnsFromFilter(*filter, child_null_rejected_columns);
             stack.push_back({node.children.front(), std::move(child_null_rejected_columns)});
@@ -367,6 +371,12 @@ void visit(QueryPlan::Node & root)
 
         if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
         {
+            if (expression->getExpression().hasStatefulFunctions())
+            {
+                stack.push_back({node.children.front(), {}});
+                continue;
+            }
+
             stack.push_back({node.children.front(), remapNullRejectedColumnsThroughActions(expression->getExpression(), null_rejected_columns)});
             continue;
         }
@@ -434,11 +444,21 @@ void visit(QueryPlan::Node & root)
             continue;
         }
 
+        if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
+        {
+            stack.push_back({node.children.front(), sorting->getLimit() ? NameSet{} : std::move(null_rejected_columns)});
+            continue;
+        }
+
+        if (const auto * distinct = typeid_cast<const DistinctStep *>(&step))
+        {
+            stack.push_back({node.children.front(), distinct->getLimitHint() ? NameSet{} : std::move(null_rejected_columns)});
+            continue;
+        }
+
         /// Passthrough steps.
         if (typeid_cast<const DelayedCreatingSetsStep *>(&step)
-            || typeid_cast<const DistinctStep *>(&step)
             || typeid_cast<const BuildRuntimeFilterStep *>(&step)
-            || typeid_cast<const SortingStep *>(&step)
             || typeid_cast<const CreateSetAndFilterOnTheFlyStep *>(&step))
         {
             stack.push_back({node.children.front(), std::move(null_rejected_columns)});

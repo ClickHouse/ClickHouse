@@ -87,6 +87,12 @@ SELECT trim(explain) FROM (
     SETTINGS query_plan_convert_outer_join_to_inner_join_transitively = 0
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
 
+SELECT '-- A stateful function in the filter does not allow converting.';
+SELECT trim(explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT count() FROM (SELECT m.id AS k, s.val AS y FROM mid_nullable AS m LEFT JOIN small AS s ON m.val = s.val ORDER BY k) WHERE y IS NOT NULL AND rowNumberInAllBlocks() < 2
+) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL', 'Type: PASTE');
+
 SELECT '-- A RIGHT join below allows converting.';
 SELECT count(), sum(f.v) FROM mid AS m RIGHT JOIN fact AS f ON f.id = m.id INNER JOIN small AS s ON m.val = s.val;
 
