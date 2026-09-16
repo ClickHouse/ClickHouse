@@ -187,22 +187,15 @@ void updateStatistics(
     /// measurement do not erase it. The verdict gates the admission of later runs (see
     /// `AggregatingStep::canUseAdaptiveAggregator`), so a query marked repeat-dominated is not
     /// re-measured until its cache entry is evicted.
-    bool repeat_dominated = false;
-    bool measured = false;
-    if (adaptive_session)
-    {
-        std::lock_guard lock(adaptive_session->thaw_sample_mutex);
-        measured = adaptive_session->staged_records >= DB::adaptive_thaw_min_staged_records;
-        repeat_dominated = adaptive_session->thaw_all.load(std::memory_order_relaxed);
-    }
-    if (!measured)
+    auto staging_verdict = adaptive_session ? adaptive_session->getStagingVerdict() : std::nullopt;
+    if (!staging_verdict)
     {
         if (const auto prev = DB::getHashTablesStatistics<DB::AggregationEntry>().getSizeHint(params))
-            repeat_dominated = prev->adaptive_staging_repeat_dominated;
+            staging_verdict = prev->adaptive_staging_repeat_dominated;
     }
 
     DB::getHashTablesStatistics<DB::AggregationEntry>().update(
-        {.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = repeat_dominated}, params);
+        {.sum_of_sizes = sum_of_sizes, .median_size = *median_size, .adaptive_staging_repeat_dominated = staging_verdict.value_or(false)}, params);
 }
 
 DB::ColumnNumbers calculateKeysPositions(const DB::Block & header, const DB::Aggregator::Params & params)

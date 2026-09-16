@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -239,12 +240,16 @@ struct AdaptiveAggregationSession
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
+    /// Returns whether staging was repeat-dominated once enough records were measured.
+    /// An absent verdict leaves any cached decision from an earlier run unchanged.
+    std::optional<bool> getStagingVerdict() const;
+
     /// Admission folds a sparse sample of the recorded hashes into the thaw sampler before
     /// publishing the chunk. Repeats of a key collapse
     /// onto one entry across all threads, so sampled records per distinct sampled hash estimates
     /// the repeat factor of the staged stream as a whole, independently of how a key's
     /// occurrences spread over the threads.
-    std::mutex thaw_sample_mutex;
+    mutable std::mutex thaw_sample_mutex;
     HashSet<UInt64> distinct_sampled_hashes;
     size_t thaw_sampled_records = 0;
     size_t staged_records = 0;
