@@ -27,7 +27,7 @@ SELECT number AS k
 FROM numbers_mt(32768) GROUP BY k
 SETTINGS log_comment = 'adaptive_input_port_keys' FORMAT Null;
 
--- A table that never freezes forwards nothing; its staging chain only sees completion.
+-- A table that never freezes finishes locally without creating a staging chain.
 SELECT toUInt64(number % 4) AS k, count()
 FROM numbers_mt(32768) GROUP BY k
 SETTINGS log_comment = 'adaptive_input_port_learning' FORMAT Null;
@@ -38,7 +38,8 @@ SELECT
     q.log_comment,
     sumIf(p.input_rows, p.name = 'AdaptiveAggregationPartitionTransform'),
     sumIf(p.output_rows, p.name = 'AdaptiveAggregationPublishTransform'),
-    uniqExact(p.name) = 3,
+    uniqExactIf(p.name, p.name != 'AggregatingTransform')
+        = if(q.log_comment = 'adaptive_input_port_learning', 0, 3),
     sumIf(p.output_rows, p.name = 'AdaptiveAggregationPartitionTransform')
         = sumIf(p.input_rows, p.name = 'AdaptiveAggregationCoalescingTransform'),
     sumIf(p.output_rows, p.name = 'AdaptiveAggregationCoalescingTransform')
@@ -48,7 +49,7 @@ SELECT
     max(q.ProfileEvents['AdaptiveAggregationStagedRecords'] > 0) = (q.log_comment != 'adaptive_input_port_learning')
 FROM system.processors_profile_log AS p
 INNER JOIN system.query_log AS q ON p.query_id = q.query_id
-WHERE p.name IN ('AdaptiveAggregationPartitionTransform', 'AdaptiveAggregationCoalescingTransform',
+WHERE p.name IN ('AggregatingTransform', 'AdaptiveAggregationPartitionTransform', 'AdaptiveAggregationCoalescingTransform',
     'AdaptiveAggregationPublishTransform')
     AND q.type = 'QueryFinish'
     AND q.current_database = currentDatabase()

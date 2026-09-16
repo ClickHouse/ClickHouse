@@ -76,8 +76,8 @@ struct ManyAggregatedData
 
     /// The number of producers that have to reach the finish barrier in
     /// `AggregatingTransform::initGenerate`, fixed at construction time.
-    /// It also sets the adaptive merge transform's input count. The size of `variants` cannot be used
-    /// instead: the merge can append the adaptive aggregation's early-drain routing table to it.
+    /// The size of `variants` cannot be used instead: the merge can append the adaptive aggregation's
+    /// early-drain routing table while other producers are still returning from the barrier.
     const size_t num_producers;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see
@@ -105,18 +105,19 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * For every separate stream of data, a separate `AggregatingTransform` is created.
   * Every `AggregatingTransform` reads data from the first port until it runs out, or until
   * `max_rows_to_group_by` is exceeded with `group_by_overflow_mode = 'break'`.
-  * In ordinary mode, when the last `AggregatingTransform` finishes reading, the results must be merged.
+  * When the last `AggregatingTransform` finishes reading and staging, the results must be merged.
   * For in-memory aggregation, this task is performed by `ConvertingAggregatedToChunksTransform`.
-  * The last `AggregatingTransform` expands the pipeline and adds a second input port, which reads
+  * The last `AggregatingTransform` expands the pipeline and adds an input port, which reads
   * from the merge pipeline.
   *
   * Aggregation data is passed through `ManyAggregatedData`, shared between all aggregating transforms.
   * During aggregation, every transform uses its own `AggregatedDataVariants` structure.
   * During in-memory merging, all structures are passed to `ConvertingAggregatedToChunksTransform`.
   *
-  * In adaptive mode, the output carries aggregate arguments and recorded misses to the staging
-  * pipeline. The producer waits for acknowledgement before checking memory and limits. A separate
-  * `AdaptiveAggregationMergeTransform` merges the results after all staging pipelines finish.
+  * In adaptive mode, the first block needing staging creates partitioning, coalescing, and publication
+  * processors. A separate output sends them aggregate arguments and recorded misses. The producer waits
+  * for acknowledgement before checking memory and limits, and for publication to finish before entering
+  * the shared finish barrier. The public output always carries aggregation results.
   */
 class AggregatingTransform final : public IProcessor
 {
@@ -178,7 +179,7 @@ private:
     bool is_consume_started = false;
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
-    /// The presence of this state fixes the adaptive output contract for the processor lifetime.
+    /// Owns adaptive execution and the ports of the lazily created staging pipeline.
     struct AdaptiveState;
     std::unique_ptr<AdaptiveState> adaptive;
 
@@ -194,14 +195,6 @@ private:
     bool is_pipeline_created = false;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
-
-/// Assembles the in-memory or external merge after all producers finish. External reader
-/// sources own their temporary files for the lifetime of the returned pipeline.
-Processors createAggregationMergePipeline(
-    const AggregatingTransformParamsPtr & params, const ManyAggregatedDataPtr & many_data,
-    size_t max_threads, size_t temporary_data_merge_threads,
-    bool should_produce_results_in_order_of_bucket_number, bool skip_merging,
-    const RuntimeDataflowStatisticsCacheUpdaterPtr & updater);
 
 Chunk convertToChunk(const Block & block);
 

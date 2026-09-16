@@ -27,10 +27,6 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/AdaptiveAggregationPartitionTransform.h>
-#include <Processors/Transforms/AdaptiveAggregationCoalescingTransform.h>
-#include <Processors/Transforms/AdaptiveAggregationPublishTransform.h>
-#include <Processors/Transforms/AdaptiveAggregationMergeTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -703,41 +699,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     dataflow_cache_updater);
             });
 
-        std::shared_ptr<AdaptiveAggregationMergeTransform> adaptive_merge;
-        if (use_adaptive_aggregator)
-        {
-            /// Each producer owns a partitioning, coalescing, and publication chain. Every stage waits
-            /// for downstream acknowledgement of emitted data before requesting its next input, so
-            /// renewed demand reaches the producer only after ready pieces and pressure flushes are
-            /// published. An intervening buffer or resize would break this contract. Coalescing may
-            /// acknowledge buffered small chunks immediately and flushes them before stream completion.
-            pipeline.addSimpleTransform(
-                [&](const SharedHeader &)
-                {
-                    return std::make_shared<AdaptiveAggregationPartitionTransform>(transform_params, many_data->adaptive_session);
-                });
-            pipeline.addSimpleTransform(
-                [&](const SharedHeader &)
-                {
-                    return std::make_shared<AdaptiveAggregationCoalescingTransform>(transform_params, many_data->adaptive_session);
-                });
-            pipeline.addSimpleTransform(
-                [&](const SharedHeader &)
-                {
-                    return std::make_shared<AdaptiveAggregationPublishTransform>(transform_params, many_data->adaptive_session);
-                });
-            adaptive_merge = std::make_shared<AdaptiveAggregationMergeTransform>(
-                transform_params, many_data, new_merge_threads, new_temporary_data_merge_threads, dataflow_cache_updater);
-            pipeline.addTransform(adaptive_merge);
-        }
-
         pipeline.resize(streams_after_aggregation, false, settings.min_outstreams_per_resize_after_split);
 
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
-        /// The collector assigns the producer group to all processors; the merge and its children
-        /// belong to final aggregation.
-        if (adaptive_merge)
-            adaptive_merge->setQueryPlanStepGroup(static_cast<size_t>(AggregatingStage::FinalAggregation));
     }
     else
     {

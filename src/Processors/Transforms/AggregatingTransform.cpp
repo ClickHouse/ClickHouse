@@ -3,6 +3,9 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationPartitionTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationCoalescingTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationPublishTransform.h>
 
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <Interpreters/AdaptiveAggregationChunkInfo.h>
@@ -1113,6 +1116,8 @@ struct AggregatingTransform::AdaptiveState
     std::optional<AdaptiveAggregationExecution> execution;
     bool has_output_chunk = false;
     bool local_aggregation_finished = false;
+    OutputPort * staging_output = nullptr;
+    InputPort * staging_completion = nullptr;
 };
 
 AggregatingTransform::AggregatingTransform(
@@ -1140,9 +1145,7 @@ AggregatingTransform::AggregatingTransform(
     bool should_produce_results_in_order_of_bucket_number_,
     bool skip_merging_,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
-    : IProcessor(
-        {std::move(header)},
-        {many_data_->adaptive_session ? params_->aggregator.getAdaptiveArgumentHeader() : std::make_shared<const Block>(params_->getHeader())})
+    : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
@@ -1180,13 +1183,32 @@ size_t AggregatingTransform::getGeneratingStepGroup() const
 IProcessor::Status AggregatingTransform::prepare()
 {
     if (adaptive)
-        return prepareAdaptive();
+    {
+        if (isCancelled() || outputs.front().isFinished())
+        {
+            adaptive->producer.session->cancel();
+            for (auto & input : inputs)
+            {
+                input.close();
+                if (input.hasData())
+                    input.pullData(/*set_not_needed=*/true);
+            }
+            if (adaptive->staging_output)
+                adaptive->staging_output->finish();
+            current_chunk.clear();
+            adaptive->execution.reset();
+            many_data.reset();
+            return Status::Finished;
+        }
+        if (!is_generate_initialized.test())
+            return prepareAdaptive();
+    }
 
-    /// There are one or two input ports.
-    /// The first one is used at aggregation step, the second one - while reading merged data from ConvertingAggregated
+    /// The first input is used during aggregation; the last reads merged data from
+    /// `ConvertingAggregatedToChunksTransform`. Adaptive staging has its own completion input.
 
     auto & output = outputs.front();
-    /// Last output is current. All other outputs should already be closed.
+    /// The last input is current. All other inputs should already be closed.
     auto & input = inputs.back();
 
     /// Check can output.
@@ -1262,7 +1284,7 @@ IProcessor::Status AggregatingTransform::prepare()
 
 void AggregatingTransform::work()
 {
-    if (adaptive)
+    if (adaptive && !is_generate_initialized.test())
     {
         workAdaptive();
         return;
@@ -1283,38 +1305,45 @@ void AggregatingTransform::work()
 IProcessor::Status AggregatingTransform::prepareAdaptive()
 {
     auto & input = inputs.front();
-    auto & output = outputs.front();
-    if (isCancelled() || output.isFinished())
+    if (!outputs.front().canPush())
     {
-        adaptive->producer.session->cancel();
-        input.close();
-        if (input.hasData())
-            input.pullData(/*set_not_needed=*/true);
-        current_chunk.clear();
-        adaptive->execution.reset();
-        many_data.reset();
-        return Status::Finished;
+        input.setNotNeeded();
+        return Status::PortFull;
     }
 
-    /// Renewed demand follows staging, required publications, and release of the input arguments.
-    if (!output.canPush())
-        return Status::PortFull;
     if (adaptive->has_output_chunk)
     {
-        output.push(std::move(current_chunk));
+        if (!adaptive->staging_output)
+            return Status::UpdatePipeline;
+        if (!adaptive->staging_output->canPush())
+            return Status::PortFull;
+        adaptive->staging_output->push(std::move(current_chunk));
         adaptive->has_output_chunk = false;
         return Status::PortFull;
     }
     if (adaptive->execution->hasPendingBlock())
-        return Status::Ready;
+    {
+        /// Renewed demand follows staging, required publications, and release of the input arguments.
+        chassert(adaptive->staging_output);
+        return adaptive->staging_output->canPush() ? Status::Ready : Status::PortFull;
+    }
 
     if (is_consume_finished)
     {
         input.close();
         if (!adaptive->local_aggregation_finished)
             return Status::Ready;
-        output.finish();
-        return Status::Finished;
+        if (adaptive->staging_output)
+        {
+            adaptive->staging_output->finish();
+            chassert(!adaptive->staging_completion->hasData());
+            if (!adaptive->staging_completion->isFinished())
+            {
+                adaptive->staging_completion->setNeeded();
+                return Status::NeedData;
+            }
+        }
+        return Status::Ready;
     }
     if (read_current_chunk)
         return Status::Ready;
@@ -1339,7 +1368,12 @@ void AggregatingTransform::workAdaptive()
             is_consume_finished = true;
     }
     else if (is_consume_finished)
-        finishAdaptiveAggregation();
+    {
+        if (!adaptive->local_aggregation_finished)
+            finishAdaptiveAggregation();
+        else
+            initGenerate();
+    }
     else
     {
         consume(current_chunk);
@@ -1361,11 +1395,32 @@ void AggregatingTransform::finishAdaptiveAggregation()
     if (adaptive->producer.session->initialized.load(std::memory_order_acquire) && variants.isConvertibleToTwoLevel())
         variants.convertToTwoLevel();
     adaptive->local_aggregation_finished = true;
-    many_data.reset();
 }
 
 IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
 {
+    if (adaptive && adaptive->has_output_chunk)
+    {
+        chassert(!adaptive->staging_output && !is_generate_initialized.test());
+        const auto & session = adaptive->producer.session;
+        auto partition = std::make_shared<AdaptiveAggregationPartitionTransform>(params, session);
+        auto coalescing = std::make_shared<AdaptiveAggregationCoalescingTransform>(params, session);
+        auto publisher = std::make_shared<AdaptiveAggregationPublishTransform>(params, session);
+        outputs.emplace_back(*params->aggregator.getAdaptiveArgumentHeader(), this);
+        inputs.emplace_back(Block(), this);
+        adaptive->staging_output = &outputs.back();
+        adaptive->staging_completion = &inputs.back();
+
+        /// Each stage renews demand only after its downstream acknowledges emitted data. Connect
+        /// the producer directly to its staging chain: a buffer or resize would acknowledge too soon.
+        /// Coalescing can acknowledge buffered chunks, but flushes them before publication completes.
+        connect(*adaptive->staging_output, partition->getInputPort());
+        connect(partition->getOutputPort(), coalescing->getInputs().front());
+        connect(coalescing->getOutputs().front(), publisher->getInputs().front());
+        connect(publisher->getOutputs().front(), *adaptive->staging_completion);
+        return PipelineUpdate{.to_add = {std::move(partition), std::move(coalescing), std::move(publisher)}, .to_remove = {}};
+    }
+
     if (processors.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not updatePipeline in AggregatingTransform. This is a bug.");
     auto & out = processors.back()->getOutputs().front();
@@ -1458,7 +1513,10 @@ void AggregatingTransform::initGenerate()
     if (is_generate_initialized.test_and_set())
         return;
 
-    finishLocalAggregation();
+    if (adaptive)
+        chassert(adaptive->local_aggregation_finished);
+    else
+        finishLocalAggregation();
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
         /// Reset our reference to the aggregation state here to release memory earlier.
@@ -1467,19 +1525,6 @@ void AggregatingTransform::initGenerate()
         return;
     }
 
-    processors = createAggregationMergePipeline(
-        params, many_data, max_threads, temporary_data_merge_threads,
-        should_produce_results_in_order_of_bucket_number, skip_merging, updater);
-}
-
-Processors createAggregationMergePipeline(
-    const AggregatingTransformParamsPtr & params, const ManyAggregatedDataPtr & many_data,
-    size_t max_threads, size_t temporary_data_merge_threads,
-    bool should_produce_results_in_order_of_bucket_number, bool skip_merging,
-    const RuntimeDataflowStatisticsCacheUpdaterPtr & updater)
-{
-    Processors processors;
-    static const auto log = getLogger("AggregatingTransform");
     const auto & session = many_data->adaptive_session;
     const bool adaptive_engaged = session && session->initialized.load(std::memory_order_acquire);
 
@@ -1571,7 +1616,7 @@ Processors createAggregationMergePipeline(
                     if (params->final)
                     {
                         pipe.addSimpleTransform(
-                            [params](const SharedHeader & header)
+                            [this](const SharedHeader & header)
                             {
                                 /// Just a reasonable constant, matches default value for the setting `preferred_block_size_bytes`
                                 static constexpr size_t oneMB = 1024 * 1024;
@@ -1644,7 +1689,6 @@ Processors createAggregationMergePipeline(
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
-    return processors;
 }
 
 }
