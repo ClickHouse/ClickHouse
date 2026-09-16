@@ -1,0 +1,314 @@
+name: Fix PR 112808 memory admission
+
+on:
+  push:
+    branches:
+      - agent/refreshable-mv-workload
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message == 'Apply RMV memory admission fix helper'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/refreshable-mv-workload
+          fetch-depth: 1
+      - name: Apply focused fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"missing expected text in {path}: {old[:120]!r}")
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected one match in {path}, found {text.count(old)}")
+              p.write_text(text.replace(old, new))
+
+          # MemoryReservation: make the initial admission wait externally cancellable.
+          replace(
+              "src/Common/Scheduler/MemoryReservation.h",
+              "#include <chrono>\n#include <memory>\n#include <mutex>\n",
+              "#include <atomic>\n#include <chrono>\n#include <memory>\n#include <mutex>\n",
+          )
+          replace(
+              "src/Common/Scheduler/MemoryReservation.h",
+              "    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size,\n                      std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max());",
+              "    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size,\n                      std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max(),\n                      const std::atomic_bool * admission_cancelled_ = nullptr);",
+          )
+          replace(
+              "src/Common/Scheduler/MemoryReservation.cpp",
+              "    extern const int MEMORY_RESERVATION_ACQUISITION_TIMEOUT;\n}",
+              "    extern const int MEMORY_RESERVATION_ACQUISITION_TIMEOUT;\n    extern const int QUERY_WAS_CANCELLED;\n}",
+          )
+          replace(
+              "src/Common/Scheduler/MemoryReservation.cpp",
+              "MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_,\n                                     std::chrono::steady_clock::time_point admission_deadline_)\n",
+              "MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_,\n                                     std::chrono::steady_clock::time_point admission_deadline_,\n                                     const std::atomic_bool * admission_cancelled)\n",
+          )
+          old_wait = '''        bool admitted = false;
+        bool timed_out = false;
+        {
+            std::unique_lock lock(mutex);
+            auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
+            auto admitted_pred = [this] { return kill_reason || fail_reason || actual_size <= allocated_size; };
+            // An infinite deadline (`time_point::max()`) means no timeout: wait_until never fires on time
+            // and blocks until the reservation is admitted, killed, or failed.
+            timed_out = !cv.wait_until(lock, admission_deadline_, admitted_pred);
+            // Flush deferred profile-event counters before potentially throwing,
+            // so failure metrics (e.g. MemoryReservationFailed) are not lost.
+            metrics.apply();
+            admitted = !kill_reason && !fail_reason && actual_size <= allocated_size;
+        }
+
+        if (!admitted)
+        {
+            // `insertAllocation` above linked this object into the scheduler. Throwing straight
+            // from the constructor would skip `~MemoryReservation`, so `removeAllocation` would
+            // never run and the scheduler would keep a dangling pointer to a destroyed object
+            // (the base `~ResourceAllocation` only has debug-only checks). Unlink first, then report
+            // the failure.
+            detachFromQueue();
+            std::unique_lock lock(mutex);
+            // A timeout takes precedence over the generic failure. Cancelling a still-pending
+            // reservation in `detachFromQueue` routes through `AllocationQueue::processActivation`,
+            // which fails it with a generic cancellation error; so when we stopped waiting because the
+            // deadline passed, report that as the admission timeout instead of letting `throwIfNeeded`
+            // surface the cancellation as `MEMORY_RESERVATION_FAILED`.
+            if (timed_out)
+                throw Exception(ErrorCodes::MEMORY_RESERVATION_ACQUISITION_TIMEOUT,
+                    "Timed out waiting to acquire a memory reservation for workload scheduling (exceeded workload_admission_timeout_ms)");
+            throwIfNeeded();
+        }
+'''
+          new_wait = '''        bool admitted = false;
+        bool timed_out = false;
+        bool cancelled = false;
+        {
+            std::unique_lock lock(mutex);
+            auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
+            auto admitted_pred = [this] { return kill_reason || fail_reason || actual_size <= allocated_size; };
+
+            if (!admission_cancelled)
+            {
+                // An infinite deadline (`time_point::max()`) means no timeout: wait_until never fires on time
+                // and blocks until the reservation is admitted, killed, or failed.
+                timed_out = !cv.wait_until(lock, admission_deadline_, admitted_pred);
+            }
+            else
+            {
+                // External cancellation is an atomic flag, so it cannot notify this condition variable.
+                // Poll it at a small bounded interval while still using scheduler notifications for the
+                // normal fast path. This runs on the query thread, never on the scheduler thread.
+                while (!admitted_pred())
+                {
+                    if (admission_cancelled->load(std::memory_order_relaxed))
+                    {
+                        cancelled = true;
+                        break;
+                    }
+
+                    const auto now = std::chrono::steady_clock::now();
+                    if (admission_deadline_ != std::chrono::steady_clock::time_point::max() && now >= admission_deadline_)
+                    {
+                        timed_out = true;
+                        break;
+                    }
+
+                    auto wake_at = now + std::chrono::milliseconds(50);
+                    if (admission_deadline_ != std::chrono::steady_clock::time_point::max())
+                        wake_at = std::min(wake_at, admission_deadline_);
+                    cv.wait_until(lock, wake_at);
+                }
+
+                cancelled = cancelled || admission_cancelled->load(std::memory_order_relaxed);
+            }
+
+            // Flush deferred profile-event counters before potentially throwing,
+            // so failure metrics (e.g. MemoryReservationFailed) are not lost.
+            metrics.apply();
+            admitted = !cancelled && !kill_reason && !fail_reason && actual_size <= allocated_size;
+        }
+
+        if (!admitted)
+        {
+            // `insertAllocation` above linked this object into the scheduler. Throwing straight
+            // from the constructor would skip `~MemoryReservation`, so `removeAllocation` would
+            // never run and the scheduler would keep a dangling pointer to a destroyed object
+            // (the base `~ResourceAllocation` only has debug-only checks). Unlink first, then report
+            // the failure.
+            detachFromQueue();
+            std::unique_lock lock(mutex);
+            if (cancelled)
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Memory reservation admission was cancelled");
+            // A timeout takes precedence over the generic failure. Cancelling a still-pending
+            // reservation in `detachFromQueue` routes through `AllocationQueue::processActivation`,
+            // which fails it with a generic cancellation error; so when we stopped waiting because the
+            // deadline passed, report that as the admission timeout instead of letting `throwIfNeeded`
+            // surface the cancellation as `MEMORY_RESERVATION_FAILED`.
+            if (timed_out)
+                throw Exception(ErrorCodes::MEMORY_RESERVATION_ACQUISITION_TIMEOUT,
+                    "Timed out waiting to acquire a memory reservation for workload scheduling (exceeded workload_admission_timeout_ms)");
+            throwIfNeeded();
+        }
+'''
+          replace("src/Common/Scheduler/MemoryReservation.cpp", old_wait, new_wait)
+
+          # ProcessList: pass an optional cancellation flag to the memory admission stage.
+          replace(
+              "src/Interpreters/ProcessList.h",
+              "    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal, QuerySlotPtr query_slot = {}, bool use_workload_resources = false,\n        std::chrono::steady_clock::time_point workload_admission_deadline = std::chrono::steady_clock::time_point::max());",
+              "    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal, QuerySlotPtr query_slot = {}, bool use_workload_resources = false,\n        std::chrono::steady_clock::time_point workload_admission_deadline = std::chrono::steady_clock::time_point::max(),\n        const std::atomic_bool * workload_admission_cancelled = nullptr);",
+          )
+          replace(
+              "src/Interpreters/ProcessList.cpp",
+              "    bool use_workload_resources,\n    std::chrono::steady_clock::time_point workload_admission_deadline)\n",
+              "    bool use_workload_resources,\n    std::chrono::steady_clock::time_point workload_admission_deadline,\n    const std::atomic_bool * workload_admission_cancelled)\n",
+          )
+          replace(
+              "src/Interpreters/ProcessList.cpp",
+              "                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);",
+              "                memory_reservation = std::make_unique<MemoryReservation>(\n                    link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline, workload_admission_cancelled);",
+          )
+
+          # RefreshTask: PAUSE cancels a refresh only while it is still in workload admission.
+          replace(
+              "src/Storages/MaterializedView/RefreshTask.h",
+              "        std::atomic_bool interrupt_execution {false};\n        CompletedPipelineExecutor * executor = nullptr;",
+              "        std::atomic_bool interrupt_execution {false};\n        /// True only while ProcessList is admitting workload resources before the refresh query starts.\n        /// Allows PAUSE to cancel that wait without interrupting an already-running refresh pipeline.\n        std::atomic_bool waiting_for_workload_admission {false};\n        CompletedPipelineExecutor * executor = nullptr;",
+          )
+          replace(
+              "src/Storages/MaterializedView/RefreshTask.cpp",
+              '''    if (execution.query_slot
+        && (execution.state == ExecutionState::State::WaitingForResource
+            || execution.state == ExecutionState::State::Requested))
+        interruptExecution();
+''',
+              '''    if ((execution.query_slot
+            && (execution.state == ExecutionState::State::WaitingForResource
+                || execution.state == ExecutionState::State::Requested))
+        || execution.waiting_for_workload_admission.load(std::memory_order_relaxed))
+        interruptExecution();
+''',
+          )
+          replace(
+              "src/Storages/MaterializedView/RefreshTask.cpp",
+              '''            process_list_entry = refresh_context->getProcessList().insert(
+                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal,
+                std::move(query_slot), use_workload_resources, admission_deadline);
+
+            refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+''',
+              '''            {
+                execution.waiting_for_workload_admission.store(true, std::memory_order_relaxed);
+                SCOPE_EXIT({ execution.waiting_for_workload_admission.store(false, std::memory_order_relaxed); });
+                process_list_entry = refresh_context->getProcessList().insert(
+                    query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal,
+                    std::move(query_slot), use_workload_resources, admission_deadline, &execution.interrupt_execution);
+            }
+
+            refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+''',
+          )
+
+          # Integration coverage: semantic error check plus STOP/PAUSE/DROP cancellation of pending memory admission.
+          replace(
+              "tests/integration/test_refreshable_mv_query_slots/test.py",
+              '''    assert "memory reservation" in error.lower()
+    assert node.query("SELECT count() FROM mv") == "0\\n"
+
+
+def test_stop_replicated_cancels_queued_admission():
+''',
+              '''    assert "RESOURCE_LIMIT_EXCEEDED" in error
+    assert "Workload 'all' allocation" in error
+    assert node.query("SELECT count() FROM mv") == "0\\n"
+
+
+@contextmanager
+def occupied_memory_reservation(instance, workload="all"):
+    query_id = f"rmv-memory-blocker-{uuid.uuid4()}"
+    errors = []
+
+    def run():
+        try:
+            instance.query(
+                "SELECT sum(number) FROM numbers(1000000000000) "
+                f"SETTINGS workload='{workload}', reserve_memory='32M', max_threads=1",
+                query_id=query_id,
+            )
+        except Exception as error:
+            errors.append(str(error))
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    try:
+        wait_query(
+            instance,
+            "SELECT value >= 33554432 FROM system.metrics WHERE metric='MemoryReservationApproved'",
+            1,
+        )
+        assert thread.is_alive(), errors
+        yield
+    finally:
+        instance.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
+        thread.join(timeout=30)
+        assert not thread.is_alive()
+
+
+@pytest.mark.parametrize("action", ["STOP", "PAUSE", "DROP"])
+def test_pending_memory_reservation_can_be_cancelled(action):
+    node.query(
+        "CREATE RESOURCE memory (MEMORY RESERVATION);"
+        "CREATE WORKLOAD all SETTINGS max_memory='64M'"
+    )
+    node.query(
+        "CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 YEAR "
+        "SETTINGS refresh_retries=0 APPEND (x UInt64) ENGINE Memory EMPTY "
+        "AS SELECT toUInt64(1) AS x "
+        "SETTINGS refresh_workload='all', reserve_memory='64M', workload_admission_timeout_ms=0"
+    )
+
+    with occupied_memory_reservation(node):
+        node.query("SYSTEM REFRESH VIEW mv")
+        wait_query(
+            node,
+            "SELECT value > 0 FROM system.metrics WHERE metric='MemoryReservationDemand'",
+            1,
+        )
+
+        if action == "DROP":
+            node.query("DROP TABLE mv SYNC", timeout=10)
+            assert node.query("EXISTS TABLE mv") == "0\\n"
+        else:
+            node.query(f"SYSTEM {action} VIEW mv", timeout=10)
+            wait_status(node, "Disabled")
+            assert node.query("SELECT count() FROM mv") == "0\\n"
+
+        # The blocker still owns its reservation, but the cancelled RMV demand must be gone.
+        wait_metric(node, "MemoryReservationDemand", 0)
+        assert int(metric(node, "MemoryReservationApproved")) >= 33554432
+
+
+def test_stop_replicated_cancels_queued_admission():
+''',
+          )
+          PY
+
+          git diff --check
+          git status --short
+          git config user.name clickhouse-gh
+          git config user.email clickhouse-gh@users.noreply.github.com
+          git add src/Common/Scheduler/MemoryReservation.h src/Common/Scheduler/MemoryReservation.cpp \
+                  src/Interpreters/ProcessList.h src/Interpreters/ProcessList.cpp \
+                  src/Storages/MaterializedView/RefreshTask.h src/Storages/MaterializedView/RefreshTask.cpp \
+                  tests/integration/test_refreshable_mv_query_slots/test.py
+          git commit -m "Make RMV memory admission cancellable"
+          git push origin HEAD:agent/refreshable-mv-workload
