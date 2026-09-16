@@ -162,6 +162,26 @@ RelativePathWithMetadata::RelativePathWithMetadata(const DataFileInfo & info, st
 
 RelativePathWithMetadata::CommandInTaskResponse::CommandInTaskResponse(const std::string & task)
 {
+    /// TEMPORARY WORKAROUND. This constructor runs for every string passed to `RelativePathWithMetadata`,
+    /// which includes every key returned by a `listObjects` / `iterate` call of every object storage, not only
+    /// the task-distributor answers it exists for (`{"retry_after_us": N}` from
+    /// `StorageObjectStorageStableTaskDistributor`). Parsing an ordinary object key as JSON throws and catches
+    /// one `JSONException` per listed key. Besides the cost, under ASan the fake stack frame of `parseImpl`
+    /// that exits by exception is never released (it is re-entered at the same stack depth, and `FakeStack::GC`
+    /// frees only frames strictly below the next allocation), so every listed key leaks one frame per thread;
+    /// once the size class is full every `__asan_stack_malloc_1` scans all 8192 slots and every small function
+    /// on that thread becomes ~100x slower. See https://github.com/Altinity/ClickHouse/issues/2362.
+    ///
+    /// Only try to parse strings that can be a JSON object. Object keys never start with `{`; the distributor
+    /// answer always does. The proper fix is to stop multiplexing the command into the path field (a separate
+    /// `ObjectInfo` kind or the versioned cluster-function protocol, see
+    /// https://github.com/Altinity/ClickHouse/pull/1360), after which this probe goes away entirely.
+    {
+        const auto first = task.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos || task[first] != '{')
+            return;
+    }
+
     Poco::JSON::Parser parser;
     try
     {
