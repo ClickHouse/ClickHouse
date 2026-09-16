@@ -170,7 +170,7 @@ namespace
         }
         new_node->parent = nullptr;
         node_list.emplace_back(std::move(new_node));
-        return node_list.back().get();
+        return static_cast<NodeType *>(node_list.back().get());
     }
 }
 
