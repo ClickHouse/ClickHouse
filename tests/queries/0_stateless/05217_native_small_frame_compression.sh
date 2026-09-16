@@ -175,7 +175,7 @@ for codec, method in [('ZSTD', 0x90), ('LZ4', 0x82), ('LZ4HC', 0x82)]:
     assert any(value == 2 for value, _ in server_frames)
     assert any(value == method for value, _ in server_frames)
     assert all(value == (2 if size < 128 else method) for value, size in server_frames)
-    for legacy, extra in [(True, []), (False, ['--network_compression_min_bytes=0']), (False, ['--compatibility=26.8'])]:
+    for legacy, extra in [(True, []), (False, ['--network_compression_min_bytes=0']), (False, ['--compatibility=26.9'])]:
         output, streams = capture('SELECT 7', [f'--network_compression_method={codec}', *extra], legacy=legacy)
         assert output == b'7\n'
         assert all(value == method for stream in streams for value, _ in frames(stream))
