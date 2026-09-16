@@ -311,25 +311,26 @@ public:
 
     /// Walks the zero-value cell first, then the occupied buffer cells in position order; `SELECT`
     /// from a Join table reads the rows through it. The position is the cell's used-flags offset
-    /// (`offsetInternal`): 0 is the zero-value cell, `p + 1` buffer cell `p`.
-    class const_iterator
+    /// (`offsetInternal`): 0 is the zero-value cell, `p + 1` buffer cell `p`. `const_iterator` is the
+    /// name the map-generic readers use.
+    class ConstIterator
     {
     public:
-        const_iterator() = default;
-        const_iterator(const HashJoinTable * table_, size_t offset_) : table(table_), offset(offset_) { }
+        ConstIterator() = default;
+        ConstIterator(const HashJoinTable * table_, size_t offset_) : table(table_), offset(offset_) { }
 
         const Cell & operator*() const { return *getPtr(); }
         const Cell * operator->() const { return getPtr(); }
         const Cell * getPtr() const { return offset == 0 ? table->zeroValue() : table->buf + (offset - 1); }
 
-        const_iterator & operator++()
+        ConstIterator & operator++()
         {
             advance();
             return *this;
         }
 
-        bool operator==(const const_iterator & rhs) const { return offset == rhs.offset; }
-        bool operator!=(const const_iterator & rhs) const { return offset != rhs.offset; }
+        bool operator==(const ConstIterator & rhs) const { return offset == rhs.offset; }
+        bool operator!=(const ConstIterator & rhs) const { return offset != rhs.offset; }
 
         /// To the next occupied buffer cell, or to the end.
         void advance()
@@ -344,6 +345,7 @@ public:
         const HashJoinTable * table = nullptr;
         size_t offset = 0;
     };
+    using const_iterator = ConstIterator;
 
     const_iterator begin() const
     {
