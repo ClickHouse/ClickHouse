@@ -19,12 +19,13 @@ extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
-/** The partitioned counterpart of `NotJoinedHash`'s per-offset regime, for RIGHT/FULL output. The one
-  * table is walked by cell position: stream `i` of `n` owns positions `[i * cells / n, (i + 1) * cells / n)`,
-  * so parallel fillers emit disjoint rows, and a cell's used flag is its position plus one - exactly where
-  * the probe marked it, offset 0 being the zero-value cell, which stream 0 emits along with the rows whose
-  * keys were never inserted (from the saved nullmap holders, as in the standard filler). Nothing here
-  * handles the per-row-flags regime, whose shapes take the delegated path and `NotJoinedHash` itself.
+/** The RIGHT/FULL non-joined rows of the shared table; the counterpart of `NotJoinedHash` with per-offset
+  * used flags. The table is walked by cell position. Stream `i` of `n` owns positions
+  * `[i * cells / n, (i + 1) * cells / n)`, so parallel fillers emit disjoint rows. A cell's used flag is
+  * its position plus one, where the probe marked it; offset 0 is the zero-value cell. Stream 0 also emits
+  * the zero-value cell and the rows whose keys were never inserted (from the saved null maps, as in
+  * `NotJoinedHash`). Joins that need per-row used flags run on the delegated `HashJoin` and its own
+  * `NotJoinedHash`.
   *
   * A stored block keeps its fixed-width payload in a row store and the rest columnar, so the output
   * columns are filled through the join's access indexes, as `NotJoinedHash` does, never by position.
@@ -40,9 +41,9 @@ public:
         , stored_blocks(parent.storedData().stored_columns_index->blocksData())
         , block_row_stores(parent.storedData().stored_columns_index->rowStoresData())
     {
-        /// `columns_keys_and_right` is built from `getEmptyBlock`, so it is positional with the saved sample.
+        /// The output columns are `getEmptyBlock`'s, so they are positional with the saved sample.
         const auto & data = parent.storedData();
-        const Block & saved = parent.leaf_join->savedBlockSample();
+        const Block & saved = parent.hash_join->savedBlockSample();
         type_name.reserve(saved.columns());
         for (const auto & column : saved)
             type_name.emplace_back(column.name, column.type);
@@ -63,7 +64,7 @@ public:
         }
     }
 
-    Block getEmptyBlock() override { return parent.leaf_join->savedBlockSample().cloneEmpty(); }
+    Block getEmptyBlock() override { return parent.hash_join->savedBlockSample().cloneEmpty(); }
 
     size_t fillColumns(MutableColumns & columns_right) override
     {
@@ -110,6 +111,15 @@ private:
     bool with_row_store = false;
     bool with_columns = false;
 
+    /// The shared-table cursor: the next cell position of this stream's stripe, and whether the zero cell
+    /// has been considered (stream 0 only).
+    size_t position = 0;
+    bool positioned = false;
+    bool zero_done = false;
+    /// The fixed-map cursor, resumable across calls.
+    std::any fixed_position;
+    std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
+
     /// The rows one call collected: `(block, row)` pairs for the columnar part, row pointers for the
     /// row store part.
     struct Collected
@@ -119,11 +129,16 @@ private:
         std::optional<size_t> row_store_batch_size;
         size_t rows = 0;
 
+        template <bool with_row_store_, bool with_columns_>
         void reserve(size_t n)
         {
-            columns_with_row_numbers.columns.reserve(n);
-            columns_with_row_numbers.row_numbers.reserve(n);
-            row_store_ptrs.ptrs.reserve(n);
+            if constexpr (with_columns_)
+            {
+                columns_with_row_numbers.columns.reserve(n);
+                columns_with_row_numbers.row_numbers.reserve(n);
+            }
+            if constexpr (with_row_store_)
+                row_store_ptrs.ptrs.reserve(n);
         }
     };
 
@@ -156,10 +171,10 @@ private:
         ++out.rows;
     }
 
-    void fillOutput(MutableColumns & columns_keys_and_right, const Collected & collected) const
+    void fillOutput(MutableColumns & columns_right, const Collected & collected) const
     {
         fillJoinOutputColumns(
-            columns_keys_and_right,
+            columns_right,
             output_access_indexes,
             collected.row_store_ptrs,
             collected.row_store_batch_size,
@@ -167,19 +182,11 @@ private:
             type_name);
     }
 
-    /// The shared-table cursor: the next cell position of this stream's stripe, and whether the zero cell
-    /// has been considered (stream 0 only).
-    size_t position = 0;
-    bool positioned = false;
-    bool zero_done = false;
-    /// The fixed-map cursor, resumable across calls.
-    std::any fixed_position;
-    std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
-
     template <bool with_row_store_, bool with_columns_, typename Mapped>
     void collectMapped(const Mapped & mapped, Collected & out) const
     {
-        /// As `CollectorNonJoined` does. ASOF never reaches here, being LEFT/INNER only.
+        /// The same walk as `CollectorNonJoined`, which is file-local to `HashJoin.cpp`. ASOF never
+        /// reaches here, being LEFT/INNER only.
         if constexpr (std::is_same_v<Mapped, RowRefList>)
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
@@ -199,10 +206,10 @@ private:
     }
 
     template <bool with_row_store_, bool with_columns_, typename Table>
-    size_t fillFromTable(MutableColumns & columns_keys_and_right, const Table & table)
+    size_t fillFromTable(MutableColumns & columns_right, const Table & table)
     {
         Collected collected;
-        collected.reserve(max_block_size);
+        collected.reserve<with_row_store_, with_columns_>(max_block_size);
 
         if constexpr (is_shared_join_table<Table>)
         {
@@ -216,7 +223,7 @@ private:
             if (stream_idx == 0 && !zero_done)
             {
                 zero_done = true;
-                if (table.hasZero() && !parent.leaf_join->isUsed(0))
+                if (table.hasZero() && !parent.hash_join->isUsed(0))
                     collectMapped<with_row_store_, with_columns_>(table.zeroValue()->getMapped(), collected);
             }
             for (; position < end && collected.rows < max_block_size; ++position)
@@ -224,7 +231,7 @@ private:
                 const auto * cell = table.cellAt(position);
                 if (table.isEmptyCell(cell))
                     continue;
-                if (parent.leaf_join->isUsed(position + 1))
+                if (parent.hash_join->isUsed(position + 1))
                     continue;
                 collectMapped<with_row_store_, with_columns_>(cell->getMapped(), collected);
             }
@@ -239,20 +246,20 @@ private:
             const auto end = table.end();
             for (; it != end && collected.rows < max_block_size; ++it)
             {
-                if (parent.leaf_join->isUsed(table.offsetInternal(it.getPtr())))
+                if (parent.hash_join->isUsed(table.offsetInternal(it.getPtr())))
                     continue;
                 collectMapped<with_row_store_, with_columns_>(it->getMapped(), collected);
             }
         }
 
-        fillOutput(columns_keys_and_right, collected);
+        fillOutput(columns_right, collected);
         return collected.rows;
     }
 
-    /// The rows that never entered the table, from the nullmap holders saved at the build barrier; as
+    /// The rows that never entered the table, from the null maps saved when the build ended; as
     /// `NotJoinedHash::fillNullsFromBlocks` does. Not partitioned, so exactly one stream emits them.
     template <bool with_row_store_, bool with_columns_>
-    void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
+    void fillNullsFromBlocks(MutableColumns & columns_right, size_t & rows_added)
     {
         if (stream_idx != 0)
             return;
@@ -264,7 +271,7 @@ private:
         auto end = nullmaps.end();
 
         Collected collected;
-        collected.reserve(max_block_size);
+        collected.reserve<with_row_store_, with_columns_>(max_block_size);
 
         for (auto & it = *nulls_position; it != end && rows_added + collected.rows < max_block_size; ++it)
         {
@@ -278,7 +285,7 @@ private:
                     collectRow<with_row_store_, with_columns_>(stored->block_no, static_cast<UInt32>(row), collected);
         }
 
-        fillOutput(columns_keys_and_right, collected);
+        fillOutput(columns_right, collected);
         rows_added += collected.rows;
     }
 };
@@ -308,7 +315,7 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
         /// first stream has anything to emit.
         if (stream_idx != 0)
             return {};
-        return leaf_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+        return hash_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
@@ -317,11 +324,11 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
     /// The same check `HashJoin::getNonJoinedBlocks` makes; the shapes that would break the
     /// invariant took the delegated branch above.
     size_t left_columns_count = left_sample_block.columns();
-    if (leaf_join->canRemoveColumnsFromLeftBlock())
+    if (hash_join->canRemoveColumnsFromLeftBlock())
         left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     const size_t expected_columns_count
-        = left_columns_count + leaf_join->required_right_keys.columns() + leaf_join->sample_block_with_columns_to_add.columns();
+        = left_columns_count + hash_join->required_right_keys.columns() + hash_join->sample_block_with_columns_to_add.columns();
     if (expected_columns_count != result_sample_block.columns())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -330,8 +337,8 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
             expected_columns_count,
             result_sample_block.dumpNames(),
             left_sample_block.dumpNames(),
-            leaf_join->required_right_keys.dumpNames(),
-            leaf_join->sample_block_with_columns_to_add.dumpNames());
+            hash_join->required_right_keys.dumpNames(),
+            hash_join->sample_block_with_columns_to_add.dumpNames());
 
     auto non_joined = std::make_unique<NotJoinedPartitioned>(*this, max_block_size, stream_idx, num_streams);
     return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);

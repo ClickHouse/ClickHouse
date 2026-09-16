@@ -170,8 +170,8 @@ TEST(RowRefList, RangeRepresentation)
     EXPECT_EQ(refWordRowNo(single.firstWord()), 7u);
 }
 
-/// Exact spans `PartitionedHashJoin` writes through `SpanWriter`. Every case checks the layout through
-/// the public readers (`rows`, `firstWord`, the iterator) and matches `sim_finish.py` variant `fixed`.
+/// Spans as `PartitionedHashJoin` writes them through `SpanWriter`. The cases check the reader
+/// contract (`rows`, `firstWord`, the iterator) and, where a header is expected, its links.
 namespace
 {
 
@@ -245,46 +245,23 @@ struct SpanFixture
         writer.finish(scratch, [&](UInt32 b) -> RowRefList & { return cells[b]; }, scratch.zero_items.empty() ? nullptr : &zero);
     }
 
-    /// One pass of `n` rows for the test key, ids `[next, next + n)`. Updates `next`.
-    std::vector<UInt32> pass(size_t n, size_t & next)
+    /// One pass of `n` rows for the test key (or the zero key), ids `[next, next + n)`. Updates `next`.
+    std::vector<UInt32> pass(size_t n, size_t & next, bool zero_key = false)
     {
         std::vector<UInt32> ids;
         ids.reserve(n);
         for (size_t i = 0; i < n; ++i)
         {
             ids.push_back(static_cast<UInt32>(next));
-            insert(ref(next++));
-        }
-        finish();
-        return ids;
-    }
-
-    std::vector<UInt32> passZero(size_t n, size_t & next)
-    {
-        std::vector<UInt32> ids;
-        ids.reserve(n);
-        for (size_t i = 0; i < n; ++i)
-        {
-            ids.push_back(static_cast<UInt32>(next));
-            insertZero(ref(next++));
+            if (zero_key)
+                insertZero(ref(next++));
+            else
+                insert(ref(next++));
         }
         finish();
         return ids;
     }
 };
-
-size_t xorRows(const RowRefList & list)
-{
-    size_t value = 0;
-    size_t count = 0;
-    for (auto it = list.begin(); it.ok(); ++it)
-    {
-        value ^= refWordRowNo(*it);
-        ++count;
-    }
-    EXPECT_EQ(count, list.rows());
-    return value;
-}
 
 }
 
@@ -301,8 +278,6 @@ TEST(RowRefList, RunDecode)
         EXPECT_EQ(rowsOf(build.cell()), iotaFrom(0, n));
         EXPECT_EQ(build.writer.stats().arena_bytes, 8u * n);
         EXPECT_EQ(build.writer.stats().headers, 0u);
-        EXPECT_FALSE(build.cell().isCount());
-        EXPECT_FALSE(build.cell().isFill());
     }
 }
 
@@ -407,10 +382,6 @@ TEST(RowRefList, SplitAt32766)
     EXPECT_TRUE(build.cell().isChain());
     EXPECT_EQ(build.cell().rows(), 70000u);
     EXPECT_EQ(build.writer.stats().headers, 2u);
-    size_t expected_xor = 0;
-    for (size_t row = 0; row < 70000; ++row)
-        expected_xor ^= row;
-    EXPECT_EQ(xorRows(build.cell()), expected_xor);
     EXPECT_EQ(rowsOf(build.cell()), expectedNewestFirst({iotaFrom(0, 70000)}));
     EXPECT_EQ(refWordRowNo(build.cell().firstWord()), 0u);
 }
@@ -428,7 +399,6 @@ TEST(RowRefList, HeaderedSplitLinksHeader)
         const auto * third = build.cell().chainHeader();
         EXPECT_TRUE(RowRefList::RangeHeader::prevHasHeader(third->prev));
         const auto * second = reinterpret_cast<const RowRefList::RangeHeader *>(RowRefList::RangeHeader::prevPtr(third->prev));
-        EXPECT_EQ(reinterpret_cast<const void *>(RowRefList::RangeHeader::prevPtr(third->prev)), second);
         EXPECT_EQ(third->ownLen(), 5u);
         EXPECT_EQ(second->ownLen(), RowRefList::MAX_RANGE_REFS);
         EXPECT_TRUE(RowRefList::RangeHeader::prevHasHeader(second->prev))
@@ -472,8 +442,8 @@ TEST(RowRefList, ZeroKeyItems)
 {
     SpanFixture build;
     size_t next = 0;
-    build.passZero(3, next);
-    build.passZero(2, next);
+    build.pass(3, next, /*zero_key=*/true);
+    build.pass(2, next, /*zero_key=*/true);
     EXPECT_TRUE(build.zero.isChain());
     EXPECT_EQ(build.zero.rows(), 5u);
     EXPECT_EQ(build.writer.stats().headers, 1u);
@@ -481,19 +451,9 @@ TEST(RowRefList, ZeroKeyItems)
     EXPECT_EQ(rowsOf(build.zero), (std::vector<UInt32>{3, 4, 0, 1, 2}));
 }
 
-TEST(RowRefList, NoBuildWordSurvives)
+TEST(RowRefList, FinishMidPassThenContinue)
 {
-    SpanFixture build;
-    size_t next = 0;
-    build.pass(5, next);
-    EXPECT_FALSE(build.cell().isCount());
-    EXPECT_FALSE(build.cell().isFill());
-    EXPECT_TRUE(build.cell().isRun() || build.cell().isInline());
-}
-
-TEST(RowRefList, G1CutMidPass)
-{
-    /// Matches sim_finish.py: finish after 5 rows of a 12-row pass, then continue.
+    /// A pass cut after 5 of 12 rows, then continued.
     SpanFixture build;
     size_t next = 0;
     for (size_t i = 0; i < 5; ++i)

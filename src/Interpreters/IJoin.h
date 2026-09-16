@@ -141,7 +141,7 @@ public:
     /// Could be called from different threads in parallel.
     virtual JoinResultPtr joinBlock(Block block) = 0;
 
-    /// The probe-side counterpart, one per `JoiningTransform` stream, under the same tolerance rule.
+    /// The probe-side counterpart: one lane per `JoiningTransform`, under the same tolerance rule.
     virtual JoinResultPtr joinBlock(Block block, size_t /*lane*/) { return joinBlock(std::move(block)); }
 
     /** Set/Get totals for right table

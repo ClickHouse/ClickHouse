@@ -1235,9 +1235,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
+        const bool use_partitioned
+            = algorithm == JoinAlgorithm::PARTITIONED_HASH && PartitionedHashJoin::isSupported(*table_join);
+        const bool spill_to_disk = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk()
+            && GraceHashJoin::isSupported(table_join);
+
+        if (use_partitioned)
         {
-            if (algorithm == JoinAlgorithm::PARTITIONED_HASH && PartitionedHashJoin::isSupported(*table_join))
+            if (spill_to_disk)
                 return std::make_shared<SpillingHashJoin>(
                     PartitionedCollectingTag{},
                     table_join,
@@ -1251,6 +1256,20 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.join_any_take_last_row,
                     params.rhs_size_estimation);
 
+            /// Without temporary storage, or when `GraceHashJoin::isSupported` is false, the
+            /// partitioned algorithm still runs in memory.
+            return std::make_shared<PartitionedHashJoin>(
+                table_join,
+                right_table_expression_header,
+                params.max_threads,
+                params.join_any_take_last_row,
+                stats_collecting_params,
+                /*max_bytes_before_external_join_=*/0,
+                params.rhs_size_estimation);
+        }
+
+        if (spill_to_disk)
+        {
             if (table_join->allowParallelHashJoin())
             {
                 const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
@@ -1279,20 +1298,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_max_buckets,
                 stats_collecting_params,
                 params.join_any_take_last_row);
-        }
-
-        /// Reached when the spilling block above was skipped: no temporary storage, or
-        /// `GraceHashJoin::isSupported` is false. The partitioned algorithm still runs in memory.
-        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && PartitionedHashJoin::isSupported(*table_join))
-        {
-            return std::make_shared<PartitionedHashJoin>(
-                table_join,
-                right_table_expression_header,
-                params.max_threads,
-                params.join_any_take_last_row,
-                stats_collecting_params,
-                /*max_bytes_before_external_join_=*/0,
-                params.rhs_size_estimation);
         }
 
         if (table_join->allowParallelHashJoin())
@@ -1494,7 +1499,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Only `hash` and `partitioned_hash` joins support multiple ORs for keys in JOIN ON section");
 
     for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {

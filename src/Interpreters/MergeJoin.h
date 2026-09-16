@@ -20,8 +20,6 @@ enum class JoinTableSide : uint8_t;
 class MergeJoin : public IJoin
 {
 public:
-    using IJoin::addBlockToJoin;
-    using IJoin::joinBlock;
     static constexpr Int32 nulls_direction = -1;
 
     MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block);
@@ -45,6 +43,7 @@ public:
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
+    using IJoin::joinBlock;
     void joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed);
 
     void setTotals(const Block &) override;

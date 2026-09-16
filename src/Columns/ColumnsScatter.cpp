@@ -10,16 +10,15 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-
-#include <base/MemorySanitizer.h>
+#include <Common/memcpySmall.h>
 
 #include <Core/TypeId.h>
 
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <cstring>
 #include <limits>
+#include <string_view>
 #include <utility>
 
 namespace DB
@@ -28,7 +27,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -39,62 +37,9 @@ namespace DB::ColumnsScatter
 namespace
 {
 
-
 using NtLine = char __attribute__((vector_size(LINE_BYTES)));
 
-/// Compile-time width so the fold unrolls fully on the hot single-key path.
-template <size_t width>
-ALWAYS_INLINE UInt32 routeWordFixed(const char * p)
-{
-    if constexpr (width == sizeof(UInt64))
-    {
-        UInt64 key{};
-        __builtin_memcpy_inline(&key, p, sizeof(key));
-        return routeWord(key);
-    }
-    else
-    {
-        return finalizeRoute(foldBytes(0, p, width));
-    }
-}
-
-/// Where a row's partition comes from: the key kernel derives it (and can emit it), the payload
-/// kernels reload what the key kernel emitted.
-template <size_t width, typename Pid>
-struct RouteFromKey
-{
-    const char * keys;
-    UInt32 shift;
-    UInt32 mask;
-    Pid * pids; /// null when there are no columns to consume the ids
-
-    ALWAYS_INLINE UInt32 partition(size_t i) const
-    {
-        const UInt32 p = (routeWordFixed<width>(keys + i * width) >> shift) & mask;
-        if (pids)
-            pids[i] = static_cast<Pid>(p);
-        return p;
-    }
-};
-
-template <typename Pid>
-struct RouteFromKeyGeneric
-{
-    const char * keys;
-    size_t width;
-    UInt32 shift;
-    UInt32 mask;
-    Pid * pids;
-
-    ALWAYS_INLINE UInt32 partition(size_t i) const
-    {
-        const UInt32 p = (routeWordBytes(keys + i * width, width) >> shift) & mask;
-        if (pids)
-            pids[i] = static_cast<Pid>(p);
-        return p;
-    }
-};
-
+/// Where a row's shard id comes from: the pid array the caller computed, read once per row.
 template <typename Pid>
 struct RouteFromPids
 {
@@ -114,11 +59,11 @@ void scatterDirect(Route route, const char * data, size_t n, char ** cursors)
     }
 }
 
-/// Runtime-width row copy built only from constant-size copies - 16-byte chunks, then an overlapped
-/// 16-byte tail - because a runtime-size `memcpy` lowers to a libc call per row here, and the
-/// barrier is what stops clang's loop-idiom pass from re-materializing that call. The overlapped
-/// stores rewrite bytes of the same row with the same values and never leave [dst, dst + w), so the
-/// exact-sized destinations the kernels rely on stay intact.
+/// Runtime-width row copy made only of constant-size copies: 16-byte chunks, then an overlapped
+/// 16-byte tail. A runtime-size `memcpy` would lower to a libc call per row, and the barrier stops
+/// clang's loop-idiom pass from recreating that call. The overlapped tail rewrites bytes of the same
+/// row with the same values and never writes past dst + w, so the exact-sized destinations stay
+/// intact.
 ALWAYS_INLINE void copyRowExact(char * __restrict dst, const char * __restrict src, size_t w)
 {
     if (w >= 16)
@@ -219,24 +164,6 @@ ALWAYS_INLINE void scatterOne(Route route, const char * data, size_t n, bool use
 }
 
 template <typename Pid>
-void scatterKeyChunkImpl(
-    size_t kw, const char * keys, size_t n, UInt32 shift, UInt32 mask, Pid * pids, bool use_swwc, ScatterScratch & scratch)
-{
-    switch (kw)
-    {
-        case 4: scatterOne<4>(RouteFromKey<4, Pid>{keys, shift, mask, pids}, keys, n, use_swwc, scratch); break;
-        case 8: scatterOne<8>(RouteFromKey<8, Pid>{keys, shift, mask, pids}, keys, n, use_swwc, scratch); break;
-        case 16: scatterOne<16>(RouteFromKey<16, Pid>{keys, shift, mask, pids}, keys, n, use_swwc, scratch); break;
-        /// Width 32 fails `widthSupportsSwwc` - a 16-byte alignment guarantee cannot keep a
-        /// 32-byte staging stride exact - so it goes direct like the generic default.
-        case 32: scatterDirect<32>(RouteFromKey<32, Pid>{keys, shift, mask, pids}, keys, n, scratch.cursors.data()); break;
-        default:
-            scatterDirectGeneric(RouteFromKeyGeneric<Pid>{keys, kw, shift, mask, pids}, keys, n, kw, scratch.cursors.data());
-            break;
-    }
-}
-
-template <typename Pid>
 void scatterPidChunkImpl(size_t w, const Pid * pids, const char * data, size_t n, bool use_swwc, ScatterScratch & scratch)
 {
     RouteFromPids<Pid> route{pids};
@@ -247,94 +174,16 @@ void scatterPidChunkImpl(size_t w, const Pid * pids, const char * data, size_t n
         case 4: scatterOne<4>(route, data, n, use_swwc, scratch); break;
         case 8: scatterOne<8>(route, data, n, use_swwc, scratch); break;
         case 16: scatterOne<16>(route, data, n, use_swwc, scratch); break;
-        /// Width 32 is not write-combining-eligible; see `scatterKeyChunkImpl`.
+        /// Width 32 fails `widthSupportsSwwc` - a 16-byte alignment guarantee cannot keep a
+        /// 32-byte staging stride exact - so it goes direct like the generic default, but with a
+        /// compile-time width that spares `copyRowExact`'s runtime branches.
         case 32: scatterDirect<32>(route, data, n, scratch.cursors.data()); break;
         default: scatterDirectGeneric(route, data, n, w, scratch.cursors.data()); break;
     }
 }
 
-/// `lanes` breaks the load-increment-store dependency chain at low fanout. Both it and `hist` are
-/// written on exactly one branch each, which clang-tidy misreads as const-able.
-template <size_t width, typename Counter>
-void histogramKeyT(
-    const char * keys,
-    size_t n,
-    UInt32 shift,
-    UInt32 mask,
-    Counter * hist,
-    Counter * lanes,
-    size_t fanout) /// NOLINT(readability-non-const-parameter)
-{
-    if (!lanes)
-    {
-        for (size_t i = 0; i < n; ++i)
-            ++hist[(routeWordFixed<width>(keys + i * width) >> shift) & mask];
-        return;
-    }
-    size_t i = 0;
-    for (; i + 4 <= n; i += 4)
-    {
-        ++lanes[0 * fanout + ((routeWordFixed<width>(keys + (i + 0) * width) >> shift) & mask)];
-        ++lanes[1 * fanout + ((routeWordFixed<width>(keys + (i + 1) * width) >> shift) & mask)];
-        ++lanes[2 * fanout + ((routeWordFixed<width>(keys + (i + 2) * width) >> shift) & mask)];
-        ++lanes[3 * fanout + ((routeWordFixed<width>(keys + (i + 3) * width) >> shift) & mask)];
-    }
-    for (; i < n; ++i)
-        ++lanes[(i & 3) * fanout + ((routeWordFixed<width>(keys + i * width) >> shift) & mask)];
-}
-
-template <typename Counter>
-void histogramKeyGeneric(
-    const char * keys, size_t width, size_t n, UInt32 shift, UInt32 mask, Counter * hist, Counter * lanes, size_t fanout)
-{
-    if (!lanes)
-    {
-        for (size_t i = 0; i < n; ++i)
-            ++hist[(routeWordBytes(keys + i * width, width) >> shift) & mask];
-        return;
-    }
-    for (size_t i = 0; i < n; ++i)
-        ++lanes[(i & 3) * fanout + ((routeWordBytes(keys + i * width, width) >> shift) & mask)];
-}
-
-template <typename Counter>
-void histogramKeyChunkImpl(
-    size_t kw, const char * keys, size_t n, UInt32 shift, UInt32 mask, Counter * hist, Counter * lanes, size_t fanout)
-{
-    switch (kw)
-    {
-        case 4: histogramKeyT<4>(keys, n, shift, mask, hist, lanes, fanout); break;
-        case 8: histogramKeyT<8>(keys, n, shift, mask, hist, lanes, fanout); break;
-        case 16: histogramKeyT<16>(keys, n, shift, mask, hist, lanes, fanout); break;
-        /// Same dispatch set as `scatterKeyChunkImpl`, and the route words agree either way -
-        /// `routeWordFixed<32>` and `routeWordBytes` both go through `foldBytes`.
-        case 32: histogramKeyT<32>(keys, n, shift, mask, hist, lanes, fanout); break;
-        default: histogramKeyGeneric(keys, kw, n, shift, mask, hist, lanes, fanout); break;
-    }
-}
-
-template <typename Counter>
-void histogramRouteChunkImpl(const UInt32 * routes, size_t n, UInt32 shift, UInt32 mask, Counter * hist, Counter * lanes, size_t fanout)
-{
-    if (!lanes)
-    {
-        for (size_t i = 0; i < n; ++i)
-            ++hist[(routes[i] >> shift) & mask];
-        return;
-    }
-    size_t i = 0;
-    for (; i + 4 <= n; i += 4)
-    {
-        ++lanes[0 * fanout + ((routes[i + 0] >> shift) & mask)];
-        ++lanes[1 * fanout + ((routes[i + 1] >> shift) & mask)];
-        ++lanes[2 * fanout + ((routes[i + 2] >> shift) & mask)];
-        ++lanes[3 * fanout + ((routes[i + 3] >> shift) & mask)];
-    }
-    for (; i < n; ++i)
-        ++lanes[(i & 3) * fanout + ((routes[i] >> shift) & mask)];
-}
-
-/// Pids are already final here, so there is nothing to shift or mask.
+/// `lanes` breaks the load-increment-store dependency chain: four rows in flight increment four
+/// independent counters.
 template <typename Pid, typename Counter>
 void histogramPidChunkImpl(const Pid * pids, size_t n, Counter * hist, Counter * lanes, size_t fanout)
 {
@@ -372,24 +221,46 @@ ALWAYS_INLINE void traceDispatch(TypeIndex type, ScatterKernelId kernel)
         dispatch_trace->entries.push_back({type, kernel});
 }
 
-/// Local copy under the `memcpySmallAllowReadWriteOverflow15` contract rather than a call to it:
-/// the library's aarch64 variant lacks the barrier its x86 variant carries, so clang's loop-idiom
-/// pass turns it back into a per-row libc call, which measured ~8% of this kernel's bandwidth at
-/// fanout 64 with 8-byte rows.
-ALWAYS_INLINE void copyRowAllowOverflow15(char * __restrict dst, const char * __restrict src, ssize_t n)
+/** State for the String kernels. Each shard has two output streams that advance together: chars,
+  * whose per-row length is data-dependent, and offsets, which are running per-shard totals rebased
+  * to 0 rather than copies of the source offsets. `scatterString` sizes the chars streams with
+  * `stringBytesPerShardImpl`, allocates, seeds, then scatters chunk by chunk.
+  */
+struct StringScatterState
 {
-    __msan_unpoison_overflow_15(src, n);
-    while (n > 0)
+    /// One 32-byte record per shard, so a row touches one cache line of cursor state instead of one
+    /// line in each of three arrays. At fanout 8192 the cursor state alone is 256 KiB, and the lines
+    /// touched per row are what drive L2 traffic.
+    struct ShardCursor
     {
-        __builtin_memcpy_inline(dst, src, 16);
-        dst += 16;
-        src += 16;
-        n -= 16;
-        __asm__ __volatile__("" : : : "memory");
-    }
-}
+        char * chars = nullptr;
+        UInt64 * offsets = nullptr;
+        /// What the next row's destination offset becomes once its length is added; 0 for a fresh
+        /// destination.
+        UInt64 rebased = 0;
+        UInt64 padding = 0;
+    };
 
-/// Shared by both pid widths: the chars copy and the rebased offset store, fused per row.
+    size_t fanout = 0;
+    PaddedPODArray<ShardCursor> cursors;
+
+    void init(size_t fanout_)
+    {
+        fanout = fanout_;
+        cursors.resize(fanout);
+    }
+
+    void seed(size_t p, char * chars_cursor, UInt64 * offsets_cursor, UInt64 rebased_start)
+    {
+        cursors[p] = {chars_cursor, offsets_cursor, rebased_start, 0};
+    }
+};
+
+/// The chars copy and the rebased offset store, fused per row. The copy follows the
+/// `memcpySmallAllowReadWriteOverflow15` contract: a row write may touch up to 15 bytes past the
+/// row's end, so every shard's chars destination must be its own overflow-tolerant allocation - a
+/// `ColumnString` is one. Carving the shards out of a single shared buffer is not supported: a row
+/// written to shard p would clobber the head of shard p + 1.
 template <typename Pid>
 void scatterStringChunkImpl(const char * chars, const UInt64 * offsets, const Pid * pids, size_t n, StringScatterState & state)
 {
@@ -402,7 +273,7 @@ void scatterStringChunkImpl(const char * chars, const UInt64 * offsets, const Pi
         const UInt64 end = offsets[i];
         const UInt64 len = end - prev;
         StringScatterState::ShardCursor & cursor = cursors[p];
-        copyRowAllowOverflow15(cursor.chars, chars + prev, static_cast<ssize_t>(len));
+        memcpySmallAllowReadWriteOverflow15(cursor.chars, chars + prev, len);
         cursor.chars += len;
         const UInt64 total = cursor.rebased + len;
         cursor.rebased = total;
@@ -411,10 +282,12 @@ void scatterStringChunkImpl(const char * chars, const UInt64 * offsets, const Pi
     }
 }
 
-/// `bytes_per_shard` is written every iteration; the clang-tidy const-able report is the same false
-/// positive as in `histogramKeyT`.
+/// `offsets` is in `ColumnString` form: offsets[i] ends row i, so row i spans
+/// [offsets[i - 1], offsets[i]) with offsets[-1] taken as 0. `bytes_per_shard` is written every
+/// iteration; clang-tidy misreads the indexed write as const-able.
 template <typename Pid>
-void stringBytesPerShardImpl(const UInt64 * offsets, const Pid * pids, size_t n, UInt64 * bytes_per_shard) /// NOLINT(readability-non-const-parameter)
+void stringBytesPerShardImpl(
+    const UInt64 * offsets, const Pid * pids, size_t n, UInt64 * bytes_per_shard) /// NOLINT(readability-non-const-parameter)
 {
     UInt64 prev = 0;
     for (size_t i = 0; i < n; ++i)
@@ -612,7 +485,6 @@ MutableColumns scatterArray(std::span<const IColumn * const> sources, SourcePids
     if (total_elements > std::numeric_limits<UInt32>::max())
         return scatterFallback<Pid>(sources, pids, rows_per_shard);
 
-    /// Per-shard element totals and the expanded pids, one source chunk at a time.
     PaddedPODArray<UInt64> elements_per_shard;
     elements_per_shard.resize_fill(num_shards, 0);
     std::vector<PaddedPODArray<Pid>> element_pids(sources.size()); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -698,7 +570,7 @@ MutableColumns scatterMap(std::span<const IColumn * const> sources, SourcePids<P
     auto nested_shards = scatterArray<Pid>({nested.data(), nested.size()}, pids, rows_per_shard);
 
     /// Statistics is only a serialization sizing hint, and merged shards have no exact one anyway,
-    /// so the first source's is good enough - which is what the legacy scatter propagates too.
+    /// so the first source's is good enough - which is what `ColumnMap::scatter` propagates too.
     const auto & statistics = assert_cast<const ColumnMap &>(*sources[0]).getStatistics();
     MutableColumns result(nested_shards.size());
     for (size_t s = 0; s < nested_shards.size(); ++s)
@@ -722,8 +594,7 @@ MutableColumns scatterLowCardinality(std::span<const IColumn * const> sources, S
     ColumnPtr shared_dictionary = IColumn::mutate(low_cardinality.getDictionaryPtr());
     MutableColumns result(rows_per_shard.size());
     for (size_t s = 0; s < result.size(); ++s)
-        result[s] = IColumn::mutate(
-            ColumnLowCardinality::create(shared_dictionary, ColumnPtr(std::move(index_shards[s])), /*is_shared*/ true));
+        result[s] = ColumnLowCardinality::create(shared_dictionary->assumeMutable(), std::move(index_shards[s]), /*is_shared*/ true);
     return result;
 }
 
@@ -768,9 +639,6 @@ MutableColumns scatterFallback(std::span<const IColumn * const> sources, SourceP
     return result;
 }
 
-/// TypeIndex -> kernel, sized by the underlying type so indexing needs no bounds check. Unregistered
-/// types take the fallback.
-
 constexpr size_t SCATTER_TABLE_SIZE = static_cast<size_t>(std::numeric_limits<std::underlying_type_t<TypeIndex>>::max()) + 1;
 
 constexpr std::array<TypeIndex, 25> FIXED_WIDTH_TYPES = {
@@ -780,8 +648,10 @@ constexpr std::array<TypeIndex, 25> FIXED_WIDTH_TYPES = {
     TypeIndex::Decimal32, TypeIndex::Decimal64, TypeIndex::Decimal128, TypeIndex::Decimal256, TypeIndex::DateTime64, TypeIndex::Time64,
     TypeIndex::FixedString};
 
-/// The function-pointer table is derived from this one, so the traced kernel equals the executed
-/// kernel by construction and a new type family is registered in one place.
+/// TypeIndex -> kernel, sized by the underlying type so indexing needs no bounds check. Types
+/// without a dedicated kernel take the fallback. The function-pointer table is derived from this
+/// one, so the traced kernel equals the executed kernel by construction and a new type family is
+/// registered in one place.
 constexpr std::array<ScatterKernelId, SCATTER_TABLE_SIZE> buildKernelIdTable()
 {
     std::array<ScatterKernelId, SCATTER_TABLE_SIZE> table{};
@@ -841,53 +711,6 @@ MutableColumns dispatchToKernel(std::span<const IColumn * const> sources, Source
     return table[static_cast<size_t>(sources[0]->getDataType())](sources, pids, rows_per_shard);
 }
 
-/// `IColumn::convertToFullIfNeeded` minus the LowCardinality conversion: strip the transparent
-/// wrappers at every nesting level and leave LowCardinality alone, since its own scatter is
-/// type-preserving and O(indexes).
-
-bool hasAnySubcolumn(const IColumn & column)
-{
-    bool found = false;
-    column.forEachSubcolumn([&](const auto &) { found = true; });
-    return found;
-}
-
-/// Any column with subcolumns recurses, because a composite can hide a wrapper at a level no
-/// top-level probe sees. Deliberately keyed on "has subcolumns" rather than a type list, which is
-/// what would silently miss a newly added composite. Clean leaf batches skip this entirely.
-bool mayNeedNormalization(const IColumn & column)
-{
-    return column.isConst() || column.isSparse() || column.isReplicated() || hasAnySubcolumn(column);
-}
-
-ColumnPtr normalizeRepresentation(const ColumnPtr & column)
-{
-    ColumnPtr converted
-        = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
-
-    /// A preserved leaf - its kernel keeps the physical type, and its dictionary must survive.
-    if (converted->getDataType() == TypeIndex::LowCardinality)
-        return converted;
-
-    Columns new_subcolumns;
-    bool any_changed = false;
-    converted->forEachSubcolumn(
-        [&](const IColumn::WrappedPtr & subcolumn)
-        {
-            auto normalized = normalizeRepresentation(subcolumn);
-            any_changed |= (normalized.get() != subcolumn.get());
-            new_subcolumns.push_back(std::move(normalized));
-        });
-
-    if (!any_changed)
-        return converted;
-
-    auto mutable_column = IColumn::mutate(std::move(converted));
-    size_t i = 0;
-    mutable_column->forEachMutableSubcolumn([&](IColumn::WrappedPtr & subcolumn) { subcolumn = std::move(new_subcolumns[i++]); });
-    return std::move(mutable_column);
-}
-
 /// An all-const batch of byte-identical values needs only `cloneResized` per shard. Equality has to
 /// be byte-exact rather than `compareAt`, because a physical split must preserve +0.0 vs -0.0 and NaN
 /// payloads. Empty when the values differ, or cannot be serialized and there is more than one source.
@@ -896,27 +719,20 @@ MutableColumns tryScatterAllConst(std::span<const IColumn * const> sources, std:
     const auto & first = assert_cast<const ColumnConst &>(*sources[0]);
     if (sources.size() > 1)
     {
+        /// `ColumnFunction` cannot be serialized, so its values cannot be compared byte-exactly.
+        if (first.getDataColumn().getDataType() == TypeIndex::Function)
+            return {};
+
         Arena arena;
         const char * ref_begin = nullptr;
-        std::string_view ref;
-        try
+        const std::string_view ref = first.getDataColumn().serializeValueIntoArena(0, arena, ref_begin, nullptr);
+        for (size_t b = 1; b < sources.size(); ++b)
         {
-            ref = first.getDataColumn().serializeValueIntoArena(0, arena, ref_begin, nullptr);
-            for (size_t b = 1; b < sources.size(); ++b)
-            {
-                const auto & other = assert_cast<const ColumnConst &>(*sources[b]);
-                const char * begin = nullptr;
-                std::string_view serialized = other.getDataColumn().serializeValueIntoArena(0, arena, begin, nullptr);
-                if (serialized != ref)
-                    return {};
-            }
-        }
-        catch (const Exception & e)
-        {
-            /// Unserializable values (`ColumnFunction`) cannot be compared byte-exactly.
-            if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+            const auto & other = assert_cast<const ColumnConst &>(*sources[b]);
+            const char * begin = nullptr;
+            const std::string_view serialized = other.getDataColumn().serializeValueIntoArena(0, arena, begin, nullptr);
+            if (serialized != ref)
                 return {};
-            throw;
         }
     }
 
@@ -933,10 +749,7 @@ void countRowsPerShardImpl(SourcePids<Pid> pids_per_source, std::span<UInt32> ro
     const bool interleave = num_shards <= HIST_INTERLEAVE_MAX_FANOUT;
     PaddedPODArray<UInt32> lanes;
     if (interleave)
-    {
-        lanes.resize(4 * num_shards);
-        memset(lanes.data(), 0, 4 * num_shards * sizeof(UInt32));
-    }
+        lanes.resize_fill(4 * num_shards, 0);
     for (const auto & pids : pids_per_source)
         histogramPidChunkImpl(pids.data(), pids.size(), rows_per_shard.data(), interleave ? lanes.data() : nullptr, num_shards);
     if (interleave)
@@ -997,8 +810,7 @@ MutableColumns scatterImpl(
     if (!rows_per_shard.empty())
     {
         PaddedPODArray<UInt32> recounted;
-        recounted.resize(num_shards);
-        memset(recounted.data(), 0, num_shards * sizeof(UInt32));
+        recounted.resize_fill(num_shards, 0);
         countRowsPerShardImpl<Pid>(pids_per_source, {recounted.data(), num_shards});
         for (size_t s = 0; s < num_shards; ++s)
             chassert(recounted[s] == rows_per_shard[s]);
@@ -1015,8 +827,7 @@ MutableColumns scatterImpl(
             return rows_per_shard;
         if (counted.empty())
         {
-            counted.resize(num_shards);
-            memset(counted.data(), 0, num_shards * sizeof(UInt32));
+            counted.resize_fill(num_shards, 0);
             countRowsPerShardImpl<Pid>(pids_per_source, {counted.data(), num_shards});
         }
         return {counted.data(), num_shards};
@@ -1038,45 +849,32 @@ MutableColumns scatterImpl(
         }
     }
 
-    /// Once, at the boundary: every kernel below assumes wrapper-free input at every nesting level.
+    /// Every kernel below assumes wrapper-free input at every nesting level; LowCardinality is kept.
     Columns normalized_holder;
     ColumnRawPtrs normalized_sources;
-    bool any_needs_normalization = false;
+    normalized_holder.reserve(sources.size());
+    normalized_sources.reserve(sources.size());
     for (const IColumn * source : sources)
-        any_needs_normalization |= mayNeedNormalization(*source);
-    if (any_needs_normalization)
     {
-        normalized_holder.reserve(sources.size());
-        normalized_sources.reserve(sources.size());
-        for (const IColumn * source : sources)
-        {
-            normalized_holder.push_back(normalizeRepresentation(source->getPtr()));
-            normalized_sources.push_back(normalized_holder.back().get());
-        }
-        sources = std::span<const IColumn * const>(normalized_sources.data(), normalized_sources.size());
+        normalized_holder.push_back(source->convertToFullIfWrapped());
+        normalized_sources.push_back(normalized_holder.back().get());
     }
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Release builds get only TypeIndex plus the width and arity guards inside the kernels.
-    for (size_t b = 1; b < sources.size(); ++b)
-    {
-        try
-        {
-            chassert(sources[b]->structureEquals(*sources[0]));
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
-                throw;
-        }
-    }
-#endif
+    sources = {normalized_sources.data(), normalized_sources.size()};
 
     const TypeIndex type = sources[0]->getDataType();
+    const ScatterKernelId kernel_id = KERNEL_ID_TABLE[static_cast<size_t>(type)];
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Release builds get only TypeIndex plus the width and arity guards inside the kernels. Every
+    /// type with a dedicated kernel implements `structureEquals`; the fallback types need not.
+    if (kernel_id != ScatterKernelId::Fallback)
+        for (size_t b = 1; b < sources.size(); ++b)
+            chassert(sources[b]->structureEquals(*sources[0]));
+#endif
 
     if (!fits_32)
     {
-        /// The legacy scatter sizes destinations itself from 64-bit counts, so the UInt32 counting
+        /// `IColumn::scatter` sizes destinations itself from 64-bit counts, so the UInt32 counting
         /// is skipped outright - zero counts only cost the reserve.
         traceDispatch(type, ScatterKernelId::Fallback);
         PaddedPODArray<UInt32> zero_counts;
@@ -1084,80 +882,21 @@ MutableColumns scatterImpl(
         return scatterFallback<Pid>(sources, pids_per_source, std::span<const UInt32>(zero_counts.data(), num_shards));
     }
 
-    static constexpr auto table = buildScatterTable<Pid>();
-    const ScatterKernelId kernel_id = KERNEL_ID_TABLE[static_cast<size_t>(type)];
     traceDispatch(type, kernel_id);
-    return table[static_cast<size_t>(type)](sources, pids_per_source, ensure_counts());
+    return dispatchToKernel<Pid>(sources, pids_per_source, ensure_counts());
 }
 
 }
 
-
-void scatterKeyChunk(
-    size_t key_width, const char * keys, size_t n, UInt32 shift, UInt32 mask, UInt16 * pids_out, bool use_swwc, ScatterScratch & scratch)
-{
-    scatterKeyChunkImpl(key_width, keys, n, shift, mask, pids_out, use_swwc, scratch);
-}
-
-void scatterKeyChunk(
-    size_t key_width, const char * keys, size_t n, UInt32 shift, UInt32 mask, UInt32 * pids_out, bool use_swwc, ScatterScratch & scratch)
-{
-    scatterKeyChunkImpl(key_width, keys, n, shift, mask, pids_out, use_swwc, scratch);
-}
 
 void scatterPidChunk(size_t width, const UInt16 * pids, const char * data, size_t n, bool use_swwc, ScatterScratch & scratch)
 {
     scatterPidChunkImpl(width, pids, data, n, use_swwc, scratch);
 }
 
-void scatterPidChunk(size_t width, const UInt32 * pids, const char * data, size_t n, bool use_swwc, ScatterScratch & scratch)
-{
-    scatterPidChunkImpl(width, pids, data, n, use_swwc, scratch);
-}
-
-void histogramKeyChunk(size_t key_width, const char * keys, size_t n, UInt32 shift, UInt32 mask, UInt32 * hist, UInt32 * lanes, size_t fanout)
-{
-    histogramKeyChunkImpl(key_width, keys, n, shift, mask, hist, lanes, fanout);
-}
-
-void histogramKeyChunk(size_t key_width, const char * keys, size_t n, UInt32 shift, UInt32 mask, UInt64 * hist, UInt64 * lanes, size_t fanout)
-{
-    histogramKeyChunkImpl(key_width, keys, n, shift, mask, hist, lanes, fanout);
-}
-
-void histogramRouteChunk(const UInt32 * routes, size_t n, UInt32 shift, UInt32 mask, UInt32 * hist, UInt32 * lanes, size_t fanout)
-{
-    histogramRouteChunkImpl(routes, n, shift, mask, hist, lanes, fanout);
-}
-
-void histogramRouteChunk(const UInt32 * routes, size_t n, UInt32 shift, UInt32 mask, UInt64 * hist, UInt64 * lanes, size_t fanout)
-{
-    histogramRouteChunkImpl(routes, n, shift, mask, hist, lanes, fanout);
-}
-
-void histogramPidChunk(const UInt16 * pids, size_t n, UInt32 * hist, UInt32 * lanes, size_t fanout)
-{
-    histogramPidChunkImpl(pids, n, hist, lanes, fanout);
-}
-
 void histogramPidChunk(const UInt16 * pids, size_t n, UInt64 * hist, UInt64 * lanes, size_t fanout)
 {
     histogramPidChunkImpl(pids, n, hist, lanes, fanout);
-}
-
-void histogramPidChunk(const UInt32 * pids, size_t n, UInt32 * hist, UInt32 * lanes, size_t fanout)
-{
-    histogramPidChunkImpl(pids, n, hist, lanes, fanout);
-}
-
-void histogramPidChunk(const UInt32 * pids, size_t n, UInt64 * hist, UInt64 * lanes, size_t fanout)
-{
-    histogramPidChunkImpl(pids, n, hist, lanes, fanout);
-}
-
-void reduceHistogramLanes(UInt32 * hist, const UInt32 * lanes, size_t fanout)
-{
-    reduceHistogramLanesImpl(hist, lanes, fanout);
 }
 
 void reduceHistogramLanes(UInt64 * hist, const UInt64 * lanes, size_t fanout)
@@ -1196,44 +935,6 @@ std::pair<MutableColumnPtr, std::span<char>> allocateUninitializedFixed(const IC
     return {std::move(column), raw};
 }
 
-void stringBytesPerShard(const UInt64 * offsets, const UInt16 * pids, size_t n, UInt64 * bytes_per_shard)
-{
-    stringBytesPerShardImpl(offsets, pids, n, bytes_per_shard);
-}
-
-void stringBytesPerShard(const UInt64 * offsets, const UInt32 * pids, size_t n, UInt64 * bytes_per_shard)
-{
-    stringBytesPerShardImpl(offsets, pids, n, bytes_per_shard);
-}
-
-void scatterStringChunk(const char * chars, const UInt64 * offsets, const UInt16 * pids, size_t n, StringScatterState & state)
-{
-    scatterStringChunkImpl(chars, offsets, pids, n, state);
-}
-
-void scatterStringChunk(const char * chars, const UInt64 * offsets, const UInt32 * pids, size_t n, StringScatterState & state)
-{
-    scatterStringChunkImpl(chars, offsets, pids, n, state);
-}
-
-
-const char * toString(ScatterKernelId id)
-{
-    switch (id)
-    {
-        case ScatterKernelId::FixedWidth: return "FixedWidth";
-        case ScatterKernelId::String: return "String";
-        case ScatterKernelId::Nullable: return "Nullable";
-        case ScatterKernelId::Tuple: return "Tuple";
-        case ScatterKernelId::Array: return "Array";
-        case ScatterKernelId::Map: return "Map";
-        case ScatterKernelId::LowCardinality: return "LowCardinality";
-        case ScatterKernelId::ConstCompact: return "ConstCompact";
-        case ScatterKernelId::Fallback: return "Fallback";
-    }
-    UNREACHABLE();
-}
-
 ScatterKernelId plannedKernel(const IColumn & column)
 {
     return KERNEL_ID_TABLE[static_cast<size_t>(column.getDataType())];
@@ -1244,13 +945,7 @@ DispatchTrace * exchangeDispatchTrace(DispatchTrace * trace)
     return std::exchange(dispatch_trace, trace);
 }
 
-
 void countRowsPerShard(std::span<const std::span<const UInt16>> pids_per_source, std::span<UInt32> rows_per_shard)
-{
-    countRowsPerShardImpl(pids_per_source, rows_per_shard);
-}
-
-void countRowsPerShard(std::span<const std::span<const UInt32>> pids_per_source, std::span<UInt32> rows_per_shard)
 {
     countRowsPerShardImpl(pids_per_source, rows_per_shard);
 }
@@ -1258,15 +953,6 @@ void countRowsPerShard(std::span<const std::span<const UInt32>> pids_per_source,
 MutableColumns scatter(
     std::span<const IColumn * const> source_columns,
     std::span<const std::span<const UInt16>> pids_per_source,
-    size_t num_shards,
-    std::span<const UInt32> rows_per_shard)
-{
-    return scatterImpl(source_columns, pids_per_source, num_shards, rows_per_shard);
-}
-
-MutableColumns scatter(
-    std::span<const IColumn * const> source_columns,
-    std::span<const std::span<const UInt32>> pids_per_source,
     size_t num_shards,
     std::span<const UInt32> rows_per_shard)
 {

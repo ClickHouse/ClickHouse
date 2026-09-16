@@ -43,8 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
-            {"partitioned_hash_join_max_fanout_per_pass", 8192, 8192, "New setting to bound the number of partitions one scatter pass of a `partitioned_hash` join writes to. A plan with more partitions scatters the build side in several passes."},
-            {"partitioned_hash_join_cap_partitions_by_l1_descriptors", true, true, "New setting to limit the number of partitions of a `partitioned_hash` join to the number of per-partition table descriptors that fit in a quarter of the L1 data cache."},
+            {"partitioned_hash_join_max_fanout_per_pass", 8192, 8192, "New setting: the maximum number of partitions a `partitioned_hash` join writes in one pass over the right table. When the join needs more partitions, it makes several passes."},
+            {"partitioned_hash_join_cap_partitions_by_l1_descriptors", true, true, "New setting: limit the number of partitions of a `partitioned_hash` join so that the per-partition records of the hash table fit in a quarter of the L1 data cache."},
+            {"join_algorithm", "direct,parallel_hash,hash,ie_join", "direct,parallel_hash,hash,ie_join", "New allowed value `partitioned_hash`: an experimental hash join that partitions the right table while building one shared hash table, and probes the left table without partitioning it. The default value is unchanged."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"query_plan_optimize_join_order_use_cd_a_conflict_detector", false, false, "New setting to use the CD-A conflict detector for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_cd_c_conflict_detector", false, false, "New setting to use the CD-C (correct and complete) conflict detector for join reordering validity in the DPsub join order algorithm."},
@@ -192,7 +193,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
             {"enable_function_early_short_circuit", false, false, "New setting"},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
-            {"join_algorithm", "direct,parallel_hash,hash", "direct,parallel_hash,hash", "New allowed value `partitioned_hash`: an experimental hash join that partitions the right table into per-partition hash tables during the build phase while keeping the probe side unpartitioned. The default value is unchanged."},
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.7",

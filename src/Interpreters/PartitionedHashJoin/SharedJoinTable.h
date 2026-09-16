@@ -45,12 +45,12 @@ extern const int LOGICAL_ERROR;
 /// inside its partition's range by construction, whatever table size the barrier later chooses.
 ///
 /// The low 32 hash bits are shifted into the high half, nothing more. A 32-bit CRC lands whole, a
-/// 64-bit hash contributes 32 good bits, and a table is at most 2^32 cells. The point of not mixing
-/// further: `HashCRC32` is linear over GF(2), so probe keys arriving in sequence visit cells in a pattern
-/// the branch predictor learns, exactly as with `HashMap`'s `hash & mask`. A multiplicative mix made
-/// every empty-cell branch a coin flip on such streams: about one mispredict per probed row against a
-/// 2^11-cell table where the plain placement has 0.08 (modelled on the perf test's sequential keys and
-/// confirmed by `perf stat`); on random keys the two placements behave the same.
+/// 64-bit hash contributes 32 good bits, and a table is at most 2^32 cells. Mixing further would hurt:
+/// `HashCRC32` is linear over GF(2), so probe keys arriving in sequence visit cells in a pattern the
+/// branch predictor learns, exactly as with `HashMap`'s `hash & mask`. With a multiplicative mix every
+/// empty-cell branch became a coin flip on such streams: about one mispredict per probed row against a
+/// 2^11-cell table, where the plain placement has 0.08 (`perf stat`, sequential keys). On random keys
+/// the two placements behave the same.
 ALWAYS_INLINE inline UInt64 sharedJoinPlacement(size_t hash_value)
 {
     return static_cast<UInt64>(hash_value) << 32;
@@ -68,15 +68,16 @@ ALWAYS_INLINE inline UInt64 sharedJoinMix(size_t hash_value)
   * The table may grow in place during post-build (a new buffer, same object, same partition bits).
   * The probe is the standard linear walk over one `{buf, mask}` pair, wrapping at the end of the buffer.
   *
-  * `Cell` and `Hash` are exactly the standard join map's, taken from `HashJoin::MapsTemplate`, so the
-  * cells this table holds are bit-identical to `HashJoin`'s and every key getter works on it unchanged:
-  * it provides `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. There is
-  * no `emplace`: the build claims cells through `claim` under its own ownership protocol, and the table's
+  * `Cell` and `Hash` are the standard join map's, taken from `HashJoin::MapsTemplate`, so the cells
+  * are bit-identical to `HashJoin`'s. Every key getter works on this table unchanged: it provides
+  * `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. There is no
+  * `emplace`: the build claims cells through `claim` under its own ownership protocol, and the table's
   * size is published once at the end. The zero key lives in the standard zero-value cell.
   *
-  * Memory: the buffer is one reservation whose ranges are committed and accounted when their owners
-  * first touch them (`RangeCommittedBuffer`), so the post-build peak keeps trading the table off against
-  * the scattered chunks range by range. `getBufferSizeInBytes` reports what has been committed.
+  * Memory: the buffer is one reservation (`RangeCommittedBuffer`). A range is committed and charged
+  * when its owner first touches it, so during post-build the table's charge rises as the scattered
+  * chunks' charge falls. `getBufferSizeInBytes` reports what has been committed; `reservedBytes` the
+  * whole buffer.
   */
 template <typename Key, typename Cell, typename Hash, typename Grower>
 class SharedJoinTable : private Hash, public ZeroValueStorage<Cell::need_zero_value_storage, Cell>
@@ -86,7 +87,6 @@ public:
     using cell_type = Cell;
     using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
-    using grower_type = Grower;
     using hash_type = Hash;
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
@@ -103,16 +103,7 @@ public:
         grower.set(reserve);
         return static_cast<size_t>(std::countr_zero(grower.bufSize()));
     }
-    static size_t bufferBytesFor(size_t reserve) { return (1uz << degreeFor(reserve)) * sizeof(Cell); }
     static size_t maxFillFor(size_t size_degree_) { return 1uz << (size_degree_ - 1); }
-
-    /// Validated before any member derives a shift or a buffer size from it.
-    static size_t checkedSizeDegree(size_t size_degree_, size_t partition_bits_)
-    {
-        if (size_degree_ == 0 || size_degree_ > 32 || partition_bits_ > size_degree_)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "SharedJoinTable: bad geometry, size degree {} with {} partition bits", size_degree_, partition_bits_);
-        return size_degree_;
-    }
 
     SharedJoinTable(size_t size_degree_, size_t partition_bits_)
         : size_degree(checkedSizeDegree(size_degree_, partition_bits_))
@@ -127,8 +118,8 @@ public:
     ~SharedJoinTable()
     {
         /// Only the ASOF cells own anything (a sorted lookup behind a `unique_ptr`); the ref words are
-        /// trivial. Every range is committed by the end of a build; a build that failed half-way leaves
-        /// uncommitted (never zeroed) ranges, which must not be read, so the walk is skipped then.
+        /// trivial. A completed build has committed every range. A build that failed half-way leaves
+        /// uncommitted, never-zeroed ranges that must not be read, so the walk is skipped then.
         if constexpr (!std::is_trivially_destructible_v<Cell>)
         {
             if (buffer.committedBytes() == buffer.size())
@@ -143,27 +134,23 @@ public:
     SharedJoinTable(const SharedJoinTable &) = delete;
     SharedJoinTable & operator=(const SharedJoinTable &) = delete;
 
-    /// Geometry.
+    /// Geometry, fixed at construction except through `adoptRehash`.
     size_t sizeDegree() const { return size_degree; }
     size_t cellCount() const { return mask + 1; }
     size_t cellMask() const { return mask; }
-    size_t partitionBits() const { return partition_bits; }
     size_t partitions() const { return 1uz << partition_bits; }
-    size_t rangeBits() const { return range_bits; }
-    size_t rangeCells() const { return 1uz << range_bits; }
     size_t rangeBegin(size_t partition) const { return partition << range_bits; }
     size_t rangeEnd(size_t partition) const { return (partition + 1) << range_bits; }
     size_t maxFill() const { return maxFillFor(size_degree); }
 
     /// The standard map interface the key getters, the flags and the accounting read.
-    size_t getBufferSizeInCells() const { return mask + 1; }
+    size_t getBufferSizeInCells() const { return cellCount(); }
     size_t getBufferSizeInBytes() const { return buffer.committedBytes(); }
     size_t reservedBytes() const { return buffer.size(); }
     size_t size() const { return m_size; }
     /// The distinct-key count, summed by the build from its owners' claims and set once at publication.
     void setSize(size_t size_) { m_size = size_; }
 
-    /// Hashing and placement.
     ALWAYS_INLINE size_t hash(const Key & key) const { return Hash::operator()(key); }
     ALWAYS_INLINE size_t place(size_t hash_value) const { return sharedJoinPlacement(hash_value) >> (64 - size_degree); }
     ALWAYS_INLINE size_t next(size_t pos) const { return (pos + 1) & mask; }
@@ -181,14 +168,14 @@ public:
     ALWAYS_INLINE bool keyEquals(const Cell * cell, const Key & key, size_t hash_value) const { return cell->keyEquals(key, hash_value, state); }
 
     /// Accounts and pre-faults one partition's range; called by the owner before its first insert.
-    void commitRange(size_t partition) { buffer.commit(rangeBegin(partition) * sizeof(Cell), rangeCells() * sizeof(Cell)); }
-    /// For tests and the single-partition path: the whole buffer at once.
+    void commitRange(size_t partition) { buffer.commit(rangeBegin(partition) * sizeof(Cell), (1uz << range_bits) * sizeof(Cell)); }
+    /// The single-partition path commits the whole buffer at once.
     void commitAll() { buffer.commit(0, buffer.size()); }
     bool fullyCommitted() const { return buffer.committedBytes() == buffer.size(); }
 
-    /// Claims the empty cell at `pos` for `key_holder`, as `emplaceNonZeroImpl` does up to the mapped
-    /// write, which the caller performs. Not counted here: owners count their claims and the build
-    /// publishes the sum with `setSize`.
+    /// Claims the empty cell at `pos` for `key_holder`, exactly as `emplaceNonZeroImpl` does up to, not
+    /// including, the mapped write; the caller writes the mapped value. Not counted here: owners count
+    /// their claims and the build publishes the sum with `setSize`.
     template <typename KeyHolder>
     ALWAYS_INLINE Cell * claim(size_t pos, KeyHolder && key_holder, size_t hash_value)
     {
@@ -224,7 +211,6 @@ public:
 
     ALWAYS_INLINE size_t newPlace(size_t hash_value) const { return sharedJoinPlacement(hash_value) >> (64 - new_size_degree); }
     ALWAYS_INLINE size_t newNext(size_t pos) const { return (pos + 1) & new_mask; }
-    ALWAYS_INLINE size_t newRangeBegin(size_t partition) const { return partition << new_range_bits; }
     ALWAYS_INLINE size_t newRangeEnd(size_t partition) const { return (partition + 1) << new_range_bits; }
     ALWAYS_INLINE size_t newCellCount() const { return new_mask + 1; }
     ALWAYS_INLINE Cell * newCellAt(size_t pos) { return new_buf + pos; }
@@ -234,7 +220,7 @@ public:
     {
         if (new_range_committed[partition])
             return;
-        new_buffer->commit(newRangeBegin(partition) * sizeof(Cell), (1uz << new_range_bits) * sizeof(Cell));
+        new_buffer->commit((partition << new_range_bits) * sizeof(Cell), (1uz << new_range_bits) * sizeof(Cell));
         new_range_committed[partition] = 1;
     }
 
@@ -302,6 +288,14 @@ public:
     }
 
 private:
+    /// Validated before any member derives a shift or a buffer size from it.
+    static size_t checkedSizeDegree(size_t size_degree_, size_t partition_bits_)
+    {
+        if (size_degree_ == 0 || size_degree_ > 32 || partition_bits_ > size_degree_)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "SharedJoinTable: bad geometry, size degree {} with {} partition bits", size_degree_, partition_bits_);
+        return size_degree_;
+    }
+
     size_t size_degree;
     size_t mask;
     size_t partition_bits;
@@ -344,66 +338,76 @@ struct TableFor<FixedHashMap<Key, Mapped, Cell, Size, Alloc, size_bits>>
     using Type = FixedHashMap<Key, Mapped, Cell, Size, Alloc, size_bits>;
 };
 
-/// The maps member for a `HashJoin::Type`, so a template can pick a table type by the enum value.
-template <HashJoin::Type type>
-struct MemberOf;
-
-#define M(NAME) \
-    template <> \
-    struct MemberOf<HashJoin::Type::NAME> \
-    { \
-        template <typename Maps> \
-        static auto & get(Maps & maps) \
-        { \
-            return maps.NAME; \
-        } \
-    };
-APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
-#undef M
-
 }
 
-/** The build's tables for one mapped-value shape: one member per supported `HashJoin::Type`, exactly one
-  * of them created. Deriving every member from `HashJoin::MapsTemplate` means a master-side change of a
-  * cell type or hash propagates here, and an incompatible restructuring breaks the build instead of
-  * silently diverging.
+/** The build's tables for one mapped-value type: one member per supported `HashJoin::Type`, exactly one
+  * of them created. Every member type is derived from `HashJoin::MapsTemplate`. A master-side change of
+  * a cell type or hash therefore propagates here, and an incompatible restructuring breaks the build
+  * instead of silently diverging.
   */
 template <typename Mapped>
 struct SharedJoinMapsTemplate
 {
-    using MappedType = Mapped;
+private:
     using StandardMaps = HashJoin::MapsTemplate<Mapped>;
 
+public:
     /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define M(NAME) \
     std::shared_ptr<typename SharedJoinTableDetail::TableFor<typename decltype(StandardMaps::NAME)::element_type>::Type> NAME;
     APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
 
+private:
+    /// A `FixedHashMap` spans the whole key domain whatever the plan asks for.
     template <typename Table>
-    static size_t predictedBufferBytesFor(size_t reserve)
+    static size_t fixedDomainBytes()
     {
-        if constexpr (is_shared_join_table<Table>)
-            return Table::bufferBytesFor(reserve);
-        else
-        {
-            /// A FixedHashTable spans the whole key domain whatever the reserve says.
-            static_assert(sizeof(typename Table::key_type) <= 2);
-            return (1uz << (sizeof(typename Table::key_type) * 8)) * sizeof(typename Table::cell_type);
-        }
+        static_assert(!is_shared_join_table<Table> && sizeof(typename Table::key_type) <= 2);
+        return (1uz << (sizeof(typename Table::key_type) * 8)) * sizeof(typename Table::cell_type);
     }
 
-    /// The bytes a table of `size_degree` cells takes, for a plan that widened the degree past what
-    /// `reserve` alone asks for (the partition floor keeps 2^10 cells per range).
     template <typename Table>
     static size_t bufferBytesForDegreeFor(size_t size_degree)
     {
         if constexpr (is_shared_join_table<Table>)
             return (1uz << size_degree) * sizeof(typename Table::cell_type);
         else
-            return predictedBufferBytesFor<Table>(0);
+            return fixedDomainBytes<Table>();
     }
 
+    /// The load at which the table doubles; a fixed-size map never grows.
+    template <typename Table>
+    static size_t maxFillOf(const Table & table)
+    {
+        if constexpr (is_shared_join_table<Table>)
+            return table.maxFill();
+        else
+            return std::numeric_limits<size_t>::max();
+    }
+
+    template <typename Table>
+    static size_t sizeDegreeFor(size_t reserve)
+    {
+        if constexpr (is_shared_join_table<Table>)
+            return Table::degreeFor(reserve);
+        else
+            return 0;
+    }
+
+    /// The whole buffer, committed or not: what the plan predicted.
+    template <typename Table>
+    static size_t reservedBufferBytesOf(const Table & table)
+    {
+        if constexpr (is_shared_join_table<Table>)
+            return table.reservedBytes();
+        else
+            return table.getBufferSizeInBytes();
+    }
+
+public:
+    /// The bytes of a table with `2^size_degree` cells. For plans that widened the degree beyond what
+    /// `reserve` asks for: the plan keeps at least 2^10 cells per partition range.
     static size_t bufferBytesForDegree(HashJoin::Type which, size_t size_degree)
     {
         switch (which)
@@ -416,16 +420,6 @@ struct SharedJoinMapsTemplate
         }
     }
 
-    /// The fill at which the table doubles; a fixed-size map never grows.
-    template <typename Table>
-    static size_t maxFillOf(const Table & table)
-    {
-        if constexpr (is_shared_join_table<Table>)
-            return table.maxFill();
-        else
-            return std::numeric_limits<size_t>::max();
-    }
-
     size_t maxFill(HashJoin::Type which) const
     {
         switch (which)
@@ -435,27 +429,6 @@ struct SharedJoinMapsTemplate
             APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
             default: return 0;
-        }
-    }
-
-    template <typename Table>
-    static size_t sizeDegreeFor(size_t reserve)
-    {
-        if constexpr (is_shared_join_table<Table>)
-            return Table::degreeFor(reserve);
-        else
-            return 0;
-    }
-
-    static size_t predictedBufferBytes(HashJoin::Type which, size_t reserve)
-    {
-        switch (which)
-        {
-#define M(NAME) \
-    case HashJoin::Type::NAME: return predictedBufferBytesFor<typename decltype(SharedJoinMapsTemplate::NAME)::element_type>(reserve);
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
-#undef M
-            default: throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", which);
         }
     }
 
@@ -541,16 +514,6 @@ struct SharedJoinMapsTemplate
         }
     }
 
-    /// The whole buffer, committed or not: what the plan predicted.
-    template <typename Table>
-    static size_t reservedBufferBytesOf(const Table & table)
-    {
-        if constexpr (is_shared_join_table<Table>)
-            return table.reservedBytes();
-        else
-            return table.getBufferSizeInBytes();
-    }
-
     size_t getReservedBufferBytes(HashJoin::Type which) const
     {
         switch (which)
@@ -587,7 +550,8 @@ using SharedMapsAsof = SharedJoinMapsTemplate<AsofRowRefs>;
 APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
 
-/// From the maps shape `MapGetter` and `JoinFeatures` speak to the shared counterpart.
+/// The shared counterpart of a standard maps type, for the `MapGetter` and `JoinFeatures` templates
+/// that are written in terms of the standard one.
 template <typename StandardMaps>
 struct SharedMapsFor;
 
@@ -607,9 +571,9 @@ struct SharedMapsFor<HashJoin::MapsAsof>
     using Type = SharedMapsAsof;
 };
 
-/** A variant over the three mapped-value shapes whose active alternative mirrors the leaf `HashJoin`'s
-  * own `MapsVariant`, so build and probe agree with the standard machinery about which shape a given
-  * (kind, strictness) uses.
+/** A variant over the three mapped-value types whose active alternative mirrors the inner `HashJoin`'s
+  * own `MapsVariant`, so build and probe agree with the standard machinery about which maps type a
+  * given (kind, strictness) uses.
   */
 struct SharedJoinMaps
 {
@@ -617,7 +581,7 @@ struct SharedJoinMaps
 
     /// Index-compatible with `HashJoin::MapsVariant` - the active alternative is selected by that
     /// variant's index. `HashJoin::MapsSet` (index 3) is the one alternative without a counterpart here:
-    /// its key-only tables are hash sets, not the hash maps the traits rebind. The leaf `HashJoin` is
+    /// its key-only tables are hash sets, not the hash maps the traits rebind. The inner `HashJoin` is
     /// therefore built with `allow_set_maps_ = false`, so it never selects one.
     static_assert(
         std::is_same_v<std::variant_alternative_t<0, HashJoin::MapsVariant>, HashJoin::MapsOne>
@@ -628,7 +592,7 @@ struct SharedJoinMaps
 
     Variant maps;
 
-    explicit SharedJoinMaps(size_t standard_variant_index = 1)
+    explicit SharedJoinMaps(size_t standard_variant_index)
     {
         switch (standard_variant_index)
         {
@@ -653,17 +617,23 @@ struct SharedJoinMaps
 
     /// A `FixedHashMap` buffer does not depend on the build size, so partitioning cannot shrink it
     /// and such plans always run as a single partition.
-    static bool isFixedSizeType(HashJoin::Type which) { return which == HashJoin::Type::key8 || which == HashJoin::Type::key16; }
+    static bool isFixedSizeType(HashJoin::Type which)
+    {
+        switch (which)
+        {
+#define M(NAME) \
+    case HashJoin::Type::NAME: return !is_shared_join_table<typename decltype(SharedMapsAll::NAME)::element_type>;
+            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+            default: return false;
+        }
+    }
 
+    /// The bytes the table for `reserve` keys will take: the standard grower's rounding of `reserve`
+    /// (`sizeDegree`), then the buffer of that degree.
     static size_t predictedBufferBytes(size_t standard_variant_index, HashJoin::Type which, size_t reserve)
     {
-        switch (standard_variant_index)
-        {
-            case 0: return SharedMapsOne::predictedBufferBytes(which, reserve);
-            case 1: return SharedMapsAll::predictedBufferBytes(which, reserve);
-            case 2: return SharedMapsAsof::predictedBufferBytes(which, reserve);
-            default: throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unexpected join maps variant index {}", standard_variant_index);
-        }
+        return bufferBytesForDegree(standard_variant_index, which, sizeDegree(standard_variant_index, which, reserve));
     }
 
     static size_t sizeDegree(size_t standard_variant_index, HashJoin::Type which, size_t reserve)

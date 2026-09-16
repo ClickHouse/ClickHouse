@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -9,15 +10,20 @@
 namespace DB
 {
 
-/** Distinct-key estimate that sizes the one shared hash table. One sketch per fill lane, fed the route
-  * word of every non-null build key and merged at the build barrier.
+/** Distinct-key estimate that sizes the one shared hash table. One sketch per fill thread; `add`
+  * receives one 32-bit word per insertable build row (`computeJoinRoutesForFill`: the top 32 bits of
+  * `sharedJoinMix`, or the key itself for `key8`/`key16`), and the build merges the sketches when the
+  * fill ends.
   *
-  * Not `HyperLogLogCounter`: that one bit-packs its ranks into a `CompactArray` and keeps the
-  * denominator and zero count up to date on every insert. `add` here runs on the build row loop, so
-  * the registers stay plain bytes and all the arithmetic waits for `estimate`.
+  * Not `HyperLogLogCounter`, although it can be fed the same words through `TrivialHash`. Its `update`
+  * reads and writes a 5-bit rank through `CompactArray` (an unaligned 16-bit load, shift and mask each
+  * way) and, on every rank increase, adjusts a floating-point denominator and a zero count. `add` here
+  * runs inside the fill's row loop, so the registers stay plain bytes, one load and one store per row,
+  * and all arithmetic waits for `estimate`. `estimate` also applies the large-range correction that
+  * `HyperLogLogCounter::fixRawEstimate` skips above `2^32 / 30`.
   *
-  * 8 KiB at precision 13, for a standard error around 1.15% - well inside the reserve factor the
-  * partition plan applies on top.
+  * 8 KiB at precision 13, for a standard error around 1.15%, well inside the safety factor that
+  * `reserveFor` multiplies the estimate by.
   */
 struct DenseHyperLogLog
 {
@@ -26,9 +32,10 @@ struct DenseHyperLogLog
 
     std::array<UInt8, register_count> registers{};
 
-    /// Route words for wide, composite and variable-length keys come out of a multiply-shift fold
-    /// whose middle bits - the ones the rank reads - are not avalanche-quality for structured keys.
-    /// fmix32 is a bijection, so this only redistributes bits and never merges two distinct keys.
+    /// The words `add` receives are the top 32 bits of a 64-bit multiplicative mix (or a raw
+    /// `key8`/`key16` value). The rank reads their low 19 bits, which are the product's middle bits and
+    /// are not avalanche-quality for structured keys. fmix32 is a bijection: it redistributes bits and
+    /// never merges two distinct words.
     static ALWAYS_INLINE UInt32 finalize(UInt32 hash)
     {
         hash ^= hash >> 16;
@@ -79,15 +86,16 @@ struct DenseHyperLogLog
         if (raw <= 2.5 * m && zeros > 0)
             return m * std::log(m / static_cast<double>(zeros));
 
-        /// Large-range correction. The sketch counts distinct 32-bit words, and every map hash the
-        /// join uses is 32 bits wide except `hashed`, so above a few percent of 2^32 the words undercount
-        /// the keys by the birthday collisions. Inverting `E = 2^32 * (1 - exp(-n / 2^32))` recovers `n`;
-        /// past 2^32 the sketch has saturated and the caller's row clamp takes over.
+        /// Large-range correction. The sketch counts distinct 32-bit words, not keys (`add` sees 32 bits
+        /// whatever the map hash's width), so once the estimate reaches a few percent of 2^32, birthday
+        /// collisions among the words undercount the keys. Inverting `E = 2^32 * (1 - exp(-n / 2^32))`
+        /// recovers `n`. Past 2^32 the sketch has saturated, and `reserveFor` clamps the reserve to the
+        /// row count anyway.
         constexpr double two_32 = 4294967296.0;
         if (raw > two_32 / 30.0)
         {
             if (raw >= two_32 * 0.999)
-                return two_32 * 8.0; /// saturated: any value the reserve clamp will override
+                return two_32 * 8.0; /// saturated; `reserveFor` clamps the reserve to the row count anyway
             return -two_32 * std::log(1.0 - raw / two_32);
         }
         return raw;

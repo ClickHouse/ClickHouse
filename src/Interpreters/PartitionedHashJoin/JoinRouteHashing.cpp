@@ -53,10 +53,9 @@ void computeFixedRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key
     }
 }
 
-template <HashJoin::Type type>
-void computeRoutesForType(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)
+template <HashJoin::Type type, typename Table>
+void computeRoutesForTable(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)
 {
-    using Table = typename std::remove_reference_t<decltype(SharedJoinTableDetail::MemberOf<type>::get(std::declval<SharedMapsAll &>()))>::element_type;
     using KeyGetter = typename KeyGetterForType<type, Table>::Type;
     if constexpr (is_shared_join_table<Table>)
         computeRoutesImpl<KeyGetter, typename Table::hash_type>(key_columns, key_sizes, rows, skip, routes, hll);
@@ -83,7 +82,8 @@ void computeJoinRoutesForFill(
     {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
-        computeRoutesForType<HashJoin::Type::TYPE>(key_columns, key_sizes, rows, skip, routes, hll); \
+        computeRoutesForTable<HashJoin::Type::TYPE, typename decltype(SharedMapsAll::TYPE)::element_type>( \
+            key_columns, key_sizes, rows, skip, routes, hll); \
         return;
         APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M

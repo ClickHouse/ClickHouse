@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -45,15 +46,14 @@ struct PartitionedCollectingTag
 /// If all blocks fit in memory, the ConcurrentHashJoin is promoted to chosen_join with zero rework.
 ///
 /// Partitioned mode:
-/// Blocks are fed into a PartitionedHashJoin from multiple threads concurrently, under the same
-/// shared/exclusive lock as concurrent mode. Accumulation overflow is judged by
-/// `predictedResidentBytes` (the post-build peak the rows already held are heading for), not
-/// `getTotalByteCount`, because the leaf tables do not exist yet during the fill. Overflow drops
-/// fill transients, then drains one stored block at a time into GraceHashJoin via
-/// `tryConvertFillLanes`. After the partitioned
-/// barrier a three-way gate may still switch (the resident data itself does not fit) or promote
-/// the in-memory join, possibly with a grouped post-build scatter that bounds the transient
-/// without disk.
+/// Blocks are fed into a PartitionedHashJoin from multiple threads, under the same shared/exclusive
+/// lock as concurrent mode. During the build the join stores blocks but has not built its hash table
+/// yet, so `getTotalByteCount` undercounts; the overflow check uses `predictedResidentBytes`, the
+/// join's estimate of its memory once the table exists. On overflow the join frees its build-time
+/// scratch and hands its stored blocks to GraceHashJoin one block at a time (`tryConvertFillLanes`).
+/// When the build ends without overflow, `onBuildPhaseFinish` asks the join whether the finished
+/// table fits (`planPostBuild`): if not, it still switches to GraceHashJoin; otherwise the
+/// PartitionedHashJoin is promoted.
 ///
 /// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
 /// transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin /
@@ -64,8 +64,6 @@ struct PartitionedCollectingTag
 class SpillingHashJoin final : public IJoin
 {
 public:
-    using IJoin::addBlockToJoin;
-    using IJoin::joinBlock;
     /// Single-thread mode: wraps a HashJoin.
     SpillingHashJoin(
         std::shared_ptr<TableJoin> table_join_,
@@ -169,20 +167,22 @@ private:
     };
 
     void switchToGraceHashJoin();
-    /// Shared by the fill-path switch and the post-barrier `MustSpill` arm. The latter must not call
-    /// `switchToGraceHashJoin`, which drains fill lanes the barrier has already consumed. A non-zero
-    /// `initial_buckets_hint` raises the starting bucket count above the configured minimum;
-    /// `GraceHashJoin` rounds it to a power of two and clamps it to the maximum.
+    /// Shared by the overflow switch and the `MustSpill` case after the build. The latter must not
+    /// call `switchToGraceHashJoin`, which would drain build lanes that `onBuildPhaseFinish` already
+    /// consumed. A non-zero `initial_buckets_hint` raises the starting bucket count; `GraceHashJoin`
+    /// rounds it up to a power of two and clamps it to the maximum.
     void createGraceJoin(size_t initial_buckets_hint = 0);
     void tryConvertSlots();
     void tryConvertFillLanes();
+    /// Whichever of the two multi-threaded collecting joins is active hands its blocks to `grace_join`.
+    void helpConvert();
 
     /// The join that owns the data while the state is COLLECTING.
     IJoin & collectingJoin() const;
 
-    /// Shared by the two `addBlockToJoin` overloads. `forward_lane` is true only for the partitioned
-    /// collecting mode, which resolves fill lanes through lock-free slot tables.
-    bool addCollectedBlock(const Block & block, bool check_limits, bool forward_lane, size_t build_lane);
+    /// Shared by the two `addBlockToJoin` overloads; `build_lane` is set only when a filling
+    /// transform of a partitioned join is the caller.
+    bool addCollectedBlock(const Block & block, bool check_limits, std::optional<size_t> build_lane);
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;

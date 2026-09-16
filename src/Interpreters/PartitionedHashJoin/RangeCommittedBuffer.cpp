@@ -7,7 +7,6 @@
 #include <Common/formatReadable.h>
 #include <base/getPageSize.h>
 
-#include <cerrno>
 #include <cstring>
 
 #include <sys/mman.h>
@@ -24,8 +23,10 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-/// Whether the running kernel accepts `MADV_POPULATE_WRITE` (Linux 5.14+). Probed once on a private page,
-/// because an older kernel reports the unknown advice as EINVAL, which is also what a bad range returns.
+/// Whether the running kernel accepts `MADV_POPULATE_WRITE` (Linux 5.14+). Probed once on a private page:
+/// an older kernel reports the unknown advice as EINVAL, and EINVAL is also what a bad range returns, so
+/// a real call cannot double as the capability check. `Allocator`'s own prefaulting is not reused because
+/// it skips anything under 16 MiB, and a range is L2-sized.
 bool populateWriteSupported()
 {
 #if defined(MADV_POPULATE_WRITE)
@@ -53,18 +54,15 @@ RangeCommittedBuffer::RangeCommittedBuffer(size_t bytes_)
     if (bytes == 0)
         return;
 
-    /// Page aligned, so the ranges the owners commit and zero never share a page with anything else. The
-    /// untracked allocator entry point, as `Allocator` uses underneath its own accounting: the memory tracker
-    /// learns about this buffer range by range, in `commit`, and a blocked tracker would still charge the
-    /// global total here.
-    alignment = ::getPageSize();
+    /// Page aligned, so the ranges the owners commit and zero never share a page with anything else.
+    /// Allocated through the untracked entry point, as `Allocator` does underneath its own accounting:
+    /// the memory tracker learns about this buffer range by range, in `commit`. A tracker blocker would
+    /// not do here, because it hides the allocation from the query's tracker while the global total still
+    /// counts it.
     void * buf = nullptr;
-    if (int res = __real_posix_memalign(&buf, alignment, bytes); res != 0)
-    {
-        /// `posix_memalign` returns the error instead of setting `errno`.
-        errno = res;
-        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate {} for the partitioned join hash table", ReadableSize(bytes));
-    }
+    if (int res = __real_posix_memalign(&buf, ::getPageSize(), bytes); res != 0)
+        ErrnoException::throwWithErrno(
+            ErrorCodes::CANNOT_ALLOCATE_MEMORY, res, "Cannot allocate {} for the partitioned join hash table", ReadableSize(bytes));
     ptr = static_cast<char *>(buf);
 }
 
@@ -76,12 +74,10 @@ RangeCommittedBuffer::~RangeCommittedBuffer()
 RangeCommittedBuffer::RangeCommittedBuffer(RangeCommittedBuffer && other) noexcept
     : ptr(other.ptr)
     , bytes(other.bytes)
-    , alignment(other.alignment)
     , committed(other.committed.load(std::memory_order_relaxed))
 {
     other.ptr = nullptr;
     other.bytes = 0;
-    other.alignment = 0;
     other.committed.store(0, std::memory_order_relaxed);
 }
 
@@ -92,11 +88,9 @@ RangeCommittedBuffer & RangeCommittedBuffer::operator=(RangeCommittedBuffer && o
         reset();
         ptr = other.ptr;
         bytes = other.bytes;
-        alignment = other.alignment;
         committed.store(other.committed.load(std::memory_order_relaxed), std::memory_order_relaxed);
         other.ptr = nullptr;
         other.bytes = 0;
-        other.alignment = 0;
         other.committed.store(0, std::memory_order_relaxed);
     }
     return *this;
@@ -115,7 +109,6 @@ void RangeCommittedBuffer::reset()
     }
     ptr = nullptr;
     bytes = 0;
-    alignment = 0;
     committed.store(0, std::memory_order_relaxed);
 }
 
@@ -131,11 +124,11 @@ void RangeCommittedBuffer::commit(size_t offset, size_t len)
     committed.fetch_add(len, std::memory_order_relaxed);
     trace.onAlloc(ptr + offset, len);
 
-    /// Fresh pages are faulted in by the kernel in bulk first: one page fault per 4 KiB page taken from
-    /// user space, with every owner faulting into the same mapping at once, costs several times more than
-    /// the population loop (measured on a 4 GiB table: 17 s of build CPU against 8 s). Then the range is
-    /// zeroed: reused allocator memory is not zero, and the zeroing touches exactly this range, so it never
-    /// races a neighbour's cells.
+    /// The kernel faults the fresh pages in bulk first. Taking one page fault per 4 KiB page from user
+    /// space, with every owner faulting into the same mapping at once, costs several times more than the
+    /// population loop: on a 4 GiB table, 17 s of build CPU against 8 s. Then the range is zeroed, because
+    /// reused allocator memory is not zero. The zeroing touches exactly this range, so it never races a
+    /// neighbour's cells.
     if (populateWriteSupported())
     {
 #if defined(MADV_POPULATE_WRITE)

@@ -15,9 +15,10 @@
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <deque>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -31,38 +32,41 @@ class TableJoin;
 
 /** Partitioned hash join (`join_algorithm = 'partitioned_hash'`).
   *
-  * `parallel_hash` probes one shared map, so once the build side outgrows last-level cache every
-  * lookup is a cold miss. This build keeps ONE hash table for the whole right side but partitions its
-  * construction: the cell buffer is split into `2^bits` contiguous ranges, a partition is the set of
-  * build rows whose home cell lies in its range, and each range is filled by one worker while it stays
-  * cache-resident. The probe side is never partitioned - a probe row hashes once and walks the one table
-  * - so transient memory does not scale with probe cardinality and rows flow downstream immediately.
+  * `parallel_hash` probes one shared map; once the build side outgrows the last-level cache, every
+  * lookup is a cold miss. This join keeps ONE hash table for the whole right side but builds it in
+  * partitions: the cell buffer is split into `2^bits` contiguous ranges, a partition is the set of
+  * build rows whose home cell lies in one range, and one worker fills each range while it stays
+  * cache-resident. The probe side is never partitioned. A probe row hashes once and walks the one
+  * table, so transient memory does not scale with probe cardinality and rows flow downstream
+  * immediately.
   *
   * The phases:
   *
-  * - Fill accumulates right-side blocks per lane untouched. Per row it computes the map hash, saves the
-  *   top 16 bits of the mixed hash as the row's route, and feeds a per-lane sketch. Nothing is inserted.
+  * - Fill accumulates right-side blocks per lane untouched. Per row it computes the map hash, saves
+  *   the top 16 bits of its placement word (`sharedJoinPlacement`) as the row's route, and feeds a
+  *   per-lane sketch (a HyperLogLog) with a mix of the hash. Nothing is inserted.
   * - The build barrier merges the sketches, sizes the table at the standard 50% max fill, and picks
   *   the partition count: the smallest power of two whose range fits private L2, at least one range per
   *   worker. The route's top `bits` name a row's partition, and by construction its home cell lies in
   *   that partition's range. The table may later double in place when a wrapping insert would take the
-  *   last empty cell, or at a quiescent point when the fill would exceed 50%.
-  * - Post-build scatters only the key columns plus a row locator into per-partition chunks (payload
-  *   stays in the shared row store), then workers claim partitions largest-first and insert: a walk that
-  *   stops at the range end, a private overflow buffer for the rows that would cross it, and after the
-  *   barrier one thread drains the overflow with the global mask and wraparound. Duplicates of a key are
-  *   stored inline, as an exact run, or as a newest-first chain of ranges (`SpanWriter`).
-  * - Probe hashes each row once and walks the table from its home cell. Above the engagement threshold
+  *   last empty cell, or between waves when the projected fill would exceed 50%.
+  * - Post-build scatters only the key columns plus a row locator into per-partition chunks; the
+  *   payload stays in the shared row store. Workers claim partitions largest-first and insert. A walk
+  *   stops at its range end; rows that would cross it go to a private overflow buffer, and after the
+  *   barrier one thread drains the overflow with the global mask and wraparound. Duplicates of a key
+  *   are stored inline, as an exact span, or as a newest-first chain of spans (`SpanWriter`).
+  * - Probe hashes each row once and walks the table from its home cell. Above the prefetch threshold
   *   this runs as two passes per block - an AMAC find ring out of order, then an in-order pass over its
-  *   results - and below it as the plain loop. Either way the emit, replication offsets, used flags and
-  *   per-kind logic are the standard `HashJoin` machinery.
+  *   results - and below it as the plain loop. AMAC (asynchronous memory access chaining) keeps a ring
+  *   of in-flight lookups whose cache misses overlap. Either way the emit, replication offsets, used
+  *   flags and per-kind logic are the standard `HashJoin` machinery.
   *
   * Used flags are one per-offset space of `cells + 1` entries (offset 0 is the zero-value cell), exactly
   * the single-map layout `JoinUsedFlags` and the non-joined iteration expect.
   *
-  * Shapes whose flags must be keyed per right-table row rather than per cell - multiple disjuncts -
-  * run the standard `HashJoin` whole behind this interface. That regime is partition-agnostic and
-  * rare, so it is not worth a partitioned build.
+  * Joins whose flags must be keyed per right-table row rather than per cell - multiple disjuncts - run
+  * the standard `HashJoin` whole behind this interface (`delegate_mode`). That case does not depend on
+  * partitioning and is rare, so it is not worth a partitioned build.
   */
 class PartitionedHashJoin : public IJoin
 {
@@ -104,11 +108,11 @@ public:
     size_t getTotalByteCount() const override;
 
     /// The peak this build is heading for if every accumulated row ends up in the table: the row
-    /// store and route words that are already allocated, plus the table and arena that are not yet.
-    /// `SpillingHashJoin` compares this against the external-join threshold. Not `getTotalByteCount`,
-    /// which is the currently allocated amount and feeds `max_bytes_in_join` and `EXPLAIN`.
-    /// `at_barrier`: the fill is complete, so a single fill thread's table only has a doubling ahead
-    /// of it when the claimed count already exceeds the maximum fill.
+    /// store and routes that are already allocated, plus the table and arena that are not yet.
+    /// `SpillingHashJoin` compares this against the external-join threshold. `getTotalByteCount` is
+    /// different: it is the currently allocated amount and feeds `max_bytes_in_join` and `EXPLAIN`.
+    /// With `at_barrier` the fill is complete, so a single fill thread's table has a doubling ahead of
+    /// it only when the claimed count already exceeds the maximum fill.
     size_t predictedResidentBytes(bool at_barrier = false) const;
 
     /// Bytes the stored rows would take once loaded into a single in-memory join: the row store as it
@@ -168,8 +172,8 @@ public:
 
     void setEnableLazyColumnsIndexing(bool value) override;
 
-    /// What the tests assert the build on: the plan, the table geometry, the sketch, the ownership
-    /// protocol's overflow and the duplicate layout.
+    /// Counters and geometry of one build: the plan, the table, the sketch, the overflow drained and
+    /// the duplicate storage. Read after `runPostBuildPhase`.
     struct BuildStats
     {
         size_t bits = 0;
@@ -177,7 +181,7 @@ public:
         /// MSB-first radix bits per scatter pass; more than one when the plan wants a fanout above a
         /// single pass's ceiling.
         std::vector<size_t> pass_bits;
-        /// Final per-partition insertable row counts, so tests can assert two pass plans agree.
+        /// Final per-partition insertable row counts.
         std::vector<UInt64> partition_row_counts;
         double hll_estimate = 0;
         /// The one table: its buffer degree, cells and bytes. `predictions_exact` says the created
@@ -205,15 +209,14 @@ public:
         {
             size_t begin = 0;
             size_t end = 0;
-            /// Bytes the group was sized with (`chunkBytesForBlockRange` and the resident set at that
-            /// moment). Zero when the plan did not size groups against a budget.
+            /// The chunk this range was sized with (`chunkBytesForBlockRange`). Zero when the plan did
+            /// not size ranges against a budget.
             size_t chunk_bytes = 0;
-            size_t used_bytes = 0;
-            /// `chunkBytesForBlockRange(begin, begin + 1)` at sizing time: the one-block overshoot
-            /// R2.10 reserves at the previous boundary, and the bound `GroupSizedAfterGrowth` checks.
+            /// `chunkBytesForBlockRange(begin, begin + 1)` at sizing time: the one block by which a range
+            /// may overshoot the headroom, since a range is never empty.
             size_t one_block_chunk_bytes = 0;
-            /// `residentBytes` at the start of sizing, before predicted arena and uncommitted table
-            /// are added. `GroupSizedAfterGrowth` bounds this plus the chunk.
+            /// `residentBytes` when the range was sized, before the predicted arena and the uncommitted
+            /// table were added. `resident_bytes + chunk_bytes` must stay within the budget plus one block.
             size_t resident_bytes = 0;
         };
         std::vector<BlockRange> scatter_group_ranges;
@@ -221,8 +224,8 @@ public:
         std::vector<UInt64> claimed_per_partition;
         /// Peak logical occupancy of any one pass scratch (`PassScratch::usedBytes`).
         size_t scratch_used_high_water = 0;
-        /// Table growth (section 4). Zero until a grow runs; `load_factor_grow_skipped` counts G2
-        /// refusals under budget.
+        /// Table growth. Zero until a grow runs; `load_factor_grow_skipped` counts the load-factor grows
+        /// refused under the budget.
         UInt64 table_resizes = 0;
         UInt64 load_factor_grow_skipped = 0;
         /// Stored blocks whose fixed-width payload went into a row store.
@@ -231,32 +234,31 @@ public:
 
     BuildStats getBuildStats() const;
 
-    /// Shrinks the reserve safety factor so the table is undersized. Growth then restores the fill,
-    /// or a G1 refusal throws `LOGICAL_ERROR` when the budget cannot pay for the doubling.
+    /// Shrinks the reserve safety factor so the table is undersized. Growth then restores the fill, or
+    /// the grow at the last free cell throws `LOGICAL_ERROR` when the budget cannot pay for the doubling.
     void setReserveSafetyFactorForTests(double factor) { reserve_safety = factor; }
     void setReserveOverrideForTests(size_t reserve) { reserve_override_for_tests = reserve; }
     void setGrowBudgetForTests(size_t bytes) { grow_budget = bytes; }
-    void setBeforeDrainHookForTests(std::function<void()> hook) { before_drain_hook_for_tests = std::move(hook); }
-    /// G1: wrapping inserts call this before the walk of every row (11.3 `beforeWalk`).
-    template <typename Target>
-    bool g1BeforeClaim(Target & target);
+    /// The grow budget from the overflow drain on; a test uses it to lift the budget for the drain only.
+    void setGrowBudgetForDrainForTests(size_t bytes) { grow_budget_for_drain_for_tests = bytes; }
 
-    /// Boundary G2 projection (F7): the sketch term while the exact count is inside its safety band;
-    /// once the count has passed the band, the max of the count and its linear extrapolation.
+    /// Projection at a block-range boundary: the sketch estimate while the exact count is inside its
+    /// safety band; once the count has passed the band, the larger of the count and its linear
+    /// extrapolation.
     static UInt64
     boundaryProjection(UInt64 claimed_total, UInt64 rows_inserted, UInt64 insertable, double hll_estimate, double reserve_safety);
+
+    /// Wrapping inserts call this before every row's walk; it grows the table when the walk would take
+    /// the last free cell. Public only because the insert target in the build translation unit calls it.
+    template <typename Target>
+    bool growBeforeLastFreeCell(Target & target);
 
     /// Pins both phases onto the sequential loops, so tests can cross-check the ring against them.
     void setAmacEnabledForTests(bool value) { amac_enabled = value; }
 
-    /// Lowers the per-pass fanout ceiling, so the refine passes can be tested without a 500M-key
-    /// build.
-    void setMaxFanoutPerPassForTests(size_t value) { max_fanout_per_pass = value; }
-
-    /// The descriptor cap binds only past a few hundred leaves, a build too large for a unit test.
-    /// A tiny L1 makes it bind on a small one; the cap itself can be switched off for the control.
+    /// The L1 partition cap binds only past a few hundred partitions, a build too large for a unit test;
+    /// a tiny L1 makes it bind on a small one.
     void setL1CacheSizeForTests(size_t bytes) { l1_cache_bytes_for_tests = bytes; }
-    void setCapPartitionsByL1DescriptorsForTests(bool value) { cap_partitions_by_l1_descriptors = value; }
 
     /// Forces the partition count (clamped to the table's degree), so plans of thousands of partitions
     /// can be executed on a build that fits a test.
@@ -271,20 +273,6 @@ public:
     };
     PostBuildPlan planPostBuild();
 
-    /// Terms `planPostBuild` used for the grouped/ungrouped verdict. Filled only on the partitioned
-    /// path (`bits > 0` and a non-zero budget). `groups_est` is computed from the ungrouped floor
-    /// (no header term), then passed into the grouped arena prediction.
-    struct PostBuildGateTerms
-    {
-        size_t floor_bytes = 0;
-        size_t floor_bytes_grouped = 0;
-        size_t tables = 0;
-        size_t chunk_all = 0;
-        size_t groups_est = 1;
-        size_t peak_ungrouped = 0;
-        size_t grouped_floor = 0;
-    };
-    PostBuildGateTerms getPostBuildGateTermsForTests() const { return gate_terms; }
     size_t predictedArenaBytesForTests(bool grouped) const;
     size_t predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const;
 
@@ -309,7 +297,7 @@ private:
     friend class NotJoinedPartitioned;
 
     /// `HashJoin::data` is private and the non-joined filler is a friend of this class, not of it.
-    const HashJoin::RightTableData & storedData() const { return *leaf_join->data; }
+    const HashJoin::RightTableData & storedData() const { return *hash_join->data; }
 
     /// One accumulated right-side block: the payload in stored form (row store plus columnar
     /// remainder, a full selector), the prepared key columns, and the saved routes.
@@ -336,6 +324,21 @@ private:
                 return skip_bytes.data();
             return null_map ? null_map->data() : nullptr;
         }
+
+        /// Drops the prepared keys, masks and routes once the rows are inserted or scattered; the stored
+        /// payload stays. Returns the route bytes freed, for the byte count.
+        size_t releaseInputs()
+        {
+            const size_t freed_route_bytes = routes.allocated_bytes();
+            keys_holder.clear();
+            key_columns.clear();
+            null_map_holder.reset();
+            null_map = nullptr;
+            join_mask = JoinCommon::JoinMask();
+            skip_bytes = {};
+            routes = {};
+            return freed_route_bytes;
+        }
     };
 
     /// One per fill thread, so appends and sketch updates never contend.
@@ -359,7 +362,7 @@ private:
     bool addBlockToJoinImpl(const Block & source_block, bool check_limits, size_t build_lane);
     void decidePartitionPlan();
     void storeBlocksInRowStore();
-    /// Moves one fill block's stored form into the leaf join's block list and saves its null-key and
+    /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and
     /// filtered rows for RIGHT/FULL output.
     void storeBlockInRowStore(FillBlock & fill);
     /// The saved-block form of one stored block, for the drains that hand blocks to another join.
@@ -390,8 +393,31 @@ private:
     /// The table reserve the plan derives from a distinct estimate: safety factor, row clamp, and the
     /// saturation clamp above `2^31` estimated words.
     size_t reserveFor(size_t rows, double distinct_estimate) const;
+    /// The buffer degree for `reserve` cells; throws past 2^32 cells.
+    size_t sizeDegreeFor(size_t reserve) const;
+    /// The barrier's sketch estimate, floored at one so an empty build never sizes a zero-byte table.
+    size_t distinctEstimate() const { return std::max<size_t>(static_cast<size_t>(std::llround(hll_estimate)), 1); }
+    /// Rows the partitioned inserts will see: the sum of the exact per-partition counts.
+    UInt64 insertableRows() const;
+    /// Bytes still held by the saved routes.
+    size_t routeBytes() const;
 
     size_t liveDistinctEstimate() const;
+
+    /// How the key columns are scattered: fixed-width keys by their raw bytes, anything else
+    /// (`String`, `LowCardinality`, ...) through `ColumnsScatter`, with an 8-byte hash word per column
+    /// in the chunk.
+    struct KeyLayout
+    {
+        std::vector<size_t> fixed_widths;
+        bool generic = false;
+        size_t scatteredKeyWidth() const;
+    };
+    /// Read off the first build block; empty when there is none.
+    KeyLayout keyLayout() const;
+    /// Total bytes of the prepared key columns over every build block, while the blocks still hold them.
+    size_t keyColumnBytes() const;
+    static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     void measureGenericKeyBytes();
     void createSharedTable();
@@ -404,25 +430,26 @@ private:
     void allocateWorker(PostBuildContext & ctx, size_t worker) const;
     void scatterWorker(PostBuildContext & ctx, size_t worker);
 
-    /// Splits every current bucket into `2^refine_bits` sub-buckets by the next route-word slice
-    /// below the `bits_done` earlier passes consumed, group-major. After the last pass a row's
+    /// Splits every current bucket into `2^refine_bits` sub-buckets by the next slice of the route
+    /// below the `bits_done` earlier passes consumed, bucket-major. After the last pass a row's
     /// partition is `route >> (16 - bits)` - the same partition a single-pass plan would give it.
     void refinePassWave(PostBuildContext & ctx, size_t refine_bits, size_t bits_done, std::atomic<UInt64> & stage_thread_us);
 
-    /// The owner wave: workers claim partitions largest-first and fill their ranges (section 4.3 of
-    /// the design); then the capacity guard and the serial drain of every partition's overflow.
+    /// The owner wave: workers claim partitions largest-first and fill their ranges; then the capacity
+    /// guard and the serial drain of every partition's overflow.
     void ownerWaveWorker(PostBuildContext & ctx, size_t worker);
     bool tableHasZero() const;
     UInt64 claimedBufferCells() const;
     UInt64 claimedTotal() const;
     void drainOverflow(PostBuildContext & ctx);
+    /// Why the table doubles: the walk is about to take the last free cell (this grow cannot be
+    /// refused), or the projected fill exceeds the load factor (refused under a tight budget).
     enum class GrowReason : UInt8
     {
-        G1,
-        G2,
+        LastFreeCell,
+        LoadFactor,
     };
     size_t residentBytes() const;
-    size_t liveChunkBytes() const;
     void grow(UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
     template <typename Table>
     void growSharedTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
@@ -469,13 +496,11 @@ private:
     JoinResultPtr probeImpl(Block block, size_t lane);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType>
-    size_t sharedJoinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
+    void sharedJoinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 
     /// Per-probe-stream scratch, pooled on the join and reused across blocks: the find pass's results.
-    /// `found_word` holds the matched cell's mapped value by value - a `RowRef` or `RowRefList` is an
-    /// 8-byte word that is never 0 for a match, so 0 encodes a miss - which is what keeps the second pass
-    /// from touching the cell again after it has left the cache. ASOF does not fit a word and stores the
-    /// mapped pointer's bits instead. `found_offset` is the used-flags offset.
+    /// `found_word` is the matched cell's mapped value by value (see `amac_mapped_fits_word`; 0 is a
+    /// miss; ASOF stores the mapped pointer's bits instead). `found_offset` is the used-flags offset.
     struct ProbeScratch
     {
         PaddedPODArray<UInt64> found_word;
@@ -495,15 +520,15 @@ private:
     const size_t num_threads;
     /// Zero disables the gate; post-build is the ungrouped scatter.
     const size_t max_bytes_before_external_join;
-    /// Same as the constructor budget unless a test lifts or tightens it for a G1/G2 refusal.
+    /// Same as the constructor budget unless a test lifts or tightens it to force or refuse a grow.
     size_t grow_budget = 0;
+    std::optional<size_t> grow_budget_for_drain_for_tests;
     std::optional<size_t> reserve_override_for_tests;
-    std::function<void()> before_drain_hook_for_tests;
 
     /// Owns everything the emit machinery needs: block preparation, the saved block sample, the
     /// shared row store, the used flags, the output samples. Its own map stays empty and the shared
     /// table replaces it - except on the delegated path, where it runs the join whole.
-    std::unique_ptr<HashJoin> leaf_join;
+    std::unique_ptr<HashJoin> hash_join;
 
     /// Set for the shapes that need per-row used flags; see the class comment.
     const bool delegate_mode;
@@ -541,7 +566,7 @@ private:
     size_t partitions = 1;
     /// MSB-first slices of the route word, summing to `bits`.
     std::vector<size_t> pass_bits;
-    /// `partitioned_hash_join_max_fanout_per_pass`; tests lower it to force refine passes.
+    /// `partitioned_hash_join_max_fanout_per_pass`.
     size_t max_fanout_per_pass;
     /// `partitioned_hash_join_cap_partitions_by_l1_descriptors`.
     bool cap_partitions_by_l1_descriptors;
@@ -554,11 +579,15 @@ private:
     std::optional<size_t> l1_cache_bytes_for_tests;
     std::optional<size_t> forced_bits_for_tests;
     double hll_estimate = 0;
-    double reserve_safety = 1.2; /// covers the sketch error (~1.15% at precision 13)
+    /// Reserve factor over the sketch estimate. Also the multiplicity band below which the arena
+    /// prediction treats the build as unique (`predictedTableAndArenaBytes`); that second use needs the
+    /// wide margin, the ~1.15% sketch error alone would not.
+    double reserve_safety = 1.2;
     /// The table's buffer degree, fixed at the barrier: `2^size_degree` cells, `2^bits` ranges.
     size_t size_degree = 0;
-    /// Cross-run distinct-key statistics are published for join reordering and the runtime filters,
-    /// never consumed for sizing: the table cannot grow, and a cached count is data-independent.
+    /// Distinct-key statistics for the next run of this query (join reordering, runtime filters). Never
+    /// read to size this build: the sketch sizes the table and a grow corrects it, and a cached count
+    /// would not depend on the data.
     StatsCollectingParams stats_collecting_params;
     /// The matched-row statistics the planner's row store decision reads.
     StatsCollectingParams match_stats_collecting_params;
@@ -583,10 +612,9 @@ private:
     /// the keys are variable-length, which is when they are copied into the arena.
     size_t generic_key_bytes = 0;
     PostBuildPlan post_build_plan = PostBuildPlan::Fits;
-    /// Number of groups the budget implies, from the ungrouped floor (section 5.1 / 11.7). 1 until
-    /// `planPostBuild` computes it, and 1 on the fill-phase and ungrouped paths.
+    /// Number of block ranges the budget implies, from the ungrouped floor. 1 until `planPostBuild`
+    /// computes it, and 1 on the fill-phase and ungrouped paths.
     size_t groups_est = 1;
-    PostBuildGateTerms gate_terms;
     /// After `beginStoredBlockDrain` the row store is being drained and this instance must not be
     /// used except for `releaseNextStoredBlock`.
     bool stored_blocks_released = false;
@@ -596,7 +624,7 @@ private:
 
     bool build_phase_finished = false;
 
-    /// The test override and the engagement decision taken before the owner wave.
+    /// `amac_enabled` is the switch; `amac_build_engaged` the decision taken before the owner inserts.
     bool amac_enabled = true;
     bool amac_build_engaged = false;
 

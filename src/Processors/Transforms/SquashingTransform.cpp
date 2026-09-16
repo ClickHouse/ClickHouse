@@ -116,7 +116,6 @@ void JoinOutputSquashingTransform::consume(Chunk chunk)
         if (!chunk.hasRows())
             return;
         passed_chunk = std::move(chunk);
-        passed_pending = true;
         return;
     }
     squashing.add(std::move(chunk));
@@ -125,7 +124,7 @@ void JoinOutputSquashingTransform::consume(Chunk chunk)
 bool JoinOutputSquashingTransform::canGenerate()
 {
     if (pass_through && *pass_through)
-        return passed_pending;
+        return passed_chunk.hasRows();
     return squashing.canGenerate();
 }
 
@@ -135,7 +134,6 @@ Chunk JoinOutputSquashingTransform::generate()
     if (pass_through && *pass_through)
     {
         result.swap(passed_chunk);
-        passed_pending = false;
         return result;
     }
 

@@ -17,8 +17,6 @@ namespace DB
 class JoinSwitcher : public IJoin
 {
 public:
-    using IJoin::addBlockToJoin;
-    using IJoin::joinBlock;
     JoinSwitcher(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,

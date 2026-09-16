@@ -1,0 +1,8 @@
+budget 82 million bytes	1500000	1
+budget 84 million bytes	1500000	1
+budget 86 million bytes	1500000	1
+budget 50 million bytes: the same build switches to grace	1500000	1
+-- at least one build split its scatter and stayed in memory
+1	1
+-- the build with the lower budget did switch
+1

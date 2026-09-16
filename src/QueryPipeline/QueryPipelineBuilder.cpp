@@ -560,8 +560,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto concurrent_right_filling_transform = [&](const OutputPortRawPtrs & outports)
         {
             Processors processors;
-            /// One filling transform per resized outport is one build lane, and a unique index lets
-            /// the join bind stable per-lane build state without locking; see `IJoin.h`.
+            /// Each filling transform is one build lane; see `IJoin::addBlockToJoin`.
             size_t build_lane = 0;
             if (min_block_size_rows > 0 || min_block_size_bytes > 0)
             {
@@ -658,7 +657,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter,
-            joining_right_rows_match_counter, emit_non_joined, /*stream_index_=*/i);
+            joining_right_rows_match_counter, emit_non_joined, /*probe_lane_=*/i);
 
         connect(*left_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());

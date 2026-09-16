@@ -48,14 +48,14 @@ JoiningTransform::JoiningTransform(
     FinishCounterPtr finish_counter_,
     RightRowsMatchCounterPtr match_counter_,
     bool emit_non_joined_,
-    size_t stream_index_)
+    size_t probe_lane_)
     : IProcessor({input_header}, {output_header})
     , join(std::move(join_))
     , on_totals(on_totals_)
     , emit_non_joined(emit_non_joined_)
     , default_totals(default_totals_)
     , finish_counter(std::move(finish_counter_))
-    , stream_index(stream_index_)
+    , probe_lane(probe_lane_)
     , max_block_size(max_block_size_)
     , match_counter(std::move(match_counter_))
 {
@@ -261,7 +261,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     {
         Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
         ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
-        join_result = join->joinBlock(std::move(block), stream_index);
+        join_result = join->joinBlock(std::move(block), probe_lane);
     }
 
     auto data = join_result->next();

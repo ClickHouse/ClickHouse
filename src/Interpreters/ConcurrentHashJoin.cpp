@@ -340,6 +340,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         ProfileEventTimeIncrement<Microseconds> dispatch_watch(ProfileEvents::ConcurrentHashJoinBuildDispatchMicroseconds);
         dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block), use_zero_copy_right);
     }
+    ProfileEventTimeIncrement<Microseconds> insert_watch(ProfileEvents::ConcurrentHashJoinBuildInsertMicroseconds);
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -352,51 +353,48 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     size_t post_join_total_rows = 0;
     size_t post_join_total_bytes = 0;
 
+    while (blocks_left > 0)
     {
-        ProfileEventTimeIncrement<Microseconds> insert_watch(ProfileEvents::ConcurrentHashJoinBuildInsertMicroseconds);
-        while (blocks_left > 0)
+        bool made_progress = false;
+
+        /// insert blocks into corresponding HashJoin instances
+        for (size_t i = 0; i < dispatched_blocks.size(); ++i)
         {
-            bool made_progress = false;
+            auto & hash_join = hash_joins[i];
+            auto & dispatched_block = dispatched_blocks[i];
 
-            /// insert blocks into corresponding HashJoin instances
-            for (size_t i = 0; i < dispatched_blocks.size(); ++i)
+            if (dispatched_block.rows())
             {
-                auto & hash_join = hash_joins[i];
-                auto & dispatched_block = dispatched_blocks[i];
+                /// if current hash_join is already processed by another thread, skip it and try later
+                std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
+                if (!lock.owns_lock())
+                    continue;
 
-                if (dispatched_block.rows())
+                made_progress = true;
+
+                if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
-                    /// if current hash_join is already processed by another thread, skip it and try later
-                    std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
-                    if (!lock.owns_lock())
-                        continue;
-
-                    made_progress = true;
-
-                    if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
-                    {
-                        reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params.build, slots, external_join_threshold);
-                        hash_join->space_was_preallocated = true;
-                    }
-
-                    auto [block, selector] = std::move(dispatched_block).detachData();
-                    bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits, block_row_store);
-
-                    std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
-
-                    dispatched_block = {};
-                    blocks_left--;
-
-                    if (limit_exceeded)
-                        return false;
+                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params.build, slots, external_join_threshold);
+                    hash_join->space_was_preallocated = true;
                 }
-            }
 
-            /// If no slot was available in this pass, yield to avoid burning CPU while waiting
-            /// for other threads to finish inserting into their respective hash join slots
-            if (!made_progress)
-                std::this_thread::yield();
+                auto [block, selector] = std::move(dispatched_block).detachData();
+                bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits, block_row_store);
+
+                std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
+
+                dispatched_block = {};
+                blocks_left--;
+
+                if (limit_exceeded)
+                    return false;
+            }
         }
+
+        /// If no slot was available in this pass, yield to avoid burning CPU while waiting
+        /// for other threads to finish inserting into their respective hash join slots
+        if (!made_progress)
+            std::this_thread::yield();
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())

@@ -454,7 +454,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
         /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
         {
-            /// Select and prepare the matched left-side rows.
             ProfileEventTimeIncrement<Microseconds> filter_left_watch(ProfileEvents::HashJoinResultFilterLeftMicroseconds);
             if (properties.need_filter)
                 scattered_block->filter(std::span<UInt64>{matched_rows});
@@ -478,9 +477,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             .state_bytes_limit = limit_bytes_per_key,
         });
 
-        /// Materialize and append the matched right-side values. This also replicates the
-        /// already-filtered left columns, by the same per-row match count - that replication is
-        /// driven by the right-side multiplicity and cannot be separated from it.
         ProfileEventTimeIncrement<Microseconds> build_output_watch(ProfileEvents::HashJoinResultBuildOutputMicroseconds);
         auto block = generateBlock(current_row_state, lazy_output, properties);
         scattered_block.reset();
@@ -591,7 +587,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
     {
-        /// The matched left-side rows of this sub-block.
         ProfileEventTimeIncrement<Microseconds> filter_left_watch(ProfileEvents::HashJoinResultFilterLeftMicroseconds);
         if (properties.need_filter)
             current_scattered_block.filter(partial_matched_rows);
@@ -615,7 +610,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         .state_bytes_limit = limit_bytes_per_key,
     });
 
-    /// See the equivalent call above.
     ProfileEventTimeIncrement<Microseconds> build_output_watch(ProfileEvents::HashJoinResultBuildOutputMicroseconds);
     auto block = generateBlock(current_row_state, lazy_output, properties);
     if (is_last)

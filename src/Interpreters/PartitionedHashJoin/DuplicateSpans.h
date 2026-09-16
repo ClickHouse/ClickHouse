@@ -9,11 +9,12 @@
 namespace DB
 {
 
-/** Per-pass scratch for the duplicate rows of a `PartitionedHashJoin` build. A key's first duplicate
-  * of the pass stores the cell's previous word (an inline ref, or a run/chain from an earlier pass)
-  * as the key's first item, then every later row of the key appends its ref. The zero key has no
-  * bucket: its items live in `zero_items`. At the pass's finish, `SpanWriter` turns each key's items
-  * into one exact arena span.
+/** Per-pass scratch for the duplicate rows of a `PartitionedHashJoin` build. A pass is the stretch of
+  * inserts between two `SpanWriter::finish` calls: one owner's partition, one drain run, or one block
+  * on the single fill thread. When a key sees its first duplicate of the pass, the cell's previous
+  * word (an inline ref, or a span or chain from an earlier pass) becomes the key's first item; every
+  * later row of the key appends its ref. The zero key has no bucket: its items live in `zero_items`.
+  * At the pass's finish, `SpanWriter` turns each key's items into one exact arena span.
   */
 struct PassScratch
 {
@@ -23,14 +24,18 @@ struct PassScratch
     PaddedPODArray<UInt64> zero_items; /// the zero key's items of the pass; it has no bucket
     UInt64 spanning_keys = 0; /// keys whose previous word was a run or a chain
 
+    /// Bytes per item (`bucket` + `item`) and per duplicated key (`keys`); the memory planner charges
+    /// these. A key's first duplicate of the pass also stores the cell's previous word as an item.
+    static constexpr size_t bytes_per_item = sizeof(UInt32) + sizeof(UInt64);
+    static constexpr size_t bytes_per_key = sizeof(UInt32);
+
     bool empty() const { return keys.empty() && zero_items.empty(); }
 
-    /// Logical occupancy: 12 bytes per item (`bucket` + `item`) plus 4 bytes per duplicated key,
-    /// plus 8 bytes per zero-key item. Capacity slack is not included; the gate charges this shape.
+    /// Logical occupancy, 8 bytes per zero-key item. Capacity slack is excluded on purpose: the spill
+    /// budget is charged this figure, not the allocated bytes.
     size_t usedBytes() const
     {
-        return bucket.size() * sizeof(UInt32) + item.size() * sizeof(UInt64) + keys.size() * sizeof(UInt32)
-            + zero_items.size() * sizeof(UInt64);
+        return bytes_per_item * item.size() + bytes_per_key * keys.size() + zero_items.size() * sizeof(UInt64);
     }
 
     size_t allocatedBytes() const
@@ -78,14 +83,18 @@ ALWAYS_INLINE inline void appendRowZero(RowRefList & mapped, UInt64 ref, PassScr
     scratch.zero_items.push_back(ref);
 }
 
-/** Turns one pass's scratch into exact arena spans: a headerless `TAG_RUN` for a key's first range,
-  * a 16-byte header in front of every later range, newest range first. One writer per build worker
+/** Turns one pass's scratch into exact arena spans: a headerless `TAG_RUN` for a key's first span,
+  * a 16-byte header in front of every later span, newest span first. One writer per build worker
   * (and one for the drain), allocating from that worker's arena. A key is only ever appended to by
   * the owner of its partition or by the serial drain, so nothing here synchronizes.
   */
 class SpanWriter
 {
 public:
+    /// Every span after a key's first is preceded by a header: the key's row count so far and the link
+    /// to the previous span.
+    static constexpr size_t span_header_bytes = 2 * sizeof(UInt64);
+
     struct Stats
     {
         UInt64 ranges = 0;

@@ -20,9 +20,9 @@ extern const int LOGICAL_ERROR;
   */
 JoinResultPtr PartitionedHashJoin::probeDispatch(Block block, size_t lane)
 {
-    const JoinKind kind = leaf_join->getKind();
-    const JoinStrictness strictness = leaf_join->getStrictness();
-    const bool prefer_use_maps_all = leaf_join->preferUseMapsAll();
+    const JoinKind kind = hash_join->getKind();
+    const JoinStrictness strictness = hash_join->getStrictness();
+    const bool prefer_use_maps_all = hash_join->preferUseMapsAll();
 
     using enum JoinKind;
     using enum JoinStrictness;

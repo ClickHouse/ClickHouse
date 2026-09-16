@@ -82,7 +82,6 @@ private:
     Squashing squashing;
     Chunk squashed_chunk;
     Chunk passed_chunk;
-    bool passed_pending = false;
 };
 
 }

@@ -129,8 +129,6 @@ class HashJoinMethods;
 class HashJoin : public IJoin
 {
 public:
-    using IJoin::addBlockToJoin;
-    using IJoin::joinBlock;
     HashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block,
@@ -168,10 +166,14 @@ public:
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
+    using IJoin::addBlockToJoin;
+
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store = nullptr);
 
     void checkTypesOfKeys(const Block & block) const override;
+
+    using IJoin::joinBlock;
 
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
@@ -612,8 +614,10 @@ public:
     RowDataStorePtr createRowStoreForBlock(const Block & block) const;
     /// Packs a prepared right block (`prepareRightBlock`) into its stored form: the columns the
     /// initialized row store layout admits go into a `RowDataStore`, the rest stay columnar. Without an
-    /// initialized row store every column stays columnar.
-    StoredBlock createStoredBlock(const Block & block_to_save, ScatteredBlock::Selector selector) const;
+    /// initialized row store every column stays columnar. A caller that already built the row store
+    /// of this block (`ConcurrentHashJoin` shares one across its slots) passes it in.
+    StoredBlock createStoredBlock(
+        const Block & block_to_save, ScatteredBlock::Selector selector, RowDataStorePtr row_store = nullptr) const;
 
     size_t getAndSetRightTableKeys() const;
 

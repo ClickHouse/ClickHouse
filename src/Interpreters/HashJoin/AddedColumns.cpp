@@ -310,9 +310,8 @@ namespace
 /// `StoredColumnsIndex::resolveEmitColumns` resolved, reading the 8-byte ref words as they are
 /// instead of expanding them to `(StoredBlock *, row)` pairs, and prefetching ahead over the
 /// randomly-accessed source rows - the generic path issues two dependent random loads per row with
-/// no overlap, which measured as the second-largest probe cost. Returns false having written nothing
-/// when the column cannot take this path: a `ColumnReplicated` source, or a source block column of an
-/// unexpected concrete type.
+/// no overlap. Returns false having written nothing when the column cannot take this path: a
+/// `ColumnReplicated` source, or a source block column of an unexpected concrete type.
 template <bool from_row_list, typename ColumnT>
 bool gatherColumnFromRefsDirect(
     IColumn & dst_column,
@@ -325,9 +324,7 @@ bool gatherColumnFromRefsDirect(
     if (!dst)
         return false;
 
-    /// Prebuilt once per join, because re-resolving it here would cost `blocks x columns` cold
-    /// `typeid_cast` chains per output chunk. All stored blocks share the saved-block structure, so
-    /// one cast of the sample column validates the whole table.
+    /// Prebuilt per join; see `StoredColumnsIndex::EmitColumn::data_by_block`.
     if (!source.data_by_block || !source.sample_column || !typeid_cast<const ColumnT *>(source.sample_column))
         return false;
 
@@ -531,7 +528,6 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
 
     if (!gathered_directly.empty())
     {
-        /// The direct gather only takes columnar sources, so whatever it left goes down the block path.
         for (size_t i = 0; i < columns.size(); ++i)
             if (!gathered_directly[i])
                 columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, output_access_indexes[i].index, columns_with_row_numbers);

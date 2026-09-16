@@ -5,7 +5,6 @@
 #include <base/defines.h>
 #include <Common/ColumnsHashing.h>
 
-#include <array>
 #include <bit>
 #include <limits>
 
@@ -17,10 +16,11 @@ namespace DB
   * the data-dependent misses of several rows overlap instead of serializing.
   *
   * Two pieces: a policy owns the per-row state as parallel arrays and the seed/step bodies over the
-  * shared table's cells; `amacRun` drives them. The table never grows, so there is no cancellation
-  * point: a build ring's in-flight rows all belong to the partition the worker holds, and the only
-  * thing a visit can do besides claiming, appending or advancing is hand a row that reached the range
-  * end to the overflow buffer.
+  * shared table's cells; `amacRun` drives them. The ring has no cancellation point. The table grows
+  * only on wrapping inserts (the single-partition build and the overflow drain) or between waves, and
+  * neither uses the ring, so no ring is ever in flight across a resize. A build ring's in-flight rows
+  * all belong to the partition its worker holds, and besides claiming, appending or advancing, a visit
+  * can only hand a row that reached its range end to the overflow buffer.
   *
   * The correctness invariant of a build policy's `step`: the cell read and the mutation it implies
   * have to be one indivisible visit. Read a batch of cells and mutate afterwards, and two in-flight
@@ -35,8 +35,8 @@ namespace DB
 template <typename Cell>
 constexpr bool cell_stores_hash = requires(const Cell & cell) { cell.saved_hash; };
 
-/// Inactive sentinel of a build ring's row array - the probe ring marks inactivity in its
-/// cell-pointer array instead - and so also the driver's row-count bound.
+/// The inactive sentinel of a build ring's row array, and therefore the driver's upper bound on rows
+/// per run. The probe ring marks inactivity in its cell-pointer array instead.
 constexpr UInt32 amac_inactive_row = std::numeric_limits<UInt32>::max();
 
 /// 8-10 in-flight rows already saturate a core's L1-D miss handling, and past 32 the ring starts
@@ -52,11 +52,11 @@ enum class AmacStepResult : UInt8
     Done, /// the row completed; the slot can be recycled
 };
 
-/// The compile-time gate of the AMAC path. Two getters stay on the plain loop: the LowCardinality
-/// one deduplicates lookups per dictionary index through its own cache, which a ring bypasses rather
-/// than accelerates (the same reason it disables the look-ahead prefetch), and the `hashed` fallback
-/// recomputes a 128-bit serialized-key hash on every key-holder fetch, which a ring pays per visit.
-/// `FixedHashMap` (`key8`/`key16`) has no collision chain to pipeline.
+/// The compile-time gate of the AMAC path. Two key getters stay on the plain loop. The LowCardinality
+/// getter deduplicates lookups per dictionary index through its own cache, which a ring would bypass
+/// (the same reason it disables the look-ahead prefetch). The `hashed` getter recomputes a 128-bit hash
+/// of the serialized key on every key-holder fetch, which a ring would pay per visit. `FixedHashMap`
+/// (`key8`/`key16`) has no collision chain to pipeline.
 template <typename T>
 inline constexpr bool is_low_cardinality_join_key_getter = false;
 template <typename BaseMethod, typename Mapped>
@@ -72,16 +72,15 @@ constexpr bool amac_join_supported
     = is_shared_join_table<std::remove_const_t<Map>> && !is_low_cardinality_join_key_getter<KeyGetter> && !is_hashed_join_key_getter<KeyGetter>;
 
 /** The ring driver. A policy supplies `Ring<ring_size>` - the per-row state, value-initialized to
-  * all-inactive, with `isActive` / `deactivate` / `rowAt` - plus `start(ring, s, row)` (seed the slot
-  * and prefetch; false means the row was handled synchronously and the slot stays free) and
+  * all-inactive, with `isActive` / `deactivate` - plus `start(ring, s, row)` (seed the slot and
+  * prefetch; false means the row was handled synchronously and the slot stays free) and
   * `step(ring, s)`.
   *
   * The ring state is a struct of parallel arrays, not an array of slot structs, so a wide field - a
-  * 16- or 32-byte stored key - cannot misalign every other field against cache lines. Keeping it
-  * minimal is what makes the ring work at all: fat slot state spills to the stack and costs more
-  * than the overlap wins, so anything recomputable from the row index is recomputed, and a policy
-  * carries resolved address material only where the steady step would otherwise re-resolve it per
-  * visit.
+  * 16- or 32-byte stored key - cannot misalign every other field against cache lines. Keeping the slot
+  * state minimal is what makes the ring pay off: fat slot state spills to the stack and costs more than
+  * the overlap wins. So anything recomputable from the row index is recomputed, and a policy stores a
+  * resolved address only where the steady step would otherwise re-resolve it on every visit.
   *
   * Steady/drain split: while rows remain and every refill has succeeded, every slot is provably
   * active, so the steady phase can sweep with a plain `for` - no active check, no modulo. The first
@@ -96,9 +95,7 @@ void amacRun(Policy & policy_arg, size_t rows)
     /// A policy whose fields are per-run invariants can opt into a frame-local copy. The copy's
     /// address never escapes - every policy call inlines - so its fields become SSA values that
     /// stores through the result arrays cannot alias; behind the caller's reference the compiler
-    /// reloads them per visit instead. A policy with mutable aggregates opts in too by providing
-    /// `writeBackTo`. An exception mid-run skips the write-back, which matches by-reference
-    /// semantics: nothing reads the aggregates until the run has finished.
+    /// reloads them per visit instead.
     static constexpr bool run_on_copy = requires { requires Policy::copy_into_frame; };
     std::conditional_t<run_on_copy, Policy, Policy &> policy = policy_arg;
 
@@ -106,10 +103,10 @@ void amacRun(Policy & policy_arg, size_t rows)
     size_t next = 0;
     size_t active = 0;
 
-    /// Pull rows into a slot until one enters the ring or the rows run out. Force-inlined because
-    /// clang otherwise outlines it for the multi-column fixed-key policies, which leaks the policy
-    /// copy's address and undoes the SSA promotion above - reintroducing a per-visit reload of every
-    /// invariant in the steady loop, plus a call per completed row.
+    /// Pull rows into a slot until one enters the ring or the rows run out. Force-inlined: for the
+    /// multi-column fixed-key policies clang otherwise outlines this lambda. That leaks the address of
+    /// the policy copy and undoes the SSA promotion above, so every invariant is reloaded per visit in
+    /// the steady loop, plus one call per completed row.
     auto refill = [&](size_t s) ALWAYS_INLINE
     {
         while (next < rows)
@@ -160,12 +157,6 @@ void amacRun(Policy & policy_arg, size_t rows)
             ring.deactivate(s);
             --active;
         }
-    }
-
-    if constexpr (run_on_copy)
-    {
-        if constexpr (requires { policy.writeBackTo(policy_arg); })
-            policy.writeBackTo(policy_arg);
     }
 }
 

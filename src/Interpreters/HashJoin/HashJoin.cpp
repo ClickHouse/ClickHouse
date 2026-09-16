@@ -898,13 +898,16 @@ RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
     return RowDataStore::create(data->row_store_layout, columns);
 }
 
-StoredBlock HashJoin::createStoredBlock(const Block & block_to_save, ScatteredBlock::Selector selector) const
+StoredBlock HashJoin::createStoredBlock(
+    const Block & block_to_save, ScatteredBlock::Selector selector, RowDataStorePtr row_store) const
 {
     if (data->row_store_state != RowStoreState::Initialized)
-        return StoredBlock(block_to_save.getColumns(), std::move(selector));
+        return StoredBlock(block_to_save.getColumns(), std::move(selector), std::move(row_store));
 
     auto [row_store_columns, remaining_columns] = extractRowStoreColumns(block_to_save, data->column_access_indexes);
-    return StoredBlock(std::move(remaining_columns), std::move(selector), RowDataStore::create(data->row_store_layout, row_store_columns));
+    if (!row_store)
+        row_store = RowDataStore::create(data->row_store_layout, row_store_columns);
+    return StoredBlock(std::move(remaining_columns), std::move(selector), std::move(row_store));
 }
 
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
@@ -1012,23 +1015,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
         assertBlocksHaveEqualStructureAllowReplicated(data->sample_block, block_to_save, "joined block");
 
-        Columns columns;
-        if (data->row_store_state == RowStoreState::Initialized)
-        {
-            auto [row_store_columns, remaining_columns] = extractRowStoreColumns(block_to_save, data->column_access_indexes);
-            columns = std::move(remaining_columns);
-            if (!row_store)
-                row_store = RowDataStore::create(data->row_store_layout, row_store_columns);
-        }
-        else
-            columns = block_to_save.getColumns();
-
         doDebugAsserts();
         /// Register the block and account for it while a local list still owns it: `splice` cannot throw,
         /// so `data->columns`, `data->allocated_size` and `data->rows_to_join` always describe the same set
         /// of stored blocks. Same ordering as `tryRerangeRightTableDataImpl`; a list node keeps its address.
         StoredBlocksList new_block;
-        new_block.emplace_back(std::move(columns), std::move(selector), std::move(row_store));
+        new_block.emplace_back(createStoredBlock(block_to_save, std::move(selector), std::move(row_store)));
         auto * stored_columns = &new_block.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         stored_columns->block_no = data->stored_columns_index->add(stored_columns);

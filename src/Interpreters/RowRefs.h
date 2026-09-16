@@ -104,8 +104,6 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 ///       `TAG_RUN`   a headerless block of `count` contiguous refs, `count` exact in [2, MAX_RANGE_REFS];
 ///       `TAG_CHAIN` a newest-first chain of ranges; the pointer is the newest range's 16-byte header.
 ///       `TAG_COUNT`, `TAG_FILL`, `TAG_FILL_H` are build-time words `PartitionedHashJoin` never publishes.
-///     A published count equal to `COUNT_SAT` is always a saturated `TAG_CHAIN` (or a `Batch`); a
-///     `TAG_RUN` never saturates because a range holds at most `MAX_RANGE_REFS = COUNT_SAT - 1` refs.
 /// Every layout keeps the same contract for the readers: `rows`, `firstWord` and `ForwardIterator`
 /// decode all of them, so `LazyOutput`, the used flags and the non-joined fillers never care which
 /// build produced the word. A `Batch` node is allocated only when the first duplicate of a key
@@ -134,9 +132,9 @@ struct RowRefList
     static constexpr UInt64 TAG_RUN = 0x6;
     static constexpr UInt64 NODE_PTR_MASK = PTR_MASK & ~TAG_MASK;
 
-    /// 16-byte header in front of every range of a key except the key's first. The range's refs start
-    /// at `reinterpret_cast<UInt64 *>(this) + 2`. The previous pointer names the previous range's
-    /// header when `prevHasHeader`, its refs otherwise.
+    /// 16-byte header in front of every range of a key except the key's first. The range's refs
+    /// follow the header directly (`refs`). The previous pointer names the previous range's header
+    /// when `prevHasHeader`, its refs otherwise.
     struct RangeHeader
     {
         UInt64 len_total = 0; /// bits 63..48 own_len, bits 47..0 total (this range plus all older)
@@ -144,6 +142,7 @@ struct RowRefList
 
         UInt32 ownLen() const { return static_cast<UInt32>(len_total >> COUNT_SHIFT); }
         UInt64 total() const { return len_total & PTR_MASK; }
+        const UInt64 * refs() const { return reinterpret_cast<const UInt64 *>(this) + 2; }
         static UInt32 prevLen(UInt64 prev_word) { return static_cast<UInt32>(prev_word >> COUNT_SHIFT); }
         static const UInt64 * prevPtr(UInt64 prev_word)
         {
@@ -223,10 +222,6 @@ struct RowRefList
         return fromWord((n_items << 4) | (static_cast<UInt64>(has_prev) << 3) | TAG_COUNT);
     }
 
-    static UInt64 addItem(UInt64 w) { return w + (1ull << 4); }
-    static UInt64 countItems(UInt64 w) { return w >> 4; }
-    static bool hasPrev(UInt64 w) { return (w >> 3) & 1; }
-
     /// Build-time: cursor at the next free slot of the key's span, `placed` refs in the open chunk.
     static RowRefList makeFill(const UInt64 * cursor, UInt32 placed, bool has_header)
     {
@@ -253,23 +248,12 @@ struct RowRefList
 
     bool isInline() const { return refWordIsInline(word); }
 
-    /// The tag of a non-inline, non-zero word.
-    UInt64 tag() const
-    {
-        chassert(word != 0 && !isInline());
-        return word & TAG_MASK;
-    }
-    bool isBatch() const { return word != 0 && !isInline() && (word & TAG_MASK) == TAG_BATCH; }
-    bool isRun() const { return word != 0 && !isInline() && (word & TAG_MASK) == TAG_RUN; }
-    bool isChain() const { return word != 0 && !isInline() && (word & TAG_MASK) == TAG_CHAIN; }
-    bool isCount() const { return word != 0 && !isInline() && (word & TAG_MASK) == TAG_COUNT; }
-    bool isFill() const
-    {
-        if (word == 0 || isInline())
-            return false;
-        const UInt64 t = word & TAG_MASK;
-        return t == TAG_FILL || t == TAG_FILL_H;
-    }
+    bool hasTag(UInt64 t) const { return word != 0 && !isInline() && (word & TAG_MASK) == t; }
+    bool isBatch() const { return hasTag(TAG_BATCH); }
+    bool isRun() const { return hasTag(TAG_RUN); }
+    bool isChain() const { return hasTag(TAG_CHAIN); }
+    bool isCount() const { return hasTag(TAG_COUNT); }
+    bool isFill() const { return hasTag(TAG_FILL) || hasTag(TAG_FILL_H); }
 
     /// The count field as stored: exact for runs, saturating for batches and chains.
     UInt32 countField() const { return static_cast<UInt32>((word >> COUNT_SHIFT) & COUNT_SAT); }
@@ -277,24 +261,19 @@ struct RowRefList
     UInt64 countItems() const
     {
         chassert(isCount());
-        return RowRefList::countItems(word);
+        return word >> 4;
     }
     bool hasPrev() const
     {
         chassert(isCount());
-        return RowRefList::hasPrev(word);
+        return (word >> 3) & 1;
     }
     void addItem()
     {
         chassert(isCount());
-        word = RowRefList::addItem(word);
+        word += 1ull << 4;
     }
 
-    const UInt64 * fillCursor() const
-    {
-        chassert(isFill());
-        return reinterpret_cast<const UInt64 *>(word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
-    }
     UInt64 * fillCursor() /// NOLINT(readability-make-member-function-const)
     {
         chassert(isFill());
@@ -332,21 +311,11 @@ struct RowRefList
         chassert(isRun());
         return reinterpret_cast<const UInt64 *>(word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
-    UInt64 * runRefsMutable() /// NOLINT(readability-make-member-function-const)
-    {
-        chassert(isRun());
-        return reinterpret_cast<UInt64 *>(word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
-    }
 
     const RangeHeader * chainHeader() const
     {
         chassert(isChain());
         return reinterpret_cast<const RangeHeader *>(word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
-    }
-    RangeHeader * chainHeader() /// NOLINT(readability-make-member-function-const)
-    {
-        chassert(isChain());
-        return reinterpret_cast<RangeHeader *>(word & NODE_PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
     /// Total number of rows for this key. Load-free unless the count saturated.
@@ -377,8 +346,7 @@ struct RowRefList
             case TAG_CHAIN: {
                 UInt64 pending = chainHeader()->prev;
                 while (RangeHeader::prevHasHeader(pending))
-                    pending
-                        = reinterpret_cast<const RangeHeader *>(RangeHeader::prevPtr(pending))->prev; /// NOLINT(performance-no-int-to-ptr)
+                    pending = reinterpret_cast<const RangeHeader *>(RangeHeader::prevPtr(pending))->prev;
                 return RangeHeader::prevPtr(pending)[0];
             }
             default:
@@ -511,7 +479,7 @@ struct RowRefList
                     return;
                 case TAG_CHAIN: {
                     const RangeHeader * header = list.chainHeader();
-                    cur = reinterpret_cast<const UInt64 *>(header) + 2;
+                    cur = header->refs();
                     run_end = cur + header->ownLen();
                     pending = header->prev;
                     return;
@@ -557,9 +525,8 @@ struct RowRefList
                     {
                         if (RangeHeader::prevHasHeader(pending))
                         {
-                            const RangeHeader * header = reinterpret_cast<const RangeHeader *>(
-                                RangeHeader::prevPtr(pending)); /// NOLINT(performance-no-int-to-ptr)
-                            cur = reinterpret_cast<const UInt64 *>(header) + 2;
+                            const auto * header = reinterpret_cast<const RangeHeader *>(RangeHeader::prevPtr(pending));
+                            cur = header->refs();
                             run_end = cur + header->ownLen();
                             pending = header->prev;
                         }
@@ -687,9 +654,8 @@ public:
         /// `repl_by_block[b]` is that column as `ColumnReplicated *` if it is one, otherwise nullptr.
         PODArray<const ColumnReplicated *> repl_by_block;
         /// `data_by_block[b]` is that column's raw fixed-width base, or nullptr for a cleared block;
-        /// valid only when `direct_gather_ok`. Prebuilt because resolving it per emit call would put
-        /// `blocks x columns` cold `typeid_cast` chains on every output chunk, which dominated the
-        /// probe of a large build with narrow probe blocks.
+        /// valid only when `direct_gather_ok`. Prebuilt because resolving it on every emit call would
+        /// cost `blocks x columns` cold `typeid_cast` chains per output chunk.
         PODArray<const void *> data_by_block;
         /// All stored blocks share the saved-block structure, so one `typeid_cast` of this column
         /// validates the whole table.

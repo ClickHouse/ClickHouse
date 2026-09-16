@@ -64,7 +64,7 @@ public:
         FinishCounterPtr finish_counter_ = nullptr,
         RightRowsMatchCounterPtr match_counter_ = nullptr,
         bool emit_non_joined_ = true,
-        size_t stream_index_ = 0);
+        size_t probe_lane_ = 0);
 
     ~JoiningTransform() override;
 
@@ -104,8 +104,8 @@ private:
     JoinResultPtr join_result;
 
     FinishCounterPtr finish_counter;
-    /// Stable 0-based probe lane, so a join can bind lock-free per-lane scratch; see `IJoin.h`.
-    size_t stream_index = 0;
+    /// Passed to `IJoin::joinBlock` as the probe lane.
+    size_t probe_lane = 0;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
@@ -135,7 +135,7 @@ public:
 private:
     JoinPtr join;
     FinishCounterPtr finish_counter;
-    /// Stable 0-based build lane; the counterpart for `addBlockToJoin`.
+    /// Passed to `IJoin::addBlockToJoin` as the build lane.
     size_t build_lane = 0;
     Chunk chunk;
     bool stop_reading = false;

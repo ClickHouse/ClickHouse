@@ -3841,9 +3841,9 @@ Possible values:
 
 - partitioned_hash
 
- An experimental variation of `hash` join that builds one shared hash table for the right table in cache-sized partitions: the table's cell buffer is split into owner ranges that parallel workers fill independently, while the left part of `JOIN` is probed without partitioning.
+ An experimental variant of `hash` join. The right table is split into partitions that fit the CPU cache, and each partition is inserted into its own range of one shared hash table by a separate thread. The left table is probed against that table without being partitioned.
 
- Supports `INNER`/`LEFT`/`RIGHT`/`FULL` joins with `ALL`/`ANY`/`SEMI`/`ANTI` strictness, `ASOF` joins, and `ON` sections with single-side filter conditions or multiple `OR`-ed key sets. Unsupported shapes (e.g. mixed non-equality `ON` conditions, joins with special storages, spilling contexts) fall back to the other enabled algorithms (or to `hash`) at query planning time.
+ Supports `INNER`, `LEFT`, `RIGHT` and `FULL` joins with `ALL`, `ANY`, `SEMI` or `ANTI` strictness, `ASOF` joins, `ON` sections with filter conditions on one side, and several key sets joined by `OR`. With `max_bytes_before_external_join` set, it spills to disk through `grace_hash` like the other hash joins. Other shapes (for example an `ON` condition that compares columns of both tables with anything but equality, or a join with a special storage) use the next enabled algorithm, or `hash`, chosen at planning time.
 
 - partial_merge
 
@@ -8599,7 +8599,7 @@ Throw an exception instead of logging a warning when Hive-style partitioning det
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
 The former is used when we know that the right table size is below the threshold.
-For `partitioned_hash`, a right table estimated below the threshold is built by a single thread without widening the pipeline, and a build with at least this many rows gets at least one build partition per thread.
+`partitioned_hash` also uses this threshold. When the right table is estimated to have fewer rows, one thread builds the hash table. When it has at least this many rows, the build uses at least one partition per thread.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
@@ -8933,10 +8933,10 @@ Initial number of grace hash join buckets
 Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, partitioned_hash_join_max_fanout_per_pass, 8192, R"(
-Upper bound on the number of partitions one scatter pass of a `partitioned_hash` join writes to. Values from 2 to 32768 are accepted and rounded down to a power of two. A plan with more partitions scatters the build side in several passes. Each partition of a pass needs about 76 bytes of write buffer per thread, so the default keeps those buffers near 600 KiB, inside a 1 MiB L2 cache.
+Maximum number of partitions a `partitioned_hash` join writes in one pass over the right table. When the join needs more partitions, it makes several passes. Values from 2 to 32768 are accepted and rounded down to a power of two. Each partition of a pass needs about 76 bytes of buffer per thread, so the default keeps the buffers of one pass near 600 KiB, which fits in a 1 MiB L2 cache.
 )", EXPERIMENTAL) \
     DECLARE(Bool, partitioned_hash_join_cap_partitions_by_l1_descriptors, true, R"(
-Limit the number of partitions of a `partitioned_hash` join to the number of per-partition table descriptors that fit in a quarter of the L1 data cache. The probe reads one descriptor per row, and past this count that read misses the L1 cache.
+Limit the number of partitions of a `partitioned_hash` join so that the per-partition records of the hash table (where each partition's cells start and end) fit in a quarter of the L1 data cache. The probe reads one such record per row; with more partitions that read misses the L1 cache.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys

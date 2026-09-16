@@ -29,8 +29,6 @@
 #include <gtest/gtest.h>
 #include <pcg_random.hpp>
 
-#include <numeric>
-
 using namespace DB;
 
 namespace
@@ -48,17 +46,16 @@ pcg64 & rng()
     return generator;
 }
 
-template <typename Pid>
-std::vector<Pid> makePids(size_t n, size_t num_shards)
+std::vector<UInt16> makePids(size_t n, size_t num_shards)
 {
-    std::vector<Pid> pids(n);
+    std::vector<UInt16> pids(n);
     for (auto & pid : pids)
-        pid = static_cast<Pid>(rng()() % num_shards);
+        pid = static_cast<UInt16>(rng()() % num_shards);
     return pids;
 }
 
 /// Fill a freshly created fixed-width column with `n` rows of random bytes (valid content for
-/// ColumnVector / ColumnDecimal / ColumnFixedString — the scatter contract is byte-preservation).
+/// ColumnVector / ColumnDecimal / ColumnFixedString - the scatter contract is byte-preservation).
 MutableColumnPtr fillFixedRandom(MutableColumnPtr column, size_t n)
 {
     auto raw = column->insertRawUninitialized(n);
@@ -69,7 +66,8 @@ MutableColumnPtr fillFixedRandom(MutableColumnPtr column, size_t n)
 
 /// Materializes the oracle's input the way the scatter contract says: wrappers stripped at every
 /// nesting level, top-level LowCardinality preserved. A wrapped composite is not a usable oracle -
-/// legacy `ColumnSparse` handling inside composites duplicated one source value across shards.
+/// `IColumn::scatter` on a composite holding a `ColumnSparse` element duplicated one source value
+/// across shards.
 ColumnPtr materializeForOracle(const IColumn & source)
 {
     if (source.getDataType() == TypeIndex::LowCardinality)
@@ -77,9 +75,10 @@ ColumnPtr materializeForOracle(const IColumn & source)
     return recursiveRemoveLowCardinality(source.convertToFullIfWrapped());
 }
 
-/// Independent oracle: legacy `IColumn::scatter` per (materialized) source + `insertRangeFrom`
-/// concatenation.
-MutableColumns referenceScatter(std::span<const IColumn * const> sources, const std::vector<std::vector<UInt32>> & pids, size_t num_shards)
+/// Oracle: `IColumn::scatter` per (materialized) source + `insertRangeFrom` concatenation. This is
+/// the same algorithm as the module's fallback, so the Fallback tests compare values with it and
+/// rely on their kernel, type and ownership assertions for the rest.
+MutableColumns referenceScatter(std::span<const IColumn * const> sources, const std::vector<std::vector<UInt16>> & pids, size_t num_shards)
 {
     MutableColumns result(num_shards);
     for (size_t s = 0; s < num_shards; ++s)
@@ -121,47 +120,64 @@ void expectColumnsBitIdentical(const IColumn & expected, const IColumn & actual,
         const char * actual_begin = nullptr;
         const auto expected_value = expected.serializeValueIntoArena(i, expected_arena, expected_begin, nullptr);
         const auto actual_value = actual.serializeValueIntoArena(i, actual_arena, actual_begin, nullptr);
-        ASSERT_EQ(expected_value, actual_value) << context << " row " << i << " (Field-level: expected="
-                                                << (expected)[i].dump() << " actual=" << (actual)[i].dump() << ")";
+        ASSERT_EQ(expected_value, actual_value) << context << " row " << i << " (Field-level: expected=" << expected[i].dump()
+                                                << " actual=" << actual[i].dump() << ")";
     }
 }
 
-/// Run the module scatter (both pid widths must agree) and compare bit-exactly with the oracle.
-void checkEquivalence(std::span<const IColumn * const> sources, const std::vector<std::vector<UInt32>> & pids32, size_t num_shards, bool with_precounted = false)
+/// Run the module scatter and compare bit-exactly with the oracle.
+void checkEquivalence(
+    std::span<const IColumn * const> sources,
+    const std::vector<std::vector<UInt16>> & pids,
+    size_t num_shards,
+    bool with_precounted = false)
 {
-    std::vector<std::span<const UInt32>> pid_spans32;
-    std::vector<std::vector<UInt16>> pids16;
-    std::vector<std::span<const UInt16>> pid_spans16;
-    for (const auto & p : pids32)
-    {
-        pid_spans32.emplace_back(p.data(), p.size());
-        auto & p16 = pids16.emplace_back();
-        p16.reserve(p.size());
-        for (UInt32 pid : p)
-            p16.push_back(static_cast<UInt16>(pid));
-    }
-    for (const auto & p : pids16)
-        pid_spans16.emplace_back(p.data(), p.size());
+    std::vector<std::span<const UInt16>> pid_spans;
+    for (const auto & p : pids)
+        pid_spans.emplace_back(p);
 
     std::vector<UInt32> counts(num_shards, 0);
-    ColumnsScatter::countRowsPerShard(std::span<const std::span<const UInt32>>(pid_spans32), std::span<UInt32>(counts));
+    ColumnsScatter::countRowsPerShard(pid_spans, counts);
     std::span<const UInt32> counts_arg;
     if (with_precounted)
-        counts_arg = std::span<const UInt32>(counts);
+        counts_arg = counts;
 
-    auto result32 = ColumnsScatter::scatter(sources, std::span<const std::span<const UInt32>>(pid_spans32), num_shards, counts_arg);
-    auto result16 = ColumnsScatter::scatter(sources, std::span<const std::span<const UInt16>>(pid_spans16), num_shards, counts_arg);
-    auto expected = referenceScatter(sources, pids32, num_shards);
+    auto result = ColumnsScatter::scatter(sources, pid_spans, num_shards, counts_arg);
+    auto expected = referenceScatter(sources, pids, num_shards);
 
-    ASSERT_EQ(num_shards, result32.size());
-    ASSERT_EQ(num_shards, result16.size());
+    ASSERT_EQ(num_shards, result.size());
     for (size_t s = 0; s < num_shards; ++s)
     {
         /// Per-shard counts must equal the selector histogram whatever the contents are.
-        ASSERT_EQ(counts[s], result32[s]->size()) << "shard " << s;
-        const std::string context = "shard " + std::to_string(s) + " of " + std::to_string(num_shards);
-        expectColumnsBitIdentical(*expected[s], *result32[s], context + " (pid32)");
-        expectColumnsBitIdentical(*expected[s], *result16[s], context + " (pid16)");
+        ASSERT_EQ(counts[s], result[s]->size()) << "shard " << s;
+        expectColumnsBitIdentical(*expected[s], *result[s], "shard " + std::to_string(s) + " of " + std::to_string(num_shards));
+    }
+}
+
+/// Equivalence, counts, and the named-kernel trace assertion.
+void checkTypedKernel(
+    std::span<const IColumn * const> sources,
+    const std::vector<std::vector<UInt16>> & pids,
+    size_t num_shards,
+    ColumnsScatter::ScatterKernelId expected_kernel)
+{
+    ColumnsScatter::DispatchTrace trace;
+    auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
+    checkEquivalence(sources, pids, num_shards);
+    ColumnsScatter::exchangeDispatchTrace(previous);
+    ASSERT_EQ(1u, trace.entries.size());
+    ASSERT_EQ(expected_kernel, trace.entries[0].kernel);
+}
+
+/// {a, b} and {b, a}: a wrapper in either position must be normalized before the typed kernel runs.
+void checkBothOrders(const IColumn & a, const IColumn & b, size_t num_shards, ColumnsScatter::ScatterKernelId expected)
+{
+    for (bool a_first : {true, false})
+    {
+        SCOPED_TRACE(a_first ? "a first" : "b first");
+        std::vector<const IColumn *> sources{a_first ? &a : &b, a_first ? &b : &a};
+        std::vector<std::vector<UInt16>> pids{makePids(sources[0]->size(), num_shards), makePids(sources[1]->size(), num_shards)};
+        checkTypedKernel(sources, pids, num_shards, expected);
     }
 }
 
@@ -176,29 +192,43 @@ void checkFixedTypeEquivalence(const IColumn & prototype)
         size_t rows_per_source;
         size_t num_shards;
     };
-    /// Trivial, direct, write-combining (>= 256) and past the inline scratch capacity.
+    /// One shard, direct (8), write-combining (256), and a second write-combining fanout (512).
     for (const auto & test_case : std::initializer_list<Case>{{1, 1000, 1}, {1, 1000, 8}, {3, 700, 8}, {2, 5000, 256}, {2, 3000, 512}})
     {
         std::vector<MutableColumnPtr> owned;
         std::vector<const IColumn *> sources;
-        std::vector<std::vector<UInt32>> pids;
+        std::vector<std::vector<UInt16>> pids;
         for (size_t b = 0; b < test_case.num_sources; ++b)
         {
             owned.push_back(fillFixedRandom(prototype.cloneEmpty(), test_case.rows_per_source));
             sources.push_back(owned.back().get());
-            pids.push_back(makePids<UInt32>(test_case.rows_per_source, test_case.num_shards));
+            pids.push_back(makePids(test_case.rows_per_source, test_case.num_shards));
         }
-
-        ColumnsScatter::DispatchTrace trace;
-        auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-        checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, test_case.num_shards);
-        ColumnsScatter::exchangeDispatchTrace(previous);
-
-        /// Both pid widths must hit the named kernel, never the fallback.
-        ASSERT_EQ(2u, trace.entries.size());
-        for (const auto & entry : trace.entries)
-            ASSERT_EQ(ColumnsScatter::ScatterKernelId::FixedWidth, entry.kernel) << prototype.getName();
+        checkTypedKernel(sources, pids, test_case.num_shards, ColumnsScatter::ScatterKernelId::FixedWidth);
     }
+}
+
+MutableColumnPtr makeStrings(size_t n, size_t max_length)
+{
+    auto column = ColumnString::create();
+    for (size_t i = 0; i < n; ++i)
+    {
+        std::string value(rng()() % (max_length + 1), static_cast<char>('a' + (i % 26)));
+        column->insertData(value.data(), value.size());
+    }
+    return column;
+}
+
+MutableColumnPtr makeLowCardinalityStrings(size_t n, size_t dict_size)
+{
+    const auto type = DataTypeLowCardinality(std::make_shared<DataTypeString>());
+    auto column = type.createColumn();
+    for (size_t i = 0; i < n; ++i)
+    {
+        std::string value = "value_" + std::to_string(rng()() % dict_size);
+        column->insertData(value.data(), value.size());
+    }
+    return column;
 }
 
 }
@@ -250,25 +280,25 @@ TEST(ColumnsScatter, ZeroRowSourceAmongNonEmpty)
     auto b = ColumnUInt64::create(); /// empty
     auto c = fillFixedRandom(ColumnUInt64::create(), 50);
     std::vector<const IColumn *> sources{a.get(), b.get(), c.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(100, 4), {}, makePids<UInt32>(50, 4)};
-    checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4);
+    std::vector<std::vector<UInt16>> pids{makePids(100, 4), {}, makePids(50, 4)};
+    checkEquivalence(sources, pids, 4);
 }
 
 TEST(ColumnsScatter, AllRowsToOneShard)
 {
     auto column = fillFixedRandom(ColumnUInt64::create(), 500);
     std::vector<const IColumn *> sources{column.get()};
-    std::vector<std::vector<UInt32>> pids{std::vector<UInt32>(500, 0)};
-    checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 8);
+    std::vector<std::vector<UInt16>> pids{std::vector<UInt16>(500, 0)};
+    checkEquivalence(sources, pids, 8);
 }
 
 TEST(ColumnsScatter, PrecountedRowsPerShardMatchesInternalCounting)
 {
     auto column = fillFixedRandom(ColumnUInt64::create(), 2000);
     std::vector<const IColumn *> sources{column.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(2000, 16)};
-    checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 16, /*with_precounted=*/true);
-    checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 16, /*with_precounted=*/false);
+    std::vector<std::vector<UInt16>> pids{makePids(2000, 16)};
+    checkEquivalence(sources, pids, 16, /*with_precounted=*/true);
+    checkEquivalence(sources, pids, 16, /*with_precounted=*/false);
 }
 
 /// Enough rows per shard that full 64-byte lines stream through the non-temporal stores.
@@ -277,8 +307,8 @@ TEST(ColumnsScatter, SwwcManyLinesPerShard)
     auto a = fillFixedRandom(ColumnUInt64::create(), 64 << 10);
     auto b = fillFixedRandom(ColumnUInt64::create(), 64 << 10);
     std::vector<const IColumn *> sources{a.get(), b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(64 << 10, 256), makePids<UInt32>(64 << 10, 256)};
-    checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 256);
+    std::vector<std::vector<UInt16>> pids{makePids(64 << 10, 256), makePids(64 << 10, 256)};
+    checkEquivalence(sources, pids, 256);
 }
 
 /// Transparent wrappers over fixed-width nested columns.
@@ -286,28 +316,7 @@ TEST(ColumnsScatter, ConstMixedWithFull)
 {
     auto full = fillFixedRandom(ColumnUInt64::create(), 300);
     auto const_column = ColumnConst::create(fillFixedRandom(ColumnUInt64::create(), 1), 200);
-
-    for (bool const_first : {true, false})
-    {
-        std::vector<const IColumn *> sources;
-        std::vector<std::vector<UInt32>> pids;
-        if (const_first)
-        {
-            sources = {const_column.get(), full.get()};
-            pids = {makePids<UInt32>(200, 8), makePids<UInt32>(300, 8)};
-        }
-        else
-        {
-            sources = {full.get(), const_column.get()};
-            pids = {makePids<UInt32>(300, 8), makePids<UInt32>(200, 8)};
-        }
-        ColumnsScatter::DispatchTrace trace;
-        auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-        checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 8);
-        ColumnsScatter::exchangeDispatchTrace(previous);
-        for (const auto & entry : trace.entries)
-            ASSERT_EQ(ColumnsScatter::ScatterKernelId::FixedWidth, entry.kernel);
-    }
+    checkBothOrders(*const_column, *full, 8, ColumnsScatter::ScatterKernelId::FixedWidth);
 }
 
 TEST(ColumnsScatter, TwoConstsDifferentValuesMaterialize)
@@ -319,8 +328,8 @@ TEST(ColumnsScatter, TwoConstsDifferentValuesMaterialize)
     auto const_a = ColumnConst::create(std::move(value_a), 100);
     auto const_b = ColumnConst::create(std::move(value_b), 150);
     std::vector<const IColumn *> sources{const_a.get(), const_b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(100, 4), makePids<UInt32>(150, 4)};
-    checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4);
+    std::vector<std::vector<UInt16>> pids{makePids(100, 4), makePids(150, 4)};
+    checkEquivalence(sources, pids, 4);
 }
 
 TEST(ColumnsScatter, AllConstEqualValuesStayCompact)
@@ -334,15 +343,12 @@ TEST(ColumnsScatter, AllConstEqualValuesStayCompact)
     auto const_a = make_const(100);
     auto const_b = make_const(60);
     std::vector<const IColumn *> sources{const_a.get(), const_b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(100, 4), makePids<UInt32>(60, 4)};
-    std::vector<std::span<const UInt32>> pid_spans;
-    for (const auto & p : pids)
-        pid_spans.emplace_back(p.data(), p.size());
+    std::vector<std::vector<UInt16>> pids{makePids(100, 4), makePids(60, 4)};
+    std::vector<std::span<const UInt16>> pid_spans{pids[0], pids[1]};
 
     ColumnsScatter::DispatchTrace trace;
     auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-    auto result = ColumnsScatter::scatter(
-        std::span<const IColumn * const>(sources.data(), sources.size()), std::span<const std::span<const UInt32>>(pid_spans), 4);
+    auto result = ColumnsScatter::scatter(sources, pid_spans, 4);
     ColumnsScatter::exchangeDispatchTrace(previous);
 
     ASSERT_EQ(1u, trace.entries.size());
@@ -371,13 +377,10 @@ TEST(ColumnsScatter, ConstBitExactNotOrderingEqual)
     auto const_pos = ColumnConst::create(std::move(value_pos), 40);
     auto const_neg = ColumnConst::create(std::move(value_neg), 40);
     std::vector<const IColumn *> sources{const_pos.get(), const_neg.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(40, 2), makePids<UInt32>(40, 2)};
-    std::vector<std::span<const UInt32>> pid_spans;
-    for (const auto & p : pids)
-        pid_spans.emplace_back(p.data(), p.size());
+    std::vector<std::vector<UInt16>> pids{makePids(40, 2), makePids(40, 2)};
+    std::vector<std::span<const UInt16>> pid_spans{pids[0], pids[1]};
 
-    auto result = ColumnsScatter::scatter(
-        std::span<const IColumn * const>(sources.data(), sources.size()), std::span<const std::span<const UInt32>>(pid_spans), 2);
+    auto result = ColumnsScatter::scatter(sources, pid_spans, 2);
 
     /// The -0.0 bit patterns across shards must add up to the second source's rows.
     size_t negative_bits = 0;
@@ -407,59 +410,7 @@ TEST(ColumnsScatter, SparseNormalizedBeforeDispatch)
     auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), 20);
 
     auto full = fillFixedRandom(ColumnUInt64::create(), 30);
-    for (bool sparse_first : {true, false})
-    {
-        std::vector<const IColumn *> sources;
-        std::vector<std::vector<UInt32>> pids;
-        if (sparse_first)
-        {
-            sources = {sparse.get(), full.get()};
-            pids = {makePids<UInt32>(20, 4), makePids<UInt32>(30, 4)};
-        }
-        else
-        {
-            sources = {full.get(), sparse.get()};
-            pids = {makePids<UInt32>(30, 4), makePids<UInt32>(20, 4)};
-        }
-        ColumnsScatter::DispatchTrace trace;
-        auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-        checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4);
-        ColumnsScatter::exchangeDispatchTrace(previous);
-        for (const auto & entry : trace.entries)
-            ASSERT_EQ(ColumnsScatter::ScatterKernelId::FixedWidth, entry.kernel);
-    }
-}
-
-namespace
-{
-
-/// Equivalence, counts, and the named-kernel trace assertion.
-void checkTypedKernel(
-    std::span<const IColumn * const> sources,
-    const std::vector<std::vector<UInt32>> & pids,
-    size_t num_shards,
-    ColumnsScatter::ScatterKernelId expected_kernel)
-{
-    ColumnsScatter::DispatchTrace trace;
-    auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-    checkEquivalence(sources, pids, num_shards);
-    ColumnsScatter::exchangeDispatchTrace(previous);
-    ASSERT_EQ(2u, trace.entries.size()); /// checkEquivalence runs both pid widths
-    for (const auto & entry : trace.entries)
-        ASSERT_EQ(expected_kernel, entry.kernel);
-}
-
-MutableColumnPtr makeStrings(size_t n, size_t max_length)
-{
-    auto column = ColumnString::create();
-    for (size_t i = 0; i < n; ++i)
-    {
-        std::string value(rng()() % (max_length + 1), static_cast<char>('a' + (i % 26)));
-        column->insertData(value.data(), value.size());
-    }
-    return column;
-}
-
+    checkBothOrders(*sparse, *full, 4, ColumnsScatter::ScatterKernelId::FixedWidth);
 }
 
 TEST(ColumnsScatter, StringEquivalence)
@@ -468,13 +419,11 @@ TEST(ColumnsScatter, StringEquivalence)
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::String, ColumnsScatter::plannedKernel(*a));
     auto b = makeStrings(1000, 20);
 
-    /// Byte-cursor continuity across chunks.
     std::vector<const IColumn *> sources{a.get(), b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(2000, 8), makePids<UInt32>(1000, 8)};
-    checkTypedKernel(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 8, ColumnsScatter::ScatterKernelId::String);
+    std::vector<std::vector<UInt16>> pids{makePids(2000, 8), makePids(1000, 8)};
+    checkTypedKernel(sources, pids, 8, ColumnsScatter::ScatterKernelId::String);
 
-    /// Empty strings among ones past 64 bytes, at one shard, at a write-combining shard count, and
-    /// above the inline scratch capacity.
+    /// Empty strings among rows past 64 bytes, at one shard and at two write-combining shard counts.
     auto mixed = ColumnString::create();
     for (size_t i = 0; i < 600; ++i)
     {
@@ -484,18 +433,17 @@ TEST(ColumnsScatter, StringEquivalence)
     for (size_t num_shards : {1uz, 256uz, 512uz})
     {
         std::vector<const IColumn *> single{mixed.get()};
-        std::vector<std::vector<UInt32>> single_pids{makePids<UInt32>(600, num_shards)};
-        checkTypedKernel(std::span<const IColumn * const>(single.data(), 1), single_pids, num_shards, ColumnsScatter::ScatterKernelId::String);
+        std::vector<std::vector<UInt16>> single_pids{makePids(600, num_shards)};
+        checkTypedKernel(single, single_pids, num_shards, ColumnsScatter::ScatterKernelId::String);
     }
 
-    /// An all-empty batch, and a zero-row source among non-empty ones.
     auto all_empty = ColumnString::create();
     for (size_t i = 0; i < 100; ++i)
         all_empty->insertDefault();
     auto empty_column = ColumnString::create();
     std::vector<const IColumn *> with_empty{a.get(), empty_column.get(), all_empty.get()};
-    std::vector<std::vector<UInt32>> with_empty_pids{makePids<UInt32>(2000, 4), {}, makePids<UInt32>(100, 4)};
-    checkTypedKernel(std::span<const IColumn * const>(with_empty.data(), with_empty.size()), with_empty_pids, 4, ColumnsScatter::ScatterKernelId::String);
+    std::vector<std::vector<UInt16>> with_empty_pids{makePids(2000, 4), {}, makePids(100, 4)};
+    checkTypedKernel(with_empty, with_empty_pids, 4, ColumnsScatter::ScatterKernelId::String);
 }
 
 TEST(ColumnsScatter, NullableEquivalence)
@@ -512,8 +460,8 @@ TEST(ColumnsScatter, NullableEquivalence)
     auto b = make_nullable_fixed(400);
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::Nullable, ColumnsScatter::plannedKernel(*a));
     std::vector<const IColumn *> sources{a.get(), b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(800, 8), makePids<UInt32>(400, 8)};
-    checkTypedKernel(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 8, ColumnsScatter::ScatterKernelId::Nullable);
+    std::vector<std::vector<UInt16>> pids{makePids(800, 8), makePids(400, 8)};
+    checkTypedKernel(sources, pids, 8, ColumnsScatter::ScatterKernelId::Nullable);
 
     /// Recursion from the null map into the String kernel.
     auto make_nullable_string = [](size_t n)
@@ -527,12 +475,8 @@ TEST(ColumnsScatter, NullableEquivalence)
     auto c = make_nullable_string(500);
     auto d = make_nullable_string(300);
     std::vector<const IColumn *> string_sources{c.get(), d.get()};
-    std::vector<std::vector<UInt32>> string_pids{makePids<UInt32>(500, 4), makePids<UInt32>(300, 4)};
-    checkTypedKernel(
-        std::span<const IColumn * const>(string_sources.data(), string_sources.size()),
-        string_pids,
-        4,
-        ColumnsScatter::ScatterKernelId::Nullable);
+    std::vector<std::vector<UInt16>> string_pids{makePids(500, 4), makePids(300, 4)};
+    checkTypedKernel(string_sources, string_pids, 4, ColumnsScatter::ScatterKernelId::Nullable);
 }
 
 TEST(ColumnsScatter, TupleEquivalence)
@@ -548,8 +492,8 @@ TEST(ColumnsScatter, TupleEquivalence)
     auto b = make_tuple(250);
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::Tuple, ColumnsScatter::plannedKernel(*a));
     std::vector<const IColumn *> sources{a.get(), b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(600, 8), makePids<UInt32>(250, 8)};
-    checkTypedKernel(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 8, ColumnsScatter::ScatterKernelId::Tuple);
+    std::vector<std::vector<UInt16>> pids{makePids(600, 8), makePids(250, 8)};
+    checkTypedKernel(sources, pids, 8, ColumnsScatter::ScatterKernelId::Tuple);
 }
 
 /// A sparse element hidden inside a Tuple in one chunk, in both chunk orders: the recursive
@@ -575,22 +519,7 @@ TEST(ColumnsScatter, TupleWithSparseElement)
     };
     auto dense = make_dense_tuple(50);
     auto sparse = make_sparse_tuple(30);
-    for (bool sparse_first : {true, false})
-    {
-        std::vector<const IColumn *> sources;
-        std::vector<std::vector<UInt32>> pids;
-        if (sparse_first)
-        {
-            sources = {sparse.get(), dense.get()};
-            pids = {makePids<UInt32>(30, 4), makePids<UInt32>(50, 4)};
-        }
-        else
-        {
-            sources = {dense.get(), sparse.get()};
-            pids = {makePids<UInt32>(50, 4), makePids<UInt32>(30, 4)};
-        }
-        checkTypedKernel(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4, ColumnsScatter::ScatterKernelId::Tuple);
-    }
+    checkBothOrders(*sparse, *dense, 4, ColumnsScatter::ScatterKernelId::Tuple);
 }
 
 TEST(ColumnsScatter, EmptyTupleRowCountOnly)
@@ -598,8 +527,8 @@ TEST(ColumnsScatter, EmptyTupleRowCountOnly)
     auto a = ColumnTuple::create(120);
     auto b = ColumnTuple::create(80);
     std::vector<const IColumn *> sources{a.get(), b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(120, 4), makePids<UInt32>(80, 4)};
-    checkTypedKernel(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4, ColumnsScatter::ScatterKernelId::Tuple);
+    std::vector<std::vector<UInt16>> pids{makePids(120, 4), makePids(80, 4)};
+    checkTypedKernel(sources, pids, 4, ColumnsScatter::ScatterKernelId::Tuple);
 }
 
 TEST(ColumnsScatter, ArrayEquivalence)
@@ -622,14 +551,13 @@ TEST(ColumnsScatter, ArrayEquivalence)
     auto b = make_array(200, fixed_nested);
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::Array, ColumnsScatter::plannedKernel(*a));
     std::vector<const IColumn *> sources{a.get(), b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(500, 8), makePids<UInt32>(200, 8)};
-    checkTypedKernel(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 8, ColumnsScatter::ScatterKernelId::Array);
+    std::vector<std::vector<UInt16>> pids{makePids(500, 8), makePids(200, 8)};
+    checkTypedKernel(sources, pids, 8, ColumnsScatter::ScatterKernelId::Array);
 
     auto c = make_array(300, string_nested);
     std::vector<const IColumn *> string_sources{c.get()};
-    std::vector<std::vector<UInt32>> string_pids{makePids<UInt32>(300, 4)};
-    checkTypedKernel(
-        std::span<const IColumn * const>(string_sources.data(), 1), string_pids, 4, ColumnsScatter::ScatterKernelId::Array);
+    std::vector<std::vector<UInt16>> string_pids{makePids(300, 4)};
+    checkTypedKernel(string_sources, string_pids, 4, ColumnsScatter::ScatterKernelId::Array);
 }
 
 TEST(ColumnsScatter, MapStatisticsPropagated)
@@ -644,10 +572,9 @@ TEST(ColumnsScatter, MapStatisticsPropagated)
     auto map = ColumnMap::create(map_base->getNestedColumnPtr(), statistics);
 
     std::vector<const IColumn *> sources{map.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(20, 4)};
-    std::vector<std::span<const UInt32>> pid_spans{{pids[0].data(), pids[0].size()}};
-    auto result = ColumnsScatter::scatter(
-        std::span<const IColumn * const>(sources.data(), 1), std::span<const std::span<const UInt32>>(pid_spans), 4);
+    auto pids = makePids(20, 4);
+    std::vector<std::span<const UInt16>> pid_spans{pids};
+    auto result = ColumnsScatter::scatter(sources, pid_spans, 4);
     for (const auto & shard : result)
         ASSERT_EQ(statistics.get(), assert_cast<const ColumnMap &>(*shard).getStatistics().get());
 }
@@ -667,25 +594,8 @@ TEST(ColumnsScatter, MapEquivalence)
     auto b = make_map(150);
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::Map, ColumnsScatter::plannedKernel(*a));
     std::vector<const IColumn *> sources{a.get(), b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(300, 4), makePids<UInt32>(150, 4)};
-    checkTypedKernel(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4, ColumnsScatter::ScatterKernelId::Map);
-}
-
-namespace
-{
-
-MutableColumnPtr makeLowCardinalityStrings(size_t n, size_t dict_size)
-{
-    const auto type = DataTypeLowCardinality(std::make_shared<DataTypeString>());
-    auto column = type.createColumn();
-    for (size_t i = 0; i < n; ++i)
-    {
-        std::string value = "value_" + std::to_string(rng()() % dict_size);
-        column->insertData(value.data(), value.size());
-    }
-    return column;
-}
-
+    std::vector<std::vector<UInt16>> pids{makePids(300, 4), makePids(150, 4)};
+    checkTypedKernel(sources, pids, 4, ColumnsScatter::ScatterKernelId::Map);
 }
 
 TEST(ColumnsScatter, LowCardinalityPreservesTypeAndSharesDictionary)
@@ -694,19 +604,18 @@ TEST(ColumnsScatter, LowCardinalityPreservesTypeAndSharesDictionary)
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::LowCardinality, ColumnsScatter::plannedKernel(*column));
 
     std::vector<const IColumn *> sources{column.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(1000, 8)};
-    std::vector<std::span<const UInt32>> pid_spans{{pids[0].data(), pids[0].size()}};
+    std::vector<std::vector<UInt16>> pids{makePids(1000, 8)};
+    std::vector<std::span<const UInt16>> pid_spans{pids[0]};
 
     ColumnsScatter::DispatchTrace trace;
     auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-    auto result = ColumnsScatter::scatter(
-        std::span<const IColumn * const>(sources.data(), 1), std::span<const std::span<const UInt32>>(pid_spans), 8);
+    auto result = ColumnsScatter::scatter(sources, pid_spans, 8);
     ColumnsScatter::exchangeDispatchTrace(previous);
     ASSERT_EQ(1u, trace.entries.size());
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::LowCardinality, trace.entries[0].kernel);
 
-    /// Every shard must stay LowCardinality and share one dictionary object, as the legacy scatter
-    /// does - neither of which the value oracle can see.
+    /// Every shard must stay LowCardinality and share one dictionary object, as
+    /// `ColumnLowCardinality::scatter` does - neither of which the value oracle can see.
     const IColumn * shared_dictionary = nullptr;
     for (const auto & shard : result)
     {
@@ -719,51 +628,25 @@ TEST(ColumnsScatter, LowCardinalityPreservesTypeAndSharesDictionary)
             ASSERT_EQ(shared_dictionary, low_cardinality.getDictionaryPtr().get());
     }
 
-    /// Values against the legacy reference.
-    auto expected = referenceScatter(std::span<const IColumn * const>(sources.data(), 1), pids, 8);
+    auto expected = referenceScatter(sources, pids, 8);
     for (size_t s = 0; s < 8; ++s)
         expectColumnsBitIdentical(*expected[s], *result[s], "LC shard " + std::to_string(s));
 }
 
 TEST(ColumnsScatter, LowCardinalityMultiSourceAndConstMixed)
 {
-    /// Per-source dictionaries force the kernel through the per-source legacy scatter.
+    /// Per-source dictionaries force the kernel through `IColumn::scatter` per source.
     auto a = makeLowCardinalityStrings(400, 8);
     auto b = makeLowCardinalityStrings(200, 24);
     std::vector<const IColumn *> sources{a.get(), b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(400, 4), makePids<UInt32>(200, 4)};
-    checkTypedKernel(
-        std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4, ColumnsScatter::ScatterKernelId::LowCardinality);
+    std::vector<std::vector<UInt16>> pids{makePids(400, 4), makePids(200, 4)};
+    checkTypedKernel(sources, pids, 4, ColumnsScatter::ScatterKernelId::LowCardinality);
 
     /// Normalization must strip the Const and preserve the LowCardinality, in both orders.
     auto lc_full = makeLowCardinalityStrings(300, 8);
     auto lc_value = makeLowCardinalityStrings(1, 1);
     auto lc_const = ColumnConst::create(std::move(lc_value), 100);
-    for (bool const_first : {true, false})
-    {
-        std::vector<const IColumn *> mixed;
-        std::vector<std::vector<UInt32>> mixed_pids;
-        if (const_first)
-        {
-            mixed = {lc_const.get(), lc_full.get()};
-            mixed_pids = {makePids<UInt32>(100, 4), makePids<UInt32>(300, 4)};
-        }
-        else
-        {
-            mixed = {lc_full.get(), lc_const.get()};
-            mixed_pids = {makePids<UInt32>(300, 4), makePids<UInt32>(100, 4)};
-        }
-        std::vector<std::span<const UInt32>> mixed_spans;
-        for (const auto & p : mixed_pids)
-            mixed_spans.emplace_back(p.data(), p.size());
-        auto result = ColumnsScatter::scatter(
-            std::span<const IColumn * const>(mixed.data(), mixed.size()), std::span<const std::span<const UInt32>>(mixed_spans), 4);
-        for (const auto & shard : result)
-            ASSERT_EQ(TypeIndex::LowCardinality, shard->getDataType());
-        auto expected = referenceScatter(std::span<const IColumn * const>(mixed.data(), mixed.size()), mixed_pids, 4);
-        for (size_t s = 0; s < 4; ++s)
-            expectColumnsBitIdentical(*expected[s], *result[s], "const-mixed LC shard " + std::to_string(s));
-    }
+    checkBothOrders(*lc_const, *lc_full, 4, ColumnsScatter::ScatterKernelId::LowCardinality);
 }
 
 TEST(ColumnsScatter, ConstStringMixedWithFull)
@@ -772,22 +655,7 @@ TEST(ColumnsScatter, ConstStringMixedWithFull)
     value->insertData("const_payload", 13);
     auto const_column = ColumnConst::create(std::move(value), 150);
     auto full = makeStrings(250, 18);
-    for (bool const_first : {true, false})
-    {
-        std::vector<const IColumn *> sources;
-        std::vector<std::vector<UInt32>> pids;
-        if (const_first)
-        {
-            sources = {const_column.get(), full.get()};
-            pids = {makePids<UInt32>(150, 4), makePids<UInt32>(250, 4)};
-        }
-        else
-        {
-            sources = {full.get(), const_column.get()};
-            pids = {makePids<UInt32>(250, 4), makePids<UInt32>(150, 4)};
-        }
-        checkTypedKernel(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4, ColumnsScatter::ScatterKernelId::String);
-    }
+    checkBothOrders(*const_column, *full, 4, ColumnsScatter::ScatterKernelId::String);
 }
 
 /// Misuse must fail loudly. A debug or sanitizer build aborts on a thrown `LOGICAL_ERROR` by design,
@@ -799,47 +667,27 @@ TEST(ColumnsScatter, NegativeMisuseThrows)
 #else
     auto column = fillFixedRandom(ColumnUInt64::create(), 10);
     std::vector<const IColumn *> sources{column.get()};
-    auto pids = makePids<UInt32>(10, 4);
-    std::vector<std::span<const UInt32>> pid_spans{{pids.data(), pids.size()}};
-    std::vector<std::span<const UInt32>> empty_spans;
+    auto pids = makePids(10, 4);
+    std::vector<std::span<const UInt16>> pid_spans{pids};
+    std::vector<std::span<const UInt16>> empty_spans;
     std::vector<UInt32> bad_counts(3, 0);
 
-    EXPECT_THROW(
-        (void)ColumnsScatter::scatter(std::span<const IColumn * const>{}, std::span<const std::span<const UInt32>>(empty_spans), 4),
-        Exception);
-    EXPECT_THROW(
-        (void)ColumnsScatter::scatter(
-            std::span<const IColumn * const>(sources.data(), 1), std::span<const std::span<const UInt32>>(empty_spans), 4),
-        Exception);
-    EXPECT_THROW(
-        (void)ColumnsScatter::scatter(
-            std::span<const IColumn * const>(sources.data(), 1), std::span<const std::span<const UInt32>>(pid_spans), 0),
-        Exception);
-    EXPECT_THROW(
-        (void)ColumnsScatter::scatter(
-            std::span<const IColumn * const>(sources.data(), 1),
-            std::span<const std::span<const UInt32>>(pid_spans),
-            4,
-            std::span<const UInt32>(bad_counts.data(), bad_counts.size())),
-        Exception);
-    auto short_pids = makePids<UInt32>(5, 4);
-    std::vector<std::span<const UInt32>> short_spans{{short_pids.data(), short_pids.size()}};
-    EXPECT_THROW(
-        (void)ColumnsScatter::scatter(
-            std::span<const IColumn * const>(sources.data(), 1), std::span<const std::span<const UInt32>>(short_spans), 4),
-        Exception);
+    EXPECT_THROW((void)ColumnsScatter::scatter(std::span<const IColumn * const>{}, empty_spans, 4), Exception);
+    EXPECT_THROW((void)ColumnsScatter::scatter(sources, empty_spans, 4), Exception);
+    EXPECT_THROW((void)ColumnsScatter::scatter(sources, pid_spans, 0), Exception);
+    EXPECT_THROW((void)ColumnsScatter::scatter(sources, pid_spans, 4, bad_counts), Exception);
+    auto short_pids = makePids(5, 4);
+    std::vector<std::span<const UInt16>> short_spans{short_pids};
+    EXPECT_THROW((void)ColumnsScatter::scatter(sources, short_spans, 4), Exception);
     /// Same TypeIndex, different value widths - silent corruption in the raw-byte kernel if this goes
     /// unchecked.
     auto fixed_4 = fillFixedRandom(ColumnFixedString::create(4), 10);
     auto fixed_8 = fillFixedRandom(ColumnFixedString::create(8), 10);
     std::vector<const IColumn *> mixed_sources{fixed_4.get(), fixed_8.get()};
-    auto pids_a = makePids<UInt32>(10, 4);
-    auto pids_b = makePids<UInt32>(10, 4);
-    std::vector<std::span<const UInt32>> mixed_spans{{pids_a.data(), pids_a.size()}, {pids_b.data(), pids_b.size()}};
-    EXPECT_THROW(
-        (void)ColumnsScatter::scatter(
-            std::span<const IColumn * const>(mixed_sources.data(), 2), std::span<const std::span<const UInt32>>(mixed_spans), 4),
-        Exception);
+    auto pids_a = makePids(10, 4);
+    auto pids_b = makePids(10, 4);
+    std::vector<std::span<const UInt16>> mixed_spans{pids_a, pids_b};
+    EXPECT_THROW((void)ColumnsScatter::scatter(mixed_sources, mixed_spans, 4), Exception);
     /// Same TypeIndex again, and out-of-bounds element indexing if this goes unchecked.
     MutableColumns one_element;
     one_element.push_back(fillFixedRandom(ColumnUInt64::create(), 10));
@@ -849,16 +697,10 @@ TEST(ColumnsScatter, NegativeMisuseThrows)
     two_elements.push_back(fillFixedRandom(ColumnUInt64::create(), 10));
     auto tuple_2 = ColumnTuple::create(std::move(two_elements));
     std::vector<const IColumn *> mixed_tuples{tuple_1.get(), tuple_2.get()};
-    EXPECT_THROW(
-        (void)ColumnsScatter::scatter(
-            std::span<const IColumn * const>(mixed_tuples.data(), 2), std::span<const std::span<const UInt32>>(mixed_spans), 4),
-        Exception);
+    EXPECT_THROW((void)ColumnsScatter::scatter(mixed_tuples, mixed_spans, 4), Exception);
     auto ints = fillFixedRandom(ColumnUInt32::create(), 10);
     std::vector<const IColumn *> mixed_types{column.get(), ints.get()};
-    EXPECT_THROW(
-        (void)ColumnsScatter::scatter(
-            std::span<const IColumn * const>(mixed_types.data(), 2), std::span<const std::span<const UInt32>>(mixed_spans), 4),
-        Exception);
+    EXPECT_THROW((void)ColumnsScatter::scatter(mixed_types, mixed_spans, 4), Exception);
 #endif
 }
 
@@ -875,27 +717,7 @@ TEST(ColumnsScatter, ReplicatedNormalizedBeforeDispatch)
     auto replicated = ColumnReplicated::create(nested_ptr, indexes_ptr);
 
     auto full = fillFixedRandom(ColumnUInt64::create(), 40);
-    for (bool replicated_first : {true, false})
-    {
-        std::vector<const IColumn *> sources;
-        std::vector<std::vector<UInt32>> pids;
-        if (replicated_first)
-        {
-            sources = {replicated.get(), full.get()};
-            pids = {makePids<UInt32>(30, 4), makePids<UInt32>(40, 4)};
-        }
-        else
-        {
-            sources = {full.get(), replicated.get()};
-            pids = {makePids<UInt32>(40, 4), makePids<UInt32>(30, 4)};
-        }
-        ColumnsScatter::DispatchTrace trace;
-        auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-        checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4);
-        ColumnsScatter::exchangeDispatchTrace(previous);
-        for (const auto & entry : trace.entries)
-            ASSERT_EQ(ColumnsScatter::ScatterKernelId::FixedWidth, entry.kernel);
-    }
+    checkBothOrders(*replicated, *full, 4, ColumnsScatter::ScatterKernelId::FixedWidth);
 }
 
 /// The staging invariant from `ScatterScratch`: a cursor seeded mid-line - which is what the join's
@@ -910,7 +732,7 @@ TEST(ColumnsScatter, MisalignedCursorSeedingSwwc)
 
     auto payload = fillFixedRandom(ColumnUInt64::create(), n);
     const char * data = payload->getRawData().data();
-    auto pids = makePids<UInt16>(n, fanout);
+    auto pids = makePids(n, fanout);
 
     std::vector<size_t> counts(fanout, 0);
     for (UInt16 pid : pids)
@@ -936,7 +758,6 @@ TEST(ColumnsScatter, MisalignedCursorSeedingSwwc)
     ColumnsScatter::scatterPidChunk(width, pids.data(), data, n, /*use_swwc=*/true, scratch);
     scratch.drain();
 
-    /// Bit-exact at every row, and the final cursor positions exact.
     std::vector<size_t> cursor_rows(fanout, 0);
     for (size_t i = 0; i < n; ++i)
     {
@@ -953,8 +774,8 @@ TEST(ColumnsScatter, MisalignedCursorSeedingSwwc)
 }
 
 
-/// The whole dispatch table: every supported family reaches its named kernel, every exotic leaf the
-/// fallback.
+/// The whole dispatch table: every supported family reaches its named kernel, every type without a
+/// dedicated kernel the fallback.
 TEST(ColumnsScatter, DispatchTableComplete)
 {
     tryRegisterAggregateFunctions();
@@ -975,7 +796,7 @@ TEST(ColumnsScatter, DispatchTableComplete)
         ASSERT_EQ(ScatterKernelId::Map, ColumnsScatter::plannedKernel(*map_column));
     }
     ASSERT_EQ(ScatterKernelId::LowCardinality, ColumnsScatter::plannedKernel(*makeLowCardinalityStrings(1, 1)));
-    /// Exotic leaves stay on the legacy fallback.
+    /// Types without a dedicated kernel take the fallback.
     for (const char * type_name : {"Variant(UInt64, String)", "Dynamic", "AggregateFunction(count)", "JSON"})
     {
         auto column = DataTypeFactory::instance().get(type_name)->createColumn();
@@ -984,7 +805,7 @@ TEST(ColumnsScatter, DispatchTableComplete)
 }
 
 /// A Variant whose nested representations differ across chunks - full against sparse - so the
-/// normalization gate has to strip the sparse alternative before the cross-chunk append.
+/// normalization has to strip the sparse alternative before the cross-chunk append.
 TEST(ColumnsScatter, VariantMixedNestedRepresentation)
 {
     const size_t n = 64;
@@ -1030,30 +851,27 @@ TEST(ColumnsScatter, VariantMixedNestedRepresentation)
     auto full_column = make_full(n);
     auto sparse_column = make_sparse(n);
     std::vector<const IColumn *> sources{full_column.get(), sparse_column.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(n, 3), makePids<UInt32>(n, 3)};
-    std::vector<std::span<const UInt32>> pid_spans;
-    for (const auto & p : pids)
-        pid_spans.emplace_back(p.data(), p.size());
+    std::vector<std::vector<UInt16>> pids{makePids(n, 3), makePids(n, 3)};
+    std::vector<std::span<const UInt16>> pid_spans{pids[0], pids[1]};
 
     ColumnsScatter::DispatchTrace trace;
     auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-    auto result = ColumnsScatter::scatter(
-        std::span<const IColumn * const>(sources.data(), sources.size()), std::span<const std::span<const UInt32>>(pid_spans), 3);
+    auto result = ColumnsScatter::scatter(sources, pid_spans, 3);
     ColumnsScatter::exchangeDispatchTrace(previous);
     ASSERT_EQ(1u, trace.entries.size());
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::Fallback, trace.entries[0].kernel);
 
-    /// The same values through two fully-nested chunks.
     auto reference_a = make_full(n);
     auto reference_b = make_full(n);
     std::vector<const IColumn *> reference_sources{reference_a.get(), reference_b.get()};
-    auto expected = referenceScatter(std::span<const IColumn * const>(reference_sources.data(), 2), pids, 3);
+    auto expected = referenceScatter(reference_sources, pids, 3);
     for (size_t s = 0; s < 3; ++s)
         expectColumnsBitIdentical(*expected[s], *result[s], "variant shard " + std::to_string(s));
 }
 
-/// A QBit with one sparse `FixedString` bit-group element: the generic `hasAnySubcolumn` gate has to
-/// route it through recursive normalization, which a hand-written type switch would have missed.
+/// A QBit with one sparse `FixedString` bit-group element: normalization recurses through
+/// `forEachSubcolumn`, so the sparse element is stripped even inside a composite that no type switch
+/// names.
 TEST(ColumnsScatter, QBitMixedNestedRepresentation)
 {
     constexpr size_t dimension = 8;
@@ -1098,12 +916,13 @@ TEST(ColumnsScatter, QBitMixedNestedRepresentation)
     auto full_column = build_qbit(120, false);
     auto sparse_column = build_qbit(90, true);
     std::vector<const IColumn *> sources{full_column.get(), sparse_column.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(120, 3), makePids<UInt32>(90, 3)};
+    std::vector<std::vector<UInt16>> pids{makePids(120, 3), makePids(90, 3)};
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::Fallback, ColumnsScatter::plannedKernel(*full_column));
-    checkEquivalence(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 3);
+    checkEquivalence(sources, pids, 3);
 }
 
-/// An exotic leaf: values preserved through the fallback, and the result stays `Dynamic`.
+/// A type without a dedicated kernel: values preserved through the fallback, and the result stays
+/// `Dynamic`.
 TEST(ColumnsScatter, DynamicFallbackEquivalence)
 {
     auto type = DataTypeFactory::instance().get("Dynamic");
@@ -1116,20 +935,17 @@ TEST(ColumnsScatter, DynamicFallbackEquivalence)
             column_b->insert(i % 2 == 0 ? Field(static_cast<Int64>(-static_cast<Int64>(i))) : Field("b_" + std::to_string(i)));
     }
     std::vector<const IColumn *> sources{column_a.get(), column_b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(200, 4), makePids<UInt32>(120, 4)};
-    std::vector<std::span<const UInt32>> pid_spans;
-    for (const auto & p : pids)
-        pid_spans.emplace_back(p.data(), p.size());
+    std::vector<std::vector<UInt16>> pids{makePids(200, 4), makePids(120, 4)};
+    std::vector<std::span<const UInt16>> pid_spans{pids[0], pids[1]};
 
     ColumnsScatter::DispatchTrace trace;
     auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-    auto result = ColumnsScatter::scatter(
-        std::span<const IColumn * const>(sources.data(), sources.size()), std::span<const std::span<const UInt32>>(pid_spans), 4);
+    auto result = ColumnsScatter::scatter(sources, pid_spans, 4);
     ColumnsScatter::exchangeDispatchTrace(previous);
     ASSERT_EQ(1u, trace.entries.size());
     ASSERT_EQ(ColumnsScatter::ScatterKernelId::Fallback, trace.entries[0].kernel);
 
-    auto expected = referenceScatter(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4);
+    auto expected = referenceScatter(sources, pids, 4);
     for (size_t s = 0; s < 4; ++s)
     {
         ASSERT_EQ(TypeIndex::Dynamic, result[s]->getDataType()) << "shard " << s;
@@ -1143,7 +959,6 @@ TEST(ColumnsScatter, DynamicFallbackEquivalence)
 /// serialize-based value oracle cannot see.
 TEST(ColumnsScatter, LowCardinalityInsideCompositesPreserved)
 {
-    /// Single- and multi-source.
     auto make_tuple = [](size_t rows)
     {
         MutableColumns elements;
@@ -1155,18 +970,17 @@ TEST(ColumnsScatter, LowCardinalityInsideCompositesPreserved)
     {
         std::vector<MutableColumnPtr> owned;
         std::vector<const IColumn *> sources;
-        std::vector<std::vector<UInt32>> pids;
+        std::vector<std::vector<UInt16>> pids;
+        std::vector<std::span<const UInt16>> pid_spans;
         for (size_t b = 0; b < num_sources; ++b)
         {
             owned.push_back(make_tuple(150));
             sources.push_back(owned.back().get());
-            pids.push_back(makePids<UInt32>(150, 4));
+            pids.push_back(makePids(150, 4));
         }
-        std::vector<std::span<const UInt32>> pid_spans;
         for (const auto & p : pids)
-            pid_spans.emplace_back(p.data(), p.size());
-        auto result = ColumnsScatter::scatter(
-            std::span<const IColumn * const>(sources.data(), sources.size()), std::span<const std::span<const UInt32>>(pid_spans), 4);
+            pid_spans.emplace_back(p);
+        auto result = ColumnsScatter::scatter(sources, pid_spans, 4);
         const IColumn * shared_nested_dictionary = nullptr;
         for (const auto & shard : result)
         {
@@ -1182,7 +996,7 @@ TEST(ColumnsScatter, LowCardinalityInsideCompositesPreserved)
                     ASSERT_EQ(shared_nested_dictionary, low_cardinality.getDictionaryPtr().get());
             }
         }
-        auto expected = referenceScatter(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4);
+        auto expected = referenceScatter(sources, pids, 4);
         for (size_t s = 0; s < 4; ++s)
             expectColumnsBitIdentical(*expected[s], *result[s], "tuple-lc shard " + std::to_string(s));
     }
@@ -1201,28 +1015,26 @@ TEST(ColumnsScatter, LowCardinalityInsideCompositesPreserved)
     auto array_a = make_array(120);
     auto array_b = make_array(80);
     std::vector<const IColumn *> sources{array_a.get(), array_b.get()};
-    std::vector<std::vector<UInt32>> pids{makePids<UInt32>(120, 4), makePids<UInt32>(80, 4)};
-    std::vector<std::span<const UInt32>> pid_spans;
-    for (const auto & p : pids)
-        pid_spans.emplace_back(p.data(), p.size());
-    auto result = ColumnsScatter::scatter(
-        std::span<const IColumn * const>(sources.data(), sources.size()), std::span<const std::span<const UInt32>>(pid_spans), 4);
+    std::vector<std::vector<UInt16>> pids{makePids(120, 4), makePids(80, 4)};
+    std::vector<std::span<const UInt16>> pid_spans{pids[0], pids[1]};
+    auto result = ColumnsScatter::scatter(sources, pid_spans, 4);
     for (const auto & shard : result)
     {
         const auto & array = assert_cast<const ColumnArray &>(*shard);
         ASSERT_EQ(TypeIndex::LowCardinality, array.getData().getDataType());
     }
-    auto expected = referenceScatter(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4);
+    auto expected = referenceScatter(sources, pids, 4);
     for (size_t s = 0; s < 4; ++s)
         expectColumnsBitIdentical(*expected[s], *result[s], "array-lc shard " + std::to_string(s));
 }
 
 
-/// `AggregateFunction` states through the fallback, the exotic with the least trivial semantics:
-/// outputs view the source arena, and a cross-source append deep-copies through `ensureOwnership`.
-/// The states are arena-allocating `groupArray` ones with distinct per-row payloads, so a misroute or
-/// permutation changes the serialized value, and every non-result owner is destroyed before the
-/// results are read - under ASan that catches any break in the result-to-arena ownership chain.
+/// `AggregateFunction` states through the fallback, the type without a dedicated kernel whose
+/// semantics are least trivial: outputs view the source arena, and a cross-source append deep-copies
+/// through `ensureOwnership`. The states are arena-allocating `groupArray` ones with distinct per-row
+/// payloads, so a misroute or permutation changes the serialized value, and every non-result owner
+/// is destroyed before the results are read - under ASan that catches any break in the
+/// result-to-arena ownership chain.
 TEST(ColumnsScatter, AggregateFunctionFallbackEquivalence)
 {
     tryRegisterAggregateFunctions();
@@ -1248,30 +1060,27 @@ TEST(ColumnsScatter, AggregateFunctionFallbackEquivalence)
     {
         std::vector<MutableColumnPtr> owned;
         std::vector<const IColumn *> sources;
-        std::vector<std::vector<UInt32>> pids;
+        std::vector<std::vector<UInt16>> pids;
+        std::vector<std::span<const UInt16>> pid_spans;
         for (size_t b = 0; b < num_sources; ++b)
         {
             owned.push_back(make_states(100, b + 1));
             sources.push_back(owned.back().get());
-            pids.push_back(makePids<UInt32>(100, 4));
+            pids.push_back(makePids(100, 4));
         }
-        std::vector<std::span<const UInt32>> pid_spans;
         for (const auto & p : pids)
-            pid_spans.emplace_back(p.data(), p.size());
+            pid_spans.emplace_back(p);
 
         ColumnsScatter::DispatchTrace trace;
         auto * previous = ColumnsScatter::exchangeDispatchTrace(&trace);
-        auto result = ColumnsScatter::scatter(
-            std::span<const IColumn * const>(sources.data(), sources.size()),
-            std::span<const std::span<const UInt32>>(pid_spans),
-            4);
+        auto result = ColumnsScatter::scatter(sources, pid_spans, 4);
         ColumnsScatter::exchangeDispatchTrace(previous);
         ASSERT_EQ(1u, trace.entries.size());
         ASSERT_EQ(ColumnsScatter::ScatterKernelId::Fallback, trace.entries[0].kernel);
 
         /// Materialize the expectations into plain Fields first, then drop every non-result owner:
         /// reading the shards afterwards must hold up on the results' own ownership chain alone.
-        auto expected = referenceScatter(std::span<const IColumn * const>(sources.data(), sources.size()), pids, 4);
+        auto expected = referenceScatter(sources, pids, 4);
         std::vector<std::vector<Field>> expected_fields(4);
         for (size_t s = 0; s < 4; ++s)
             for (size_t i = 0; i < expected[s]->size(); ++i)
@@ -1290,36 +1099,30 @@ TEST(ColumnsScatter, AggregateFunctionFallbackEquivalence)
     }
 }
 
-/// The chunk primitives in exactly the composition the join uses: histogram, exact allocation, key
-/// scatter emitting pids, payload scatter from those pids.
-TEST(ColumnsScatter, Layer0KeyScatterComposition)
+/// The chunk kernels in the composition the join runs: the histogram accumulated chunk by chunk
+/// through the interleaved lanes and reduced once, one exact uninitialized allocation per shard,
+/// cursors seeded once per column, then every chunk of every column scattered from the same pids.
+TEST(ColumnsScatter, ChunkKernelsComposeLikeTheJoin)
 {
     const size_t n = 10000;
-    const size_t bits = 6;
-    const size_t fanout = 1ULL << bits;
-    const UInt32 shift = 32 - bits;
-    const UInt32 mask = static_cast<UInt32>(fanout - 1);
+    const size_t fanout = 64;
+    /// Two uneven chunks, so the cursors and the lanes must carry state across calls.
+    const std::array<std::pair<size_t, size_t>, 2> chunks{{{0, 3000}, {3000, n - 3000}}};
 
     auto keys = fillFixedRandom(ColumnUInt64::create(), n);
     auto payload = fillFixedRandom(ColumnUInt32::create(), n);
     const char * keys_raw = keys->getRawData().data();
     const char * payload_raw = payload->getRawData().data();
+    const auto pids = makePids(n, fanout);
 
-    /// Expected routing from the route hash in the header.
-    std::vector<UInt32> expected_hist(fanout, 0);
-    std::vector<UInt16> expected_pids(n);
-    for (size_t i = 0; i < n; ++i)
-    {
-        UInt64 key;
-        memcpy(&key, keys_raw + i * 8, 8);
-        expected_pids[i] = static_cast<UInt16>((ColumnsScatter::routeWord(key) >> shift) & mask);
-        ++expected_hist[expected_pids[i]];
-    }
+    std::vector<UInt64> expected_hist(fanout, 0);
+    for (UInt16 pid : pids)
+        ++expected_hist[pid];
 
-    /// Through the interleaved-lane chunk primitive.
-    std::vector<UInt32> hist(fanout, 0);
-    std::vector<UInt32> lanes(4 * fanout, 0);
-    ColumnsScatter::histogramKeyChunk(8, keys_raw, n, shift, mask, hist.data(), lanes.data(), fanout);
+    std::vector<UInt64> hist(fanout, 0);
+    std::vector<UInt64> lanes(4 * fanout, 0);
+    for (const auto & [offset, rows] : chunks)
+        ColumnsScatter::histogramPidChunk(pids.data() + offset, rows, hist.data(), lanes.data(), fanout);
     ColumnsScatter::reduceHistogramLanes(hist.data(), lanes.data(), fanout);
     ASSERT_EQ(expected_hist, hist);
 
@@ -1327,35 +1130,27 @@ TEST(ColumnsScatter, Layer0KeyScatterComposition)
     ColumnsScatter::ScatterScratch scratch;
     scratch.init(fanout, use_swwc);
 
-    MutableColumns key_shards(fanout);
-    std::vector<char *> key_bases(fanout);
-    for (size_t p = 0; p < fanout; ++p)
+    auto scatter_column = [&](const IColumn & sample, const char * raw_data, size_t width)
     {
-        auto [column, raw] = ColumnsScatter::allocateUninitializedFixed(*keys, hist[p]);
-        key_shards[p] = std::move(column);
-        key_bases[p] = raw.data();
-        scratch.seed(p, raw.data());
-    }
-    std::vector<UInt16> emitted_pids(n);
-    ColumnsScatter::scatterKeyChunk(8, keys_raw, n, shift, mask, emitted_pids.data(), use_swwc, scratch);
-    scratch.drain();
-    ASSERT_EQ(expected_pids, emitted_pids);
+        MutableColumns shards(fanout);
+        for (size_t p = 0; p < fanout; ++p)
+        {
+            auto [column, raw] = ColumnsScatter::allocateUninitializedFixed(sample, hist[p]);
+            shards[p] = std::move(column);
+            scratch.seed(p, raw.data());
+        }
+        for (const auto & [offset, rows] : chunks)
+            ColumnsScatter::scatterPidChunk(width, pids.data() + offset, raw_data + offset * width, rows, use_swwc, scratch);
+        scratch.drain();
+        return shards;
+    };
+    MutableColumns key_shards = scatter_column(*keys, keys_raw, 8);
+    MutableColumns payload_shards = scatter_column(*payload, payload_raw, 4);
 
-    MutableColumns payload_shards(fanout);
-    for (size_t p = 0; p < fanout; ++p)
-    {
-        auto [column, raw] = ColumnsScatter::allocateUninitializedFixed(*payload, hist[p]);
-        payload_shards[p] = std::move(column);
-        scratch.seed(p, raw.data());
-    }
-    ColumnsScatter::scatterPidChunk(4, emitted_pids.data(), payload_raw, n, use_swwc, scratch);
-    scratch.drain();
-
-    /// Row by row against a scalar reference.
     std::vector<size_t> cursor(fanout, 0);
     for (size_t i = 0; i < n; ++i)
     {
-        const size_t p = expected_pids[i];
+        const size_t p = pids[i];
         UInt64 expected_key;
         memcpy(&expected_key, keys_raw + i * 8, 8);
         UInt64 actual_key;
@@ -1367,5 +1162,10 @@ TEST(ColumnsScatter, Layer0KeyScatterComposition)
         memcpy(&actual_payload, payload_shards[p]->getRawData().data() + cursor[p] * 4, 4);
         ASSERT_EQ(expected_payload, actual_payload) << "row " << i;
         ++cursor[p];
+    }
+    for (size_t p = 0; p < fanout; ++p)
+    {
+        ASSERT_EQ(hist[p], key_shards[p]->size()) << "shard " << p;
+        ASSERT_EQ(hist[p], payload_shards[p]->size()) << "shard " << p;
     }
 }

@@ -186,27 +186,32 @@ std::string SpillingHashJoin::getName() const
 
 bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 {
-    return addCollectedBlock(block, check_limits, /*forward_lane=*/false, 0);
+    return addCollectedBlock(block, check_limits, /*build_lane=*/{});
 }
 
 bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t /*num_rows*/, bool check_limits, size_t build_lane)
 {
     if (!partitioned_join)
         return addBlockToJoin(block, check_limits);
-    return addCollectedBlock(block, check_limits, /*forward_lane=*/true, build_lane);
+    return addCollectedBlock(block, check_limits, build_lane);
 }
 
-bool SpillingHashJoin::addCollectedBlock(const Block & block, bool check_limits, bool forward_lane, size_t build_lane)
+void SpillingHashJoin::helpConvert()
+{
+    if (concurrent_join)
+        tryConvertSlots();
+    else if (partitioned_join)
+        tryConvertFillLanes();
+}
+
+bool SpillingHashJoin::addCollectedBlock(const Block & block, bool check_limits, std::optional<size_t> build_lane)
 {
     /// Fast path: already switched to GraceHashJoin (no lock needed).
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
         /// Help convert one ConcurrentHashJoin slot / PartitionedHashJoin fill lane while in
         /// GRACE_HASH_JOIN state.
-        if (concurrent_join)
-            tryConvertSlots();
-        else if (partitioned_join)
-            tryConvertFillLanes();
+        helpConvert();
         return chosen_join->addBlockToJoin(block, check_limits);
     }
 
@@ -218,11 +223,10 @@ bool SpillingHashJoin::addCollectedBlock(const Block & block, bool check_limits,
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
     ///
-    /// PartitionedHashJoin builds no table during the fill: its leaf buffers are exact-reserved
-    /// and created once after the barrier, so the doubling case does not arise. The tables the
-    /// factor was standing in for are counted explicitly by `predictedResidentBytes`. Keeping both
-    /// the factor and those bytes would double-count them and make the partitioned path spill
-    /// earlier than `parallel_hash`. The single-thread and concurrent modes keep `* 2`.
+    /// PartitionedHashJoin does not build its hash table while blocks arrive, so nothing doubles in
+    /// place and the `* 2` factor does not apply. `predictedResidentBytes` already includes the table
+    /// it will build later; applying both would count that table twice and spill earlier than
+    /// `parallel_hash` does.
     const bool over_threshold = partitioned_join
         ? partitioned_join->predictedResidentBytes() >= max_bytes_before_external_join
         : collectingJoin().getTotalByteCount() * 2 >= max_bytes_before_external_join;
@@ -232,10 +236,7 @@ bool SpillingHashJoin::addCollectedBlock(const Block & block, bool check_limits,
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
-        if (concurrent_join)
-            tryConvertSlots();
-        else if (partitioned_join)
-            tryConvertFillLanes();
+        helpConvert();
         return chosen_join->addBlockToJoin(block, check_limits);
     }
 
@@ -250,8 +251,8 @@ bool SpillingHashJoin::addCollectedBlock(const Block & block, bool check_limits,
 
         if (partitioned_join)
         {
-            if (forward_lane)
-                return partitioned_join->addBlockToJoin(block, block.rows(), check_limits, build_lane);
+            if (build_lane)
+                return partitioned_join->addBlockToJoin(block, block.rows(), check_limits, *build_lane);
             return partitioned_join->addBlockToJoin(block, check_limits);
         }
 
@@ -279,21 +280,21 @@ void SpillingHashJoin::createGraceJoin(size_t initial_buckets_hint)
 
 void SpillingHashJoin::switchToGraceHashJoin()
 {
-    const auto print_threshold_reached_log = [this](const JoinPtr & join, std::string_view join_name)
+    const auto print_threshold_reached_log = [this](const IJoin & join)
     {
         LOG_DEBUG(
             log,
             "Memory spill threshold reached with {} ({} bytes, {} rows), switching to GraceHashJoin",
-            join_name,
-            join->getTotalByteCount(),
-            join->getTotalRowCount());
+            join.getName(),
+            join.getTotalByteCount(),
+            join.getTotalRowCount());
     };
 
-    if (concurrent_join)
+    if (concurrent_join || partitioned_join)
     {
         {
             /// Exclusive lock: waits for all in-flight `addBlockToJoin` (shared lock holders)
-            /// to complete. After this, no thread is inside `ConcurrentHashJoin::addBlockToJoin`.
+            /// to complete. After this, no thread is inside the collecting join's `addBlockToJoin`.
             std::unique_lock lock(switch_mutex);
 
             /// Re-check: another thread may have already switched.
@@ -302,54 +303,38 @@ void SpillingHashJoin::switchToGraceHashJoin()
 
             ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
 
-            print_threshold_reached_log(concurrent_join, "ConcurrentHashJoin");
+            print_threshold_reached_log(collectingJoin());
 
             createGraceJoin();
+
+            if (partitioned_join)
+            {
+                /// The per-block key hashes, prepared key columns and skip masks of the build are
+                /// useless to GraceHashJoin. Free them before draining so they do not add to the peak.
+                partitioned_join->dropFillAuxiliary();
+
+                /// A single fill thread has no lanes: its rows are in the stored blocks and the table, and
+                /// this thread is the only one filling, so the blocks are handed over here. A build that
+                /// has not stored anything yet keeps its join data.
+                if (partitioned_join->isSingleLaneBuild())
+                {
+                    partitioned_join->beginStoredBlockDrain();
+                    if (partitioned_join->getTotalRowCount() > 0)
+                        partitioned_join->drainStoredBlocksInto(*grace_join);
+                }
+            }
 
             /// Set state BEFORE releasing the lock so new `addBlockToJoin` calls
             /// see GRACE_HASH_JOIN and go directly to `grace_join`.
             state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
         }
-        /// Convert ConcurrentHashJoin slots into GraceHashJoin.
+        /// Convert the ConcurrentHashJoin slots / PartitionedHashJoin fill lanes into GraceHashJoin.
         /// Other build-phase threads will also help via `addBlockToJoin`.
-        tryConvertSlots();
+        helpConvert();
         return;
     }
 
-    if (partitioned_join)
-    {
-        {
-            std::unique_lock lock(switch_mutex);
-
-            if (state.load(std::memory_order_relaxed) != State::COLLECTING)
-                return;
-
-            ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
-
-            print_threshold_reached_log(partitioned_join, "PartitionedHashJoin");
-
-            createGraceJoin();
-            /// Routes, prepared keys and skip masks are not used on the grace path. Drop them
-            /// before any drain so they are not still allocated at the conversion peak.
-            partitioned_join->dropFillAuxiliary();
-
-            /// A single fill thread has no lanes: its rows are in the stored blocks and the table, and
-            /// this thread is the only one filling, so the blocks are handed over here. A build that
-            /// has not stored anything yet keeps its join data.
-            if (partitioned_join->isSingleLaneBuild())
-            {
-                partitioned_join->beginStoredBlockDrain();
-                if (partitioned_join->getTotalRowCount() > 0)
-                    partitioned_join->drainStoredBlocksInto(*grace_join);
-            }
-
-            state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
-        }
-        tryConvertFillLanes();
-        return;
-    }
-
-    print_threshold_reached_log(hash_join, "HashJoin");
+    print_threshold_reached_log(*hash_join);
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
@@ -399,9 +384,9 @@ void SpillingHashJoin::onBuildPhaseFinish()
         }
         else if (partitioned_join)
         {
-            /// The barrier concatenates lanes and sizes the plan. The gate histograms and exact-reserves the
-            /// duplicate-list arenas, so the in-memory path does not pay that allocation later as a surprise;
-            /// `MustSpill` releases them in `beginStoredBlockDrain`.
+            /// `onBuildPhaseFinish` merges the per-thread stored blocks and chooses the partition layout.
+            /// It also reserves the memory for duplicate-key rows now, so the in-memory path does not
+            /// allocate it later; `beginStoredBlockDrain` releases it when the plan is `MustSpill`.
             partitioned_join->onBuildPhaseFinish();
             const auto plan = partitioned_join->planPostBuild();
             if (plan == PartitionedHashJoin::PostBuildPlan::MustSpill)

@@ -1,8 +1,9 @@
--- The block squashing after a widened join exists for `parallel_hash`, which emits one slot's fragment
--- of every probe block. `partitioned_hash` joins probe blocks whole and caps its output at
--- `max_joined_block_size_rows`, so its blocks now pass through the squashing untouched, as `hash`'s
--- do. The spilling wrapper decides at run time: the in-memory join passes through, a switch to grace
--- squashes again, because the grace join emits one bucket's share of each probe block.
+-- The squashing step after a join exists for `parallel_hash`, whose output splits each probe block into one
+-- piece per hash table. `partitioned_hash` joins each probe block whole and caps its output at
+-- `max_joined_block_size_rows`, so its blocks pass through the squashing unchanged, as `hash`'s do. Inside
+-- `SpillingHashJoin` the decision is made at run time: while the join stays in memory the blocks pass
+-- through; after a switch to `GraceHashJoin`, which emits one bucket's part of each probe block, they are
+-- squashed again.
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET enable_parallel_replicas = 0;
@@ -11,7 +12,7 @@ SET max_bytes_in_join = 0;
 SET grace_hash_join_initial_buckets = 1;
 SET grace_hash_join_max_buckets = 1024;
 SET max_threads = 4;
--- Every build here is tiny; the parallel fill (and with it the squashing) needs the threshold off.
+-- Every build here is tiny; the parallel build (and with it the squashing) needs the threshold off.
 SET parallel_hash_join_threshold = 0;
 SET max_joined_block_size_rows = 5;
 
