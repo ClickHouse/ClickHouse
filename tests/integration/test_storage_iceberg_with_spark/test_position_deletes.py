@@ -272,10 +272,8 @@ def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark, use_r
 
 
 @pytest.mark.parametrize("run_on_cluster", [False, True])
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
-def test_v3_deletion_vectors_table_function(
-        started_cluster_iceberg_with_spark, use_roaring_bitmaps, storage_type, run_on_cluster):
+def test_v3_deletion_vectors_table_function(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
     if storage_type == "local" and run_on_cluster:
         pytest.skip("Local storage with cluster execution is not supported")
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -297,12 +295,9 @@ def test_v3_deletion_vectors_table_function(
         run_on_cluster=run_on_cluster,
         table_function=True)
 
-    settings = {
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
-    }
-    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 90))
-    assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == 80
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 85", settings=settings)) == 5
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(10, 90))
+    assert int(instance.query(f"SELECT count() FROM {expression}")) == 80
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 85")) == 5
 
 def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spark):
     storage_type = "local"
@@ -421,8 +416,7 @@ def test_v3_deletion_vectors_apply_only_to_referenced_data_file(started_cluster_
     assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 100")) == 100
 
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_mixed_v2_position_deletes_and_v3_deletion_vectors(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_mixed_v2_position_deletes_and_v3_deletion_vectors(started_cluster_iceberg_with_spark):
     storage_type = "local"
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_mixed_v2_pos_deletes_v3_dv_" + get_uuid_str()
@@ -442,12 +436,9 @@ def test_mixed_v2_position_deletes_and_v3_deletion_vectors(started_cluster_icebe
         format_version=3,
         table_function=True)
 
-    settings = {
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
-    }
-    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 90))
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id < 15", settings=settings)) == 5
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 85", settings=settings)) == 5
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(10, 90))
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id < 15")) == 5
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 85")) == 5
 
 
 def create_spark_v3_merge_on_read_table(started_cluster_iceberg_with_spark, table_name: str, schema: str = "id bigint, data string", partition_by: str = ""):
@@ -582,8 +573,7 @@ def test_v3_deletion_vectors_after_update_and_merge(started_cluster_iceberg_with
     spark.sql(f"DROP TABLE {SOURCE_NAME}")
 
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_v3_deletion_vectors_large_cardinality(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_v3_deletion_vectors_large_cardinality(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_v3_deletion_vectors_large_cardinality_" + get_uuid_str()
@@ -598,13 +588,10 @@ def test_v3_deletion_vectors_large_cardinality(started_cluster_iceberg_with_spar
     # The local uploader passes file contents on the command line, which is too small for this data file.
     expression = upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME, storage_type="s3")
 
-    settings = {
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
-    }
-    assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == 50000
-    assert int(instance.query(f"SELECT sum(id) FROM {expression}", settings=settings)) == sum(range(1, 100000, 2))
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id % 2 = 0", settings=settings)) == 0
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id BETWEEN 1000 AND 1999", settings=settings)) == 500
+    assert int(instance.query(f"SELECT count() FROM {expression}")) == 50000
+    assert int(instance.query(f"SELECT sum(id) FROM {expression}")) == sum(range(1, 100000, 2))
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id % 2 = 0")) == 0
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id BETWEEN 1000 AND 1999")) == 500
 
 
 class LogEntry:
