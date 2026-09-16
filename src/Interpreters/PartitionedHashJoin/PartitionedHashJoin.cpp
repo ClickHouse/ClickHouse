@@ -101,8 +101,9 @@ PartitionedHashJoin::PartitionedHashJoin(
               any_take_last_row,
               /*reserve_num_=*/0,
               /*instance_id_=*/"",
-              /*is_concurrent_hash_join_=*/false,
               /*stats_collecting_params_=*/HashJoinStatsCollectingParams{},
+              /*max_threads_=*/1,
+              /*use_parallel_layout_=*/false,
               /*allow_set_maps_=*/false))
     , delegate_mode(!table_join->oneDisjunct())
     , maps_variant_index(hash_join->data->maps.empty() ? 1 : hash_join->data->maps.front().index())
@@ -197,39 +198,29 @@ PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane()
     return *it->second;
 }
 
-PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane(size_t build_lane)
+PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane(size_t worker_id)
 {
-    if (build_lane >= fill_lane_slots.size())
+    if (worker_id >= fill_lane_slots.size())
         return getFillLane();
 
-    if (FillLane * fast = fill_lane_slots[build_lane].load(std::memory_order_acquire))
+    if (FillLane * fast = fill_lane_slots[worker_id].load(std::memory_order_acquire))
         return *fast;
 
     /// First block of this lane: one mutexed emplace into the deque, whose elements are stable, and
-    /// every later block takes the atomic load above. A lane index is unique per filling transform
+    /// every later block takes the atomic load above. A worker id is unique per filling transform
     /// and a transform's work is serialized, so the slot is single-writer once published - even
     /// though executor threads migrate between transforms.
     std::lock_guard lock(fill_mutex);
-    if (FillLane * raced = fill_lane_slots[build_lane].load(std::memory_order_relaxed))
+    if (FillLane * raced = fill_lane_slots[worker_id].load(std::memory_order_relaxed))
         return *raced;
     FillLane * fresh = &lanes.emplace_back();
-    fill_lane_slots[build_lane].store(fresh, std::memory_order_release);
+    fill_lane_slots[worker_id].store(fresh, std::memory_order_release);
     return *fresh;
 }
 
-bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
-{
-    return addBlockToJoinImpl(source_block, check_limits, invalid_lane);
-}
-
-bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, bool check_limits, size_t build_lane)
+bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, size_t worker_id, bool check_limits)
 {
     /// `num_rows` only matters for the columnless CROSS blocks this algorithm never plans.
-    return addBlockToJoinImpl(source_block, check_limits, build_lane);
-}
-
-bool PartitionedHashJoin::addBlockToJoinImpl(const Block & source_block, bool check_limits, size_t build_lane)
-{
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
 
     if (build_phase_finished || stored_blocks_released)
@@ -237,9 +228,9 @@ bool PartitionedHashJoin::addBlockToJoinImpl(const Block & source_block, bool ch
 
     if (delegate_mode)
     {
-        /// The standard machinery runs the join whole, on one fill stream.
+        /// The standard machinery runs the join whole, on one fill stream, so the inner join has one worker.
         ProfileEvents::increment(ProfileEvents::PartitionedHashJoinInsertedRows, source_block.rows());
-        return hash_join->addBlockToJoin(source_block, check_limits);
+        return hash_join->addBlockToJoin(source_block, source_block.rows(), /*worker_id=*/0, check_limits);
     }
 
     /// Key preparation plus the per-row hash, route and sketch update. The partition plan comes later,
@@ -317,7 +308,7 @@ bool PartitionedHashJoin::addBlockToJoinImpl(const Block & source_block, bool ch
     /// not reach the sketch, but their routes are still written - the scatter's bucket derivation reads
     /// them. ASOF hashes the equi-key prefix only; its inequality column is not part of the table key.
     fill.routes.resize_exact(rows);
-    FillLane & lane = build_lane == invalid_lane ? getFillLane() : getFillLane(build_lane);
+    FillLane & lane = getFillLane(worker_id);
     {
         /// Exclusive merge of the sketches must not race `add` on a live lane: a torn register
         /// would persist into the barrier's `hll_estimate`, which the post-build gate then uses.
@@ -378,10 +369,10 @@ void PartitionedHashJoin::storeBlocksInRowStore()
 void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
 {
     auto & data = *hash_join->data;
-    auto & stored = data.columns.emplace_back(std::move(fill.stored));
+    auto & stored = storedBlocks().emplace_back(std::move(fill.stored));
     stored.block_no = data.stored_columns_index->add(&stored);
-    data.allocated_size += stored.allocatedBytes();
-    data.rows_to_join += fill.rows;
+    data.addBytes(data.allocated_size, stored.allocatedBytes());
+    data.rows_to_join.fetch_add(fill.rows, std::memory_order_relaxed);
     fill.block_no = stored.block_no;
     fill.stored = StoredBlock{};
     if (stored.hasRowStore())
@@ -401,8 +392,8 @@ void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
             save_nullmap = (*fill.null_map)[i];
     if (save_nullmap)
     {
-        auto & holder = data.nullmaps.emplace_back(&stored, fill.null_map_holder);
-        data.nullmaps_allocated_size += holder.allocatedBytes();
+        auto & holder = storedNullmaps().emplace_back(&stored, fill.null_map_holder);
+        data.addBytes(data.nullmaps_allocated_size, holder.allocatedBytes());
     }
 
     if (fill.join_mask.hasData() && fill.join_mask.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
@@ -420,8 +411,8 @@ void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
         }
         if (has_right_not_joined)
         {
-            auto & holder = data.nullmaps.emplace_back(&stored, std::move(not_joined_map));
-            data.nullmaps_allocated_size += holder.allocatedBytes();
+            auto & holder = storedNullmaps().emplace_back(&stored, std::move(not_joined_map));
+            data.addBytes(data.nullmaps_allocated_size, holder.allocatedBytes());
         }
     }
 }
@@ -536,7 +527,7 @@ void PartitionedHashJoin::onBuildPhaseFinish()
             "Single fill thread: table of 2^{} cells, {} rows in {} blocks inserted during the fill, {} distinct keys",
             size_degree,
             accumulated_rows.load(std::memory_order_relaxed),
-            hash_join->data->columns.size(),
+            storedBlocks().size(),
             static_cast<size_t>(hll_estimate));
         return;
     }
@@ -788,7 +779,15 @@ PartitionedHashJoin::clone(const std::shared_ptr<TableJoin> & table_join_, Share
 std::shared_ptr<IJoin>
 PartitionedHashJoin::cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const
 {
-    return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row);
+    return std::make_shared<HashJoin>(
+        table_join_,
+        right_sample_block_,
+        any_take_last_row,
+        /*reserve_num_=*/0,
+        /*instance_id_=*/"",
+        HashJoinStatsCollectingParams{},
+        /*max_threads_=*/1,
+        /*use_parallel_layout_=*/false);
 }
 
 void PartitionedHashJoin::setEnableLazyColumnsIndexing(bool value)
@@ -848,7 +847,7 @@ void PartitionedHashJoin::beginStoredBlockDrain()
 
 Block PartitionedHashJoin::releaseNextStoredBlock()
 {
-    if (!hash_join->data || hash_join->data->columns.empty())
+    if (!hash_join->data || storedBlocks().empty())
     {
         if (hash_join->data)
             hash_join->data.reset();
@@ -856,13 +855,14 @@ Block PartitionedHashJoin::releaseNextStoredBlock()
     }
 
     auto & data = *hash_join->data;
-    StoredBlock stored = std::move(data.columns.front());
-    data.columns.pop_front();
-    data.allocated_size -= stored.allocatedBytes();
+    auto & blocks = storedBlocks();
+    StoredBlock stored = std::move(blocks.front());
+    blocks.pop_front();
+    data.subBytes(data.allocated_size, stored.allocatedBytes());
 
     Block out = storedBlockToBlock(std::move(stored));
 
-    if (data.columns.empty())
+    if (blocks.empty())
         hash_join->data.reset();
     return out;
 }
@@ -871,19 +871,19 @@ void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
 {
     chassert(stored_blocks_released);
 
-    const size_t blocks = hash_join->data ? hash_join->data->columns.size() : 0;
+    const size_t blocks = hash_join->data ? storedBlocks().size() : 0;
     const size_t workers = std::min(num_threads, blocks);
     if (workers <= 1)
     {
         for (Block block = releaseNextStoredBlock(); !block.empty(); block = releaseNextStoredBlock())
-            target.addBlockToJoin(block, /*check_limits=*/false);
+            target.addBlockToJoin(block, block.rows(), /*worker_id=*/0, /*check_limits=*/false);
         return;
     }
 
-    /// The pop is a deque front and a few counters, so one mutex serializes it cheaply; the scatter,
-    /// compression and write inside `target.addBlockToJoin` run in parallel.
+    /// The pop is a list front and a few counters, so one mutex serializes it cheaply; the scatter,
+    /// compression and write inside `target.addBlockToJoin` run in parallel, one target worker each.
     std::mutex pop_mutex;
-    auto drain = [&]
+    auto drain = [&](size_t worker_id)
     {
         while (true)
         {
@@ -894,7 +894,7 @@ void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
             }
             if (block.empty())
                 return;
-            target.addBlockToJoin(block, /*check_limits=*/false);
+            target.addBlockToJoin(block, block.rows(), worker_id, /*check_limits=*/false);
         }
     };
 
@@ -903,10 +903,10 @@ void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
     {
         for (size_t w = 0; w < workers; ++w)
             pool->scheduleOrThrow(
-                [&drain, thread_group = CurrentThread::getGroup()]
+                [&drain, w, thread_group = CurrentThread::getGroup()]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
-                    drain();
+                    drain(w);
                 });
         pool->wait();
     }

@@ -830,7 +830,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
         join.key_sizes[0],
         HashJoin::isLowCardinalityType(join.data->type));
 
-    AddedColumns<!join_features.is_any_join> added_columns(
+    AddedColumns added_columns(
         scattered_block,
         join.sample_block_with_columns_to_add,
         join.savedBlockSample(),
@@ -864,7 +864,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using Map = const typename decltype(HashJoinTables::TYPE)::element_type; \
-        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map>::Type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map, join_features.need_flags>::Type; \
         joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*tables.TYPE, added_columns, scattered_block, lane); \
         break; \
     }

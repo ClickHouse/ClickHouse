@@ -93,8 +93,8 @@ public:
     std::string getName() const override { return "PartitionedHashJoin"; }
     const TableJoin & getTableJoin() const override;
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
-    bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits, size_t build_lane) override;
+    /// `worker_id` indexes the fill lanes; an id past the lane table takes the thread-keyed lane.
+    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
     JoinResultPtr joinBlock(Block block, size_t lane) override;
@@ -298,6 +298,9 @@ private:
 
     /// `HashJoin::data` is private and the non-joined filler is a friend of this class, not of it.
     const HashJoin::RightTableData & storedData() const { return *hash_join->data; }
+    /// The inner join is built with one worker: this join stores the blocks itself, one thread at a time.
+    HashJoin::StoredBlocksList & storedBlocks() const { return hash_join->data->workers.front().columns; }
+    HashJoin::NullmapList & storedNullmaps() const { return hash_join->data->workers.front().nullmaps; }
 
     /// One accumulated right-side block: the payload in stored form (row store plus columnar
     /// remainder, a full selector), the prepared key columns, and the saved routes.
@@ -358,8 +361,7 @@ private:
     };
 
     FillLane & getFillLane();
-    FillLane & getFillLane(size_t build_lane);
-    bool addBlockToJoinImpl(const Block & source_block, bool check_limits, size_t build_lane);
+    FillLane & getFillLane(size_t worker_id);
     void decidePartitionPlan();
     void storeBlocksInRowStore();
     /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and

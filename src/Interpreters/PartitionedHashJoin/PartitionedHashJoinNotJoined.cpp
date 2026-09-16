@@ -1,6 +1,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/NamesAndTypes.h>
-#include <Interpreters/HashJoin/fillJoinOutputColumns.h>
+#include <Interpreters/HashJoin/AddedColumns.h>
+#include <Interpreters/HashJoin/fillRowStoreOutputColumns.h>
+#include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/RowDataStore.h>
@@ -8,6 +10,7 @@
 #include <Common/assert_cast.h>
 
 #include <any>
+#include <numeric>
 #include <optional>
 
 namespace DB
@@ -38,30 +41,21 @@ public:
         , max_block_size(max_block_size_)
         , stream_idx(stream_idx_)
         , num_streams(num_streams_)
-        , stored_blocks(parent.storedData().stored_columns_index->blocksData())
         , block_row_stores(parent.storedData().stored_columns_index->rowStoresData())
     {
         /// The output columns are `getEmptyBlock`'s, so they are positional with the saved sample.
-        const auto & data = parent.storedData();
         const Block & saved = parent.hash_join->savedBlockSample();
         type_name.reserve(saved.columns());
         for (const auto & column : saved)
             type_name.emplace_back(column.name, column.type);
 
-        if (data.row_store_state == HashJoin::RowStoreState::Initialized)
-        {
-            output_access_indexes = data.column_access_indexes;
-            with_row_store = true;
-            for (const auto & access_index : output_access_indexes)
-                with_columns = with_columns || access_index.type == ColumnAccessIndex::Type::Columns;
-        }
-        else
-        {
-            output_access_indexes.reserve(saved.columns());
-            for (size_t j = 0; j < saved.columns(); ++j)
-                output_access_indexes.push_back({ColumnAccessIndex::Type::Columns, j});
-            with_columns = true;
-        }
+        std::vector<size_t> positions(saved.columns());
+        std::iota(positions.begin(), positions.end(), 0);
+        EmitPlan plan = planJoinEmit(parent.storedData(), positions, type_name, /*with_gather=*/true);
+        output_access_indexes = std::move(plan.access_indexes);
+        emit_gather = std::move(plan.gather);
+        with_row_store = plan.has_row_store;
+        with_columns = plan.has_columns;
     }
 
     Block getEmptyBlock() override { return parent.hash_join->savedBlockSample().cloneEmpty(); }
@@ -102,12 +96,13 @@ private:
     const size_t stream_idx;
     const size_t num_streams;
 
-    /// Per-block bases of the stored blocks and their row stores; stable once the build is finished.
-    const StoredBlock * const * stored_blocks;
+    /// Per-block bases of the row stores; stable once the build is finished.
     const RowDataStore * const * block_row_stores;
-    /// Where each saved-block column lives (row store field or columnar position) and its type.
+    /// Where each saved-block column lives (row store field or columnar position), its type, and
+    /// the gather source of the columnar ones.
     ColumnAccessIndexes output_access_indexes;
     NamesAndTypes type_name;
+    std::vector<GatherColumn> emit_gather;
     bool with_row_store = false;
     bool with_columns = false;
 
@@ -120,11 +115,11 @@ private:
     std::any fixed_position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
 
-    /// The rows one call collected: `(block, row)` pairs for the columnar part, row pointers for the
+    /// The rows one call collected: encoded ref words for the columnar part, row pointers for the
     /// row store part.
     struct Collected
     {
-        ColumnsWithRowNumbers columns_with_row_numbers;
+        PaddedPODArray<UInt64> words;
         RowStorePointers row_store_ptrs;
         std::optional<size_t> row_store_batch_size;
         size_t rows = 0;
@@ -133,10 +128,7 @@ private:
         void reserve(size_t n)
         {
             if constexpr (with_columns_)
-            {
-                columns_with_row_numbers.columns.reserve(n);
-                columns_with_row_numbers.row_numbers.reserve(n);
-            }
+                words.reserve(n);
             if constexpr (with_row_store_)
                 row_store_ptrs.ptrs.reserve(n);
         }
@@ -157,10 +149,7 @@ private:
     void collectRow(UInt32 block_no, UInt32 row_no, Collected & out) const
     {
         if constexpr (with_columns_)
-        {
-            out.columns_with_row_numbers.columns.push_back(stored_blocks[block_no]);
-            out.columns_with_row_numbers.row_numbers.push_back(row_no);
-        }
+            out.words.push_back(RowRef(block_no, row_no).encode());
         if constexpr (with_row_store_)
         {
             const RowDataStore * row_store = block_row_stores[block_no];
@@ -171,15 +160,24 @@ private:
         ++out.rows;
     }
 
+    /// Flat: a not-joined row is always one inline ref, never a list and never a default.
     void fillOutput(MutableColumns & columns_right, const Collected & collected) const
     {
-        fillJoinOutputColumns(
-            columns_right,
-            output_access_indexes,
-            collected.row_store_ptrs,
-            collected.row_store_batch_size,
-            collected.columns_with_row_numbers,
-            type_name);
+        if (with_columns)
+        {
+            const RefWordSelection selection{
+                .begin = collected.words.data(),
+                .end = collected.words.data() + collected.words.size(),
+                .rows = collected.words.size(),
+                .shape = RefWordShape::Flat};
+            EmitScratch scratch;
+            for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+                if (output_access_indexes[dst_idx].type == ColumnAccessIndex::Type::Columns)
+                    gatherColumn(*columns_right[dst_idx], emit_gather[dst_idx], selection, scratch);
+        }
+        if (with_row_store)
+            fillRowStoreOutputColumns(
+                columns_right, output_access_indexes, collected.row_store_ptrs, collected.row_store_batch_size, type_name);
     }
 
     template <bool with_row_store_, bool with_columns_, typename Mapped>
@@ -264,7 +262,7 @@ private:
         if (stream_idx != 0)
             return;
 
-        const auto & nullmaps = parent.storedData().nullmaps;
+        const auto & nullmaps = parent.storedNullmaps();
         if (!nulls_position.has_value())
             nulls_position = nullmaps.begin();
 

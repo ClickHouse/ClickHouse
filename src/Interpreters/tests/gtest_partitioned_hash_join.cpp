@@ -291,6 +291,12 @@ std::vector<UInt64> keysOf(const std::vector<size_t> & key_indexes)
     return keys;
 }
 
+/// One right-side block through the `IJoin` interface, from build worker `worker_id`.
+bool addBuildBlock(IJoin & join, const Block & block, size_t worker_id = 0)
+{
+    return join.addBlockToJoin(block, block.rows(), worker_id, /*check_limits=*/true);
+}
+
 /// Feeds `distinct_keys * duplicates` rows in the layout `options` selects.
 void addBuildBlocks(PartitionedHashJoin & join, size_t distinct_keys, size_t duplicates, const BuildOptions & options)
 {
@@ -300,7 +306,7 @@ void addBuildBlocks(PartitionedHashJoin & join, size_t distinct_keys, size_t dup
         options,
         [&](const std::vector<size_t> & key_indexes, const std::vector<UInt64> & ids)
         {
-            EXPECT_TRUE(join.addBlockToJoin(twoColumnBlock("rk", "build_id", keysOf(key_indexes), ids), /*check_limits=*/true));
+            EXPECT_TRUE(addBuildBlock(join, twoColumnBlock("rk", "build_id", keysOf(key_indexes), ids)));
         });
 }
 
@@ -310,7 +316,7 @@ void addBlock(PartitionedHashJoin & join, const std::vector<UInt64> & keys, UInt
     std::vector<UInt64> ids(keys.size());
     for (UInt64 & id : ids)
         id = next_id++;
-    EXPECT_TRUE(join.addBlockToJoin(twoColumnBlock("rk", "build_id", keys, ids), /*check_limits=*/true));
+    EXPECT_TRUE(addBuildBlock(join, twoColumnBlock("rk", "build_id", keys, ids)));
 }
 
 /// The barrier and the post-build phase; records the memory verdict when a budget is set.
@@ -613,7 +619,8 @@ void expectCrossingStats(const CrossingBuild & crossing)
 
 }
 
-/// Build and probe blocks carrying a lane the join has no entry for must still produce the exact multiset.
+/// Build blocks carrying a worker id, and probe blocks a lane, the join has no entry for must still
+/// produce the exact multiset.
 TEST(PartitionedHashJoin, OutOfRangeLaneFallsBackToPool)
 {
     /// The lane table holds 2 x num_threads = 8 lanes, so `% 9` sends every ninth block to lane 8.
@@ -630,7 +637,7 @@ TEST(PartitionedHashJoin, OutOfRangeLaneFallsBackToPool)
         [&](const std::vector<size_t> & key_indexes, const std::vector<UInt64> & ids)
         {
             const Block block = twoColumnBlock("rk", "build_id", keysOf(key_indexes), ids);
-            EXPECT_TRUE(built.join->addBlockToJoin(block, block.rows(), /*check_limits=*/true, build_block_index++ % 9));
+            EXPECT_TRUE(addBuildBlock(*built.join, block, /*worker_id=*/build_block_index++ % 9));
         });
     finishBuild(built, options);
 
@@ -1161,15 +1168,15 @@ TEST(PartitionedHashJoin, FirstGroupOfSkippedRowsOnly)
         return block;
     };
     BuiltJoin built = makeJoin(options, twoColumnBlock("k", "probe_id", {}, {}), nullable_block({}, {}, /*is_null=*/false));
-    EXPECT_TRUE(built.join->addBlockToJoin(
-        nullable_block(std::vector<UInt64>(block_rows, 0), std::vector<UInt64>(block_rows, 0), /*is_null=*/true), /*check_limits=*/true));
+    EXPECT_TRUE(addBuildBlock(
+        *built.join, nullable_block(std::vector<UInt64>(block_rows, 0), std::vector<UInt64>(block_rows, 0), /*is_null=*/true)));
     forEachBuildBlock(
         distinct_keys,
         duplicates,
         options,
         [&](const std::vector<size_t> & key_indexes, const std::vector<UInt64> & ids)
         {
-            EXPECT_TRUE(built.join->addBlockToJoin(nullable_block(keysOf(key_indexes), ids, /*is_null=*/false), /*check_limits=*/true));
+            EXPECT_TRUE(addBuildBlock(*built.join, nullable_block(keysOf(key_indexes), ids, /*is_null=*/false)));
         });
     finishBuild(built, options);
     ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped);
@@ -1327,7 +1334,7 @@ TEST(PartitionedHashJoin, SinglePartitionAsofGrows)
             if (keys.size() == block_rows || i + 1 == distinct_keys)
             {
                 /// `ts` is the row id, so a probe at `probe_ts = i` matches exactly its own row.
-                EXPECT_TRUE(built.join->addBlockToJoin(uint64Block({{"rk", keys}, {"ts", ids}, {"build_id", ids}}), /*check_limits=*/true));
+                EXPECT_TRUE(addBuildBlock(*built.join, uint64Block({{"rk", keys}, {"ts", ids}, {"build_id", ids}})));
                 keys.clear();
                 ids.clear();
             }

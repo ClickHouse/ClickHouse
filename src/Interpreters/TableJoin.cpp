@@ -1345,7 +1345,9 @@ bool allowHashJoinCacheKeys(
         return false;
     if (!parallelLayoutKindSupported(kind))
         return false;
-    return isParallelHashJoinShape(kind, is_special_storage, one_disjunct);
+    if (is_special_storage || !one_disjunct)
+        return false;
+    return true;
 }
 
 bool preferParallelHashLayout(JoinKind kind, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold)
