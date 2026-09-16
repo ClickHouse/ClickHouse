@@ -710,6 +710,25 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     return true;
                 }
             }
+            else if constexpr (IsDataTypeNumber<LeftDataType>
+                && (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>)
+                && !std::is_same_v<LeftDataType, DataTypeBFloat16>)
+            {
+                /// The accurate casts validate representability independently of `date_time_overflow_behavior`,
+                /// which only governs the ordinary CAST below: `accurateCast` rejects an out-of-range value and
+                /// `accurateCastOrNull` (and `accurateCastOrDefault` built on it) returns NULL for it.
+                if (cast_type == CastType::accurate)
+                {
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(
+                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                    return true;
+                }
+                if (cast_type == CastType::accurateOrNull)
+                {
+                    result_column = convertNumericToDateTime64OrTime64OrNull<LeftDataType, RightDataType>(arguments, input_rows_count, scale);
+                    return true;
+                }
+            }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
             {
                 /// The only conversion handled by this wrapper that can overflow the target: the whole-seconds value

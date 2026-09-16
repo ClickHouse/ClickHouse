@@ -883,6 +883,75 @@ struct ToTime64TransformFloat
     }
 };
 
+/// `accurateCastOrNull` from a number to `DateTime64` / `Time64`: NULL for every value that the target cannot
+/// represent at the requested scale, regardless of `date_time_overflow_behavior`. The transforms above cannot
+/// report per-row failures, so the check is repeated here against the same bounds they clamp to.
+template <typename FromDataType, typename ToDataType>
+ColumnPtr convertNumericToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale)
+{
+    static_assert(std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>);
+    using FromFieldType = typename FromDataType::FieldType;
+    using ToFieldType = typename ToDataType::FieldType;
+
+    const auto * col_from = checkAndGetColumn<typename FromDataType::ColumnType>(arguments[0].column.get());
+    if (!col_from)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of conversion to {}",
+            arguments[0].column->getName(), ToDataType::family_name);
+
+    const auto & vec_from = col_from->getData();
+
+    auto col_to = ToDataType::ColumnType::create(input_rows_count, scale);
+    auto & vec_to = col_to->getData();
+
+    auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+    auto & vec_null_map_to = col_null_map_to->getData();
+
+    const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<typename ToFieldType::NativeType>(scale);
+    time_t min_whole;
+    time_t max_whole;
+    Int64 min_ticks;
+    Int64 max_ticks;
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+    {
+        min_whole = minWholeSecondsForDateTime64(scale_multiplier);
+        max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
+        min_ticks = minTicksForDateTime64(scale_multiplier);
+        max_ticks = maxTicksForDateTime64(scale_multiplier);
+    }
+    else
+    {
+        min_whole = -MAX_TIME_TIMESTAMP;
+        max_whole = MAX_TIME_TIMESTAMP;
+        min_ticks = minTicksForTime64(scale_multiplier);
+        max_ticks = maxTicksForTime64(scale_multiplier);
+    }
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        bool representable;
+        if constexpr (is_floating_point<FromFieldType>)
+        {
+            /// Compared in ticks so that the boundary second keeps its fraction; the product is computed in
+            /// `Float64` for the same reason as in ToDateTime64TransformFloat. A non-finite value fails the conversion.
+            ToFieldType result;
+            representable = tryConvertToDecimal<DataTypeFloat64, ToDataType>(static_cast<Float64>(vec_from[i]), scale, result)
+                && result.value >= min_ticks && result.value <= max_ticks;
+            vec_to[i] = representable ? result : ToFieldType(0);
+        }
+        else
+        {
+            /// Compared in the source domain: narrowing a wide or unsigned value first could move it into range.
+            representable = !accurate::lessOp(vec_from[i], min_whole) && !accurate::greaterOp(vec_from[i], max_whole);
+            vec_to[i] = representable
+                ? DecimalUtils::decimalFromComponentsWithMultiplier<ToFieldType>(static_cast<Int64>(vec_from[i]), 0, scale_multiplier)
+                : ToFieldType(0);
+        }
+        vec_null_map_to[i] = !representable;
+    }
+
+    return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+}
+
 struct ToTime64Transform
 {
     static constexpr auto name = "toTime64";
