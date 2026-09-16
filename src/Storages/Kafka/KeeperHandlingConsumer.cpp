@@ -5,6 +5,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/DateLUT.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/randomSeed.h>
 
 namespace DB
@@ -96,7 +97,7 @@ KeeperHandlingConsumer::OffsetGuard::OffsetGuard(OffsetGuard && other) noexcept
 KeeperHandlingConsumer::OffsetGuard::~OffsetGuard()
 {
     if (consumer && needs_rollback)
-        consumer->rollbackToCommittedOffsets();
+        consumer->rollbackToCommittedOffsetsNoThrow();
 }
 
 void KeeperHandlingConsumer::OffsetGuard::commit()
@@ -113,11 +114,13 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     const String & replica_name_,
     size_t idx_,
     const LoggerPtr & log_,
+    size_t num_consumers_,
     UInt64 partition_shard_num_,
     UInt64 shard_count_)
     : keeper_path(keeper_path_)
     , replica_name(replica_name_)
     , idx(idx_)
+    , num_consumers(std::max<size_t>(num_consumers_, 1))
     , partition_shard_num(partition_shard_num_)
     , shard_count(shard_count_)
     , kafka_consumer(kafka_consumer_)
@@ -201,23 +204,33 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     }
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
+    /// The fast path above lets the next cycle poll on any non-empty assignment, so from here on the
+    /// assignment must be left either rewound to the committed offsets or empty.
+    try
     {
-        std::lock_guard lock(topic_partition_locks_mutex);
-        // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
-        updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
-        lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.has_replica_without_locks);
-        poll_count = 0;
+        {
+            std::lock_guard lock(topic_partition_locks_mutex);
+            // These operations are expected to be fast, because they only modify in-memory data and read/write to Keeper. For huge number of topic partitions
+            updatePermanentLocksLocked(available_topic_partitions, all_topic_partitions.size(), active_replicas_info.active_replica_count);
+            lockTemporaryLocksLocked(available_topic_partitions, active_replicas_info.has_replica_without_locks);
+            poll_count = 0;
 
-        assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
-        appendToAssignedTopicPartitions(permanent_locks);
-        appendToAssignedTopicPartitions(tmp_locks);
+            assigned_topic_partitions.reserve(permanent_locks.size() + tmp_locks.size());
+            appendToAssignedTopicPartitions(permanent_locks);
+            appendToAssignedTopicPartitions(tmp_locks);
+        }
+        // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called
+        // in-between the two locks. However this is not a problem, because in `getStat` the main source of information is
+        // the acquired locks and the information from KafkaConsumer2 about the offset are only used to provide more recent
+        // information about the offsets in case the consumer is polling message while `getStat` is called. Here this is not
+        // the case, so the offset values in the lock infos are good enough.
+        rollbackToCommittedOffsets();
     }
-    // In `rollbackToCommittedOffsets` `topic_partition_locks_mutex` is locked again, this means `getStat` can be called
-    // in-between the two locks. However this is not a problem, because in `getStat` the main source of information is
-    // the acquired locks and the information from KafkaConsumer2 about the offset are only used to provide more recent
-    // information about the offsets in case the consumer is polling message while `getStat` is called. Here this is not
-    // the case, so the offset values in the lock infos are good enough.
-    rollbackToCommittedOffsets();
+    catch (...)
+    {
+        assigned_topic_partitions.clear();
+        throw;
+    }
 
     if (assigned_topic_partitions.empty())
     {
@@ -411,7 +424,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     {
         tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
     }
-    LOG_INFO(log, "The replica can take {} temporary locks in the current round", tmp_locks_quota);
+    LOG_INFO(log, "The consumer can take {} temporary locks in the current round", tmp_locks_quota);
 
     if (tmp_locks_quota == 0)
         return;
@@ -439,9 +452,19 @@ void KeeperHandlingConsumer::updatePermanentLocksLocked(
 {
     LOG_TRACE(log, "Starting to update permanent locks");
     chassert(active_replica_count > 0 && "There should be at least one active replica, because we are active");
-    size_t can_lock_partitions = std::max<size_t>(topic_partitions_count / static_cast<size_t>(active_replica_count), 1);
 
-    LOG_TRACE(log, "The replica can have {} permanent locks after the current round", can_lock_partitions);
+    const size_t node_quota = std::max<size_t>(topic_partitions_count / active_replica_count, 1);
+    const size_t can_lock_partitions = computeConsumerQuota(node_quota);
+
+    LOG_TRACE(
+        log,
+        "The consumer can have {} permanent locks after the current round "
+        "(node_quota={}, active_replicas={}, num_consumers={}, idx={})",
+        can_lock_partitions,
+        node_quota,
+        active_replica_count,
+        num_consumers,
+        idx);
 
     if (can_lock_partitions == permanent_locks.size())
     {
@@ -482,6 +505,13 @@ void KeeperHandlingConsumer::updatePermanentLocksLocked(
     }
 }
 
+size_t KeeperHandlingConsumer::computeConsumerQuota(size_t node_quota) const
+{
+    if (num_consumers <= 1)
+        return node_quota;
+    return node_quota / num_consumers + (idx < node_quota % num_consumers ? 1 : 0);
+}
+
 void KeeperHandlingConsumer::rollbackToCommittedOffsets()
 {
     TopicPartitionOffsets offsets_to_rollback;
@@ -496,6 +526,24 @@ void KeeperHandlingConsumer::rollbackToCommittedOffsets()
         }
     }
     kafka_consumer->updateOffsets(std::move(offsets_to_rollback));
+}
+
+void KeeperHandlingConsumer::rollbackToCommittedOffsetsNoThrow() noexcept
+{
+    /// The rollback allocates, and it is also called from inside a catch handler, where the memory
+    /// tracker is still allowed to raise `MEMORY_LIMIT_EXCEEDED`.
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    try
+    {
+        rollbackToCommittedOffsets();
+    }
+    catch (...)
+    {
+        /// The consumer may still hold the messages of the aborted batch, and committing a later
+        /// batch would skip them. Drop the assignment so `prepareToPoll` rebuilds it and rewinds.
+        assigned_topic_partitions.clear();
+        tryLogCurrentException(log, "Failed to return the consumer to the committed offsets");
+    }
 }
 
 void KeeperHandlingConsumer::saveIntentSize(const KafkaConsumer2::TopicPartition & topic_partition, const std::optional<int64_t> & offset, const uint64_t intent)
@@ -611,24 +659,35 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
     ReadBufferPtr buf;
     uint64_t consumed_messages = 0;
     int64_t last_read_offset = 0;
-    while (true)
+    try
     {
-        buf = kafka_consumer->consume(topic_partition, intent_size);
-        last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
-        if (buf)
+        while (true)
         {
-            ++consumed_messages;
-            last_read_offset = message_info.currentOffset();
-        }
-        /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
-        if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
-        {
-            if (consumed_messages == 0)
-                return std::nullopt;
+            buf = kafka_consumer->consume(topic_partition, intent_size);
+            last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
+            if (buf)
+            {
+                ++consumed_messages;
+                last_read_offset = message_info.currentOffset();
+            }
+            /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
+            if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
+            {
+                if (consumed_messages == 0)
+                    return std::nullopt;
 
-            saveIntentSize(topic_partition, committed_offset, consumed_messages);
-            return OffsetGuard(*this, last_read_offset + 1);
+                saveIntentSize(topic_partition, committed_offset, consumed_messages);
+                return OffsetGuard(*this, last_read_offset + 1);
+            }
         }
+    }
+    catch (...)
+    {
+        /// Consuming a message advances the consumer past it, and only an `OffsetGuard` returns it to
+        /// the committed offsets. No guard exists yet here, so undo the advance: otherwise the next
+        /// batch would commit past messages that were never delivered.
+        rollbackToCommittedOffsetsNoThrow();
+        throw;
     }
 }
 
