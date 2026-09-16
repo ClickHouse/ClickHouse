@@ -16,11 +16,8 @@ Nodes:
     `replicated` and excludes `johndoe`.
   - `node_dry`: same search with `dry_run`; nothing may change.
   - `node_bad`: wrong `lookup_password`, `interval` 0 (startup run + `SYSTEM RELOAD USERS`); also
-    restarted with invalid configurations for the startup validation and with an `ldap` directory
-    declared before the synchronised one that cannot answer the shadow rule: one that materialises
-    users at login (no `<sync>`, or `only_synced_users` false) or a `dry_run` one, layouts every run
-    refuses, and one that has not applied a snapshot yet, refused until it has; and with two correct
-    synchronised directories, whose startup runs must happen in declaration order.
+    restarted with invalid configurations for the startup validation, among them a second `ldap`
+    directory next to the synchronised one, which must be the only `ldap` directory of the server.
   - `node_stale`: the `ldap` directory FIRST (`interval` 1, `max_staleness` 3), then `users_xml`
     with the local user `local_after`: the gate order must keep local users reachable while the
     directory is stale.
@@ -146,11 +143,6 @@ def group_dn(cn):
 SYNC_SEARCH_FILTER = (
     "(&(objectClass=inetOrgPerson)"
     f"(|(memberOf={group_dn(ROLE_A_GROUP)})(memberOf={group_dn(ROLE_B_GROUP)})))"
-)
-# The members of `clickhouse-role_b` only: the search of a synchronised directory declared before
-# the one above, which then serves the rest.
-ROLE_B_SYNC_SEARCH_FILTER = (
-    f"(&(objectClass=inetOrgPerson)(memberOf={group_dn(ROLE_B_GROUP)}))"
 )
 
 
@@ -1182,256 +1174,60 @@ def test_nonexistent_roles_storage_fails_the_first_run(janedoe_in_role_a):
         restore_node_bad()
 
 
-def preceding_ldap_config(name, sync=None):
+def with_second_ldap_directory(name, sync=None, after=False):
     """`directories_bad.xml` with a second `ldap` directory named `name`, backed by the same server and
-    declared right before the synchronised one. `sync` is the content of its `<sync>` section; `None`
-    gives a directory without one."""
+    declared right before (with `after`, right after) the synchronised one. `sync` is the content of its
+    `<sync>` section; `None` gives a lazy directory, one without a section."""
     original = read_config("directories_bad.xml")
-    synced = "        <ldap>\n            <server>openldap_strict</server>\n"
-    assert original.count(synced) == 1
     sync_xml = f"            <sync>{sync}</sync>\n" if sync is not None else ""
-    preceding = (
+    second = (
         "        <ldap>\n"
         f"            <name>{name}</name>\n"
         "            <server>openldap_strict</server>\n"
         f"{sync_xml}"
         "        </ldap>\n"
     )
-    return original.replace(synced, preceding + synced)
+    if after:
+        anchor = "        </ldap>\n"
+        assert original.count(anchor) == 1
+        return original.replace(anchor, anchor + second)
+    anchor = "        <ldap>\n            <server>openldap_strict</server>\n"
+    assert original.count(anchor) == 1
+    return original.replace(anchor, second + anchor)
 
 
-def assert_run_refused_by_ldap_lazy(reason, remedy):
-    """`node_bad` runs with `ldap_lazy` declared before `ldap`: the startup run (`interval` 0) and
-    `SYSTEM RELOAD USERS` fail on the layout, whatever the directory would return, and `ldap`
-    materialises nothing."""
-    message = (
-        "LDAP synchronisation of directory `ldap` cannot run: user directory `ldap_lazy` is an 'ldap'"
-        f" directory {reason} and is declared before it"
+def second_ldap_directory_refused(synced, other):
+    """The startup error, as a `grep` pattern: the names are back-quoted in the message and a backtick
+    inside the double-quoted `grep` argument would start a command substitution."""
+    return (
+        f"User directory .{synced}. has a 'sync' section and user directory .{other}. is another 'ldap'"
+        " user directory: a synchronised 'ldap' user directory must be the only 'ldap' user directory"
+        " in 'user_directories'"
     )
-    assert_logs_contain_with_retry(node_bad, message.replace("`", "."))
-    error = admin_error(node_bad, "SYSTEM RELOAD USERS")
-    assert message in error, error
-    assert (
-        f"Declare directory `ldap` before `ldap_lazy`, or {remedy} `ldap_lazy`" in error
-    ), error
-    assert event_value(node_bad, "LDAPSyncFailures") >= 2
-    assert admin(node_bad, ldap_users_query()) == "0\n"
 
 
-def test_lazy_ldap_directory_declared_before_the_synced_one_fails_the_run():
-    """The shadow rule of the planner asks the preceding storages whether they define a name. A lazy
-    `ldap` directory knows only the users who already logged in through it and would still win the
-    next login of a synchronised name, so every run is refused before the directory is contacted:
-    nothing is materialised, at startup and on `SYSTEM RELOAD USERS` alike, and the lazy directory
-    keeps working."""
-    try:
-        restart_node_bad_with(
-            preceding_ldap_config("ldap_lazy"),
-            server_config=read_config("ldap_server.xml"),
-        )
-        assert_run_refused_by_ldap_lazy(
-            "without a 'sync' section", "add a 'sync' section to"
-        )
-        assert event_value(node_bad, "LDAPSyncUsersAdded") == 0
-        assert (
-            admin(
-                node_bad, "SELECT count() FROM system.users WHERE storage LIKE 'ldap%'"
-            )
-            == "0\n"
-        )
-
-        # The lazy directory is unaffected: janedoe logs in through it and is materialised there only.
-        assert login(node_bad, "janedoe") == TSV([["janedoe"]])
-        assert admin(
-            node_bad, "SELECT storage FROM system.users WHERE name = 'janedoe'"
-        ) == TSV([["ldap_lazy"]])
-    finally:
-        restore_node_bad()
-
-
-def test_synced_directory_without_only_synced_users_before_the_synced_one_fails_the_run(
-    janedoe_in_role_a,
-):
-    """A preceding synchronised directory answers the shadow rule from its snapshot, which is complete
-    only with `only_synced_users`: with `false` it materialises a name outside the snapshot at its
-    first login exactly like a lazy directory, so the same layout rule applies. Its own runs are
-    unaffected, and every user the runs of the node added lives there (profile events are global,
-    so this is how "the later directory added nothing" is checked)."""
-    try:
-        restart_node_bad_with(
-            preceding_ldap_config("ldap_lazy", sync_section(only_synced_users="false")),
-            server_config=read_config("ldap_server.xml"),
-        )
-        assert_run_refused_by_ldap_lazy(
-            "with 'only_synced_users' set to false",
-            "set 'only_synced_users' to true in",
-        )
-        assert admin(
-            node_bad, "SELECT storage FROM system.users WHERE name = 'janedoe'"
-        ) == TSV([["ldap_lazy"]])
-        assert event_value(node_bad, "LDAPSyncUsersAdded") == int(
-            admin(
-                node_bad, "SELECT count() FROM system.users WHERE storage = 'ldap_lazy'"
-            )
-        )
-
-        # What the rule guards against: a name outside the snapshot is materialised at login.
-        ldap_add_user("lazyonly")
-        try:
-            assert login(node_bad, "lazyonly") == TSV([["lazyonly"]])
-            assert admin(
-                node_bad, "SELECT storage FROM system.users WHERE name = 'lazyonly'"
-            ) == TSV([["ldap_lazy"]])
-        finally:
-            ldap_delete(user_dn("lazyonly"), ignore_missing=True)
-    finally:
-        restore_node_bad()
-
-
-def test_dry_run_directory_declared_before_the_synced_one_fails_the_run(
-    janedoe_in_role_a,
-):
-    """A `dry_run` directory never materialises anybody, so it answers the shadow rule with "not found" for
-    every name, and the synchronised directory declared after it would take over the users the dry run is
-    about to serve. Every run of `ldap` is refused before the directory is contacted, at startup and on
-    `SYSTEM RELOAD USERS` alike, and the dry run itself keeps running; nobody is served by either.
-    """
-    try:
-        restart_node_bad_with(
-            preceding_ldap_config("ldap_dry", sync_section(dry_run="true")),
-            server_config=read_config("ldap_server.xml"),
-        )
-        message = (
-            "LDAP synchronisation of directory `ldap` cannot run: user directory `ldap_dry` is an 'ldap'"
-            " directory with 'dry_run' enabled and is declared before it"
-        )
-        assert_logs_contain_with_retry(node_bad, message.replace("`", "."))
-        assert_logs_contain_with_retry(
-            node_bad, "Dry run: would add LDAP user 'janedoe'"
-        )
-        error = admin_error(node_bad, "SYSTEM RELOAD USERS")
-        assert message in error, error
-        assert (
-            "Declare directory `ldap` before `ldap_dry`, or disable 'dry_run' in `ldap_dry`"
-            in error
-        ), error
-        assert event_value(node_bad, "LDAPSyncFailures") >= 2
-        assert event_value(node_bad, "LDAPSyncUsersAdded") == 0
-        assert (
-            admin(
-                node_bad, "SELECT count() FROM system.users WHERE storage LIKE 'ldap%'"
-            )
-            == "0\n"
-        )
-        # The snapshot of `ldap_dry` stays empty and `ldap` never gets one: janedoe is found nowhere.
-        login_error(node_bad, "janedoe")
-    finally:
-        restore_node_bad()
-
-
-def test_synced_directory_declared_before_the_synced_one_needs_an_applied_snapshot(
-    janedoe_in_role_a,
-):
-    """`ldap_first` synchronises the members of `clickhouse-role_b` and precedes `ldap`, which synchronises
-    both groups. Until `ldap_first` has applied a snapshot its answer to the shadow rule is "not found" for
-    everybody, so `ldap` refuses to run (an `LDAP_ERROR`, transient) instead of materialising johndoe, whom
-    `ldap_first` is about to serve. The node starts with the wrong `lookup_password`, so no run of
-    `ldap_first` is applied until the server definition is fixed: `SYSTEM RELOAD USERS` synchronises the
-    directories in their declared order and reports the first failure, the lookup bind of `ldap_first`,
-    while the refusal of `ldap` is in the log. Once the password is fixed a single reload applies
-    `ldap_first` and then lets `ldap` synchronise the rest, johndoe shadowed."""
-    try:
-        restart_node_bad_with(
-            preceding_ldap_config(
-                "ldap_first",
-                sync_section(
-                    search_filter=ROLE_B_SYNC_SEARCH_FILTER.replace("&", "&amp;")
-                ),
-            ),
-            server_config=read_config("ldap_server_bad_lookup.xml"),
-        )
-        refusal = (
-            "LDAP synchronisation of directory `ldap` cannot run yet: user directory `ldap_first` is an"
-            " 'ldap' directory declared before it and has no authoritative snapshot yet"
-        )
-        # The startup runs (`interval` 0): `ldap_first` fails on the lookup bind, then `ldap`, whose startup
-        # run waits for that one to finish, on the layout. Both are logged after `LDAPSyncFailures` was
-        # incremented.
-        assert_logs_contain_with_retry(
-            node_bad, "LDAP synchronisation of directory .ldap_first. failed"
-        )
-        assert_logs_contain_with_retry(node_bad, refusal.replace("`", "."))
-
-        failures_before = event_value(node_bad, "LDAPSyncFailures")
-        error = admin_error(node_bad, "SYSTEM RELOAD USERS")
-        assert "LDAP lookup bind as" in error and "invalid credentials" in error, error
-        assert count_in_log(node_bad, refusal.replace("`", ".")) >= 2
-        assert event_value(node_bad, "LDAPSyncFailures") == failures_before + 2
-        assert (
-            admin(
-                node_bad, "SELECT count() FROM system.users WHERE storage LIKE 'ldap%'"
-            )
-            == "0\n"
-        )
-        login_error(node_bad, "janedoe")
-
-        # With the server definition fixed, the reload applies `ldap_first` first, so `ldap` passes the
-        # check in the same reload and synchronises everybody `ldap_first` does not serve.
-        reload_config(
-            node_bad, "ldap_server_bad_lookup.xml", read_config("ldap_server.xml")
-        )
-        admin(node_bad, "SYSTEM RELOAD USERS")
-        assert admin(
-            node_bad,
-            "SELECT name, storage FROM system.users"
-            " WHERE name IN ('janedoe', 'johndoe', 'permanent') ORDER BY name",
-        ) == TSV(
-            [["janedoe", "ldap"], ["johndoe", "ldap_first"], ["permanent", "ldap"]]
-        )
-        assert node_bad.contains_in_log(
-            "LDAP user 'johndoe' (cn=johndoe,ou=users,dc=example,dc=org) exists in storage .ldap_first.,"
-            " which precedes directory .ldap.: not synchronised"
-        )
-        assert login(node_bad, "janedoe") == TSV([["janedoe"]])
-    finally:
-        restore_node_bad()
-
-
-def test_first_runs_happen_in_declaration_order(janedoe_in_role_a):
-    """The correct version of the layout above, against the good server definition: `ldap_first` (the
-    members of `clickhouse-role_b`) is declared before `ldap` (both groups), both with `interval` 0, so
-    both jobs are released at once. The startup run of `ldap` must wait for the startup run of `ldap_first`
-    to finish instead of racing it: were it first, it would be refused for a layout that is correct, with an
-    error logged, a failure counted and nobody served by `ldap` until `SYSTEM RELOAD USERS`. Exactly two
-    runs, no failure, every user in the first directory that serves them."""
-    try:
-        restart_node_bad_with(
-            preceding_ldap_config(
-                "ldap_first",
-                sync_section(
-                    search_filter=ROLE_B_SYNC_SEARCH_FILTER.replace("&", "&amp;")
-                ),
-            ),
-            server_config=read_config("ldap_server.xml"),
-        )
-        assert_eq_with_retry(
-            node_bad,
-            "SELECT name, storage FROM system.users"
-            " WHERE name IN ('janedoe', 'johndoe', 'permanent') ORDER BY name",
-            TSV(
-                [["janedoe", "ldap"], ["johndoe", "ldap_first"], ["permanent", "ldap"]]
-            ),
-            user="admin",
-        )
-        assert event_value(node_bad, "LDAPSyncRuns") == 2
-        assert event_value(node_bad, "LDAPSyncFailures") == 0
-        assert not node_bad.contains_in_log(
-            "LDAP synchronisation of directory .ldap. cannot run yet"
-        )
-        assert login(node_bad, "janedoe") == TSV([["janedoe"]])
-        assert login(node_bad, "johndoe", "qwertz") == TSV([["johndoe"]])
-    finally:
-        restore_node_bad()
+def test_startup_validation_of_a_second_ldap_directory():
+    """The plan of a run asks the other storages whether they define a name and leaves it to a storage
+    declared before the synchronised directory, which wins the login. A storage of any other type answers
+    from its whole user set; another `ldap` directory never does: a lazy one knows only the users who have
+    logged in through it, a synchronised one only its last snapshot, taken on its own schedule, so a user
+    matching both would change directory with the timing of the runs. No run can make that sound, so the
+    server refuses to start, whether the other `ldap` directory is lazy or synchronised too, declared
+    before or after the synchronised one; every other kind of storage may still surround it (every node
+    of this module has `users_xml` and a writable storage before its `ldap` directory)."""
+    assert_startup_fails_with(
+        with_second_ldap_directory("ldap_lazy"),
+        second_ldap_directory_refused("ldap", "ldap_lazy"),
+    )
+    assert_startup_fails_with(
+        with_second_ldap_directory("ldap_lazy", after=True),
+        second_ldap_directory_refused("ldap", "ldap_lazy"),
+    )
+    # Two synchronised directories, with the same search even: the first synchronised one is named first.
+    assert_startup_fails_with(
+        with_second_ldap_directory("ldap_first", sync_section()),
+        second_ldap_directory_refused("ldap_first", "ldap"),
+    )
 
 
 def test_startup_validation_of_max_staleness():
