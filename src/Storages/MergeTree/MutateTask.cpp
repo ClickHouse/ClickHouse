@@ -2527,18 +2527,7 @@ static bool hasAnyIndexFileOnDisk(
     if (source_part->hasSecondaryIndex(index_name, metadata_snapshot))
         return true;
 
-    const auto & storage = source_part->getDataPartStorage();
-    const String file_name = index.getFileName();
-    for (const auto & substream : index.getSubstreams())
-    {
-        const String stream_name = file_name + substream.suffix;
-        if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, storage))
-            return true;
-        if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, storage))
-            return true;
-    }
-
-    return false;
+    return skipIndexHasStandaloneFiles(index, source_part->getDataPartStorage(), mrk_extension);
 }
 
 class MutateAllPartColumnsTask : public IExecutableTask

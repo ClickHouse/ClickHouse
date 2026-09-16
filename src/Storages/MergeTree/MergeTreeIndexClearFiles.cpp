@@ -175,24 +175,53 @@ bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndex
 {
     const auto & checksums = part.checksums;
     const auto & storage = part.getDataPartStorage();
-    const IDataPartStorage * storage_for_discovery
-        = storage.getType() == MergeTreeDataPartStorageType::Full ? nullptr : &storage;
-    const NameSet candidates = getSkipIndexSubstreamFileNames(
+    const auto checksum_candidates = getSkipIndexSubstreamFileNames(
         {index},
         part.getMarksFileExtension(),
-        checksums,
-        storage_for_discovery);
+        checksums);
 
-    for (const auto & file : candidates)
-    {
-        if (checksums.has(file) || (storage_for_discovery && storage.existsFile(file)))
+    for (const auto & file : checksum_candidates)
+        if (checksums.has(file))
             return true;
-    }
 
     if (checksums.has(String(SKIP_INDICES_PACKED_FILENAME)))
     {
         const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&storage);
-        return skipIndexHasFilesInPackedArchive(*index, disk_storage, part.getMarksFileExtension());
+        if (skipIndexHasFilesInPackedArchive(*index, disk_storage, part.getMarksFileExtension()))
+            return true;
+    }
+
+    /// The released #109595 bug left standalone files out of checksums only when a mutation
+    /// preserved a full Wide part. Other full parts stay on the checksum-only selector path so
+    /// unmaterialized indexes do not cause repeated storage probes on every selection pass.
+    const bool may_have_released_orphan
+        = storage.getType() == MergeTreeDataPartStorageType::Full
+        && part.getType() == MergeTreeDataPartType::Wide
+        && part.info.mutation != 0;
+    if (storage.getType() == MergeTreeDataPartStorageType::Full && !may_have_released_orphan)
+        return false;
+
+    return skipIndexHasStandaloneFiles(*index, storage, part.getMarksFileExtension());
+}
+
+bool skipIndexHasStandaloneFiles(
+    const IMergeTreeIndex & index,
+    const IDataPartStorage & storage,
+    const String & mrk_extension)
+{
+    const String file_name = index.getFileName();
+    for (const auto & substream : index.getSubstreams())
+    {
+        const String stream_name = file_name + substream.suffix;
+        if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, storage))
+            return true;
+        if (substream.extension == ".idx2"
+            && IMergeTreeDataPart::getStreamNameOrHash(stream_name, ".idx", storage))
+        {
+            return true;
+        }
+        if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, storage))
+            return true;
     }
 
     return false;

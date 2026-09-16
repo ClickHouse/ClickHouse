@@ -69,8 +69,15 @@ SkipIndexClearFiles collectSkipIndexClearFiles(
     const MergeTreeDataPartChecksums & checksums,
     const IDataPartStorage & storage);
 
-/// Return whether the part contains a skip-index file represented in checksums or packed storage.
+/// Return whether the part contains a checksummed or packed skip-index file, including
+/// standalone mutation orphans from the released #109595 bug.
 bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndexPtr & index);
+
+/// Return whether standalone storage contains a declared data or mark file for the index.
+bool skipIndexHasStandaloneFiles(
+    const IMergeTreeIndex & index,
+    const IDataPartStorage & storage,
+    const String & mrk_extension);
 
 /// Return whether the packed skip-index archive contains a data or mark file for the index.
 bool skipIndexHasFilesInPackedArchive(
