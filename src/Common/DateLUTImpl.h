@@ -454,7 +454,6 @@ public:
     }
 
 private:
-
     /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
     /// undefined behavior). Interval rounding reconstructs the result as `date + offset`; for arguments far
     /// outside any valid date range this sum can step just past the type boundary even though both operands
