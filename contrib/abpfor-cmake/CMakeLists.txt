@@ -50,6 +50,10 @@ if (ARCH_AMD64)
     else ()
         target_compile_definitions(_abpfor PRIVATE ABPFOR_ALLOW_SCALAR_FALLBACK)
     endif ()
+elseif (NOT ARCH_AARCH64)
+    # ppc64le, s390x, riscv64, loongarch64, wasm64: abpfor has no SIMD codec for these
+    # architectures, so src/core/arch.h selects the scalar codec. Same output bytes, slower.
+    target_compile_definitions(_abpfor PRIVATE ABPFOR_ALLOW_SCALAR_FALLBACK)
 endif ()
 
 add_library(ch_contrib::abpfor ALIAS _abpfor)
