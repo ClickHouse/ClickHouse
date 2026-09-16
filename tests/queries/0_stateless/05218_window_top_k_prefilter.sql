@@ -76,10 +76,8 @@ SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) 
 SELECT '-- 27 the hint survives a cloned subplan (window result used as an IN set)';
 SELECT count() FROM t_wtkp WHERE o IN (SELECT o FROM (SELECT o, rank() OVER (ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 2);
 
-SELECT '-- (C) still optimized: now() is constant within the query';
+SELECT '-- (C) still optimized: now() is constant within the query and folded before the filter is built';
 SELECT count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND now() > toDateTime('2000-01-01')) WHERE explain ILIKE '%Window top-K prefilter%';
-SELECT '-- and a conjunct on a column the window neither partitions nor orders by';
-SELECT count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, o + 1 AS x, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND x > 0) WHERE explain ILIKE '%Window top-K prefilter%';
 
 SELECT '-- a conjunct on the PARTITION BY columns is pushed below the window, which leaves a step';
 SELECT '-- between the window and its sort, so the prefilter declines: correct, only slower';
@@ -105,6 +103,11 @@ SELECT '20 lambda body, rand, sleepEachRow', count() FROM (EXPLAIN actions=1 SEL
 -- resolved with nor a way to ask them whether they throw, so it is refused even when its body is harmless.
 SELECT '20b deterministic lambda body', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2])) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2]) ORDER BY p, o, rk;
+-- `o + 1` is merged into the filter step, and `plus` describes no `canThrow` of its own while it can fail
+-- on a value (a Decimal sum overflows), so a conjunct computing it is refused even where, as here, it
+-- cannot fail. The rows must be the same as without it.
+SELECT '20c a conjunct computing o + 1', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, o + 1 AS x, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND x > 0) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT p, o, rk FROM (SELECT p, o, o + 1 AS x, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND x > 0 ORDER BY p, o, rk;
 SELECT '20 rand', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND rand() > 0) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '20 sleepEachRow', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND sleepEachRow(0) = 0) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '24 bound above the limit', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3) WHERE explain ILIKE '%Window top-K prefilter%' SETTINGS query_plan_max_limit_for_top_k_optimization = 2;
@@ -115,6 +118,21 @@ SELECT '-- 30b the rows the prefilter would drop are the ones `throwIf` throws o
 SELECT '--     the query raises today must survive the optimization';
 SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
+SELECT '-- 33 a function can be cheap and still throw on a value: `IPv4StringToNum` describes no';
+SELECT '--     `canThrow` of its own, so the property falls back to the short-circuit answer, which is';
+SELECT '--     `false` for it. Only an allowlist keeps the exception below alive.';
+DROP TABLE IF EXISTS t_wtkp_ip;
+CREATE TABLE t_wtkp_ip (p UInt8, o UInt8, s String) ENGINE = Memory;
+-- The middle row is the one the prefilter would remove at `rk <= 1`, and it holds the only unparseable
+-- value. A filter evaluates its conjuncts in order, each one only on the rows the previous one kept, so
+-- the throwing conjunct comes FIRST: placed after `rk <= 1` it would never see that row anyway.
+INSERT INTO t_wtkp_ip VALUES (1,10,'1.2.3.4'),(1,9,'not-an-ip'),(1,8,'5.6.7.8');
+-- `cast_ipv4_ipv6_default_on_conversion_error` is read in the function's constructor and returns a default
+-- instead of throwing, which would make all three statements vacuous. The runner does not randomize it.
+SELECT '33 a cheap throwing conjunct beside the bound', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, s, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_ip) WHERE IPv4StringToNum(s) > 0 AND rk <= 1) WHERE explain ILIKE '%Window top-K prefilter%' SETTINGS cast_ipv4_ipv6_default_on_conversion_error = 0;
+SELECT count() FROM (SELECT p, s, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_ip) WHERE IPv4StringToNum(s) > 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0, cast_ipv4_ipv6_default_on_conversion_error = 0; -- { serverError CANNOT_PARSE_IPV4 }
+SELECT count() FROM (SELECT p, s, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_ip) WHERE IPv4StringToNum(s) > 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1, cast_ipv4_ipv6_default_on_conversion_error = 0; -- { serverError CANNOT_PARSE_IPV4 }
 
 SELECT '-- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the';
 SELECT '--    prefilter is admitted and the expanded rows must be unchanged';
@@ -146,6 +164,7 @@ WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND qu
         AND log_comment = '05218_window_top_k_prefilter_pruning' AND type = 'QueryFinish'
 );
 
+DROP TABLE t_wtkp_ip;
 DROP TABLE t_wtkp_merge;
 DROP TABLE t_wtkp_mt;
 DROP TABLE t_wtkp_sparse;

@@ -132,9 +132,7 @@ nan	nan	2
 3	10	1
 -- 27 the hint survives a cloned subplan (window result used as an IN set)
 3
--- (C) still optimized: now() is constant within the query
-1
--- and a conjunct on a column the window neither partitions nor orders by
+-- (C) still optimized: now() is constant within the query and folded before the filter is built
 1
 -- a conjunct on the PARTITION BY columns is pushed below the window, which leaves a step
 -- between the window and its sort, so the prefilter declines: correct, only slower
@@ -183,6 +181,19 @@ nan	nan	2
 3	8	3
 3	9	2
 3	10	1
+20c a conjunct computing o + 1	0
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
 20 rand	0
 20 sleepEachRow	0
 24 bound above the limit	0
@@ -190,6 +201,10 @@ nan	nan	2
 31 the setting itself declines	0
 -- 30b the rows the prefilter would drop are the ones `throwIf` throws on, so the exception
 --     the query raises today must survive the optimization
+-- 33 a function can be cheap and still throw on a value: `IPv4StringToNum` describes no
+--     `canThrow` of its own, so the property falls back to the short-circuit answer, which is
+--     `false` for it. Only an allowlist keeps the exception below alive.
+33 a cheap throwing conjunct beside the bound	0
 -- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the
 --    prefilter is admitted and the expanded rows must be unchanged
 1	1	1

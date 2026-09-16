@@ -79,24 +79,38 @@ std::optional<UInt64> tryGetIntegerConstant(const ActionsDAG::Node * node)
     return {};
 }
 
-/// A function that throws on a row the prefilter removes stops throwing. `IFunction::canThrow` answers that
-/// for the argument types a node was resolved with: `rk <= 100` cannot throw, `throwIf` and `intDiv` can.
-/// `IFunctionBase` does not publish the property, so it is read off the function behind the standard adaptor;
-/// any other `IFunctionBase` is refused, which is what `IExecutableFunction::canThrow` itself defaults to.
+/// A function that throws on a row the prefilter removes stops throwing. `IFunction::canThrow` is not a
+/// proof of the opposite on its own: by default it answers `isSuitableForShortCircuitArgumentsExecution`
+/// instead, which reports a function that is cheap and throws, such as `IPv4StringToNum`, as non-throwing
+/// (`IFunction.h:681` says so and asks for an override). So a function is admitted only when it cannot fail
+/// on a value at all - the boolean connectives - or when it implements the property exactly, which in the
+/// tree today means the comparisons: those answer `false` when both sides are compared as stored, and `true`
+/// when one of them is parsed or rescaled first. As more functions describe the property this list can give
+/// way to it.
 bool mayThrowOnRemovedRows(const ActionsDAG & dag)
 {
+    /// `IFunction::getName` reports the name the function was registered under, whatever case the query used.
+    static const NameSet cannot_throw_on_a_value
+        = {"and", "or", "not", "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals"};
+
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION)
         {
+            /// `IFunctionBase` does not publish `canThrow`, so it is read off the function behind the
+            /// standard adaptor; any other `IFunctionBase` is refused, which is what
+            /// `IExecutableFunction::canThrow` itself defaults to.
             const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
             if (!adaptor)
+                return true;
+            const IFunction & function = *adaptor->getFunction();
+            if (!cannot_throw_on_a_value.contains(function.getName()))
                 return true;
             DataTypesWithConstInfo arguments;
             arguments.reserve(node.children.size());
             for (const auto * child : node.children)
                 arguments.push_back({child->result_type, child->column != nullptr});
-            if (adaptor->getFunction()->canThrow(arguments))
+            if (function.canThrow(arguments))
                 return true;
         }
         /// A lambda folded into a `COLUMN` node hides its body from the scan above, and the argument types
@@ -165,14 +179,6 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
 
     const auto & filter_dag = filter_step->getExpression();
 
-    /// The rewrite changes which rows every step between the window and this filter sees, so the filter's
-    /// own predicate must not depend on how many rows reached it, must not raise an exception that a
-    /// removed row raises today, and its column names must identify their carriers uniquely
-    /// (`CAST(rk, 'UInt64') AS rk` republishes an input's name for a computed node).
-    if (isSensitiveToEvaluationCount(filter_dag) || filter_dag.hasInputNameShadowedByComputedNode()
-        || mayThrowOnRemovedRows(filter_dag))
-        return;
-
     /// The window must be the filter's DIRECT child: a step in between would be evaluated on the rows the
     /// prefilter leaves rather than on all of them, which is observable for a stateful function such as
     /// `rowNumberInAllBlocks`.
@@ -238,6 +244,15 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
         != window_description.full_sort_description.size())
         return;
     if (!sameSortColumns(sorting_step->getSortDescription(), window_description.full_sort_description))
+        return;
+
+    /// The rewrite changes which rows every step between the window and this filter sees, so the filter's
+    /// own predicate must not depend on how many rows reached it, must not raise an exception that a
+    /// removed row raises today, and its column names must identify their carriers uniquely
+    /// (`CAST(rk, 'UInt64') AS rk` republishes an input's name for a computed node). These three walk the
+    /// whole filter DAG, so they run only once the cheap structural tests have admitted the shape.
+    if (isSensitiveToEvaluationCount(filter_dag) || filter_dag.hasInputNameShadowedByComputedNode()
+        || mayThrowOnRemovedRows(filter_dag))
         return;
 
     sorting_step->setWindowTopKPrefilter(window_description.partition_by, window_description.order_by, top_k);
