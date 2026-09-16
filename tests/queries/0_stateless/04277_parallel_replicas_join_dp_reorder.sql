@@ -45,10 +45,15 @@ SET
 -- `optimizeJoinLogicalImpl` exits early without converting the `JoinStepLogical`s, and
 -- `optimizeJoinLegacy` is a no-op on them, so the user-written order `(a JOIN b) JOIN c` reaches
 -- `ReadFromMergeTree` unchanged and the traversal is `a, b, c`.
+-- Pinned to the query-based implementation: the plan-based one embeds the shipped fragment in the
+-- step description, and its `ReadFromMergeTree` line matches the filter as an extra row, so the
+-- traversal reads `c, b, a, c`. `description = 0` is not an option here - the table name this
+-- asserts on *is* the description.
 SELECT extract(explain, '(pr_dp_a|pr_dp_b|pr_dp_c)')
 FROM (
   EXPLAIN PLAN
   SELECT count() FROM pr_dp_a AS a JOIN pr_dp_b AS b ON a.x = b.x JOIN pr_dp_c AS c ON b.x = c.x
+  SETTINGS parallel_replicas_plan_based = 0
 )
 WHERE explain LIKE '%ReadFromMergeTree%';
 
