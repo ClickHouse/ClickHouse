@@ -3048,31 +3048,33 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     if (!array_join)
         return {};
 
-    const std::string name = array_join->result_name;
-
-    /// One split gives both halves: the ARRAY_JOIN goes to `first`, so `second` (= after) is array-join-free
-    /// and consumes the join result as an input, matched to `first`'s output by the split itself (no names).
-    auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true);
-    ActionsDAG after = std::move(split_res.second);
-
-    /// The ArrayJoinStep still explodes the column by name, so bail if another column crossing the step shares
-    /// the join's name (or the result is unused) - otherwise the passenger would be element-typed too.
-    size_t element_inputs = 0;
-    for (const auto * input : after.inputs)
-        element_inputs += (input->result_name == name);
-    if (element_inputs != 1)
-        return {};
+    /// The ARRAY_JOIN and its argument go to `before`, everything else to `after`, which reads the join result
+    /// as an input. The columns crossing the step get unique names, so the step can explode its column by name.
+    auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true, /*avoid_duplicate_inputs=*/true);
     ActionsDAG before = std::move(split_res.first);
+    ActionsDAG after = std::move(split_res.second);
     const Node * aj_before = split_res.split_nodes_mapping.at(array_join);
+    const std::string name = aj_before->result_name;
     const Node * arg_before = aj_before->children.at(0);
 
-    /// `before` computed the join result; output the array argument under the same name instead and drop the
-    /// ARRAY_JOIN node so the ArrayJoinStep does the expansion. Erase it directly - its only consumer was that
-    /// output, and removeUnusedActions never prunes an ARRAY_JOIN (it changes the number of rows).
+    /// An unused join result still multiplies the rows: the step needs the array and `after` has to consume the element.
+    if (std::ranges::none_of(after.inputs, [&](const Node * input) { return input->result_name == name; }))
+        after.addInput(name, array_join->result_type);
+
+    /// Hand the array itself to the step under the join's name and drop the ARRAY_JOIN node; removeUnusedActions
+    /// would keep it, it never prunes a node that changes the number of rows.
     const Node * arg_out = arg_before->result_name == name ? arg_before : &before.addAlias(*arg_before, name);
+    bool replaced = false;
     for (auto & output : before.outputs)
+    {
         if (output == aj_before)
+        {
             output = arg_out;
+            replaced = true;
+        }
+    }
+    if (!replaced)
+        before.outputs.push_back(arg_out);
     before.nodes.remove_if([&](const Node & node) { return &node == aj_before; });
     before.removeUnusedActions(/*allow_remove_inputs=*/false);
 
