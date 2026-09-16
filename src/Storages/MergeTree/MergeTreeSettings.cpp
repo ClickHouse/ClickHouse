@@ -672,6 +672,12 @@ once takes hundreds of megabytes before a single row is read. On a server with l
 then fails with `MEMORY_LIMIT_EXCEEDED`, its source parts stay where they were, and the next selection
 round picks the same parts again, so the table stops compacting altogether.
 
+A merge that runs through the vertical algorithm (see `enable_vertical_merge_algorithm`) holds only the
+key columns of every source part at once and gathers the other columns one at a time, so it is priced by
+its key columns alone and keeps its full width on a small server. Whether a merge will be vertical is
+predicted from the table definition and the rows and bytes of the candidate parts the same way the merge
+decides it; where the prediction is unsure it prices the merge as a horizontal one.
+
 Set to `0` to disable this and select merges by `max_parts_to_merge_at_once` alone.
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
