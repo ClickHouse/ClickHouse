@@ -15,6 +15,7 @@ void registerAggregateFunctionCount(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory &);
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory &);
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory);
+void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
@@ -55,6 +56,7 @@ void registerAggregateFunctionsStatisticsThirdMoment(AggregateFunctionFactory &)
 void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory &);
+void registerAggregateFunctionsRegr(AggregateFunctionFactory &);
 void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory &);
 void registerAggregateFunctionSum(AggregateFunctionFactory &);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory &);
@@ -134,6 +136,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionDeltaSum(factory);
         registerAggregateFunctionDeltaSumTimestamp(factory);
         registerAggregateFunctionEstimateCompressionRatio(factory);
+        registerAggregateFunctionHierarchicalKMeans(factory);
         registerAggregateFunctionGroupArray(factory);
         registerAggregateFunctionGroupArraySorted(factory);
         registerAggregateFunctionGroupUniqArray(factory);
@@ -174,6 +177,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsStatisticsFourthMoment(factory);
         registerAggregateFunctionsStatisticsCovar(factory);
         registerAggregateFunctionsStatisticsCorr(factory);
+        registerAggregateFunctionsRegr(factory);
         registerAggregateFunctionsVarianceMatrix(factory);
         registerAggregateFunctionSum(factory);
         registerAggregateFunctionSumCount(factory);
