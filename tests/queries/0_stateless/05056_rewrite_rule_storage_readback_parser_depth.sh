@@ -18,11 +18,14 @@ RULE_DIR="${CLICKHOUSE_TMP}/rewrite_rule_storage_05056"
 rm -rf "${RULE_DIR}"
 mkdir -p "${RULE_DIR}"
 
-# Nested deeper than the default `max_parser_depth` of 1000, but accepted under the raised limits.
-DEEP_EXPRESSION=$(python3 -c "print('('*400 + '1' + ')'*400)")
+# Each parenthesis level costs several parser recursion levels, so 100 levels need a
+# `max_parser_depth` of about 600: well above the reduced limit the reader below runs with, and
+# shallow enough that the parser stays within the TSan stack budget (`checkStackSize` allows only
+# 5% of the stack under TSan, which 400 levels exhausted).
+DEEP_EXPRESSION=$(python3 -c "print('('*100 + '1' + ')'*100)")
 
 ${CLICKHOUSE_LOCAL} --path "${RULE_DIR}" -q "
-SET max_parser_depth = 6000, max_parser_backtracks = 10000000, max_ast_depth = 6000, max_ast_elements = 100000;
+SET max_parser_depth = 2000, max_parser_backtracks = 10000000, max_ast_depth = 2000, max_ast_elements = 100000;
 CREATE RULE rule_05056_deep AS (SELECT ${DEEP_EXPRESSION}) REWRITE TO (SELECT 'deep');
 SELECT name FROM system.query_rules WHERE name = 'rule_05056_deep';
 "
@@ -30,9 +33,13 @@ SELECT name FROM system.query_rules WHERE name = 'rule_05056_deep';
 # A fresh process with default settings loads the rule from storage.
 ${CLICKHOUSE_LOCAL} --path "${RULE_DIR}" -q "SELECT name FROM system.query_rules WHERE name = 'rule_05056_deep'"
 
+# So does a process whose `max_parser_depth` is far below what the stored rule needs: the reader's
+# limits must not apply to the server's own persisted output.
+${CLICKHOUSE_LOCAL} --path "${RULE_DIR}" --max_parser_depth 200 -q "SELECT name FROM system.query_rules WHERE name = 'rule_05056_deep'"
+
 # The loaded rule still works: it is applied to the same deeply nested query.
 ${CLICKHOUSE_LOCAL} --path "${RULE_DIR}" -q "
-SET max_parser_depth = 6000, max_parser_backtracks = 10000000, max_ast_depth = 6000, max_ast_elements = 100000, query_rules = 'rule_05056_deep';
+SET max_parser_depth = 2000, max_parser_backtracks = 10000000, max_ast_depth = 2000, max_ast_elements = 100000, query_rules = 'rule_05056_deep';
 SELECT ${DEEP_EXPRESSION};
 "
 
