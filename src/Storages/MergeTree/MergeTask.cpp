@@ -130,6 +130,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsBool allow_experimental_vertical_merge_tuple_subcolumns;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -1052,22 +1053,25 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     ctx->sum_uncompressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
 
-    NameSet columns_with_statistics_to_rebuild;
-    for (const auto & part_stats : global_ctx->statistics_to_build_by_part)
+    if ((*merge_tree_settings)[MergeTreeSetting::enable_vertical_merge_algorithm] != 0
+        && (*merge_tree_settings)[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
     {
-        for (const auto & stats_entry : part_stats.second)
-            columns_with_statistics_to_rebuild.insert(stats_entry.first);
+        NameSet columns_with_statistics_to_rebuild;
+        for (const auto & part_stats : global_ctx->statistics_to_build_by_part)
+        {
+            for (const auto & stats_entry : part_stats.second)
+                columns_with_statistics_to_rebuild.insert(stats_entry.first);
+        }
+        tryFlattenGatheringColumns(
+            global_ctx->gathering_columns,
+            global_ctx->storage_columns,
+            global_ctx->metadata_snapshot,
+            global_ctx->future_part->parts,
+            patch_parts,
+            columns_with_statistics_to_rebuild,
+            global_ctx->skip_indexes_by_column,
+            ctx->log);
     }
-    tryFlattenGatheringColumns(
-        *global_ctx->data_settings,
-        global_ctx->gathering_columns,
-        global_ctx->storage_columns,
-        global_ctx->metadata_snapshot,
-        global_ctx->future_part->parts,
-        patch_parts,
-        columns_with_statistics_to_rebuild,
-        global_ctx->skip_indexes_by_column,
-        ctx->log);
 
     global_ctx->chosen_merge_algorithm = chooseMergeAlgorithm();
     global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);

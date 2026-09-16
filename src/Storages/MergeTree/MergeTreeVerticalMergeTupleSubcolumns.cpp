@@ -30,11 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool allow_experimental_vertical_merge_tuple_subcolumns;
-}
-
 namespace
 {
 
@@ -311,7 +306,6 @@ void rerouteSkipIndexesOntoLeaves(
 }
 
 void tryFlattenGatheringColumns(
-    const MergeTreeSettings & settings,
     NamesAndTypesList & gathering_columns,
     const NamesAndTypesList & storage_columns,
     const StorageMetadataPtr & metadata_snapshot,
@@ -321,9 +315,6 @@ void tryFlattenGatheringColumns(
     std::unordered_map<String, IndicesDescription> & skip_indexes_by_column,
     LoggerPtr log)
 {
-    if (!settings[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
-        return;
-
     NamesAndTypesList new_gathering;
     const NameSet storage_names = storage_columns.getNameSet();
 

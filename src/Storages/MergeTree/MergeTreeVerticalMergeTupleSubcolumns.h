@@ -20,7 +20,6 @@ struct MergeTreeSettings;
 /// name onto the exact leaf they require. Logs one line per gathering column.
 /// Horizontal merge later discards `gathering_columns`.
 void tryFlattenGatheringColumns(
-    const MergeTreeSettings & settings,
     NamesAndTypesList & gathering_columns,
     const NamesAndTypesList & storage_columns,
     const StorageMetadataPtr & metadata_snapshot,
