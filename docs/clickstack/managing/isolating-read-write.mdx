@@ -118,11 +118,14 @@ SELECT
 FROM clusterAllReplicas('default', system.query_log)
 WHERE event_time > now() - toIntervalMinute(10) 
   AND type = 'QueryFinish'
+  AND is_initial_query = 1
 GROUP BY ALL
 ORDER BY count() DESC;
 ```
 
-Grouping by `user` and `http_user_agent` is what attributes the traffic: it distinguishes the UI from the SQL console and from anything else connecting to the endpoint, whatever tables your sources point at.
+An empty result here doesn't on its own mean the queries went elsewhere: `system.query_log` is flushed periodically - every 7.5 seconds by default - so a query run immediately after a search may not see it yet. Wait a moment and run it again, or force the flush with [`SYSTEM FLUSH LOGS`](/reference/statements/system#flush-logs) if you have the grant.
+
+Grouping by `user` and `http_user_agent` is what attributes the traffic: it distinguishes the UI from the SQL console and from anything else connecting to the endpoint, whatever tables your sources point at. Filtering on `is_initial_query = 1` keeps one row per query as it was submitted - secondary queries from distributed execution, and the internal queries that evaluate [materialized views](/reference/system-tables/query_views_log), are logged separately with `is_initial_query = 0`.
 
 On the **read-write** service, the same query should show inserts from the ingestion user and no ClickStack query traffic.
 
@@ -136,6 +139,7 @@ SELECT
 FROM clusterAllReplicas('all_groups.default', system.query_log)
 WHERE event_time > now() - toIntervalMinute(10) 
   AND type = 'QueryFinish'
+  AND is_initial_query = 1
 GROUP BY ALL;
 ```
 
