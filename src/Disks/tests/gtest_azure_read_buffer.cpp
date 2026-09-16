@@ -3001,8 +3001,9 @@ PostProcessingOutcome postProcess(const std::string & action, const DB::StoredOb
     settings.after_processing_retries = 1;
     settings.after_processing_move_prefix = "moved";
 
+    /// The last argument identifies the queue that stamps and recognizes its own moves.
     DB::ObjectStorageQueuePostProcessor post_processor(
-        getContext().context, DB::ObjectStorageType::Azure, object_storage, "AzureQueue", table_metadata, settings);
+        getContext().context, DB::ObjectStorageType::Azure, object_storage, table_metadata, settings, "/test/azure_queue");
 
     std::optional<int> error_code;
     DB::UnorderedSetWithMemoryTracking<String> failed_object_paths;

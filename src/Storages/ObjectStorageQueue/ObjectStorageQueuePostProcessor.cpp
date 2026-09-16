@@ -387,7 +387,9 @@ ObjectStorageQueuePostProcessor::MoveResult ObjectStorageQueuePostProcessor::cop
     return MoveResult::Moved;
 }
 
-void ObjectStorageQueuePostProcessor::removeCopiedSource(const StoredObject & object, const SourceGeneration & consumed) const
+/// `consumed` names a version only on S3, so a build without it reads the object's own `ETag` alone.
+void ObjectStorageQueuePostProcessor::removeCopiedSource(
+    const StoredObject & object, [[maybe_unused]] const SourceGeneration & consumed) const
 {
 #if USE_AWS_S3
     /// The copy consumed exactly this version, so the delete takes exactly this version too and
