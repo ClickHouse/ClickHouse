@@ -491,7 +491,7 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
                         }
                         if constexpr (join_features.is_all_join)
                         {
-                            const UInt32 match_rows = refWordRows(word);
+                            const size_t match_rows = refWordRows(word);
                             current_offset += match_rows;
                             if constexpr (with_refs)
                             {
@@ -797,8 +797,6 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
             }
         }
     }
-
-    added_columns.applyLazyDefaults();
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape>
@@ -848,8 +846,6 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     added_columns.max_joined_block_rows = join.max_joined_block_rows;
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
-    else
-        added_columns.reserve(join_features.need_replication);
 
     using HashJoinTables = typename HashJoinTableMapsFor<MapsShape>::Type;
 
@@ -880,7 +876,6 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
         /// An empty probe block may legally arrive before any build data exists; nothing to look up.
         if constexpr (join_features.need_replication)
             added_columns.offsets_to_replicate = IColumn::Offsets(0);
-        added_columns.applyLazyDefaults();
     }
 
     added_columns.join_on_keys.clear();
