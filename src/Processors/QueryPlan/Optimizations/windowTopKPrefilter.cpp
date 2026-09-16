@@ -1,5 +1,9 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/IDataType_fwd.h>
+#include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -75,6 +79,35 @@ std::optional<UInt64> tryGetIntegerConstant(const ActionsDAG::Node * node)
     return {};
 }
 
+/// A function that throws on a row the prefilter removes stops throwing. `IFunction::canThrow` answers that
+/// for the argument types a node was resolved with: `rk <= 100` cannot throw, `throwIf` and `intDiv` can.
+/// `IFunctionBase` does not publish the property, so it is read off the function behind the standard adaptor;
+/// any other `IFunctionBase` is refused, which is what `IExecutableFunction::canThrow` itself defaults to.
+bool mayThrowOnRemovedRows(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
+            if (!adaptor)
+                return true;
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node.children.size());
+            for (const auto * child : node.children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+            if (adaptor->getFunction()->canThrow(arguments))
+                return true;
+        }
+        /// A lambda folded into a `COLUMN` node hides its body from the scan above, and the argument types
+        /// its functions were resolved with are not reachable from here, so it is refused outright.
+        else if (node.type == ActionsDAG::ActionType::COLUMN && node.column
+                 && !allNodeFunctions(node, [](const IFunctionBase &) { return false; }))
+            return true;
+    }
+    return false;
+}
+
 /// The largest rank the conjunct admits, when it bounds one of `ranking_columns` by an integer constant:
 /// `rk <= k` / `k >= rk` / `rk = k` give `k`, and the strict forms give `k - 1`. Zero means "no rows pass",
 /// which is not a bound worth optimizing for, and is reported as no bound at all.
@@ -133,9 +166,11 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     const auto & filter_dag = filter_step->getExpression();
 
     /// The rewrite changes which rows every step between the window and this filter sees, so the filter's
-    /// own predicate must not depend on how many rows reached it, and its column names must identify their
-    /// carriers uniquely (`CAST(rk, 'UInt64') AS rk` republishes an input's name for a computed node).
-    if (isSensitiveToEvaluationCount(filter_dag) || filter_dag.hasInputNameShadowedByComputedNode())
+    /// own predicate must not depend on how many rows reached it, must not raise an exception that a
+    /// removed row raises today, and its column names must identify their carriers uniquely
+    /// (`CAST(rk, 'UInt64') AS rk` republishes an input's name for a computed node).
+    if (isSensitiveToEvaluationCount(filter_dag) || filter_dag.hasInputNameShadowedByComputedNode()
+        || mayThrowOnRemovedRows(filter_dag))
         return;
 
     /// The window must be the filter's DIRECT child: a step in between would be evaluated on the rows the

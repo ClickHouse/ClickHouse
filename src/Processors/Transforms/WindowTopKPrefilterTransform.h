@@ -47,7 +47,7 @@ private:
     ColumnNumbers order_positions;
 
     /// Rows to observe before the skip rate may freeze the transform into a pass-through, and the
-    /// counters it is judged on. Mirrors `TopKAggregationHeapBase::shouldFreeze`.
+    /// counters it is judged on.
     const UInt64 profitability_window;
     UInt64 observed_rows = 0;
     UInt64 skipped_rows = 0;

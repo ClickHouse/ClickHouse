@@ -132,8 +132,7 @@ nan	nan	2
 3	10	1
 -- 27 the hint survives a cloned subplan (window result used as an IN set)
 3
--- (C) still optimized: now() is constant within the query, and a deterministic lambda is safe
-1
+-- (C) still optimized: now() is constant within the query
 1
 -- and a conjunct on a column the window neither partitions nor orders by
 1
@@ -171,9 +170,26 @@ nan	nan	2
 1	3	4
 19 computing step between	0
 20 lambda body, rand, sleepEachRow	0
+20b deterministic lambda body	0
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
 20 rand	0
 20 sleepEachRow	0
 24 bound above the limit	0
+30 a throwing conjunct beside the bound	0
+31 the setting itself declines	0
+-- 30b the rows the prefilter would drop are the ones `throwIf` throws on, so the exception
+--     the query raises today must survive the optimization
 -- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the
 --    prefilter is admitted and the expanded rows must be unchanged
 1	1	1
@@ -217,3 +233,8 @@ nan	nan	2
 -- 16 max_rows_to_sort: the same error with the optimization on and off
 -- the pipeline really carries the transform
 1
+-- 32 the transform really drops rows, it does not just carry them. The chunk size and the stream
+--     count decide how much is dropped, so both are pinned on this cell alone, and `o` descends so
+--     that each partition meets its three best rows first and every later row of the chunk is
+--     droppable (ascending `o` under a DESC window is the shape where nothing can be dropped).
+32 rows dropped	1

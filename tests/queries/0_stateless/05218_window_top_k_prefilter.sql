@@ -76,9 +76,8 @@ SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) 
 SELECT '-- 27 the hint survives a cloned subplan (window result used as an IN set)';
 SELECT count() FROM t_wtkp WHERE o IN (SELECT o FROM (SELECT o, rank() OVER (ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 2);
 
-SELECT '-- (C) still optimized: now() is constant within the query, and a deterministic lambda is safe';
+SELECT '-- (C) still optimized: now() is constant within the query';
 SELECT count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND now() > toDateTime('2000-01-01')) WHERE explain ILIKE '%Window top-K prefilter%';
-SELECT count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2])) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '-- and a conjunct on a column the window neither partitions nor orders by';
 SELECT count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, o + 1 AS x, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND x > 0) WHERE explain ILIKE '%Window top-K prefilter%';
 
@@ -102,9 +101,20 @@ SELECT '19b not the direct child', count() FROM (EXPLAIN actions=1 SELECT p, rk 
 SELECT p, rk, n FROM (SELECT p, rk, rowNumberInAllBlocks() AS n FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp)) WHERE rk <= 3 AND n < 5 ORDER BY p, rk, n SETTINGS query_plan_merge_expressions = 0;
 SELECT '19 computing step between', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rk, rowNumberInAllBlocks() AS n FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp)) WHERE rk <= 3 AND n < 5) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '20 lambda body, rand, sleepEachRow', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> ((x + rowNumberInAllBlocks()) < 5), [0])) WHERE explain ILIKE '%Window top-K prefilter%';
+-- A lambda is folded into a `COLUMN` node, which carries neither the argument types its functions were
+-- resolved with nor a way to ask them whether they throw, so it is refused even when its body is harmless.
+SELECT '20b deterministic lambda body', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2])) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND arrayExists(x -> (x + o) < 1000, [1, 2]) ORDER BY p, o, rk;
 SELECT '20 rand', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND rand() > 0) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '20 sleepEachRow', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND sleepEachRow(0) = 0) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '24 bound above the limit', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3) WHERE explain ILIKE '%Window top-K prefilter%' SETTINGS query_plan_max_limit_for_top_k_optimization = 2;
+SELECT '30 a throwing conjunct beside the bound', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT '31 the setting itself declines', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 SETTINGS query_plan_window_top_k_prefilter = 0) WHERE explain ILIKE '%Window top-K prefilter%';
+
+SELECT '-- 30b the rows the prefilter would drop are the ones `throwIf` throws on, so the exception';
+SELECT '--     the query raises today must survive the optimization';
+SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1 SETTINGS query_plan_window_top_k_prefilter = 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT '-- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the';
 SELECT '--    prefilter is admitted and the expanded rows must be unchanged';
@@ -120,6 +130,21 @@ SELECT count() FROM (SELECT rank() OVER (PARTITION BY number % 3 ORDER BY number
 
 SELECT '-- the pipeline really carries the transform';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3) WHERE explain ILIKE '%WindowTopKPrefilterTransform%';
+
+SELECT '-- 32 the transform really drops rows, it does not just carry them. The chunk size and the stream';
+SELECT '--     count decide how much is dropped, so both are pinned on this cell alone, and `o` descends so';
+SELECT '--     that each partition meets its three best rows first and every later row of the chunk is';
+SELECT '--     droppable (ascending `o` under a DESC window is the shape where nothing can be dropped).';
+SELECT count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM (SELECT number % 4 AS p, 20000 - number AS o FROM numbers(20000))) WHERE rk <= 3
+SETTINGS max_threads = 1, max_block_size = 8192, log_processors_profiles = 1, log_queries = 1, log_comment = '05218_window_top_k_prefilter_pruning' FORMAT Null;
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+SELECT '32 rows dropped', sum(output_rows) < sum(input_rows) FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND log_comment = '05218_window_top_k_prefilter_pruning' AND type = 'QueryFinish'
+);
 
 DROP TABLE t_wtkp_merge;
 DROP TABLE t_wtkp_mt;

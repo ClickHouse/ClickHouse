@@ -165,8 +165,10 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
     observed_rows += num_rows;
     skipped_rows += num_rows - kept_rows;
     /// Hashing and heap building in chunk after chunk of mostly unique partitions costs CPU for nothing.
-    /// The window and threshold mirror `TopKAggregationHeapBase::shouldFreeze`.
-    if (profitability_window && observed_rows >= profitability_window
+    /// The threshold is `TopKAggregationHeapBase::shouldFreeze`'s, but the window is not: a chunk-local
+    /// heap's skip rate is decided within one chunk, so one chunk of evidence is enough, and waiting for
+    /// that heap's 65536-row window would only make more chunks pay full cost.
+    if (observed_rows >= profitability_window
         && static_cast<Float64>(skipped_rows) / static_cast<Float64>(observed_rows) < 0.1)
         frozen = true;
 
