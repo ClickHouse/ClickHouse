@@ -17,7 +17,6 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/StorageCredentials.h>
-
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
 #include <Common/escapeForFileName.h>
