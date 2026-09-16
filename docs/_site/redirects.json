@@ -40896,7 +40896,7 @@
     "source": "/sql-reference/table-functions/timeSeriesHistograms"
   },
   {
-    "destination": "/reference/functions/table-functions/timeSeriesMetrics",
+    "destination": "/reference/functions/table-functions/timeSeriesMetricFamilies",
     "source": "/sql-reference/table-functions/timeSeriesMetrics"
   },
   {
