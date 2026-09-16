@@ -22,6 +22,8 @@ SELECT formatQueryFromJSON(parseQueryToJSON('RENAME DATABASE a TO b'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/01/\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT lambda(tuple(x), x + 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT lambda(tuple(), 1)'));
 
 -- ---------------------------------------------------------------------------
 -- ASTAlterCommand: parser-owned children are restored by concrete type. `col_decl` must be an
@@ -87,3 +89,18 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\
 -- `is_lambda_function` flag; reject the kind without the flag.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"Function","name":"f","kind":"LAMBDA_FUNCTION"}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ASTFunction: `is_lambda_function` marks the lambda definition shape `lambda(tuple(...), body)`,
+-- the only shape the parser sets it on, and `QueryTreeBuilder` takes the flag as proof of that shape
+-- ahead of the `isASTLambdaFunction` predicate; reject the flag on any other shape. One row per
+-- shape: a name that is not `lambda`, no `arguments`, one argument, a first argument that is not a
+-- tuple, an argument tuple without its own argument list, and the `APPLY` transformer child (whose
+-- own boundary check accepts a two-child lambda whose first argument is not a tuple).
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"Function","name":"f","is_lambda_function":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple"},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * APPLY(x -> (x + 1))'), '"name":"tuple"', '"name":"nottuple"')); -- { serverError BAD_ARGUMENTS }
