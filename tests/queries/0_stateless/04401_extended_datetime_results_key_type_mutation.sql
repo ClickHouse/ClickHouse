@@ -182,12 +182,16 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localho
 -- A key qualified with the table name does not resolve against the bare column list that validation
 -- types the key in; it is resolved against the table expression of the query, so it must not be
 -- rejected. Every v is even, so replica 0 of 2 reads all rows and replica 1 none: resolved and applied.
+-- `parallel_replicas_for_non_replicated_merge_tree` is pinned off to keep this offset/count pair local:
+-- with it on the table is read through `cluster_for_parallel_replicas`, one partial count() per replica.
 SELECT count() FROM tck SETTINGS max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
   parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'tck.v',
-  parallel_replicas_count = 2, parallel_replica_offset = 0;
+  parallel_replicas_count = 2, parallel_replica_offset = 0,
+  parallel_replicas_for_non_replicated_merge_tree = 0;
 SELECT count() FROM tck SETTINGS max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
   parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'tck.v',
-  parallel_replicas_count = 2, parallel_replica_offset = 1;
+  parallel_replicas_count = 2, parallel_replica_offset = 1,
+  parallel_replicas_for_non_replicated_merge_tree = 0;
 
 DROP TABLE tck;
 
