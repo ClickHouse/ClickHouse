@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- ON shapes with fewer than two usable inequality conditions that must NOT be routed through
 -- IEJoin, and the behavior of the eligible shape without `ie_join` in `join_algorithm`. For
 -- INNER the rejected shapes fall back to a cross join with a filter (no `IEJoin` in the plan,

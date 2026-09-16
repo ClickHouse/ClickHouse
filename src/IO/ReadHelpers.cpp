@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_PARSE_NUMBER;
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_UUID;
@@ -206,11 +205,6 @@ void assertNotEOF(ReadBuffer & buf)
 {
     if (buf.eof())
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF");
-}
-
-void throwNumberWithoutDigits()
-{
-    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
 }
 
 
@@ -1511,14 +1505,10 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    /// This one lambda reports every way the parse below can fail - a non-digit where a digit belongs, a
-    /// delimiter that is not allowed, or the value ending early - so it must not claim a particular one.
-    /// `toDate('yesterday')` used to be reported as "value is too short".
     auto error = []
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATE,
-                "Cannot parse date: expected a date in the YYYY-MM-DD or YYYYMMDD format");
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date: value is too short");
         return ReturnType(false);
     };
 

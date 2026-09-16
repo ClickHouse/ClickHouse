@@ -20,7 +20,6 @@ workflow = Workflow.Config(
     name="NightlyJepsen",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         binary_build_job,
         JobConfigs.jepsen_keeper,

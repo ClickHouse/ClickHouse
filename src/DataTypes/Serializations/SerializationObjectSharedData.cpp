@@ -348,8 +348,6 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             /// Don't write any dynamic statistics.
             data_serialization_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::NONE;
             data_serialization_settings.stream_mark_getter = [&](const SubstreamPath &) -> MarkInCompressedFile { return settings.stream_mark_getter(settings.path); };
-            /// Inherit the min_compress_block_size setting.
-            data_serialization_settings.min_compress_block_size = settings.min_compress_block_size;
 
             StreamFileNameSettings stream_file_name_settings;
             stream_file_name_settings.escape_variant_substreams = false;
@@ -360,10 +358,6 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 paths_substreams_marks.emplace_back();
                 data_serialization_settings.getter = [&](const SubstreamPath & substream_path) -> WriteBuffer *
                 {
-                    /// New block per substream only once it's worth it: bounds a selective read's over-read
-                    /// to min_compress_block_size while small substreams still share a block (good compression).
-                    if (data_stream->offset() >= settings.min_compress_block_size)
-                        data_stream->next();
                     /// Add new substream and its mark for current path.
                     paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings));
                     paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
@@ -371,9 +365,6 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 };
 
                 SerializeBinaryBulkStatePtr path_state;
-                /// Same at the path boundary.
-                if (data_stream->offset() >= settings.min_compress_block_size)
-                    data_stream->next();
                 /// Remember the mark of ObjectSharedDataData stream for this path before writing any data.
                 paths_marks.push_back(settings.stream_mark_getter(settings.path));
                 dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);

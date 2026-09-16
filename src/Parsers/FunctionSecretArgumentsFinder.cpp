@@ -1123,11 +1123,6 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     {
         findBackupDatabaseSecretArguments();
     }
-    else if (engine_name == "URL")
-    {
-        /// URL('base_url')
-        findURLSecretArguments();
-    }
 }
 
 void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
