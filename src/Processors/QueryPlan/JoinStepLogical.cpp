@@ -763,6 +763,34 @@ static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionR
     }
 }
 
+/// Under `join_use_nulls`, a right column selected from a LEFT or FULL JOIN is output through `toNullable(x)`
+/// (see `addToNullableIfNeeded`). When that column is also a join key, joining on the `Nullable` node makes
+/// it the single right column that is both the key and the output, which the join restores from the left
+/// key. Joining on the plain input instead leaves the `Nullable` wrapper as a payload column next to the
+/// key: a whole extra column where the join keeps keys only in its arena, and a second count of the same
+/// bytes toward the spill threshold where it saves the key columns too.
+static void preferNullableRightKey(JoinActionRef & right_node, const JoinPlanningContext & planning_context)
+{
+    /// The `Join` engine and a dictionary are looked up by the key they declare.
+    if (planning_context.is_storage_join)
+        return;
+
+    const auto * input = right_node.getNode();
+    if (input->type != ActionsDAG::ActionType::INPUT)
+        return;
+
+    auto it = planning_context.actions_after_join_map.find(input->result_name);
+    if (it == planning_context.actions_after_join_map.end())
+        return;
+
+    const auto * to_nullable = it->second;
+    if (to_nullable->type != ActionsDAG::ActionType::FUNCTION || to_nullable->children.size() != 1
+        || to_nullable->children.front() != input || to_nullable->function_base->getName() != "toNullable")
+        return;
+
+    right_node = JoinActionRef::transform({right_node}, [to_nullable](auto &, auto &&) { return to_nullable; });
+}
+
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
 {
@@ -783,6 +811,8 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
 
         predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
+        if (!null_safe_comparison)
+            preferNullableRightKey(rhs, planning_context);
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
             /**
@@ -1355,6 +1385,34 @@ static QueryPlanNode buildPhysicalJoinImpl(
     for (const auto * action : required_residual_nodes)
         used_expressions.emplace_back(action, expression_actions);
 
+    /// An input that only feeds a used expression, such as the `toNullable(x)` key under `join_use_nulls`
+    /// or a key cast to a common type, is not passed to the join as a column of its own: the join would
+    /// keep it as payload for nothing. `ActionsDAG::updateHeader` drops such consumed inputs anyway.
+    std::unordered_set<const ActionsDAG::Node *> consumed_inputs;
+    {
+        std::unordered_set<const ActionsDAG::Node *> used_nodes;
+        for (const auto & expression : used_expressions)
+            used_nodes.insert(expression.getNode());
+
+        std::stack<const ActionsDAG::Node *> stack;
+        for (const auto * node : used_nodes)
+            for (const auto * child : node->children)
+                stack.push(child);
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                if (!used_nodes.contains(node))
+                    consumed_inputs.insert(node);
+                continue;
+            }
+            for (const auto * child : node->children)
+                stack.push(child);
+        }
+    }
+
     for (const auto * child : children)
     {
         /// We expect dag inputs to be a subset of child step header columns.
@@ -1384,7 +1442,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
             if (input_it->second.size() > 1)
                 input_it->second.pop_front();
 
-            used_expressions.emplace_back(input_node, expression_actions);
+            if (!consumed_inputs.contains(input_node))
+                used_expressions.emplace_back(input_node, expression_actions);
         }
     }
 
