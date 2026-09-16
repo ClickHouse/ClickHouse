@@ -19,6 +19,10 @@ SET prefer_localhost_replica = 1;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET enable_materialized_cte = 1;
+-- Pinned for a stable fallback reason on the shards: a shard that receives a serialized plan falls back on the GROUP BY
+-- limit, a shard that receives query text on its `BlocksMarshalling` step. Only the distributed-plan CI jobs set this in
+-- users.d; row 13 flips it to cover the query-text path.
+SET serialize_query_plan = 1;
 -- Randomized by the test runner; it decides which step the shard of row 13 falls back on.
 SET enable_parallel_blocks_marshalling = 1;
 SET allow_experimental_time_series_table = 1;
