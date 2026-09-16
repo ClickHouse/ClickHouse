@@ -164,11 +164,11 @@ MongoDBSource::MongoDBSource(
     : ISource{std::make_shared<const Block>(sample_block_->cloneEmpty())}
     , client{[&uri]
         {
-            mongocxx::client client{uri};
+            mongocxx::client new_client{uri};
             /// Append ClickHouse metadata to the MongoDB driver handshake.
             /// This allows MongoDB server operators to identify connections from ClickHouse.
-            client.append_metadata("ClickHouse", VERSION_STRING);
-            return client;
+            new_client.append_metadata("ClickHouse", VERSION_STRING);
+            return new_client;
         }()}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
