@@ -21,6 +21,9 @@
         indexOf. They cover the scalar-prefix/optimized-continuation crossover where the search
         can stop after two elements.
 
+        The dedicated `indexOf` cases at lengths 80 and 160 cross the protected scalar prefixes for
+        `UInt16` and `UInt64` and hit in the optimized continuation.
+
         The alignment table alternates adjacent row lengths around each continuation boundary. This
         makes ColumnArray row starts move through different 32-byte alignment phases instead of
         reusing the same phase for every row.
@@ -54,6 +57,7 @@
             u16_32 Array(UInt16),
             u16_48 Array(UInt16),
             u16_64 Array(UInt16),
+            u16_80 Array(UInt16),
             u32_15 Array(UInt32),
             u32_16 Array(UInt32),
             u32_24 Array(UInt32),
@@ -61,7 +65,8 @@
             u64_31 Array(UInt64),
             u64_32 Array(UInt64),
             u64_36 Array(UInt64),
-            u64_64 Array(UInt64)
+            u64_64 Array(UInt64),
+            u64_160 Array(UInt64)
         ) ENGINE = Memory
     </create_query>
     <create_query>DROP TABLE IF EXISTS perf_array_index_simd_alignment</create_query>
@@ -100,6 +105,7 @@
             materialize(range(32)::Array(UInt16)),
             materialize(range(48)::Array(UInt16)),
             materialize(range(64)::Array(UInt16)),
+            materialize(range(80)::Array(UInt16)),
             materialize(range(15)::Array(UInt32)),
             materialize(range(16)::Array(UInt32)),
             materialize(range(24)::Array(UInt32)),
@@ -107,7 +113,8 @@
             materialize(range(31)::Array(UInt64)),
             materialize(range(32)::Array(UInt64)),
             materialize(range(36)::Array(UInt64)),
-            materialize(range(64)::Array(UInt64))
+            materialize(range(64)::Array(UInt64)),
+            materialize(range(160)::Array(UInt64))
         FROM numbers(20000)
     </fill_query>
     <fill_query>
@@ -221,6 +228,13 @@
         FORMAT Null
     </query>
 
+    <!-- `indexOf` continuation case beyond the protected `UInt16` scalar prefix. -->
+    <query>
+        SELECT sum(indexOf(u16_80, toUInt16(79)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+
     <!-- UInt32: short and medium arrays with early, middle, late, and missing needles. -->
     <query>
         SELECT sum(has(u32_15, toUInt32(0)) + indexOf(u32_15, toUInt32(14)))
@@ -277,6 +291,13 @@
         FORMAT Null
     </query>
 
+    <!-- `indexOf` continuation case beyond the protected `UInt64` scalar prefix. -->
+    <query>
+        SELECT sum(indexOf(u64_160, toUInt64(159)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+
     <!-- Boundary-size position-one hits, measured separately for has and indexOf. -->
     <query>
         SELECT sum(has(u8_64, toUInt8(1)))
@@ -326,7 +347,7 @@
         FORMAT Null
     </query>
     <query>
-        SELECT sum(has(u16_64, toUInt16(65535)) + indexOf(u16_64, toUInt16(65535)))
+        SELECT sum(has(u16_80, toUInt16(65535)) + indexOf(u16_80, toUInt16(65535)))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
@@ -337,8 +358,8 @@
     </query>
     <query>
         SELECT sum(
-            has(u64_64, toUInt64('18446744073709551615'))
-            + indexOf(u64_64, toUInt64('18446744073709551615')))
+            has(u64_160, toUInt64('18446744073709551615'))
+            + indexOf(u64_160, toUInt64('18446744073709551615')))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
