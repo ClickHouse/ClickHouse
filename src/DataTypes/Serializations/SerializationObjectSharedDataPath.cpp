@@ -24,7 +24,8 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
     const DataTypePtr & subcolumn_type_,
-    size_t bucket_)
+    size_t bucket_,
+    const DataTypePtr & default_path_type_)
     : SerializationWrapper(nested_)
     , serialization_version(serialization_version_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
@@ -33,11 +34,12 @@ SerializationObjectSharedDataPath::SerializationObjectSharedDataPath(
     , dynamic_type(dynamic_type_)
     , subcolumn_type(subcolumn_type_)
     , dynamic_serialization(dynamic_serialization_)
+    , default_path_type(default_path_type_)
     , bucket(bucket_)
 {
 }
 
-UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket_)
+UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket_, const DataTypePtr & default_path_type_)
 {
     SipHash hash;
     hash.update("ObjectSharedDataPath");
@@ -55,14 +57,17 @@ UInt128 SerializationObjectSharedDataPath::getHash(const SerializationPtr & nest
     hash.update(subcolumn_type_name.size());
     hash.update(subcolumn_type_name);
     hash.update(bucket_);
+    auto default_path_type_name = default_path_type_ ? default_path_type_->getName() : "";
+    hash.update(default_path_type_name.size());
+    hash.update(default_path_type_name);
     return hash.get128();
 }
 
-SerializationPtr SerializationObjectSharedDataPath::create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket)
+SerializationPtr SerializationObjectSharedDataPath::create(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, size_t bucket, const DataTypePtr & default_path_type_)
 {
     if (!nested_->supportsPooling() || !dynamic_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket));
-    return ISerialization::pooled(getHash(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket), [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket); });
+        return std::shared_ptr<ISerialization>(new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket, default_path_type_));
+    return ISerialization::pooled(getHash(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket, default_path_type_), [&] { return new SerializationObjectSharedDataPath(nested_, serialization_version_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_, bucket, default_path_type_); });
 }
 
 struct DeserializeBinaryBulkStateObjectSharedDataPath : public ISerialization::DeserializeBinaryBulkState
@@ -195,7 +200,10 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkStatePrefix(
             /// we will just extract it in memory from whole path column.
         }
         /// If no subcolumn requested or path matches any requested prefixes, request the whole path.
-        else if (path_subcolumn.empty() || structure_state_concrete->checkIfPathMatchesAnyRequestedPrefix(path))
+        /// Also request the whole path when the type has DEFAULT PATH TYPE: in this case the path is
+        /// stored as T (not Dynamic), so a Dynamic subcolumn substream doesn't exist and the
+        /// subcolumn must be extracted in memory from the whole path column.
+        else if (path_subcolumn.empty() || default_path_type || structure_state_concrete->checkIfPathMatchesAnyRequestedPrefix(path))
         {
             structure_state_concrete->requested_paths.insert(path);
             /// Remove all subcolumns of this path if any. We will read the whole path and extract all subcolumns in memory.
@@ -275,20 +283,32 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         size_t map_column_offset = map_column->size() - num_read_rows;
 
         /// If we need to read a subcolumn from Dynamic column, create an empty Dynamic column, fill it and extract subcolumn.
-        auto temp_dynamic_column = path_subcolumn.empty() ? MutableColumnPtr{} : dynamic_type->createColumn();
-        IColumn & dynamic_column = path_subcolumn.empty() ? column : *temp_dynamic_column;
-        /// Check if we don't have any paths in shared data in current range.
-        const auto & offsets = assert_cast<const ColumnArray &>(*map_column).getOffsets();
-        if (offsets.back() == offsets[ssize_t(map_column_offset) - 1])
-            dynamic_column.insertManyDefaults(num_read_rows);
-        else
-            ColumnObject::fillPathColumnFromSharedData(dynamic_column, path, map_column, map_column_offset, map_column->size());
-
-        /// Extract subcolumn from Dynamic column if needed.
-        if (!path_subcolumn.empty())
+        /// With DEFAULT PATH TYPE the result column is T: fill it directly as T (missing = default).
+        if (default_path_type)
         {
-            auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column.getPtr());
-            column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
+            const auto & offsets = assert_cast<const ColumnArray &>(*map_column).getOffsets();
+            if (offsets.back() == offsets[ssize_t(map_column_offset) - 1])
+                column.insertManyDefaults(num_read_rows);
+            else
+                ColumnObject::fillPathColumnFromSharedDataT(column, path, map_column, map_column_offset, map_column->size(), default_path_type);
+        }
+        else
+        {
+            auto temp_dynamic_column = path_subcolumn.empty() ? MutableColumnPtr{} : dynamic_type->createColumn();
+            IColumn & dynamic_column = path_subcolumn.empty() ? column : *temp_dynamic_column;
+            /// Check if we don't have any paths in shared data in current range.
+            const auto & offsets = assert_cast<const ColumnArray &>(*map_column).getOffsets();
+            if (offsets.back() == offsets[ssize_t(map_column_offset) - 1])
+                dynamic_column.insertManyDefaults(num_read_rows);
+            else
+                ColumnObject::fillPathColumnFromSharedData(dynamic_column, path, map_column, map_column_offset, map_column->size());
+
+            /// Extract subcolumn from Dynamic column if needed.
+            if (!path_subcolumn.empty())
+            {
+                auto subcolumn = dynamic_type->getSubcolumn(path_subcolumn, dynamic_column.getPtr());
+                column.insertRangeFrom(*subcolumn, 0, subcolumn->size());
+            }
         }
     }
     else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
@@ -299,7 +319,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_path_state->structure_state);
         auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
         auto paths_infos_granules = SerializationObjectSharedData::deserializePathsInfos(*structure_granules, *shared_data_structure_state, settings, cache);
-        auto paths_data_granules = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
+        auto paths_data_granules = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, default_path_type, cache);
 
         for (size_t granule = 0; granule != structure_granules->size(); ++granule)
         {

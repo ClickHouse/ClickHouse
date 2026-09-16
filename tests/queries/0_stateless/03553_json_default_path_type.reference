@@ -1,0 +1,100 @@
+JSON(DEFAULT PATH TYPE Int64)
+JSON(max_dynamic_paths=0, DEFAULT PATH TYPE String, d UInt32)
+{}
+{}
+{"z":60}
+{"b":20,"c":30}
+{"b":50}
+{"a":1,"b":10}
+{"a":2,"c":40}
+{"a":3}
+{"a":1}	1
+{"a":2.5}	2.5
+{}	0
+{"a":1}
+{"a":2.5}
+{}
+{"a":"x","b":"y"}	x	y
+{"a":"z"}	z	
+{}		
+{"c":"w"}		
+{"a":"x","b":"y"}
+{"a":"z"}
+{}
+{"c":"w"}
+Int64
+Int64
+1	1
+0	0
+3	3
+Nullable(Int64)
+1
+\N
+3
+{"a":1}	Float64	Float64
+{"b":2.5}	Float64	Float64
+{}	Float64	Float64
+{"a":1}	Float64	Float64
+{"b":2.5}	Float64	Float64
+{}	Float64	Float64
+{"a":{"b":1}}	{"b":1}
+{"a":{"b":2,"c":3}}	{"b":2,"c":3}
+{}	{}
+{"a":{"b":1}}
+{"a":{"b":2,"c":3}}
+{}
+JSON(max_dynamic_paths=0, DEFAULT PATH TYPE Int64)
+JSON
+{"a":5,"s":"text"}	text	5	String
+{"a":1}	Int64	Int64
+{"b":2}	Int64	Int64
+{"a":1}	1	\N
+{}	\N	\N
+{"b":5}	\N	5
+{}	\N	\N
+{"a":1}
+{}
+{"b":5}
+{}
+{"a":1}	Nullable(Int64)	Nullable(Int64)
+{"b":2}	Nullable(Int64)	Nullable(Int64)
+{}	Nullable(Int64)	Nullable(Int64)
+{"a":1}	Nullable(Int64)	Nullable(Int64)
+{"b":2}	Nullable(Int64)	Nullable(Int64)
+{}	Nullable(Int64)	Nullable(Int64)
+{"a":1}	1	\N
+{"b":"x"}	\N	x
+{}	\N	\N
+{"a":1}
+{"b":"x"}
+{}
+{"a":[1,2,3]}	[1,2,3]	[]
+{"b":[]}	[]	[]
+{}	[]	[]
+3
+{"a":1,"b":2}	1	0	0	Int64
+{"a":3,"c":4}	3	4	0	Int64
+{"d":5,"e":6,"f":7}	0	0	7	Int64
+{}	0	0	0	Int64
+{"a":1,"b":2}	1	0	0
+{"a":3,"c":4}	3	4	0
+{"d":5,"e":6,"f":7}	0	0	7
+{}	0	0	0
+{"a":{"b":1,"c":2}}	{"b":1,"c":2}	0
+{"a":{"b":3}}	{"b":3}	0
+{}	{}	0
+{"b":1,"c":2}	0
+{"b":3}	0
+{}	0
+5	Dynamic
+{"b":6}	Dynamic
+\N	Dynamic
+5
+{"b":6}
+\N
+{}		String
+{"a":"5"}	5	String
+{"a":"hello"}	hello	String
+{}	
+{"a":"5"}	5
+{"a":"hello"}	hello
