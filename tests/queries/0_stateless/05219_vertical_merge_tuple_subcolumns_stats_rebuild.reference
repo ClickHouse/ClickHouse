@@ -1,12 +1,3 @@
-=== two INSERTs still flatten under default implicit basic ===
-t	basic(auto)
-2
-1
-merge_algorithm
-Vertical
-stats_files
-statistics.packed
-
 === lightweight delete rebuilds stats and pins flatten ===
 t	basic(auto)
 2

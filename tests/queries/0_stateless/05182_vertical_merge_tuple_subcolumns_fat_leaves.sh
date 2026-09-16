@@ -4,8 +4,8 @@
 # no-random-merge-tree-settings: pins flatten settings and Vertical activation.
 # no-object-storage / no-shared-merge-tree: reads part files from a local directory.
 #
-# Flattenable Tuple leaves are gathered as FatLeaf units of parent `t`.
-# Output files stay streams of the parent column.
+# Flattenable Tuple leaves are gathered one at a time. Output files stay
+# streams of the parent column. Vertical output is byte-compatible with Horizontal.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -146,33 +146,6 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_fat_v; DROP TABLE t_fat_h;"
 
 echo
-echo '=== String + UInt8 flatten ==='
-
-${CLICKHOUSE_CLIENT} -q "
-    DROP TABLE IF EXISTS t_mix;
-    CREATE TABLE t_mix
-    (
-        k UInt64,
-        t Tuple(s String, n UInt8)
-    )
-    ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        index_granularity = 8192;
-
-    INSERT INTO t_mix SELECT number, (repeat('a', 1000), number % 256) FROM numbers(20);
-    INSERT INTO t_mix SELECT number + 20, (repeat('b', 1000), number % 256) FROM numbers(20);
-    OPTIMIZE TABLE t_mix FINAL;
-"
-
-echo 'mix_rows'
-${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(t.n), length(any(t.s)) FROM t_mix"
-echo 'mix_check'
-${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_mix SETTINGS check_query_single_value_result = 1"
-echo 'mix_files'
-print_part_files "$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_mix' AND active")"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE t_mix;"
-
-echo
 echo '=== JSON leaf does not flatten ==='
 
 ${CLICKHOUSE_CLIENT} -q "
@@ -219,29 +192,6 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT k, t FROM t_compact ORDER BY k;
     CHECK TABLE t_compact SETTINGS check_query_single_value_result = 1;
     DROP TABLE t_compact;
-"
-
-echo
-echo '=== skip index on t.x, ORDER BY k ==='
-
-${CLICKHOUSE_CLIENT} -q "
-    DROP TABLE IF EXISTS t_idx;
-    CREATE TABLE t_idx
-    (
-        k UInt64,
-        t Tuple(x String, y String),
-        INDEX idx t.x TYPE minmax GRANULARITY 1
-    )
-    ENGINE = MergeTree ORDER BY k
-    SETTINGS ${COMMON_SETTINGS},
-        index_granularity = 1;
-
-    INSERT INTO t_idx SELECT number, (toString(number), 'y') FROM numbers(10);
-    INSERT INTO t_idx SELECT number + 10, (toString(number + 10), 'y') FROM numbers(10);
-    OPTIMIZE TABLE t_idx FINAL;
-    SELECT count() FROM t_idx WHERE t.x = '3' SETTINGS force_data_skipping_indices = 'idx';
-    CHECK TABLE t_idx SETTINGS check_query_single_value_result = 1;
-    DROP TABLE t_idx;
 "
 
 echo

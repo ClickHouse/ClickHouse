@@ -4,6 +4,8 @@ t	basic(auto)
 1
 merge_algorithm
 Vertical
+stats_files
+statistics.packed
 
 === explicit STATISTICS on Tuple pins flatten ===
 2

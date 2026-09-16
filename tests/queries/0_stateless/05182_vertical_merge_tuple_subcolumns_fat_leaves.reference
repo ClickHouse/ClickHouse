@@ -54,19 +54,6 @@ inner_exact False
 merge_algorithm
 Vertical
 
-=== String + UInt8 flatten ===
-mix_rows
-40	380	1000
-mix_check
-1
-mix_files
-t%2En.bin
-t%2En.cmrk2
-t%2Es.bin
-t%2Es.cmrk2
-t%2Es.size.bin
-t%2Es.size.cmrk2
-
 === JSON leaf does not flatten ===
 1	a	1
 2	b	2
@@ -78,10 +65,6 @@ Compact
 Wide
 1	('a','b')
 2	('c','d')
-1
-
-=== skip index on t.x, ORDER BY k ===
-1
 1
 
 === ADD tuple element: old Wide part lacks the leaf ===

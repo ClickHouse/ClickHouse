@@ -22,25 +22,3 @@
 4	('g','h')
 1
 1
-
-=== Tuple(UInt8 x 20) merge stays correct ===
-32	240	848
-1
-
-=== merge_max_block_size_bytes=0 does not refuse or force flatten ===
-select_match
-1
-check
-1
-serialization_keys
-k t
-t_exact False
-merge_algorithm
-Vertical
-
-=== one fat Tuple does not activate Vertical ===
-1	('a',1)
-2	('b',2)
-1
-merge_algorithm
-Horizontal

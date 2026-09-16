@@ -2,9 +2,11 @@
 # Tags: no-random-merge-tree-settings, no-object-storage, no-shared-merge-tree, no-replicated-database, no-parallel-replicas
 #
 # no-random-merge-tree-settings: pins Vertical activation and the experimental flatten setting.
+# no-object-storage / no-shared-merge-tree: reads part files from a local directory.
 #
 # Implicit `basic(auto)` on a flattenable Tuple must not pin flatten: that statistic
-# does not store min/max or string length. Explicit STATISTICS on the parent still pins.
+# does not store min/max or string length, and existing part stats are folded by
+# parent name. Explicit STATISTICS on the parent still pins.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -36,6 +38,12 @@ print_merge_algorithm()
     "
 }
 
+print_stats_files()
+{
+    local path="$1"
+    find "$path" -maxdepth 1 -type f -printf '%f\n' | grep -E 'statistics' | sort
+}
+
 echo '=== implicit basic(auto) on Tuple still activates Vertical ==='
 
 ${CLICKHOUSE_CLIENT} -q "
@@ -63,6 +71,8 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 echo 'merge_algorithm'
 print_merge_algorithm t_auto_basic
+echo 'stats_files'
+print_stats_files "$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_auto_basic' AND active")"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_auto_basic;"
 
 echo
