@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int INVALID_SETTING_VALUE;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 ASTPtr getCustomKeyFilterForParallelReplica(
@@ -44,19 +45,31 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING || filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
-        /// Reject a nullable custom key in the caller's own context (do NOT canonicalize, same reason as
-        /// the range branch below). The sampling filter built here is positiveModulo(custom_key, N) =
-        /// replica_num, executed later in that query context. If the custom key produces Nullable at
-        /// runtime (e.g. cast_keep_nullable=1 with CAST(x AS UInt32) over Nullable(x)), positiveModulo
-        /// yields NULL for NULL rows, the equals is NULL, and those rows are silently dropped on every
-        /// replica. So a nullable custom key would give wrong results and must be rejected up front.
-        KeyDescription custom_key_description
-            = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context, /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
-        if (custom_key_description.data_types.size() == 1 && isNullableOrLowCardinalityNullable(custom_key_description.data_types[0]))
+        /// The sampling filter built below is positiveModulo(custom_key, N) = replica_num, so a nullable
+        /// custom key makes it NULL for NULL keys and those rows are silently dropped on every replica.
+        /// Type it in the caller's own context, not canonicalized (same reason as the range branch below).
+        DataTypePtr custom_key_type;
+        try
+        {
+            KeyDescription custom_key_description = KeyDescription::getKeyFromAST(
+                custom_key_ast, columns, {}, context, /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
+            if (custom_key_description.data_types.size() == 1)
+                custom_key_type = custom_key_description.data_types[0];
+        }
+        catch (const Exception & e)
+        {
+            /// A key that does not name its columns the way the column list does (a qualified `db.t.id`, an
+            /// alias column) is resolved later, against the table expression of the query. This filter needs
+            /// no type of its own, so such a key stays the analyzer's to resolve or to reject.
+            if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
+                throw;
+        }
+
+        if (custom_key_type && isNullableOrLowCardinalityNullable(custom_key_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
                 "Invalid custom key column type: {}. A nullable custom key would silently drop rows with NULL keys",
-                custom_key_description.data_types[0]->getName());
+                custom_key_type->getName());
 
         // first we do modulo with replica count
         auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, make_intrusive<ASTLiteral>(replicas_count));

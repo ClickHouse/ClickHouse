@@ -179,6 +179,16 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, prefer_localho
   parallel_replicas_custom_key = 'CAST(x AS UInt32)', parallel_replicas_mode = 'custom_key_sampling',
   cast_keep_nullable = 1; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
 
+-- A key qualified with the table name does not resolve against the bare column list that validation
+-- types the key in; it is resolved against the table expression of the query, so it must not be
+-- rejected. Every v is even, so replica 0 of 2 reads all rows and replica 1 none: resolved and applied.
+SELECT count() FROM tck SETTINGS max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
+  parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'tck.v',
+  parallel_replicas_count = 2, parallel_replica_offset = 0;
+SELECT count() FROM tck SETTINGS max_parallel_replicas = 2, allow_experimental_parallel_reading_from_replicas = 1,
+  parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'tck.v',
+  parallel_replicas_count = 2, parallel_replica_offset = 1;
+
 DROP TABLE tck;
 
 -- The same class of bug is reachable through every session setting that changes the RESULT TYPE of a
