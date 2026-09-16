@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "최종 집계의 출력이 `LIMIT n`과 함께 `ORDER BY`로 정렬되고 버킷별 선택이 정확하다는 것을 증명할 수 있을 때, 각 2단계 버킷에서 상위 n개 그룹만 구체화하는 계획 최적화를 전환하는 새로운 설정입니다."}]}]} />
+
+최종 집계의 출력이 `LIMIT n`과 함께 `ORDER BY`로 정렬되고 계획에서 버킷별 선택이 정확하다는 것을 증명할 수 있는 경우, 집계의 최종 변환 과정에서 각 2단계 버킷의 상위 n개 그룹만 해당 순서로 구체화하는 쿼리 계획 수준 최적화를 전환합니다. 결과는 정확합니다. 자체 버킷의 상위 n개 그룹에 속하지 않는 그룹은 전역적으로 적어도 n개의 그룹보다 뒤에 있으므로 전역 상위 n개에 포함될 수 없습니다.
+설정 [query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations)이 1인 경우에만 적용됩니다.
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
@@ -145,6 +161,21 @@ JOIN 이후의 필터가 일치하지 않는 행 또는 일치하는 행에 대�
 * 0 - 비활성화
 * 1 - 활성화
 
+<div id="query_plan_fuse_filter_into_array_join">
+  ## query_plan_fuse_filter_into_array_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "ARRAY JOIN된 컬럼에 대한 필터를 ARRAY JOIN 단계에 통합하는 새로운 최적화로, 기본적으로 활성화됩니다."}]}]} />
+
+`ARRAY JOIN`된 원소 컬럼에 대한 필터를 `ARRAY JOIN` 단계에 통합하는 쿼리 계획 수준의 최적화를 전환합니다. 확장하기 전에 원소 단위로 배열을 필터링하므로, 필터링으로 제외된 원소는 확장되거나 복제되지 않습니다.
+설정 [query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations)이 1인 경우에만 적용됩니다.
+
+<Note>
+  개발자가 디버깅 목적으로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+</Note>
+
 <div id="query_plan_join_shard_by_pk_ranges">
   ## query_plan_join_shard_by_pk_ranges
 </div>
@@ -231,9 +262,11 @@ lazy materialization 최적화에 쿼리 계획을 사용할 수 있는 최대 �
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "새 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "새로운 설정입니다."}]}]} />
 
-minmax 스킵 인덱스와 동적 임계값 필터링을 사용하는 TopK 최적화의 쿼리 계획을 평가할 때 허용되는 최대 limit 값을 제어합니다. 0이면 제한이 없습니다.
+minmax 스킵 인덱스와 동적 임계값 필터링을 사용하는 TopK 최적화의 쿼리 계획을 평가할 때 허용되는 최대 LIMIT 값을 제어합니다. 0이면 제한이 없습니다.
+
+이 설정은 [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/ko/reference/settings/session-settings/enable#enable_group_by_top_k_optimization)의 동작도 제어합니다.
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,13 +451,23 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 
 지연 머티리얼라이즈 최적화에 쿼리 계획을 사용합니다.
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`file` 테이블 함수 및 `File` 테이블 엔진을 사용해 로컬 Parquet 파일을 읽는 `ORDER BY ... LIMIT n` 쿼리에 지연 머티리얼라이즈를 적용하는 새로운 설정입니다."}]}]} />
+
+`file` 테이블 함수 및 `File` 테이블 엔진을 사용해 로컬 Parquet 파일을 읽을 때 지연 머티리얼라이즈 최적화를 적용합니다. `ORDER BY ... LIMIT n` 쿼리에서는 정렬 및 필터링에 필요하지 않은 컬럼을 `LIMIT`를 통과한 `n`개 행에 대해서만 읽습니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽는 `ORDER BY ... LIMIT n` 쿼리에 지연 머티리얼라이즈를 사용하기 위한 새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽는 `ORDER BY ... LIMIT n` 쿼리에 지연 머티리얼라이즈를 사용하기 위한 새로운 설정"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽는 `ORDER BY ... LIMIT n` 쿼리에 지연 머티리얼라이즈를 사용하기 위한 새로운 설정"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽는 `ORDER BY ... LIMIT n` 쿼리에 지연 머티리얼라이즈를 사용하기 위한 새로운 설정"}]}]} />
 
 객체 스토리지에서 Parquet 파일(Iceberg 테이블 포함)을 읽을 때 지연 머티리얼라이즈 최적화를 사용합니다. `ORDER BY ... LIMIT n` 쿼리에서는 정렬 및 필터링에 필요하지 않은 컬럼을 `LIMIT`를 통과한 `n`개의 행에 대해서만 읽습니다. `query_plan_optimize_lazy_materialization`이 활성화된 경우에만 적용됩니다.
 
@@ -450,6 +493,26 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 <Note>
   이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
 </Note>
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "데이터 볼륨을 줄이는 함수(`length`, `lengthUTF8`, `empty`, `notEmpty`)를 `Sorting` 및 `Filter` 단계 아래로 푸시다운하는 새로운 설정입니다. 이에 따라 wide 인수 컬럼이 고정 크기 결과로 대체됩니다. previous_value=false이므로 26.8 이전 버전과의 `compatibility`를 사용하면 기존 동작(푸시다운 없음)이 복원됩니다."}]}]} />
+
+데이터 볼륨을 줄이는 함수(`length`, `lengthUTF8`, `empty`, `notEmpty`)를 실행 계획에서
+`Sorting` 및 `Filter` 단계 아래로 이동하는 쿼리 계획 수준 최적화를 켜거나 끕니다. 고정 크기 결과가
+wide `String` / `FixedString` 인수를 대체하므로 해당 인수는 더 이상 이 단계를 거치지 않습니다.
+이 재작성은 인수 컬럼이 푸시다운되는 단계 위에서 필요하지 않은 경우에만 적용됩니다.
+
+[query&#95;plan&#95;enable&#95;optimizations](/ko/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) 설정이 1인 경우에만 적용됩니다.
 
 가능한 값:
 
@@ -500,22 +563,6 @@ primary key 집합을 구성하고 이를 인덱스 분석에 활용하여 Repla
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "새로운 설정"}]}]} />
 
 JOIN 작업에서 왼쪽 테이블의 순서를 유지하며 계속 읽고, 이는 후속 단계에서 활용될 수 있습니다.
-
-<div id="query_plan_read_in_order_through_spilling_join">
-  ## query_plan_read_in_order_through_spilling_join
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "자동 스필 임계값이 설정된 해시 조인에서도 순서대로 읽기가 전파되도록 하는 새로운 설정입니다. 조인을 메모리에 고정해 보장된 순서를 유지합니다. previous_value=false이므로 26.8 이전 버전과의 `compatibility`는 이러한 조인이 순서대로 읽기에 사용되지 않고 항상 스필할 수 있었던 기존의 보수적인 동작을 복원합니다."}]}]} />
-
-[`query_plan_read_in_order_through_join`](/ko/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join)이 [`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) 또는 [`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)로 구성된 자동 디스크 스필 임계값이 있는 해시 조인에도 적용되도록 합니다.
-
-이러한 조인은 스필이 발생하지 않을 때만 왼쪽 테이블의 순서를 보존한다고 보장할 수 있습니다. 스필이 발생하면 행이 해시를 기준으로 버킷에 분산되기 때문입니다. 최적화가 적용되면 조인은 메모리에 유지되고 스필 임계값이 더 이상 작동하지 않습니다. 대신 자동 스필이 구성되지 않은 경우처럼 오른쪽 테이블은 메모리 트래커에 의해 제한됩니다.
-
-스필할 수 있는 조인을 통해 순서대로 읽기를 전파하지 않는 보수적인 동작을 유지하려면 `0`으로 설정하십시오. 메모리 제한 내에 유지하기 위해 스필에 의존하고, 그렇지 않았다면 최적화 대상이 되었을 쿼리는 이전과 동일하게 작동합니다.
-
-`JOIN`을 통한 별도의 `ORDER BY ... LIMIT` 최적화는 `Sort`와 `Limit`를 조인의 보존되는 쪽으로 푸시다운하며, 조인이 순서를 보존하는지에는 전혀 의존하지 않습니다. 따라서 이 설정과 관계없이 스필 가능한 조인에서도 계속 사용할 수 있습니다. 다만 순서대로 읽기가 가능하면 이 최적화는 순서대로 읽기에 우선순위를 양보합니다. 따라서 이 설정을 활성화하면 보존되는 쪽이 요청된 순서대로 행을 스트리밍할 수 있는 스필 가능한 조인에 대한 `ORDER BY ... LIMIT`는 푸시다운된 `Sort`와 `Limit` 대신 순서대로 읽기 계획을 사용합니다. 이 전환에는 기존 조건이 그대로 적용되며, 특히 [`query_plan_join_swap_table`](/ko/reference/settings/session-settings/query-plan#query_plan_join_swap_table)이 명시적으로 `false`로 설정되어야 합니다. 기본값인 `auto`에서는 이후 최적화가 조인 양쪽을 스왑하여 순서대로 읽기 계획을 무효화할 수 있으므로 전환이 확정되지 않으며, 이러한 쿼리는 푸시다운된 `Sort`와 `Limit`를 계속 사용합니다.
 
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct

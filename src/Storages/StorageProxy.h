@@ -70,17 +70,6 @@ public:
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
     }
 
-    Pipe watch(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        size_t num_streams) override
-    {
-        return getNested()->watch(column_names, query_info, context, processed_stage, max_block_size, num_streams);
-    }
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -124,9 +113,9 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override
     {
-        getNested()->alter(params, context, alter_lock_holder);
+        getNested()->alter(params, context, alter_lock_holder, ddl_guard);
         auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
         IStorage::setInMemoryMetadata(*nested_metadata);
     }

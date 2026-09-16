@@ -93,6 +93,15 @@ void ASTCreateRoleQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
 }
 
 
+/// `settings` and `alter_settings` are held outside `children`.
+bool ASTCreateRoleQuery::hasSecretParts() const
+{
+    return (settings && settings->hasSecretParts())
+        || (alter_settings && alter_settings->hasSecretParts())
+        || childrenHaveSecretParts();
+}
+
+
 void ASTCreateRoleQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)

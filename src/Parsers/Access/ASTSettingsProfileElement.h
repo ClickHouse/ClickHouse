@@ -26,6 +26,7 @@ public:
 
     String getID(char) const override { return "SettingsProfileElement"; }
     ASTPtr clone() const override { return make_intrusive<ASTSettingsProfileElement>(*this); }
+    bool hasSecretParts() const override;
 
     /// All distinguishing state is kept in plain members outside `children` and `getID` is
     /// constant, so `getTreeHash` would otherwise treat different settings profile elements
@@ -52,6 +53,7 @@ public:
 
     String getID(char) const override { return "SettingsProfileElements"; }
     ASTPtr clone() const override;
+    bool hasSecretParts() const override;
 
     void setUseInheritKeyword(bool use_inherit_keyword_);
 
@@ -84,6 +86,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    bool hasSecretParts() const override;
 
     void add(ASTAlterSettingsProfileElements && other);
 

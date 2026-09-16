@@ -294,7 +294,6 @@ struct UUIDConverter : public FixedSizeConverter
     UUIDConverter() { input_size = 16; }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    std::optional<Field> convertField(std::span<const char> data, bool is_max) const override;
 };
 
 struct TrivialStringConverter : public StringConverter
@@ -431,7 +430,9 @@ struct GeoConverter : public StringConverter
 };
 
 
-void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out);
+/// If out_num_zeros is not null, the number of zero levels is added to it, counted as part of the
+/// decoding.
+void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out, size_t * out_num_zeros = nullptr);
 
 std::unique_ptr<PageDecoder> makeDictionaryIndicesDecoder(parq::Encoding::type encoding, size_t dictionary_size, std::span<const char> data);
 

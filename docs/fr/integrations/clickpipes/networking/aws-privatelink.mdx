@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'AWS PrivateLink pour ClickPipes'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'Établissez une connexion sécurisée entre ClickPipes et une source de données à l’aide d’AWS PrivateLink.'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'AWS PrivateLink pour ClickPipes'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'sécurité ClickPipes', 'point de terminaison VPC', 'connectivité privée', 'ressource VPC']
 integration:
@@ -13,7 +14,7 @@ integration:
 import { Image } from "/snippets/fr/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-Vous pouvez utiliser [AWS PrivateLink](https://aws.amazon.com/privatelink/) pour établir une connexion sécurisée entre ClickPipes et une source de données hébergée sur AWS. ClickPipes crée un **Reverse Private Endpoint (RPE)** dans son VPC et le connecte à un endpoint service privé publié pour votre source de données, afin que le trafic ne soit jamais exposé à Internet.
+Vous pouvez utiliser [AWS PrivateLink](https://aws.amazon.com/privatelink/) pour établir une connexion sécurisée entre ClickPipes et une source de données hébergée sur AWS. ClickPipes crée un **endpoint privé inversé (RPE)** dans son VPC et le connecte à un endpoint service privé publié pour votre source de données, afin que le trafic ne soit jamais exposé à Internet.
 
 <Note>
   Consultez les [régions AWS prises en charge](#aws-privatelink-regions) avant de commencer.

@@ -23,11 +23,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكن إسناد أدوار SQL Console الأساسية إلى المستخدمين الذين لديهم أذونات Service Read Only وService Admin. لمزيد من المعلومات، راجع [إدارة تعيينات أدوار SQL Console](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). يوضّح هذا الدليل كيفية إنشاء دور مخصّص لمستخدم في SQL Console.
 
-<Note>
-  **إدارة أدوار قاعدة البيانات من Console (Beta)**
-
-  يمكنك أيضًا إدارة أدوار قاعدة البيانات مباشرةً من ClickHouse Cloud console بإضافة أذونات البيانات إلى الأدوار المخصّصة. هذه الميزة في مرحلة Beta ومتاحة للخدمات التي تشغّل ClickHouse بالإصدار 26.4 وما بعده. تتقدّم الأدوار المُسنَدة يدويًا باستخدام اصطلاح التسمية `sql-console-role:<email>` على الأدوار المُسنَدة عبر Console. لمزيد من المعلومات، راجع [إدارة أدوار قاعدة البيانات](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles).
-</Note>
+<Tip>
+  يُفضَّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (Beta) لإدارة الوصول إلى قاعدة البيانات من Console. الأدوار `sql-console-role:<email>` غير متوافقة مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
 
 لإنشاء دور مخصّص لمستخدم في SQL Console ومنحه دورًا عامًا، شغّل الأوامر التالية. يجب أن يتطابق عنوان البريد الإلكتروني مع عنوان البريد الإلكتروني للمستخدم في Console.
 

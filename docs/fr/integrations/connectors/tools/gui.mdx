@@ -432,6 +432,23 @@ doc_type: 'reference'
   ## Commercial
 </div>
 
+<Accordion title="ProbeDeck">
+  [ProbeDeck](https://probedeck.app) est un client iOS et iPadOS pour surveiller ClickHouse et y exécuter des requêtes.
+
+  Fonctionnalités :
+
+  * ProbeDeck affiche les requêtes en cours d’exécution, les répliques, les parts de la table, les fusions, les mutations, les disques et les métriques du serveur.
+  * Vous pouvez arrêter les requêtes avec `KILL QUERY` et les mutations avec `KILL MUTATION`.
+  * Vous pouvez parcourir les schémas et les données ou exécuter du SQL dans l’éditeur.
+  * ProbeDeck se connecte via HTTP(S), au moyen du réseau de l’appareil ou d’un tunnel SSH.
+  * ProbeDeck stocke les identifiants dans le trousseau iOS et prend en charge un mode lecture seule pour chaque connexion.
+  * L’application inclut une démo hors ligne avec des données intégrées.
+
+  Les utilisateurs gratuits peuvent surveiller un serveur et exécuter du SQL en lecture seule. Ils peuvent enregistrer une connexion. ProbeDeck Pro ajoute des commandes d’arrêt, les écritures, le DDL et un nombre illimité de connexions enregistrées.
+
+  Consultez [Connecter ProbeDeck à ClickHouse](/fr/integrations/connectors/sql-clients/probedeck) pour obtenir les instructions de connexion.
+</Accordion>
+
 <Accordion title="DataGrip">
   [DataGrip](https://www.jetbrains.com/datagrip/) est un IDE de base de données de JetBrains offrant une prise en charge dédiée de ClickHouse. Il est également intégré à d’autres outils basés sur IntelliJ : PyCharm, IntelliJ IDEA, GoLand, PhpStorm et d’autres.
 
@@ -487,24 +504,24 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="SeekTable">
-  [SeekTable](https://www.seektable.com) est un outil de self-service BI pour l’exploration de données et le reporting opérationnel. Il est disponible à la fois comme service cloud et en version auto-hébergée. Les rapports SeekTable peuvent être intégrés à n’importe quelle application web.
+  [SeekTable](https://www.seektable.com) est un outil de BI en libre-service destiné à l’exploration des données et au reporting opérationnel. Il est disponible à la fois comme service cloud et en version auto-hébergée. Les rapports de SeekTable peuvent être intégrés à toute application web.
 
   Fonctionnalités :
 
-  * Générateur de rapports convivial pour les utilisateurs métier.
-  * Paramètres de rapport puissants pour le filtrage SQL et la personnalisation des requêtes propres à chaque rapport.
-  * Peut se connecter à ClickHouse via un endpoint TCP/IP natif ou une interface HTTP(S) (2 drivers différents).
-  * Il est possible d’utiliser toute la puissance du dialecte ClickHouse SQL dans les définitions des dimensions/mesures.
+  * Générateur de rapports adapté aux utilisateurs métier.
+  * Paramètres de rapport puissants pour le filtrage SQL et les personnalisations de requêtes propres aux rapports.
+  * Peut se connecter à ClickHouse à la fois avec un point de terminaison TCP/IP natif et une interface HTTP(S) (2 pilotes différents).
+  * Il est possible d’utiliser toute la puissance du dialecte SQL de ClickHouse dans les définitions de dimensions et de mesures.
   * [API Web](https://www.seektable.com/help/web-api-integration) pour la génération automatisée de rapports.
-  * Prend en charge un workflow de développement des rapports avec [sauvegarde/restauration](https://www.seektable.com/help/self-hosted-backup-restore) des données du compte ; la configuration des modèles de données (cubes) / rapports est en XML lisible et peut être stockée dans un système de gestion de versions.
+  * Prend en charge le flux de développement des rapports avec [sauvegarde/restauration](https://www.seektable.com/help/self-hosted-backup-restore) des données de compte ; la configuration des modèles de données (cubes) et des rapports est en XML lisible par l’humain et peut être stockée dans un système de contrôle de version.
 
-  SeekTable est [gratuit](https://www.seektable.com/help/cloud-pricing) pour un usage personnel/individuel.
+  SeekTable est [gratuit](https://www.seektable.com/help/cloud-pricing) pour un usage personnel ou individuel.
 
-  [Comment configurer une connexion ClickHouse dans SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+  [Comment configurer une connexion à ClickHouse dans SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
 </Accordion>
 
 <Accordion title="Chadmin">
-  [Chadmin](https://github.com/bun4uk/chadmin) est une interface utilisateur simple permettant de visualiser les requêtes en cours d’exécution sur votre cluster ClickHouse, ainsi que les informations les concernant, et de les arrêter si nécessaire.
+  [Chadmin](https://github.com/bun4uk/chadmin) est une interface utilisateur simple qui permet de visualiser les requêtes en cours d’exécution sur votre cluster ClickHouse, d’en consulter les informations et de les arrêter si vous le souhaitez.
 </Accordion>
 
 <Accordion title="TABLUM.IO">
@@ -546,7 +563,7 @@ doc_type: 'reference'
 
   Fonctionnalités :
 
-  * Vue d’ensemble du serveur à la connexion — version, temps de fonctionnement, requêtes en cours, merges actifs, parts et volumes de stockage, état des réplicas, clusters et nœuds en un coup d’œil.
+  * Vue d’ensemble du serveur à la connexion — version, temps de fonctionnement, requêtes en cours, fusions actives, parts de la table et volumes de stockage, état des réplicas, clusters et nœuds en un coup d’œil.
   * Générateur de requêtes visuel (sélecteurs de colonnes, filtres, tri, limite), avec un éditeur SQL Monaco doté de la coloration syntaxique et d’un historique des requêtes par connexion.
   * Assistant visuel `CREATE TABLE` prenant en charge les variantes de `MergeTree`, `ORDER BY`, `PARTITION BY`, `SETTINGS` et l’ajout automatique de `Nullable()`.
   * Gestion native des types ClickHouse — `Nullable`, `Array`, `LowCardinality`, objets imbriqués.
