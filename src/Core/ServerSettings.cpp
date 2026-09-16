@@ -219,6 +219,8 @@ A value of `0` means unlimited.
     DECLARE(UInt64, max_async_insert_parsing_thread_pool_size, 100, R"(
 Maximum total number of threads to use for parsing the data of asynchronous inserts when a batch is flushed, see [`async_insert_parse_threads`](/operations/settings/settings#async_insert_parse_threads).
 
+The pool always keeps at least one thread, so a smaller value is treated as 1: a flush that has already scheduled its parsing work on the pool must be able to finish it, also when the value is changed while the server is running. To switch parallel parsing off, set `async_insert_parse_threads` to 0 instead.
+
 This is a separate pool from the one bounded by [`max_format_parsing_thread_pool_size`](#max_format_parsing_thread_pool_size), because an input format may parallelize its own work on that pool while a flush is waiting for it.
 )", 0) \
     DECLARE(UInt64, max_async_insert_parsing_thread_pool_free_size, 0, R"(

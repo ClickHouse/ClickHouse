@@ -1747,8 +1747,10 @@ try
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
         server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
+    /// Never less than one thread: a flush schedules its parsing slices on this pool and then waits
+    /// for them, and a pool with no threads accepts jobs it can never run.
     getAsyncInsertParsingThreadPool().initialize(
-        server_settings[ServerSetting::max_async_insert_parsing_thread_pool_size],
+        std::max<size_t>(1, server_settings[ServerSetting::max_async_insert_parsing_thread_pool_size]),
         server_settings[ServerSetting::max_async_insert_parsing_thread_pool_free_size],
         server_settings[ServerSetting::async_insert_parsing_thread_pool_queue_size]);
 
@@ -2809,7 +2811,7 @@ try
                 new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
             getAsyncInsertParsingThreadPool().reloadConfiguration(
-                new_server_settings[ServerSetting::max_async_insert_parsing_thread_pool_size],
+                std::max<size_t>(1, new_server_settings[ServerSetting::max_async_insert_parsing_thread_pool_size]),
                 new_server_settings[ServerSetting::max_async_insert_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::async_insert_parsing_thread_pool_queue_size]);
 
