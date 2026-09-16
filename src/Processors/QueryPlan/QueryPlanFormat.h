@@ -88,7 +88,7 @@ namespace QueryPlanFormat
     String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
-    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);
+    PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan, bool show_secrets);
 }
 
 }
