@@ -22,6 +22,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesInsertCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -45,6 +46,7 @@ namespace Setting
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsUInt64 insert_cache_max_size_bytes;
     extern const TimeSeriesSettingsUInt64 version;
 }
 
@@ -217,6 +219,8 @@ StorageTimeSeries::StorageTimeSeries(
     }
 
     has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
+    if ((*settings)[TimeSeriesSetting::insert_cache_max_size_bytes] && isInnerTable(ViewTarget::MetricFamilies))
+        insert_cache = std::make_unique<TimeSeriesInsertCache>((*settings)[TimeSeriesSetting::insert_cache_max_size_bytes]);
     storage_settings.set(std::move(settings));
 
     if (!comment.empty())
@@ -415,6 +419,9 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
     }
+
+    if (insert_cache)
+        insert_cache->clear();
 
     for (auto target_kind : getTargetKinds())
     {
@@ -1311,6 +1318,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
+| `insert_cache_max_size_bytes` | UInt64 | 16777216 | Maximum memory used by the replica-local cache for inserts into the inner metric families table. Set to 0 to disable the cache |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |

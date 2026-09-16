@@ -46,6 +46,36 @@ def get_async_insert_query_count():
     )
 
 
+def get_insert_cache_event(event):
+    return int(
+        node.query(
+            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
+        )
+    )
+
+
+def test_remote_write_metric_family_insert_cache():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SETTINGS recent_samples_ttl_seconds=0"
+    )
+
+    metadata = [("cached_metric", "GAUGE", "Test metric", "seconds")]
+    protobuf = convert_metrics_metadata_to_protobuf(metadata)
+    hits_before = get_insert_cache_event("TimeSeriesMetricFamilyCacheHits")
+
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+
+    assert (
+        node.query("SELECT count() FROM timeSeriesMetricFamilies(prometheus)")
+        == "1\n"
+    )
+    assert (
+        get_insert_cache_event("TimeSeriesMetricFamilyCacheHits") == hits_before + 1
+    )
+
+
 def test_async_insert_acknowledged_after_flush():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
