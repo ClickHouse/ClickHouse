@@ -294,7 +294,11 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
         /// It deflates with zlib, which supports levels only up to 9; the libdeflate-only levels 10..12
         /// stay on the serial libdeflate writer below, so enabling the setting never rejects a level
         /// that `getCompressionLevelRange` allows.
-        if (method == CompressionMethod::Gzip && compression_threads > 1 && level <= 9)
+        /// The parallel deflater stages input in its own memory (about `compression_threads` blocks) and
+        /// ignores `buf_size` / `existing_memory`. Callers that hand over an external working buffer and
+        /// expect the returned buffer to expose exactly that memory (e.g. the Parquet page compressor,
+        /// which advances `position()` over an already filled page) must keep the serial writers.
+        if (method == CompressionMethod::Gzip && compression_threads > 1 && level <= 9 && existing_memory == nullptr)
             return std::make_unique<ParallelGzipDeflatingWriteBuffer>(
                 std::forward<WriteBufferT>(nested), level, compression_threads, compress_empty);
 #if USE_LIBDEFLATE
