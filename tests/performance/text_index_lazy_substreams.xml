@@ -4,6 +4,7 @@
       <use_query_condition_cache>0</use_query_condition_cache>
       <use_query_cache>0</use_query_cache>
       <max_threads>1</max_threads>
+      <force_data_skipping_indices>idx</force_data_skipping_indices>
   </settings>
 
   <!-- The cost measured here is paid once per part, so the table must keep many parts (400):
