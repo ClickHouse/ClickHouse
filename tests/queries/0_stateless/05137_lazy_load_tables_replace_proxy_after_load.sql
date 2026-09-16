@@ -46,9 +46,25 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t DELETE WHERE id = 4 SETTINGS mutations_sync = 2;
 SELECT 'cold alter delete', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t;
 
--- An action lock (`SYSTEM STOP MERGES` and friends) is keyed by the storage it was taken on, so one
--- taken while the table was still a proxy has to survive the replacement: the matching
--- `SYSTEM START MERGES` addresses the storage that took the proxy's place.
+-- A `DELETE` that has to be rejected must be rejected even as the very first statement addressed to
+-- a table that has not been loaded yet: the projections check consults the table's metadata and its
+-- `MergeTree` settings, neither of which the proxy has before the load.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t3 (id UInt64, s String, PROJECTION p (SELECT s, count() GROUP BY s))
+    ENGINE = MergeTree ORDER BY id SETTINGS lightweight_mutation_projection_mode = 'throw';
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t3 VALUES (1, 'a'), (2, 'b');
+
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+
+DELETE FROM {CLICKHOUSE_DATABASE_1:Identifier}.t3 WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
+SELECT 'cold rejected lightweight delete', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t3;
+SELECT 'projection parts', count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't3' AND active;
+
+-- An action lock (`SYSTEM STOP MERGES` and friends) is keyed by the storage it is held for, and the
+-- same table is a proxy before the load and the storage itself after the replacement, so the lock
+-- has to be found under either: the matching `SYSTEM START MERGES` addresses the storage that took
+-- the proxy's place.
 -- `max_bytes_to_merge_at_max_space_in_pool` keeps background merges away, so the two parts stay two
 -- until the explicit `OPTIMIZE`, which ignores that limit for `FINAL`.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2 (id UInt64) ENGINE = MergeTree ORDER BY id

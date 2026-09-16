@@ -106,6 +106,14 @@ BlockIO InterpreterDeleteQuery::execute()
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
     }
 
+    /// A table in a database with `lazy_load_tables` is handed out as a `StorageTableProxy` until it
+    /// has been loaded, and the proxy's own metadata carries nothing but the columns. This query is
+    /// about to write to the table, so load it and address the storage itself: the projections check
+    /// below reads the metadata and asks for a `MergeTreeData`, and would be answered by the proxy
+    /// otherwise, letting a `DELETE` that must be rejected proceed and drop the projections.
+    if (auto loaded = table->loadLazyTable())
+        table = loaded;
+
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
     /// metadata is not loaded until the first access.  Initialize it now so that

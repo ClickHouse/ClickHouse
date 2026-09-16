@@ -5,7 +5,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -583,12 +582,6 @@ StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::ite
     }
 
     it->second = real_table;
-
-    /// `ActionLocksManager` keys the locks it holds by the storage they were taken on, so a
-    /// `SYSTEM STOP MERGES` issued while the table was still a proxy has to be re-keyed: the
-    /// matching `SYSTEM START MERGES` addresses the storage that just took the proxy's place, and
-    /// would otherwise not find the lock and never lift it.
-    getContext()->getActionLocksManager()->transfer(proxy.get(), real_table);
 
     LOG_TRACE(log, "Replaced the proxy of lazily loaded table {} with the loaded {}",
               table_id.getNameForLogs(), real_table->getName());

@@ -7,5 +7,7 @@ after alter delete	3
 after lightweight delete	2
 cold lightweight delete	1
 cold alter delete	0
+cold rejected lightweight delete	2
+projection parts	1
 stopped merges parts	2
 started merges parts	1

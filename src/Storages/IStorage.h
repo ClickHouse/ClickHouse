@@ -373,6 +373,12 @@ public:
     /// Any other storage returns nullptr: it already is the storage it stands for.
     virtual StoragePtr getLoadedLazyTable() const { return nullptr; }
 
+    /// For a lazily loaded table, the storage this one stands for, loading it first if that has not
+    /// happened yet. Any other storage returns nullptr. Use this instead of getLoadedLazyTable
+    /// wherever waiting for the load is acceptable and the answer must not depend on timing, e.g. to
+    /// address the storage itself when the table is about to be written to.
+    virtual StoragePtr loadLazyTable() const { return nullptr; }
+
     /// Make this storage use the very same table-level locks as `other` instead of its own, so that
     /// the two objects form a single lock domain for lockForShare, lockForAlter and lockExclusively.
     ///

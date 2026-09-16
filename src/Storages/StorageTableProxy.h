@@ -85,6 +85,8 @@ public:
         return nested;
     }
 
+    StoragePtr loadLazyTable() const override { return getNested(); }
+
     /// `StorageProxy` forwards `mutate`, but not the checks that gate a mutation, an UPDATE or a
     /// DELETE. Without these, the first such statement addressed to a table that has not been loaded
     /// yet is answered by the `IStorage` defaults and rejected, e.g. with
