@@ -19,8 +19,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/StackTrace.h>
@@ -74,13 +72,6 @@ extern const Event HashJoinBuildInsertMicroseconds;
 extern const Event HashJoinBuildLockWaitMicroseconds;
 extern const Event HashJoinBuiltWithParallelLayout;
 extern const Event HashJoinBuiltWithSerialLayout;
-}
-
-namespace CurrentMetrics
-{
-extern const Metric HashJoinDestroyThreads;
-extern const Metric HashJoinDestroyThreadsActive;
-extern const Metric HashJoinDestroyThreadsScheduled;
 }
 
 namespace DB
@@ -1797,58 +1788,6 @@ HashJoin::~HashJoin()
         instance_log_id,
         getTotalByteCountUnchecked(),
         getTotalRowCount());
-
-    static constexpr size_t PARALLEL_DESTROY_THRESHOLD_BYTES = 100 * 1024 * 1024;
-
-    /// `reuseJoinedData` hands the same `data` to several joins, so only the last owner destroys it.
-    if (max_threads > 1 && data.use_count() == 1 && getTotalByteCountUnchecked() >= PARALLEL_DESTROY_THRESHOLD_BYTES)
-    {
-        try
-        {
-            parallelDestroyRightTableData();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-}
-
-void HashJoin::parallelDestroyRightTableData()
-{
-    /// The map cells are trivially destructible; the cost is the stored columns and the arenas.
-    std::vector<WorkerStoredData> workers_to_destroy = std::move(data->workers);
-    std::vector<std::unique_ptr<Arena>> pools_to_destroy = std::move(data->pools);
-
-    const size_t num_tasks = std::min(max_threads, std::max(workers_to_destroy.size(), pools_to_destroy.size()));
-    if (num_tasks <= 1)
-        return;
-
-    auto destroy_slice = [](auto & items, size_t task_idx, size_t num_tasks_)
-    {
-        const size_t begin = items.size() * task_idx / num_tasks_;
-        const size_t end = items.size() * (task_idx + 1) / num_tasks_;
-        for (size_t i = begin; i < end; ++i)
-            items[i] = {};
-    };
-
-    ThreadPool pool(
-        CurrentMetrics::HashJoinDestroyThreads,
-        CurrentMetrics::HashJoinDestroyThreadsActive,
-        CurrentMetrics::HashJoinDestroyThreadsScheduled,
-        num_tasks);
-
-    for (size_t task_idx = 0; task_idx < num_tasks; ++task_idx)
-    {
-        pool.scheduleOrThrowOnError(
-            [&, task_idx, thread_group = CurrentThread::getGroup()]()
-            {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::HASH_JOIN_DESTRUCTION);
-                destroy_slice(workers_to_destroy, task_idx, num_tasks);
-                destroy_slice(pools_to_destroy, task_idx, num_tasks);
-            });
-    }
-    pool.wait();
 }
 
 /// Appends one hash map cell's not-joined rows: as a flat run of encoded ref words for the

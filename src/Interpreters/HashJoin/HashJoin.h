@@ -1121,8 +1121,6 @@ private:
 
     void shrinkWorkerStoredBlocks(WorkerStoredData & worker);
 
-    void parallelDestroyRightTableData();
-
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
