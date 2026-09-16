@@ -2,6 +2,7 @@ from praktika import Job
 from praktika.utils import Utils
 
 from ci.defs.defs import (
+    ASAN_IT_NUM_BATCHES,
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
     LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,
@@ -1292,10 +1293,7 @@ class JobConfigs:
         ),
     )
     # Despite the name, only release_branches.py uses these.
-    # Six batches, not four: the whole integration suite is about 110000 test-seconds, which
-    # four batches of three xdist workers cannot fit into the two-hour pytest session timeout
-    # however well they are balanced. At four batches this job timed out on roughly half of
-    # all release-branch runs.
+    # `ASAN_IT_NUM_BATCHES` explains the batch count; keep it in step with the flavor below.
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -1303,7 +1301,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (6,)
+            for total_batches in (ASAN_IT_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -1314,7 +1312,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
-            for total_batches in (6,)
+            for total_batches in (ASAN_IT_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
         *[
