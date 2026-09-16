@@ -822,7 +822,12 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     /// The decoder already converts a variable binary leaf whose type hint reaches it (mask-aware, so
     /// it also covers invisibility this phase cannot see: dropped struct null maps, masked list
     /// ranges); only the declared type needs reconciling then.
-    if (nested.getDataType() == to_leaf->getTypeId())
+    /// `UUID` and `UUID2` share `ColumnVector<UUID>` but store the two 64-bit halves in the opposite
+    /// order, so the physical column type cannot tell them apart: a column decoded as one of them and
+    /// requested as the other must not be relabeled, the later cast performs the swap.
+    const WhichDataType from_which(from_no_null);
+    const bool uuid_layout_differs = (from_which.isUUID() && which.isUUID2()) || (from_which.isUUID2() && which.isUUID());
+    if (!uuid_layout_differs && nested.getDataType() == to_leaf->getTypeId())
     {
         if (from_no_null->equals(*to_leaf))
             return {col, from_type};
