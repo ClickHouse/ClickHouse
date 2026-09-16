@@ -1980,12 +1980,13 @@ def test_reload_flat_not_broken():
     )
 
 
-# This test checks that CHECK TABLE classifies an unknown flat projection (left after DROP PROJECTION
-# on a detached part) as a projection problem, not a broken part - the nested-only scan misses flat siblings.
+# This test checks that CHECK TABLE tolerates an unknown flat projection (left after DROP PROJECTION on a
+# detached part) the same way it tolerates a nested one: the part lists the directory in its manifest, so it
+# was written deliberately and the part is intact - the nested-only scan used to miss flat siblings.
 # Scenario (nested and flat):
 # - create table with a projection, DETACH PART, DROP PROJECTION, ATTACH PART
 # - run CHECK TABLE
-# - assert the result reports "unexpected projection" and the data is still readable
+# - assert the part passes, is not reported as having unexpected files, and the data is still readable
 def test_reload_check_table_dropped_projection():
     for tname, extra in (
         ("t_chk_nested", ""),
@@ -1998,12 +1999,124 @@ def test_reload_check_table_dropped_projection():
         node.query(f"ALTER TABLE {tname} DROP PROJECTION p")
         node.query(f"ALTER TABLE {tname} ATTACH PART '{name}'")
 
-        # assert CHECK TABLE flags the unknown projection and the data stays readable
+        # assert CHECK TABLE passes despite the since-dropped projection and the data stays readable
         result = node.query(
             f"CHECK TABLE {tname} SETTINGS check_query_single_value_result = 0"
         )
-        assert "unexpected projection" in result, (tname, result)
+        assert "unexpected projection" not in result, (tname, result)
+        assert result.strip().split("\t")[1] == "1", (tname, result)
+        assert check_table(tname) == "1", tname
         assert node.query(f"SELECT count() FROM {tname}").strip() == "1000"
+
+
+def _check_table_rows(name, n=node):
+    """CHECK TABLE per part: list of (part, passed, message)."""
+    return [
+        tuple(line.split("\t"))
+        for line in n.query(
+            f"CHECK TABLE {name} SETTINGS check_query_single_value_result = 0"
+        ).splitlines()
+        if line
+    ]
+
+
+# This test checks that the CHECK TABLE branch that regenerates a missing checksums.txt on a live part
+# reconciles against the projection-aware manifest `checkDataPart` returns, not the stale in-memory one.
+# A part re-attached after DROP PROJECTION still lists the dropped projection in its in-memory manifest;
+# comparing the recomputed checksums against it reported the intact part as broken ("No file p.proj").
+# Scenario (nested and flat):
+# - create table with a projection, DETACH PART, DROP PROJECTION, ATTACH PART
+# - delete the live part's checksums.txt without restarting, run CHECK TABLE
+# - assert the part passes with "Checksums recounted", the rewritten manifest no longer lists the dropped
+#   projection, the data reads, and the part reloads healthy after a restart
+def test_reload_check_table_dropped_projection_missing_manifest():
+    for tname, extra in (
+        ("t_chkm_nested", ""),
+        ("t_chkm_flat", "projection_storage_format = 'flat'"),
+    ):
+        # create table with a projection, then drop the projection while the part is detached
+        setup_table(tname, extra)
+        name = part_name(tname)
+        node.query(f"ALTER TABLE {tname} DETACH PART '{name}'")
+        node.query(f"ALTER TABLE {tname} DROP PROJECTION p")
+        node.query(f"ALTER TABLE {tname} ATTACH PART '{name}'")
+        p = part_dir(tname)
+        assert _manifest_mentions_projection(p), tname
+
+        # delete the live part's manifest and let CHECK TABLE regenerate it
+        node.exec_in_container(
+            ["bash", "-c", f"rm {p}/checksums.txt"], privileged=True, user="root"
+        )
+        rows = _check_table_rows(tname)
+        assert len(rows) == 1, (tname, rows)
+        assert rows[0][1] == "1", (tname, rows)
+        assert "Checksums recounted" in rows[0][2], (tname, rows)
+
+        # assert the regenerated manifest is projection-aware: the dropped projection is not listed
+        assert path_exists(f"{p}/checksums.txt"), tname
+        assert not _manifest_mentions_projection(p), tname
+        assert node.query(f"SELECT count() FROM {tname}").strip() == "1000", tname
+
+        # assert the part reloads from the regenerated manifest
+        node.restart_clickhouse()
+        block_until_tables_loaded(tname)
+        assert active_parts(tname) == "1", tname
+        assert node.query(f"SELECT count() FROM {tname}").strip() == "1000", tname
+
+
+# This test checks that the same CHECK TABLE repair branch persists a regenerated child manifest: when both
+# the parent's and the projection's checksums.txt are deleted from under a live part, the recomputed
+# projection checksums must be written back too (as `IMergeTreeDataPart::loadChecksums` does on load),
+# or the next check, which requires checksums, reports the projection broken.
+# Scenario (nested and flat):
+# - create table with a projection, capture SELECT baseline
+# - delete the live part's checksums.txt and the projection's checksums.txt, run CHECK TABLE
+# - assert the part passes, both manifests are back, the parent lists the projection, a second CHECK
+#   TABLE (checksums required) passes, and the projection is served after a restart
+def test_recovery_check_table_recompute_missing_projection_checksums():
+    for tname, extra, nested in (
+        ("t_chkr_nested", "", True),
+        ("t_chkr_flat", "projection_storage_format = 'flat'", False),
+    ):
+        # create table with a projection, capture baseline
+        setup_table(tname, extra)
+        baseline = proj_query(tname)
+        p = part_dir(tname)
+        proj_manifest = (
+            f"{p}/p.proj/checksums.txt" if nested else f"{p}.p.proj/checksums.txt"
+        )
+        assert path_exists(proj_manifest), tname
+
+        # delete both manifests from under the live part and let CHECK TABLE regenerate them
+        node.exec_in_container(
+            ["bash", "-c", f"rm {p}/checksums.txt {proj_manifest}"],
+            privileged=True,
+            user="root",
+        )
+        rows = _check_table_rows(tname)
+        assert len(rows) == 1, (tname, rows)
+        assert rows[0][1] == "1", (tname, rows)
+        assert "Checksums recounted" in rows[0][2], (tname, rows)
+
+        # assert both manifests were written back and the parent covers the projection
+        assert path_exists(f"{p}/checksums.txt"), tname
+        assert path_exists(proj_manifest), tname
+        assert _manifest_mentions_projection(p), tname
+
+        # assert the checksums-required path passes and the projection is still served
+        assert check_table(tname) == "1", tname
+        assert broken_projection_parts(tname) == "0", tname
+        assert (
+            proj_query(tname, extra_settings="force_optimize_projection = 1")
+            == baseline
+        ), tname
+
+        # assert the regenerated manifests survive a reload
+        node.restart_clickhouse()
+        block_until_tables_loaded(tname)
+        assert active_projection_parts(tname) == "1", tname
+        assert broken_projection_parts(tname) == "0", tname
+        assert check_table(tname) == "1", tname
 
 
 # ==============================================================================

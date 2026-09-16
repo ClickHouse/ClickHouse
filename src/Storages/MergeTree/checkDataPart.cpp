@@ -414,10 +414,15 @@ static CheckDataPartResult checkDataPart(
                 }
 
                 if (loaded)
+                {
+                    /// The child's own manifest may be gone even though the projection is loaded (deleted from under a live
+                    /// part); report the recomputed checksums so a repairing caller can persist them along with the parent's.
+                    recomputed = !projection_storage->existsFile("checksums.txt");
                     projection_checksums = checkDataPart(
                         proj_it->second, *projection_storage, projection_columns, proj_it->second->getType(),
                         proj_it->second->getFileNamesWithoutChecksums(),
                         read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false).computed_checksums;
+                }
                 else if (projection_storage->existsFile("checksums.txt"))
                 {
                     auto buf = projection_storage->readFile("checksums.txt", read_settings, std::nullopt);
