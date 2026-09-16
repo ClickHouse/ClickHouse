@@ -1,0 +1,22 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- `automatic_parallel_replicas_mode` = 1 is the only mode that runs the cost model and
+                 rewrites the plan. The settings randomizer only ever picks 0 or 2, and mode 2 collects
+                 statistics without ever switching, so without this profile the plan-rewriting half of
+                 the optimization has no coverage outside its own handful of tests. -->
+            <automatic_parallel_replicas_mode>1</automatic_parallel_replicas_mode>
+            <!-- Stateless test tables read far less than the 1 MiB per replica the setting defaults to,
+                 so keeping the default would make the cheap pre-check reject every plan before the
+                 probe is built and the job would pass without ever exercising the switch. -->
+            <automatic_parallel_replicas_min_bytes_per_replica>0</automatic_parallel_replicas_min_bytes_per_replica>
+            <enable_parallel_replicas>1</enable_parallel_replicas>
+            <cluster_for_parallel_replicas>parallel_replicas</cluster_for_parallel_replicas>
+            <parallel_replicas_local_plan>1</parallel_replicas_local_plan>
+            <parallel_replicas_for_non_replicated_merge_tree>1</parallel_replicas_for_non_replicated_merge_tree>
+            <!-- Matches the randomized mode-2 runs: it pushed the suite over the memory limit of the
+                 sanitizer builds. -->
+            <parallel_distributed_insert_select>0</parallel_distributed_insert_select>
+        </default>
+    </profiles>
+</clickhouse>
