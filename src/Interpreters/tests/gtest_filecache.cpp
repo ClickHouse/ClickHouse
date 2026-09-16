@@ -10,9 +10,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <chrono>
-#include <future>
-#include <mutex>
 #include <thread>
 
 #include <Core/ServerUUID.h>
@@ -32,9 +29,6 @@
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
-
-#include <Common/DimensionalMetrics.h>
-#include <Common/HistogramMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -63,9 +57,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
@@ -85,23 +77,9 @@ using namespace DB;
 
 static constexpr auto TEST_LOG_LEVEL = "debug";
 
-/// Diagnostics must go through this logger: the root channel is a `ConsoleChannel(std::cerr)` that
-/// serialises its writers under a static mutex, which a bare `std::cerr <<` would not take.
-/// Must stay lazy: a logger keeps whatever channel the root had when it was created, so one created
-/// before `SetUp` installs the channel silently drops every message.
-static LoggerPtr testLog()
-{
-    return getLogger("FileCacheTest");
-}
-
-/// For waits which must observe the concurrent download finishing, so they cannot use the
-/// (much smaller) timeout a query would pass.
-static constexpr size_t TEST_WAIT_FOR_DOWNLOAD_TIMEOUT_MS = 60000;
-
 namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
-    extern const int CANNOT_READ_ALL_DATA;
 }
 namespace DB::FileCacheSetting
 {
@@ -117,20 +95,15 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
-    extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
-    extern const FileCacheSettingsUInt64 idle_client_check_interval_sec;
-    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
-    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
 
 void printRanges(const auto & segments)
 {
-    String out;
+    std::cerr << "\nHaving file segments: ";
     for (const auto & segment : segments)
-        out += fmt::format("\n{} (state: {})", segment->range().toString(), DB::FileSegment::stateToString(segment->state()));
-    LOG_DEBUG(testLog(), "Having file segments: {}", out);
+        std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")" << "\n";
 }
 
 [[maybe_unused]] static String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
@@ -168,15 +141,12 @@ std::string cache_base_path3 = caches_dir / "cache3" / "";
 
 static void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
-    {
-        String got;
-        for (const auto & file_segment : *file_segments)
-            got += file_segment->range().toString() + ", ";
-        String expected;
-        for (const auto & r : expected_ranges)
-            expected += r.toString() + ", ";
-        LOG_DEBUG(testLog(), "File segments: {}\nExpected: {}", got, expected);
-    }
+    std::cerr << "\nFile segments: ";
+    for (const auto & file_segment : *file_segments)
+        std::cerr << file_segment->range().toString() << ", ";
+    std::cerr << "\nExpected: ";
+    for (const auto & r : expected_ranges)
+        std::cerr << r.toString() << ", ";
 
     ASSERT_EQ(file_segments->size(), expected_ranges.size());
 
@@ -202,15 +172,12 @@ static void assertEqual(const FileSegmentsHolderPtr & file_segments, const Range
 
 static void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
-    {
-        String got;
-        for (const auto & file_segment : file_segments)
-            got += FileSegment::Range(file_segment.range_left, file_segment.range_right).toString() + ", ";
-        String expected;
-        for (const auto & r : expected_ranges)
-            expected += r.toString() + ", ";
-        LOG_DEBUG(testLog(), "File segments: {}\nExpected: {}", got, expected);
-    }
+    std::cerr << "\nFile segments: ";
+    for (const auto & file_segment : file_segments)
+        std::cerr << FileSegment::Range(file_segment.range_left, file_segment.range_right).toString() << ", ";
+    std::cerr << "\nExpected: ";
+    for (const auto & r : expected_ranges)
+        std::cerr << r.toString() << ", ";
 
     ASSERT_EQ(file_segments.size(), expected_ranges.size());
 
@@ -248,21 +215,7 @@ static void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const 
 
 static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
 {
-    /// Logged before the first assertion, so a failure still reports every segment.
-    {
-        String got;
-        for (const auto & f : file_segments)
-        {
-            auto range = FileSegment::Range(f.range_left, f.range_right);
-            bool is_protected = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Protected);
-            got += fmt::format("{} (protected: {}), ", range.toString(), is_protected);
-        }
-        String expected_str;
-        for (const auto & range : expected)
-            expected_str += range.toString() + ", ";
-        LOG_DEBUG(testLog(), "File segments: {}\nExpected: {}", got, expected_str);
-    }
-
+    std::cerr << "\nFile segments: ";
     std::vector<Range> res;
     for (const auto & f : file_segments)
     {
@@ -271,10 +224,17 @@ static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & f
         bool is_probationary = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Probationary);
         ASSERT_TRUE(is_probationary || is_protected);
 
+        std::cerr << fmt::format("{} (protected: {})", range.toString(), is_protected) <<  ", ";
+
         if ((is_protected && assert_protected) || (!is_protected && !assert_protected))
         {
             res.push_back(range);
         }
+    }
+    std::cerr << "\nExpected: ";
+    for (const auto & range : expected)
+    {
+        std::cerr << range.toString() << ", ";
     }
 
     ASSERT_EQ(res.size(), expected.size());
@@ -286,13 +246,13 @@ static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & f
 
 static void assertProtected(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
-    LOG_DEBUG(testLog(), "Assert protected");
+    std::cerr << "\nAssert protected";
     assertProtectedOrProbationary(file_segments, expected, true);
 }
 
 static void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
-    LOG_DEBUG(testLog(), "Assert probationary");
+    std::cerr << "\nAssert probationary";
     assertProtectedOrProbationary(file_segments, expected, false);
 }
 
@@ -330,7 +290,7 @@ static FileSegmentPtr get(const HolderPtr & holder, int i)
 
 static void download(FileSegmentPtr file_segment, bool complete = true)
 {
-    LOG_DEBUG(testLog(), "Downloading range {}", file_segment->range().toString());
+    std::cerr << "\nDownloading range " << file_segment->range().toString() << "\n";
 
     ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment->state(), State::DOWNLOADING);
@@ -476,6 +436,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
     const auto & user = FileCache::getCommonOrigin();
     {
+        std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
         cache.initialize();
         auto key = DB::FileCacheKey::fromPath("key1");
@@ -501,6 +462,8 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 1);
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
 
+        std::cerr << "Step 2\n";
+
         {
             /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
             auto holder = get_or_set(5, 10);
@@ -517,6 +480,8 @@ TEST_F(FileCacheTest, LRUPolicy)
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
+
+        std::cerr << "Step 3\n";
 
         /// Get [9, 9]
         {
@@ -540,6 +505,8 @@ TEST_F(FileCacheTest, LRUPolicy)
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
+
+        std::cerr << "Step 4\n";
 
         {
             auto holder = get_or_set(17, 4);
@@ -568,6 +535,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 23);
 
+        std::cerr << "Step 5\n";
         {
             auto holder = get_or_set(0, 26);
             assertEqual(holder,
@@ -610,6 +578,8 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 24);
 
+        std::cerr << "Step 6\n";
+
         {
             auto holder = get_or_set(12, 10);
             assertEqual(holder,
@@ -630,6 +600,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
 
+        std::cerr << "Step 7\n";
         {
             auto holder = get_or_set(23, 5);
             assertEqual(holder,
@@ -648,6 +619,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
 
+        std::cerr << "Step 8\n";
         {
             auto holder = get_or_set(2, 3); /// Get [2, 4]
             assertEqual(holder, { Range(2, 4) }, { State::EMPTY });
@@ -690,6 +662,8 @@ TEST_F(FileCacheTest, LRUPolicy)
         ///                   2   4       23 24  26 27  30 31
         assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
         assertEqual(cache.dumpQueue(), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
+
+        std::cerr << "Step 9\n";
 
         /// Get [2, 4]
         {
@@ -737,7 +711,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 }
                 cv.notify_one();
 
-                file_segment2->wait(file_segment2->range().right, TEST_WAIT_FOR_DOWNLOAD_TIMEOUT_MS);
+                file_segment2->wait(file_segment2->range().right);
                 ASSERT_EQ(file_segment2->getDownloadedSize(), file_segment2->range().size());
             });
 
@@ -760,6 +734,7 @@ TEST_F(FileCacheTest, LRUPolicy)
         assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29), Range(30, 31) });
         assertEqual(cache.dumpQueue(), { Range(30, 31), Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29) });
 
+        std::cerr << "Step 10\n";
         {
             /// Now let's check the similar case but getting ERROR state after segment->wait(), when
             /// state is changed not manually via segment->completeWithState(state) but from destructor of holder
@@ -801,7 +776,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 }
                 cv.notify_one();
 
-                file_segment2->wait(file_segment2->range().left, TEST_WAIT_FOR_DOWNLOAD_TIMEOUT_MS);
+                file_segment2->wait(file_segment2->range().left);
                 ASSERT_EQ(file_segment2->state(), DB::FileSegment::State::EMPTY);
                 ASSERT_EQ(file_segment2->getOrSetDownloader(), DB::FileSegment::getCallerId());
                 download(file_segment2);
@@ -822,6 +797,7 @@ TEST_F(FileCacheTest, LRUPolicy)
     ///                   ^   ^^         ^   ^^  ^  ^
     ///                   2   45       24  2627 28 29
 
+    std::cerr << "Step 11\n";
     {
         /// Test LRUCache::restore().
 
@@ -836,6 +812,7 @@ TEST_F(FileCacheTest, LRUPolicy)
             {State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED});
     }
 
+    std::cerr << "Step 12\n";
     {
         /// Test max file segment size
 
@@ -855,6 +832,7 @@ TEST_F(FileCacheTest, LRUPolicy)
             {State::EMPTY, State::EMPTY, State::EMPTY});
     }
 
+    std::cerr << "Step 13\n";
     {
         /// Test delayed cleanup
 
@@ -870,15 +848,15 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         download(cache.getOrSet(key, 0, 10, file_size, {}, 0, user));
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
-        /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`).
-        ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */10)));
+        ASSERT_TRUE(fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user)));
 
         cache.removeAllReleasable(user.user_id);
         ASSERT_EQ(cache.getUsedCacheSize(), 0);
         ASSERT_TRUE(!fs::exists(key_path));
-        ASSERT_TRUE(!fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */10)));
+        ASSERT_TRUE(!fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user)));
     }
 
+    std::cerr << "Step 14\n";
     {
         /// Test background thread delated cleanup
 
@@ -978,7 +956,7 @@ TEST_F(FileCacheTest, writeBuffer)
             auto holder2 = write_to_cache("key2", {"22", "333", "4444", "55555", "1"}, true, &reader);
             file_segment_paths.emplace_back(holder2->front().getPath());
 
-            LOG_DEBUG(testLog(), "File segments: {}", holder2->toString());
+            std::cerr << "\nFile segments: " << holder2->toString() << "\n";
 
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
             EXPECT_TRUE(reader);
@@ -1153,7 +1131,7 @@ try
 }
 catch (...)
 {
-    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
     throw;
 }
 
@@ -1209,7 +1187,7 @@ try
 }
 catch (...)
 {
-    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
     throw;
 }
 
@@ -1291,506 +1269,6 @@ TEST_F(FileCacheTest, CachedReadBuffer)
         cached_buffer->next();
         assertEqual(cache->dumpQueue(), {Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9), Range(10, 14)});
     }
-}
-
-namespace
-{
-
-/// Behaves like a remote reader (e.g. `ReadBufferFromS3`): supports right-bounded reads (so
-/// `getRemoteReadBuffer` uses it as is, without wrapping) and reports the remote object's metadata.
-/// The metadata reflects the current size of the underlying file, so a file smaller than the object
-/// size the cached buffer was created with imitates a remote object that was overwritten with
-/// shorter content between listing and reading.
-class FakeRemoteReadBuffer : public BoundedReadBuffer
-{
-public:
-    explicit FakeRemoteReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : BoundedReadBuffer(std::move(impl_)) {}
-
-    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override
-    {
-        return RemoteFileMetadata{.size = static_cast<size_t>(fs::file_size(getFileName())), .last_modification_time = 0};
-    }
-};
-
-/// A source that fails on the first read, imitating e.g. a network error in a remote reader.
-class FailingReadBuffer : public BoundedReadBuffer
-{
-public:
-    explicit FailingReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : BoundedReadBuffer(std::move(impl_)) {}
-
-    bool nextImpl() override
-    {
-        throw std::runtime_error("Simulated source read failure");
-    }
-};
-
-/// The query scope required for reading through the cache (a query id and a query context bound to
-/// the current thread).
-struct TestQueryScope
-{
-    explicit TestQueryScope(const std::string & query_id = "query_id")
-    {
-        ServerUUID::setRandomForUnitTests();
-
-        Poco::XML::DOMParser dom_parser;
-        std::string xml(R"CONFIG(<clickhouse>
-</clickhouse>)CONFIG");
-        Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
-        getMutableContext().context->setConfig(config);
-
-        query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        chassert(&DB::CurrentThread::get() == &thread_status);
-        query_scope = DB::QueryScope::create(query_context);
-    }
-
-    DB::ThreadStatus thread_status;
-    ContextMutablePtr query_context;
-    DB::QueryScope query_scope;
-};
-
-void setupCacheSettings(FileCacheSettings & settings, size_t max_file_segment_size)
-{
-    settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_file_segment_size] = max_file_segment_size;
-    settings[FileCacheSetting::max_size] = 30;
-    settings[FileCacheSetting::max_elements] = 10;
-    settings[FileCacheSetting::boundary_alignment] = 1;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
-}
-
-void writeSourceFile(const std::string & path, const std::string & data)
-{
-    WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE);
-    wb.write(data.data(), data.size());
-    wb.next();
-    wb.finalize();
-}
-
-std::string makeSourceData(size_t size)
-{
-    std::string data(size, 0);
-    for (size_t i = 0; i < size; ++i)
-        data[i] = 'a' + i % 26;
-    return data;
-}
-
-}
-
-/// The following CachedReadBuffer* tests cover the failure paths of CachedOnDiskReadBufferFromFile
-/// on which a downloader releases the file segment while unwinding. A segment's remote reader is
-/// shared between the readers of the segment and synchronized only by the downloader election, so
-/// before the failing downloader publishes `PARTIALLY_DOWNLOADED_NO_CONTINUATION` (which wakes up
-/// the waiters and makes the reader extractable) it must withdraw the reader from the segment with
-/// `resetRemoteFileReader` -- otherwise another reader could take it over and mutate it while the
-/// unwinding frame still references it. `FileSegment::setDownloadFinishedWithoutContinuation`
-/// chasserts that invariant at the publication point, so these tests fail deterministically in
-/// debug and sanitizer builds if one of those withdrawals is removed; where the withdrawal is
-/// observable in the segment's final state, the tests additionally assert it directly.
-
-/// The remote object was truncated (overwritten with shorter content) between listing and reading,
-/// detected in the middle of a plain read (`nextImpl`, the EOF branch of `readFromFileSegment`).
-TEST_F(FileCacheTest, CachedReadBufferTruncatedObject)
-{
-    TestQueryScope query_scope;
-
-    ReadSettings read_settings;
-    read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-
-    /// The object was listed with size 30, but only 24 bytes exist by the time it is read.
-    const std::string data = makeSourceData(24);
-    const size_t expected_object_size = 30;
-    std::string file_path = fs::current_path() / "test_truncated_object";
-    writeSourceFile(file_path, data);
-
-    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
-    };
-
-    DB::FileCacheSettings settings;
-    setupCacheSettings(settings, /* max_file_segment_size */ 5);
-    auto cache = std::make_shared<DB::FileCache>("truncated_object", settings);
-    cache->initialize();
-
-    auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto & user = FileCache::getCommonOrigin();
-
-    /// Pin the segment in which the truncation will be detected (EOF falls into [20, 24]),
-    /// to observe its state after the failure.
-    auto probe = cache->getOrSet(key, 20, 5, expected_object_size, {}, 0, user);
-    ASSERT_EQ(probe->size(), 1);
-
-    auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-        file_path, key, cache, user, read_buffer_creator,
-        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", expected_object_size, false, false, std::nullopt, nullptr);
-
-    WriteBufferFromOwnString result;
-    try
-    {
-        copyData(*cached_buffer, result);
-        FAIL() << "Expected CANNOT_READ_ALL_DATA";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
-    }
-
-    /// Everything before the truncation point was read and downloaded.
-    EXPECT_EQ(result.str(), data);
-    EXPECT_EQ(probe->front().getDownloadedSize(), 4);
-
-    /// The failing downloader released the segment so that the readers waiting on it can take over,
-    /// and withdrew the shared remote reader beforehand: a woken-up waiter must not be able to grab
-    /// a reader that the unwinding frame still references.
-    EXPECT_EQ(probe->front().state(), State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-    EXPECT_FALSE(probe->front().extractRemoteFileReader());
-}
-
-/// The truncation is detected while predownloading: the second reader seeks into a partially
-/// downloaded segment, becomes its downloader, has to predownload the gap [current write offset,
-/// seek offset) first, and hits EOF inside it (the seek offset lies beyond the truncated object).
-TEST_F(FileCacheTest, CachedReadBufferTruncatedObjectPredownload)
-{
-    TestQueryScope query_scope;
-
-    ReadSettings read_settings;
-    read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-
-    /// The object was listed with size 10, but only 4 bytes exist by the time it is read.
-    const std::string data = makeSourceData(4);
-    const size_t expected_object_size = 10;
-    std::string file_path = fs::current_path() / "test_truncated_object_predownload";
-    writeSourceFile(file_path, data);
-
-    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
-    };
-
-    DB::FileCacheSettings settings;
-    setupCacheSettings(settings, /* max_file_segment_size */ 10);
-    auto cache = std::make_shared<DB::FileCache>("truncated_object_predownload", settings);
-    cache->initialize();
-
-    auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto & user = FileCache::getCommonOrigin();
-
-    /// Pin the single segment [0, 9] to observe its state after the failure.
-    auto probe = cache->getOrSet(key, 0, expected_object_size, expected_object_size, {}, 0, user);
-    ASSERT_EQ(probe->size(), 1);
-
-    /// The first reader downloads bytes [0, 2) and stops mid-segment, leaving the segment
-    /// PARTIALLY_DOWNLOADED with the shared remote reader registered in it for reuse.
-    auto first_reader = std::make_shared<CachedOnDiskReadBufferFromFile>(
-        file_path, key, cache, user, read_buffer_creator,
-        read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 2, /* local_fs_buffer_size */ 2,
-        "test", expected_object_size, false, false, std::nullopt, nullptr);
-
-    ASSERT_TRUE(first_reader->next());
-    EXPECT_EQ(std::string(first_reader->buffer().begin(), first_reader->buffer().end()), data.substr(0, 2));
-    ASSERT_EQ(probe->front().state(), State::PARTIALLY_DOWNLOADED);
-    ASSERT_EQ(probe->front().getCurrentWriteOffset(), 2);
-
-    /// The second reader seeks to offset 5 and becomes the downloader, reusing the reader registered
-    /// by the first one. It predownloads bytes [2, 4) and then hits EOF with one more byte to
-    /// predownload, because the requested offset lies beyond the truncated object.
-    auto second_reader = std::make_shared<CachedOnDiskReadBufferFromFile>(
-        file_path, key, cache, user, read_buffer_creator,
-        read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 8, /* local_fs_buffer_size */ 8,
-        "test", expected_object_size, /* allow_seeks_after_first_read */ true, false, std::nullopt, nullptr);
-
-    second_reader->seek(5, SEEK_SET);
-    try
-    {
-        second_reader->next();
-        FAIL() << "Expected CANNOT_READ_ALL_DATA";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
-    }
-
-    /// The bytes that did exist were predownloaded before the failure was detected.
-    EXPECT_EQ(probe->front().getDownloadedSize(), 4);
-
-    /// As in the plain-read test: released for waiting readers, with the shared reader withdrawn.
-    EXPECT_EQ(probe->front().state(), State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-    EXPECT_FALSE(probe->front().extractRemoteFileReader());
-}
-
-/// The truncated object is detected under `readBigAt`, which has its own segment-completion cleanup
-/// (its state does not outlive the call, unlike the `nextImpl` path).
-TEST_F(FileCacheTest, CachedReadBufferTruncatedObjectReadBigAt)
-{
-    TestQueryScope query_scope;
-
-    ReadSettings read_settings;
-    read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-
-    /// The object was listed with size 10, but only 4 bytes exist by the time it is read.
-    const std::string data = makeSourceData(4);
-    const size_t expected_object_size = 10;
-    std::string file_path = fs::current_path() / "test_truncated_object_read_big_at";
-    writeSourceFile(file_path, data);
-
-    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
-    };
-
-    DB::FileCacheSettings settings;
-    setupCacheSettings(settings, /* max_file_segment_size */ 10);
-    auto cache = std::make_shared<DB::FileCache>("truncated_object_read_big_at", settings);
-    cache->initialize();
-
-    auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto & user = FileCache::getCommonOrigin();
-
-    /// Pin the single segment [0, 9] to observe its state after the failure.
-    auto probe = cache->getOrSet(key, 0, expected_object_size, expected_object_size, {}, 0, user);
-    ASSERT_EQ(probe->size(), 1);
-
-    auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-        file_path, key, cache, user, read_buffer_creator,
-        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", expected_object_size, false, false, std::nullopt, nullptr);
-
-    std::vector<char> to(expected_object_size, 0);
-    try
-    {
-        cached_buffer->readBigAt(to.data(), to.size(), 0, {});
-        FAIL() << "Expected CANNOT_READ_ALL_DATA";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA);
-    }
-
-    /// Everything before the truncation point was read and downloaded.
-    EXPECT_EQ(std::string(to.data(), data.size()), data);
-    EXPECT_EQ(probe->front().getDownloadedSize(), 4);
-
-    /// As in the plain-read test: released for waiting readers, with the shared reader withdrawn.
-    EXPECT_EQ(probe->front().state(), State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-    EXPECT_FALSE(probe->front().extractRemoteFileReader());
-}
-
-/// The source reader of a `readBigAt` call fails mid-read. The unwinding `readBigAt` releases
-/// downloader ownership in its cleanup, and must withdraw the shared remote reader from the segment
-/// while doing so: the reader still borrows the caller's `to` buffer (the normal un-borrowing is
-/// skipped on the exception path precisely because the reader may already be shared), so a new
-/// downloader must get a fresh reader instead of one pointing into the unwound caller's memory.
-TEST_F(FileCacheTest, CachedReadBufferReadBigAtSourceFailure)
-{
-    TestQueryScope query_scope;
-
-    ReadSettings read_settings;
-    read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-
-    const std::string data = makeSourceData(10);
-    std::string file_path = fs::current_path() / "test_read_big_at_source_failure";
-    writeSourceFile(file_path, data);
-
-    auto failing_read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<FailingReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
-    };
-
-    DB::FileCacheSettings settings;
-    setupCacheSettings(settings, /* max_file_segment_size */ 10);
-    auto cache = std::make_shared<DB::FileCache>("read_big_at_source_failure", settings);
-    cache->initialize();
-
-    auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto & user = FileCache::getCommonOrigin();
-
-    /// Pin the single segment [0, 9] to observe its state after the failure.
-    auto probe = cache->getOrSet(key, 0, data.size(), data.size(), {}, 0, user);
-    ASSERT_EQ(probe->size(), 1);
-
-    auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-        file_path, key, cache, user, failing_read_buffer_creator,
-        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", data.size(), false, false, std::nullopt, nullptr);
-
-    std::vector<char> to(data.size(), 0);
-    EXPECT_THROW(cached_buffer->readBigAt(to.data(), to.size(), 0, {}), std::runtime_error);
-
-    /// Become the next downloader of the segment, as a reader waiting on it would.
-    auto & file_segment = probe->front();
-    ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
-    EXPECT_FALSE(file_segment.getRemoteFileReader());
-    file_segment.completePartAndResetDownloader();
-
-    /// The segment stays usable: a reader with a healthy source reads it end to end.
-    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
-    };
-    auto recovered_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-        file_path, key, cache, user, read_buffer_creator,
-        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", data.size(), false, false, std::nullopt, nullptr);
-    WriteBufferFromOwnString result;
-    copyData(*recovered_buffer, result);
-    EXPECT_EQ(result.str(), data);
-}
-
-/// The same source failure as above, through the `nextImpl` path.
-TEST_F(FileCacheTest, CachedReadBufferSourceFailure)
-{
-    TestQueryScope query_scope;
-
-    ReadSettings read_settings;
-    read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-
-    const std::string data = makeSourceData(10);
-    std::string file_path = fs::current_path() / "test_source_failure";
-    writeSourceFile(file_path, data);
-
-    auto failing_read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<FailingReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
-    };
-
-    DB::FileCacheSettings settings;
-    setupCacheSettings(settings, /* max_file_segment_size */ 10);
-    auto cache = std::make_shared<DB::FileCache>("source_failure", settings);
-    cache->initialize();
-
-    auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto & user = FileCache::getCommonOrigin();
-
-    /// Pin the single segment [0, 9] to observe its state after the failure.
-    auto probe = cache->getOrSet(key, 0, data.size(), data.size(), {}, 0, user);
-    ASSERT_EQ(probe->size(), 1);
-
-    auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-        file_path, key, cache, user, failing_read_buffer_creator,
-        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", data.size(), false, false, std::nullopt, nullptr);
-
-    EXPECT_THROW(cached_buffer->next(), std::runtime_error);
-
-    /// Become the next downloader of the segment, as a reader waiting on it would; the failed
-    /// downloader must have withdrawn the shared remote reader on its unwind path.
-    auto & file_segment = probe->front();
-    ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
-    EXPECT_FALSE(file_segment.getRemoteFileReader());
-    file_segment.completePartAndResetDownloader();
-
-    /// The segment stays usable: a reader with a healthy source reads it end to end.
-    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
-    };
-    auto recovered_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-        file_path, key, cache, user, read_buffer_creator,
-        read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", data.size(), false, false, std::nullopt, nullptr);
-    WriteBufferFromOwnString result;
-    copyData(*recovered_buffer, result);
-    EXPECT_EQ(result.str(), data);
-}
-
-/// A cached read can be issued from a destructor while an unrelated exception is being unwound --
-/// e.g. `MergeTreeData::Transaction` rollback reading version metadata from an `s3` disk. The read
-/// must succeed: the exception detection in the cleanups of `nextImplStep` and `readBigAt` compares
-/// `std::uncaught_exceptions` against the count captured on entry, and a plain `> 0` check would
-/// treat every successfully completed step as failed and drop the read state mid-read (an earlier
-/// revision of the ownership-handoff fix did exactly that and failed with a null dereference).
-TEST_F(FileCacheTest, CachedReadBufferReadDuringExceptionUnwinding)
-{
-    TestQueryScope query_scope;
-
-    ReadSettings read_settings;
-    read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-
-    const std::string data = makeSourceData(30);
-    std::string file_path = fs::current_path() / "test_read_during_unwinding";
-    writeSourceFile(file_path, data);
-
-    auto read_buffer_creator = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        return std::make_unique<FakeRemoteReadBuffer>(createReadBufferFromFileBase(file_path, read_settings, std::nullopt, std::nullopt));
-    };
-
-    DB::FileCacheSettings settings;
-    setupCacheSettings(settings, /* max_file_segment_size */ 5);
-    auto cache = std::make_shared<DB::FileCache>("read_during_unwinding", settings);
-    cache->initialize();
-
-    auto key = DB::FileCacheKey::fromPath(file_path);
-    const auto & user = FileCache::getCommonOrigin();
-
-    auto make_cached_buffer = [&]()
-    {
-        return std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file_path, key, cache, user, read_buffer_creator,
-            read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-            "test", data.size(), false, false, std::nullopt, nullptr);
-    };
-
-    std::string remote_read_result;
-    std::string cached_read_result;
-    std::string read_big_at_result;
-    std::string error;
-    bool outer_exception_caught = false;
-
-    try
-    {
-        /// The guard's destructor runs the reads while the exception below is being unwound.
-        SCOPE_EXIT({
-            try
-            {
-                {
-                    /// The data is not cached yet: REMOTE_FS_READ_AND_PUT_IN_CACHE.
-                    auto cached_buffer = make_cached_buffer();
-                    WriteBufferFromOwnString result;
-                    copyData(*cached_buffer, result);
-                    remote_read_result = result.str();
-                }
-                {
-                    /// Now the data is cached: CACHED.
-                    auto cached_buffer = make_cached_buffer();
-                    WriteBufferFromOwnString result;
-                    copyData(*cached_buffer, result);
-                    cached_read_result = result.str();
-                }
-                {
-                    std::vector<char> to(data.size(), 0);
-                    const size_t size = make_cached_buffer()->readBigAt(to.data(), to.size(), 0, {});
-                    read_big_at_result = std::string(to.data(), size);
-                }
-            }
-            catch (...)
-            {
-                error = getCurrentExceptionMessage(true);
-            }
-        });
-        throw std::runtime_error("The exception being unwound while the cached reads run");
-    }
-    catch (const std::runtime_error &)
-    {
-        outer_exception_caught = true;
-    }
-
-    EXPECT_TRUE(outer_exception_caught);
-    EXPECT_EQ(error, "");
-    EXPECT_EQ(remote_read_result, data);
-    EXPECT_EQ(cached_read_result, data);
-    EXPECT_EQ(read_big_at_result, data);
 }
 
 TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
@@ -1886,7 +1364,7 @@ try
 
         auto add_range = [&](size_t offset, size_t size)
         {
-            LOG_DEBUG(testLog(), "Add [{}, {}]", offset, offset + size - 1);
+            std::cerr << "Add [" << offset << ", " << offset + size - 1 << "]" << std::endl;
 
             auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
             assertEqual(holder, { Range(offset, offset + size - 1) }, { State::EMPTY });
@@ -2058,7 +1536,7 @@ try
 }
 catch (...)
 {
-    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
+    std::cerr << getCurrentExceptionMessage(true) << "\n";
     throw;
 }
 
@@ -2155,151 +1633,6 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
     ASSERT_LE(cache->getFileSegmentsNum(), 6);
 }
 
-TEST_F(FileCacheTest, DynamicResizeConcurrentWithReservations)
-{
-    /// Stress dynamic resize against concurrent reservations: workers keep adding new cache
-    /// elements while a resizer keeps shrinking/growing the cache via `applySettingsIfPossible`.
-    /// Assert no thread threw, `dumpQueue` does not throw, and a final shrink enforces the new limit.
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-
-    const std::string cache_path = caches_dir / "cache_dynamic_resize_concurrent" / "";
-    if (fs::exists(cache_path))
-        fs::remove_all(cache_path);
-    fs::create_directories(cache_path);
-
-    constexpr size_t max_size_large = 4096;
-    constexpr size_t max_size_small = 512;
-    constexpr size_t max_elements = 256;
-
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_path;
-    settings[FileCacheSetting::max_size] = max_size_large;
-    settings[FileCacheSetting::max_elements] = max_elements;
-    settings[FileCacheSetting::boundary_alignment] = 1;
-    /// SLRU exercises both sub-queues during resize eviction.
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
-    settings[FileCacheSetting::slru_size_ratio] = 0.5;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
-
-    auto cache = std::make_shared<DB::FileCache>("dynamic_resize_concurrent", settings);
-    cache->initialize();
-
-    const auto & user = FileCache::getCommonOrigin();
-    const size_t file_size = -1;
-
-    std::atomic<size_t> exceptions_caught{0};
-    std::atomic<bool> stop_resizer{false};
-    std::mutex first_exception_mutex;
-    std::string first_exception_message;
-    auto record_exception = [&]
-    {
-        exceptions_caught.fetch_add(1, std::memory_order_relaxed);
-        std::lock_guard lock(first_exception_mutex);
-        if (first_exception_message.empty())
-            first_exception_message = getCurrentExceptionMessage(true);
-    };
-
-    constexpr size_t num_reservers = 8;
-    constexpr size_t iterations_per_reserver = 2000;
-
-    /// Each reserver uses its own key, so the contention is on the global cache
-    /// budget and eviction (racing the resizer), not on downloading the same segment.
-    auto reserver = [&](size_t thread_index, UInt64 seed)
-    {
-        DB::ThreadStatus reserver_thread_status;
-        pcg64 local_rng(seed);
-        const auto key = DB::FileCacheKey::fromPath("dyn_resize_key_" + std::to_string(thread_index));
-        for (size_t iter = 0; iter < iterations_per_reserver; ++iter)
-        {
-            try
-            {
-                const size_t offset = (local_rng() % 256) * 16;
-                const size_t size = 1 + (local_rng() % 32);
-                auto holder = cache->getOrSet(key, offset, size, file_size, {}, 0, user);
-                for (auto & segment : *holder)
-                {
-                    if (segment->state() == State::EMPTY
-                        && segment->getOrSetDownloader() == FileSegment::getCallerId())
-                    {
-                        std::string failure_reason;
-                        if (segment->reserve(segment->range().size(), 1000, failure_reason))
-                            download(cache_path, *segment);
-                        FileSegment::complete(
-                            FileSegmentPtr(segment),
-                            /*allow_background_download=*/false,
-                            /*force_shrink_to_downloaded_size=*/false);
-                    }
-                }
-            }
-            catch (...)
-            {
-                /// Ok: the exception is saved and asserted on after all threads join.
-                record_exception();
-            }
-        }
-    };
-
-    /// `resizer_actual_settings` is the authoritative copy: `applySettingsIfPossible` throws unless
-    /// the current limits passed in match the cache's real limits, and only the resizer changes them.
-    DB::FileCacheSettings resizer_actual_settings = settings;
-    auto resizer = [&]
-    {
-        DB::ThreadStatus resizer_thread_status;
-        size_t toggle = 0;
-        while (!stop_resizer.load(std::memory_order_relaxed))
-        {
-            try
-            {
-                DB::FileCacheSettings new_settings = resizer_actual_settings;
-                new_settings[FileCacheSetting::max_size] = (toggle++ % 2 == 0) ? max_size_small : max_size_large;
-                cache->applySettingsIfPossible(new_settings, resizer_actual_settings);
-            }
-            catch (...)
-            {
-                /// Ok: the exception is saved and asserted on after all threads join.
-                record_exception();
-            }
-        }
-    };
-
-    std::vector<std::thread> threads;
-    threads.reserve(num_reservers);
-    for (size_t i = 0; i < num_reservers; ++i)
-        threads.emplace_back(reserver, i, rng());
-    std::thread resizer_thread(resizer);
-
-    for (auto & t : threads)
-        t.join();
-    stop_resizer.store(true, std::memory_order_relaxed);
-    resizer_thread.join();
-
-    /// A final deterministic shrink (no concurrency) must bring usage within the smaller limit -
-    /// resize must still evict correctly after the storm. Reuses `resizer_actual_settings`.
-    {
-        DB::FileCacheSettings final_settings = resizer_actual_settings;
-        final_settings[FileCacheSetting::max_size] = max_size_small;
-        ASSERT_NO_THROW(cache->applySettingsIfPossible(final_settings, resizer_actual_settings));
-        ASSERT_EQ(resizer_actual_settings[FileCacheSetting::max_size].value, max_size_small);
-    }
-
-    ASSERT_LE(cache->getUsedCacheSize(), static_cast<size_t>(max_size_small));
-    ASSERT_LE(cache->getFileSegmentsNum(), static_cast<size_t>(max_elements));
-    ASSERT_NO_THROW(cache->dumpQueue());
-
-    if (exceptions_caught.load() != 0u)
-        std::cerr << "First exception caught (of " << exceptions_caught.load() << "): "
-                  << first_exception_message << std::endl;
-    ASSERT_EQ(exceptions_caught.load(), 0u);
-
-    /// Destroy the cache before removing the directory: `~FileCache` runs `assertCacheCorrectness`
-    /// (debug/sanitizer builds), which stats the cached files.
-    cache.reset();
-    if (fs::exists(cache_path))
-        fs::remove_all(cache_path);
-}
-
 TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 {
     /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/104307
@@ -2344,22 +1677,23 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
 
     /// Add 3 entries of 5 bytes each (15 bytes total) directly to the protected queue,
     /// leaving probationary empty. This is the precondition that used to trigger the
     /// chassert in `collectEvictionInfo`.
     {
+        auto write_lock = cache_guard.writeLock();
         auto state_lock = state_guard.lock();
-        auto lock = priority.getPriorityGuardForTests().writeLock();
         priority.addForRestore(key_metadata, /* offset */0, /* size */5,
                                IFileCachePriority::QueueEntryType::SLRU_Protected,
-                               lock, &state_lock);
+                               write_lock, &state_lock);
         priority.addForRestore(key_metadata, /* offset */5, /* size */5,
                                IFileCachePriority::QueueEntryType::SLRU_Protected,
-                               lock, &state_lock);
+                               write_lock, &state_lock);
         priority.addForRestore(key_metadata, /* offset */10, /* size */5,
                                IFileCachePriority::QueueEntryType::SLRU_Protected,
-                               lock, &state_lock);
+                               write_lock, &state_lock);
     }
 
     /// Verify the precondition: 3 entries / 15 bytes total, all in protected,
@@ -2474,14 +1808,16 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     auto origin = FileCache::getCommonOrigin();
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
         IFileCachePriority::IteratorPtr it;
         {
+            auto write_lock = cache_guard.writeLock();
             auto state_lock = state_guard.lock();
-            it = priority.add(key_metadata, offset, size, &state_lock);
+            it = priority.add(key_metadata, offset, size, write_lock, &state_lock);
         }
         auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
 
@@ -2507,41 +1843,43 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     auto it2 = add_file_segment(10, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 2); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
 
     FileCacheReserveStat stat;
-    auto evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+    auto evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
 
     auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
     eviction_info.reset();
 
     ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 2); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
 
     auto it3 = add_file_segment(20, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 3); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// queue.end()
 
-    evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
+    evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// queue.begin()
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 
     {
         evicted->evict();
         evicted->afterEvictState(state_guard.lock());
-        evicted->afterEvictWrite();
+        evicted->afterEvictWrite(cache_guard.writeLock());
+        IFileCachePriority::removeEntries(invalidated_entries, cache_guard.writeLock());
         evicted.reset();
     }
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// still queue.begin(), but it2
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// still queue.begin(), but it2
 
     auto get_file_segment = [&](size_t offset)
     {
@@ -2557,22 +1895,22 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     auto it4 = add_file_segment(30, 10);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0);
+    ASSERT_EQ(priority.getEvictionPosCount(), 0);
 
-    evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
+    evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 3); /// 3 and not 2, because 1 entry is invalidated.
+    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// 3 and not 2, because 1 entry is invalidated.
 
     fs2.reset();
     fs3.reset();
 
-    priority.resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
-    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// queue.begin()
+    priority.resetEvictionPos();
+    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 }
 
 TEST_F(FileCacheTest, MoveEvictionPos)
@@ -2592,11 +1930,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
-
-    /// Both queues must share one structural guard:
-    /// `LRUFileCachePriority::move` splices both lists under a single write lock.
-    auto & cache_guard = src.getPriorityGuard();
-    dst.setPriorityGuard(cache_guard);
+    CachePriorityGuard cache_guard;
 
     using Entry = IFileCachePriority::Entry;
     auto add_to_src = [&](size_t offset, size_t size)
@@ -2611,12 +1945,12 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     auto it_middle = add_to_src(10, 10);
     add_to_src(20, 10);
 
-    /// Point `src`'s eviction position at the middle entry - the one we are about to move out.
+    /// Point src's eviction position at the middle entry — the one we are about to move out.
     {
         auto read_lock = cache_guard.readLock();
-        src.setEvictionPos(IFileCachePriority::EvictionCursor::Reserve, it_middle.get(), read_lock);
+        src.setEvictionPos(it_middle.get(), read_lock);
     }
-    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Reserve, cache_guard.readLock()))->offset, 10u);
+    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 10u);
 
     /// Move the middle entry out of `src` into `dst` (as an SLRU upgrade/downgrade would).
     /// `move` is called on the destination queue; `src` is the source.
@@ -2629,7 +1963,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     /// The moved node was spliced out of src, so src's eviction position must advance to the
     /// next surviving src entry (offset 20). Before the fix it kept pointing at the moved node,
     /// which now lives in `dst` (offset 10) — a dangling cross-queue eviction position.
-    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Reserve, cache_guard.readLock()))->offset, 20u);
+    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 20u);
 }
 
 TEST_F(FileCacheTest, LoadMetadataParallelism)
@@ -2889,9 +2223,6 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
 
         FileSegment::complete(FileSegmentPtr(seg), false, false);
         ASSERT_EQ(seg->state(), State::PARTIALLY_DOWNLOADED);
-        /// The holder is still alive, so the segment is not shrunk yet and keeps its full
-        /// reservation; the reserve-ahead surplus (8 reserved vs 3 downloaded) is reclaimed
-        /// once the holder below is destroyed and the last-holder completion shrinks it.
         ASSERT_EQ(seg->getReservedSize(), 8u);
         ASSERT_EQ(seg->getDownloadedSize(), 3u);
     }
@@ -2904,9 +2235,8 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(seg->state(), State::DOWNLOADED);
     }
 
-    /// seg1's surplus was reclaimed when its holder was released (3 reserved) and seg2 is
-    /// fully downloaded (8 reserved).
-    ASSERT_EQ(cache->getUsedCacheSize(), 11u);
+    /// Both priority entries account for reserved size.
+    ASSERT_EQ(cache->getUsedCacheSize(), 16u);
     ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
     /// Force the failed-eviction restore loop to run.
@@ -2916,7 +2246,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
             DB::FailPointInjection::disableFailPoint("file_cache_dynamic_resize_fail_to_evict");
         });
 
-        /// Trigger resize. The restore path must keep the total queue size at 11.
+        /// Trigger resize. The restore path must keep total queue size at 16.
         DB::FileCacheSettings new_settings = settings;
         new_settings[FileCacheSetting::max_size] = 4;
         DB::FileCacheSettings actual_settings = settings;
@@ -2927,7 +2257,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 16u);
 
         /// Release-visible check for restored reserved-size accounting.
-        ASSERT_EQ(cache->getUsedCacheSize(), 11u);
+        ASSERT_EQ(cache->getUsedCacheSize(), 16u);
         ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
         /// All segments must still be reachable from the priority queue.
@@ -2948,338 +2278,6 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_NO_THROW(cache->applySettingsIfPossible(second_new_settings, second_actual));
         ASSERT_LE(cache->getUsedCacheSize(), 4u);
     }
-}
-
-TEST_F(FileCacheTest, EvictionMetricsTryIncreasePriority)
-{
-    /// Regression: when tryIncreasePriority promotes a probationary entry and the
-    /// protected queue is full, some protected entries are downgraded to probationary.
-    /// If probationary is also full at that point (the promoted entry still holds its
-    /// slot with a Moving flag), real probationary entries are evicted to make room.
-    /// Those evictions must fire onSegmentEvicted and advance the metric counter.
-
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-
-    Poco::XML::DOMParser dom_parser;
-    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
-    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
-    auto query_context = DB::Context::createCopy(getContext().context);
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("eviction_metrics_promotion_test");
-    auto query_scope_holder = DB::QueryScope::create(query_context);
-
-    auto sum_dim = [](const std::string & name)
-    {
-        double total = 0;
-        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
-        {
-            if (f.getName() != name) return;
-            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m) { total += m.get(); });
-        });
-        return total;
-    };
-
-    /// SLRU: probationary = 10 B, protected = 10 B; five 5-byte segments fit exactly.
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_size] = 20;
-    settings[FileCacheSetting::max_elements] = 10;
-    settings[FileCacheSetting::max_file_segment_size] = 5;
-    settings[FileCacheSetting::boundary_alignment] = 5;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
-    settings[FileCacheSetting::slru_size_ratio] = 0.5;
-    settings[FileCacheSetting::expose_prometheus_eviction_metrics] = true;
-
-    auto cache = DB::FileCache("eviction_metrics_promotion", settings);
-    cache.initialize();
-    const auto & user = FileCache::getCommonOrigin();
-    auto key = FileCacheKey::fromPath("eviction_metrics_promotion_key");
-
-    /// A and B go to probationary, get promoted to protected, then their holders
-    /// are released so they become releasable eviction/downgrade candidates.
-    {
-        auto holderA = cache.getOrSet(key, 0, 5, /*file_size=*/20, {}, 0, user);
-        ASSERT_EQ(holderA->size(), 1u);
-        download(*holderA->begin());
-
-        auto holderB = cache.getOrSet(key, 5, 5, /*file_size=*/20, {}, 0, user);
-        ASSERT_EQ(holderB->size(), 1u);
-        download(*holderB->begin());
-
-        increasePriority(holderA);
-        increasePriority(holderB);
-    }
-    /// Protected: {A=5, B=5} = 10/10 full. Probationary: empty.
-    /// A and B are releasable: no live holders, so they can be downgraded.
-
-    /// C and D fill probationary. D's holder is released so it is evictable.
-    auto holderC = cache.getOrSet(key, 10, 5, /*file_size=*/20, {}, 0, user);
-    ASSERT_EQ(holderC->size(), 1u);
-    download(*holderC->begin());
-
-    {
-        auto holderD = cache.getOrSet(key, 15, 5, /*file_size=*/20, {}, 0, user);
-        ASSERT_EQ(holderD->size(), 1u);
-        download(*holderD->begin());
-    }
-    /// Protected: {A, B} = 10/10. Probationary: {C, D} = 10/10.
-    /// D is releasable: no live holder.
-
-    const auto evictions_before = sum_dim("filesystem_cache_evictions_total");
-
-    /// Promote C: protected full → downgrade A (releasable) → probationary has no
-    /// room (C holds its slot with a Moving flag) → D (releasable) is evicted.
-    increasePriority(holderC);
-
-    EXPECT_GT(sum_dim("filesystem_cache_evictions_total") - evictions_before, 0.0)
-        << "Promotion-induced probationary eviction must be counted in the metric";
-}
-
-TEST_F(FileCacheTest, ExposeEvictionMetrics)
-{
-    /// Verify that `filesystem_cache_*` metric families update iff the
-    /// `expose_prometheus_eviction_metrics` / `_per_user`
-    /// flags are set on the cache.
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-
-    Poco::XML::DOMParser dom_parser;
-    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
-    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
-    auto query_context = DB::Context::createCopy(getContext().context);
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("eviction_metrics_test");
-    auto query_scope_holder = DB::QueryScope::create(query_context);
-
-    auto sum_dim = [](const std::string & name)
-    {
-        double total = 0;
-        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
-        {
-            if (f.getName() != name) return;
-            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m) { total += m.get(); });
-        });
-        return total;
-    };
-    auto sum_hist = [](const std::string & name)
-    {
-        /// Each observation increments exactly one bucket (or the +Inf overflow),
-        /// so summing every bucket counter gives the total observation count.
-        uint64_t total = 0;
-        ::HistogramMetrics::Factory::instance().forEachFamily([&](::HistogramMetrics::MetricFamily & f)
-        {
-            if (f.getName() != name) return;
-            const auto & buckets = f.getBuckets();
-            f.forEachMetric([&](const ::HistogramMetrics::LabelValues &, const ::HistogramMetrics::Metric & m)
-            {
-                for (size_t i = 0; i <= buckets.size(); ++i)
-                    total += m.getCounter(i);
-            });
-        });
-        return total;
-    };
-    auto dim_value_for_labels = [](const std::string & name, ::DimensionalMetrics::Labels expected_labels, ::DimensionalMetrics::LabelValues expected_label_values)
-    {
-        bool found_family = false;
-        bool found_metric = false;
-        double value = 0;
-        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
-        {
-            if (f.getName() != name)
-                return;
-
-            found_family = true;
-            EXPECT_EQ(f.getLabels(), expected_labels);
-            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues & label_values, const ::DimensionalMetrics::Metric & m)
-            {
-                if (label_values == expected_label_values)
-                {
-                    found_metric = true;
-                    value += m.get();
-                }
-            });
-        });
-
-        EXPECT_TRUE(found_family) << "Missing dimensional metric family " << name;
-        EXPECT_TRUE(found_metric) << "Missing dimensional metric row " << name;
-        return value;
-    };
-    auto hist_observations_for_labels = [](const std::string & name, ::HistogramMetrics::Labels expected_labels, ::HistogramMetrics::LabelValues expected_label_values)
-    {
-        bool found_family = false;
-        bool found_metric = false;
-        uint64_t total = 0;
-        ::HistogramMetrics::Factory::instance().forEachFamily([&](::HistogramMetrics::MetricFamily & f)
-        {
-            if (f.getName() != name)
-                return;
-
-            found_family = true;
-            EXPECT_EQ(f.getLabels(), expected_labels);
-            const auto & buckets = f.getBuckets();
-            f.forEachMetric([&](const ::HistogramMetrics::LabelValues & label_values, const ::HistogramMetrics::Metric & m)
-            {
-                if (label_values == expected_label_values)
-                {
-                    found_metric = true;
-                    for (size_t i = 0; i <= buckets.size(); ++i)
-                        total += m.getCounter(i);
-                }
-            });
-        });
-
-        EXPECT_TRUE(found_family) << "Missing histogram metric family " << name;
-        EXPECT_TRUE(found_metric) << "Missing histogram metric row " << name;
-        return total;
-    };
-
-    const FileCacheOriginInfo origin("eviction_metrics_test_user", 0);
-    const auto & user_id = origin.user_id;
-
-    auto run_workload = [&](const std::string & cache_name, bool expose, bool per_user)
-    {
-        DB::FileCacheSettings settings;
-        settings[FileCacheSetting::path] = cache_base_path;
-        settings[FileCacheSetting::max_size] = 40;
-        settings[FileCacheSetting::max_elements] = 6;
-        settings[FileCacheSetting::boundary_alignment] = 1;
-        settings[FileCacheSetting::load_metadata_asynchronously] = false;
-        settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
-        settings[FileCacheSetting::slru_size_ratio] = 0.5;
-        settings[FileCacheSetting::expose_prometheus_eviction_metrics] = expose;
-        settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user] = per_user;
-
-        auto cache = DB::FileCache(cache_name, settings);
-        cache.initialize();
-        auto key = FileCacheKey::fromPath(cache_name);
-        /// max_size=40, max_elements=6; 8 segments of size 5 forces evictions.
-        for (size_t i = 0; i < 8; ++i)
-        {
-            auto holder = cache.getOrSet(key, i * 10, 5, static_cast<size_t>(-1), {}, 0, origin);
-            ASSERT_EQ(holder->size(), 1u);
-            download(*holder->begin());
-        }
-    };
-
-    const std::string aggregate_cache_name = "cache_with_eviction_metrics";
-    const std::string per_user_cache_name = "cache_with_eviction_metrics_per_user";
-
-    const auto evictions_off_before = sum_dim("filesystem_cache_evictions_total");
-    const auto by_user_off_before = sum_dim("filesystem_cache_evictions_by_user_total");
-    run_workload("eviction_metrics_off", /*expose=*/false, /*per_user=*/false);
-    EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), evictions_off_before);
-    EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_user_total"), by_user_off_before);
-
-    const auto evictions_before = sum_dim("filesystem_cache_evictions_total");
-    const auto bytes_before = sum_dim("filesystem_cache_evicted_bytes_total");
-    const auto hits_before = sum_hist("filesystem_cache_evicted_segment_hits");
-    const auto size_before = sum_hist("filesystem_cache_evicted_segment_size_bytes");
-    const auto by_user_before = sum_dim("filesystem_cache_evictions_by_user_total");
-    run_workload(aggregate_cache_name, /*expose=*/true, /*per_user=*/false);
-    const auto evictions_delta = sum_dim("filesystem_cache_evictions_total") - evictions_before;
-    EXPECT_GT(evictions_delta, 0.0);
-    EXPECT_GT(sum_dim("filesystem_cache_evicted_bytes_total") - bytes_before, 0.0);
-    EXPECT_EQ(static_cast<uint64_t>(evictions_delta), sum_hist("filesystem_cache_evicted_segment_hits") - hits_before);
-    EXPECT_EQ(static_cast<uint64_t>(evictions_delta), sum_hist("filesystem_cache_evicted_segment_size_bytes") - size_before);
-    EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_user_total"), by_user_before);
-    EXPECT_GT(dim_value_for_labels("filesystem_cache_evictions_total", {"cache_name"}, {aggregate_cache_name}), 0.0);
-    EXPECT_GT(dim_value_for_labels("filesystem_cache_evicted_bytes_total", {"cache_name"}, {aggregate_cache_name}), 0.0);
-    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_hits", {"cache_name"}, {aggregate_cache_name}), 0u);
-    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_size_bytes", {"cache_name"}, {aggregate_cache_name}), 0u);
-
-    const auto by_user_pre = sum_dim("filesystem_cache_evictions_by_user_total");
-    run_workload(per_user_cache_name, /*expose=*/true, /*per_user=*/true);
-    EXPECT_GT(sum_dim("filesystem_cache_evictions_by_user_total") - by_user_pre, 0.0);
-    EXPECT_GT(dim_value_for_labels("filesystem_cache_evictions_by_user_total", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0.0);
-    EXPECT_GT(dim_value_for_labels("filesystem_cache_evicted_bytes_by_user_total", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0.0);
-    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_hits_by_user", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0u);
-    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_size_bytes_by_user", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0u);
-}
-
-TEST_F(FileCacheTest, EvictionMetricsRuntimeToggle)
-{
-    /// The eviction-metric settings are advertised as runtime-reloadable
-    /// (SYSTEM RELOAD CONFIG -> applySettingsIfPossible). Exercise the full cycle
-    /// on a live cache: disabled -> no delta, enable -> metric advances,
-    /// disable again -> no further delta. Guards against a regression where
-    /// applySettingsIfPossible stops propagating these flags to the atomics.
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-
-    Poco::XML::DOMParser dom_parser;
-    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
-    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
-    auto query_context = DB::Context::createCopy(getContext().context);
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("eviction_metrics_runtime_toggle_test");
-    auto query_scope_holder = DB::QueryScope::create(query_context);
-
-    auto sum_dim = [](const std::string & name)
-    {
-        double total = 0;
-        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
-        {
-            if (f.getName() != name) return;
-            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m) { total += m.get(); });
-        });
-        return total;
-    };
-
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_size] = 40;
-    settings[FileCacheSetting::max_elements] = 6;
-    settings[FileCacheSetting::boundary_alignment] = 1;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
-    settings[FileCacheSetting::slru_size_ratio] = 0.5;
-    settings[FileCacheSetting::expose_prometheus_eviction_metrics] = false;
-
-    auto cache = DB::FileCache("eviction_metrics_runtime_toggle", settings);
-    cache.initialize();
-
-    /// max_size=40, max_elements=6; 8 segments of size 5 force evictions.
-    /// A fresh key per round avoids hits/promotions, so each round evicts anew.
-    size_t round = 0;
-    auto force_evictions = [&]
-    {
-        auto key = FileCacheKey::fromPath("toggle_key_" + std::to_string(round++));
-        for (size_t i = 0; i < 8; ++i)
-        {
-            auto holder = cache.getOrSet(key, i * 10, 5, static_cast<size_t>(-1), {}, 0, FileCache::getCommonOrigin());
-            ASSERT_EQ(holder->size(), 1u);
-            download(*holder->begin());
-        }
-    };
-
-    /// Flip the flag through the reload path. `current` tracks applied state,
-    /// as applySettingsIfPossible updates its second (actual) argument in place.
-    DB::FileCacheSettings current = settings;
-    auto reload_expose = [&](bool value)
-    {
-        DB::FileCacheSettings new_settings = current;
-        new_settings[FileCacheSetting::expose_prometheus_eviction_metrics] = value;
-        ASSERT_NO_THROW(cache.applySettingsIfPossible(new_settings, current));
-    };
-
-    /// 1) Disabled: evictions happen, but the metric must not move.
-    const auto before_disabled = sum_dim("filesystem_cache_evictions_total");
-    force_evictions();
-    EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), before_disabled);
-
-    /// 2) Enable at runtime: the metric must now advance.
-    reload_expose(true);
-    const auto before_enabled = sum_dim("filesystem_cache_evictions_total");
-    force_evictions();
-    EXPECT_GT(sum_dim("filesystem_cache_evictions_total") - before_enabled, 0.0);
-
-    /// 3) Disable again at runtime: the metric must stop advancing.
-    reload_expose(false);
-    const auto before_redisabled = sum_dim("filesystem_cache_evictions_total");
-    force_evictions();
-    EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), before_redisabled);
 }
 
 namespace
@@ -3320,15 +2318,16 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
 
     /// One small 5-byte entry in each sub-queue, fitting comfortably under old and new limits.
     {
+        auto write_lock = cache_guard.writeLock();
         auto state_lock = state_guard.lock();
-        auto lock = priority.getPriorityGuardForTests().writeLock();
         priority.addForRestore(key_metadata, 0, 5,
-            IFileCachePriority::QueueEntryType::SLRU_Protected, lock, &state_lock);
+            IFileCachePriority::QueueEntryType::SLRU_Protected, write_lock, &state_lock);
         priority.addForRestore(key_metadata, 100, 5,
-            IFileCachePriority::QueueEntryType::SLRU_Probationary, lock, &state_lock);
+            IFileCachePriority::QueueEntryType::SLRU_Probationary, write_lock, &state_lock);
     }
     ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 5);
     ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 5);
@@ -3348,57 +2347,6 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
     /// With the bug the protected limit was already shrunk to 10; with the fix it is
     /// rolled back to the original 15.
     ASSERT_EQ(priority.getProtectedSizeLimit(state_guard.lock()), 15);
-}
-
-TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
-{
-    /// An entry is counted as one element while its size is > 0 (`incrementSize`
-    /// adds an element on a 0 -> size transition). `decrementSize` used to subtract
-    /// only the size, so emptying an entry left it counted as an element; a later
-    /// `remove` then saw size 0, assumed the element was already accounted, and
-    /// leaked the count. `decrementSize` must drop the element when it empties the
-    /// entry. No production path decrements an entry to exactly 0 today (the shrink
-    /// path keeps at least `downloaded_size > 0`), so this exercises the invariant
-    /// directly.
-    ServerUUID::setRandomForUnitTests();
-
-    LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10, "lru_decrement_to_zero_test");
-
-    const std::string cache_path = caches_dir / "test_lru_decrement_to_zero";
-    fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path,
-                                 /* background_download_queue_size_limit */0,
-                                 /* background_download_threads */0,
-                                 /* write_cache_per_user_directory */false);
-
-    const auto key = DB::FileCacheKey::fromPath("lru_decrement_to_zero_key");
-    const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
-
-    CacheStateGuard state_guard;
-    CachePriorityGuard cache_guard;
-
-    IFileCachePriority::IteratorPtr it;
-    {
-        auto state_lock = state_guard.lock();
-        it = priority.add(key_metadata, /* offset */0, /* size */5, &state_lock);
-    }
-
-    ASSERT_EQ(priority.getSize(state_guard.lock()), 5);
-    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 1);
-
-    /// Emptying the entry must drop its element immediately (the invariant).
-    it->decrementSize(5);
-    ASSERT_EQ(priority.getSize(state_guard.lock()), 0);
-    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 0);
-
-    /// Removing the now-empty entry must not double-subtract (would underflow).
-    {
-        auto write_lock = cache_guard.writeLock();
-        it->remove(write_lock);
-    }
-    ASSERT_EQ(priority.getSize(state_guard.lock()), 0);
-    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 0);
 }
 
 TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
@@ -3423,12 +2371,14 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
 
     /// Add entries only to the System sub-queue.
     {
+        auto write_lock = cache_guard.writeLock();
         auto state_lock = state_guard.lock();
-        priority.add(key_metadata, 0, 10, &state_lock);
-        priority.add(key_metadata, 10, 10, &state_lock);
+        priority.add(key_metadata, 0, 10, write_lock, &state_lock);
+        priority.add(key_metadata, 10, 10, write_lock, &state_lock);
     }
     ASSERT_EQ(priority.getSize(state_guard.lock()), 20);
 
@@ -3466,13 +2416,15 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
 
     auto add_system_segment = [&](size_t offset, size_t size)
     {
         IFileCachePriority::IteratorPtr it;
         {
+            auto write_lock = cache_guard.writeLock();
             auto state_lock = state_guard.lock();
-            it = priority.add(key_metadata, offset, size, &state_lock);
+            it = priority.add(key_metadata, offset, size, write_lock, &state_lock);
         }
         auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, system_origin);
         if (std::filesystem::exists(path))
@@ -3504,11 +2456,12 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
     ASSERT_TRUE(eviction_info->requiresEviction());
 
     FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     EvictionCandidates evicted(IFileCachePriority::OnEvictCallback{});
     priority.collectCandidatesForEviction(
-        *eviction_info, stat, evicted, /* reservee */ nullptr,
-        IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
-        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), state_guard);
+        *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
+        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard);
 
     /// With the bug, dispatch goes to the empty data sub-queue and no System candidates
     /// are collected. With the fix the System segments are collected for eviction.
@@ -3536,6 +2489,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
 
     /// Fill the protected sub-queue with 3 releasable 5-byte entries (15 bytes = limit).
     std::vector<IFileCachePriority::IteratorPtr> protected_iters;
@@ -3543,10 +2497,10 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
     {
         IFileCachePriority::IteratorPtr it;
         {
+            auto write_lock = cache_guard.writeLock();
             auto state_lock = state_guard.lock();
-            auto lock = priority.getPriorityGuardForTests().writeLock();
             it = priority.addForRestore(key_metadata, offset, size,
-                IFileCachePriority::QueueEntryType::SLRU_Protected, lock, &state_lock);
+                IFileCachePriority::QueueEntryType::SLRU_Protected, write_lock, &state_lock);
         }
         auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
         if (std::filesystem::exists(path))
@@ -3577,16 +2531,17 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
     ASSERT_TRUE(eviction_info->requiresEviction());
 
     FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     {
         auto evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
         priority.collectCandidatesForEviction(
-            *eviction_info, stat, *evicted, reservee,
-            IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
-            /* is_total_space_cleanup */ false, origin, state_guard);
+            *eviction_info, stat, *evicted, invalidated_entries, reservee,
+            /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+            /* is_total_space_cleanup */ false, origin, cache_guard, state_guard);
 
         /// Run only the write phase, then drop the candidates WITHOUT running the state
         /// phase -- simulating an exception between `afterEvictWrite` and `afterEvictState`.
-        evicted->afterEvictWrite();
+        evicted->afterEvictWrite(cache_guard.writeLock());
         eviction_info.reset();
         evicted.reset();
     }
@@ -3625,13 +2580,15 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
 
     auto add_system_segment = [&](size_t offset, size_t size)
     {
         IFileCachePriority::IteratorPtr it;
         {
+            auto write_lock = cache_guard.writeLock();
             auto state_lock = state_guard.lock();
-            it = priority.add(key_metadata, offset, size, &state_lock);
+            it = priority.add(key_metadata, offset, size, write_lock, &state_lock);
         }
         auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, system_origin);
         if (std::filesystem::exists(path))
@@ -3659,12 +2616,13 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
     ASSERT_TRUE(eviction_info->requiresEviction());
 
     FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     EvictionCandidates evicted(IFileCachePriority::OnEvictCallback{});
     /// Must not throw on the empty Data SLRU's absent queue ids.
     ASSERT_NO_THROW(priority.collectCandidatesForEviction(
-        *eviction_info, stat, evicted, /* reservee */ nullptr,
-        IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
-        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), state_guard));
+        *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
+        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard));
 
     ASSERT_GT(evicted.size(), 0u);
 }
@@ -3681,6 +2639,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
 
     const auto elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements);
     const auto invalidated_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements);
@@ -3693,15 +2652,16 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
 
         IFileCachePriority::IteratorPtr it;
         {
+            auto write_lock = cache_guard.writeLock();
             auto state_lock = state_guard.lock();
-            it = priority.add(key_metadata, 0, 10, &state_lock);
+            it = priority.add(key_metadata, 0, 10, write_lock, &state_lock);
         }
         ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before + delta);
 
         it->invalidate();
         ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before + delta);
 
-        it->remove();
+        it->remove(cache_guard.writeLock());
         ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before);
         ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before);
     };
@@ -3725,21 +2685,17 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
 
     auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
     {
         IFileCachePriority::IteratorPtr it;
         {
+            auto write_lock = cache_guard.writeLock();
             auto state_lock = state_guard.lock();
-            auto lock = priority.getPriorityGuardForTests().writeLock();
-            it = priority.addForRestore(key_metadata, offset, size, qtype, lock, &state_lock);
+            it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
         }
         const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
-        /// The cache directory survives across runs and the file is opened with
-        /// `O_APPEND`, so a leftover file from a previous run would double in size
-        /// and fail the size check in the `FileSegment` constructor.
-        if (fs::exists(path))
-            fs::remove(path);
         fs::create_directories(fs::path(path).parent_path());
         WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
         DB::writeString(std::string(size, '0'), wb);
@@ -3754,229 +2710,75 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
 
     auto & events = CurrentThread::getProfileEvents();
-    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments];
-    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments];
+    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load();
+    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments].load();
 
     /// Protected is full, so promoting the probationary entry downgrades (moves) the protected one, not evicts it.
-    ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, state_guard));
+    ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, cache_guard, state_guard));
 
-    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
-    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
 }
 
-TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
+namespace
 {
-    /// Regression: encoding the segment size in the file name (`<offset>` -> `<offset>_<size>`) is a
-    /// best-effort startup optimization done from `setDownloadedUnlocked` while the segment is still
-    /// `DOWNLOADING` with its downloader set. If the `rename` were allowed to throw, completion would
-    /// abort before clearing the downloader, leaving the segment owned by the unwinding query (no other
-    /// reader could acquire it), and `FileSegmentsHolder::reset` would hit its `chassert(false)`.
-    /// Here we force the rename to fail and assert the segment still completes consistently: it becomes
-    /// `DOWNLOADED`, the downloader is cleared, and the file keeps its legacy `<offset>` name.
 
-    ServerUUID::setRandomForUnitTests();
+/// Behaves like a remote reader (e.g. `ReadBufferFromS3`): supports right-bounded reads (so
+/// `getRemoteReadBuffer` uses it as is, without wrapping) and reports the remote object's metadata.
+class FakeRemoteReadBuffer : public BoundedReadBuffer
+{
+public:
+    explicit FakeRemoteReadBuffer(std::unique_ptr<SeekableReadBuffer> impl_) : BoundedReadBuffer(std::move(impl_)) {}
+
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override
+    {
+        return RemoteFileMetadata{.size = static_cast<size_t>(fs::file_size(getFileName())), .last_modification_time = 0};
+    }
+};
+
+/// The query scope required for reading through the cache (a query id and a query context bound to
+/// the current thread).
+struct TestQueryScope
+{
+    explicit TestQueryScope(const std::string & query_id = "query_id")
+    {
+        ServerUUID::setRandomForUnitTests();
+
+        Poco::XML::DOMParser dom_parser;
+        std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+        Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+        getMutableContext().context->setConfig(config);
+
+        query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        chassert(&DB::CurrentThread::get() == &thread_status);
+        query_scope = DB::QueryScope::create(query_context);
+    }
+
     DB::ThreadStatus thread_status;
+    ContextMutablePtr query_context;
+    DB::QueryScope query_scope;
+};
 
-    Poco::XML::DOMParser dom_parser;
-    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
-    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
-    getMutableContext().context->setConfig(config);
-
-    auto query_context = DB::Context::createCopy(getContext().context);
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("rename_size_in_name_failure");
-    chassert(&DB::CurrentThread::get() == &thread_status);
-    auto query_scope_holder = DB::QueryScope::create(query_context);
-
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_size] = 16;
-    settings[FileCacheSetting::max_elements] = 4;
-    settings[FileCacheSetting::max_file_segment_size] = 8;
-    settings[FileCacheSetting::boundary_alignment] = 8;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
-
-    auto cache = std::make_shared<DB::FileCache>("rename_size_in_name_failure", settings);
-    cache->initialize();
-
-    const auto & user = FileCache::getCommonOrigin();
-    auto key = DB::FileCacheKey::fromPath("rename_size_in_name_failure_key");
-
-    auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
-    ASSERT_EQ(holder->size(), 1u);
-    auto seg = *holder->begin();
-    ASSERT_EQ(seg->state(), State::EMPTY);
-
-    /// Fully download the segment but do not complete yet, so completion will trigger the rename.
-    download(seg, /*complete=*/false);
-    ASSERT_EQ(seg->state(), State::DOWNLOADING);
-    ASSERT_EQ(seg->getDownloadedSize(), 8u);
-
-    /// Make `fs::rename` fail: occupy the target `<offset>_<size>` name with a directory, so renaming
-    /// the regular file onto it is rejected by the filesystem.
-    const auto new_path = cache->getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */8);
-    const auto legacy_path = cache->getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */std::nullopt);
-    ASSERT_NE(new_path, legacy_path);
-    fs::create_directories(new_path);
-
-    /// Completion must not propagate the rename failure.
-    ASSERT_NO_THROW(FileSegment::complete(FileSegmentPtr(seg), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false));
-
-    /// The segment is fully completed and not stranded under a stale downloader.
-    ASSERT_EQ(seg->state(), State::DOWNLOADED);
-    ASSERT_TRUE(seg->getDownloader().empty());
-
-    /// The size could not be encoded, so the file keeps its legacy `<offset>` name.
-    ASSERT_FALSE(seg->hasSizeInFileName());
-    ASSERT_EQ(seg->getPath(), legacy_path);
-    ASSERT_TRUE(fs::is_regular_file(legacy_path));
-    ASSERT_EQ(fs::file_size(legacy_path), 8u);
-
-    /// Drop all in-memory references and destroy the first cache instance before reopening the same
-    /// directory below. `FileCache::initialize` acquires an exclusive `status` lock on the cache
-    /// directory (and holds it for the cache's lifetime); a second live `FileCache` on the same path
-    /// would otherwise fail with "Another server instance in same directory is already running".
-    /// Destroying the cache only releases the lock — it keeps the persisted files on disk — which is
-    /// exactly the restart we want to model here.
-    /// `holder` is a `FileSegmentsHolderPtr` (a `std::unique_ptr<FileSegmentsHolder>`) whose pointee
-    /// also has a `reset` method, so a bare `holder.reset()` is an ambiguous call (flagged by
-    /// `readability-ambiguous-smartptr-reset-call`); assign `nullptr` to unambiguously destroy the
-    /// holder (which completes and releases its segments via `~FileSegmentsHolder`).
-    holder = nullptr;
-    seg.reset();
-    cache.reset();
-
-    /// Reopen the cache from disk (a real restart). The persisted state is now the real segment under
-    /// its legacy `<offset>` name next to the stale `<offset>_<size>` directory. `loadMetadataForKey`
-    /// must restore the segment from the legacy file and must not treat the directory as a second
-    /// segment for the same offset — otherwise it hits the duplicate-offset `chassert(false)` in
-    /// debug/sanitizer builds or nondeterministically deletes the real file in release.
-    auto reloaded = std::make_shared<DB::FileCache>("rename_size_in_name_failure_reload", settings);
-    reloaded->initialize();
-
-    /// Exactly one segment is restored (from the legacy file); the directory artifact is ignored.
-    ASSERT_EQ(reloaded->getFileSegmentsNum(), 1u);
-    ASSERT_EQ(reloaded->getUsedCacheSize(), 8u);
-
-    /// Startup kept the legacy `<offset>` file intact.
-    ASSERT_TRUE(fs::is_regular_file(legacy_path));
-    ASSERT_EQ(fs::file_size(legacy_path), 8u);
-
-    /// The restored segment is fully downloaded and reusable.
-    auto reloaded_holder = reloaded->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
-    ASSERT_EQ(reloaded_holder->size(), 1u);
-    ASSERT_EQ((*reloaded_holder->begin())->state(), State::DOWNLOADED);
+void writeSourceFile(const std::string & path, const std::string & data)
+{
+    WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE);
+    wb.write(data.data(), data.size());
+    wb.next();
+    wb.finalize();
 }
 
-TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
+std::string makeSourceData(size_t size)
 {
-    /// Regression test: while one holder for a query_id releases its query context,
-    /// another holder for the same query_id must keep it alive, and a later release must not fail
-    /// with "Attempt to release query context that does not exist".
-
-    FileCacheQueryLimit query_limit;
-
-    const std::string query_id = "query_id_revive";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
-
-    FileCacheQueryLimit::QueryContextPtr context1;
-    FileCacheQueryLimit::QueryContextPtr context2;
-    {
-        auto lock = query_limit.lock();
-        /// Take the context for the first time; `query_map` and `context1` reference it.
-        context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-        ASSERT_TRUE(context1 != nullptr);
-        /// A second holder revives the same context: `getOrSetQueryContext` returns the existing entry.
-        context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-    }
-    ASSERT_EQ(context1.get(), context2.get());
-    ASSERT_EQ(context1.use_count(), 3);
-    const auto * context_raw = context1.get();
-
-    /// `~QueryContextHolder` does not use its `cache` member, so tests pass nullptr; the holders
-    /// and `query_map` hold the only references once the local copies are dropped.
-    auto holder1 = std::make_unique<FileCacheQueryLimit::QueryContextHolder>(
-        query_id, /* cache */ nullptr, &query_limit, context1);
-    auto holder2 = std::make_unique<FileCacheQueryLimit::QueryContextHolder>(
-        query_id, /* cache */ nullptr, &query_limit, context2);
-    context1.reset();
-    context2.reset();
-
-    /// The first holder releases. Another holder is still alive, so the entry must be kept (no erase,
-    /// no throw) and enforcement preserved: the context is still discoverable.
-    ASSERT_NO_THROW(holder1.reset());
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), context_raw);
-    }
-
-    /// The second holder is now the last one; releasing it removes the entry, once, without throwing.
-    ASSERT_NO_THROW(holder2.reset());
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
-    }
+    std::string data(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        data[i] = 'a' + i % 26;
+    return data;
 }
 
-TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
-{
-    /// Regression for #109508: parallel read streams create several holders for one query_id.
-    /// `~QueryContextHolder` drops its own reference under `query_limit->lock()` before checking
-    /// `use_count`, so two holders releasing concurrently cannot both skip the erase and orphan
-    /// `query_map[query_id]`. This test releases sequentially and only pins the single-erase,
-    /// no-throw outcome; the concurrent case is not reproduced here.
-
-    FileCacheQueryLimit query_limit;
-
-    const std::string query_id = "query_id_concurrent_release";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
-
-    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
-    FileCacheQueryLimit::QueryContextPtr context1;
-    FileCacheQueryLimit::QueryContextPtr context2;
-    {
-        auto lock = query_limit.lock();
-        context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-        context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-    }
-    ASSERT_EQ(context1.get(), context2.get());
-    ASSERT_EQ(context1.use_count(), 3);
-
-    {
-        /// `~QueryContextHolder` does not use its `cache` member, so tests pass nullptr.
-        FileCacheQueryLimit::QueryContextHolder holder1(query_id, /* cache */ nullptr, &query_limit, context1);
-        FileCacheQueryLimit::QueryContextHolder holder2(query_id, /* cache */ nullptr, &query_limit, context2);
-        context1.reset();
-        context2.reset();
-        /// At scope end holder2 releases first (another holder still alive, entry kept), then holder1
-        /// releases and erases the entry once. Neither throws.
-    }
-
-    /// The entry must be gone: a leaked entry (both releases skipping the erase, as described in
-    /// the comment at the top of this test) would still be found by `tryGetQueryContext`.
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
-    }
 }
 
 /// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a
@@ -4166,5 +2968,135 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
 
         for (size_t t = 0; t < num_threads; ++t)
             ASSERT_EQ(errors[t], "") << "thread " << t << ", iteration " << iteration;
+    }
+}
+
+TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
+{
+    /// Regression for STID 4192-71db: a holder for some query_id decides it is the last one and
+    /// releases its query context, but a concurrent holder for the same query_id revives the
+    /// context first. The release must then be a no-op: the revived context must survive (so the
+    /// per-query download limit keeps being enforced for the rest of the query) and a later release
+    /// of the revived context must not fail with "Attempt to release query context that does not exist".
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_revive";
+    FilesystemCacheSettings cache_settings;
+    cache_settings.max_download_size_per_query = 1024;
+
+    /// holder1 takes the context; query_map and holder1 both reference it (use_count == 2).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_TRUE(context1 != nullptr);
+    ASSERT_EQ(context1.use_count(), 2);
+
+    /// holder2 revives the same context before holder1 releases (getOrSetQueryContext returns the
+    /// existing entry). Now query_map, holder1 and holder2 all reference it (use_count == 3).
+    auto context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// holder1 releases. The map still maps query_id to the live context and another holder is
+    /// alive, so the entry must be kept (no erase, no throw) and nothing is handed back for
+    /// destruction.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_EQ(doomed1, nullptr);
+    context1.reset();
+
+    /// Enforcement is preserved: the revived context is still discoverable.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), context2.get());
+    }
+
+    /// holder2 is now the last holder; releasing it actually removes the entry, once, and hands the
+    /// orphaned context back so it is destroyed by the caller outside the cache lock.
+    const auto * context2_raw = context2.get();
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+    ASSERT_EQ(doomed2.get(), context2_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+    context2.reset();
+
+    /// After full release the context is gone.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
+}
+
+TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
+{
+    /// Regression for #109508: two holders for the same query_id release "at the same time".
+    /// A query with parallel read streams has several holders (each CachedOnDiskReadBufferFromFile
+    /// creates its own), so use_count is > 2. If the last-holder decision reads use_count before this
+    /// holder drops its own reference (or drops it outside the lock), both releasers observe the shared
+    /// count, both skip the erase, and after both drop their reference only the map entry remains and is
+    /// never removed. That orphans query_map[query_id] for the lifetime of the cache and lets a later
+    /// query reusing the same query_id pick up stale per-query limit state. The fix drops each holder's
+    /// reference under the lock and erases once the map entry is the sole owner.
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_concurrent_release";
+    FilesystemCacheSettings cache_settings;
+    cache_settings.max_download_size_per_query = 1024;
+
+    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    auto context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// Keep a raw pointer to assert which release actually surrenders the context for destruction.
+    const auto * context_raw = context1.get();
+
+    /// Both holders decide to release while both are still alive (the interleaving that leaks): each
+    /// removeQueryContext drops that holder's reference under the lock. The first keeps the entry (one
+    /// holder still alive) and returns nullptr; the second erases it and returns the now-orphaned
+    /// context so the caller destroys it after the cache lock is released. Neither throws.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+
+    /// removeQueryContext resets each passed reference, so both are already null here.
+    ASSERT_EQ(context1, nullptr);
+    ASSERT_EQ(context2, nullptr);
+
+    /// Only the last release hands the context back for out-of-lock destruction; the earlier one
+    /// returns nullptr because another holder was still alive.
+    ASSERT_EQ(doomed1, nullptr);
+    ASSERT_EQ(doomed2.get(), context_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+
+    /// The entry must be gone: with the pre-fix logic both releases skipped the erase and the entry
+    /// leaked, so tryGetQueryContext would still find it.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
     }
 }

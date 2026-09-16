@@ -26,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
@@ -98,8 +99,13 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     function->serializeBatch(vec, offset, end, ostr, version);
 }
 
-void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
+    if (rows_offset)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method deserializeBinaryBulk of SerializationAggregateFunction does not support cases where rows_offset {} is non-zero",
+                        rows_offset);
+
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container & vec = real_column.getData();
 
@@ -215,7 +221,7 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
             auto tmp_column = arg_types.createColumn();
             ReadBufferFromString buf(value_str);
             arg_types.getDefaultSerialization()->deserializeWholeText(*tmp_column, buf, settings);
-            ColumnRawPtrs columns_ptrs;
+            std::vector<const IColumn *> columns_ptrs;
             for (const auto & col : assert_cast<ColumnTuple*>(tmp_column.get())->getColumns())
                 columns_ptrs.push_back(col.get());
             function->add(place, columns_ptrs.data(), 0, &arena);

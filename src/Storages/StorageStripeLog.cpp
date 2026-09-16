@@ -6,7 +6,6 @@
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
-#include <Common/saturatedDuration.h>
 
 #include <Core/Settings.h>
 
@@ -152,11 +151,7 @@ private:
             started = true;
 
             String data_file_path = storage->table_path + "data.bin";
-            /// `allow_different_codecs = true`: the data file is append-only, so blocks written by
-            /// different inserts may use different codecs - in particular after a server upgrade that
-            /// changes the default compression codec (e.g. `LZ4` -> `ZSTD`). Each compressed block is
-            /// self-describing (the codec method byte is in its header), so a mixed-codec stream is valid.
-            data_in.emplace(storage->disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)), /* allow_different_codecs = */ true);
+            data_in.emplace(storage->disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
 
             /// Limit reads to the file size that was snapshotted under the read lock.
             /// The file may have grown since (due to concurrent inserts after lock release),
@@ -268,7 +263,16 @@ public:
         data_out->finalize();
         data_out_compressed->finalize();
 
-        storage.saveIndicesAndFileSizes(lock);
+        /// Save the new indices.
+        storage.saveIndices(lock);
+
+        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
+        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
+        });
+        /// Save the new file sizes.
+        storage.saveFileSizes(lock);
 
         storage.updateTotalRows(lock);
 
@@ -375,19 +379,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return saturatedSeconds(lock_timeout);
-}
-
-size_t StorageStripeLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
-{
-    const auto lock_timeout = getLockTimeout(local_context);
-    loadIndices(lock_timeout);
-
-    ReadLock lock{rwlock, lock_timeout};
-    if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-
-    return std::min(num_streams, std::max(1uz, indices.blocks.size()));
+    return std::chrono::seconds{lock_timeout};
 }
 
 VirtualColumnsDescription StorageStripeLog::createVirtuals()
@@ -526,9 +518,7 @@ void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked excl
 
     if (disk->existsFile(index_file_path))
     {
-        /// `allow_different_codecs = true`: the index file is append-only and may mix codecs across
-        /// inserts (e.g. after a server upgrade that changes the default compression codec).
-        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)), /* allow_different_codecs = */ true);
+        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)));
         indices.read(index_in);
     }
 
@@ -569,33 +559,10 @@ void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked 
 
 void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    file_checker.updateAndSave({data_file_path, index_file_path});
+    file_checker.update(data_file_path);
+    file_checker.update(index_file_path);
+    file_checker.save();
     total_bytes = file_checker.getTotalSize();
-}
-
-
-void StorageStripeLog::saveIndicesAndFileSizes(const WriteLock & lock)
-{
-    /// The index file is itself one of the files whose size is recorded, so the count of saved indices
-    /// is only valid while those sizes are: repair() truncates the file back to the recorded size.
-    size_t num_indices_saved_before = num_indices_saved;
-    try
-    {
-        saveIndices(lock);
-
-        // While executing save file sizes the exception might occurs. S3::TooManyRequests for example.
-        fiu_do_on(FailPoints::stripe_log_sink_write_fallpoint,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault for inserting into StipeLog table");
-        });
-
-        saveFileSizes(lock);
-    }
-    catch (...)
-    {
-        num_indices_saved = num_indices_saved_before;
-        throw;
-    }
 }
 
 
@@ -742,9 +709,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_path_in_backup);
 
             auto index_in = backup->readFile(index_path_in_backup);
-            /// `allow_different_codecs = true`: the backed-up index may mix codecs across inserts
-            /// (e.g. if it was written across a server upgrade that changed the default codec).
-            CompressedReadBuffer index_compressed_in{*index_in, /* allow_different_codecs = */ true};
+            CompressedReadBuffer index_compressed_in{*index_in};
             extra_indices.read(index_compressed_in);
 
             /// Adjust the offsets.
@@ -758,7 +723,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         }
 
         /// Finish writing.
-        saveIndicesAndFileSizes(lock);
+        saveIndices(lock);
+        saveFileSizes(lock);
         updateTotalRows(lock);
     }
     catch (...)
@@ -805,9 +771,9 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](/reference/engines/table-engines/log-family/index) article.
+This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
-Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](/reference/engines/table-engines/log-family/log) when a high number of tables are required. This is at the expense of read efficiency.
+Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](./log.md) when a high number of tables are required. This is at the expense of read efficiency.
 
 ## Creating a table {#table_engines-stripelog-creating-a-table}
 
@@ -820,7 +786,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-See the detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Writing the data {#table_engines-stripelog-writing-the-data}
 

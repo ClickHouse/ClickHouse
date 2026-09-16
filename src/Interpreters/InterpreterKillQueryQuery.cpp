@@ -39,6 +39,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -292,8 +293,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                         getContext()->getSettingsRef()[Setting::max_parser_depth],
                         getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
-                        command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name,
-                        InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(storage, getContext()));
+                        command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
                     if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;
@@ -357,8 +357,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                     alter_command.type = ASTAlterCommand::MOVE_PARTITION;
                     alter_command.move_destination_type = DataDestinationType::SHARD;
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
-                        alter_command, table_id.database_name, table_id.table_name,
-                        InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(storage, getContext()));
+                        alter_command, table_id.database_name, table_id.table_name);
                     if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;
@@ -440,28 +439,18 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
 
     auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 
-    /// The pipeline can legitimately produce multiple blocks (e.g. when the
-    /// `WHERE` clause contains a per-row subquery that the planner splits into
-    /// chunks, when `max_block_size` is small, or when parallel reads are used).
-    /// Previously this code asserted "Expected one block from input stream",
-    /// which fired as a LOGICAL_ERROR for valid queries surfaced by the AST
-    /// fuzzer (issue #104857). Collect every produced block and concatenate
-    /// them — the result set is bounded by the size of `system.processes`,
-    /// `system.mutations`, `system.part_moves_between_shards` or
-    /// `system.transactions`, so this remains cheap.
-    Blocks blocks;
+    Block res;
+    Block tmp_block;
     io.executeWithCallbacks([&]()
     {
         PullingPipelineExecutor executor(io.pipeline);
-        Block block;
-        while (executor.pull(block))
-        {
-            if (!block.empty())
-                blocks.push_back(std::move(block));
-        }
+        while (res.empty() && executor.pull(res));
+
+        while (executor.pull(tmp_block));
     });
 
-    Block res = concatenateBlocks(blocks);
+    if (!tmp_block.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
 
     /// Materialize const columns, because callers use typeid_cast to concrete column types.
     materializeBlockInplace(res);

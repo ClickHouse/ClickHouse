@@ -1,10 +1,7 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowOutputFormat.h>
 
-#include <Common/isValidUTF8.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/FlattenTupleForCSVHeader.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/JSONUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
@@ -40,31 +37,15 @@ void CustomSeparatedRowOutputFormat::writePrefix()
     writeString(format_settings.custom.result_before_delimiter, out);
 
     const auto & header = getPort(PortKind::Main).getHeader();
-
-    /// Tuple values are flattened into separate columns only under the CSV escaping rule, and the
-    /// tuple elements are joined with csv.tuple_delimiter. CustomSeparated joins fields with
-    /// custom.field_delimiter, so flattening the header only matches the data when that delimiter is
-    /// the same single character as csv.tuple_delimiter; otherwise a tuple value stays one custom
-    /// field while a flattened header would emit several (issue #107342).
-    const bool flatten = escaping_rule == EscapingRule::CSV
-        && format_settings.csv.serialize_tuple_into_separate_columns
-        && format_settings.csv.header_serialize_tuple_into_separate_columns
-        && format_settings.custom.field_delimiter.size() == 1
-        && format_settings.custom.field_delimiter[0] == format_settings.csv.tuple_delimiter;
-
-    Names names;
-    Names type_names;
-    getCSVHeaderNamesAndTypes(header, flatten, names, type_names);
-
     if (with_names)
     {
-        writeLine(names);
+        writeLine(header.getNames());
         writeRowBetweenDelimiter();
     }
 
     if (with_types)
     {
-        writeLine(type_names);
+        writeLine(header.getDataTypeNames());
         writeRowBetweenDelimiter();
     }
 }
@@ -118,53 +99,6 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
         factory.registerAppendSupportChecker(format_name, [](const FormatSettings & settings)
         {
             return settings.custom.result_after_delimiter.empty();
-        });
-
-        /// With the `Raw` escaping rule the fields are written verbatim (like `TSVRaw`), so the output
-        /// is not guaranteed to be valid UTF-8 text and cannot be embedded into a text framing format.
-        /// The literal delimiters are written verbatim regardless of the escaping rule, so a delimiter
-        /// that is not valid UTF-8 (for example `format_custom_row_after_delimiter` set to a non-UTF-8
-        /// byte sequence) makes the output non-textual as well. The `*WithNames*` variants also write
-        /// the column names (and data type names) into the header, and neither the escaping rule nor
-        /// the delimiters validate UTF-8, so a name that is not valid UTF-8 makes the output
-        /// non-textual too. All of this is knowable from the settings and the header, so it is detected
-        /// here rather than relying on the payload being valid UTF-8.
-        factory.registerOutputFormatMayProduceRawBytesChecker(
-            format_name,
-            [with_names, with_types](const FormatSettings & settings, const Block & header)
-        {
-            const auto & custom = settings.custom;
-            if (custom.escaping_rule == FormatSettings::EscapingRule::Raw)
-                return true;
-            auto is_not_valid_utf8 = [](const std::string & s)
-            {
-                return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
-            };
-            /// The header carries the dotted leaf names when a Tuple column is flattened, which happens
-            /// under the CSV escaping rule with a matching single-character field delimiter (mirroring
-            /// `CustomSeparatedRowOutputFormat::writePrefix`), so validate the actual flattened header.
-            const bool flatten = custom.escaping_rule == FormatSettings::EscapingRule::CSV
-                && settings.csv.serialize_tuple_into_separate_columns
-                && settings.csv.header_serialize_tuple_into_separate_columns
-                && custom.field_delimiter.size() == 1
-                && custom.field_delimiter[0] == settings.csv.tuple_delimiter;
-            return is_not_valid_utf8(custom.result_before_delimiter)
-                || is_not_valid_utf8(custom.result_after_delimiter)
-                || is_not_valid_utf8(custom.row_before_delimiter)
-                || is_not_valid_utf8(custom.row_after_delimiter)
-                || is_not_valid_utf8(custom.row_between_delimiter)
-                || is_not_valid_utf8(custom.field_delimiter)
-                || csvHeaderNamesMayProduceRawBytes(header, flatten, with_names, with_types)
-                /// The `Escaped` and `CSV` escaping rules write the settings-driven `NULL` and `Bool`
-                /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`).
-                || settingsLiteralsMayProduceRawBytes(settings, custom.escaping_rule)
-                /// The `JSON` escaping rule serializes the field values via `serializeTextJSON`, which
-                /// can synthesize JSON object keys from named `Tuple` element names (see
-                /// `tupleElementNamesMayProduceRawBytesInJSON`). The format installs no UTF-8
-                /// validating buffer, so those keys are never sanitized regardless of
-                /// `output_format_json_validate_utf8`.
-                || (custom.escaping_rule == FormatSettings::EscapingRule::JSON
-                    && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, /*validate_utf8=*/false));
         });
     };
 
