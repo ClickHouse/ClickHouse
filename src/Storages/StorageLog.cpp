@@ -301,7 +301,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -330,7 +330,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
