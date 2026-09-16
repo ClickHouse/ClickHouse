@@ -81,6 +81,8 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
+    REGULAR(s3_copy_inject_etag_mismatch) \
+    REGULAR(s3_head_omit_etag) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
@@ -159,6 +161,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_select_sequential_consistency_before_keeper_fence) \
     PAUSEABLE_ONCE(smt_select_sequential_consistency_after_keeper_get) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(delta_lake_create_table_pause) \
     ONCE(delta_lake_write_cancel_in_commit_window) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
