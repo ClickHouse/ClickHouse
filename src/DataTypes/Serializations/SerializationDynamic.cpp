@@ -769,8 +769,7 @@ void SerializationDynamic::serializeForHashCalculation(const IColumn & column, s
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
         ReadBufferFromMemory value_buf(value);
         auto type = decodeDataType(value_buf);
-        auto type_name = type->getName();
-        auto serialization = getDataTypesCache().getSerialization(type_name);
+        auto serialization = getDataTypesCache().getSerialization(type);
         auto tmp_column = type->createColumn();
         serialization->deserializeBinary(*tmp_column, value_buf, {});
         serializeVariantForHashCalculation(*tmp_column, serialization, type, 0, ostr);
@@ -960,8 +959,7 @@ static void serializeTextImpl(
         ReadBufferFromMemory buf(value);
         auto variant_type = decodeDataType(buf);
         auto tmp_variant_column = variant_type->createColumn();
-        /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
-        auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
+        auto variant_serialization = getDataTypesCache().getSerialization(variant_type);
         variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
         nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
         return;
@@ -971,9 +969,8 @@ static void serializeTextImpl(
     /// Variant type instead would build serializations and names of all the variants and go through the globally
     /// locked serialization pool for every value.
     const auto & variant_info = dynamic_column.getVariantInfo();
-    const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     nested_serialize(
-        *getDataTypesCache().getSerialization(variant_info.variant_names[global_discr], variant_types[global_discr]),
+        *getDataTypesCache().getSerialization(variant_info.variant_names[global_discr]),
         variant_column.getVariantByGlobalDiscriminator(global_discr),
         variant_column.offsetAt(row_num),
         ostr);

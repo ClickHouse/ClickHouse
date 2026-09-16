@@ -42,6 +42,9 @@ public:
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return true; }
+    /// No variant's serialization is built into this type's own: they are resolved by name on each
+    /// use, and each is then asked this question for itself.
+    bool serializationDependsOnQueryContext() const override { return false; }
     std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }

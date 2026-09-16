@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <ranges>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
@@ -302,6 +303,13 @@ MutableColumnPtr DataTypeObject::createColumn() const
         typed_path_columns[path] = type->createColumn();
 
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+}
+
+bool DataTypeObject::serializationDependsOnQueryContext() const
+{
+    /// A typed path's serialization is built into this type's own, so it is carried here. Dynamic
+    /// paths are not: their serializations are resolved by variant name on each use.
+    return std::ranges::any_of(typed_paths, [](auto && path) { return path.second->serializationDependsOnQueryContext(); });
 }
 
 void DataTypeObject::forEachChild(const ChildCallback & callback) const
