@@ -109,6 +109,11 @@ class HttpProcessor(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(CSV_DATA.encode())))
             self.end_headers()
             self.wfile.write(CSV_DATA.encode())
+        elif self.path.startswith("/redirect_permanent"):
+            # `308 Permanent Redirect` keeps the method like `307`; it must be followed as well.
+            self.send_response(308)
+            self.send_header("Location", HTTP_SERVER_URL_STR + "/data.csv")
+            self.end_headers()
         elif self.path.startswith("/redirect_gz"):
             self.send_response(302)
             self.send_header("Location", HTTP_SERVER_URL_STR + "/data.csv.gz")
@@ -205,6 +210,12 @@ def main():
     print("with redirects:")
     sys.stdout.write(answer)
 
+    # A standards-compliant server may answer with `308 Permanent Redirect` instead of `302`.
+    create_dictionary("dict_04498_permanent_redirect", 5, endpoint="/redirect_permanent")
+    answer = get_ch_answer("SELECT * FROM dict_04498_permanent_redirect ORDER BY id")
+    print("with 308 Permanent Redirect:")
+    sys.stdout.write(answer)
+
     # A redirect may lead to an object with a different extension; the compression method must be
     # detected from the final (post-redirect) URL, not from the URL of the dictionary source.
     create_dictionary("dict_04498_redirect_gz", 5, endpoint="/redirect_gz")
@@ -246,6 +257,7 @@ def main():
 
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_no_redirects")
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_with_redirects")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_permanent_redirect")
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_redirect_gz")
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_gz_to_opaque")
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_relative_redirect")

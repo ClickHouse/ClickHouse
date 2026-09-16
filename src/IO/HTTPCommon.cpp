@@ -60,7 +60,15 @@ HTTPSessionPtr makeHTTPSession(
     return connection_pool->getConnection(timeouts, connect_time);
 }
 
-bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status) { return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY  || status == Poco::Net::HTTPResponse::HTTP_FOUND || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER  || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT; }
+bool isRedirect(const Poco::Net::HTTPResponse::HTTPStatus status)
+{
+    return status == Poco::Net::HTTPResponse::HTTP_MOVED_PERMANENTLY
+        || status == Poco::Net::HTTPResponse::HTTP_FOUND
+        || status == Poco::Net::HTTPResponse::HTTP_SEE_OTHER
+        || status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT
+        /// `308 Permanent Redirect` (RFC 9110, 15.4.9) keeps the method and the body like `307`.
+        || status == Poco::Net::HTTPResponse::HTTP_PERMANENT_REDIRECT;
+}
 
 bool isRetriableHTTPError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
 {
