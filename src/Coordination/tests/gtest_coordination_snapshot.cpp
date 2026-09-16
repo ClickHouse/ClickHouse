@@ -52,10 +52,39 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+    extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_after_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
 }
 
 namespace
 {
+
+/// A snapshot disk that can never take a file: `moveFileBetweenDisks` starts every move by
+/// writing the `tmp_` marker on the target, so failing that fails the move without the source
+/// disk being involved at all.
+class MarkerRefusingDisk : public DB::DiskLocal
+{
+public:
+    MarkerRefusingDisk(const std::string & name_, const std::string & path_)
+        : DB::DiskLocal(name_, path_)
+    {
+    }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase> writeFile(
+        const std::string & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        if (fs::path(path).filename().string().starts_with(DB::tmp_keeper_file_prefix))
+        {
+            ++refused_markers;
+            throw std::runtime_error("injected failure while creating the temporary marker");
+        }
+
+        return DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+    }
+
+    std::atomic<size_t> refused_markers = 0;
+};
 
 class TestLocalObjectStorage : public DB::LocalObjectStorage
 {
@@ -3316,6 +3345,92 @@ TEST_P(CoordinationTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /* initialize_system_nodes */ false);
     auto restored = manager.deserializeSnapshotFromBuffer(manager.deserializeSnapshotBufferFromDisk(10), *restored_storage);
     EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/move_me", /*out_stats=*/nullptr, /*out_data=*/nullptr));
+}
+
+/// The snapshot disk move runs in phase 4 of `create_snapshot`, before the snapshot object is
+/// destroyed and before `when_done`. While the move was unbounded, one that could not succeed
+/// never returned, so NuRaft never learned the snapshot had finished and - because the snapshot
+/// object holds an MVCC read view over the storage container, and
+/// `SnapshotableHashTable::clearStaleNodes` reclaims only once no view is outstanding - every
+/// superseded node stayed resident for as long as the failure lasted. Bounding the retries has
+/// to let the snapshot finish even when its move cannot.
+TEST_P(CoordinationTest, AbandonedSnapshotMoveStillFinishesTheSnapshot)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest move_target("./snapshots_move_target");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    /// Give up after the first failure, so a move that cannot succeed does not slow the test.
+    (*settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*settings)[DB::CoordinationSetting::disk_move_retries_after_init] = 1;
+    (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 1;
+
+    auto ctx = makeKeeperContext(settings);
+    ctx->setLocalLogsPreprocessed();
+    ctx->setServerState(DB::KeeperContext::Phase::RUNNING);
+    /// `setSnapshotDisk` overwrites both, so the latest disk has to be set after it.
+    auto refusing_disk = std::make_shared<MarkerRefusingDisk>("SnapshotDisk", "./snapshots_move_target");
+    ctx->setSnapshotDisk(refusing_disk);
+    ctx->setLatestSnapshotDisk(std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./snapshots"));
+
+    DB::SnapshotsQueue snapshots_queue{2};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+
+    /// Large enough that a superseded copy of it is visible in the approximate data size.
+    const std::string first_value(4096, 'a');
+    auto create = makeCreateEntry(*state_machine, "/k", first_value);
+    state_machine->pre_commit(1, create->get_buf());
+    state_machine->commit(1, create->get_buf());
+
+    /// The first snapshot is the latest one, so the latest disk is already its target and it is
+    /// not a move candidate. Nothing may hold its pin afterwards, or the next maintenance pass
+    /// defers the move instead of attempting it.
+    nuraft::snapshot first(1, 0, std::make_shared<nuraft::cluster_config>());
+    ASSERT_NE(executeCreateSnapshotTask(*state_machine, snapshots_queue, first), nullptr);
+    ASSERT_EQ(refusing_disk->refused_markers.load(), 0u);
+
+    /// The second snapshot makes the first one's target the regular snapshot disk, which refuses
+    /// the marker, so its move runs out of retries inside phase 4.
+    auto second_create = makeCreateEntry(*state_machine, "/k2", "v");
+    state_machine->pre_commit(2, second_create->get_buf());
+    state_machine->commit(2, second_create->get_buf());
+
+    bool when_done_called = false;
+    bool snapshot_published = false;
+    nuraft::async_result<bool>::handler_type when_done = [&](bool & result, nuraft::ptr<std::exception> &)
+    {
+        when_done_called = true;
+        snapshot_published = result;
+    };
+
+    nuraft::snapshot second(2, 0, std::make_shared<nuraft::cluster_config>());
+    state_machine->create_snapshot(second, when_done);
+    DB::CreateSnapshotTask snapshot_task;
+    ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
+    ASSERT_NE(snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false), nullptr);
+
+    /// The move was attempted and abandoned, and the snapshot still completed.
+    EXPECT_GT(refusing_disk->refused_markers.load(), 0u);
+    EXPECT_TRUE(when_done_called);
+    EXPECT_TRUE(snapshot_published);
+
+    /// The abandoned file is still tracked on the disk it is actually on, so it is still there
+    /// for the next maintenance pass to select again.
+    EXPECT_GT(state_machine->getLatestSnapshotSize(), 0u);
+    EXPECT_FALSE(fs::exists("./snapshots_move_target/tmp_snapshot_1.bin.zstd"));
+
+    if (!GetParam())
+    {
+        /// The read view was retired even though the move never completed: overwriting the node
+        /// now drops the superseded copy instead of retaining it, so the data size does not grow
+        /// by another copy of the value. A leaked view would keep both.
+        const auto size_before = state_machine->getStorageStats().approximate_data_size;
+        auto overwrite = makeSetEntry(*state_machine, "/k", std::string(4096, 'b'));
+        state_machine->pre_commit(3, overwrite->get_buf());
+        state_machine->commit(3, overwrite->get_buf());
+        EXPECT_EQ(state_machine->getStorageStats().approximate_data_size, size_before);
+    }
 }
 
 TEST(KeeperSnapshotFileNameTest, CanonicalSnapshotS3Name)
