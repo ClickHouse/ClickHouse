@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <limits>
 #include <optional>
 
 #include <Analyzer/ColumnNode.h>
@@ -16,7 +17,9 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
@@ -227,24 +230,54 @@ bool canCompareKeyWithoutCast(const DataTypePtr & expr_type, const DataTypePtr &
     return supertype && supertype->equals(*stripped_key_col_type);
 }
 
-/// Check every normalized key component against the declared type of its dictionary key column.
-/// The expression must have a valid key shape, with any single-column tuple wrapper already removed.
-bool canCompareKeysWithoutCasts(const QueryTreeNodePtr & key_expr_node, const DataTypes & declared_key_types)
+/// Check every normalized key component against its dictionary column type. The expression must have
+/// a valid key shape, with any single-column tuple wrapper already removed.
+bool canCompareKeysWithoutCasts(const QueryTreeNodePtr & key_expr_node, const NamesAndTypes & key_cols)
 {
-    if (declared_key_types.size() == 1)
-        return canCompareKeyWithoutCast(key_expr_node->getResultType(), declared_key_types.front());
+    if (key_cols.size() == 1)
+        return canCompareKeyWithoutCast(key_expr_node->getResultType(), key_cols.front().type);
 
     /// `keyExpressionMatchesDictionaryStructure` guarantees a tuple with one element per key column.
     const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
     const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
-    chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == declared_key_types.size());
+    chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == key_cols.size());
 
     const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
-    for (size_t i = 0; i < declared_key_types.size(); ++i)
+    for (size_t i = 0; i < key_cols.size(); ++i)
     {
-        if (!canCompareKeyWithoutCast(key_expr_elements[i], declared_key_types[i]))
+        if (!canCompareKeyWithoutCast(key_expr_elements[i], key_cols[i].type))
             return false;
     }
+    return true;
+}
+
+/// A simple key is looked up as `UInt64` whatever integer type it is declared with, so `dictGet`
+/// converts a signed probe with `castColumnAccurate`: a negative value throws `CANNOT_CONVERT_TYPE`.
+/// Mirror that conversion with `accurateCast` to `UInt64`, which for integer types is the same
+/// conversion: no setting takes part in it (the `Nullable` wrapper of a nullable probe is requested
+/// explicitly, so `cast_keep_nullable` cannot change the result type), it prepares successfully for
+/// every integer pair, so empty inputs and unselected branches behave as with the lookup, it is
+/// evaluated lazily under short-circuit evaluation like `dictGet`, and every server version that runs
+/// this pass knows the function, so the rewritten query can be shipped to remote servers.
+///
+/// Only the native signed integers are converted. Their converted values lie below 2^63, which the
+/// zero-match rewrite relies on to build a comparison that is false on every row; the 128- and
+/// 256-bit integers can convert to any `UInt64` value and are left to the caller, which keeps the
+/// lookup for them, as it does for non-integer probes.
+///
+/// Returns false when the probe is not a native signed integer expression.
+bool convertSimpleKeyProbe(QueryTreeNodePtr & key_expr_node, const ContextPtr & context)
+{
+    const DataTypePtr & probe_type = key_expr_node->getResultType();
+    if (!WhichDataType(removeLowCardinalityAndNullable(probe_type)).isNativeInt())
+        return false;
+
+    DataTypePtr lookup_type = std::make_shared<DataTypeUInt64>();
+    if (isNullableOrLowCardinalityNullable(probe_type))
+        lookup_type = makeNullable(lookup_type);
+
+    auto lookup_type_node = std::make_shared<ConstantNode>(lookup_type->getName(), std::make_shared<DataTypeString>());
+    key_expr_node = createResolvedFunction(context, "accurateCast", {key_expr_node, std::move(lookup_type_node)});
     return true;
 }
 
@@ -446,9 +479,6 @@ public:
 
 
         NamesAndTypes key_cols;
-        /// The types the probe is compared against without a cast (`canCompareKeysWithoutCasts`). They
-        /// are the `key_cols` types for a composite key; for a simple key see below.
-        DataTypes declared_key_types;
 
         const auto & dict_structure = dict->getStructure();
 
@@ -464,24 +494,13 @@ public:
             /// different trees -> different `__set_<hash>` names -> remote header mismatch ("Cannot find column ... __set_...").
             chassert(dict_structure.getKeyTypes().size() == 1);
             key_cols.emplace_back(dict_structure.id->name, dict_structure.getKeyTypes().front());
-
-            /// The no-cast decision, however, is made against the declared type. Against the `UInt64` lookup
-            /// type a probe of the declared signed type, the common case, would never pass, and the
-            /// optimization would silently switch off for every simple-key dictionary declared with a
-            /// signed key (`03906_dict_case_distributed_predicate_pushdown` depends on it firing). The
-            /// comparison with the `UInt64` key values is exact for every probe value the lookup can
-            /// convert; a value it cannot convert compares unequal where `dictGet` throws, which is the
-            /// behavior these dictionaries had before the gate existed.
-            declared_key_types.push_back(dict_structure.id->type);
         }
         else if (dict_structure.key) /// composite key
         {
             key_cols.reserve(dict_structure.key->size());
-            declared_key_types.reserve(dict_structure.key->size());
             for (const auto & id : *dict_structure.key)
             {
                 key_cols.emplace_back(id.name, id.type);
-                declared_key_types.push_back(id.type);
             }
         }
         else
@@ -516,8 +535,19 @@ public:
         /// so it cannot preserve the lookup's behavior for empty inputs and skipped branches. Replacement
         /// expressions must also use functions understood by remote servers, which reanalyze generated SQL.
         /// Comparisons that only widen key values need no cast and keep the expression usable for indices.
-        if (!canCompareKeysWithoutCasts(dictget_function_info.key_expr_node, declared_key_types))
-            return;
+        ///
+        /// The one conversion that is mirrored is an integer probe of a simple key, whose lookup type is
+        /// `UInt64` by construction (`key_cols` above): a dictionary declared with a signed key and probed
+        /// with that very type is the common case, and skipping it would switch the optimization off for
+        /// all such dictionaries (`03906_dict_case_distributed_predicate_pushdown` depends on it firing).
+        /// `convertSimpleKeyProbe` explains why `accurateCast` is exact there.
+        bool key_conversion_inserted = false;
+        if (!canCompareKeysWithoutCasts(dictget_function_info.key_expr_node, key_cols))
+        {
+            if (!dict_structure.id || !convertSimpleKeyProbe(dictget_function_info.key_expr_node, getContext()))
+                return;
+            key_conversion_inserted = true;
+        }
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
 
@@ -603,6 +633,28 @@ public:
                 /// Like any constant fold, this replaces the predicate without evaluating the
                 /// key expression. Exceptions from that expression, such as an explicit user-supplied
                 /// cast, are therefore skipped together with the lookup.
+                ///
+                /// The conversion this pass inserted itself must keep running on every row, so the
+                /// predicate cannot fold to a constant, and `IN` with an empty set does not help
+                /// either: it is reported as a constant without evaluating its left operand (see
+                /// `FunctionIn::getConstantResultForNonConstArguments` and its empty-set execution).
+                /// Compare the converted probe with a `UInt64` value no native signed integer converts
+                /// to instead: false on every row, `NULL` for a `NULL` probe like the lookup, and the
+                /// conversion is evaluated.
+                if (keys_size == 0 && key_conversion_inserted)
+                {
+                    auto never_matching_key = std::make_shared<ConstantNode>(
+                        Field(std::numeric_limits<UInt64>::max()), std::make_shared<DataTypeUInt64>());
+
+                    auto equals_node = std::make_shared<FunctionNode>("equals");
+                    equals_node->markAsOperator();
+                    equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, never_matching_key};
+                    resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
+
+                    node = preserve_result_type(equals_node);
+                    return;
+                }
+
                 if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
