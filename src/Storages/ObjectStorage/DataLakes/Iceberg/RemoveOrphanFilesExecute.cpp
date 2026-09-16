@@ -347,6 +347,8 @@ Pipe executeRemoveOrphanFiles(
             "but this table uses format version {}",
             current_format_version);
 
+    validateGarbageCollectionEnabled(latest_metadata, "delete orphan files");
+
     auto parsed = makeSchema().parse(args);
 
     RemoveOrphanFilesParams params;
