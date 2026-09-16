@@ -249,6 +249,57 @@ def test_subquery_body_identical_across_schema_inference_and_read(started_cluste
         assert get_request_bodies() == [expected, expected]
 
 
+def test_top_level_only_settings_do_not_apply_to_subquery_body(started_cluster):
+    # Regression: the body subquery was interpreted in a context that cleared only the session
+    # `limit`/`offset`, so the settings that are meant for the top-level query only still applied
+    # to it: `max_result_rows`/`max_result_bytes` truncated the payload, `extremes` appended an
+    # extremes trailer, and `implicit_table_at_top_level` rewrote a FROM-less body query against
+    # the implicit table under the analyzer. The body context is sanitized the same way
+    # `interpretSubquery` does it now, so the payload is what the body query evaluates to on its
+    # own, whatever the session settings of the outer query are.
+    server.query("DROP TABLE IF EXISTS implicit_body_table")
+    server.query(
+        "CREATE TABLE implicit_body_table (k UInt8) ENGINE = Memory AS SELECT number FROM numbers(3)"
+    )
+    try:
+        for analyzer in (1, 0):
+            settings = f"enable_analyzer = {analyzer}"
+
+            # `max_result_rows` with `result_overflow_mode = 'break'` must not truncate the body.
+            reset_request_count()
+            result = server.query(
+                "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+                "body((SELECT toUInt8(number) AS n FROM numbers(3)))) "
+                f"SETTINGS {settings}, max_result_rows = 1, result_overflow_mode = 'break'"
+            )
+            assert result.strip() == "1"
+            assert get_request_bodies() == ['{"n":0}\n{"n":1}\n{"n":2}\n']
+
+            # `extremes` must not add an extremes trailer to a body in the `JSON` format.
+            reset_request_count()
+            server.query(
+                "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+                "body((SELECT toUInt8(number) AS n FROM numbers(3)), 'JSON')) "
+                f"SETTINGS {settings}, extremes = 1"
+            )
+            bodies = get_request_bodies()
+            assert len(bodies) == 1
+            body = json.loads(bodies[0])
+            assert body["rows"] == 3
+            assert "extremes" not in body
+
+            # `implicit_table_at_top_level` must not turn `SELECT 1` into `SELECT 1 FROM <table>`.
+            reset_request_count()
+            server.query(
+                "SELECT count() FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+                "body((SELECT 1 AS x))) "
+                f"SETTINGS {settings}, implicit_table_at_top_level = 'implicit_body_table'"
+            )
+            assert get_request_bodies() == ['{"x":1}\n']
+    finally:
+        server.query("DROP TABLE IF EXISTS implicit_body_table")
+
+
 def test_subquery_body_with_glob_url_and_parallel_streams(started_cluster):
     # A glob URL is read by one source per expanded URL, and all of them share the single body
     # callback the storage created. Those sources can run in parallel, so the pipeline prepared for

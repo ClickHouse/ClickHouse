@@ -106,6 +106,12 @@ namespace Setting
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsString url_base;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsBool extremes;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 namespace ErrorCodes
@@ -143,17 +149,30 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 namespace
 {
     /// Interpret the `body(...)` subquery. Executes it as a subquery (as `interpretSubquery` does),
-    /// and clears the session `limit`/`offset` settings, which apply only to top-level queries.
-    /// With top-level semantics the payload would depend on which send interprets the query: the
-    /// old planner folds these settings into the stored AST in place (so the schema-inference
-    /// request, the actual read, and any retries each mutate the AST again and the body drifts),
-    /// and the analyzer folds them into the query tree only when they are still set in the
-    /// interpreting context (so schema inference would truncate the body while the read would not).
+    /// in a context sanitized the same way `interpretSubquery` and `getSubqueryContext` do it:
+    /// the settings that apply to the top-level query only (`max_result_rows`, `max_result_bytes`,
+    /// `extremes`, `implicit_table_at_top_level`) are cleared, so that the request body cannot be
+    /// truncated, gain an `extremes` trailer, or have a FROM-less body query rewritten against the
+    /// implicit table. The old planner still receives this context directly, and the analyzer treats
+    /// the unwrapped body `SELECT` as top-level when building the query tree, so both branches need
+    /// the sanitized context rather than only the `.subquery()` option.
+    /// The session `limit`/`offset` are cleared for the same reason, and additionally because with
+    /// top-level semantics the payload would depend on which send interprets the query: the old
+    /// planner folds these settings into the stored AST in place (so the schema-inference request,
+    /// the actual read, and any retries each mutate the AST again and the body drifts), and the
+    /// analyzer folds them into the query tree only when they are still set in the interpreting
+    /// context (so schema inference would truncate the body while the read would not).
     QueryPipelineBuilder buildBodyQueryPipeline(const ASTPtr & body_query, const ContextPtr & context)
     {
         auto body_context = Context::createCopy(context);
-        body_context->setSetting("limit", UInt64(0));
-        body_context->setSetting("offset", UInt64(0));
+        Settings body_settings = context->getSettingsCopy();
+        body_settings[Setting::limit] = 0.0;
+        body_settings[Setting::offset] = 0.0;
+        body_settings[Setting::max_result_rows] = 0;
+        body_settings[Setting::max_result_bytes] = 0;
+        body_settings[Setting::extremes] = false;
+        body_settings[Setting::implicit_table_at_top_level] = "";
+        body_context->setSettings(body_settings);
         auto subquery_options = SelectQueryOptions{}.subquery();
         /// Interpreters rewrite the query they are given in place, and the stored body AST is shared
         /// between all the requests a single read sends (schema inference, the read itself, retries,
