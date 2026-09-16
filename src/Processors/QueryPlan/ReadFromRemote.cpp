@@ -732,6 +732,13 @@ void ReadFromRemote::addLazyPipe(
         remote_query_executor->setLogger(my_log);
         remote_query_executor->setQueryPlanFallbackStage(my_stage);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
+        /// The connections above were acquired with `PoolMode::GET_ONE` and checked against the table;
+        /// a retry after a network error (`distributed_query_retries`) reacquires them from the same pool
+        /// in the same way, so the retry can go to another (up-to-date) replica.
+        remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+        if (!my_table_func_ptr)
+            remote_query_executor->setMainTable(my_shard.main_table ? my_shard.main_table : my_main_table);
+        remote_query_executor->enableQueryRetries();
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
         /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
         remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);

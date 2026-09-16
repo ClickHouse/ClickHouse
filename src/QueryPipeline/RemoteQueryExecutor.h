@@ -224,7 +224,8 @@ public:
     void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
 
     /// Opt in to network-error retries (`distributed_query_retries`). Default is off: only proven
-    /// read-only paths that can reacquire connections from `ConnectionPoolWithFailover` may enable this.
+    /// read-only paths may enable this, and the executor must have a `ConnectionPoolWithFailover`
+    /// to reacquire the connections from (the retry is silently impossible otherwise).
     void enableQueryRetries() { allow_query_retry = true; }
 
     const Block & getHeader() const { return *header; }
@@ -353,9 +354,10 @@ private:
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    /// The failover pool the connections are taken from, if any. Used to penalize a replica
-    /// whose established connection failed with a network error, so that the retry of the
-    /// query prefers another replica even under deterministic `load_balancing` policies.
+    /// The failover pool the connections are taken from, if any. Used to reacquire the connections
+    /// for a retry after a network error and to penalize the replica whose established connection
+    /// failed, so that the retry prefers another replica even under deterministic `load_balancing`
+    /// policies. A retry is impossible without it.
     ConnectionPoolWithFailoverPtr failover_pool;
 
     LoggerPtr log = getLogger("RemoteQueryExecutor");
@@ -393,6 +395,11 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+    /// Acquire the connections for the query from a failover pool according to `pool_mode`,
+    /// `main_table`, `priority_func` and the `use_hedged_requests` setting.
+    std::unique_ptr<IConnections> createConnectionsFromPool(
+        const ConnectionPoolWithFailoverPtr & pool, const ThrottlerPtr & throttler, AsyncCallback async_callback);
 
     ReadResult readImpl();
     ReadResult readAsyncImpl();

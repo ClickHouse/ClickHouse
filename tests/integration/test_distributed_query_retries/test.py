@@ -12,10 +12,11 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 # `stay_alive` is required on node1: every test restarts it, see `prepare_initiator`.
-node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], stay_alive=True)
+# ZooKeeper is for the replicated table of `test_retry_on_stale_local_replica_path`.
+node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, stay_alive=True)
 # `stay_alive` is required on node2/node3: tests kill and restart them.
-node2 = cluster.add_instance("node2", stay_alive=True)
-node3 = cluster.add_instance("node3", stay_alive=True)
+node2 = cluster.add_instance("node2", with_zookeeper=True, stay_alive=True)
+node3 = cluster.add_instance("node3", with_zookeeper=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -29,6 +30,13 @@ def started_cluster():
 
         node1.query("CREATE TABLE t_distr (x UInt64) ENGINE = Distributed('two_replicas', 'default', 't')")
         node1.query("CREATE TABLE t_two_shards (x UInt64) ENGINE = Distributed('two_shards', 'default', 't')")
+
+        for node in (node1, node2, node3):
+            node.query(
+                "CREATE TABLE t_repl (x UInt64) "
+                f"ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_repl', '{node.name}') ORDER BY x"
+            )
+        node1.query("CREATE TABLE t_repl_distr (x UInt64) ENGINE = Distributed('three_replicas', 'default', 't_repl')")
 
         yield cluster
     finally:
@@ -179,41 +187,108 @@ def test_deferred_progress_not_lost_when_shard_cancelled_by_limit(started_cluste
     assert rows2 == rows0
 
 
-def test_retry_prefers_another_replica(started_cluster):
-    """A replica that failed mid-query must be penalized in the connection pool, so the retry
-    connects to another replica even under `load_balancing = 'in_order'` and even when the failed
-    replica is reachable again by the time of the retry (e.g. after a transient network error)."""
+def run_query_and_kill_replica_while_retry_is_paused(query, settings, query_id):
+    """Kill node2 mid-query, hold the retry at the fail point after the failed replica has been
+    penalized but before the query is re-sent, bring node2 back up, and release the retry, so both
+    replicas are available for the retry and only the penalty can make it prefer node3."""
 
-    prepare_initiator()
     node1.query("SYSTEM ENABLE FAILPOINT remote_query_executor_prepare_retry_pause")
 
-    query_id = "dq_retry_prefers_another_replica"
-
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            lambda: node1.query(QUERY, settings={**SETTINGS, "distributed_query_retries": 2}, query_id=query_id)
-        )
+        future = executor.submit(lambda: node1.query(query, settings=settings, query_id=query_id))
         try:
             wait_query_started_on(node2)
             node2.stop_clickhouse(kill=True)
-            # The retry is paused after the failed replica has been penalized but before the query
-            # is re-sent. Bring node2 back up, so both replicas are available for the retry.
             node1.query("SYSTEM WAIT FAILPOINT remote_query_executor_prepare_retry_pause PAUSE", timeout=60)
             node2.start_clickhouse()
             node1.query("SYSTEM DISABLE FAILPOINT remote_query_executor_prepare_retry_pause")
 
-            assert future.result(timeout=120).strip() == "45"
-            assert node1.contains_in_log("will retry (1/2)")
-            # The retry must run on node3: `in_order` alone would reconnect to node2, which is up
-            # again, but its mid-query failure must have moved it to the back of the failover order.
-            assert remote_read_rows(node3, query_id) == 10
-            assert remote_read_rows(node2, query_id) == 0
+            return future.result(timeout=120)
         finally:
             future.cancel()
             try:
                 node1.query("SYSTEM DISABLE FAILPOINT remote_query_executor_prepare_retry_pause")
             except Exception:
                 pass
+
+
+def assert_retry_ran_on_node3(query_id):
+    assert node1.contains_in_log("will retry (1/2)")
+    # The retry must run on node3: `in_order` alone would reconnect to node2, which is up again,
+    # but its mid-query failure must have moved it to the back of the failover order.
+    assert remote_read_rows(node3, query_id) == 10
+    assert remote_read_rows(node2, query_id) == 0
+
+
+@pytest.mark.parametrize("use_hedged_requests", [0, 1])
+def test_retry_prefers_another_replica(started_cluster, use_hedged_requests):
+    """A replica that failed mid-query must be penalized in the connection pool, so the retry
+    connects to another replica even under `load_balancing = 'in_order'` and even when the failed
+    replica is reachable again by the time of the retry (e.g. after a transient network error).
+
+    With `use_hedged_requests = 1`, `HedgedConnections` drops the failed replica before the error
+    reaches the retry, so it must remember which replica failed instead of penalizing nobody (or a
+    surviving hedge)."""
+
+    prepare_initiator()
+
+    query_id = f"dq_retry_prefers_another_replica_hedged_{use_hedged_requests}"
+    result = run_query_and_kill_replica_while_retry_is_paused(
+        QUERY, {**SETTINGS, "use_hedged_requests": use_hedged_requests, "distributed_query_retries": 2}, query_id
+    )
+
+    assert result.strip() == "45"
+    assert_retry_ran_on_node3(query_id)
+
+
+def wait_local_replica_is_stale(node, table, min_delay):
+    for _ in range(100):
+        delay = int(node.query(f"SELECT absolute_delay FROM system.replicas WHERE table = '{table}'").strip())
+        if delay >= min_delay:
+            return
+        time.sleep(0.2)
+    raise Exception(f"The replica of {table} on {node.name} did not become stale")
+
+
+@pytest.mark.parametrize("use_hedged_requests", [0, 1])
+def test_retry_on_stale_local_replica_path(started_cluster, use_hedged_requests):
+    """With `prefer_localhost_replica = 1` and a stale local replica, the query is sent to a remote
+    replica through the lazy pipe (`ReadFromRemote::addLazyPipe`), which acquires the connections up
+    front. The retry must reacquire them from the pool and run on another replica as well."""
+
+    prepare_initiator()
+
+    for node in (node2, node3):
+        node.query("SYSTEM SYNC REPLICA t_repl")
+    node1.query("SYSTEM STOP FETCHES t_repl")
+    try:
+        # A fetch that node1 cannot process keeps an entry in its replication queue, and the age of
+        # that entry is the replica's absolute delay.
+        node2.query("INSERT INTO t_repl SELECT number FROM numbers(10)")
+        node3.query("SYSTEM SYNC REPLICA t_repl")
+        wait_local_replica_is_stale(node1, "t_repl", 2)
+
+        query_id = f"dq_retry_stale_local_replica_hedged_{use_hedged_requests}"
+        result = run_query_and_kill_replica_while_retry_is_paused(
+            "SELECT sum(x + sleepEachRow(0.25)) FROM t_repl_distr",
+            {
+                **SETTINGS,
+                "use_hedged_requests": use_hedged_requests,
+                "distributed_query_retries": 2,
+                "prefer_localhost_replica": 1,
+                "max_replica_delay_for_distributed_queries": 1,
+            },
+            query_id,
+        )
+
+        assert result.strip() == "45"
+        assert node1.contains_in_log("Local replica of shard 1 is stale")
+        assert_retry_ran_on_node3(query_id)
+    finally:
+        node1.query("SYSTEM START FETCHES t_repl")
+        node2.query("TRUNCATE TABLE t_repl")
+        for node in (node1, node3):
+            node.query("SYSTEM SYNC REPLICA t_repl")
 
 
 def test_no_resend_after_finish_during_prepare_retry_pause(started_cluster):

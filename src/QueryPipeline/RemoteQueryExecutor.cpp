@@ -272,13 +272,26 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     ConnectionPoolWithFailoverPtr pool)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
+    failover_pool = pool;
+
     /// Capture `pool` in the lambda to prevent the connection pool from being destroyed
     /// while entries are still in use. The Entry objects hold raw references (via PoolEntryHelper)
     /// back to the pool's internal PooledObject and PoolBase structures, so the pool must
     /// outlive all Entry objects.
-    create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback) mutable
+    create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback async_callback) mutable -> std::unique_ptr<IConnections>
     {
-        auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context, throttler);
+        /// The preselected entries are used for the first attempt only. A retry after a network error
+        /// (`distributed_query_retries`) reacquires the connections from the pool, so that it can go to
+        /// another replica (the failed one has been penalized in the pool by then).
+        if (connections_.empty())
+        {
+            if (!pool)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot re-create connections for a remote query without a connection pool");
+
+            return createConnectionsFromPool(pool, throttler, std::move(async_callback));
+        }
+
+        auto res = std::make_unique<MultiplexedConnections>(std::exchange(connections_, {}), context, throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -300,56 +313,62 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_)
 {
     failover_pool = pool;
-    create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
+    create_connections = [this, pool, throttler](AsyncCallback async_callback)
     {
-        const Settings & current_settings = context->getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+        return createConnectionsFromPool(pool, throttler, std::move(async_callback));
+    };
+}
+
+std::unique_ptr<IConnections> RemoteQueryExecutor::createConnectionsFromPool(
+    const ConnectionPoolWithFailoverPtr & pool, const ThrottlerPtr & throttler, AsyncCallback async_callback)
+{
+    const Settings & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
 #if defined(OS_LINUX)
-        if (current_settings[Setting::use_hedged_requests])
-        {
-            std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
-            if (main_table)
-                table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
-
-            auto res = std::make_unique<HedgedConnections>(
-                pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback), priority_func);
-            if (extension && extension->replica_info)
-                res->setReplicaInfo(*extension->replica_info);
-            return res;
-        }
-#endif
-
-        ConnectionPoolEntries connection_entries;
-        std::optional<bool> skip_unavailable_endpoints;
-        if (extension && extension->parallel_reading_coordinator)
-            skip_unavailable_endpoints = true;
-
+    if (current_settings[Setting::use_hedged_requests])
+    {
+        std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
         if (main_table)
-        {
-            auto try_results = pool->getManyChecked(
-                timeouts,
-                current_settings,
-                pool_mode,
-                main_table.getQualifiedName(),
-                std::move(async_callback),
-                skip_unavailable_endpoints,
-                priority_func);
-            connection_entries.reserve(try_results.size());
-            for (auto & try_result : try_results)
-                connection_entries.emplace_back(std::move(try_result.entry));
-        }
-        else
-        {
-            connection_entries = pool->getMany(
-                timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
-        }
+            table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
+        auto res = std::make_unique<HedgedConnections>(
+            pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback), priority_func);
         if (extension && extension->replica_info)
             res->setReplicaInfo(*extension->replica_info);
         return res;
-    };
+    }
+#endif
+
+    ConnectionPoolEntries connection_entries;
+    std::optional<bool> skip_unavailable_endpoints;
+    if (extension && extension->parallel_reading_coordinator)
+        skip_unavailable_endpoints = true;
+
+    if (main_table)
+    {
+        auto try_results = pool->getManyChecked(
+            timeouts,
+            current_settings,
+            pool_mode,
+            main_table.getQualifiedName(),
+            std::move(async_callback),
+            skip_unavailable_endpoints,
+            priority_func);
+        connection_entries.reserve(try_results.size());
+        for (auto & try_result : try_results)
+            connection_entries.emplace_back(std::move(try_result.entry));
+    }
+    else
+    {
+        connection_entries = pool->getMany(
+            timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
+    }
+
+    auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
+    if (extension && extension->replica_info)
+        res->setReplicaInfo(*extension->replica_info);
+    return res;
 }
 
 RemoteQueryExecutor::~RemoteQueryExecutor()
@@ -830,6 +849,11 @@ bool RemoteQueryExecutor::mayRetryAfterNetworkError() const
     if (!allow_query_retry)
         return false;
 
+    /// The connections for the retry are reacquired from the failover pool, and the failed replica
+    /// is penalized there; without a pool (e.g. a single preestablished connection) a retry is impossible.
+    if (!failover_pool)
+        return false;
+
     /// An exception received from a remote server in a packet means that the query failed there,
     /// not that the connection is broken.
     if (hasThrownException())
@@ -895,9 +919,8 @@ void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
             /// available replica even under deterministic `load_balancing` policies (e.g. `in_order`,
             /// which would otherwise reconnect to the same host and burn all the retries there).
             /// The connection failures during establishment are already counted by the pool itself.
-            if (failover_pool)
-                for (const auto & address : connections->getReplicaAddresses())
-                    failover_pool->incrementErrorCount(address.host, address.port);
+            for (const auto & address : connections->getFailedReplicaAddresses())
+                failover_pool->incrementErrorCount(address.host, address.port);
 
             connections->disconnect();
         }

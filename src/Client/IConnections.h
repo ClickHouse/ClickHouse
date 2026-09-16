@@ -66,11 +66,12 @@ public:
         UInt16 port;
     };
 
-    /// Addresses (host, port) of the replicas these connections are established to.
-    /// Used to penalize the replicas of a query that failed with a network error before
-    /// it is retried on another replica. Implementations that manage failover themselves
-    /// may return an empty list.
-    virtual std::vector<ReplicaAddress> getReplicaAddresses() const { return {}; }
+    /// Addresses (host, port) of the replicas to penalize in the failover pool after these connections
+    /// failed with a network error, before the query is retried on another replica: the replicas whose
+    /// connection failed (dropped by the implementation before the error was rethrown), or, if the error
+    /// cannot be attributed to a particular replica, all replicas these connections are established to.
+    /// The default is for implementations that do not support such retries.
+    virtual std::vector<ReplicaAddress> getFailedReplicaAddresses() const { return {}; }
 
     struct ReplicaInfo
     {

@@ -349,9 +349,12 @@ std::string MultiplexedConnections::dumpAddresses() const
     return dumpAddressesUnlocked();
 }
 
-std::vector<IConnections::ReplicaAddress> MultiplexedConnections::getReplicaAddresses() const
+std::vector<IConnections::ReplicaAddress> MultiplexedConnections::getFailedReplicaAddresses() const
 {
     std::lock_guard lock(cancel_mutex);
+
+    /// A network error is rethrown without invalidating the replica (only a protocol error does that),
+    /// so the replicas that are still connected are the ones that failed.
     std::vector<ReplicaAddress> addresses;
     for (const ReplicaState & state : replica_states)
     {
