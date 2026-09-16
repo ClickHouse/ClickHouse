@@ -303,16 +303,12 @@ PartitionTransformKind parsePartitionTransformKind(const String & transform_name
     return PartitionTransformKind::NotInvertible;
 }
 
-/// Half-open: `[first, past_last)`. The transforms map a whole such interval to one partition value,
-/// and every step below stays half-open, so a value from corrupt metadata can only fail an overflow
-/// check and disable pruning, never wrap around.
 struct Interval
 {
     Int64 first;
     Int64 past_last;
 };
 
-/// The value covers `[v, v + 1)` of its own unit.
 std::optional<Interval> unitInterval(Int64 value)
 {
     Int64 past_last = 0;
@@ -321,7 +317,6 @@ std::optional<Interval> unitInterval(Int64 value)
     return Interval{value, past_last};
 }
 
-/// `[a, b)` in one unit is `[a * factor, b * factor)` in a unit that many times finer.
 std::optional<Interval> refineInterval(std::optional<Interval> interval, Int64 factor)
 {
     Int64 first = 0;
