@@ -3092,7 +3092,7 @@ The maximum size of the set in the right-hand side of the `IN` operator for whic
     DECLARE(Bool, analyze_index_with_multiple_key_columns_per_condition, true, R"(
 Allow one atomic condition of the `WHERE`/`PREWHERE` expression (a single comparison, `IN`, `has`, etc.) to constrain multiple key columns during index analysis.
 
-For example, if a table has `ORDER BY (toDate(ts), ts)` and the query has `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, the first of the two conditions constrains both key columns: it is analyzed as if `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'` were written. When the setting is disabled, each condition constrains at most one key column (only `ts` in this example).
+For example, if a table has `ORDER BY (toDate(ts), ts)` and the query has `WHERE ts = '2026-01-10 00:00:00' AND user_id = 42`, the first of the two conditions constrains both key columns: it is analyzed as if `toDate(ts) = '2026-01-10' AND ts = '2026-01-10 00:00:00'` were written. When the setting is disabled, this predicate constrains only `ts`. Tuple membership predicates such as `(a, b) IN ((1, 2), (3, 4))` can still constrain multiple key columns.
 )", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis. Currently, 2D analysis skips curves with `UInt64` arguments because the curve implementations use only 32 bits per argument.

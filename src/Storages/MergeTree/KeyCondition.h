@@ -601,7 +601,7 @@ private:
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         const std::string & func_name,
-        bool allow_constant_transformation,
+        bool allow_relaxed_pruning,
         RPN & out,
         const Field * rewritten_const_value = nullptr,
         const DataTypePtr & rewritten_const_type = nullptr);
@@ -621,7 +621,7 @@ private:
         const std::string & func_name,
         const Field & const_value,
         const DataTypePtr & const_type,
-        bool allow_constant_transformation,
+        bool allow_relaxed_pruning,
         RPN & out);
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
@@ -724,34 +724,39 @@ private:
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         RPN & out,
-        bool allow_constant_transformation);
+        bool allow_relaxed_pruning);
     void tryPrepareSetAtomsForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         RPN & out,
-        bool allow_constant_transformation);
+        bool allow_relaxed_pruning);
 
-    /// The result of mapping a set-membership predicate expression onto key columns
-    /// (see `analyzePredicateExpressionForSetIndex`).
-    struct SetIndexAnalysisResult
+    /// The inputs for one set atom, with one mapping, transform, and type per matched key column.
+    struct SetAtomCandidate
     {
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
         std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
         DataTypes data_types;
-        /// A direct mapping of a tuple expression onto a Tuple-typed key column. This is kept
-        /// separately from the component mappings because it needs the prepared set packed as
-        /// one Tuple column.
-        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> whole_tuple_indexes_mapping;
-        std::vector<std::optional<DeterministicKeyTransformDag>> whole_tuple_set_transforming_dags;
-        DataTypes whole_tuple_data_types;
-        /// The number of tuple components of the predicate expression (1 for a scalar).
+        /// The number of tuple components of the predicate expression (1 for a scalar or packed tuple).
         size_t args_count = 1;
-        /// Some component mapping goes through a non-injective deterministic DAG; the set
-        /// check as a whole then only describes a superset of the matching values. This is
-        /// distinct from the per-element `RPNElement::relaxed`.
+        /// A non-injective transform makes the set check a superset of the matching values.
         bool is_relaxed = false;
-        bool whole_tuple_is_relaxed = false;
     };
+
+    struct SetIndexAnalysisResult
+    {
+        SetAtomCandidate components;
+        /// A tuple expression mapped onto one Tuple-typed key column needs a packed set column.
+        std::optional<SetAtomCandidate> whole_tuple;
+    };
+
+    /// Converts a candidate's set columns into key space and builds its `MergeTreeSetIndex`.
+    static std::optional<RPNElement> tryBuildSetAtom(
+        const Columns & set_columns,
+        const DataTypes & set_types,
+        SetAtomCandidate candidate,
+        bool allow_relaxed_pruning,
+        const DataTypePtr & has_element_type);
 
     /// This function maps the predicate expression whose values are tested for set
     /// membership (the left-hand side of IN, or the element argument of `has`) onto
@@ -760,20 +765,18 @@ private:
     /// deterministic set-transforming DAG.
     SetIndexAnalysisResult analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg, const BuildInfo & info);
 
-    /// The shared core of set-atom extraction for IN and `has`: given the membership
-    /// predicate's key-side expression, the materialized set columns and the analyzed
-    /// key mapping, appends the direct set atom and, when `allow_wrapped_set_atoms` is
-    /// set, one wrapped-set atom per remaining key column that is a deterministic
-    /// function of the expression. `has_element_type` supplies the occupied element type of a
-    /// `has` array, so every atom checks that conversion preserves its comparison semantics.
-    void extractSetAtomsForKeyArgument(
-        const RPNBuilderTreeNode & key_arg,
+    /// Appends the set atoms for one `IN` or `has` predicate using its materialized set and analyzed
+    /// key mappings. `wrapped_expressions` supplies the tuple components from which deterministic
+    /// transforms can derive atoms for remaining key columns. Deduplication is local to this predicate.
+    /// `has_element_type` supplies the occupied element type of a `has` array, so every atom checks
+    /// that conversion preserves its comparison semantics.
+    void appendSetAtoms(
         const BuildInfo & info,
         const Columns & set_columns,
         const DataTypes & set_types,
         SetIndexAnalysisResult analysis,
-        bool allow_constant_transformation,
-        bool allow_wrapped_set_atoms,
+        const std::vector<std::pair<size_t, String>> & wrapped_expressions,
+        bool allow_relaxed_pruning,
         RPN & out,
         const DataTypePtr & has_element_type = nullptr);
 
@@ -882,10 +885,10 @@ private:
     bool date_time_overflow_behavior_ignore;
 
     /// Holds the value of the `analyze_index_with_multiple_key_columns_per_condition` setting.
-    /// When false, atom extraction keeps at most one key column per predicate leaf: the candidate
+    /// When false, atom extraction keeps at most one atom per predicate leaf: the candidate
     /// sources of `extractComparisonAtomsForKeyArgument` are consulted in priority order until one
     /// of them matches, and the set analysis builds only the direct set atom. Multi-atom groups
-    /// then never form.
+    /// then never form, but a single tuple-set atom can still constrain several key columns.
     bool multiple_key_columns_per_condition = true;
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.

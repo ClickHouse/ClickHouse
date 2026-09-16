@@ -709,31 +709,7 @@ void RPNBuilder<RPNElement>::traverseTree(
 
     if (!atoms.empty())
     {
-        for (size_t i = 0; i < atoms.size(); ++i)
-        {
-            /// Mark every element that continues the group (the second and subsequent atoms
-            /// and the AND operators combining them) so that consumers relying on a
-            /// one-element-per-leaf RPN layout can treat the whole group as a single position.
-            /// The `requires` check makes this a no-op for element types that do not
-            /// declare the flag; such conditions do not participate in disjunction tracking.
-            if constexpr (requires (RPNElement & e) { e.continues_multi_atom_group = true; })
-            {
-                if (i != 0)
-                    atoms[i].continues_multi_atom_group = true;
-            }
-
-            rpn_elements.emplace_back(std::move(atoms[i]));
-
-            if (i != 0)
-            {
-                RPNElement and_operator;
-                and_operator.function = RPNElement::FUNCTION_AND;
-                if constexpr (requires (RPNElement & e) { e.continues_multi_atom_group = true; })
-                    and_operator.continues_multi_atom_group = true;
-                rpn_elements.emplace_back(std::move(and_operator));
-            }
-        }
-
+        appendAtomGroup(rpn_elements, std::make_move_iterator(atoms.begin()), std::make_move_iterator(atoms.end()));
         return;
     }
 

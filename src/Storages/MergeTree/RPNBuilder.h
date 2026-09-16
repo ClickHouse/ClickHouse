@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Core/Block.h>
-
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ActionsDAG.h>
+#include <base/defines.h>
+
+#include <iterator>
 
 namespace DB
 {
@@ -246,6 +248,38 @@ public:
     explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
     explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_);
     RPNElements && extractRPN() &&;
+
+    /// Appends one predicate leaf as `atom0 atom1 AND atom2 AND ...`. Continuation markers let
+    /// consumers treat the entire group as one leaf. Moving iterators transfer ownership of atoms.
+    template <typename Iterator>
+    static void appendAtomGroup(RPNElements & target, Iterator begin, Iterator end)
+    {
+        chassert(begin != end);
+        bool first = true;
+        for (auto it = begin; it != end; ++it)
+        {
+            RPNElement atom(*it);
+            chassert(atom.function != RPNElement::FUNCTION_AND);
+            chassert(atom.function != RPNElement::FUNCTION_OR);
+            chassert(atom.function != RPNElement::FUNCTION_NOT);
+            chassert(atom.function != RPNElement::FUNCTION_UNKNOWN || (first && std::next(it) == end));
+
+            /// Element types without this flag do not participate in disjunction tracking.
+            if constexpr (requires { atom.continues_multi_atom_group = true; })
+                atom.continues_multi_atom_group = !first;
+            target.emplace_back(std::move(atom));
+
+            if (!first)
+            {
+                RPNElement and_operator;
+                and_operator.function = RPNElement::FUNCTION_AND;
+                if constexpr (requires { and_operator.continues_multi_atom_group = true; })
+                    and_operator.continues_multi_atom_group = true;
+                target.emplace_back(std::move(and_operator));
+            }
+            first = false;
+        }
+    }
 
 private:
     void traverseTree(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function);
