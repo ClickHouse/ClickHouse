@@ -577,7 +577,12 @@ void optimizeTreeSecondPass(
     /// Must run after the read-in-order pass so that `SortingStep` types have been finalised.
     /// Does its own root-to-leaf traversal because eligibility depends on the ancestors of
     /// each `WindowStep` (a later window may rely on the candidate's original output order).
-    if (optimization_settings.reuse_storage_ordering_for_window_functions)
+    /// Skipped when the plan may be shipped out (see the rule above `optimizeTreeSecondPass`):
+    /// the rewritten shape - a `MergeOnly` sort under a streaming `WindowStep` - is not
+    /// serializable, and the pass is perf-only. Nothing is lost: a worker re-optimizes its
+    /// fragment with `make_distributed_plan = 0` and applies the rewrite to its own part.
+    if (optimization_settings.reuse_storage_ordering_for_window_functions
+        && !optimization_settings.make_distributed_plan && !optimization_settings.serialize_query_plan)
         optimizeStreamingWindowFunctions(root, nodes, optimization_settings);
 
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.

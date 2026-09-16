@@ -57,7 +57,11 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    /// The streaming state (`enableStreamingMode`) is not on the wire, and the `MergeOnly` sort
+    /// it pairs with is not serializable either, so a streaming window must stay unserializable
+    /// rather than have a worker silently rebuild it as an ordinary `WindowTransform` over a
+    /// sort it never received.
+    bool isSerializable() const override { return !streaming_mode_; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
