@@ -30,6 +30,10 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (dag.hasStatefulFunctions())
         return 0;
 
+    /// How often rand() is drawn relative to the expansion depends on the shape today; lowering must not change it.
+    if (dag.hasNonDeterministic())
+        return 0;
+
     auto extracted = dag.extractFirstArrayJoin();
     if (!extracted)
         return 0;
