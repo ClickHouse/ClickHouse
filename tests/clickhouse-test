@@ -1938,11 +1938,19 @@ class SettingsRandomizer:
 
     @staticmethod
     def adjust_settings_for_autopr(args, tags, random_settings):
-        # The AutoPR job pins `automatic_parallel_replicas_mode` (and the settings that go with it) in
-        # the server profile. Randomizing it here would send a per-query value that overrides the
-        # profile, so the job would silently run in the randomized mode instead of the one it installed.
+        # The AutoPR job pins the settings the optimization needs in the server profile
+        # (tests/config/users.d/enable_automatic_parallel_replicas.xml). A randomized value is sent
+        # with every query and overrides the profile, so any setting that appears both there and in
+        # `SettingsRandomizer.settings` must be dropped here - otherwise the job silently runs with
+        # the optimization disabled for a fraction of the suite and covers nothing.
+        #
+        # `automatic_parallel_replicas_mode` turns it off outright; `parallel_replicas_local_plan` = 0
+        # makes the analyzer skip building the parallel-replicas plan at all
+        # (`InterpreterSelectQueryAnalyzer::buildQueryPlanWithParallelReplicas`), so AutoPR has nothing
+        # to compare against. Keep this list in sync with the profile.
         if args.autopr:
-            random_settings.pop("automatic_parallel_replicas_mode", None)
+            for setting in ("automatic_parallel_replicas_mode", "parallel_replicas_local_plan"):
+                random_settings.pop(setting, None)
             return
         # no_parallel_replicas is set for runs with enabled parallel replicas. In this case we should not reset `cluster_for_parallel_replicas`
         if (
