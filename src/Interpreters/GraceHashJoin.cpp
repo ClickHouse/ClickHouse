@@ -596,7 +596,7 @@ BlocksList GraceHashJoin::releaseInMemoryBlocks(IJoin & join) const
     return assert_cast<HashJoin &>(join).releaseJoinedBlocks(/* restructure */ false);
 }
 
-void GraceHashJoin::finishInMemoryBuild(IJoin & join)
+void GraceHashJoin::finishInMemoryBuild(IJoin & join) const
 {
     join.onBuildPhaseFinish();
     if (partitioned_buckets)
@@ -893,12 +893,11 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
 {
     if (partitioned_buckets)
     {
-        /// No row hint: a table sized for `reserve_num` up front would be charged to the bucket's
+        /// No row hint: a table sized for `reserve_num` up front would count against the bucket's
         /// predicted bytes before any row arrives, and under a tight threshold every bucket would
-        /// rebucket at once. Sized at the barrier from its own rows, a bucket's prediction grows with
-        /// the rows it holds, as the `HashJoin` bucket's byte count does. The memory budget stays off:
-        /// the bucket count is how this join bounds memory, and the blocks a rebucketing takes back
-        /// out come from `releaseJoinedBlocks`.
+        /// rebucket at once; sized at the barrier from its own rows, the prediction grows with the
+        /// rows, as a `HashJoin` bucket's byte count does. No memory budget either: the bucket count
+        /// is how this join bounds memory.
         return std::make_shared<PartitionedHashJoin>(
             table_join,
             right_sample_block,

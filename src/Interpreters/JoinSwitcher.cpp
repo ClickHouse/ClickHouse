@@ -165,7 +165,7 @@ bool JoinSwitcher::switchJoin()
         join->getTotalByteCount(),
         join->getTotalRowCount());
 
-    /// Construct first so a throw here leaves `join` as a live HashJoin with `switched == false`.
+    /// Construct first so a throw here leaves `join` as the live in-memory join with `switched == false`.
     auto merge_join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
 
     /// Keep the old table alive for the drain. Publish `MergeJoin` before releasing so a throw
@@ -178,7 +178,7 @@ bool JoinSwitcher::switchJoin()
                                                    : assert_cast<HashJoin *>(old_join.get())->releaseJoinedBlocks(true);
 
     fiu_do_on(FailPoints::join_switcher_throw_after_hash_release, {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after HashJoin data was released");
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the in-memory join's data was released");
     });
 
     bool success = true;

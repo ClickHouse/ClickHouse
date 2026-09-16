@@ -21,24 +21,25 @@ class PartitionedHashJoin;
 class MatchedRowsStats;
 
 /**
- * Efficient and highly parallel implementation of external memory JOIN based on HashJoin.
+ * Efficient and highly parallel implementation of external memory JOIN based on an in-memory hash join
+ * (`HashJoin`, or `PartitionedHashJoin` when the query runs `partitioned_hash`).
  * Supports most of the JOIN modes, except CROSS and ASOF.
  *
  * The joining algorithm consists of three stages:
  *
  * 1) During the first stage we accumulate blocks of the right table via @addBlockToJoin.
  * Each input block is split into multiple buckets based on the hash of the row join keys.
- * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
- * When the size of HashJoin exceeds the limits, we double the number of buckets.
+ * The first bucket is added to the in-memory join, and the remaining buckets are written to disk for further processing.
+ * When the size of the in-memory join exceeds the limits, we double the number of buckets.
  * There can be multiple threads calling addBlockToJoin, just like HashJoin.
  *
  * 2) At the second stage we process left table blocks via @joinBlock.
  * Again, each input block is split into multiple buckets by hash.
- * The first bucket is joined in-memory via HashJoin::joinBlock, and the remaining buckets are written to the disk.
+ * The first bucket is joined in-memory via the in-memory join's `joinBlock`, and the remaining buckets are written to the disk.
  *
  * 3) When the last thread reading left table block finishes, the last stage begins.
  * Each @DelayedJoinedBlocksTransform calls repeatedly @getDelayedBlocks until there are no more unfinished buckets left.
- * Inside @getDelayedBlocks we select the next unprocessed bucket, load right table blocks from disk into in-memory HashJoin,
+ * Inside @getDelayedBlocks we select the next unprocessed bucket, load right table blocks from disk into the in-memory join,
  * And then join them with left table blocks.
  *
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
@@ -49,8 +50,7 @@ class GraceHashJoin final : public IJoin
     class FileBucket;
     class DelayedBlocks;
 
-    /// The join of one bucket: a `HashJoin`, or a `PartitionedHashJoin` when the query runs
-    /// `partitioned_hash` (`partitioned_buckets`).
+    /// The join of one bucket, see `partitioned_buckets`.
     using InMemoryJoinPtr = std::shared_ptr<IJoin>;
 
     struct GraceHashJoinStats
@@ -142,7 +142,7 @@ private:
     BlocksList releaseInMemoryBlocks(IJoin & join) const;
     /// The partitioned join builds its table in its post-build phase, so that phase runs here for every
     /// bucket; a `HashJoin` bucket keeps its post-build optimizations for the single-bucket case.
-    void finishInMemoryBuild(IJoin & join);
+    void finishInMemoryBuild(IJoin & join) const;
     void foldInMemoryJoin(GraceHashJoinStats & into, const IJoin & join) const;
 
     /// Add right table block to the @join. Calls @rehash on overflow.

@@ -1064,6 +1064,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     };
     const bool spill_to_disk
         = analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk() && GraceHashJoin::isSupported(analyzed_join);
+    /// The partitioned join serves this shape and `join_algorithm` lists it: `partitioned_hash` itself,
+    /// and the in-memory join of `auto` and the buckets of `grace_hash` when it is listed as well.
+    const bool partitioned_hash_wanted
+        = analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && PartitionedHashJoin::isSupported(*analyzed_join);
     auto make_partitioned_join = [&]() -> std::shared_ptr<IJoin>
     {
         const auto & settings = context->getSettingsRef();
@@ -1101,7 +1105,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         const auto & settings = context->getSettingsRef();
 
-        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && PartitionedHashJoin::isSupported(*analyzed_join))
+        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && partitioned_hash_wanted)
             return make_partitioned_join();
 
         if (spill_to_disk)
@@ -1162,21 +1166,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 /*any_take_last_row_=*/false,
                 /*external_join_threshold_=*/0,
                 context->getSettingsRef()[Setting::max_threads],
-                /*partitioned_buckets_=*/analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH)
-                    && PartitionedHashJoin::isSupported(*analyzed_join));
+                /*partitioned_buckets_=*/partitioned_hash_wanted);
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
         const auto & settings = context->getSettingsRef();
 
-        /// `auto` starts from the partitioned join when `join_algorithm` lists it as well.
-        const bool partitioned
-            = analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && PartitionedHashJoin::isSupported(*analyzed_join);
-
         if (spill_to_disk)
         {
-            if (partitioned)
+            if (partitioned_hash_wanted)
                 return make_partitioned_join();
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
@@ -1203,9 +1202,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 HashJoinStatsCollectingParams{},
                 settings[Setting::max_threads],
                 use_parallel_layout,
-                partitioned,
+                partitioned_hash_wanted,
                 rhs_size_estimation);
-        if (partitioned)
+        if (partitioned_hash_wanted)
             return make_partitioned_join();
         return std::make_shared<HashJoin>(
             analyzed_join,
