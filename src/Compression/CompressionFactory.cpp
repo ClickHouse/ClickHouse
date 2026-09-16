@@ -3,7 +3,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <Core/Settings.h>
-#include <IO/ReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -12,10 +11,7 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/String.h>
 
-#include <algorithm>
 #include <Columns/IColumn.h>
-
-#include <boost/algorithm/string/join.hpp>
 
 #include "config.h"
 
