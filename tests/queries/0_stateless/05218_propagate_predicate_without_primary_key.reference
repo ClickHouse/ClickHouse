@@ -4,4 +4,7 @@ in set on a key column	2
 in set on a key column, no index analysis	1
 in set on a skip-indexed column	2
 in set on a skip-indexed column, no skip indexes	1
+in set, index ignored	1
+in set, final without skip indexes	1
+in set, final with skip indexes	2
 correctness	0
