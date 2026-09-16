@@ -19,12 +19,22 @@ SELECT arrayInsert([1, 2, 3], pos, 9)
 FROM values('pos Int64', 2, -1);
 
 SELECT arrayInsert(arr, 2, 9)
-FROM values('arr Array(Int32)', [1, 2, 3], [], [4, 5]);
+FROM values('arr Array(Int32)', [1, 2, 3], [6], [4, 5]);
 
 SELECT arrayInsert(arr, pos, 9)
 FROM values('arr Array(Int32), pos UInt64',
     ([1, 2], 2),
     ([], 1));
+
+SELECT arrayInsert(arr, pos, 9)
+FROM values('arr Array(Int32), pos Int64',
+    ([1, 2, 3], 5),
+    ([4, 5], -4)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+SELECT arrayInsert(arr, pos, 9)
+FROM values('arr Array(Int32), pos UInt64',
+    ([1, 2], 4),
+    ([], 2)); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT arrayInsert([1, 2], 1, NULL);
 SELECT arrayInsert(['a', 'b'], 2, 'x');
