@@ -216,6 +216,18 @@ TEST(FindSymbols, CompileTimeRandomized)
     test_compile_time_randomized<'\0', '\n'>();
 }
 
+TEST(FindSymbols, ReversedRange)
+{
+    const std::array<char, 1> haystack {'a'};
+    const char * begin = haystack.data() + haystack.size();
+    const char * end = haystack.data();
+
+    ASSERT_EQ(find_first_symbols<'a'>(begin, end), end);
+    ASSERT_EQ(find_first_symbols_or_null<'a'>(begin, end), nullptr);
+    ASSERT_EQ(find_first_not_symbols<'a'>(begin, end), end);
+    ASSERT_EQ(find_first_not_symbols_or_null<'a'>(begin, end), nullptr);
+}
+
 
 TEST(FindSymbols, SimpleTest)
 {

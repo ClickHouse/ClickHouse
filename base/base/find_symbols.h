@@ -374,26 +374,9 @@ inline const char * find_first_symbols_avx2_blocks_128(const char * pos)
 }
 
 template <bool positive, ReturnMode return_mode, char... symbols>
-inline const char * find_first_symbols_avx2(const char * const begin, const char * const end)
+[[gnu::noinline]] const char * find_first_symbols_avx2(const char * const begin, const char * const end)
 {
-    constexpr size_t avx2_threshold = 512;
-    constexpr size_t prefix_size = 64;
-
-    if (static_cast<size_t>(end - begin) < avx2_threshold) [[unlikely]]
-        return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);
-
-    const char * const prefix_end = begin + prefix_size;
-
-#if defined(__clang__)
-#pragma clang loop unroll(disable)
-#endif
-    for (const char * pos = begin; pos != prefix_end; pos += 16)
-    {
-        if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(pos))
-            return found;
-    }
-
-    const char * pos = prefix_end;
+    const char * pos = begin;
 
     if constexpr (sizeof...(symbols) <= 2)
     {
@@ -737,9 +720,30 @@ template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_first_symbols_dispatch(const char * begin, const char * end)
     requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
 {
+    if (begin >= end) [[unlikely]]
+        return return_mode == ReturnMode::End ? end : nullptr;
+
 #if defined(__AVX2__)
     if constexpr (sizeof...(symbols) >= 1 && sizeof...(symbols) <= 4)
-        return find_first_symbols_avx2<positive, return_mode, symbols...>(begin, end);
+    {
+        constexpr size_t avx2_threshold = 1024;
+        if (static_cast<size_t>(end - begin) >= avx2_threshold) [[unlikely]]
+        {
+            constexpr size_t prefix_size = 512;
+            const char * const prefix_end = begin + prefix_size;
+
+#if defined(__clang__)
+#pragma clang loop unroll(disable)
+#endif
+            for (const char * pos = begin; pos != prefix_end; pos += 16)
+            {
+                if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(pos))
+                    return found;
+            }
+
+            return find_first_symbols_avx2<positive, return_mode, symbols...>(prefix_end, end);
+        }
+    }
 #endif
 #if defined(__SSE4_2__)
     if (sizeof...(symbols) >= 5)
