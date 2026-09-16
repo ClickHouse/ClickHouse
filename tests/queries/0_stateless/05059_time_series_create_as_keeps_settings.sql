@@ -9,12 +9,14 @@ DROP TABLE IF EXISTS ts_src;
 DROP TABLE IF EXISTS ts_derived;
 
 CREATE TABLE ts_src ENGINE = TimeSeries
-SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0;
+SETTINGS tags_to_columns = {'job': 'job'}, store_time_ranges = 0;
 
 SELECT '-- `AS` without `ENGINE`: the engine is taken from `ts_src` and the settings are merged the same way';
-CREATE TABLE ts_derived AS ts_src SETTINGS store_min_time_and_max_time = 1;
+CREATE TABLE ts_derived AS ts_src SETTINGS store_time_ranges = 1;
 SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'ts_derived';
 SELECT extract(create_table_query, 'TAGS INNER COLUMNS \((.*?)\) TAGS INNER ENGINE')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_derived';
+SELECT extract(create_table_query, 'TIME RANGES INNER COLUMNS \((.*?)\) TIME RANGES INNER ENGINE')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_derived';
 
 -- The `job` column comes with the copied inner columns anyway, so check that it's actually filled -

@@ -8,8 +8,7 @@ SET allow_experimental_time_series_table = 1;
 DROP TABLE IF EXISTS ts;
 
 CREATE TABLE ts ENGINE = TimeSeries
-SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0,
-         filter_by_min_time_and_max_time = 0, samples_index_granularity = 1024;
+SETTINGS tags_to_columns = {'job': 'job'}, metric_families_deduplication_cache_expiration_seconds = 600, samples_index_granularity = 1024;
 
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
 
@@ -39,10 +38,11 @@ INSERT INTO ts (metric_name, tags, samples) VALUES ('m3', {'job': 'j3'}, [(3, 3.
 SELECT metric_name, job FROM timeSeriesTags(ts) ORDER BY metric_name;
 
 SELECT '-- `MODIFY SETTING` sees the other settings, so a conflicting value is rejected';
+-- `filter_by_min_time_and_max_time` applies to tables of version 7 or earlier only, and the kept `version` of the table is later.
 ALTER TABLE ts MODIFY SETTING filter_by_min_time_and_max_time = 1; -- { serverError INVALID_SETTING_VALUE }
 
 SELECT '-- `RESET SETTING` removes only the reset setting';
-ALTER TABLE ts RESET SETTING filter_by_min_time_and_max_time;
+ALTER TABLE ts RESET SETTING metric_families_deduplication_cache_expiration_seconds;
 SELECT arraySort(extractAll(arrayFirst(line -> line LIKE 'SETTINGS %', splitByChar('\n', formatQuery(create_table_query))), '([a-z_]+) = '))
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
 

@@ -1,0 +1,35 @@
+-- an insert writes the time range of each inserted time series with samples
+1970-01-01 00:16:40.000	1970-01-01 00:17:40.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+-- a second insert extends the time range, the ranges of a time series are merged into one
+1970-01-01 00:08:20.000	1970-01-01 00:25:00.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+-- the selector reads the time ranges table to filter time series by time
+4
+1
+-- the probe deciding whether a selector matches the whole metric reads the time ranges table too: a time series without samples in the range is not a counterexample
+0
+1
+-- store_time_ranges = 0 disables the time ranges table and the filtering
+1
+4
+0
+-- a TIME RANGES clause requires store_time_ranges to be enabled and is rejected for version 7 or earlier
+-- a table of version 7 keeps min_time and max_time in the tags table and filters by them
+1970-01-01 00:08:20.000	1970-01-01 00:25:00.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+\N	\N
+4
+0
+-- an external time ranges table is written by inserts and read by the selector
+1970-01-01 00:08:20.000	1970-01-01 00:25:00.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+4
+-- the filter is applied: a time series is hidden from a range which its stored time range does not intersect
+0
+4
+-- a selector matching the whole metric does not filter time series by their stored time ranges, only the samples are filtered by their timestamps
+2
+1
+-- DROP TABLE drops the inner tables
+0

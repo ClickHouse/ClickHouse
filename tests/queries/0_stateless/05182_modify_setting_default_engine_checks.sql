@@ -25,14 +25,14 @@ SET allow_experimental_time_series_table = 1;
 CREATE TABLE t_modify_setting_default_ts ENGINE = TimeSeries;
 ALTER TABLE t_modify_setting_default_ts RESET SETTING version; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE t_modify_setting_default_ts MODIFY SETTING version = DEFAULT; -- { serverError NOT_IMPLEMENTED }
-ALTER TABLE t_modify_setting_default_ts MODIFY SETTING filter_by_min_time_and_max_time = false, version = DEFAULT; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_modify_setting_default_ts MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600, version = DEFAULT; -- { serverError NOT_IMPLEMENTED }
 -- The pinned value is whatever the server's latest version is, so only its presence is checked.
 SELECT create_table_query LIKE '%version =%'
 FROM system.tables WHERE database = currentDatabase() AND name = 't_modify_setting_default_ts';
 
 SELECT '-- an altered setting a reset does not touch still takes effect';
-ALTER TABLE t_modify_setting_default_ts MODIFY SETTING filter_by_min_time_and_max_time = false, id_generator = DEFAULT;
-SELECT extract(create_table_query, 'filter_by_min_time_and_max_time = (\\w+)')
+ALTER TABLE t_modify_setting_default_ts MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600, id_generator = DEFAULT;
+SELECT extract(create_table_query, 'metric_families_deduplication_cache_expiration_seconds = (\\w+)')
 FROM system.tables WHERE database = currentDatabase() AND name = 't_modify_setting_default_ts';
 
 SELECT '-- MergeTree: a column setting is reset too';
