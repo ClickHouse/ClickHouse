@@ -470,6 +470,7 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     LIBFUZZER_CORPUS_MINIMIZATION = "libFuzzer corpus minimization"
     PARSER_MEMORY_CHECK = "Parser memory check"
+    STORAGE_MEMORY_CHECK = "Storage memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
