@@ -37,6 +37,18 @@ SELECT number, arrayRemoveAt([number, number + 1], toUInt64(18446744073709551615
 SELECT arrayRemoveAt([1, 2, 3], toUInt64(18446744073709551615));
 SELECT arrayRemoveAt([1, 2, 3], toInt64(-9223372036854775807) - 1);
 SELECT toTypeName(arrayRemoveAt(CAST([1, 2, 3], 'Array(UInt8)'), toInt8(2)));
+SELECT arrayRemoveAt([[1, 2], [3, 4], [5, 6]], 2);
+
+SELECT
+    number,
+    arrayRemoveAt(
+        arrayMap(x -> toUInt64(number + x), range(number % 5)),
+        multiIf(number = 0, toInt8(1), number = 1, toInt8(1), number = 2, toInt8(9), number = 3, toInt8(-1), toInt8(2)))
+FROM numbers(5)
+ORDER BY number;
+
+SELECT number, arrayRemoveAt([number, number + 1], toInt8(10 + number)) FROM numbers(3) ORDER BY number;
+SELECT number, arrayRemoveAt(CAST([toUInt64(number), NULL, toUInt64(number + 2)], 'Array(Nullable(UInt64))'), toInt8(2)) FROM numbers(3) ORDER BY number;
 
 SELECT arrayRemoveAt([1, 2, 3], 0); -- { serverError ZERO_ARRAY_OR_TUPLE_INDEX }
 SELECT arrayRemoveAt(1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

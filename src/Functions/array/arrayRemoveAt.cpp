@@ -141,66 +141,111 @@ public:
                 return arguments[0].column;
         }
 
-        auto result_data = source_data.cloneEmpty();
-        size_t reserve_size = source_data.size();
-        if (array_is_const && input_rows_count != 0
-            && source_data.size() <= std::numeric_limits<size_t>::max() / input_rows_count)
-            reserve_size *= input_rows_count;
-        result_data->reserve(reserve_size);
-
         auto result_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
         auto & result_offsets = result_offsets_column->getData();
 
-        size_t source_begin = 0;
-        const size_t constant_array_size = array_is_const ? source_offsets[0] : 0;
         size_t result_size = 0;
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        auto get_remove_position_for_row = [&](size_t row, size_t array_size) -> std::optional<size_t>
         {
-            const size_t row_source_begin = array_is_const ? 0 : source_begin;
-            const size_t source_end = array_is_const ? constant_array_size : source_offsets[row];
-            const size_t array_size = source_end - row_source_begin;
-
-            std::optional<size_t> remove_position;
             if (index_is_const)
             {
                 if (constant_index_distance <= array_size)
                 {
-                    remove_position = constant_index_from_end
+                    return constant_index_from_end
                         ? array_size - static_cast<size_t>(constant_index_distance)
                         : static_cast<size_t>(constant_index_distance - 1);
                 }
+
+                return std::nullopt;
             }
-            else
+
+            return index_is_unsigned
+                ? getRemovePosition(index_column.getUInt(row), array_size)
+                : getRemovePosition(index_column.getInt(row), array_size);
+        };
+
+        if (array_is_const)
+        {
+            auto result_data = source_data.cloneEmpty();
+            size_t reserve_size = source_data.size();
+            if (input_rows_count != 0 && source_data.size() <= std::numeric_limits<size_t>::max() / input_rows_count)
+                reserve_size *= input_rows_count;
+            result_data->reserve(reserve_size);
+
+            const size_t constant_array_size = source_offsets.empty() ? 0 : source_offsets[0];
+            for (size_t row = 0; row < input_rows_count; ++row)
             {
-                remove_position = index_is_unsigned
-                    ? getRemovePosition(index_column.getUInt(row), array_size)
-                    : getRemovePosition(index_column.getInt(row), array_size);
+                const auto remove_position = get_remove_position_for_row(row, constant_array_size);
+                if (!remove_position)
+                {
+                    if (constant_array_size != 0)
+                        result_data->insertRangeFrom(source_data, 0, constant_array_size);
+                    result_size += constant_array_size;
+                }
+                else
+                {
+                    const size_t prefix_size = *remove_position;
+                    const size_t suffix_size = constant_array_size - prefix_size - 1;
+
+                    if (prefix_size != 0)
+                        result_data->insertRangeFrom(source_data, 0, prefix_size);
+                    if (suffix_size != 0)
+                        result_data->insertRangeFrom(source_data, prefix_size + 1, suffix_size);
+
+                    result_size += constant_array_size - 1;
+                }
+
+                result_offsets[row] = result_size;
             }
+
+            return ColumnArray::create(std::move(result_data), std::move(result_offsets_column));
+        }
+
+        MutableColumnPtr result_data;
+        size_t source_begin = 0;
+        size_t copy_begin = 0;
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const size_t source_end = source_offsets[row];
+            const size_t array_size = source_end - source_begin;
+            const auto remove_position = get_remove_position_for_row(row, array_size);
 
             if (!remove_position)
             {
-                if (array_size != 0)
-                    result_data->insertRangeFrom(source_data, row_source_begin, array_size);
                 result_size += array_size;
             }
             else
             {
-                const size_t prefix_size = *remove_position;
-                const size_t suffix_size = array_size - prefix_size - 1;
+                if (!result_data)
+                {
+                    result_data = source_data.cloneEmpty();
+                    result_data->reserve(source_data.size());
+                }
 
-                if (prefix_size != 0)
-                    result_data->insertRangeFrom(source_data, row_source_begin, prefix_size);
-                if (suffix_size != 0)
-                    result_data->insertRangeFrom(source_data, row_source_begin + prefix_size + 1, suffix_size);
+                const size_t absolute_remove_position = source_begin + *remove_position;
+                if (absolute_remove_position > copy_begin)
+                {
+                    result_data->insertRangeFrom(
+                        source_data,
+                        copy_begin,
+                        absolute_remove_position - copy_begin);
+                }
 
+                copy_begin = absolute_remove_position + 1;
                 result_size += array_size - 1;
             }
 
             result_offsets[row] = result_size;
-            if (!array_is_const)
-                source_begin = source_end;
+            source_begin = source_end;
         }
+
+        if (!result_data)
+            return arguments[0].column;
+
+        if (copy_begin < source_data.size())
+            result_data->insertRangeFrom(source_data, copy_begin, source_data.size() - copy_begin);
 
         return ColumnArray::create(std::move(result_data), std::move(result_offsets_column));
     }
