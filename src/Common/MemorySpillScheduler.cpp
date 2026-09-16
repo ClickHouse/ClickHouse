@@ -315,7 +315,8 @@ void MemorySpillScheduler::executeForcedSpillUntil(UInt64 epoch, std::chrono::st
     async_forced_spill_cv.wait_until(lock, deadline, [&]
     {
         const auto state = async_forced_spills.find(epoch);
-        return state == async_forced_spills.end() || !state->second.running;
+        return (state != async_forced_spills.end() && state->second.exception)
+            || getForcedSpillResult(epoch).outcome != ForcedSpillOutcome::Pending;
     });
 
     const auto state = async_forced_spills.find(epoch);
@@ -335,13 +336,16 @@ MemorySpillScheduler::ForcedSpillResult MemorySpillScheduler::getForcedSpillResu
 
 void MemorySpillScheduler::finishMemoryPressure()
 {
-    std::lock_guard lock(mutex);
-    forced_spill_active = false;
-    forced_spill_remaining = 0;
-    const UInt64 requested = forced_spill_request_epoch.load(std::memory_order_acquire);
-    forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
-    forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
-    forced_spill_completed_epoch.store(requested, std::memory_order_release);
+    {
+        std::lock_guard lock(mutex);
+        forced_spill_active = false;
+        forced_spill_remaining = 0;
+        const UInt64 requested = forced_spill_request_epoch.load(std::memory_order_acquire);
+        forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
+        forced_spill_reclaimed_bytes.store(0, std::memory_order_relaxed);
+        forced_spill_completed_epoch.store(requested, std::memory_order_release);
+    }
+    async_forced_spill_cv.notify_all();
 }
 
 Int64 MemorySpillScheduler::getHardLimit()
@@ -392,6 +396,7 @@ void MemorySpillScheduler::completeForcedSpillProcessor(UInt64 epoch, ProcessorS
             forced_spill_outcome.store(ForcedSpillOutcome::NoProgress, std::memory_order_relaxed);
         forced_spill_completed_epoch.store(epoch, std::memory_order_release);
     }
+    async_forced_spill_cv.notify_all();
 }
 
 void MemorySpillScheduler::updateTopProcessor()
