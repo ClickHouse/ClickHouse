@@ -10,7 +10,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
-#include "config.h"
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -121,7 +120,6 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/HypotheticalObjectStore.h>
-#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
@@ -190,10 +188,6 @@ namespace ProfileEvents
     extern const Event MergesThrottlerSleepMicroseconds;
     extern const Event MutationsThrottlerBytes;
     extern const Event MutationsThrottlerSleepMicroseconds;
-    extern const Event DistrCacheReadThrottlerBytes;
-    extern const Event DistrCacheReadThrottlerSleepMicroseconds;
-    extern const Event DistrCacheWriteThrottlerBytes;
-    extern const Event DistrCacheWriteThrottlerSleepMicroseconds;
     extern const Event QueryLocalReadThrottlerBytes;
     extern const Event QueryLocalReadThrottlerSleepMicroseconds;
     extern const Event QueryLocalWriteThrottlerBytes;
@@ -434,8 +428,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_thread_pool_size;
-    extern const ServerSettingsUInt64 max_distributed_cache_read_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_distributed_cache_write_bandwidth_for_server;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
@@ -488,15 +480,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
 }
-
-/// Per-query deviations from the server-level distributed cache switches. The background and buffer
-/// contexts are built once at startup, so a value coming from their profile would pin them for the
-/// lifetime of the server - which is exactly what makes the switch unobservable for merges,
-/// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
-/// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
-/// it is already shared with running threads when profiles are applied, so a reset would race there.
-static const std::vector<String> distributed_cache_force_setting_names
-    = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
 {                                                       \
@@ -611,7 +594,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
-    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text, deliberately not exposed to SQL
+    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
@@ -1060,50 +1043,12 @@ struct ContextSharedPart : boost::noncopyable
         LOG_TRACE(log, "Shutting down object storage queue streaming");
         StreamingStorageRegistry::instance().shutdown();
 
-        /// Stop all MergeTree background executors and cancel the in-flight merges,
-        /// mutations and fetches, in this order:
-        ///
-        /// 1. Flip every executor into shutdown mode without joining it. From this point on
-        ///    no new task can be scheduled (`trySchedule` rejects them) and no pending task
-        ///    can start (worker threads exit at the next step boundary), so the set of
-        ///    running tasks cannot grow.
-        /// 2. Cancel everything that is currently running. `cancelAll` also marks entries
-        ///    inserted later as cancelled, so a task that is inside its first step and has
-        ///    not registered itself in the list yet cannot escape the cancellation.
-        /// 3. Join the executors.
-        ///
-        /// The executors' `wait` (step 3) does not interrupt already running tasks, and the
-        /// per-storage cancellation (`merges_blocker`, `fetcher.blocker`) happens only later,
-        /// in `DatabaseCatalog::shutdown`. Without step 2, `wait` would block until the
-        /// current task step completes, and a single slow step (e.g. a merge applying huge
-        /// patch parts, which can spend minutes inside one block under sanitizers, or a
-        /// fetch of a large part) would delay shutdown beyond any timeout. The results of
-        /// these merges and fetches are discarded after the restart anyway, so finishing
-        /// them is pure waste. Without step 1, the cancellation would be racy: a task
-        /// scheduled after step 2 would be invisible to `cancelAll` and block `wait` again.
-        ///
-        /// Merge and mutate tasks check `MergeListElement::is_cancelled` on every block
-        /// through `MergeProgressCallback` and abort with the `ABORTED` exception; fetches
-        /// check `ReplicatedFetchListElement::is_cancelled` on every buffer refill.
-        ///
-        /// Waiting for the executors before shutting down databases also ensures no
-        /// background task is accessing a storage's data (e.g. data_parts_indexes) while
-        /// `DatabaseCatalog::shutdown` destroys that storage, which used to cause a SIGBUS.
+        /// Stop all MergeTree background executors before shutting down databases.
+        /// This ensures no background tasks (merges, mutations, moves, part cleanup)
+        /// are running when storage objects are shut down or destroyed.
+        /// Without this, a background task could be accessing a storage's data_parts_indexes
+        /// while DatabaseCatalog::shutdown is destroying that storage, causing a SIGBUS.
         /// See https://github.com/ClickHouse/ClickHouse/issues/85433
-        LOG_TRACE(log, "Stopping background executors from starting new tasks");
-        if (merge_mutate_executor)
-            merge_mutate_executor->requestShutdown();
-        if (fetch_executor)
-            fetch_executor->requestShutdown();
-        if (moves_executor)
-            moves_executor->requestShutdown();
-        if (common_executor)
-            common_executor->requestShutdown();
-
-        LOG_TRACE(log, "Cancelling merges, mutations and fetches");
-        merge_list.cancelAll();
-        replicated_fetch_list.cancelAll();
-
         SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
         SHUTDOWN(log, "fetches executor", fetch_executor, wait());
         SHUTDOWN(log, "moves executor", moves_executor, wait());
@@ -1389,18 +1334,6 @@ struct ContextSharedPart : boost::noncopyable
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
             merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
-
-        // Distributed cache client throttling.
-        // Note that distributed cache throttlers are inherited from remote throttlers because they are socket-level throttlers and use server bandwidth
-        if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_read_bandwidth_for_server])
-            distributed_cache_read_throttler = std::make_shared<Throttler>(bandwidth, remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
-        else
-            distributed_cache_read_throttler = remote_read_throttler;
-
-        if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_write_bandwidth_for_server])
-            distributed_cache_write_throttler = std::make_shared<Throttler>(bandwidth, remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
-        else
-            distributed_cache_write_throttler = remote_write_throttler;
     }
 };
 
@@ -1435,9 +1368,6 @@ ContextData::ContextData(const ContextData &o) :
     input_blocks_reader(o.input_blocks_reader),
     user_id(o.user_id),
     current_roles(o.current_roles),
-    external_roles(o.external_roles),
-    authentication_grants(o.authentication_grants),
-    authentication_valid_until(o.authentication_valid_until),
     settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
@@ -1496,7 +1426,6 @@ ContextData::ContextData(const ContextData &o) :
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
-    streaming_cursor(o.streaming_cursor),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -2229,7 +2158,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -2256,8 +2185,6 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
-    setAuthenticationGrantsWithLock(authentication_grants_, lock);
-    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -2303,54 +2230,15 @@ void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_role
 
 void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
 {
-    // External roles are roles received from another node; current roles is a collection of roles that were assigned locally.
-    // Replace them unconditionally (rather than append) so that switching the principal via `setUser` clears any external
-    // roles carried over from a previous principal on the same or a copied context. `ContextData`'s copy constructor now
-    // preserves `external_roles`, so without this reset a context authenticated with pushed roles would keep them after
-    // `setUser(target_user)` (e.g. `EXECUTE AS target_user` via `impersonateSessionContext`), silently widening the
-    // target's privileges. This mirrors how `setAuthenticationGrants` and `setCurrentRoles` overwrite their state.
-    if (new_external_roles.empty())
-        external_roles = nullptr;
-    else
-        external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
-    need_recalculate_access = true;
-}
-
-void Context::setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> &)
-{
-    authentication_grants = authentication_grants_;
-    need_recalculate_access = true;
-}
-
-void Context::setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_)
-{
-    std::lock_guard lock(mutex);
-    setAuthenticationGrantsWithLock(authentication_grants_, lock);
-}
-
-std::shared_ptr<const AccessRightsElements> Context::getAuthenticationGrants() const
-{
-    SharedLockGuard lock(mutex);
-    return authentication_grants;
-}
-
-void Context::setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> &)
-{
-    /// This does not affect the access-rights calculation (unlike the grant limit), so there is no
-    /// need to invalidate the access cache: it is metadata for the deferred-execution expiry check.
-    authentication_valid_until = authentication_valid_until_;
-}
-
-void Context::setAuthenticationValidUntil(time_t authentication_valid_until_)
-{
-    std::lock_guard lock(mutex);
-    setAuthenticationValidUntilWithLock(authentication_valid_until_, lock);
-}
-
-time_t Context::getAuthenticationValidUntil() const
-{
-    SharedLockGuard lock(mutex);
-    return authentication_valid_until;
+    // External roles are roles received from other node, current roles is a collection of roles that were assigned locally
+    if (!new_external_roles.empty())
+    {
+        if (external_roles)
+            external_roles->insert(external_roles->end(), new_external_roles.begin(), new_external_roles.end());
+        else
+            external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
+        need_recalculate_access = true;
+    }
 }
 
 void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
@@ -2409,14 +2297,6 @@ void Context::setCurrentRolesDefault()
 std::vector<UUID> Context::getCurrentRoles() const
 {
     return getRolesInfo()->getCurrentRoles();
-}
-
-std::vector<UUID> Context::getExternalRoles() const
-{
-    SharedLockGuard lock(mutex);
-    if (external_roles)
-        return *external_roles;
-    return {};
 }
 
 std::vector<UUID> Context::getEnabledRoles() const
@@ -2479,7 +2359,7 @@ std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
             initial_user_id = getAccessControl().find<User>(client_info.initial_user);
 
         return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, authentication_grants, *settings, current_database, client_info, initial_user_id};
+            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info, initial_user_id};
     };
 
     /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
@@ -2915,18 +2795,6 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
         external_tables_mapping.erase(iter);
     }
     return holder;
-}
-
-SessionQueryIdsHistory & Context::getSessionQueryIdsHistory() const
-{
-    /// in session context so the history persists across queries
-    if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
-        return session_ctx->getSessionQueryIdsHistory();
-
-    std::lock_guard lock(mutex);
-    if (!session_query_ids_history)
-        session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
-    return *session_query_ids_history;
 }
 
 HypotheticalObjectStore & Context::getHypotheticalObjectStore() const
@@ -4076,7 +3944,6 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
     ContextMutablePtr background_context_ptr = Context::createCopy(shared_from_this());
     background_context_ptr->setCurrentProfile(shared->background_profile_name);
     background_context_ptr->is_background_operation = true;
-    background_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
 
     background_context_instance = background_context_ptr;
     background_context = background_context_ptr;
@@ -4395,20 +4262,6 @@ WasmModuleManager * Context::initWasmModuleManager()
         return nullptr;
 
     String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
-    /// Validated on every build, including the ones that cannot run WebAssembly at all, so that a stale
-    /// engine name in the configuration is reported the same way everywhere instead of being ignored.
-    WasmModuleManager::validateEngineName(engine_name);
-
-#if !USE_WASMTIME
-    /// This build has no WebAssembly engine, so fail close: do not expose any WebAssembly UDF surface at all.
-    /// In particular, `system.webassembly_modules` is not attached and persisted `LANGUAGE WASM` functions are
-    /// not loaded at startup (loading them would compile the modules and abort the server startup).
-    LOG_WARNING(
-        shared->log,
-        "WebAssembly UDFs are enabled in the configuration, but this build of ClickHouse does not include "
-        "a WebAssembly engine, so WebAssembly UDFs remain unavailable");
-    return nullptr;
-#else
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
@@ -4416,7 +4269,6 @@ WasmModuleManager * Context::initWasmModuleManager()
     shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
 
     return shared->wasm_module_manager.get();
-#endif
 }
 
 bool Context::hasWasmModuleManager() const
@@ -4429,15 +4281,7 @@ WasmModuleManager & Context::getWasmModuleManager() const
 {
     SharedLockGuard lock(shared->mutex);
     if (!shared->wasm_module_manager)
-    {
-#if USE_WASMTIME
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WebAssembly support is not enabled");
-#else
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "WebAssembly support is not enabled: this build of ClickHouse does not include a WebAssembly engine");
-#endif
-    }
     return *shared->wasm_module_manager;
 }
 
@@ -4492,31 +4336,16 @@ ThreadPool & Context::getBackgroundQueryPool() const
     return *shared->background_query_pool;
 }
 
-void Context::stopAcceptingNewBackupsAndRestores() const
-{
-    /// Not `if (shared->backups_worker)`: the worker is created on first use, and the flag has to
-    /// land on the instance any later caller will get.
-    getBackupsWorker().stopAcceptingNewOperations();
-}
-
 void Context::waitAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
         shared->backups_worker->waitAll();
 }
 
-bool Context::cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline) const
+void Context::cancelAllBackupsAndRestores() const
 {
     if (shared->backups_worker)
-        return shared->backups_worker->cancelAll(/* wait_= */ true, deadline);
-    return true;
-}
-
-bool Context::hasUnfinishedBackupsAndRestores() const
-{
-    if (shared->backups_worker)
-        return shared->backups_worker->hasUnfinishedOperations();
-    return false;
+        shared->backups_worker->cancelAll();
 }
 
 std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
@@ -4530,16 +4359,6 @@ std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
     return const_cast<Context *>(this)->getBackupsInMemory();
-}
-
-void Context::setStreamingCursor(std::shared_ptr<StreamingCursor> cursor)
-{
-    streaming_cursor = std::move(cursor);
-}
-
-std::shared_ptr<StreamingCursor> Context::getStreamingCursor() const
-{
-    return streaming_cursor;
 }
 
 
@@ -5540,9 +5359,9 @@ void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
 
-    /// Each cache is null-checked because some `Context` users intentionally do
-    /// not initialize the full set of caches; matches the single-cache
-    /// `clear<X>Cache` methods.
+    /// Each cache is null-checked because some `Context` users (e.g. the
+    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
+    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
 
     if (shared->uncompressed_cache)
         shared->uncompressed_cache->clear();
@@ -5969,26 +5788,11 @@ ThrottlerPtr Context::getMergesThrottler() const
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->distributed_cache_read_throttler;
-    }
-
-    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
-    /// Writes do not need this here: `WriteBufferFromDistributedCache` also flushes through the
-    /// underlying object-storage writer, whose `write_settings.remote_throttler` already carries the
-    /// user-level throttler via `getRemoteWriteThrottler`. Splicing it onto the send socket too would
-    /// account each byte twice against the same token bucket.
-    if (auto process_list_element = getProcessListElementSafe())
-        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
-
-    return throttler;
+    return shared->distributed_cache_read_throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
 {
-    SharedLockGuard lock(shared->mutex);
     return shared->distributed_cache_write_throttler;
 }
 
@@ -6036,33 +5840,6 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
 
     if (shared->local_write_throttler)
         std::static_pointer_cast<Throttler>(shared->local_write_throttler)->setMaxSpeed(write_bandwidth);
-}
-
-void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
-{
-    std::lock_guard lock(shared->mutex);
-
-    /// While distributed cache throttling is off the member aliases the remote throttler
-    /// (see configureServerWideThrottling), so a non-null pointer does not mean it is ours to mutate.
-    if (read_bandwidth)
-    {
-        if (!shared->distributed_cache_read_throttler || shared->distributed_cache_read_throttler == shared->remote_read_throttler) // Create throttler
-            shared->distributed_cache_read_throttler = std::make_shared<Throttler>(read_bandwidth, shared->remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
-        else // Update throttler
-            std::static_pointer_cast<Throttler>(shared->distributed_cache_read_throttler)->setMaxSpeed(read_bandwidth);
-    }
-    else if (shared->distributed_cache_read_throttler != shared->remote_read_throttler) // Delete throttler
-        shared->distributed_cache_read_throttler = shared->remote_read_throttler;
-
-    if (write_bandwidth)
-    {
-        if (!shared->distributed_cache_write_throttler || shared->distributed_cache_write_throttler == shared->remote_write_throttler) // Create throttler
-            shared->distributed_cache_write_throttler = std::make_shared<Throttler>(write_bandwidth, shared->remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
-        else // Update throttler
-            std::static_pointer_cast<Throttler>(shared->distributed_cache_write_throttler)->setMaxSpeed(write_bandwidth);
-    }
-    else if (shared->distributed_cache_write_throttler != shared->remote_write_throttler) // Delete throttler
-        shared->distributed_cache_write_throttler = shared->remote_write_throttler;
 }
 
 bool Context::hasDistributedDDL() const
@@ -7984,11 +7761,8 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     makeBackgroundContext(config);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    /// Settle the settings before publishing the context, so that a reader never sees them being changed.
-    ContextMutablePtr buffer_context_ptr = Context::createCopy(shared_from_this());
-    buffer_context_ptr->setCurrentProfile(shared->buffer_profile_name);
-    buffer_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
-    buffer_context = buffer_context_ptr;
+    buffer_context = Context::createCopy(shared_from_this());
+    buffer_context->setCurrentProfile(shared->buffer_profile_name);
 }
 
 String Context::getDefaultProfileName() const
@@ -8292,11 +8066,6 @@ void Context::increaseDistributedDepth()
     ++client_info.distributed_depth;
 }
 
-void Context::setClientTraceContext(const OpenTelemetry::TracingContext & trace_context)
-{
-    client_info.client_trace_context = trace_context;
-}
-
 
 StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
@@ -8498,8 +8267,8 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 
 bool Context::isServerCompletelyStarted() const
 {
-    /// Only the server ever sets the flag, so every other application reads it as "not started yet".
     SharedLockGuard lock(shared->mutex);
+    chassert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
 
@@ -8891,7 +8660,7 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
-    /// Below this the executor would serve near-empty windows / stall on tiny source reads.
+    /// Below 4 KiB the executor would serve near-empty windows / stall on tiny source reads.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
     if (res.reader_executor.window_size < min_reader_executor_size)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",

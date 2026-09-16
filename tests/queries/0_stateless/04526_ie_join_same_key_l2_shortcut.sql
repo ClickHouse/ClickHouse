@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-old-analyzer
 
 -- `x BETWEEN a AND b` shapes: when both left keys are the same column and the operator
 -- families are opposite (exactly then the L1 and L2 directions coincide for the left side),
