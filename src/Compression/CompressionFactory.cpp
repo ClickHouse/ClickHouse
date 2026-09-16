@@ -123,7 +123,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
         if (codecs.size() == 1)
             return codecs.back();
         if (codecs.size() > 1)
-            return std::make_shared<CompressionCodecMultiple>(codecs);
+            return std::make_shared<CompressionCodecMultiple>(std::move(codecs));
         return std::make_shared<CompressionCodecNone>();
     }
 
