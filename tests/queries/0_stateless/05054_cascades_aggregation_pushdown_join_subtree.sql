@@ -1,5 +1,4 @@
--- Tags: no-old-analyzer, no-random-settings
--- no-old-analyzer: distributed planning requires the analyzer.
+-- Tags: no-random-settings
 -- no-random-settings: the test pins whole EXPLAIN outputs, and the harness randomizes several
 -- settings that move the join order and with it those plans.
 
