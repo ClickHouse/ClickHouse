@@ -1,6 +1,8 @@
 #pragma once
 
-// Adapted from Boost.Geometry's algorithms/detail/is_valid/multipolygon.hpp.
+// Adapted from Boost.Geometry 1.90.0's algorithms/detail/is_valid/multipolygon.hpp.
+// Uses private validation visitors and partition helpers. On Boost upgrades, compare all
+// five validation phases with the upstream implementation and rerun differential tests.
 // Copyright (c) 2023 Adam Wulkiewicz, Lodz, Poland.
 // Copyright (c) 2014-2021, Oracle and/or its affiliates.
 // Licensed under the Boost Software License, Version 1.0.
