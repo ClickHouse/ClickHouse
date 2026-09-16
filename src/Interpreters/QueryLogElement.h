@@ -6,6 +6,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/FlatStringMap.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TransactionID.h>
 
@@ -111,7 +112,8 @@ struct QueryLogElement
     /// element owns all its memory - see SystemLogBase::add.
     std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
     std::map<String, UInt64> async_read_counters;
-    std::map<String, String> query_settings;
+    /// Unset when the settings were not dumped, which is not the same as a query that changed none.
+    std::optional<FlatStringMap> query_settings;
 
     bool is_internal{};
 
