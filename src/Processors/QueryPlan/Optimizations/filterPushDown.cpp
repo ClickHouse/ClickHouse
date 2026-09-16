@@ -372,13 +372,15 @@ struct JoinActionRefPairHash
     }
 };
 
-/// A pushed-down filter computes the key it stands in for while the JOIN computes it again, so a substitutable
-/// key must return the same value both times and must not change the number of rows. `arrayJoin` in a key is a
-/// FUNCTION node, refused by the determinism test rather than by the node-type one.
+/// A pushed-down filter computes the key it stands in for while the JOIN computes it again, so a substitutable key
+/// must return the same value both times, must not change the number of rows, and must not be observable beyond
+/// that value. `arrayJoin` in a key is a FUNCTION node, refused by the determinism test rather than the node-type one.
 static bool isKeyStableAcrossEvaluations(const JoinActionRef & key)
 {
     static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
-    { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
+    {
+        return function.isStateful() || !function.isDeterministicInScopeOfQuery() || function.hasObservableSideEffects();
+    };
 
     const auto key_dag = JoinExpressionActions::getSubDAG(key);
     for (const auto & node : key_dag.getNodes())

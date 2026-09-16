@@ -59,3 +59,6 @@ a stable key still reaches both indexes
 1
 a deterministic expression key keeps the substitution
 1
+a key observable beyond its value is not substituted
+0
+1

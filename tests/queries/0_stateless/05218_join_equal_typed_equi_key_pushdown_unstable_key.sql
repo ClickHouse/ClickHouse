@@ -1,7 +1,7 @@
 -- A predicate over one side of an equi-join key is pushed to the other side by substituting that side's key
 -- expression into it, so the pushed filter evaluates that expression while the JOIN evaluates it again. A key
--- that does not survive a second evaluation - it changes the number of rows, or it is stateful - must not be
--- substituted, otherwise the answer changes.
+-- that does not survive a second evaluation - it changes the number of rows, it is stateful, or it is observable
+-- beyond its value - must not be substituted, otherwise the answer or what the query accounts for changes.
 
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
@@ -145,6 +145,27 @@ SELECT count() > 0 FROM (
     SELECT lk.a FROM lk_stable_key AS lk INNER JOIN rk_stable_key AS rk ON lk.a = rk.x + 1 WHERE lk.a = 5
     SETTINGS query_plan_propagate_predicate_across_join = 0, enable_join_runtime_filters = 0
 ) WHERE explain ILIKE '%Condition: (plus(x, 1) in [5, 5])%';
+
+SELECT 'a key observable beyond its value is not substituted';
+
+-- `sleep` returns the same value for every row and is neither stateful nor non-deterministic, so its observable
+-- side effects are the only thing that disqualifies it: a substituted key runs below the JOIN over that side's
+-- whole read while the JOIN runs it again above, which a user reads back as extra `SleepFunctionCalls` and time.
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT lk.a FROM lk_stable_key AS lk INNER JOIN rk_stable_key AS rk ON lk.a = rk.x + sleep(0)
+    WHERE lk.a = 5
+    SETTINGS query_plan_propagate_predicate_across_join = 0, enable_join_runtime_filters = 0
+) WHERE explain ILIKE '%Filter column: %sleep%';
+
+-- `materialize` is the same shape, an expression that is not constant-folded either, and is still substituted,
+-- so the pair cannot pass by refusing both.
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT lk.a FROM lk_stable_key AS lk INNER JOIN rk_stable_key AS rk ON lk.a = rk.x + materialize(0::Int64)
+    WHERE lk.a = 5
+    SETTINGS query_plan_propagate_predicate_across_join = 0, enable_join_runtime_filters = 0
+) WHERE explain ILIKE '%Filter column: %materialize%';
 
 DROP TABLE lk_stable_key;
 DROP TABLE rk_stable_key;
