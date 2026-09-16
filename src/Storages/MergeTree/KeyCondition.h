@@ -747,6 +747,29 @@ private:
         std::optional<SetAtomCandidate> whole_tuple;
     };
 
+    /// A key subexpression from which the wrapped-set pass of `appendSetAtoms` derives atoms: one
+    /// tuple component of the membership predicate expression (the expression itself for a scalar),
+    /// or, for a tuple expression, the packed tuple as a whole.
+    struct WrappedSetSource
+    {
+        /// The component index within the predicate tuple; 0 for a scalar or the whole tuple.
+        size_t component = 0;
+        String expr_name;
+        /// Whether the source is the whole tuple expression rather than one component. Its
+        /// candidates are checked against the packed set, like `SetIndexAnalysisResult::whole_tuple`.
+        bool is_whole_tuple = false;
+    };
+
+    /// Returns the key subexpressions through which the wrapped-set candidates of `appendSetAtoms`
+    /// can be built: every tuple component of the membership predicate expression that appears
+    /// among the key subexpressions and, for a tuple expression, the packed tuple itself. An empty
+    /// result means that pass cannot produce anything.
+    static std::vector<WrappedSetSource> wrappedSetSources(
+        const RPNBuilderTreeNode & key_arg,
+        const NameSet & key_subexpr_names,
+        size_t args_count,
+        bool allow_wrapped_set_atoms);
+
     /// Converts a candidate's set columns into key space and builds its `MergeTreeSetIndex`.
     static std::optional<RPNElement> tryBuildSetAtom(
         const Columns & set_columns,
@@ -763,8 +786,9 @@ private:
     SetIndexAnalysisResult analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg, const BuildInfo & info);
 
     /// Appends the set atoms for one `IN` or `has` predicate using its materialized set and analyzed
-    /// key mappings. `wrapped_expressions` supplies the tuple components from which deterministic
-    /// transforms can derive atoms for remaining key columns. Deduplication is local to this predicate.
+    /// key mappings. `wrapped_sources` supplies the tuple components (and the packed tuple) from which
+    /// deterministic transforms can derive atoms for remaining key columns. Deduplication is local to
+    /// this predicate.
     /// `has_element_type` supplies the occupied element type of a `has` array, so every atom checks
     /// that conversion preserves its comparison semantics.
     void appendSetAtoms(
@@ -772,7 +796,7 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetIndexAnalysisResult analysis,
-        const std::vector<std::pair<size_t, String>> & wrapped_expressions,
+        const std::vector<WrappedSetSource> & wrapped_sources,
         bool allow_relaxed_pruning,
         RPN & out,
         const DataTypePtr & has_element_type = nullptr);
