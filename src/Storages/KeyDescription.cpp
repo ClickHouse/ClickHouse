@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -16,6 +17,8 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+
+#include <unordered_set>
 
 
 namespace DB
@@ -32,6 +35,7 @@ namespace Setting
     extern const SettingsBool allow_lossy_numeric_supertype;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsUInt64 function_date_trunc_return_type_behavior;
+    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
 }
 
 namespace ErrorCodes
@@ -59,6 +63,9 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     ///   - h3togeo_lon_lat_result_order: h3ToGeo returns Tuple(longitude, latitude) instead of the
     ///     canonical Tuple(latitude, longitude) - same top-level type but the two Float64 elements are
     ///     swapped, so it silently reorders the produced key column rather than aborting with a Bad cast;
+    ///   - geotoh3_argument_order: geoToH3 reads its two coordinate arguments as (longitude, latitude)
+    ///     instead of the canonical (latitude, longitude) - the result type is always UInt64, so, like
+    ///     h3togeo_lon_lat_result_order, it silently changes the produced key values rather than the type;
     ///   - allow_lossy_numeric_supertype and use_variant_as_common_type: the two knobs that decide how
     ///     if/multiIf/ifNull/coalesce/array/map resolve branches with no lossless common type (they are
     ///     the only arguments getLeastSupertype/getLeastSupertypeOrVariant take besides the types), so
@@ -67,7 +74,7 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     /// If a CREATE/ALTER runs with any of them at a value that differs from the server baseline, the
     /// recomputed KeyDescription::data_types diverge from the column the storage actually produces for
     /// the key (which is analyzed elsewhere with the baseline), aborting the next write with a Bad cast
-    /// or (for h3togeo_lon_lat_result_order) silently swapping the key tuple elements. For the two
+    /// or (for h3togeo_lon_lat_result_order and geotoh3_argument_order) silently changing the key values. For the two
     /// supertype knobs the recorded type can also be one the baseline cannot resolve at all, which makes
     /// the table fail to attach on reload rather than only failing the write.
     /// Pin exactly these type-affecting settings to the baseline so the key type is deterministic. This
@@ -102,6 +109,7 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     bool lossy_numeric_supertype = false;
     bool variant_as_common_type = false;
     UInt64 date_trunc = 0;
+    GeoToH3ArgumentOrder geotoh3_order = GeoToH3ArgumentOrder::LAT_LON;
     if (context->hasGlobalContext())
     {
         const auto & baseline = context->getGlobalContext()->getSettingsRef();
@@ -114,6 +122,7 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
         lossy_numeric_supertype = baseline[Setting::allow_lossy_numeric_supertype];
         variant_as_common_type = baseline[Setting::use_variant_as_common_type];
         date_trunc = baseline[Setting::function_date_trunc_return_type_behavior];
+        geotoh3_order = baseline[Setting::geotoh3_argument_order];
     }
     else
     {
@@ -127,6 +136,7 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
         lossy_numeric_supertype = default_settings[Setting::allow_lossy_numeric_supertype];
         variant_as_common_type = default_settings[Setting::use_variant_as_common_type];
         date_trunc = default_settings[Setting::function_date_trunc_return_type_behavior];
+        geotoh3_order = default_settings[Setting::geotoh3_argument_order];
     }
 
     const auto & settings = context->getSettingsRef();
@@ -138,7 +148,8 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
         && static_cast<bool>(settings[Setting::h3togeo_lon_lat_result_order]) == h3togeo_lon_lat
         && static_cast<bool>(settings[Setting::allow_lossy_numeric_supertype]) == lossy_numeric_supertype
         && static_cast<bool>(settings[Setting::use_variant_as_common_type]) == variant_as_common_type
-        && static_cast<UInt64>(settings[Setting::function_date_trunc_return_type_behavior]) == date_trunc)
+        && static_cast<UInt64>(settings[Setting::function_date_trunc_return_type_behavior]) == date_trunc
+        && settings[Setting::geotoh3_argument_order].value == geotoh3_order)
         return context;
 
     auto key_context = Context::createCopy(context);
@@ -151,7 +162,48 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     key_context->setSetting("allow_lossy_numeric_supertype", Field(lossy_numeric_supertype));
     key_context->setSetting("use_variant_as_common_type", Field(variant_as_common_type));
     key_context->setSetting("function_date_trunc_return_type_behavior", Field(date_trunc));
+    key_context->setSetting("geotoh3_argument_order", SettingFieldGeoToH3ArgumentOrder(geotoh3_order).toString());
     return key_context;
+}
+
+NameSet getKeySubexpressionsWithSessionDependentValues(const ExpressionActions & key_expr, const ContextPtr & context)
+{
+    NameSet result;
+    if (!context || !context->hasGlobalContext())
+        return result;
+
+    /// Hand-maintained, like date_time_parsing_functions in KeyCondition: the functions whose produced
+    /// VALUE (not type) follows a session setting, paired with the setting that drives them. A function
+    /// is a carrier only while the query session deviates from the server baseline the key was built
+    /// under (see createKeyExpressionContext); when the two agree the key and the query mean the same.
+    const auto & baseline = context->getGlobalContext()->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
+    std::unordered_set<std::string_view> deviating_functions;
+    if (settings[Setting::h3togeo_lon_lat_result_order] != baseline[Setting::h3togeo_lon_lat_result_order])
+        deviating_functions.insert("h3ToGeo");
+    if (settings[Setting::geotoh3_argument_order].value != baseline[Setting::geotoh3_argument_order].value)
+        deviating_functions.insert("geoToH3");
+    if (deviating_functions.empty())
+        return result;
+
+    /// Actions are linearized children-first, so one pass propagates the taint from a carrier function
+    /// to every subexpression computed from it, up to the key column itself.
+    std::unordered_set<const ActionsDAG::Node *> tainted;
+    for (const auto & action : key_expr.getActions())
+    {
+        const auto * node = action.node;
+        bool is_tainted = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+            && deviating_functions.contains(node->function_base->getName());
+        for (const auto * child : node->children)
+            is_tainted = is_tainted || tainted.contains(child);
+
+        if (is_tainted)
+        {
+            tainted.insert(node);
+            result.insert(node->result_name);
+        }
+    }
+    return result;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
