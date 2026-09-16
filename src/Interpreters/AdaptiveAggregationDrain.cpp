@@ -359,6 +359,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         /*key_start=*/slice_begin,
         /*has_only_one_value_since_last_reset=*/false,
         /*all_keys_are_const=*/false,
+        /*all_places_are_non_null=*/true,
         use_compiled_functions);
 }
 
