@@ -4,6 +4,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <Disks/DiskLocal.h>
 #include <base/defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
@@ -16,6 +17,13 @@
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/MapConfiguration.h>
+
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_after_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
+}
 
 #include <algorithm>
 #include <atomic>
@@ -4404,5 +4412,113 @@ TYPED_TEST(CoordinationChangelogTest, StartupReadOutOfScopeCompressionDoesNotFor
         EXPECT_EQ(reference.termAt(i), parallel_reader.termAt(i)) << "index " << i;
 }
 
+
+namespace
+{
+
+/// A log disk that cannot hand a file to another disk. `writeAt` moves a completed changelog back
+/// onto the latest log disk by copying it through `disk_from->copyFile`, so failing that abandons
+/// the move and leaves the file where it is.
+class CopyRefusingDiskLocal : public DB::DiskLocal
+{
+public:
+    CopyRefusingDiskLocal(const std::string & name_, const std::string & path_)
+        : DB::DiskLocal(name_, path_)
+    {
+    }
+
+    void copyFile(
+        const std::string & from_file_path,
+        DB::IDisk & to_disk,
+        const std::string & to_file_path,
+        const DB::ReadSettings & read_settings,
+        const DB::WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) override
+    {
+        if (refuse_copies)
+            throw std::runtime_error("injected failure while copying the file");
+
+        DB::DiskLocal::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
+    }
+
+    std::atomic<bool> refuse_copies = false;
+};
+
+}
+
+/// A rewrite that starts exactly at a completed changelog's first index used to hand
+/// `ChangelogWriter::setFile` the description of the file whose move was abandoned: `rotate` keeps
+/// whatever is already registered under that index, and that description still names the disk the
+/// file never left, while the writer only ever writes to the latest log disk. In a release build,
+/// where the disk assertion in `setFile` is compiled out, the rewrite then went to a fresh empty
+/// file on the latest disk while the records before it stayed addressed on the other one.
+TEST(KeeperChangelogDiskMove, RewriteAtSegmentStartSurvivesAnAbandonedMove)
+{
+    ChangelogDirTest cold_dir("./logs_cold");
+    ChangelogDirTest latest_dir("./logs_latest");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    /// Give up after the first failure; nothing here waits for the sleep.
+    (*settings)[DB::CoordinationSetting::disk_move_retries_during_init] = 1;
+    (*settings)[DB::CoordinationSetting::disk_move_retries_after_init] = 1;
+    (*settings)[DB::CoordinationSetting::disk_move_retries_wait_ms] = 1;
+
+    auto keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
+
+    auto cold_disk = std::make_shared<CopyRefusingDiskLocal>("LogDisk", "./logs_cold");
+    const DB::LogFileSettings file_settings{.force_sync = true, .compress_logs = false, .rotate_interval = 5};
+
+    /// One disk to begin with, so the segments are written where they stay.
+    keeper_context->setLogDisk(cold_disk);
+    {
+        DB::KeeperLogStore changelog(file_settings, DB::FlushSettings(), DB::ReadAheadSettings(), keeper_context);
+        changelog.init(0, 0);
+        for (size_t i = 1; i <= 12; ++i)
+        {
+            auto entry = getLogEntry("original_" + std::to_string(i), i);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+        changelog.shutdownChangelog();
+    }
+    ASSERT_TRUE(cold_disk->existsFile("changelog_6_10.bin"));
+
+    /// Now the latest log disk is a different one, and the cold disk refuses to give its files up.
+    auto latest_disk = std::make_shared<DB::DiskLocal>("LatestLogDisk", "./logs_latest");
+    keeper_context->setLatestLogDisk(latest_disk);
+    cold_disk->refuse_copies = true;
+
+    DB::KeeperLogStore changelog(file_settings, DB::FlushSettings(), DB::ReadAheadSettings(), keeper_context);
+    changelog.init(0, 0);
+
+    /// Index 6 is exactly where `changelog_6_10` starts, which is the colliding case.
+    auto rewrite = getLogEntry("rewritten_6", 5555);
+    changelog.write_at(6, rewrite);
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    EXPECT_EQ(changelog.next_slot(), 7);
+    EXPECT_EQ(changelog.start_index(), 1);
+    EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
+    /// The records before the rewrite are still addressed on the disk that holds them.
+    EXPECT_EQ(changelog.entry_at(5)->get_term(), 5);
+
+    /// The segment the rewrite supersedes is gone from the cold disk rather than left behind to
+    /// compete with the file that now holds index 6.
+    EXPECT_FALSE(cold_disk->existsFile("changelog_6_10.bin"));
+    EXPECT_TRUE(latest_disk->existsFile("changelog_6_10.bin"));
+    changelog.shutdownChangelog();
+
+    /// And the log reads back the same way after a restart.
+    DB::KeeperLogStore reread(file_settings, DB::FlushSettings(), DB::ReadAheadSettings(), keeper_context);
+    reread.init(0, 0);
+    EXPECT_EQ(reread.next_slot(), 7);
+    EXPECT_EQ(reread.start_index(), 1);
+    EXPECT_EQ(reread.entry_at(5)->get_term(), 5);
+    EXPECT_EQ(reread.entry_at(6)->get_term(), 5555);
+}
 
 #endif

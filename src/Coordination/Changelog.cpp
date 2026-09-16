@@ -4382,6 +4382,32 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
                         "Cannot write into {} because moving it to disk {} was abandoned, rotating",
                         description->path,
                         latest_log_disk->getName());
+
+                    /// The abandoned move leaves its residue at this path on the latest log
+                    /// disk: the `tmp_` marker, which it writes before copying, and whatever the
+                    /// failed copy produced. `rotate` is about to write the authoritative file
+                    /// there, and a surviving marker would make the startup scan delete that file
+                    /// together with the marker. The source file is still where it was, so the
+                    /// residue is worth nothing and has to go.
+                    const auto residue_marker
+                        = std::string{tmp_keeper_file_prefix} + fs::path(description->path).filename().string();
+                    latest_log_disk->removeFileIfExists(
+                        (fs::path(description->path).parent_path() / residue_marker).generic_string());
+                    latest_log_disk->removeFileIfExists(description->path);
+
+                    /// `rotate` inserts its fresh description and keeps whatever is already
+                    /// registered under that index, so a rewrite that starts exactly at this
+                    /// file's first index would hand `setFile` the description we just failed to
+                    /// move - the writer would then write to the latest log disk while the
+                    /// description names the other one. The rewrite supersedes this file whole,
+                    /// so drop it the same way the superseded files below are dropped; leaving it
+                    /// would also let the startup scan pick it over the file about to be written.
+                    if (auto same_start_itr = existing_changelogs.find(index); same_start_itr != existing_changelogs.end())
+                    {
+                        pending_superseded_removes.push_back(removeChangelogAsync(same_start_itr->second));
+                        existing_changelogs.erase(same_start_itr);
+                    }
+
                     current_writer->rotate(index);
                 }
                 else
