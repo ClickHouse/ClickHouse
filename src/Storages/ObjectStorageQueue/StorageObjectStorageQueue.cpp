@@ -2211,6 +2211,17 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// the metadata object and plain members of this storage.
     auto settings = getSettings().enumerateSettings();
 
+    /// The rebuild assigns the settings this engine keeps somewhere - in Keeper, in the metadata handle
+    /// or in a member of this storage - and nothing else. The rest, which is most of this struct because it
+    /// carries the shared format settings, is left at a compiled-in default even when the table's own
+    /// definition states it: `registerQueueStorage` turns those into the table's `FormatSettings`, which the
+    /// rebuild never sees. Enumeration reports an assigned setting as `Other`, so this is the one moment
+    /// that distinction is visible, before the loop below overwrites it.
+    NameSet not_assigned_by_rebuild;
+    for (const auto & setting : settings)
+        if (setting.origin == SettingOrigin::Default)
+            not_assigned_by_rebuild.insert(setting.name);
+
     /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them
     /// and distinguishes nothing - the same reason `dumpToSystemEngineSettingsColumns` compares
     /// against the table metadata instead. Recover the distinction by value.
@@ -2225,6 +2236,12 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// table created with a legacy spelling reports its settings as coming from nowhere.
     settings = attributeSettingsStatedInDefinition(
         std::move(settings), query_context, ObjectStorageQueueSettings::adjustSettingName);
+
+    /// For a setting the rebuild does not assign, the definition is the only source of the value the table
+    /// works with, so reporting the rebuilt default would say the table ignores a setting it honours.
+    /// Disjoint from the shared metadata below, which the rebuild does assign.
+    settings = reportValuesStatedInDefinition(
+        std::move(settings), query_context, not_assigned_by_rebuild, ObjectStorageQueueSettings::adjustSettingName);
 
     /// Applied after the definition, because for these the shared metadata is what the table
     /// actually uses: an `ALTER` on another replica has already changed them here, while this

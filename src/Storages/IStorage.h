@@ -282,6 +282,14 @@ public:
     SettingDescriptions attributeSettingsStatedInDefinition(
         SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
 
+    /// Replaces the reported value of every setting in `only_these` that the table's own `SETTINGS` clause
+    /// names with the value the clause states. For an engine that keeps no settings object and rebuilds one
+    /// from its own state: what the rebuild does not assign carries a compiled-in default, while the table
+    /// works with what its definition said - see `StorageObjectStorageQueue`.
+    SettingDescriptions reportValuesStatedInDefinition(
+        SettingDescriptions settings, ContextPtr context, const NameSet & only_these,
+        const SettingNameNormalizer & normalize = {}) const;
+
     /// Replaces the reported value of setting `name` with the value the engine actually works with, masked as
     /// enumeration masks it, and sets `origin` when given. For an engine that derives its working values after
     /// loading its settings - by macro expansion, a generated default or a server config fallback.

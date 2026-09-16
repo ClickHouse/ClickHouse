@@ -1,0 +1,11 @@
+-- a format setting the definition states reports the value the table uses, not its default
+input_format_allow_errors_num	5	0	definition
+input_format_tsv_skip_first_lines	2	0	definition
+-- a setting the storage keeps as a member of its own is unaffected
+polling_min_timeout_ms	1234	definition
+-- and one the shared metadata is authoritative for still outranks the definition
+mode	unordered	shared_metadata
+-- a format setting nothing states reports its default
+input_format_csv_skip_first_lines	1	default
+-- no row claims the default source for a value that is not the default
+0

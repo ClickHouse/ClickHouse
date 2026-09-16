@@ -321,6 +321,28 @@ SettingDescriptions IStorage::attributeSettingsStatedInDefinition(
     return settings;
 }
 
+SettingDescriptions IStorage::reportValuesStatedInDefinition(
+    SettingDescriptions settings, ContextPtr context, const NameSet & only_these, const SettingNameNormalizer & normalize) const
+{
+    for (const auto & change : getSettingsStatedInDefinition(getStorageID(), context))
+    {
+        std::string_view name = change.name;
+        if (normalize)
+        {
+            if (auto canonical = normalize(name))
+                name = *canonical;
+        }
+
+        if (!only_these.contains(String{name}))
+            continue;
+
+        /// Through the same helper the engines use for a derived value, so that the masking of a
+        /// definition-stated value does not depend on which path reported it.
+        reportEffectiveValue(settings, name, convertFieldToString(change.value));
+    }
+    return settings;
+}
+
 void IStorage::reportEffectiveValue(
     SettingDescriptions & settings, std::string_view name, const String & value, std::optional<SettingOrigin> origin)
 {
