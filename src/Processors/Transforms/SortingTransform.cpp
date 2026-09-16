@@ -1,5 +1,6 @@
 #include <Processors/Transforms/SortingTransform.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
@@ -45,12 +46,14 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
 
         size_t num_rows = chunk.getNumRows();
         auto columns = chunk.detachColumns();
-        /// We don't support sorting by replicated columns for now,
-        /// because it requires special code for them in the cursors.
+        /// The cursors compare sort keys with a raw `IColumn::compareAt` that handles neither
+        /// replicated nor sparse columns, including when they are nested inside a composite sort
+        /// key (a tuple/nullable child). Materialize each sort-key column recursively so a
+        /// replicated or sparse column can never reach the comparison.
         for (const auto & column_desc : description)
         {
             size_t column_number = header->getPositionByName(column_desc.column_name);
-            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
+            columns[column_number] = materializeSortKeyColumn(columns[column_number]);
         }
         chunk.setColumns(std::move(columns), num_rows);
 
