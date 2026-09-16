@@ -7,36 +7,36 @@
       "versionId": "912d4ea7eb14eab5911f88b95a8e5be0b8dcba7e7a59e4a3c8c83c0f5df33be0",
       "translations": {
         "ru": {
-          "updatedAt": "2026-09-16T13:27:18.286Z",
+          "updatedAt": "2026-09-16T21:19:30.117Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-16T13:27:18.576Z",
+          "updatedAt": "2026-09-16T21:19:30.377Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-16T13:27:18.721Z",
+          "updatedAt": "2026-09-16T21:19:30.504Z",
           "fileName": "docs.json",
           "postProcessHash": "cd5aab4f6cf6bdaa8b0daa99e85e29e2ac1c8d2d1fda538c1848b5fc88564c13"
         },
         "ko": {
-          "updatedAt": "2026-09-16T13:27:17.993Z",
+          "updatedAt": "2026-09-16T21:19:29.845Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-16T13:27:17.643Z",
+          "updatedAt": "2026-09-16T21:19:29.567Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-16T13:27:17.835Z",
+          "updatedAt": "2026-09-16T21:19:29.711Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-16T13:27:18.141Z",
+          "updatedAt": "2026-09-16T21:19:29.985Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-16T13:27:18.430Z",
+          "updatedAt": "2026-09-16T21:19:30.248Z",
           "fileName": "docs.json"
         }
       },
@@ -104154,47 +104154,47 @@
     },
     {
       "fileId": "f51ea09c6f2bd1bab07f5fde385c01ee81ceb4882b0de27bd878401245277911",
-      "versionId": "889087faa33c35583aaaaf5d6638d295a6ec9214b27974ec211cc1e55d4bd460",
+      "versionId": "95451bdbddcef1324746591b4d8ebc0758d6f4ef84981a890fb41ae9346fa119",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T08:10:32.714Z",
-          "fileName": "snippets/es/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "a3f8ab70478f7c67eb08f10ea7a6354aa6ec33921323fe2d7c87801753660f18"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:32.714Z",
-          "fileName": "snippets/ja/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "c2eb948d9e58a3d0d4ab5e31181984f6f48d95c76bf921e669b1ed9105a25f42"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:32.715Z",
-          "fileName": "snippets/ko/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "1319b880626d8ade0e9608f0186cdd36c3b831c9a700b1bd818925417b686079"
+        "ru": {
+          "updatedAt": "2026-09-16T21:19:33.573Z",
+          "fileName": "snippets/ru/components/ReleaseSchedule/ReleaseSchedule.jsx",
+          "postProcessHash": "bc223af6703da93b928e744073354821d17a81f74c10ba26468c3e658170901a"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:32.716Z",
+          "updatedAt": "2026-09-16T21:19:33.573Z",
           "fileName": "snippets/pt-BR/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "287b978a5173720c925e3caad10d545de255ef6216f3971cd591c21b2934e773"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:32.717Z",
-          "fileName": "snippets/ru/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "b2896fc3aea424dc9fd5f414e39b4169d5feb36b449c69840f41beb4e94bf1f6"
+          "postProcessHash": "e3497deff24d3d1e99573b66f3dda6a5b913da7cd96aa8c1347e350c076d16bb"
         },
         "zh": {
-          "updatedAt": "2026-08-26T08:10:32.718Z",
+          "updatedAt": "2026-09-16T21:19:33.574Z",
           "fileName": "snippets/zh/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "fe5991950fabab08a30e5120938ac32a806fbbd89c6c330b0bca37ed63b752c2"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:32.719Z",
-          "fileName": "snippets/ar/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "55b8153b5721e7c702aa50d8b23a0df13c3400478ee0cc751c822a5301fa8d93"
+          "postProcessHash": "1d03091fea0f0546caa73f58d1f732a1a02539d71b74be3f5d698bed66f96b89"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:32.720Z",
+          "updatedAt": "2026-09-16T21:19:33.574Z",
           "fileName": "snippets/fr/components/ReleaseSchedule/ReleaseSchedule.jsx",
-          "postProcessHash": "5d76907d4e8129bec2f711f9658b841c1b327204c7a04c2e5eced8d3ae343649"
+          "postProcessHash": "80aa9c7cdb87a570026ed16a36d27efe68cd935fd478b7da13047027c7d57e22"
+        },
+        "es": {
+          "updatedAt": "2026-09-16T21:19:33.574Z",
+          "fileName": "snippets/es/components/ReleaseSchedule/ReleaseSchedule.jsx",
+          "postProcessHash": "c237d7fd338509c6dd55b96695cd28f198d8e73480a56296232ff0ac9eb34121"
+        },
+        "ko": {
+          "updatedAt": "2026-09-16T21:19:33.575Z",
+          "fileName": "snippets/ko/components/ReleaseSchedule/ReleaseSchedule.jsx",
+          "postProcessHash": "300309194618e28690008dd18006ae1f735688d95f778139c60af1a3054f7574"
+        },
+        "ar": {
+          "updatedAt": "2026-09-16T21:19:33.575Z",
+          "fileName": "snippets/ar/components/ReleaseSchedule/ReleaseSchedule.jsx",
+          "postProcessHash": "5ec5ba30667d5a7cf67bcfb75fc8ccf400cb84e8d0536bbe4011b5920d696996"
+        },
+        "ja": {
+          "updatedAt": "2026-09-16T21:19:33.575Z",
+          "fileName": "snippets/ja/components/ReleaseSchedule/ReleaseSchedule.jsx",
+          "postProcessHash": "6eb7e61929329505e7eb934ff69c5efbdc58a5bbba418952261e2b062ad7d863"
         }
       },
       "fileName": "snippets/components/ReleaseSchedule/ReleaseSchedule.jsx"
