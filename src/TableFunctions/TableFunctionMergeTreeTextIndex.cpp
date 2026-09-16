@@ -1,6 +1,5 @@
 #include <Storages/StorageMergeTreeTextIndex.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -13,13 +12,16 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
+#include <Access/Common/AccessFlags.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -32,7 +34,9 @@ public:
     std::string getName() const override { return name; }
 
     /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
+    /// A persisted definition would also resolve the source table under the global context or the engine credentials.
     bool canBeUsedToCreateTable() const override { return false; }
+    bool dependsOnCurrentUserGrants() const override { return true; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -45,24 +49,16 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
+    /// Resolves the index of the source table and checks that the user may read it.
+    std::pair<StoragePtr, MergeTreeIndexPtr> resolveIndex(ContextPtr context) const;
+
+    /// The result structure for the given resolved index.
+    static ColumnsDescription getColumns(const MergeTreeIndexPtr & index);
+
     const char * getStorageEngineName() const override
     {
         return "";
     }
-
-    struct SourceIndex
-    {
-        StoragePtr table;
-        MergeTreeIndexPtr index;
-    };
-
-    /// Resolves the source table and builds the index object from its current metadata.
-    /// Requires `SHOW TABLES` on the source table: the grant that reveals the index definition in `system.data_skipping_indices`,
-    /// implied by a grant on any of its columns, so it only adds a tier below the `SELECT` check done when reading.
-    SourceIndex resolveSourceIndex(ContextPtr context) const;
-
-    /// The result structure for the given resolved index.
-    static ColumnsDescription getTableStructure(const MergeTreeIndexPtr & index);
 
     String source_database;
     String source_table;
@@ -98,8 +94,17 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
     return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
-TableFunctionMergeTreeTextIndex::SourceIndex TableFunctionMergeTreeTextIndex::resolveSourceIndex(ContextPtr context) const
+std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolveIndex(ContextPtr context) const
 {
+    /// A table persisted before that was forbidden resolves the function under the load context, which has no user.
+    if (!context->getUserID())
+    {
+        context = CurrentThread::tryGetQueryContext();
+        if (!context)
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Table function 'mergeTreeTextIndex' cannot check the access of the user outside of a query");
+    }
+
+    /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
@@ -107,22 +112,21 @@ TableFunctionMergeTreeTextIndex::SourceIndex TableFunctionMergeTreeTextIndex::re
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 
     if (index_desc.type != "text")
-    {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Got index '{}' of type '{}', expected 'text'",
             source_index_name, index_desc.type);
-    }
 
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table_ptr.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
     auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
-    return {.table = std::move(source_table_ptr), .index = std::move(text_index)};
+    StorageMergeTreeTextIndex::checkAccess(context, source_table_ptr->getStorageID(), *text_index);
+    return {std::move(source_table_ptr), std::move(text_index)};
 }
 
-ColumnsDescription TableFunctionMergeTreeTextIndex::getTableStructure(const MergeTreeIndexPtr & index)
+ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns(const MergeTreeIndexPtr & index)
 {
     NamesAndTypesList columns
     {
@@ -154,7 +158,8 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getTableStructure(const Merg
 
 ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    return getTableStructure(resolveSourceIndex(context).index);
+    /// Resolving is also where e.g. `remote` over a local shard checks the access of the user.
+    return getColumns(resolveIndex(context).second);
 }
 
 StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
@@ -165,8 +170,8 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     bool /*is_insert_query*/) const
 {
     /// The structure comes from the same index object the storage reads with, so the two cannot diverge.
-    auto [source_table_ptr, text_index] = resolveSourceIndex(context);
-    auto columns = getTableStructure(text_index);
+    auto [source_table_ptr, text_index] = resolveIndex(context);
+    auto columns = getColumns(text_index);
     StorageID storage_id(getDatabaseName(), table_name);
 
     auto res = std::make_shared<StorageMergeTreeTextIndex>(
