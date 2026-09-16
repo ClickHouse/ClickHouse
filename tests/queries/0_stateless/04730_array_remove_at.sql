@@ -21,6 +21,19 @@ SELECT
 FROM numbers(4)
 ORDER BY number;
 
+-- Constant array with a dynamic index must stay compact instead of being materialized per row.
+SELECT
+    number,
+    arrayRemoveAt(
+        [10, 20, 30, 40],
+        multiIf(number = 0, toInt8(1), number = 1, toInt8(-1), number = 2, toInt8(2), toInt8(10)))
+FROM numbers(4)
+ORDER BY number;
+
+-- Constant index is read once. A position larger than the whole nested column is guaranteed out of bounds.
+SELECT number, arrayRemoveAt([number, number + 1, number + 2], toInt8(2)) FROM numbers(3) ORDER BY number;
+SELECT number, arrayRemoveAt([number, number + 1], toUInt64(18446744073709551615)) FROM numbers(3) ORDER BY number;
+
 SELECT arrayRemoveAt([1, 2, 3], toUInt64(18446744073709551615));
 SELECT arrayRemoveAt([1, 2, 3], toInt64(-9223372036854775807) - 1);
 SELECT toTypeName(arrayRemoveAt(CAST([1, 2, 3], 'Array(UInt8)'), toInt8(2)));
