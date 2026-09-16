@@ -35,7 +35,9 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT h FROM t_h3_pk WHERE t
 SELECT h FROM t_h3_part WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT h FROM t_h3_minmax WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT v FROM t_h3_geo WHERE geoToH3(lat, lon, 5) = geoToH3(80.0, 10.0, 5);
-SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k) WHERE explain LIKE '%Read type: InOrder%';
+-- The two counts below only mean anything while in-order reading is enabled: with it off both are 0,
+-- whatever the guard does, so the setting is pinned rather than taken from the session.
+SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1) WHERE explain LIKE '%Read type: InOrder%';
 SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k;
 
 SELECT '-- deviating session: element 1 is now the longitude, so the other row matches and the key must not be used';
@@ -45,7 +47,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT h FROM t_h3_pk WHERE t
 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 SELECT h FROM t_h3_part WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT h FROM t_h3_minmax WHERE tupleElement(h3ToGeo(h), 1) > 50;
-SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k) WHERE explain LIKE '%Read type: InOrder%';
+SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1) WHERE explain LIKE '%Read type: InOrder%';
 SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k;
 SET h3togeo_lon_lat_result_order = 0;
 
