@@ -59,8 +59,7 @@ struct QueryPlanOptimizationSettings
     bool merge_filters;
     bool filter_push_down;
     bool propagate_predicate_across_join;
-    bool use_primary_key;
-    bool use_skip_indexes;
+    bool index_analysis_enabled;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
     bool enable_lazy_columns_replication;

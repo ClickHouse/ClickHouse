@@ -337,9 +337,6 @@ public:
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
 
-    /// Whether a predicate on this column can exclude granules, through the primary key or a skip index
-    bool isColumnPrunable(const String & column_name, bool with_primary_key, bool with_skip_indexes) const;
-
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
