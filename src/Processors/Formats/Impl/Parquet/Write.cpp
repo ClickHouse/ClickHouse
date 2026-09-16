@@ -1348,8 +1348,19 @@ void writeColumnImpl(
 
                     if (def_count_kept == 0)
                     {
-                        /// One record wants more than the budget and cannot be split, so it is
-                        /// converted whole after all.
+                        /// The converter stopped inside the first record of the batch, and a record
+                        /// cannot be cut while the page index describes it, so that record is
+                        /// converted whole. Only it: asking for the rest of the batch again would
+                        /// serialize rows that this page is not going to keep.
+                        def_count_kept = 1;
+                        while (next_def_offset + def_count_kept < num_values
+                               && s.rep[next_def_offset + def_count_kept] != 0)
+                            ++def_count_kept;
+                        def_count_kept = std::min(def_count_kept, def_count);
+
+                        def_count = def_count_kept;
+                        data_count = values_in(def_count_kept);
+
                         converter.setByteBudget(0);
                         converted = converter.getBatch(next_data_offset, data_count);
                     }
