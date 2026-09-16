@@ -168,7 +168,7 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
                         current_path.pop_back();
                         continue;
                     }
-                    auto next_val = std::get<Map>(current_value)[i];
+                    auto next_val = std::get<Map>(current_value)[i].safeGet<Tuple>()[1];
 
                     Tuple tmp_node_tuple;
                     Array tmp_node_array;
@@ -679,7 +679,8 @@ void ExecutableEvolutionFunction::pushNewNode(
         auto old_subfields = old_node->getObject("type")->getObject("element");
 
         if (current_path)
-            current_path->push_back({"", "", TransformType::ARRAY});
+            current_path->push_back(
+                {old_node->getValue<std::string>("name"), new_node->getValue<std::string>("name"), TransformType::STRUCT});
 
         walk_stack.push(
             {makeArrayFromObject(old_subfields),
@@ -694,7 +695,8 @@ void ExecutableEvolutionFunction::pushNewNode(
         auto subfields = new_node->getObject("type")->getObject("value");
         auto old_subfields = old_node->getObject("type")->getObject("value");
         if (current_path)
-            current_path->push_back({"", "", TransformType::MAP});
+            current_path->push_back(
+                {old_node->getValue<std::string>("name"), new_node->getValue<std::string>("name"), TransformType::STRUCT});
 
         walk_stack.push(
             {makeArrayFromObject(old_subfields),
