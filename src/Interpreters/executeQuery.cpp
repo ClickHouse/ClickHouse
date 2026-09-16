@@ -737,15 +737,17 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 }
 
 /// Accounts the profile events accumulated by a finished (or failed) query against the quotas
-/// defining limits over profile events. Called once per query at its end. When no governing
-/// quota defines such limits, the cost is one atomic load: no snapshot of the counters is taken.
-static void usedQuotaProfileEvents(const std::shared_ptr<const EnabledQuota> & quota, const ContextPtr & context, UInt64 normalized_query_hash)
+/// defining limits over profile events. Called once per query at its end, after the performance
+/// counters of its threads have been finalized and, for a failed query, after the `FailedQuery`
+/// family of events has been incremented, so that the snapshot contains everything the query
+/// produced. When no governing quota defines such limits, the cost is one atomic load: no
+/// snapshot of the counters is taken.
+static void usedQuotaProfileEvents(
+    const std::shared_ptr<const EnabledQuota> & quota,
+    const QueryStatusPtr & process_list_elem,
+    UInt64 normalized_query_hash)
 {
-    if (!quota || !quota->hasProfileEventLimits())
-        return;
-
-    QueryStatusPtr process_list_elem = context->getProcessListElement();
-    if (!process_list_elem)
+    if (!quota || !quota->hasProfileEventLimits() || !process_list_elem)
         return;
 
     auto counters = process_list_elem->getInfo(false, /* get_profile_events= */ true).profile_counters;
@@ -896,28 +898,38 @@ void logQueryFinish(
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
 /// Shared between `logQueryException` (failures during execution) and `logExceptionBeforeStart`
 /// (failures before execution starts) so the two paths never drift.
-static void incrementFailedQueryProfileEvents(const ASTPtr & ast, const ClientInfo & client_info, bool internal)
+/// If `mirror` is given, the same events are incremented in it as well: a query that failed before
+/// it was registered in the process list has no thread group to take its counters from, and the
+/// mirror is then what the quotas over profile events are charged with.
+static void incrementFailedQueryProfileEvents(const ASTPtr & ast, const ClientInfo & client_info, bool internal, ProfileEvents::Counters * mirror = nullptr)
 {
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
+    auto increment = [&](ProfileEvents::Event event)
+    {
+        ProfileEvents::increment(event);
+        if (mirror)
+            mirror->increment(event);
+    };
+
+    increment(ProfileEvents::FailedQuery);
     if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+        increment(ProfileEvents::FailedSelectQuery);
     else if (ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+        increment(ProfileEvents::FailedInsertQuery);
 
     if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
+        increment(ProfileEvents::FailedInitialQuery);
         if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
+            increment(ProfileEvents::FailedInitialSelectQuery);
     }
 
     if (internal)
     {
-        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
+        increment(ProfileEvents::FailedInternalQuery);
         if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
+            increment(ProfileEvents::FailedInternalSelectQuery);
         else if (ast->as<ASTInsertQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
+            increment(ProfileEvents::FailedInternalInsertQuery);
     }
 }
 
@@ -950,6 +962,12 @@ void logQueryException(
     elem.event_time_microseconds = timeInMicroseconds(time_now);
 
     incrementFailedQueryProfileEvents(query_ast, context->getClientInfo(), internal);
+
+    /// The resources the failed query consumed, including the failure itself (`FailedQuery` and
+    /// friends), count against the quotas over profile events. Like the predefined `errors`
+    /// counter, only the outer query of an internal one is charged.
+    if (!internal)
+        usedQuotaProfileEvents(context->getQuota(), process_list_elem, elem.normalized_query_hash);
 
     QueryStatusInfoPtr info;
     if (process_list_elem)
@@ -1005,7 +1023,8 @@ void logExceptionBeforeStart(
     auto query_end_time = std::chrono::system_clock::now();
 
     /// Exception before the query execution.
-    if (auto quota = context->getQuota())
+    auto quota = context->getQuota();
+    if (quota)
         quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
@@ -1069,10 +1088,24 @@ void logExceptionBeforeStart(
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    incrementFailedQueryProfileEvents(ast, context->getClientInfo(), internal);
+    /// A query that failed before it was registered in the process list (e.g. a syntax error) has
+    /// no thread group, so its counters cannot be taken from there; the failure itself is then
+    /// all it has produced, and the quotas over profile events are charged with it directly.
+    ProfileEvents::Counters failed_query_counters(VariableContext::Process, /* parent = */ nullptr);
+    incrementFailedQueryProfileEvents(ast, context->getClientInfo(), internal, &failed_query_counters);
+
+    QueryStatusPtr process_list_elem = context->getProcessListElementSafe();
+
+    if (!internal)
+    {
+        if (process_list_elem)
+            usedQuotaProfileEvents(quota, process_list_elem, normalized_query_hash);
+        else if (quota && quota->hasProfileEventLimits())
+            quota->usedProfileEvents(normalized_query_hash, failed_query_counters.getPartiallyAtomicSnapshot(), /* check_exceeded = */ false);
+    }
 
     QueryStatusInfoPtr info;
-    if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())
+    if (process_list_elem)
     {
         info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
         addStatusInfoToQueryLogElement(elem, *info, ast, context, query_end_time);
@@ -3362,11 +3395,6 @@ static BlockIO executeQueryImpl(
                 return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
 
-            /// Shared by the finish and the exception callbacks: if a finish callback throws
-            /// half-way, `onException` may run after `onFinish`, and the consumption of the query
-            /// must not be counted twice.
-            auto quota_profile_events_accounted = std::make_shared<std::atomic_bool>(false);
-
             /// The finish callback logs the query result
             auto finish_callback = [elem,
                                     context,
@@ -3377,24 +3405,27 @@ static BlockIO executeQueryImpl(
                                     implicit_tcl_executor,
                                     my_quota(quota),
                                     normalized_query_hash,
-                                    quota_profile_events_accounted,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                if (!internal && !quota_profile_events_accounted->exchange(true))
-                    usedQuotaProfileEvents(my_quota, context, normalized_query_hash);
-
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
                 {
                     implicit_tcl_executor->commit(context);
                 }
+
+                /// The performance counters have been finalized by `finalizeQueryPipelineBeforeLogging`.
+                /// This is the last step of the callback: if anything above throws, the query is
+                /// accounted by the exception path (`logQueryException`) instead, so it is never
+                /// counted twice.
+                if (!internal)
+                    usedQuotaProfileEvents(my_quota, context->getProcessListElement(), normalized_query_hash);
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, quota_profile_events_accounted, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3410,12 +3441,9 @@ static BlockIO executeQueryImpl(
                 {
                     if (my_quota)
                         my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
-
-                    /// The resources the failed query consumed count against the quota as well.
-                    if (!quota_profile_events_accounted->exchange(true))
-                        usedQuotaProfileEvents(my_quota, context, normalized_query_hash);
                 }
 
+                /// Also charges the quotas over profile events with what the failed query consumed.
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
             };
 

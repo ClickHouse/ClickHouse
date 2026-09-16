@@ -46,6 +46,8 @@ ${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT count() FROM numbers(1)"
 ${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT count() FROM numbers(1)"
 ${CLICKHOUSE_CLIENT} --user "${U1}" -q "SELECT count() FROM numbers(1)" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
 
+# The rejected query is counted too: its `Query` event is incremented before the quota check,
+# and the failure before start is accounted, just as the predefined `queries` counter counts it.
 echo "-- current consumption is reported in system.quotas_usage"
 ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['Query'], max_profile_events['Query'] FROM system.quotas_usage WHERE quota_name = '${Q1}'"
 
