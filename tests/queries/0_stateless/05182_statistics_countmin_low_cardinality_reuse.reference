@@ -1,0 +1,12 @@
+dense fixture distribution
+1000	400	402	1	20
+dense common value uses row frequency
+1
+dense rare value is selective
+1
+sparse fixture distribution
+60	3	30	10	20
+sparse common value uses row frequency
+1
+sparse rare value is selective
+1

@@ -1,0 +1,168 @@
+<test>
+    <!-- Ten regression cases: dense crossover and near-unique fallback,
+         retained-dictionary sparse counting, ordering sensitivity and NULLs.
+         Keep million-row blocks to expose hash-table allocation/cache costs.
+         Construct fixtures outside the timed queries and disable squashing. -->
+    <settings>
+        <allow_statistics>1</allow_statistics>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <min_insert_block_size_rows>0</min_insert_block_size_rows>
+        <min_insert_block_size_bytes>0</min_insert_block_size_bytes>
+        <max_block_size>1048576</max_block_size>
+        <max_insert_block_size>1048576</max_insert_block_size>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>dense_reuse</name>
+            <values><value>1</value><value>2</value></values>
+        </substitution>
+        <substitution>
+            <name>sparse_reuse</name>
+            <values><value>1</value><value>10</value></values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_countmin_crossover_src_{dense_reuse}
+        (
+            numeric LowCardinality(UInt32),
+            string LowCardinality(String)
+        ) ENGINE = Memory
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_retained_src_{sparse_reuse}
+        (
+            id UInt64,
+            numeric LowCardinality(UInt32),
+            long LowCardinality(String)
+        ) ENGINE = Memory
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_distribution_src
+        (
+            skew_suffix LowCardinality(UInt32),
+            null_reused LowCardinality(Nullable(String))
+        ) ENGINE = Memory
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_crossover_numeric (value LowCardinality(UInt32) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_crossover_string (value LowCardinality(String) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_retained_numeric (value LowCardinality(UInt32) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_retained_long (value LowCardinality(String) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_distribution_skew_suffix (value LowCardinality(UInt32) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_distribution_null_reused (value LowCardinality(Nullable(String)) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0
+    </create_query>
+
+    <!-- The odd multiplier permutes the power-of-two domain without losing keys.
+         Sixteen-byte strings retain string coverage without long-string hashing
+         dominating the runtime of the million-row crossover cases. -->
+    <fill_query>
+        INSERT INTO t_countmin_crossover_src_{dense_reuse}
+        WITH ((number * 104729) % 1048576) % intDiv(1048576, {dense_reuse}) + 1 AS key
+        SELECT toUInt32(key), leftPad(toString(key), 16, '0')
+        FROM numbers(1048576)
+    </fill_query>
+
+    <!-- The filtered tail retains 524289 dictionary entries (including default).
+         Spread touched keys across that dictionary, without reconstructing it
+         in the measured query. Reuse 1 aborts sparse counting; reuse 10 completes. -->
+    <fill_query>
+        INSERT INTO t_countmin_retained_src_{sparse_reuse}
+        WITH if(number &lt; 524288, number + 1,
+            ((((number - 524288) * 104729) % 65536) % intDiv(65536, {sparse_reuse}))
+                * intDiv(524287, greatest(1, intDiv(65536, {sparse_reuse}) - 1)) + 1) AS key
+        SELECT number, toUInt32(key), leftPad(toString(key), 128, '0')
+        FROM numbers(589824) SETTINGS max_block_size = 589824
+    </fill_query>
+
+    <!-- Keep the unique-prefix/common-suffix case and repeated non-NULL values
+         among 90% NULLs. `ORDER BY tuple()` preserves the tested row ordering. -->
+    <fill_query>
+        INSERT INTO t_countmin_distribution_src
+        SELECT
+            toUInt32(if(number &lt; 16384, number + 2, 1)),
+            if(number % 10 &lt; 9, NULL, leftPad(toString(intDiv(number, 10) % 1638), 16, '0'))
+        FROM numbers(65536) SETTINGS max_block_size = 65536
+    </fill_query>
+
+    <fill_query>SYSTEM STOP MERGES t_countmin_crossover_numeric</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_crossover_string</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_retained_numeric</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_retained_long</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_distribution_skew_suffix</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_distribution_null_reused</fill_query>
+
+    <query>
+        INSERT INTO t_countmin_crossover_numeric
+        SELECT numeric FROM t_countmin_crossover_src_{dense_reuse}
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_crossover_string
+        SELECT string FROM t_countmin_crossover_src_{dense_reuse}
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_retained_numeric
+        SELECT numeric FROM t_countmin_retained_src_{sparse_reuse} WHERE id &gt;= 524288
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_retained_long
+        SELECT long FROM t_countmin_retained_src_{sparse_reuse} WHERE id &gt;= 524288
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_distribution_skew_suffix
+        SELECT skew_suffix FROM t_countmin_distribution_src
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_distribution_null_reused
+        SELECT null_reused FROM t_countmin_distribution_src
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_countmin_crossover_numeric</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_crossover_string</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_retained_numeric</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_retained_long</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_distribution_skew_suffix</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_distribution_null_reused</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_crossover_src_{dense_reuse}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_retained_src_{sparse_reuse}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_distribution_src</drop_query>
+</test>

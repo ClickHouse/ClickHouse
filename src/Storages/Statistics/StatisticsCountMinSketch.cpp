@@ -26,8 +26,10 @@ namespace ErrorCodes
 /// And sketch the size is 152kb.
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
-/// Aggregation has a measured benefit when at most one in ten rows is distinct.
-static constexpr auto min_low_cardinality_value_reuse = 10uz;
+/// Dense counting benefits from twofold reuse. Hash-map counting needs a more
+/// conservative cutoff to bound its overhead on nearly unique inputs.
+static constexpr auto min_dense_dictionary_value_reuse = 2uz;
+static constexpr auto min_sparse_dictionary_value_reuse = 10uz;
 
 namespace
 {
@@ -155,12 +157,12 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
 {
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
     {
-        const size_t max_distinct_values = column_low_cardinality->size() / min_low_cardinality_value_reuse;
+        const size_t max_dense_distinct_values = column_low_cardinality->size() / min_dense_dictionary_value_reuse;
         const auto & dictionary = column_low_cardinality->getDictionary();
         /// LowCardinality dictionaries always contain a default value and nullable
         /// dictionaries contain one additional special value.
         const size_t dictionary_special_values = dictionary.canContainNulls() ? 2 : 1;
-        if (dictionary.size() <= max_distinct_values + dictionary_special_values)
+        if (dictionary.size() <= max_dense_distinct_values + dictionary_special_values)
         {
             /// Every referenced value belongs to the dictionary, so a small
             /// dictionary guarantees enough reuse to make dense counting useful.
@@ -171,8 +173,10 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
         else
         {
             /// A filtered column may retain a large dictionary while referencing
-            /// only a few entries, so count indexes up to the same reuse cutoff.
-            updateSketchFromTouchedDictionaryIndexes(sketch, *column_low_cardinality, max_distinct_values);
+            /// only a few entries. Bound the temporary hash map more conservatively
+            /// than the dense counter.
+            const size_t max_sparse_distinct_values = column_low_cardinality->size() / min_sparse_dictionary_value_reuse;
+            updateSketchFromTouchedDictionaryIndexes(sketch, *column_low_cardinality, max_sparse_distinct_values);
         }
 
         return;
