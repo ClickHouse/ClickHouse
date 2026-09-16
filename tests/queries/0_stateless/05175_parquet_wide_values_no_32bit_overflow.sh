@@ -88,3 +88,17 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT count(), length(a), sum(length(toString(a[1]))) FROM file('$FILE', Parquet) GROUP BY length(a)
 "
+
+# `FixedString` written as `BYTE_ARRAY` rather than `FIXED_LEN_BYTE_ARRAY`: that encoding prefixes
+# every value with its 4-byte length, so the batch is budgeted against what it writes, not just the
+# payload.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --allow_suspicious_fixed_string_types 1 --query "
+    SELECT toFixedString(concat(toString(number), repeat('z', 70000)), 70008) AS s
+    FROM numbers(1024)
+    SETTINGS output_format_parquet_fixed_string_as_fixed_byte_array = 0
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), sum(length(s)), uniqExact(cityHash64(s)) FROM file('$FILE', Parquet)
+"
