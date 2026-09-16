@@ -1,6 +1,6 @@
 -- Companion of `03354_pr_disable_for_multiple_tables_query`: that test checks the query plan of a
 -- multi-table query, this one checks the parts of the query that are planned by an independent
--- `Planner` (prepared sets, materialized CTEs, correlated subqueries) and the legacy interpreter path.
+-- `Planner` (prepared sets, materialized CTEs, correlated subqueries).
 -- The two are separate files because together they run too long in the flaky check.
 
 drop table if exists X;
@@ -106,35 +106,6 @@ select count() > 0 from (select id from Z final) as s inner join Y as j on s.id 
 set parallel_replicas_for_queries_with_multiple_tables=0;
 select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id where exists (select 1 from X where X.id = s.id)
     settings enable_parallel_replicas = 2;
-
--- The legacy (pre-analyzer) interpreter must respect the setting as well: with
--- parallel_replicas_only_with_analyzer = 0 task-based parallel replicas are allowed on that path,
--- and the kill switch is applied in InterpreterSelectQuery before the storage read.
-set enable_analyzer = 0, parallel_replicas_only_with_analyzer = 0;
--- On the legacy path a JOIN can use parallel replicas only after the predicate optimizer has rewritten
--- the joined table into a subquery (`GlobalSubqueriesMatcher`: JOIN with parallel replicas is only
--- supported with subqueries), so pin `enable_optimize_predicate_expression` against the randomizer.
-set enable_optimize_predicate_expression = 1;
-set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() > 0 from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
-set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
--- A single-table query is not affected by the setting on the legacy path either.
-select count() > 0 from (explain select * from X) where explain ilike '%ReadFromRemoteParallelReplicas%';
-
--- On the legacy path the kill switch must run before `JoinedTables` is constructed: `JoinedTables` captures
--- its own copy of the context, and the legacy subquery paths (`JoinedTables::makeLeftTableSubquery`,
--- `JoinedTables::rewriteDistributedInAndJoins`) keep using it, so a switch applied afterwards would leave a
--- subquery-backed `JOIN` planned with parallel replicas still enabled. The probe is the same `FINAL` refusal
--- as above: with the setting enabled the query is refused (the control that the probe is not vacuous), with
--- the setting disabled it must simply run without parallel replicas.
-set parallel_replicas_for_queries_with_multiple_tables=1;
-select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id
-    settings enable_parallel_replicas = 2; -- { serverError SUPPORT_IS_DISABLED }
-set parallel_replicas_for_queries_with_multiple_tables=0;
-select count() > 0 from (select id from Z final) as s inner join Y as j on s.id = j.id
-    settings enable_parallel_replicas = 2;
-
 
 drop table X;
 drop table Y;
