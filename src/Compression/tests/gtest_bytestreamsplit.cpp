@@ -520,7 +520,7 @@ TEST(ByteStreamSplitTest, CodecDescription)
 {
     auto descStr = [](const CompressionCodecPtr & c) -> std::string
     {
-        if (auto ast = c->getCodecDesc())
+        if (auto ast = c->getCodecDescription())
             return ast->formatForErrorMessage();
         return {};
     };

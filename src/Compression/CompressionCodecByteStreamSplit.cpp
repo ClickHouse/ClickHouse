@@ -47,6 +47,7 @@ public:
     explicit CompressionCodecByteStreamSplit(Int32 element_bytes_size_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
 protected:
@@ -713,7 +714,11 @@ Int32 getElementBytesSize(const IDataType * column_type)
 CompressionCodecByteStreamSplit::CompressionCodecByteStreamSplit(Int32 element_bytes_size_)
     : element_bytes_size(element_bytes_size_)
 {
-    setCodecDescription(
+}
+
+ASTPtr CompressionCodecByteStreamSplit::getCodecDescription() const
+{
+    return makeCodecDescription(
         "ByteStreamSplit",
         {make_intrusive<ASTLiteral>(static_cast<UInt64>(element_bytes_size))});
 }
@@ -725,7 +730,7 @@ uint8_t CompressionCodecByteStreamSplit::getMethodByte() const
 
 void CompressionCodecByteStreamSplit::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecByteStreamSplit::doCompressData(
