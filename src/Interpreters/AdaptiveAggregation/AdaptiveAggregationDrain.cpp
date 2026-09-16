@@ -2,7 +2,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ProfileEvents.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/AggregationUtils.h>
 #include <base/unaligned.h>
 

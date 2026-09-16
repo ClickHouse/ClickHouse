@@ -4,8 +4,8 @@
 
 #include <limits>
 #include <Common/ProfileEvents.h>
-#include <Interpreters/AdaptiveAggregationChunkInfo.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationChunkInfo.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/AggregationUtils.h>
 
 namespace ProfileEvents

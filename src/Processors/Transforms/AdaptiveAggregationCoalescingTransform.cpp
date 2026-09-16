@@ -2,8 +2,8 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/MemoryTrackerUtils.h>
-#include <Interpreters/AdaptiveAggregationChunkInfo.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationChunkInfo.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 
 namespace DB
 {

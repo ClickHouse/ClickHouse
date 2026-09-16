@@ -11,7 +11,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/PODArray.h>
-#include <Interpreters/AdaptiveAggregation.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 #include <Processors/Chunk.h>
 #include <base/PackedStringRef.h>
 

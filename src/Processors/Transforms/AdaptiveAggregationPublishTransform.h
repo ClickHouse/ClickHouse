@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/AdaptiveAggregation.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 #include <Processors/IProcessor.h>
 
 namespace DB

@@ -9,8 +9,8 @@
 #include <Common/logger_useful.h>
 #include <Common/memcpySmall.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Interpreters/AdaptiveAggregationChunkInfo.h>
-#include <Interpreters/AdaptiveAggregationStaging.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationChunkInfo.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationStaging.h>
 #include <Processors/Merges/Algorithms/PartitionedChunkCoalescing.h>
 #include <base/memcmpSmall.h>
 

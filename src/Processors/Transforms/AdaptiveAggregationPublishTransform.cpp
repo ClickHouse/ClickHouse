@@ -1,6 +1,6 @@
 #include <Processors/Transforms/AdaptiveAggregationPublishTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 
 namespace DB
 {

@@ -7,7 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <base/arithmeticOverflow.h>
 
 namespace ProfileEvents

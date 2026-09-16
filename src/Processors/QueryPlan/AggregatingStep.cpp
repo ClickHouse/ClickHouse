@@ -1,5 +1,5 @@
 #include <algorithm>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
 #include <Columns/ColumnConst.h>

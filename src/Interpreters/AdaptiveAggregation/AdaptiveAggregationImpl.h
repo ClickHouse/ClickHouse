@@ -12,8 +12,8 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/SharedMutex.h>
 #include <Common/PODArray.h>
-#include <Interpreters/AdaptiveAggregation.h>
-#include <Interpreters/AdaptiveAggregationStaging.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationStaging.h>
 #include <Interpreters/Aggregator.h>
 
 namespace DB

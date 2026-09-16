@@ -7,9 +7,9 @@
 #include <Processors/Transforms/AdaptiveAggregationCoalescingTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationPublishTransform.h>
 
-#include <Interpreters/AdaptiveAggregationImpl.h>
-#include <Interpreters/AdaptiveAggregationChunkInfo.h>
-#include <Interpreters/AdaptiveAggregationExecution.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationChunkInfo.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationExecution.h>
 
 #include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>

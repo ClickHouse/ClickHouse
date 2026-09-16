@@ -23,9 +23,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
-#include <Interpreters/AdaptiveAggregationChunkInfo.h>
-#include <Interpreters/AdaptiveAggregationExecution.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationChunkInfo.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationExecution.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/ISink.h>

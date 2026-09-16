@@ -26,9 +26,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
-#include <Interpreters/AdaptiveAggregationImpl.h>
-#include <Interpreters/AdaptiveAggregationExecution.h>
-#include <Interpreters/AdaptiveAggregationChunkInfo.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationExecution.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationChunkInfo.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>

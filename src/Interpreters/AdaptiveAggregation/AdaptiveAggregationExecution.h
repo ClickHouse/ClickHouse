@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Interpreters/AdaptiveAggregation.h>
+#include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
 
 namespace DB
 {
