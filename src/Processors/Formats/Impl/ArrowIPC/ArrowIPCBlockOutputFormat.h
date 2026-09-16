@@ -45,6 +45,9 @@ private:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
+    /// Encodes one chunk as exactly one record batch, preceded by the dictionary batches it references.
+    void writeChunk(Chunk chunk);
+
     void writeSchemaIfNeeded();
     /// Writes rows [begin, end) of the already dictionary-substituted `columns` as one record batch.
     void writeRecordBatch(const Columns & columns, const DataTypes & types, size_t begin, size_t end);
@@ -98,6 +101,11 @@ private:
     };
     ArrowIPC::DictPlans column_dict_plans;
     VectorWithMemoryTracking<DictionaryColumnState> dictionary_states;
+
+    /// Rows of consecutive chunks that are individually smaller than the configured record batch target,
+    /// to be written as one record batch. The first chunk becomes the accumulator itself, so a staged batch
+    /// can hold one source block's allocations until it is written.
+    Chunk staged;
 };
 
 }
