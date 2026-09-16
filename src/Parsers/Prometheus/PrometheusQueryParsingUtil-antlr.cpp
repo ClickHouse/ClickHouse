@@ -267,7 +267,8 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseTimestamp(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseTimestamp(
+                    getText(ctx), timestamp_scale, result, &error_message, &error_pos, /* allow_octal_literals */ true))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -279,7 +280,8 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseDuration(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseDuration(
+                    getText(ctx), timestamp_scale, result, &error_message, &error_pos, /* allow_octal_literals */ true))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;

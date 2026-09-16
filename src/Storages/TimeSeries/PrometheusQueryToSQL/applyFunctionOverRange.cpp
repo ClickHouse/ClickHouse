@@ -298,6 +298,30 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
+            {"max_over_time",
+             {
+                 "timeSeriesMaxToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"min_over_time",
+             {
+                 "timeSeriesMinToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"ts_of_max_over_time",
+             {
+                 "timeSeriesTimestampOfMaxToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"ts_of_min_over_time",
+             {
+                 "timeSeriesTimestampOfMinToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             {"deriv",
              {
                  "timeSeriesDerivToGrid",
@@ -335,16 +359,12 @@ namespace
              }},
 
             /// TODO:
-            /// min_over_time
-            /// max_over_time
             /// quantile_over_time
             /// stddev_over_time"
             /// stdvar_over_time
             /// present_over_time
             /// absent_over_time
             /// mad_over_time
-            /// ts_of_min_over_time
-            /// ts_of_max_over_time
             /// ts_of_last_over_time
             /// first_over_time
             /// ts_of_first_over_time
@@ -521,13 +541,13 @@ SQLQueryPiece applyFunctionOverRange(
         case StoreMethod::VECTOR_GRID:
         {
             /// SELECT group,
-            ///        <aggregate_function>((timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1,
-            ///                             time_series.2)) AS values
+            ///        <aggregate_function>((timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS samples).1,
+            ///                             samples.2)) AS values
             /// FROM <vector_grid>
             /// GROUP BY group
             has_group = true;
 
-            /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1
+            /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS samples).1
             ASTPtr ts = makeASTFunction(
                 "timeSeriesFromGrid",
                 timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
@@ -544,12 +564,12 @@ SQLQueryPiece applyFunctionOverRange(
             }
             else
             {
-                ts->setAlias(ColumnNames::TimeSeries);
+                ts->setAlias(ColumnNames::Samples);
                 timestamps = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(1));
 
-                /// time_series.2
+                /// samples.2
                 values = makeASTFunction(
-                    "tupleElement", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries), make_intrusive<ASTLiteral>(2));
+                    "tupleElement", make_intrusive<ASTIdentifier>(ColumnNames::Samples), make_intrusive<ASTLiteral>(2));
             }
 
             break;
