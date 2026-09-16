@@ -3,9 +3,12 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/Preconditions.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/copyData.h>
 
 #include <filesystem>
 #include <IO/ReadHelpers.h>
@@ -34,6 +37,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RMDIR;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int S3_ERROR;
+    extern const int FILE_CHANGED_DURING_READ;
 };
 
 namespace FailPoints
@@ -43,6 +49,179 @@ namespace FailPoints
     extern const char plain_object_storage_copy_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
+}
+
+namespace
+{
+
+/// The object storages whose generations can be pinned: their endpoints name a generation with an
+/// `ETag`, take it back as a precondition of a read, of a copy and of a delete (`If-Match`), and
+/// refuse a create-if-absent write (`If-None-Match: *`) of a key that a blob is at.
+bool pinsGenerations(const IObjectStorage & object_storage)
+{
+    const auto type = object_storage.getType();
+    return type == ObjectStorageType::Azure || type == ObjectStorageType::S3;
+}
+
+/// The error an operation is refused with when the endpoint of a pinning object storage will not
+/// name the generation of a blob.
+int errorCodeOfAnUnnamedGeneration(const IObjectStorage & object_storage)
+{
+    return object_storage.getType() == ObjectStorageType::Azure ? ErrorCodes::AZURE_BLOB_STORAGE_ERROR : ErrorCodes::S3_ERROR;
+}
+
+/// Names the generation that is at `remote_path` right now, together with its size, or nothing
+/// when the blob is not there or the endpoint reports no `ETag` for it.
+std::optional<StoredObject> nameTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
+{
+    auto metadata = object_storage.tryGetObjectMetadata(remote_path, /*with_tags=*/ false);
+    if (!metadata || metadata->etag.empty())
+        return {};
+
+    StoredObject object(remote_path);
+    object.bytes_size = metadata->size_bytes;
+    object.etag = metadata->etag;
+    return object;
+}
+
+}
+
+StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
+{
+    StoredObject object(remote_path);
+
+    if (!pinsGenerations(object_storage))
+        return object;
+
+    auto metadata = object_storage.tryGetObjectMetadata(remote_path, /*with_tags=*/ false);
+    /// The blob of a file the metadata says exists is not there. Returning it unpinned would not
+    /// keep the copy from happening: `copyObject` makes a `HEAD` of its own for a source without an
+    /// `ETag`, so a blob recreated between the two probes would be copied as the generation that
+    /// `HEAD` finds, while the delete that follows would still address the blob by path alone and
+    /// take away whatever is there by then. Fail closed, for the same reason the case of an endpoint
+    /// that reports no generation does: this operation may only move a generation it has named.
+    if (!metadata)
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "Blob {} was not moved: it does not exist, so the move cannot be pinned to the generation "
+            "of the blob that is being moved",
+            remote_path.string());
+
+    /// The endpoint reports no generation for the blob, so nothing here can be pinned: the copy
+    /// would take whatever is there when it runs and the delete would remove whatever is there when
+    /// it runs. Refuse the move instead of losing a rewritten file, the same way `copyObject` and
+    /// the `ObjectStorageQueue` post-processing refuse an unpinnable object.
+    if (metadata->etag.empty())
+        throw Exception(
+            errorCodeOfAnUnnamedGeneration(object_storage),
+            "Blob {} was not moved: the endpoint reports no `ETag` for it, so the move cannot be "
+            "pinned to the generation of the blob that is being moved",
+            remote_path.string());
+
+    object.bytes_size = metadata->size_bytes;
+    object.etag = metadata->etag;
+    return object;
+}
+
+/// Declared in the header, where the contract is documented.
+void refuseAGenerationOfAnotherSize(const StoredObject & generation, size_t recorded_size, const std::filesystem::path & path)
+{
+    /// Not named, not measured: the object storage does not pin (see `pinToTheGenerationThatIsThereNow`).
+    if (generation.etag.empty())
+        return;
+
+    if (generation.bytes_size != recorded_size)
+        throw Exception(
+            ErrorCodes::FILE_CHANGED_DURING_READ,
+            "Blob {} of the file '{}' is {} bytes long, while the metadata of the file records {} bytes: the blob "
+            "was written over since the file was recorded, and the generation that is there now is not the file",
+            generation.remote_path,
+            path.string(),
+            generation.bytes_size,
+            recorded_size);
+}
+
+/// Declared in the header, where the contract is documented.
+bool restoreTheSavedBlobWithoutWritingOver(
+    IObjectStorage & object_storage,
+    const std::filesystem::path & remote_tmp_path,
+    const std::filesystem::path & remote_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings)
+{
+    auto log = getLogger("PlainRewritableRollback");
+
+    /// An object storage that does not pin restores by key, the way its execute side deletes and
+    /// writes by key.
+    if (!pinsGenerations(object_storage))
+    {
+        object_storage.copyObject(StoredObject(remote_tmp_path), StoredObject(remote_path), read_settings, write_settings);
+        return true;
+    }
+
+    /// The saved blob is read pinned to its own generation, so that a restore cannot stitch together
+    /// what this transaction saved aside with something written over the temporary key since.
+    auto saved = nameTheGenerationThatIsThereNow(object_storage, remote_tmp_path);
+    if (!saved)
+    {
+        LOG_WARNING(
+            log,
+            "The blob saved aside at {} cannot be named (it is not there, or the endpoint reports no "
+            "`ETag` for it), so it is not restored to {}",
+            remote_tmp_path.string(),
+            remote_path.string());
+        return false;
+    }
+
+    /// The restore creates the destination and never replaces one: `If-None-Match: *` makes the
+    /// endpoint refuse the write when a blob is at the key (Azure answers `409 Conflict`, S3 `412
+    /// Precondition Failed`), so a writer that recreated the key at any moment - including after a
+    /// probe of the key would have found it free - keeps its generation. There is no way to express
+    /// this through `copyObject`, which writes by key alone.
+    WriteSettings create_if_absent = write_settings;
+    create_if_absent.object_storage_write_if_none_match = "*";
+
+    std::unique_ptr<WriteBufferFromFileBase> out;
+    try
+    {
+        auto in = object_storage.readObject(*saved, read_settings);
+        out = object_storage.writeObject(
+            StoredObject(remote_path), WriteMode::Rewrite, /* attributes */ {}, DBMS_DEFAULT_BUFFER_SIZE, create_if_absent);
+        copyData(*in, *out);
+        out->finalize();
+        return true;
+    }
+    catch (...)
+    {
+        if (out)
+            out->cancel();
+
+        /// Every failure of the restore is treated the same way, because they all mean that the
+        /// generation this transaction saved aside is not at the key: the write was refused because
+        /// somebody else got the key first, or it did not go through at all. The saved blob stays in
+        /// the bucket, and its path is logged, rather than the restore being retried by a write that
+        /// would be free to replace whatever is there.
+        tryLogCurrentException(log, fmt::format(
+            "The blob saved aside at {} was not restored to {}; it is left in the bucket",
+            remote_tmp_path.string(), remote_path.string()));
+        return false;
+    }
+}
+
+std::optional<StoredObject> nameTheGenerationThatWasJustWritten(
+    const IObjectStorage & object_storage, const std::filesystem::path & remote_path, const String & etag_the_copy_reported, size_t bytes_size)
+{
+    StoredObject object(remote_path);
+    object.bytes_size = bytes_size;
+
+    if (!pinsGenerations(object_storage))
+        return object;
+
+    if (etag_the_copy_reported.empty())
+        return {};
+
+    object.etag = etag_the_copy_reported;
+    return object;
 }
 
 MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
@@ -384,13 +563,29 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     const auto normalized_path_from = normalizePath(path);
     const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
     remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
-    remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    remote_tmp_path = layout->constructScratchFileObjectKey(getRandomASCIIString(16));
+
+    /// The blob is copied aside and then deleted: both requests must be about the same generation
+    /// of it, or the delete would take away content that was never copied.
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, remote_source_path);
 
     copy_started = true;
-    object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
+    object_storage->copyObject(source, StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
 
     remove_started = true;
-    object_storage->removeObjectIfExists(StoredObject(remote_source_path));
+    try
+    {
+        object_storage->removeObjectIfExists(source);
+    }
+    catch (...)
+    {
+        /// The blob is not the generation that was copied aside any more, so it was left in place:
+        /// the file still holds content that this operation has never seen, and restoring the copy
+        /// over it would be the very loss the pinning prevents.
+        if (getCurrentExceptionCode() == ErrorCodes::FILE_CHANGED_DURING_READ)
+            source_was_left_in_place = true;
+        throw;
+    }
 
     fs_tree->removeFile(path);
 }
@@ -400,8 +595,27 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
     if (!copy_started)
         return;
 
-    if (remove_started)
-        object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
+    if (remove_started && !source_was_left_in_place)
+    {
+        /// The source blob was deleted, so its key is free and another writer may have recreated
+        /// it. That blob is a generation this operation has never seen, and the copy it saved
+        /// aside is the generation before it: restoring over it would lose the newer one. The
+        /// restore therefore only creates the key and never replaces it, and a restore that did not
+        /// happen leaves the saved blob in the bucket.
+        if (!restoreTheSavedBlobWithoutWritingOver(
+                *object_storage, remote_tmp_path, remote_source_path, getReadSettings(), getWriteSettings()))
+        {
+            LOG_WARNING(
+                getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
+                "Not restoring the blob of the file '{}': a blob that this transaction never saw is "
+                "at {}, or the restore of it did not go through. The blob that was deleted is left "
+                "in the bucket at {} instead of being restored over it",
+                path,
+                remote_source_path.string(),
+                remote_tmp_path.string());
+            return;
+        }
+    }
 
     object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
 }
@@ -452,23 +666,101 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
 
-    copy_attempted = true;
-    object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
-    fs_tree->recordFile(path_to, fs_tree->getFileRemoteInfo(path_from).value());
+    /// The copy is pinned to the generation of the source named here, and the file is recorded at
+    /// `path_to` with the metadata of `path_from`, so that generation has to be the one the metadata
+    /// describes: a blob of another size was written over the file out of band, and a link recorded
+    /// with the size of the old generation would be read short of its end from then on. Such a link
+    /// is refused before anything is written (see `refuseAGenerationOfAnotherSize`).
+    const FileRemoteInfo file_from_remote_info = fs_tree->getFileRemoteInfo(path_from).value();
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, remote_path_from);
+    refuseAGenerationOfAnotherSize(source, file_from_remote_info.bytes_size, path_from);
+
+    const String etag_the_copy_reported
+        = object_storage->copyObject(source, StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+
+    /// The destination blob is there from now on, so `undo` has to take it back out - and only it:
+    /// the generation the copy wrote is the one the response to the copy named, and the delete in
+    /// `undo` is pinned to it, so it cannot take away a generation another writer has put at the
+    /// same key since - not even one put there right after the copy, because no request of this
+    /// operation looks at the key again. A copy that threw before writing anything leaves nothing
+    /// for `undo` to remove, which is why the flag is set here rather than before the copy.
+    copied_to_destination = true;
+    destination = StoredObject(remote_path_to);
+    if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to, etag_the_copy_reported, source.bytes_size))
+    {
+        destination = std::move(*named);
+        destination_generation_is_named = true;
+    }
+    else
+        throw Exception(
+            errorCodeOfAnUnnamedGeneration(*object_storage),
+            "Cannot copy '{}' to '{}': the endpoint reported no `ETag` for the blob at {} that the "
+            "copy has just written, so a rollback of this copy cannot delete exactly that "
+            "generation. The copy is refused here, before the file is recorded, and the rollback "
+            "leaves the blob the copy wrote at its key rather than deleting whatever is at the key "
+            "(see `undo`)",
+            path_from.string(),
+            path_to.string(),
+            remote_path_to.string());
+
+    fs_tree->recordFile(path_to, file_from_remote_info);
 }
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
 {
-    if (!copy_attempted)
+    if (!copied_to_destination)
         return;
 
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation");
+
+    if (!destination_generation_is_named)
+    {
+        /// The generation the copy wrote was never named, so the only delete available here is one
+        /// by key, and that one is not made: a delete by key cannot tell the blob this copy wrote
+        /// from a generation another writer has put at the key since, and taking away a generation
+        /// this transaction never wrote is the loss the pinned deletes of these operations exist to
+        /// prevent. The blob is left where it is and its path is logged instead. The cost is that
+        /// `load` rebuilds the files of a directory from every blob under the key of the directory,
+        /// so that blob comes back as the file `path_to` on the next start of the server although
+        /// the transaction never committed - a copy of the source at a key that was free by the
+        /// metadata of this disk, which is recoverable by hand, while a deleted generation is not.
+        LOG_ERROR(
+            log,
+            "Leaving the blob at {} that the copy of '{}' to '{}' wrote: the generation it holds "
+            "could not be named, so a delete could only be made by the key alone and could take "
+            "away a blob another writer has put there since. The blob is loaded as the file '{}' on "
+            "the next start unless it is removed by hand",
+            remote_path_to.string(),
+            path_from,
+            path_to,
+            path_to);
+        return;
+    }
+
     LOG_WARNING(
-        getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"),
+        log,
         "Removing file '{}' that was copied from '{}",
         path_to,
         path_from);
 
-    object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    /// `destination` names the generation this copy wrote, so a blob that another writer has put at
+    /// the same key since is refused with `FILE_CHANGED_DURING_READ` and stays.
+    try
+    {
+        object_storage->removeObjectIfExists(destination);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::FILE_CHANGED_DURING_READ)
+            throw;
+
+        LOG_WARNING(
+            log,
+            "Not removing the blob at {} that the copy of '{}' wrote: another writer has replaced "
+            "that generation since, and it was never seen here",
+            remote_path_to.string(),
+            path_to);
+    }
 }
 
 MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlainObjectStorageMoveFileOperation(
@@ -515,11 +807,22 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
-    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
-    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    tmp_remote_path_from = layout->constructScratchFileObjectKey(getRandomASCIIString(16));
+    tmp_remote_path_to = layout->constructScratchFileObjectKey(getRandomASCIIString(16));
     file_from_remote_info = fs_tree->getFileRemoteInfo(path_from).value();
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
+
+    /// Every request that touches the blob of the source - the copy aside, the copy to the
+    /// destination and the delete - is pinned to the generation named here, so the move carries
+    /// one generation of the file and deletes exactly the one it carried. It is named before
+    /// anything is written, because the file is recorded at `path_to` with the metadata of
+    /// `path_from`, and the generation has to be the one that metadata describes: a blob of
+    /// another size was written over the file out of band, and a file recorded with the size of
+    /// the old generation would be read short of its end from then on. Such a move is refused
+    /// here, with nothing to undo yet (see `refuseAGenerationOfAnotherSize`).
+    source = pinToTheGenerationThatIsThereNow(*object_storage, remote_path_from);
+    refuseAGenerationOfAnotherSize(source, file_from_remote_info->bytes_size, path_from);
 
     if (fs_tree->existsFile(path_to))
     {
@@ -530,8 +833,12 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
 
+        /// The blob of the target is copied aside and then deleted; both requests must be about
+        /// the same generation of it (see `pinToTheGenerationThatIsThereNow`).
+        const StoredObject target = pinToTheGenerationThatIsThereNow(*object_storage, remote_path_to);
+
         object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_to),
+            /*object_from=*/target,
             /*object_to=*/StoredObject(tmp_remote_path_to),
             read_settings,
             write_settings);
@@ -540,7 +847,19 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         fs_tree->removeFile(path_to);
         fs_tree->recordFile(path_to, file_from_remote_info.value());
 
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        try
+        {
+            object_storage->removeObjectIfExists(target);
+        }
+        catch (...)
+        {
+            /// The target blob is a generation this operation has never copied aside, so it was
+            /// left in place and must not be overwritten by the copy that was made of the
+            /// generation before it.
+            if (getCurrentExceptionCode() == ErrorCodes::FILE_CHANGED_DURING_READ)
+                target_was_left_in_place = true;
+            throw;
+        }
     }
     else
     {
@@ -552,8 +871,9 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
 
+        /// The copy aside is pinned to the generation of the source named above.
         object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_from),
+            /*object_from=*/source,
             /*object_to=*/StoredObject(tmp_remote_path_from),
             read_settings,
             write_settings);
@@ -564,10 +884,45 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         fiu_do_on(FailPoints::plain_object_storage_copy_fail_on_file_move, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
-        object_storage->copyObject(
-            /*object_from=*/StoredObject(remote_path_from), /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
-        object_storage->removeObjectIfExists(StoredObject(remote_path_from));
-        moved_file = true;
+        const String etag_the_copy_reported = object_storage->copyObject(
+            /*object_from=*/source, /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
+
+        /// The destination blob is there from now on, whatever happens next, so `undo` has to take
+        /// it back out: a blob of a move that was never committed resurrects `path_to` on restart,
+        /// because the directory is rebuilt from the blobs that are in the bucket. The generation
+        /// the copy wrote is the one the response to the copy named, and the delete in `undo` is
+        /// pinned to it; no request of this operation looks at the key again.
+        copied_to_destination = true;
+        destination = StoredObject(remote_path_to);
+        if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to, etag_the_copy_reported, source.bytes_size))
+        {
+            destination = std::move(*named);
+            destination_generation_is_named = true;
+        }
+        else
+            throw Exception(
+                errorCodeOfAnUnnamedGeneration(*object_storage),
+                "Cannot move '{}' to '{}': the endpoint reported no `ETag` for the blob at {} that "
+                "the copy has just written, so a rollback of this move cannot delete exactly that "
+                "generation. The move is refused here, before the source is deleted, and the "
+                "rollback leaves the blob the copy wrote at its key rather than deleting whatever "
+                "is at the key (see `undo`)",
+                path_from.string(),
+                path_to.string(),
+                remote_path_to.string());
+
+        try
+        {
+            object_storage->removeObjectIfExists(source);
+        }
+        catch (...)
+        {
+            /// The source blob holds a generation that was never moved, so it stayed where it is
+            /// and the copy of the previous generation must not be restored over it.
+            if (getCurrentExceptionCode() == ErrorCodes::FILE_CHANGED_DURING_READ)
+                source_was_left_in_place = true;
+            throw;
+        }
     }
 
     fs_tree->removeFile(path_from);
@@ -578,38 +933,112 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     const auto read_settings = getReadSettings();
     const auto write_settings = getWriteSettings();
 
-    if (moved_file)
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation");
+
+    /// The copy to the destination is undone whether or not the delete of the source that follows
+    /// it succeeded: `copied_to_destination` is set between the two.
+    if (copied_to_destination && !destination_generation_is_named)
+    {
+        /// The move was refused because the generation the copy wrote could not be named, so the
+        /// only delete available here is one by key, and it is not made, for the reason given in
+        /// the copy operation: it could take away a generation another writer has put at the key
+        /// since the copy, which is the loss the pinned deletes exist to prevent. The blob is left
+        /// at the key and logged. It is loaded as the file `path_to` on the next start although the
+        /// move never committed, and in the replaceable case the target this move had set aside is
+        /// not restored over it (see `restoreTheSavedBlobWithoutWritingOver` below) and stays under
+        /// its scratch key, which the restore logs as well.
+        LOG_ERROR(
+            log,
+            "Leaving the blob at {} that the move of '{}' to '{}' wrote: the generation it holds "
+            "could not be named, so a delete could only be made by the key alone and could take "
+            "away a blob another writer has put there since. The blob is loaded as the file '{}' on "
+            "the next start unless it is removed by hand",
+            remote_path_to.string(),
+            path_from,
+            path_to,
+            path_to);
+    }
+    else if (copied_to_destination)
     {
         LOG_WARNING(
-            getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"),
+            log,
             "Removing file '{}' that was moved (replaceable = {}) from '{}",
             path_to,
             replaceable,
             path_from);
 
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        /// `destination` names the generation this move wrote, so a blob that another writer has
+        /// put at the same key since is refused with `FILE_CHANGED_DURING_READ` and stays. The
+        /// destination is then left as that writer made it, which is the fail-closed outcome: the
+        /// blob this move wrote is gone from the metadata of this transaction either way.
+        try
+        {
+            object_storage->removeObjectIfExists(destination);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::FILE_CHANGED_DURING_READ)
+                throw;
+
+            LOG_WARNING(
+                log,
+                "Not removing the blob at {} that the move of '{}' wrote: another writer has "
+                "replaced that generation since, and it was never seen here",
+                remote_path_to.string(),
+                path_to);
+        }
     }
 
     if (moved_existing_source_file)
     {
-        object_storage->copyObject(
-            /*object_from=*/StoredObject(tmp_remote_path_from),
-            /*object_to=*/StoredObject(remote_path_from),
-            read_settings,
-            write_settings);
+        /// The same rule as in the unlink operation: the copy that was saved aside is only put back
+        /// over a key that nobody has taken over since this move emptied it, and otherwise it is
+        /// left in the bucket rather than overwriting a generation this move never saw.
+        const bool restored = source_was_left_in_place
+            || restoreTheSavedBlobWithoutWritingOver(
+                *object_storage, tmp_remote_path_from, remote_path_from, read_settings, write_settings);
 
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        if (!restored)
+        {
+            LOG_WARNING(
+                log,
+                "Not restoring the source blob of the move of '{}': a blob that this move never "
+                "carried is at {}, or the restore of it did not go through. The blob that was "
+                "deleted is left in the bucket at {}",
+                path_from,
+                remote_path_from.string(),
+                tmp_remote_path_from.string());
+        }
+        else
+        {
+            object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        }
     }
 
     if (moved_existing_target_file)
     {
-        object_storage->copyObject(
-            /*object_from=*/StoredObject(tmp_remote_path_to),
-            /*object_to=*/StoredObject(remote_path_to),
-            read_settings,
-            write_settings);
+        /// The target that this move replaced is put back only over a key that is free. It is not
+        /// free when the delete above was refused, or when another writer has taken the key over,
+        /// and in both cases what is there is a generation this move never carried.
+        const bool restored = target_was_left_in_place
+            || restoreTheSavedBlobWithoutWritingOver(
+                *object_storage, tmp_remote_path_to, remote_path_to, read_settings, write_settings);
 
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        if (!restored)
+        {
+            LOG_WARNING(
+                log,
+                "Not restoring the blob that the move of '{}' replaced: a blob that this move never "
+                "carried is at {}, or the restore of it did not go through. The blob that was "
+                "replaced is left in the bucket at {}",
+                path_to,
+                remote_path_to.string(),
+                tmp_remote_path_to.string());
+        }
+        else
+        {
+            object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        }
     }
 }
 
