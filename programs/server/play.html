@@ -4646,7 +4646,11 @@ class QueryResultElement extends HTMLElement
             this._column_is_string[elem.name] = !!unwrapped_type.match(/^(String|FixedString)/);
             this._column_is_enum[elem.name] = !!unwrapped_type.match(/^Enum/);
             this._column_is_bool[elem.name] = !!unwrapped_type.match(/^Bool/);
-            this._column_is_json[elem.name] = !!unwrapped_type.match(/^JSON\b/);
+            /// Never for a name the header carries more than once: the cells are keyed by name too
+            /// (`appendRow`, `_renderCell`), so a `JSON` namesake would tag a non-`JSON` column's cells,
+            /// whose text is then no JSON for `_expandJSON` to parse. Withheld like sort and filter
+            /// (`duplicateColumnNames`): fail closed, and the compact form stays.
+            this._column_is_json[elem.name] = !this._duplicate_columns.has(elem.name) && !!unwrapped_type.match(/^JSON\b/);
             this._column_is_nullable[elem.name] = !!elem.type.match(/^(?:LowCardinality\()?Nullable\(/);
             this._appendPinToggle(th, elem.name);
             this._appendColorizeToggle(th, elem.name);
