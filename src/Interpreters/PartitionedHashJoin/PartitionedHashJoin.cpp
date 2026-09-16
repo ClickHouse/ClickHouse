@@ -168,9 +168,11 @@ PartitionedHashJoin::PartitionedHashJoin(
 
     if (join_table_mode)
     {
-        /// `StorageJoin` accepts one key clause and no ASOF at `CREATE`, so these are not user errors.
+        /// `StorageJoin` accepts one key clause, no mixed ON condition and no ASOF at `CREATE`, so these
+        /// are not user errors.
         if (delegate_mode)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table has exactly one key clause");
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table has exactly one key clause and no mixed ON condition");
         if (hash_join->getStrictness() == JoinStrictness::Asof)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table cannot be ASOF");
         clause.createJoinTable();
