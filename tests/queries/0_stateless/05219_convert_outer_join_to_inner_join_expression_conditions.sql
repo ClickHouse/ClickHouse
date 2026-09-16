@@ -1,3 +1,4 @@
+-- Tags: long
 -- Test outer to inner join conversion driven by a join condition whose sides are expressions
 -- rather than plain columns, and by expressions that do not propagate NULLs at all.
 
