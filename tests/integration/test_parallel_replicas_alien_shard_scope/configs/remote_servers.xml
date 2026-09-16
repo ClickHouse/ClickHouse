@@ -51,5 +51,34 @@
                 </replica>
             </shard>
         </test_alien_pr_cluster>
+
+        <!-- Same shard count as the fan-out, but a different layout: its shard 2 is `n3` and `n4`, not the
+             initiator. A `_shard_num = 2` / `_shard_count = 2` pair from the fan-out is indistinguishable from
+             this cluster's own by the numbers alone, so applying it here would make the initiator's shard read
+             the wrong replica set. -->
+        <test_alien_pr_cluster_same_shard_count>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n4</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_alien_pr_cluster_same_shard_count>
     </remote_servers>
 </clickhouse>

@@ -105,6 +105,10 @@ static void setClusterForParallelReplicas(const ContextMutablePtr & context, con
     /// `prepareClusterForParallelReplicas` scopes the coordinator by the per-query `_shard_num` scalar as well:
     /// a fan-out over the same cluster name but a different shard is a different replica set, and must not
     /// inherit the previous shard's count.
+    ///
+    /// The dispatch already pinned the cluster and cleared the count for the whole fan-out
+    /// (`updateSettingsAndClientInfoForCluster`, which also covers the local shard plans); this repeats it
+    /// for the context this step actually ships, so the remote pipes do not depend on that ordering.
     context->getClientInfo().obsolete_count_participating_replicas = 0;
     context->clearParallelReplicasCoordinatorCount();
 

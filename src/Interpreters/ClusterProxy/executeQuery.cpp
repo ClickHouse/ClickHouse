@@ -434,12 +434,35 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     if (context->canUseTaskBasedParallelReplicas())
     {
         bool disable_parallel_replicas = false;
-        if (is_remote_function)
+        if (is_remote_function && cluster.getName().empty())
         {
-            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
-                disable_parallel_replicas = true;
-            else
-                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
+            /// disable parallel replicas with remote() table functions w/o configured cluster
+            disable_parallel_replicas = true;
+        }
+        else
+        {
+            /// Every shard of this dispatch reads with parallel replicas over the `Distributed` cluster,
+            /// scoped to its own shard by the `_shard_num` / `_shard_count` pair, and that pair describes
+            /// this cluster only. Pin `cluster_for_parallel_replicas` to it here, for the local shard plans
+            /// as well as the remote pipes (`ReadFromRemote` used to do this for the remote pipes alone):
+            /// a local shard plan that kept a user-supplied `cluster_for_parallel_replicas` would apply
+            /// this cluster's shard scope to an unrelated cluster, which the pair cannot detect (it carries
+            /// no cluster identity), and either read the wrong replica set or fail on a shard this node
+            /// is not part of.
+            const String & previous_cluster_name = settings[Setting::cluster_for_parallel_replicas];
+            if (log && settings[Setting::cluster_for_parallel_replicas].changed && previous_cluster_name != cluster.getName())
+                LOG_INFO(
+                    log,
+                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is used: {}",
+                    previous_cluster_name,
+                    cluster.getName());
+            new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
+
+            /// Any coordinator replica count present here was selected by an outer parallel-replicas
+            /// dispatch, not by the ones this fan-out is about to start: every replica set reached
+            /// through it gets its own coordinator from `executeQueryWithParallelReplicas`, which owns and
+            /// re-sends the count. The context carrier is cleared below, once the context copy exists.
+            new_client_info.obsolete_count_participating_replicas = 0;
         }
 
         if (!disable_parallel_replicas)
@@ -482,6 +505,8 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     new_context->setClientInfo(new_client_info);
+    if (context->canUseTaskBasedParallelReplicas())
+        new_context->clearParallelReplicasCoordinatorCount();
 
     if (context->canUseParallelReplicasCustomKeyForCluster(cluster))
         new_context->disableOffsetParallelReplicas();
@@ -791,52 +816,30 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 
 /// The shard the parallel-replicas scope is narrowed to, taken from the `_shard_num` / `_shard_count` pair
 /// propagated by the query initiator. `shard_num` is 1-based, so 0 means that no shard is specified.
-/// `cluster` is the cluster this read is scoped to, used to reject a pair that belongs to another cluster;
-/// pass `nullptr` to skip that check.
-static UInt64 getParallelReplicasShardNum(const ContextPtr & context, const ClusterPtr & cluster)
+///
+/// The pair describes the cluster of the `Distributed` dispatch that produced it, and that dispatch pins
+/// `cluster_for_parallel_replicas` to the same cluster for every shard it produces
+/// (`updateSettingsAndClientInfoForCluster`), so the shard number returned here always refers to the
+/// cluster `Context::getClusterForParallelReplicas` resolves in the same context.
+static UInt64 getParallelReplicasShardNum(const ContextPtr & context)
 {
-    auto read_shard_info = [](const Block & block) { return block.safeGetByPosition(0).column->getUInt(0); };
+    auto read_shard_num = [](const Block & block) { return block.safeGetByPosition(0).column->getUInt(0); };
 
     /// The shard number arrives through two carriers. The remote fan-out ships it as a regular scalar
     /// (`ReadFromRemote` adds it to the scalars sent over the wire), so on the receiving replica it lives in
     /// the query context. A local shard plan never crosses the wire: `createLocalPlan` passes the shard
     /// number in `SelectQueryOptions`, and the interpreter injects it into its context copy with
     /// `addSpecialScalar`, from where context copies inherit it. The special scalar is set by the innermost
-    /// interpreter, so when both are present it is the more specific scope and takes precedence. Both
-    /// carriers always ship the shard count next to the number (`setShardInfo` sets the pair), so take both
-    /// from the same carrier.
-    UInt64 shard_num = 0;
-    std::optional<UInt64> shard_count;
+    /// interpreter, so when both are present it is the more specific scope and takes precedence.
     if (const auto shard_num_block = context->tryGetSpecialScalar("_shard_num"))
-    {
-        shard_num = read_shard_info(*shard_num_block);
-        if (const auto shard_count_block = context->tryGetSpecialScalar("_shard_count"))
-            shard_count = read_shard_info(*shard_count_block);
-    }
-    else
-    {
-        const auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-        const auto it = scalars.find("_shard_num");
-        if (it == scalars.end())
-            return 0;
+        return read_shard_num(*shard_num_block);
 
-        shard_num = read_shard_info(it->second);
-        if (const auto count_it = scalars.find("_shard_count"); count_it != scalars.end())
-            shard_count = read_shard_info(count_it->second);
-    }
-
-    if (shard_num == 0)
+    const auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    const auto it = scalars.find("_shard_num");
+    if (it == scalars.end())
         return 0;
 
-    /// The pair describes the cluster of the `Distributed` dispatch that shipped it, which is not necessarily
-    /// the cluster this read is scoped to: a plain table read nested in a `Distributed` shard plan keeps its
-    /// own `cluster_for_parallel_replicas`, and then the outer fan-out's shard scope says nothing about it.
-    /// Such an alien scope used to reach `getClusterWithSingleShard` and make `prepareClusterForParallelReplicas`
-    /// throw for a shard number past the end of the unrelated cluster.
-    if (cluster && ((shard_count && *shard_count != cluster->getShardCount()) || shard_num > cluster->getShardCount()))
-        return 0;
-
-    return shard_num;
+    return read_shard_num(it->second);
 }
 
 static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context)
@@ -844,7 +847,7 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
     /// check cluster for parallel replicas
     auto not_optimized_cluster = context->getClusterForParallelReplicas();
 
-    const UInt64 shard_num = getParallelReplicasShardNum(context, not_optimized_cluster);
+    const UInt64 shard_num = getParallelReplicasShardNum(context);
 
     ClusterPtr new_cluster = not_optimized_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
@@ -1014,7 +1017,7 @@ size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, con
     /// `prepareClusterForParallelReplicas` does: with a multi-shard cluster, shard 0 is not necessarily the
     /// shard this query reads, and its replica set (and liveness) can differ.
     ClusterPtr shard_cluster = cluster;
-    if (const UInt64 shard_num = getParallelReplicasShardNum(context, cluster);
+    if (const UInt64 shard_num = getParallelReplicasShardNum(context);
         shard_num > 0 && shard_num <= cluster->getShardCount() && cluster->getShardCount() > 1)
         shard_cluster = cluster->getClusterWithSingleShard(shard_num - 1);
 
@@ -1538,7 +1541,7 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
         return cluster->getShardsInfo()[0].getAllNodeCount() > 1;
 
     /// parallel replicas with distributed table
-    const UInt64 shard_num = getParallelReplicasShardNum(context, cluster);
+    const UInt64 shard_num = getParallelReplicasShardNum(context);
     if (shard_num > 0)
     {
         const auto shard_count = cluster->getShardCount();
@@ -1572,7 +1575,7 @@ bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
 
     /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
     /// `executeQueryWithParallelReplicas`).
-    if (getParallelReplicasShardNum(context, /*cluster=*/ nullptr) > 0)
+    if (getParallelReplicasShardNum(context) > 0)
         return false;
 
     return true;
