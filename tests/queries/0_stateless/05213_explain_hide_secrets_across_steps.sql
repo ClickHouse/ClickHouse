@@ -72,3 +72,9 @@ FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 0, compact = 0, optimize
 SELECT countIf(explain LIKE '%SEKRIT_FOLDED%') AS folded_query_tree_leaks
 FROM viewExplain('EXPLAIN QUERY TREE', '', (
     SELECT decrypt('aes-128-ecb', encrypt('aes-128-ecb', 'SEKRIT_FOLDED', '0123456789abcdef'), '0123456789abcdef') AS k));
+
+-- A projected folded secret crosses to the `Project names` step through the header and is renamed
+-- there; the rebuilt constant and its alias must keep the mask, or `Output:` prints the plaintext.
+SELECT countIf(explain LIKE '%SEKRIT_PROJECTED%') AS projected_output_leaks, countIf(explain LIKE 'Output: [HIDDEN]%') AS projected_output_hidden
+FROM viewExplain('EXPLAIN PLAN', 'header = 1', (
+    SELECT decrypt('aes-128-ecb', encrypt('aes-128-ecb', 'SEKRIT_PROJECTED', '0123456789abcdef'), '0123456789abcdef') AS k FROM numbers(1)));

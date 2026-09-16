@@ -177,6 +177,11 @@ void tryFoldFunctionToConstant(
             node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
         else
             node.column = column_const->getPtr();
+
+        /// A constant computed from a masked secret is derived from it and stays hidden too.
+        for (const auto * child : node.children)
+            if (child->is_masked_secret)
+                node.is_masked_secret = true;
     }
 }
 
@@ -382,11 +387,21 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
             ///   without any respect to header structure. So, it is a way to drop materialized column and use
             ///   constant value from header.
             /// We cannot remove such input right now cause inputs positions are important in some cases.
-            outputs.push_back(&addColumn(input_const->getPtr(), input.type, input.name));
+            outputs.push_back(&addColumn(input_const->getPtr(), input.type, input.name, true, isMaskedSecretName(input.name)));
         }
         else
             outputs.push_back(&addInput(input.name, input.type));
     }
+}
+
+/// A block header carries only name, type and value, so the mask of a secret constant crosses a
+/// step boundary only through its name: the planner names every masked constant by the placeholder
+/// from `ConstantNode::getMaskString` (`[HIDDEN id: N]_Type`, possibly wrapped in `_CAST`). A node
+/// rebuilt from such a header column gets the mask back, so it can be inherited from there on
+/// (an alias, or a constant folded over it) and does not depend on the placeholder staying in the name.
+bool ActionsDAG::isMaskedSecretName(std::string_view name)
+{
+    return name.contains("[HIDDEN");
 }
 
 ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
@@ -396,6 +411,9 @@ ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
+    /// An alias of a masked constant is that constant under another name; the mask has to follow it
+    /// because constant folding later turns the alias into a plain COLUMN.
+    node.is_masked_secret = child.is_masked_secret;
     node.children.emplace_back(&child);
 
     return node;
@@ -430,7 +448,10 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     /// Only keep the column if it is a propagated constant.
     /// Non-const columns from block headers must not be stored in DAG nodes.
     if (const auto * column_const = column.column ? typeid_cast<const ColumnConst *>(column.column.get()) : nullptr)
+    {
         node.column = column_const->getPtr();
+        node.is_masked_secret = isMaskedSecretName(node.result_name);
+    }
 
     return addNode(std::move(node));
 }
@@ -1928,16 +1949,7 @@ void ActionsDAG::addAliases(const NamesWithAliases & aliases)
         const auto * child = required_nodes[i];
 
         if (!item.second.empty() && item.first != item.second)
-        {
-            Node node;
-            node.type = ActionType::ALIAS;
-            node.result_type = child->result_type;
-            node.result_name = item.second;
-            node.column = child->column;
-            node.children.emplace_back(child);
-
-            child = &addNode(std::move(node));
-        }
+            child = &addNode(createAlias(*child, item.second));
 
         auto it = names_map.find(child->result_name);
         if (it == names_map.end())
@@ -1977,16 +1989,7 @@ void ActionsDAG::project(const NamesWithAliases & projection, const std::unorder
         auto & child = outputs[i];
 
         if (!item.second.empty() && item.first != item.second)
-        {
-            Node node;
-            node.type = ActionType::ALIAS;
-            node.result_type = child->result_type;
-            node.result_name = item.second;
-            node.column = child->column;
-            node.children.emplace_back(child);
-
-            child = &addNode(std::move(node));
-        }
+            child = &addNode(createAlias(*child, item.second));
     }
 
     /// Forward keep_inputs as used_inputs so a constant input re-created as a free-standing COLUMN
