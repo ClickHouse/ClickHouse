@@ -1961,7 +1961,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
     {
         /// "null" and "new ISODate(" share the leading 'n', consume it once and match the rest.
         ++buf.position();
-        if (checkString("ew ISODate(", buf))
+        if (settings.allow_mongodb_isodate_wrapper && checkString("ew ISODate(", buf))
         {
             if constexpr (throw_exception)
                 skipJSONISODateArgument<ReturnType>(buf, settings);
@@ -1973,7 +1973,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
         else if (!checkString("ull", buf))
             return ReturnType(false);
     }
-    else if (*buf.position() == 'I') /// skip ISODate("...")  -- not valid JSON, but mongodb shell syntax
+    else if (settings.allow_mongodb_isodate_wrapper && *buf.position() == 'I') /// skip ISODate("...")  -- not valid JSON, but mongodb shell syntax
     {
         if constexpr (throw_exception)
         {

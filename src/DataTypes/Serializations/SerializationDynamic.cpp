@@ -1145,10 +1145,17 @@ void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_
 
 void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto read_field = [&settings](ReadBuffer & buf)
+    /// The MongoDB shell `ISODate("...")` wrapper is understood only by a target type already known to be
+    /// `DateTime64`, and it is deliberately not part of JSON type inference. Tokenize strictly here, otherwise
+    /// a wrapper (at any nesting depth) would be inferred as an incomplete type and then accepted by an
+    /// existing `DateTime64` variant through the fallback below.
+    FormatSettings::JSON strict_json_settings = settings.json;
+    strict_json_settings.allow_mongodb_isodate_wrapper = false;
+
+    auto read_field = [&strict_json_settings](ReadBuffer & buf)
     {
         String field;
-        readJSONField(field, buf, settings.json);
+        readJSONField(field, buf, strict_json_settings);
         return field;
     };
 
