@@ -7,6 +7,7 @@ template JoinResultPtr PartitionedHashJoin::probeImpl<JoinKind::Inner, JoinStric
 template JoinResultPtr PartitionedHashJoin::probeImpl<JoinKind::Inner, JoinStrictness::RightAny, HashJoin::MapsOne>(Block, size_t);
 template JoinResultPtr PartitionedHashJoin::probeImpl<JoinKind::Inner, JoinStrictness::RightAny, HashJoin::MapsAll>(Block, size_t);
 template JoinResultPtr PartitionedHashJoin::probeImpl<JoinKind::Inner, JoinStrictness::Any, HashJoin::MapsOne>(Block, size_t);
+template JoinResultPtr PartitionedHashJoin::probeImpl<JoinKind::Inner, JoinStrictness::Any, HashJoin::MapsAll>(Block, size_t);
 template JoinResultPtr PartitionedHashJoin::probeImpl<JoinKind::Inner, JoinStrictness::Asof, HashJoin::MapsAsof>(Block, size_t);
 
 }

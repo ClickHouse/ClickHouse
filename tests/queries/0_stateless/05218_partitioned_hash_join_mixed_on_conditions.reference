@@ -1,0 +1,75 @@
+-- the rows of two shapes, so the checksums below are anchored to visible data
+key1	a	1	1	2	key1	B	2	1	2
+key1	a	1	1	2	key1	C	3	4	5
+key1	a	1	1	2	key1	D	4	1	6
+key1	b	2	3	2	key1	C	3	4	5
+key1	b	2	3	2	key1	D	4	1	6
+key1	c	3	2	1	key1	D	4	1	6
+key1	d	4	7	2			0	0	\N
+key1	e	5	5	5			0	0	\N
+key2	a2	1	1	1			0	0	\N
+key4	f	2	3	4			0	0	\N
+		0	0	\N	key3	a3	1	1	1
+		0	0	\N	key4	F	1	1	1
+key1	a	1	1	2	key1	A	1	2	1
+key1	b	2	3	2	key1	B	2	1	2
+key1	b	2	3	2	key1	C	3	4	5
+key1	c	3	2	1	key1	B	2	1	2
+key1	c	3	2	1	key1	C	3	4	5
+key1	d	4	7	2	key1	D	4	1	6
+key1	e	5	5	5			0	0	\N
+key2	a2	1	1	1			0	0	\N
+key4	f	2	3	4			0	0	\N
+-- every kind and strictness, three conditions: count, and whether hash and partitioned_hash agree
+LEFT | t1.key = t2.key AND t1.a < t2.a	10	1
+LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	9	1
+LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	13	1
+INNER | t1.key = t2.key AND t1.a < t2.a	6	1
+INNER | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	6	1
+INNER | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	11	1
+RIGHT | t1.key = t2.key AND t1.a < t2.a	9	1
+RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	8	1
+RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	12	1
+FULL | t1.key = t2.key AND t1.a < t2.a	13	1
+FULL | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	11	1
+FULL | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	14	1
+ANY LEFT | t1.key = t2.key AND t1.a < t2.a	7	1
+ANY LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	7	1
+ANY LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	7	1
+ANY INNER | t1.key = t2.key AND t1.a < t2.a	3	1
+ANY INNER | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	4	1
+ANY INNER | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	5	1
+ANY RIGHT | t1.key = t2.key AND t1.a < t2.a	6	1
+ANY RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	6	1
+ANY RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	6	1
+SEMI LEFT | t1.key = t2.key AND t1.a < t2.a	3	1
+SEMI LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	4	1
+SEMI LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	5	1
+SEMI RIGHT | t1.key = t2.key AND t1.a < t2.a	3	1
+SEMI RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	4	1
+SEMI RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	5	1
+ANTI LEFT | t1.key = t2.key AND t1.a < t2.a	4	1
+ANTI LEFT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	3	1
+ANTI LEFT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	2	1
+ANTI RIGHT | t1.key = t2.key AND t1.a < t2.a	3	1
+ANTI RIGHT | t1.key = t2.key AND (t1.b + t2.b == t1.c + t2.c)	2	1
+ANTI RIGHT | (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key	1	1
+-- a subquery inside the condition
+LEFT | subquery	10	1
+-- join_use_nulls: the other side becomes Nullable and the residual still decides the match
+LEFT | join_use_nulls	12	1
+RIGHT | join_use_nulls	13	1
+FULL | join_use_nulls	14	1
+INNER | join_use_nulls	11	1
+ANY LEFT | join_use_nulls	7	1
+SEMI LEFT | join_use_nulls	6	1
+ANTI LEFT | join_use_nulls	1	1
+-- a build large enough to partition, and probe blocks the residual filter stops at max_joined_block_size_rows
+LEFT | large	2702138	1
+ANY LEFT | large	20000	1
+SEMI LEFT | large	18000	1
+ANTI LEFT | large	2000	1
+ANY INNER | large	18000	1
+-- a shape hash rejects with a mixed condition is rejected the same way
+-- every labelled query ran the partitioned join
+1	0

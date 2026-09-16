@@ -85,11 +85,10 @@ SELECT 'LEFT ALL, UInt64 key', h.1, h = ph, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k SETTINGS join_algorithm = 'parallel_hash') AS ph,
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
 
-SELECT '-- unsupported shapes fall back at plan time and still work';
--- A mixed non-equi ON condition is planned with another algorithm (never at execution time).
+SELECT '-- a mixed non-equi ON condition runs under partitioned_hash (05218 covers every shape)';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT p.p FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k AND p.p > b.k SETTINGS join_algorithm = 'partitioned_hash') WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
 
-SELECT 'mixed ON condition, planned with another algorithm', h.1, h = pa FROM (SELECT
+SELECT 'mixed ON condition', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k AND p.p > b.k SETTINGS join_algorithm = 'hash') AS h,
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_probe AS p LEFT JOIN t_phj_build AS b ON p.k = b.k AND p.p > b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
 

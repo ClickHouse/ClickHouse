@@ -251,7 +251,7 @@ struct SharedAmacFindPolicy
   * map) holding identical cells.
   */
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
-void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
+size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
     /// The joins that keep used flags per row take the delegated standard path instead.
@@ -284,6 +284,28 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
             return KeyGetter(join_keys.key_columns, join_keys.key_sizes, nullptr);
         }
     }();
+
+    /// A mixed ON condition is decided per candidate pair, over the right rows themselves, so the
+    /// probe cannot record matches by cell word. The standard filter path runs over the shared
+    /// table instead: it finds through the same key getter and marks the per-cell used flags
+    /// through the same `FindResult`. Only `RowRefList` maps hold every right row of a key, which is
+    /// why `preferUseMapsAll` chose them for the build.
+    if constexpr (join_features.is_maps_all)
+    {
+        if (added_columns.additional_filter_expression)
+        {
+            std::vector<KeyGetter> key_getters;
+            key_getters.push_back(std::move(key_getter));
+            return HashJoinMethods<KIND, STRICTNESS, MapsShape>::template joinRightColumnsWithAdditionalFilter<KeyGetter, Map>(
+                std::move(key_getters),
+                std::vector<const Map *>{&table},
+                added_columns,
+                used_flags,
+                selector,
+                added_columns.need_filter,
+                /*flag_per_row=*/false);
+        }
+    }
 
     /// No null map and no ON mask: the loops run the instantiation without the per-row skip check.
     const bool fast_path = !join_keys.null_map && join_keys.join_mask_column.getKind() == JoinCommon::JoinMask::Kind::AllTrue;
@@ -797,6 +819,8 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
             }
         }
     }
+
+    return rows;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape>
@@ -834,9 +858,8 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
         join.savedBlockSample(),
         join,
         std::move(join_on_keys),
-        /// Mixed ON conditions are rejected by `isSupported`.
-        /*additional_filter_expression=*/nullptr,
-        /*additional_filter_required_rhs_pos=*/{},
+        table_join->getMixedJoinExpression(),
+        join.additional_filter_required_rhs_pos,
         join_features.is_asof_join,
         /*is_join_get=*/false,
         /*record_refs_for_stats=*/false);
@@ -849,6 +872,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
 
     using HashJoinTables = typename HashJoinTableMapsFor<MapsShape>::Type;
 
+    size_t processed_rows = 0;
     if (scattered_block.rows() > 0)
     {
         /// Lookups and match bookkeeping only. No column value is gathered yet - that is deferred to
@@ -861,7 +885,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     case HashJoin::Type::TYPE: { \
         using Map = const typename decltype(HashJoinTables::TYPE)::element_type; \
         using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map, join_features.need_flags>::Type; \
-        joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*tables.TYPE, added_columns, scattered_block, lane); \
+        processed_rows = joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*tables.TYPE, added_columns, scattered_block, lane); \
         break; \
     }
             APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
@@ -880,12 +904,23 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
 
     added_columns.join_on_keys.clear();
 
+    /// A mixed ON condition stops at `max_joined_block_rows`; the rows it did not reach go back to the
+    /// transform as the next block, as in `HashJoinMethods::joinBlockImpl`.
+    std::optional<ScatteredBlock> next_scattered_block;
+    if (0 < processed_rows && processed_rows < scattered_block.rows())
+    {
+        auto [raw_block, raw_selector] = std::move(scattered_block).detachData();
+        auto split_selector = raw_selector.split(processed_rows);
+        scattered_block = ScatteredBlock(raw_block, std::move(split_selector.first));
+        next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second));
+    }
+
     /// The count only advances while row refs are recorded; otherwise leave it empty rather than report
     /// a zero the planner would take as measured.
     const std::optional<size_t> matched_right_rows
         = added_columns.record_row_refs ? std::optional<size_t>(added_columns.lazy_output.hash_table_matches) : std::nullopt;
 
-    return std::make_unique<HashJoinResult>(
+    auto join_result = std::make_unique<HashJoinResult>(
         std::move(added_columns.lazy_output),
         std::move(added_columns.columns),
         std::move(added_columns.offsets_to_replicate),
@@ -905,6 +940,10 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
             join.joined_block_split_single_row,
             join.enable_lazy_columns_replication,
             join.enable_lazy_columns_indexing});
+
+    if (next_scattered_block)
+        join_result->setNextBlock(std::move(*next_scattered_block));
+    return join_result;
 }
 
 }

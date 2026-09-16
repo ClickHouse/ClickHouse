@@ -100,7 +100,7 @@ PartitionedHashJoin::PartitionedHashJoin(
               /*max_threads_=*/1,
               /*use_parallel_layout_=*/false,
               /*allow_set_maps_=*/false))
-    , delegate_mode(!table_join->oneDisjunct())
+    , delegate_mode(hash_join->needUsedFlagsForPerRightTableRow(table_join))
     , build_rows_hint(build_rows_hint_)
     , single_fill_thread(!delegate_mode && build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())
     , stats_collecting_params(stats_collecting_params_.build)
@@ -160,10 +160,8 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
 {
     /// Everything the single-level `HashJoin` machinery serves. Kinds: INNER, LEFT, RIGHT, FULL.
     /// Strictness: ALL, ANY, RightAny, SEMI, ANTI, plus ASOF. Also null maps, per-clause ON filters,
-    /// USING, and any number of disjuncts. Out: special storages, and the Cross/Comma/Paste and
-    /// ON-constant joins. Those are routed before the algorithm loop. Also out: mixed non-equi ON
-    /// conditions. The parallel `hash` layout serves those better than a delegated single-threaded
-    /// build would.
+    /// mixed non-equi ON conditions, USING, and any number of disjuncts. Out: special storages, and
+    /// the Cross/Comma/Paste and ON-constant joins. Those are routed before the algorithm loop.
     /// A memory limit is no reason to decline: the planner wraps this join in `SpillingHashJoin` instead.
     const JoinKind kind = table_join.kind();
     const JoinStrictness strictness = table_join.strictness();
@@ -183,8 +181,6 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
     }
 
     if (table_join.isSpecialStorage())
-        return false;
-    if (table_join.getMixedJoinExpression())
         return false;
 
     if (strictness == JoinStrictness::Asof)

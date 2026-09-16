@@ -93,6 +93,9 @@ public:
     using LookupResult = Cell *;
     using ConstLookupResult = const Cell *;
 
+    /// One buffer, as the single-level maps have; the standard probe's prefetch heuristic reads it.
+    static constexpr size_t NUM_BUCKETS = 1;
+
     static_assert(std::is_same_v<typename Cell::State, HashTableNoState>, "the walk reads nothing through the table");
     static_assert(Grower::performs_linear_probing_with_single_step, "ranges assume the standard linear probe");
     static_assert(Cell::need_zero_value_storage, "the zero key is stored in the zero-value cell");

@@ -58,8 +58,9 @@ class TableJoin;
   * used flags and the probe. Used flags are `cells + 1` entries (offset 0 is the zero-value cell).
   * That is the layout `JoinUsedFlags` and the non-joined scan expect.
   *
-  * Several ON disjuncts need used flags per right-table row, not per cell. Those joins run a
-  * standard `HashJoin` behind this interface (`delegate_mode`) instead of a partitioned build.
+  * Several ON disjuncts, or a mixed non-equi ON condition on a RIGHT or FULL join, need used flags
+  * per right-table row, not per cell. Those joins run a standard `HashJoin` behind this interface
+  * (`delegate_mode`) instead of a partitioned build.
   */
 class PartitionedHashJoin : public IJoin
 {
@@ -239,8 +240,10 @@ private:
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape> // NOLINT(readability-identifier-naming)
     JoinResultPtr probeImpl(Block block, size_t lane);
 
+    /// Returns the number of probe rows processed: all of them, unless a mixed ON condition stops the
+    /// block at `max_joined_block_rows`, as the standard join does.
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
-    void joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
+    size_t joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 
     /// Per-probe-stream scratch, pooled on the join and reused across blocks: the find pass's results.
     /// `found_word` is the matched cell's mapped value by value (see `amac_mapped_fits_word`; 0 is a
