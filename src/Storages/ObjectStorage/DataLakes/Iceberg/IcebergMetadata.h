@@ -110,7 +110,7 @@ public:
 
     std::optional<String> getRefreshCursor(ContextPtr local_context) const override;
 
-    IcebergHistory getHistory(ContextPtr local_context) const;
+    IcebergHistory getHistory(ContextPtr local_context, bool ignore_metadata_pointer_overrides = false) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(

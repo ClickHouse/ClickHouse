@@ -491,7 +491,7 @@ bool IcebergMetadata::optimize(
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
+        auto snapshots_info = getHistory(context, /* ignore_metadata_pointer_overrides */ true);
         compactIcebergTable(
             snapshots_info,
             persistent_components,
@@ -974,7 +974,8 @@ DataLakeMetadataPtr IcebergMetadata::create(
 }
 
 
-IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
+IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(
+    ContextPtr local_context, bool ignore_metadata_pointer_overrides) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
@@ -984,7 +985,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         local_context,
         log.get(),
         persistent_components.table_uuid,
-        persistent_components.metadata_compression_method);
+        persistent_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        ignore_metadata_pointer_overrides);
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);

@@ -1,3 +1,4 @@
+import json
 import pytest
 from datetime import datetime, timezone
 import time
@@ -7,7 +8,8 @@ from helpers.iceberg_utils import (
     default_upload_directory,
     default_download_directory,
     get_uuid_str,
-    get_last_snapshot
+    get_last_snapshot,
+    spark_alter_table,
 )
 
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
@@ -223,6 +225,83 @@ def test_optimize_rejected_when_gc_disabled(started_cluster_iceberg_with_spark, 
     )
 
     table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    files_before = set(default_download_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    ))
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    assert "BAD_ARGUMENTS" in error
+    assert "GC is disabled" in error
+    assert set(default_download_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )) == files_before
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_ignores_pinned_metadata_when_gc_disabled(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_pinned_metadata_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'gc.enabled' = 'true',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(0, 100)")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    default_upload_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    )
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    old_metadata_file = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
+    ).strip()
+    old_metadata_path = "metadata/" + old_metadata_file.rsplit("/", 1)[-1]
+    with open(old_metadata_file) as metadata_handle:
+        old_metadata = json.load(metadata_handle)
+    assert old_metadata["properties"].get("gc.enabled") == "true"
+    assert any(
+        int(snapshot.get("summary", {}).get("added-position-delete-files", "0")) > 0
+        for snapshot in old_metadata["snapshots"]
+    ), "Fixture must contain a positional delete so OPTIMIZE reaches the rewrite path"
+
+    spark_alter_table(
+        started_cluster_iceberg_with_spark,
+        spark,
+        storage_type,
+        TABLE_NAME,
+        "SET TBLPROPERTIES('gc.enabled' = 'false')",
+    )
+    latest_metadata_file = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
+    ).strip()
+    assert latest_metadata_file != old_metadata_file
+    with open(latest_metadata_file) as metadata_handle:
+        latest_metadata = json.load(metadata_handle)
+    assert latest_metadata["properties"].get("gc.enabled") == "false"
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        explicit_metadata_path=old_metadata_path,
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
     files_before = set(default_download_directory(
         started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
     ))
