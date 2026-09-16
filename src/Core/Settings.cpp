@@ -6353,10 +6353,20 @@ that take no arguments (such as `count()`), MergeTree sources that read stored v
 expression evaluated on the way out, and branch filters built from comparisons and logical
 connectives over a single one of those tables.
 
-One shape loses: when the branches' residual conjuncts are each prunable by the sorting key, the
-unfused branches prune to a few marks apiece while the single fused scan keeps the rows of all of
-them, so one broad read replaces several narrow ones. A query tree cannot see access paths, hence the
-opt-in default.
+Three shapes are known to lose:
+
+- When the branches' residual conjuncts are each prunable by the sorting key, the unfused branches
+prune to a few marks apiece while the single fused scan keeps the rows of all of them, so one broad
+read replaces several narrow ones.
+- When a branch's `count()` could be answered from partition and minmax metadata without reading any
+rows at all, the `-If` rewrite makes the read ineligible for that projection, so the fused query reads
+the rows instead.
+- When the branches join more than one table, the fused residual widens the join build side by up to
+the number of fused branches, so a query close to an external-join spill threshold (see
+`max_bytes_ratio_before_external_join`, which defaults to `0.5`) can spill to disk where the unfused
+branches did not. Spilling is a graceful fallback rather than an error, but it costs.
+
+A query tree cannot see access paths, hence the opt-in default.
 
 :::note
 Supported only with the analyzer (`enable_analyzer = 1`).

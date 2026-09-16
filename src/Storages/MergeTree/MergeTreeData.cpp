@@ -321,6 +321,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_avg_part_size_for_too_many_parts;
+    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
     extern const MergeTreeSettingsUInt64 max_delay_to_insert;
     extern const MergeTreeSettingsUInt64 max_delay_to_mutate_ms;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
@@ -339,6 +340,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_bytes_to_rebalance_partition_over_jbod;
     extern const MergeTreeSettingsUInt64 min_delay_to_insert_ms;
     extern const MergeTreeSettingsUInt64 min_delay_to_mutate_ms;
+    extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
     extern const MergeTreeSettingsUInt64 min_rows_for_wide_part;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_delay;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_throw;
@@ -13524,13 +13526,22 @@ bool MergeTreeData::readsColumnsWithoutTransformations(const StorageSnapshotPtr 
 
 bool MergeTreeData::readIsBoundedBySpanLimit(ContextPtr query_context) const
 {
-    /// Mirrors ReadFromMergeTree::AnalysisResult::checkLimits, which bounds the partitions one read
-    /// may span: the query setting decides when it is set, the table's own when it is not.
+    /// Mirrors ReadFromMergeTree::AnalysisResult::checkLimits, whose first branch bounds the partitions
+    /// one read may span: the query setting decides when it is set, the table's own when it is not.
     const auto & settings = query_context->getSettingsRef();
     auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
         ? settings[Setting::max_partitions_to_read].value
         : (*getSettings())[MergeTreeSetting::max_partitions_to_read].value;
-    return max_partitions_to_read > 0;
+    if (max_partitions_to_read > 0)
+        return true;
+
+    /// checkLimits' second branch: a read that selects at least this many marks has to take a
+    /// table-wide slot, and taking it when the table is at its limit throws rather than waits.
+    if ((*getSettings())[MergeTreeSetting::max_concurrent_queries] > 0
+        && (*getSettings())[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0)
+        return true;
+
+    return false;
 }
 
 MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)

@@ -43,7 +43,6 @@
           (SELECT count() AS c5 FROM facts WHERE val > 0 AND slice = 5) AS s5,
           (SELECT count() AS c6 FROM facts WHERE val > 0 AND slice = 6) AS s6,
           (SELECT count() AS c7 FROM facts WHERE val > 0 AND slice = 7) AS s7
-      SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0
   </query>
   <query>
       SELECT * FROM
@@ -70,7 +69,6 @@
           (SELECT count() AS c5 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 5) AS s5,
           (SELECT count() AS c6 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 6) AS s6,
           (SELECT count() AS c7 FROM facts, dim WHERE facts.id = dim.g AND dim.bucket = 7) AS s7
-      SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0
   </query>
   <query>
       SELECT * FROM

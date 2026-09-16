@@ -26,6 +26,8 @@ DROP TABLE IF EXISTS smp;
 DROP TABLE IF EXISTS pq;
 DROP TABLE IF EXISTS pt;
 DROP TABLE IF EXISTS mm;
+DROP TABLE IF EXISTS cq;
+DROP TABLE IF EXISTS cqn;
 
 CREATE TABLE t (k Int64, v Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t SELECT number, number * 2 FROM numbers(1000);
@@ -98,6 +100,12 @@ INSERT INTO pt SELECT number % 2, number FROM numbers(100);
 CREATE TABLE mm (p UInt8, k UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
 INSERT INTO mm SELECT number % 4, number FROM numbers(1000);
 
+-- The mark gate on the table concurrency limit, and the same shape without it.
+CREATE TABLE cq (p UInt8, k UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 1;
+INSERT INTO cq SELECT number % 2, number FROM numbers(10);
+CREATE TABLE cqn (p UInt8, k UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
+INSERT INTO cqn SELECT number % 2, number FROM numbers(10);
+
 SELECT '-- 01 two sibling branches over one table: fuses';
 SELECT '01', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
 SELECT '01', a, b FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
@@ -166,7 +174,11 @@ SELECT '10 fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TRE
 SELECT '-- 11 an aggregate with an argument is out of scope: the -If condition would stop protecting it';
 SELECT '11a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count(k) AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count(k) AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 SELECT '11b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count(DISTINCT k) AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count(DISTINCT k) AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+-- The rewrite names the fused aggregate after the branch's own function, so these two would emit
+-- uniqExactIf and avgIf rather than countIf: the table expressions are counted as well.
+SELECT '11b tables', countIf(explain LIKE '%TABLE id:%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count(DISTINCT k) AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count(DISTINCT k) AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 SELECT '11c fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT avg(k) AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT avg(k) AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+SELECT '11c tables', countIf(explain LIKE '%TABLE id:%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT avg(k) AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT avg(k) AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 SELECT '11c', a, b FROM (SELECT avg(k) AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT avg(k) AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
 SELECT '11c', a, b FROM (SELECT avg(k) AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT avg(k) AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
 -- count(1) reaches this pass argument-less only while count-variant normalization is on, which is
@@ -336,6 +348,13 @@ SELECT '33b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TR
 -- Nothing forced: the same shape fuses, and the projection it silently gives up is disclosed rather than guarded.
 SELECT '33c fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM mm WHERE p = 0) AS x, (SELECT count() AS b FROM mm WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, optimize_use_projections = 1, optimize_use_implicit_projections = 1);
 
+SELECT '-- 34 the same limit also gates a table-wide concurrency slot on the marks one read selects, and the fused read selects the marks of the union, so it can have to take a slot neither branch read needed';
+SELECT '34a', a, b FROM (SELECT count() AS a FROM cq WHERE k < 10 AND p = 0) AS x, (SELECT count() AS b FROM cq WHERE k < 10 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
+SELECT '34a', a, b FROM (SELECT count() AS a FROM cq WHERE k < 10 AND p = 0) AS x, (SELECT count() AS b FROM cq WHERE k < 10 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
+SELECT '34a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM cq WHERE k < 10 AND p = 0) AS x, (SELECT count() AS b FROM cq WHERE k < 10 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+-- Neither setting on the table: the same shape fuses, so 34a's refusal is the settings and not the shape.
+SELECT '34b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM cqn WHERE k < 10 AND p = 0) AS x, (SELECT count() AS b FROM cqn WHERE k < 10 AND p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+
 DROP TABLE t;
 DROP TABLE tn;
 DROP TABLE m;
@@ -356,3 +375,5 @@ DROP TABLE smp;
 DROP TABLE pq;
 DROP TABLE pt;
 DROP TABLE mm;
+DROP TABLE cq;
+DROP TABLE cqn;

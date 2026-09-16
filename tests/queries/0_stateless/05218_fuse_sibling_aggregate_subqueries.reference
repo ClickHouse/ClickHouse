@@ -50,7 +50,9 @@
 -- 11 an aggregate with an argument is out of scope: the -If condition would stop protecting it
 11a fused	0
 11b fused	0
+11b tables	2
 11c fused	0
+11c tables	2
 11c	300	500
 11c	300	500
 11d	1	1
@@ -178,3 +180,8 @@
 33b	250	250
 33b fused	0
 33c fused	1
+-- 34 the same limit also gates a table-wide concurrency slot on the marks one read selects, and the fused read selects the marks of the union, so it can have to take a slot neither branch read needed
+34a	5	5
+34a	5	5
+34a fused	0
+34b fused	1
