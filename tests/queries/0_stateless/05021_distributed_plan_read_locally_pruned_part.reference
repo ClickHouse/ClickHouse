@@ -15,15 +15,18 @@
 -- non-empty shipped set, _part_offset unaffected
 4	6	9
 4	6	9
--- _part_offset over a restored part
+-- _part_offset with whole parts pruned locally
 1	5	5
 1	5	5
--- the restored-part read distributes	1
+-- the whole-parts-pruned read distributes	1
+-- rows read by the probe below
+1
+-- the pruned parts are not read	1
 -- FINAL, parts pruned locally across lanes
 1	5
 1	5
 -- the across-lanes FINAL read distributes	1
--- FINAL, every part pruned locally and restored, no row matches
+-- FINAL, every part pruned locally, no row matches
 0	0
 0	0
 -- the FINAL read distributes	1

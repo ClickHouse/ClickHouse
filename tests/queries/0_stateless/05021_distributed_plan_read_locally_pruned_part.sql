@@ -4,7 +4,8 @@
 -- A bucketed distributed read is pinned to the coordinator's part list, but the worker re-runs its own
 -- index analysis. With `use_index_for_in_with_subqueries = 0` the coordinator cannot use the IN set while
 -- the worker receives it as shipped tuple values and can, so the worker prunes a part the coordinator
--- selected. Each distributed query below must return what its single-node control returns.
+-- selected. Such a part is dropped from the marks the worker reads, neither read nor reported missing:
+-- each distributed query below must return what its single-node control returns.
 
 DROP TABLE IF EXISTS t_keys;
 DROP TABLE IF EXISTS t_probe;
@@ -35,7 +36,7 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
 
--- Result equality alone cannot tell a restored read from one that never distributed: a read is left
+-- Result equality alone cannot tell a bucketed read from one that never distributed: a read is left
 -- serial when it selects no rows or stays under `distributed_plan_max_rows_to_broadcast`. `GatherExchange`
 -- over the read is present only when the read itself was split into buckets. A bare SELECT is required:
 -- with an aggregate the plan distributes on the aggregation alone.
@@ -90,16 +91,16 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
 
--- `_part_offset` is read per part, so it must stay correct when whole parts come back from the restore.
+-- `_part_offset` is read per part, so it must stay correct when whole parts drop out of the read.
 -- Disjoint key ranges make the worker prune two of the three parts while the third still has a row.
--- Merges are stopped so the three parts cannot collapse into one and take the restore out of play.
+-- Merges are stopped so the three parts cannot collapse into one and take the divergence out of play.
 CREATE TABLE t_probe_offset (k Int32, v UInt64) ENGINE = MergeTree ORDER BY k;
 SYSTEM STOP MERGES t_probe_offset;
 INSERT INTO t_probe_offset SELECT number, number FROM numbers(1000);
 INSERT INTO t_probe_offset SELECT 10000 + number, number FROM numbers(1000);
 INSERT INTO t_probe_offset SELECT 20000 + number, number FROM numbers(1000);
 
-SELECT '-- _part_offset over a restored part';
+SELECT '-- _part_offset with whole parts pruned locally';
 SELECT count(), min(_part_offset), max(_part_offset) FROM t_probe_offset
 WHERE k IN (SELECT k FROM t_keys WHERE k = 5);
 SELECT count(), min(_part_offset), max(_part_offset) FROM t_probe_offset
@@ -108,11 +109,29 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
 
-SELECT '-- the restored-part read distributes', countIf(explain LIKE '%GatherExchange%') > 0
+SELECT '-- the whole-parts-pruned read distributes', countIf(explain LIKE '%GatherExchange%') > 0
 FROM (EXPLAIN distributed = 1 SELECT k, v FROM t_probe_offset WHERE k IN (SELECT k FROM t_keys WHERE k = 5)
 SETTINGS make_distributed_plan = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0);
+
+-- Results cannot show that a pruned part is not read: putting it back into the scan returns the same rows,
+-- because the rows it holds do not match the predicate anyway. Read volume can. Only the first of the three
+-- parts can match, so this reads its 1000 rows plus the key table; the coordinator cannot use the IN set, so
+-- its marks cover all three parts and adding the pruned two back would read 3000.
+SELECT '-- rows read by the probe below';
+SELECT count() FROM t_probe_offset WHERE k IN (SELECT k FROM t_keys WHERE k = 5) -- read_volume_probe
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT '-- the pruned parts are not read', read_rows < 2000
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 10 MINUTE
+    AND current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
+    AND query LIKE '%read_volume_probe%' AND query NOT LIKE '%query_log%'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- FINAL resolves the coordinator's marks per lane, in a separate site from the plain read. Several parts
 -- with disjoint primary-key ranges, spread over more lanes than there are buckets, make the local analysis
@@ -141,9 +160,10 @@ SETTINGS make_distributed_plan = 1,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0,
     optimize_move_to_prewhere_if_final = 1);
 
--- Local analysis prunes every part, so the coordinator's whole part list is restored and resolved
--- against it; no row matches the predicate, so zero rows is also what reading nothing would give.
-SELECT '-- FINAL, every part pruned locally and restored, no row matches';
+-- Local analysis prunes every part, so every lane loses all its marks and the read produces nothing.
+-- Zero rows is also what an unpatched binary returns here, so this arm does not discriminate the two;
+-- it is kept because nothing else covers a FINAL task whose lanes all end up empty.
+SELECT '-- FINAL, every part pruned locally, no row matches';
 SELECT count(), sum(v) FROM t_probe_final FINAL WHERE k IN (SELECT k FROM t_keys WHERE k > 1000);
 SELECT count(), sum(v) FROM t_probe_final FINAL WHERE k IN (SELECT k FROM t_keys WHERE k > 1000)
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,

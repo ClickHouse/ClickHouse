@@ -4902,9 +4902,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     logPredicateStatistics(result);
 
-    /// A distributed worker reads exactly the bucket described by its per-read bucket task parameter: its
-    /// marks, whether it needs a FINAL merge, and (for a merge layer) the borders + index. Match the marks
-    /// to local parts by name; a missing part is a retryable error (the replica diverged by merge or lag).
+    /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, whether it
+    /// needs a FINAL merge, and (for a merge layer) the borders + index. Marks are matched to local parts by
+    /// name, and a part this replica no longer has is a retryable error (it diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
         /// Read this task's lanes from this read's own bucket parameter, in the layout
@@ -4937,48 +4937,32 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             distributed_read_task_buckets.push_back(std::move(bucket));
         }
 
-        /// The coordinator's marks are authoritative here: they overwrite this read's own ranges below and
-        /// in `spreadMarkRangesAmongStreamsFinal`, so a coordinator-selected part the local analysis pruned
-        /// is still readable. Only a part absent from the storage snapshot means the replica diverged.
+        /// The coordinator selects parts without this worker's index analysis, so its marks can name a part
+        /// this read pruned. Such a part holds no row the query can match (the worker filters rows with the
+        /// same shipped IN set it prunes with), so drop it; a name the snapshot lacks too is really gone.
         {
-            /// Drained as each coordinator-selected part is accounted for; what is left is unavailable here.
-            NameSet coordinator_parts;
-            for (const auto & bucket : distributed_read_task_buckets)
-                for (const auto & part_desc : bucket.marks)
-                    coordinator_parts.insert(part_desc.info.getPartNameV1());
+            NameSet shortlisted_parts;
             for (const auto & part : result.parts_with_ranges)
-                coordinator_parts.erase(part.data_part->info.getPartNameV1());
+                shortlisted_parts.insert(part.data_part->info.getPartNameV1());
+            NameSet snapshot_parts;
+            if (prepared_parts)
+                for (const auto & part : *prepared_parts)
+                    snapshot_parts.insert(part.data_part->info.getPartNameV1());
 
-            if (!coordinator_parts.empty())
+            for (auto & bucket : distributed_read_task_buckets)
             {
-                RangesInDataParts restored;
-                if (prepared_parts)
+                RangesInDataPartsDescription marks_to_read;
+                for (auto & part_desc : bucket.marks)
                 {
-                    for (const auto & part : *prepared_parts)
-                    {
-                        if (coordinator_parts.erase(part.data_part->info.getPartNameV1()))
-                            restored.push_back(part);
-                    }
+                    const String part_name = part_desc.info.getPartNameV1();
+                    if (shortlisted_parts.contains(part_name))
+                        marks_to_read.push_back(std::move(part_desc));
+                    else if (!snapshot_parts.contains(part_name))
+                        throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                            "Distributed read: part {} selected by the coordinator is not available on this replica "
+                            "(diverged by merge or replication lag); retry the query", part_name);
                 }
-
-                if (!coordinator_parts.empty())
-                    throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
-                        "Distributed read: part {} selected by the coordinator is not available on this replica "
-                        "(diverged by merge or replication lag); retry the query", *coordinator_parts.begin());
-
-                result.parts_with_ranges.insert(result.parts_with_ranges.end(), restored.begin(), restored.end());
-
-                /// `part_index_in_query` keys the per-part maps of `MergeTreeIndexBuildContext`.
-                chassert(
-                    [&]
-                    {
-                        std::unordered_set<size_t> part_indices;
-                        for (const auto & part : result.parts_with_ranges)
-                            if (!part_indices.insert(part.part_index_in_query).second)
-                                return false;
-                        return true;
-                    }(),
-                    "Duplicate part_index_in_query after restoring coordinator-selected parts");
+                bucket.marks = std::move(marks_to_read);
             }
         }
 
