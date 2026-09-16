@@ -64,6 +64,12 @@ SELECT * FROM prometheusQuery(ts_dist, 'sum by (job) (m)', 140) ORDER BY ALL;
 SELECT '--- sum(): a single row with the total of all four series ---';
 SELECT * FROM prometheusQuery(ts_dist, 'sum(m)', 140) ORDER BY ALL;
 
+SELECT '--- topk over series the shards hold separately ---';
+-- Distinct values, so the answer does not depend on the order the shards are read in: with a tie,
+-- `topk` ranks by the group number, which is assigned in arrival order (true of one table too).
+SELECT * FROM prometheusQuery(ts_dist, 'topk(2, m)', 140) ORDER BY ALL;
+SELECT * FROM prometheusQuery(ts_dist, 'bottomk(1, m)', 140) ORDER BY ALL;
+
 SELECT '--- a metric present on one shard only ---';
 SELECT * FROM prometheusQuery(ts_dist, 'solo', 140) ORDER BY ALL;
 

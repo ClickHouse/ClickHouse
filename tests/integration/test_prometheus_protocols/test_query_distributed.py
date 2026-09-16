@@ -72,6 +72,14 @@ def start_cluster():
             "INSERT INTO ts_all (metric_name, tags, samples) "
             "SELECT metric_name, tags, samples FROM ts_dist"
         )
+        # Keeps `serialize_query_plan` on and forbids a query from changing it, so the SETTINGS
+        # clause the generated read carries is dropped and only a context-level pin survives.
+        node.query(
+            "CREATE USER prom_plan_pinned IDENTIFIED WITH no_password "
+            "SETTINGS serialize_query_plan = 1 CONST"
+        )
+        node.query("GRANT SELECT ON *.* TO prom_plan_pinned")
+        node.query("GRANT READ ON REMOTE TO prom_plan_pinned")
         yield cluster
     finally:
         cluster.shutdown()
@@ -105,6 +113,35 @@ def range_query(handler, promql, start, end, step):
 
 def values_of(result):
     return {labels: float(value[1]) for labels, value in result[1].items()}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"serialize_query_plan": 1},
+        {"user": "prom_plan_pinned", "password": ""},
+    ],
+    ids=["asked_for_by_the_request", "const_in_the_profile"],
+)
+@pytest.mark.parametrize("promql", ["m", "sum by (job) (m)"])
+def test_the_read_never_ships_a_plan_to_the_shards(params, promql):
+    """A shipped plan is built on the initiator, which would have to resolve the shard-local name in
+    its own catalog, where `ts_local` does not exist. The read pins the setting off on its own
+    context, so neither a request that asks for it nor a profile that will not let it be changed
+    reaches the generated cluster() call."""
+    answer = keyed_result(
+        json.loads(
+            execute_query_via_http_api(
+                node.ip_address,
+                9093,
+                f"{DIST}/query",
+                promql,
+                EVALUATION_TIME,
+                params=params,
+            )
+        )
+    )
+    assert answer == query(LOCAL, promql)
 
 
 def test_sharding_key_splits_the_metric_across_both_shards():

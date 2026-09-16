@@ -17,6 +17,10 @@ b	2
 [('job','b')]	1970-01-01 00:02:20.000	5500
 --- sum(): a single row with the total of all four series ---
 []	1970-01-01 00:02:20.000	5555
+--- topk over series the shards hold separately ---
+[('__name__','m'),('host','h2'),('job','b')]	1970-01-01 00:02:20.000	500
+[('__name__','m'),('host','h4'),('job','b')]	1970-01-01 00:02:20.000	5000
+[('__name__','m'),('host','h1'),('job','a')]	1970-01-01 00:02:20.000	5
 --- a metric present on one shard only ---
 [('__name__','solo'),('host','h5')]	1970-01-01 00:02:20.000	11
 --- range query ---
