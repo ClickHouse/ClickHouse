@@ -225,6 +225,15 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Whether merging `rhs` into `place` is expensive enough to be deferred by `mergeBatchOrDefer` /
+    /// `mergeAndDestroyBatchOrDefer` and merged later in parallel via `parallelizeMergeMulti`.
+    /// Overridden by functions whose merge cost grows with the state size (e.g. `uniqExact`);
+    /// combinators forward it to the nested function so that wrapped states are deferred too.
+    virtual bool isLargeMergePair(ConstAggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr __restrict /*rhs*/) const
+    {
+        return false;
+    }
+
     /// Return true if it is allowed to replace call of `addBatch`
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
@@ -723,14 +732,6 @@ public:
 
             static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
         }
-    }
-
-    /// Shadowed by functions whose merge cost grows with the state size and that implement
-    /// `parallelizeMergeMulti` (e.g. `uniqExact`): returns whether the pair should be deferred
-    /// by `mergeAndDestroyBatchOrDefer` for a later parallel merge.
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr __restrict /*rhs*/) const
-    {
-        return false;
     }
 
     void mergeAndDestroyBatchOrDefer(

@@ -641,7 +641,7 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
         if constexpr (is_able_to_parallelize_merge)
             return this->data(place).set.worthMergingInParallel(this->data(rhs).set);
@@ -773,7 +773,7 @@ public:
         }
     }
 
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
         if constexpr (is_able_to_parallelize_merge)
             return this->data(place).set.worthMergingInParallel(this->data(rhs).set);
