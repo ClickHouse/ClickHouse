@@ -326,8 +326,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     /// turn the inner joins around it into semi/anti joins and quietly change the answer. It should
     /// never come to that, but the damage would be wrong rows, so fail loudly rather than silently.
     const bool semi_anti_in_graph
-        = (query_graph.use_conflict_detector_a || query_graph.use_conflict_detector_c)
-        && !enabled_algorithms.empty() && enabled_algorithms.front() == JoinOrderAlgorithm::DPSUB
+        = query_graph.semi_anti_flattened
         && std::ranges::any_of(
                query_graph.conflict_ops, [](const auto & op) { return op.strictness != JoinStrictness::All; });
 
