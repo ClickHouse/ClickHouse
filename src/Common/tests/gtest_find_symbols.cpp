@@ -31,22 +31,23 @@ static void test_compile_time_boundaries()
     while (std::find(needles.begin(), needles.end(), non_needle) != needles.end())
         ++non_needle;
     const bool contains_null = std::find(needles.begin(), needles.end(), '\0') != needles.end();
-    const std::array<size_t, 35> sizes {
+    const std::array<size_t, 39> sizes {
         0, 1,
         15, 16, 17,
         31, 32, 33,
         47, 48, 49,
         63, 64, 65,
-        127, 128,
+        127, 128, 129,
         255, 256,
         511, 512, 513,
+        767, 768, 769,
         1023, 1024, 1025,
         1039, 1040, 1041,
         1055, 1056, 1057,
         1087, 1088, 1089,
         1536, 1537,
     };
-    const std::array<size_t, 20> positions {0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 127, 128, 255, 256, 511, 512, 1023};
+    const std::array<size_t, 21> positions {0, 1, 15, 16, 17, 31, 32, 33, 47, 48, 63, 64, 65, 127, 128, 255, 256, 511, 512, 767, 1023};
 
     for (const size_t size : sizes)
     {
@@ -141,16 +142,17 @@ template <char... symbols>
 static void test_compile_time_randomized()
 {
     const std::array<char, sizeof...(symbols)> needles {symbols...};
-    constexpr std::array<size_t, 37> sizes {
+    constexpr std::array<size_t, 41> sizes {
         0, 1,
         15, 16, 17,
         31, 32, 33,
         47, 48, 49,
         63, 64, 65,
         95, 96,
-        127, 128,
+        127, 128, 129,
         255, 256,
         511, 512, 513,
+        767, 768, 769,
         1023, 1024, 1025,
         1039, 1040, 1041,
         1055, 1056, 1057,

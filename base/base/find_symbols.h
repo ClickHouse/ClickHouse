@@ -29,7 +29,8 @@
   * - if not found, returns pointer to end instead of nullptr;
   * - maximum number of symbols to search is 16.
   *
-  * Uses SSE 2 in case of small number of symbols for search and AVX2 for 1-4 compile-time symbols on x86-v3 builds.
+  * Uses SSE 2 in case of small number of symbols for search and AVX2 for 1-4 compile-time symbols in sufficiently
+  * long x86-v3 ranges.
   * SSE 4.2 is used in the case of large number of symbols, with more than 2x performance
   *  advantage over trivial loop
   *  in the case of parsing tab-separated dump with (probably escaped) string fields.
@@ -337,31 +338,105 @@ inline const char * find_first_symbols_sse2_block(const char * pos)
 }
 
 template <bool positive, char... symbols>
-inline const char * find_first_symbols_avx2_block(const char * pos)
+inline const char * find_first_symbols_avx2_blocks_64(const char * pos)
 {
-    __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
-    __m256i eq = mm256_is_in<symbols...>(bytes);
-    uint32_t bit_mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq)));
-    return bit_mask ? pos + __builtin_ctz(bit_mask) : nullptr;
+    __m256i bytes0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
+    __m256i bytes1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32));
+
+    __m256i eq0 = mm256_is_in<symbols...>(bytes0);
+    __m256i eq1 = mm256_is_in<symbols...>(bytes1);
+
+    __m256i combined;
+    if constexpr (positive)
+        combined = _mm256_or_si256(eq0, eq1);
+    else
+        combined = _mm256_and_si256(eq0, eq1);
+
+    const uint32_t combined_mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(combined)));
+    if (!combined_mask)
+        return nullptr;
+
+    const uint32_t mask0 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq0)));
+    if (mask0)
+        return pos + __builtin_ctz(mask0);
+
+    const uint32_t mask1 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq1)));
+    return pos + 32 + __builtin_ctz(mask1);
+}
+
+template <bool positive, char... symbols>
+inline const char * find_first_symbols_avx2_blocks_128(const char * pos)
+{
+    __m256i bytes0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos));
+    __m256i bytes1 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 32));
+    __m256i bytes2 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 64));
+    __m256i bytes3 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(pos + 96));
+
+    __m256i eq0 = mm256_is_in<symbols...>(bytes0);
+    __m256i eq1 = mm256_is_in<symbols...>(bytes1);
+    __m256i eq2 = mm256_is_in<symbols...>(bytes2);
+    __m256i eq3 = mm256_is_in<symbols...>(bytes3);
+
+    __m256i combined;
+    if constexpr (positive)
+        combined = _mm256_or_si256(_mm256_or_si256(eq0, eq1), _mm256_or_si256(eq2, eq3));
+    else
+        combined = _mm256_and_si256(_mm256_and_si256(eq0, eq1), _mm256_and_si256(eq2, eq3));
+
+    const uint32_t combined_mask = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(combined)));
+    if (!combined_mask)
+        return nullptr;
+
+    const uint32_t mask0 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq0)));
+    if (mask0)
+        return pos + __builtin_ctz(mask0);
+
+    const uint32_t mask1 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq1)));
+    if (mask1)
+        return pos + 32 + __builtin_ctz(mask1);
+
+    const uint32_t mask2 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq2)));
+    if (mask2)
+        return pos + 64 + __builtin_ctz(mask2);
+
+    const uint32_t mask3 = maybe_negate<positive>(static_cast<uint32_t>(_mm256_movemask_epi8(eq3)));
+    return pos + 96 + __builtin_ctz(mask3);
 }
 
 template <bool positive, ReturnMode return_mode, char... symbols>
 inline const char * find_first_symbols_avx2(const char * const begin, const char * const end)
 {
-    const char * pos = begin;
+    constexpr size_t avx2_threshold = 512;
+    constexpr size_t prefix_size = 64;
 
-    /// Keep the first block on the low-latency SSE2 path. This avoids paying the AVX2 setup cost for the common
-    /// case where a delimiter appears near the beginning, while still allowing long scans to use AVX2 immediately.
-    if (end - pos >= 16)
+    if (static_cast<size_t>(end - begin) < avx2_threshold) [[unlikely]]
+        return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);
+
+    const char * const prefix_end = begin + prefix_size;
+
+#if defined(__clang__)
+#pragma clang loop unroll(disable)
+#endif
+    for (const char * pos = begin; pos != prefix_end; pos += 16)
     {
         if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(pos))
             return found;
-        pos += 16;
     }
 
-    for (; end - pos >= 32; pos += 32)
+    const char * pos = prefix_end;
+
+    if constexpr (sizeof...(symbols) <= 2)
     {
-        if (const char * found = find_first_symbols_avx2_block<positive, symbols...>(pos))
+        for (; end - pos >= 128; pos += 128)
+        {
+            if (const char * found = find_first_symbols_avx2_blocks_128<positive, symbols...>(pos))
+                return found;
+        }
+    }
+
+    for (; end - pos >= 64; pos += 64)
+    {
+        if (const char * found = find_first_symbols_avx2_blocks_64<positive, symbols...>(pos))
             return found;
     }
 
