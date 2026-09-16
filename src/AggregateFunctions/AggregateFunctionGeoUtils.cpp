@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <boost/geometry.hpp>
+#include <boost/geometry/index/rtree.hpp>
 #include <boost/multiprecision/cpp_bin_float.hpp>
 
 #include <algorithm>
@@ -551,7 +552,40 @@ void unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
                 };
                 /// Strict separation excludes boundary contacts as well as interior intersections.
                 /// The caller still normalizes and validates the complete result and its point budget.
-                if (separated.template operator()<0>() || separated.template operator()<1>())
+                bool disjoint = separated.template operator()<0>() || separated.template operator()<1>();
+                if (!disjoint && first.size() + second.size() >= 64)
+                {
+                    /// A global envelope can hide gaps between components. Probe those gaps only
+                    /// for larger operands, where avoiding the overlay pays for a temporary index.
+                    const auto & smaller = first.size() <= second.size() ? first : second;
+                    const auto & larger = first.size() <= second.size() ? second : first;
+                    const auto probe_box = boost::geometry::return_envelope<Box>(larger.front());
+                    const auto first_component_box = boost::geometry::return_envelope<Box>(smaller.front());
+                    if (boost::geometry::disjoint(probe_box, first_component_box))
+                    {
+                        using Index = boost::geometry::index::rtree<
+                            Box,
+                            boost::geometry::index::quadratic<16>,
+                            boost::geometry::index::indexable<Box>,
+                            boost::geometry::index::equal_to<Box>,
+                            AllocatorWithMemoryTracking<Box>>;
+                        Index index;
+                        /// Incremental insertion keeps node allocation under memory tracking.
+                        for (const auto & polygon : smaller)
+                            index.insert(boost::geometry::return_envelope<Box>(polygon));
+                        disjoint = true;
+                        for (const auto & polygon : larger)
+                        {
+                            const auto box = boost::geometry::return_envelope<Box>(polygon);
+                            if (index.qbegin(boost::geometry::index::intersects(box)) != index.qend())
+                            {
+                                disjoint = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (disjoint)
                 {
                     output.reserve(first.size() + second.size());
                     output.insert(output.end(), first.begin(), first.end());
