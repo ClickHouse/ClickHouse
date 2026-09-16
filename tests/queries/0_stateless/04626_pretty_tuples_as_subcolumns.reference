@@ -160,17 +160,25 @@ t: (1,'world')
 2. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │
 3. │    2 │ 2    │
    └──────┴──────┘
-   ┌─t────────────┐
-1. │ {           ↴│
-   │↳  "a": 1,   ↴│
-   │↳  "inner": {↴│
-   │↳   "m": 2,  ↴│
-   │↳   "n": 3   ↴│
-   │↳  }         ↴│
-   │↳}            │
-   └──────────────┘
+   ┌─t─────────────┐
+   ├─a─┬─inner─────┤
+1. │ 1 │ {        ↴│
+   │   │↳  "m": 2,↴│
+   │   │↳  "n": 3 ↴│
+   │   │↳}         │
+   └───┴───────────┘
    ┌─the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces end─────────┐
    ├─a──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─b──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 1. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │ yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy │
    ├─a──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─b──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
    └─the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces end─────────┘
+Row 1:
+──────
+t: {
+  "a": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "b": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+}
+   ┌─t───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+   ├─a────────────────────────────────────────────────────────────────────────────────────────────────────┬─b────────────────────────────────────────────────────────────────────────────────────────────────────┤
+1. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │ yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘

@@ -69,10 +69,20 @@ SET enable_nullable_tuple_type = 1;
 SELECT if(number = 1, NULL, (number, toString(number))::Tuple(a UInt64, b String))::Nullable(Tuple(a UInt64, b String)) AS t
 FROM numbers(3) FORMAT PrettyCompact;
 
--- A Nullable tuple with an element that cannot represent NULL keeps the single-cell rendering.
+-- A Nullable tuple with a nested tuple element: the nested element is extracted as a `Nullable(Tuple)`
+-- subcolumn (it is NULL where the whole tuple is NULL), so it gets its own subcolumn, rendered as JSON.
 SELECT materialize((1, (2, 3)))::Nullable(Tuple(a UInt8, inner Tuple(m UInt8, n UInt8))) AS t FORMAT PrettyCompact;
 
 -- A long non-identifier tuple name that fits inside the combined width of wide subcolumns, but exceeds
 -- output_format_pretty_max_column_pad_width, is rendered exactly as accounted: the header and footer stay aligned.
 SELECT (repeat('x', 130), repeat('y', 130))::Tuple(a String, b String) AS `the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces the tuple alias with spaces end`
 FORMAT PrettyCompact SETTINGS output_format_pretty_display_footer_column_names_min_rows = 1;
+
+-- The Vertical fallback is decided by the rendered layout: a single top-level tuple expanded into two wide
+-- subcolumns counts as two displayed columns, so it falls back to Vertical (which renders the whole tuple).
+SELECT (repeat('x', 100), repeat('y', 100))::Tuple(a String, b String) AS t FORMAT PrettyCompact
+SETTINGS output_format_pretty_fallback_to_vertical = 1, output_format_pretty_fallback_to_vertical_min_columns = 2, output_format_pretty_fallback_to_vertical_min_table_width = 10;
+
+-- With the threshold above the rendered column count, the table layout is kept.
+SELECT (repeat('x', 100), repeat('y', 100))::Tuple(a String, b String) AS t FORMAT PrettyCompact
+SETTINGS output_format_pretty_fallback_to_vertical = 1, output_format_pretty_fallback_to_vertical_min_columns = 3, output_format_pretty_fallback_to_vertical_min_table_width = 10;
