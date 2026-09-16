@@ -82,13 +82,11 @@ Output: tup
 1
 pushed for INNER JOIN
 Output: json.a, tup.a
-│  Output:
 │     Output: id, json.a
 Output: id, tup.a
 1	1
 2	2
 not pushed to the right side of LEFT JOIN
 Output: 3, getSubcolumn(n, \'null\')
-│  Output:
 │     Output: 3, n
 3	1
