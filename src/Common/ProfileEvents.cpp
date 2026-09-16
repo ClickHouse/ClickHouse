@@ -1478,6 +1478,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperChangelogStartupReadBytes, "Number of physical bytes (checksum + header + blob) read from changelog files by the parallel Keeper startup reader", ValueType::Bytes) \
     M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \
     M(KeeperSnapshotFileSyncMicroseconds, "Time spent in fsync for Keeper snapshot files", ValueType::Microseconds) \
+    M(KeeperDiskMoves, "Number of Keeper changelog or snapshot files whose move between disks was started", ValueType::Number) \
+    M(KeeperDiskMoveMicroseconds, "Time spent moving Keeper changelog and snapshot files between disks, including the time spent sleeping between retries", ValueType::Microseconds) \
+    M(KeeperDiskMoveRetries, "Number of retries of a failed sub-operation (creating the temporary marker, copying, removing the temporary marker, removing the source file) while moving a Keeper changelog or snapshot file between disks", ValueType::Number) \
+    M(KeeperDiskMovesAbandoned, "Number of Keeper changelog or snapshot file moves between disks that were abandoned without completing, because the retry limit was reached or because shutdown was requested", ValueType::Number) \
     \
     M(KeeperLSMTFlushes, "Number of Keeper LSMT memtable flushes finished successfully", ValueType::Number) \
     M(KeeperLSMTMerges, "Number of Keeper LSMT merges finished successfully", ValueType::Number) \

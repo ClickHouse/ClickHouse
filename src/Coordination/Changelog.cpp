@@ -97,6 +97,15 @@ namespace FailPoints
 namespace
 {
 
+/// `moveFileBetweenDisks` is bounded by `disk_move_retries_during_init` /
+/// `disk_move_retries_after_init` and gives up instead of retrying forever, so this can return
+/// without the file having moved. That is safe but *not* self-healing: unlike a snapshot, which
+/// `KeeperSnapshotManager::selectSnapshotsToMove` re-selects on the maintenance pass of the next
+/// snapshot, an abandoned changelog move is only re-attempted at the next restart, by the
+/// "Move files to correct disks" loop in `finalizeChangelogsAfterRead`. Until then the file stays
+/// where it is, and `description` keeps pointing at that disk: the callback below - the only thing
+/// that repoints `description` at `disk_to` - runs after the copy has completed, so giving up
+/// earlier leaves `description->disk` at `disk_from`.
 void moveChangelogBetweenDisks(
     DiskPtr disk_from,
     ChangelogFileDescriptionPtr description,

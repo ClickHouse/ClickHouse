@@ -8,7 +8,9 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Disks/DiskLocal.h>
@@ -18,6 +20,15 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
+
+namespace ProfileEvents
+{
+    extern const Event KeeperDiskMoves;
+    extern const Event KeeperDiskMoveMicroseconds;
+    extern const Event KeeperDiskMoveRetries;
+    extern const Event KeeperDiskMovesAbandoned;
+}
 
 namespace DB
 {
@@ -25,6 +36,7 @@ namespace DB
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_after_init;
     extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
 }
 
@@ -78,6 +90,10 @@ void moveFileBetweenDisks(
     /// that pressure into a full disk and a fail-stop abort, so it is exempt too.
     LockMemoryExceptionInThread blocker{VariableContext::Global};
 
+    ProfileEvents::increment(ProfileEvents::KeeperDiskMoves);
+    Stopwatch move_watch;
+    SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::KeeperDiskMoveMicroseconds, move_watch.elapsedMicroseconds()); });
+
     LOG_TRACE(logger, "Moving {} to {} from disk {} to disk {}", path_from, path_to, disk_from->getName(), disk_to->getName());
     /// we use empty file with prefix tmp_ to detect incomplete copies
     /// if a copy is complete we don't care from which disk we use the same file
@@ -87,11 +103,25 @@ void moveFileBetweenDisks(
     auto tmp_file_name = from_path.parent_path() / (std::string{tmp_keeper_file_prefix} + from_path.filename().string());
 
     const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
-    auto max_retries_on_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
+    auto max_retries_during_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
+    auto max_retries_after_init = coordination_settings[CoordinationSetting::disk_move_retries_after_init].value;
     auto retries_sleep = std::chrono::milliseconds(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
+
+    /// Every sub-operation is bounded, in both phases. An unbounded retry never throws and never
+    /// returns, so it pins its caller instead of failing it, and the `try`/`catch` the callers wrap
+    /// it in does not help - there is no exception, just no return:
+    ///  - on the snapshot path, `KeeperStateMachine::create_snapshot` calls `when_done` only after
+    ///    `runSnapshotMaintenance` (or `publishAndRunMaintenance` on the save path) returns, so
+    ///    NuRaft never learns the snapshot finished, `snapshot_in_progress` stays set, no further
+    ///    snapshot is created, `compact_upto` never advances and Raft log compaction stops for good;
+    ///  - on the changelog path, `backgroundChangelogOperationsThread` never marks the operation
+    ///    done, so `waitAllAsyncOperations` blocks `writeAt` with no timeout and further pushes fail
+    ///    with `SYSTEM_ERROR` after the `tryPush` timeout.
+    /// Giving up costs a delay, not correctness - see the comment on the abandon log below.
     auto run_with_retries = [&](const auto & op, std::string_view operation_description)
     {
         size_t retry_num = 0;
+        std::string_view give_up_reason = "shutdown was requested";
         do
         {
             try
@@ -109,19 +139,47 @@ void moveFileBetweenDisks(
             }
 
             ++retry_num;
-            if (keeper_context->getServerState() == KeeperContext::Phase::INIT && retry_num == max_retries_on_init)
+            ProfileEvents::increment(ProfileEvents::KeeperDiskMoveRetries);
+
+            /// The limit follows the phase we are in right now, not the phase the move started in:
+            /// a move that starts during initialization and outlives it becomes a runtime move.
+            const bool during_init = keeper_context->getServerState() == KeeperContext::Phase::INIT;
+            const auto max_retries = during_init ? max_retries_during_init : max_retries_after_init;
+
+            /// 0 keeps retrying until shutdown, which is what a running server used to do always.
+            if (max_retries != 0 && retry_num >= max_retries)
             {
-                LOG_ERROR(logger, "Operation '{}' failed too many times", operation_description);
+                if (during_init)
+                    give_up_reason = "the limit of disk_move_retries_during_init was reached";
+                else
+                    give_up_reason = "the limit of disk_move_retries_after_init was reached";
                 break;
             }
         } while (!keeper_context->isShutdownCalled());
 
+        ProfileEvents::increment(ProfileEvents::KeeperDiskMovesAbandoned);
+
+        /// Abandoning is safe because the move is idempotent and the file is still tracked on the
+        /// disk it is actually on: `before_file_remove_op` - the only thing that repoints the
+        /// caller's metadata at `disk_to` - runs after the copy completed, so a give-up before it
+        /// leaves the metadata pointing at `disk_from`, and a give-up after it leaves the metadata
+        /// pointing at the complete copy on `disk_to`. Any temporary marker left on `disk_to` makes
+        /// the incomplete copy detectable and it is cleaned up on the next startup scan.
+        ///
+        /// A snapshot move is re-attempted by `KeeperSnapshotManager::selectSnapshotsToMove` on the
+        /// maintenance pass of the next snapshot. A *changelog* move is NOT re-attempted while the
+        /// server runs - the only other pass over `existing_changelogs` that fixes up disks is in
+        /// `Changelog::finalizeChangelogsAfterRead`, i.e. the next restart - so an abandoned
+        /// changelog move keeps the file on the disk it is on until then. That is still strictly
+        /// better than retrying forever, which stops Raft log truncation altogether.
         LOG_ERROR(
             logger,
-            "Failed to run '{}' while moving file {} to disk {}",
-            operation_description,
+            "Abandoning the move of file {} to disk {}: '{}' failed {} times and {}",
             path_from,
-            disk_to->getName());
+            disk_to->getName(),
+            operation_description,
+            retry_num,
+            give_up_reason);
         return false;
     };
 
