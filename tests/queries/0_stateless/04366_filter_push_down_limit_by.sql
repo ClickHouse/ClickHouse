@@ -94,6 +94,143 @@ SELECT count(), sum(val) FROM (
     SELECT key, ts, val FROM t_04366 WHERE key = '5' ORDER BY key, ts LIMIT 1 BY key
 );
 
+-- A conjunct probing a set the plan cannot bound is NOT pushed below the LIMIT BY (issue #120341):
+-- below the step it reaches index analysis, which materializes the whole set in sorted order, and it
+-- is merged into the source filter, where `in` is not evaluated lazily and so runs on every source
+-- row. A subquery set has no size until it is built, so it counts as unbounded.
+DROP TABLE IF EXISTS t_04366_keys;
+CREATE TABLE t_04366_keys (k String) ENGINE = MergeTree ORDER BY k
+AS SELECT toString(number) AS k FROM numbers(50);
+
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN (SELECT k FROM t_04366_keys)
+);
+
+-- Live-oracle control: `0` means no limit, the behaviour of 26.7 to 26.9, so the same query pushes again.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN (SELECT k FROM t_04366_keys)
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 0
+);
+
+-- A literal list is a built set of known small size, so it still reaches the primary key.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '7')
+);
+
+-- Only the unbounded conjunct is held back: the equality beside it still reaches the primary key.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key = '5' AND key IN (SELECT k FROM t_04366_keys)
+);
+
+-- Holding the conjunct above the LIMIT BY must not change the result.
+SELECT count(), sum(val) FROM (
+    SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+) WHERE key IN (SELECT k FROM t_04366_keys WHERE k = '5');
+
+-- The bound is a row count, not a subquery test: a built literal set larger than it is held back
+-- too. Four elements against a bound of three.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '7', '11', '13')
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 3
+);
+
+-- The same list at a bound equal to its size is pushed: the comparison is strictly greater-than.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '7', '11', '13')
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 4
+);
+
+-- `getTotalRowCount` deduplicates, while the sorted materialization filters the original list, so
+-- the pre-deduplication length is bounded as well. Three distinct values in a six-entry list
+-- against a bound of four: the deduplicated size fits and the list length does not.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '5', '7', '7', '11', '11')
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 4
+);
+
+-- The same list at a bound that covers its length passes both checks and is pushed.
+SELECT countIf(match(explain, 'Condition: \(key in ')) > 0 AS pushed
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN ('5', '5', '7', '7', '11', '11')
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 6
+);
+
+-- A built set that is not a literal list: an `ENGINE = Set` table. It has no pre-deduplication list
+-- length, so its deduplicated size is the only bound the plan can put on it. `KeyCondition` prints
+-- `Condition: true` for a Set-table `IN` whether or not the conjunct crossed the step, so this case
+-- asserts the plan shape instead: a top-level `Filter` survives only while the conjunct is held above
+-- the LIMIT BY. Top-level plan nodes print with no tree-drawing prefix, so `^Filter` cannot match a
+-- deeper step.
+DROP TABLE IF EXISTS t_04366_set;
+CREATE TABLE t_04366_set (k String) ENGINE = Set;
+INSERT INTO t_04366_set VALUES ('5'), ('7'), ('11'), ('13');
+
+-- Four rows against a bound of three: held back, so the top-level `Filter` is still there.
+SELECT countIf(match(explain, '^Filter')) AS filter_on_top
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN t_04366_set
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 3
+);
+
+-- The same table at a bound equal to its size is pushed, so no top-level `Filter` remains.
+SELECT countIf(match(explain, '^Filter')) AS filter_on_top
+FROM (
+    EXPLAIN indexes = 1
+    SELECT * FROM (
+        SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+    ) WHERE key IN t_04366_set
+    SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 4
+);
+
+-- Holding the conjunct above the LIMIT BY and pushing it must give the same result.
+SELECT count(), sum(val) FROM (
+    SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+) WHERE key IN t_04366_set
+SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 3;
+
+SELECT count(), sum(val) FROM (
+    SELECT key, ts, val FROM t_04366 ORDER BY key, ts LIMIT 1 BY key
+) WHERE key IN t_04366_set
+SETTINGS query_plan_max_set_size_for_filter_push_down_below_limit_by = 4;
+
+DROP TABLE t_04366_set;
+
+DROP TABLE t_04366_keys;
+
 DROP TABLE t_04366;
 
 -- Exception-semantics regression: a singleton group '0' dropped by OFFSET 1 must NOT be
