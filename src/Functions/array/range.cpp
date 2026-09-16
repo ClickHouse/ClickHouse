@@ -13,7 +13,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
-#include <Common/iota.h>
 #include <numeric>
 #include <vector>
 
@@ -137,6 +136,23 @@ private:
         return nullptr;
     }
 
+    /// Out of line so ThinLTO cannot inline it into `executeImpl`, where the loop's alignment ends up
+    /// depending on the surrounding code. The value comes from the index rather than an accumulator:
+    /// ranges here are short, so the vectoriser's scalar remainder dominates and independent values
+    /// let it fill that remainder much better. `iotaWithStep` keeps an accumulator instead, because
+    /// its caller generates whole blocks where a per-element multiply would cost more.
+    template <typename T>
+    static NO_INLINE void fillConstStartStep(T * out, size_t n, T start, T step)
+    {
+        /// Same as in `iota`: a portable AArch64 build keeps LLVM's default interleave factor of 2,
+        /// while x86-64-v3 is already at 4.
+#if defined(__aarch64__) && !defined(OS_DARWIN)
+#pragma clang loop interleave_count(4)
+#endif
+        for (size_t idx = 0; idx < n; ++idx)
+            out[idx] = static_cast<T>(start + idx * step);
+    }
+
     template <typename T>
     ColumnPtr executeConstStartStep(
             const IColumn * end_arg, const T start, const T step, const size_t input_rows_count) const
@@ -188,8 +204,7 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             const size_t n = row_length[row_idx];
-            if (n)
-                iotaWithStep(out_data.data() + offset, n, start, step);
+            fillConstStartStep(out_data.data() + offset, n, start, step);
             offset += n;
             out_offsets[row_idx] = offset;
         }
