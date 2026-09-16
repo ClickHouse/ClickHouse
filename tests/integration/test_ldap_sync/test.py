@@ -1214,7 +1214,8 @@ def test_startup_validation_of_a_second_ldap_directory():
     matching both would change directory with the timing of the runs. No run can make that sound, so the
     server refuses to start, whether the other `ldap` directory is lazy or synchronised too, declared
     before or after the synchronised one; every other kind of storage may still surround it (every node
-    of this module has `users_xml` and a writable storage before its `ldap` directory)."""
+    of this module has `users_xml` and a writable storage before its `ldap` directory).
+    """
     assert_startup_fails_with(
         with_second_ldap_directory("ldap_lazy"),
         second_ldap_directory_refused("ldap", "ldap_lazy"),
