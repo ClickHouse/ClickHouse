@@ -39,12 +39,18 @@ namespace
 
         assertNoParameters(name, parameters);
 
-        const size_t expected_num_arguments = (kind == TimeSeriesTopKMasksKind::LimitK) ? 4 : 3;
-        if (argument_types.size() != expected_num_arguments)
+        /// `limitk` ranks by the sampling key and requires it; `topk` and `bottomk` rank by value and take
+        /// it only to break a tie, so it is optional there and a call without it ranks ties by read order.
+        constexpr bool sampling_key_is_required = (kind == TimeSeriesTopKMasksKind::LimitK);
+        const bool arity_ok = sampling_key_is_required ? (argument_types.size() == 4)
+                                                       : (argument_types.size() == 3 || argument_types.size() == 4);
+        if (!arity_ok)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Aggregate function {} requires {} arguments: {}(k, key, {}values)",
-                            name, expected_num_arguments, name,
-                            (kind == TimeSeriesTopKMasksKind::LimitK) ? "sampling_key, " : "");
+                            "Aggregate function {} requires {}: {}(k, key, {}values)",
+                            name,
+                            sampling_key_is_required ? "4 arguments" : "3 or 4 arguments",
+                            name,
+                            sampling_key_is_required ? "sampling_key, " : "[sampling_key, ]");
 
         const auto * k_array_type = typeid_cast<const DataTypeArray *>(argument_types[0].get());
         const DataTypePtr k_type = k_array_type ? k_array_type->getNestedType() : argument_types[0];
@@ -59,15 +65,12 @@ namespace
                             "Illegal type {} of 2nd argument (key) for aggregate function {}, expected UInt64",
                             argument_types[1]->getName(), name);
 
-        if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
-        {
-            if (!isUInt64(argument_types[2]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of 3rd argument (sampling_key) for aggregate function {}, expected UInt64",
-                                argument_types[2]->getName(), name);
-        }
+        if (argument_types.size() == 4 && !isUInt64(argument_types[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of 3rd argument (sampling_key) for aggregate function {}, expected UInt64",
+                            argument_types[2]->getName(), name);
 
-        const size_t values_argument_index = expected_num_arguments - 1;
+        const size_t values_argument_index = argument_types.size() - 1;
         const auto * values_type = typeid_cast<const DataTypeArray *>(argument_types[values_argument_index].get());
         const DataTypePtr value_type = values_type ? removeNullable(values_type->getNestedType()) : nullptr;
         if (!value_type || !isNativeFloat(value_type))
@@ -75,7 +78,7 @@ namespace
                             "Illegal type {} of {} argument (values) for aggregate function {}, "
                             "expected an array of Float32, Float64, Nullable(Float32) or Nullable(Float64)",
                             argument_types[values_argument_index]->getName(),
-                            (kind == TimeSeriesTopKMasksKind::LimitK) ? "4th" : "3rd", name);
+                            (values_argument_index == 3) ? "4th" : "3rd", name);
 
         if (value_type->getTypeId() == TypeIndex::Float64)
             return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float64>>(argument_types);

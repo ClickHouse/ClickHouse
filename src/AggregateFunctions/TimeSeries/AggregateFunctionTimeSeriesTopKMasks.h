@@ -44,11 +44,13 @@ enum class TimeSeriesTopKMasksKind : UInt8
 template <typename RankType>
 struct AggregateFunctionTimeSeriesTopKMasksData
 {
-    /// A candidate series at one time step: `rank` is what candidates are compared by, `key` identifies the series.
+    /// A candidate series at one time step: `rank` is what candidates are compared by, `key` identifies
+    /// the series, and `sampling_key` breaks a tie between equal ranks (0 when none was given).
     struct Entry
     {
         RankType rank;
         UInt64 key;
+        UInt64 sampling_key;
     };
 
     /// A binary heap of at most k entries with the worst kept entry at the front (see `better()` in the aggregate function).
@@ -82,8 +84,9 @@ public:
 
     static constexpr UInt8 FORMAT_VERSION = 1;
 
-    /// The arguments are (k, key, values) for `topk` and `bottomk`, and (k, key, sampling_key, values) for `limitk`.
-    static constexpr size_t values_argument_index = (kind == TimeSeriesTopKMasksKind::LimitK) ? 3 : 2;
+    /// `sampling_key` is required for `limitk`, which ranks by it, and optional for `topk` and `bottomk`,
+    /// which rank by value and use it only to break a tie.
+    static constexpr size_t sampling_key_argument_index = 2;
 
     static constexpr const char * getNameImpl()
     {
@@ -107,10 +110,15 @@ public:
     explicit AggregateFunctionTimeSeriesTopKMasks(const DataTypes & argument_types_)
         : Base(argument_types_, {}, createResultType())
         , k_is_per_step(argument_types_[0]->getTypeId() == TypeIndex::Array)
+        , has_sampling_key(argument_types_.size() == 4)
+        , values_argument_index(argument_types_.size() - 1)
     {
     }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    /// Only `topk` and `bottomk` keep the sampling key of their own; see `serialize`.
+    bool writesSamplingKey() const { return has_sampling_key && kind != TimeSeriesTopKMasksKind::LimitK; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -136,9 +144,9 @@ public:
         else
             checkStateMatchesRow(state, num_steps, columns, row_num);
 
-        [[maybe_unused]] UInt64 sampling_key = 0;
-        if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
-            sampling_key = columns[2]->getUInt(row_num);
+        UInt64 sampling_key = 0;
+        if (has_sampling_key)
+            sampling_key = columns[sampling_key_argument_index]->getUInt(row_num);
 
         for (size_t t = 0; t != num_steps; ++t)
         {
@@ -148,6 +156,7 @@ public:
 
             Entry entry;
             entry.key = key;
+            entry.sampling_key = sampling_key;
             if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
                 entry.rank = sampling_key;
             else
@@ -202,6 +211,9 @@ public:
             {
                 writeBinaryLittleEndian(entry.rank, buf);
                 writeBinaryLittleEndian(entry.key, buf);
+                /// `limitk` ranks by the sampling key, so its state already carries it in `rank`.
+                if (writesSamplingKey())
+                    writeBinaryLittleEndian(entry.sampling_key, buf);
             }
         }
     }
@@ -252,8 +264,11 @@ public:
             for (size_t i = 0; i != heap_size; ++i)
             {
                 Entry entry;
+                entry.sampling_key = 0;
                 readBinaryLittleEndian(entry.rank, buf);
                 readBinaryLittleEndian(entry.key, buf);
+                if (writesSamplingKey())
+                    readBinaryLittleEndian(entry.sampling_key, buf);
                 heap.push_back(entry);
             }
         }
@@ -324,7 +339,10 @@ private:
                 return (kind == TimeSeriesTopKMasksKind::TopK) ? (a.rank > b.rank) : (a.rank < b.rank);
             }
         }
-        /// Deterministic tie-breaking: prefer the series with the smaller key.
+        /// A tie is broken by the sampling key, a hash of the series' tags, so the winner does not depend
+        /// on the order the rows were read in; `key` is the group number, which is assigned in that order.
+        if (a.sampling_key != b.sampling_key)
+            return a.sampling_key < b.sampling_key;
         return a.key < b.key;
     }
 
@@ -403,6 +421,9 @@ private:
 
     /// Whether the first argument (`k`) is an array with one value per time step rather than a single value.
     const bool k_is_per_step;
+    /// Whether a `sampling_key` argument was given; always true for `limitk`.
+    const bool has_sampling_key;
+    const size_t values_argument_index;
 };
 
 }
