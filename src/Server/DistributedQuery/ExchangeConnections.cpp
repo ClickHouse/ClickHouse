@@ -1,5 +1,4 @@
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-
+#ifdef OS_LINUX
 #include <mutex>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/FutureConnection.h>
@@ -8,12 +7,6 @@
 
 namespace DB
 {
-
-std::shared_ptr<ExchangeConnections> ExchangeConnections::instance()
-{
-    static std::shared_ptr<ExchangeConnections> self = std::make_shared<ExchangeConnections>();
-    return self;
-}
 
 namespace ErrorCodes
 {
@@ -192,5 +185,4 @@ void ExchangeConnections::removePendingStreams(const String & query_id, const st
 }
 
 }
-
 #endif

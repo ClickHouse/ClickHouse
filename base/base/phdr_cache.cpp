@@ -108,27 +108,20 @@ void updatePHDRCache()
 }
 
 
-namespace
+bool hasPHDRCache()
 {
-    /// The lock-free dl_iterate_phdr override above is active once the cache is populated.
-    bool hasPHDRCache() { return phdr_cache.load() != nullptr; }
-}
-
-bool hasAsyncSignalSafeUnwind()
-{
-    return hasPHDRCache();
+    return phdr_cache.load() != nullptr;
 }
 
 #else
 
 void updatePHDRCache() {}
 
-#if defined(USE_MUSL) || defined(OS_DARWIN)
-    /// musl: dl_iterate_phdr is inherently lock-free.
-    /// macOS: unwinding uses frame-pointer backtrace() which never calls dl_iterate_phdr.
-    bool hasAsyncSignalSafeUnwind() { return true; }
+#if defined(USE_MUSL)
+    /// With statically linked with musl, dl_iterate_phdr is immutable.
+    bool hasPHDRCache() { return true; }
 #else
-    bool hasAsyncSignalSafeUnwind() { return false; }
+    bool hasPHDRCache() { return false; }
 #endif
 
 #endif

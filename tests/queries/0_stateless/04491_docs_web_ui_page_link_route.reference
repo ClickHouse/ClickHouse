@@ -1,9 +1,0 @@
-ClickHouse <span class="accent">Reference</span>
-const DOCS_PAGE_ROUTE = {
-'syntax': '/sql-reference/syntax',
-'type-conversion-functions': '/sql-reference/functions/type-conversion-functions',
-if (DOCS_PAGE_ROUTE[head]) return base + DOCS_PAGE_ROUTE[head] + tail + suffix;
-'type-conversion-functions.md#parseDateTime64BestEffort': 'https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#parseDateTime64BestEffort',
-'../syntax.md#string': 'https://clickhouse.com/docs/sql-reference/syntax#string',
-1
-1
