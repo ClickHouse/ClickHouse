@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -9,10 +10,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+template <typename SubstreamsContainer>
 std::vector<size_t> getSubcolumnsDeserializationOrder(
     const String & column_name,
     const std::vector<ISerialization::SubstreamData> & subcolumns_data,
-    const std::vector<String> & substreams_in_serialization_order,
+    const SubstreamsContainer & substreams_in_serialization_order,
     ISerialization::EnumerateStreamsSettings & enumerate_settings,
     const ISerialization::StreamFileNameSettings & stream_file_name_settings)
 {
@@ -67,6 +69,20 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
     std::sort(subcolumns_positions.begin(), subcolumns_positions.end(), [&](size_t left, size_t right){ return subcolumns_substreams_positions[left] < subcolumns_substreams_positions[right]; });
     return subcolumns_positions;
 }
+
+template std::vector<size_t> getSubcolumnsDeserializationOrder<std::vector<String>>(
+    const String &,
+    const std::vector<ISerialization::SubstreamData> &,
+    const std::vector<String> &,
+    ISerialization::EnumerateStreamsSettings &,
+    const ISerialization::StreamFileNameSettings &);
+
+template std::vector<size_t> getSubcolumnsDeserializationOrder<VectorWithMemoryTracking<String>>(
+    const String &,
+    const std::vector<ISerialization::SubstreamData> &,
+    const VectorWithMemoryTracking<String> &,
+    ISerialization::EnumerateStreamsSettings &,
+    const ISerialization::StreamFileNameSettings &);
 
 }
 

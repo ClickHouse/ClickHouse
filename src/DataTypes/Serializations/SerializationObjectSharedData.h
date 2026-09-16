@@ -3,6 +3,7 @@
 #pragma clang diagnostic ignored "-Wdocumentation-html"
 
 #include <Common/Exception.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
@@ -248,9 +249,9 @@ private:
         /// Mark of the substreams marks in ObjectSharedDataSubstreamsMarks stream for this path.
         MarkInCompressedFile substreams_marks_mark{};
         /// List of substreams for this path.
-        std::vector<String> substreams;
+        VectorWithMemoryTracking<String> substreams;
         /// Map Substream -> its mark in ObjectSharedDataData stream.
-        std::unordered_map<std::string_view, MarkInCompressedFile> substream_to_mark;
+        UnorderedMapWithMemoryTracking<std::string_view, MarkInCompressedFile> substream_to_mark;
     };
 
     struct PathsInfos
