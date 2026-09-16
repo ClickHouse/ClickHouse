@@ -43,11 +43,11 @@ ${CLICKHOUSE_CLIENT} --query "SHOW CREATE DICTIONARY dict_uri_leak" 2>&1 | asser
 
 # 3. system.query_log must store neither the query text nor the exception with the cleartext password.
 #    The needle is split so that this checking query does not itself contain the contiguous secret.
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT 'query_log_cleartext', count()
     FROM system.query_log
-    WHERE event_date >= today()
+    WHERE event_date >= yesterday()
       AND current_database = currentDatabase()
       AND (query LIKE '%' || 'pwleakprobe' || '9f2a%' OR exception LIKE '%' || 'pwleakprobe' || '9f2a%')"
 
