@@ -26,3 +26,23 @@ $CLICKHOUSE_LOCAL --query "
     ARRAY JOIN row_groups
     ARRAY JOIN row_groups.columns AS columns
 "
+
+# The level histograms are filled a page at a time, so a discarded pass leaves its pages counted
+# twice. That only shows on a column that has levels at all, and only when the dictionary outgrows
+# its limit after some pages have been written - hence the small data page size.
+$CLICKHOUSE_LOCAL --query "
+    SELECT arrayMap(i -> if(i % 3 = 0, NULL, concat(toString(number * 10 + i), repeat('q', 200))), range(number % 4)) AS a
+    FROM numbers(20000)
+    SETTINGS output_format_parquet_data_page_size = 1024, output_format_parquet_max_dictionary_size = 1000000
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --query "
+    SELECT
+        columns.size_statistics.repetition_level_histogram AS rep,
+        columns.size_statistics.definition_level_histogram AS def,
+        columns.size_statistics.unencoded_byte_array_data_bytes AS bytes
+    FROM file('$FILE', ParquetMetadata)
+    ARRAY JOIN row_groups
+    ARRAY JOIN row_groups.columns AS columns
+"
