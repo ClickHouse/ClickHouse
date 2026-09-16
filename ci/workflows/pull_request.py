@@ -11,19 +11,10 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
-# Functional tests with sanitizers are trimmed down in pull requests: instead of
-# the full suite, their `selected tests` counterparts run only the tests selected
-# for the change. The full suite still runs here in the debug and plain binary
-# flavors, the sanitizer builds are still exercised by the stress tests, and the
-# master workflow keeps running the full suite in every flavor.
-# See ClickHouse/ClickHouse#114725.
-SANITIZERS = ("asan_ubsan", "tsan", "msan")
-
-FUNCTIONAL_TESTS_JOBS = [
-    job
-    for job in JobConfigs.functional_tests_jobs
-    if not any(sanitizer in job.name for sanitizer in SANITIZERS)
-] + JobConfigs.stateless_tests_selected_pr_jobs
+# PR sanitizer jobs repeat tests related to the change to find intermittent failures.
+# Debug and plain binary jobs run the full suite. Master keeps the full suite in
+# every configuration; coverage-based targeting is specific to pull requests.
+FUNCTIONAL_TESTS_JOBS = JobConfigs.functional_tests_pr_jobs
 
 ALL_FUNCTIONAL_TESTS = [job.name for job in FUNCTIONAL_TESTS_JOBS]
 
@@ -36,9 +27,7 @@ CORE_BLOCKING_JOB_NAMES = [
             "_debug, parallel",
             "_binary, parallel",
             "_binary, sequential",
-            "_asan_ubsan, distributed plan, parallel",
-            "_asan_ubsan, db disk, distributed plan, sequential",
-            "_tsan, parallel",
+            "_asan_ubsan, db disk, distributed plan, targeted",
         )
     )
 ] + [
@@ -99,9 +88,13 @@ workflow = Workflow.Config(
             job.set_run_after(STYLE_AND_FAST_TESTS)
             for job in JobConfigs.wasm_parser_build_jobs
         ],
-        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.build_llvm_coverage_job
+        ],
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
+        JobConfigs.select_functional_tests,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
@@ -135,9 +128,7 @@ workflow = Workflow.Config(
         JobConfigs.bugfix_validation_ut_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *[
             j.set_run_after(
-                CORE_BLOCKING_JOB_NAMES
-                if j.name not in CORE_BLOCKING_JOB_NAMES
-                else []
+                CORE_BLOCKING_JOB_NAMES if j.name not in CORE_BLOCKING_JOB_NAMES else []
             )
             for j in FUNCTIONAL_TESTS_JOBS
         ],
@@ -155,7 +146,9 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(
-                CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
+                CORE_BLOCKING_JOB_NAMES
+                if job.name not in CORE_BLOCKING_JOB_NAMES
+                else []
             )
             for job in JobConfigs.integration_test_jobs_required[:]
         ],
@@ -176,12 +169,8 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.unittest_llvm_coverage_job
         ],
-        JobConfigs.docker_server.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
-        JobConfigs.docker_keeper.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
+        JobConfigs.docker_server.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        JobConfigs.docker_keeper.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.install_check_jobs
@@ -221,23 +210,18 @@ workflow = Workflow.Config(
         JobConfigs.promql_compliance_job,
         # TODO: stabilize and remove set_allow_failure
         JobConfigs.build_profile_diff_job.set_allow_failure(),
-        JobConfigs.sqllogic_test_master_job.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
-        JobConfigs.sqlstorm_test_job.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
-        JobConfigs.docs_examples_job.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
+        JobConfigs.sqllogic_test_master_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        JobConfigs.sqlstorm_test_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        JobConfigs.docs_examples_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
-        JobConfigs.keeper_stress_job
-            .set_name("Keeper Stress Tests (PR)")
-            .set_timeout(3 * 3600),
+        JobConfigs.keeper_stress_job.set_name("Keeper Stress Tests (PR)").set_timeout(
+            3 * 3600
+        ),
         *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
+        ArtifactConfigs.stateless_selection,
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
         *ArtifactConfigs.clickhouse_darwin_plain_binaries,
