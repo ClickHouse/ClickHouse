@@ -1708,18 +1708,18 @@ Enabling this option disables parallel parsing and makes deduplication impossibl
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
     DECLARE(Bool, input_format_protobuf_datetime64_legacy_seconds, false, R"(
-When enabled, numeric Protobuf fields mapped to `DateTime64` are interpreted as Unix seconds
-(for backward compatibility with pre-26.9 writers). Integer fields are whole seconds; `float`/`double`
-fields keep fractional seconds. When disabled (default), they are interpreted as scaled `DateTime64`
-ticks matching the column precision, preserving subseconds for integer schemas.
-Enable it (or `SET compatibility = '26.8'`) to restore the pre-26.9 reader.
+When enabled, integer Protobuf fields mapped to `DateTime64` are interpreted as whole Unix seconds
+(for backward compatibility with pre-26.9 writers). When disabled (default), integer fields are
+interpreted as scaled `DateTime64` ticks matching the column precision, preserving subseconds.
+`float`/`double` fields always store fractional Unix seconds and are unaffected by this setting.
+Enable it (or `SET compatibility = '26.8'`) to restore the pre-26.9 reader for integer schemas.
 )", 0) \
     DECLARE(Bool, output_format_protobuf_datetime64_legacy_seconds, false, R"(
-When enabled, numeric Protobuf fields mapped from `DateTime64` are written as Unix seconds
+When enabled, integer Protobuf fields mapped from `DateTime64` are written as whole Unix seconds
 (for backward compatibility with older ClickHouse builds and external readers, and with user-supplied
-schemas that use narrower numeric field types). Integer fields are whole seconds; `float`/`double`
-fields keep fractional seconds. When disabled (default), they are written as scaled `DateTime64`
-ticks matching the column precision, preserving subseconds for integer schemas.
+schemas that use narrower integer field types). When disabled (default), integer fields are written
+as scaled `DateTime64` ticks matching the column precision, preserving subseconds.
+`float`/`double` fields always store fractional Unix seconds and are unaffected by this setting.
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types

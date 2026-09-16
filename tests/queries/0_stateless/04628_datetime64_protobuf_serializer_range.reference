@@ -21,8 +21,10 @@
 1970-01-19 06:17:16.800
 -- legacy output and legacy input restores the truncated Unix-second instant
 2020-01-01 00:00:00.000
--- legacy double field stores fractional Unix seconds
--- legacy double read preserves subseconds
+-- double field stores fractional Unix seconds (independent of legacy settings)
+-- double read preserves subseconds without legacy input setting
 2020-01-01 00:00:00.125
--- legacy double write intermediately preserves subseconds
+-- double write preserves subseconds without legacy output setting
 1577836800.125
+-- fractional double 1.5 is Unix seconds, not truncated ticks
+1970-01-01 00:00:01.500

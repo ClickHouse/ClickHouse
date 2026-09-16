@@ -4,7 +4,8 @@
 # subsecond precision, and upper bound values are preserved through serialization and deserialization.
 # Legacy whole-seconds files can still be read with input_format_protobuf_datetime64_legacy_seconds=1
 # (or SET compatibility = '26.8'). Legacy writers can emit whole Unix seconds with
-# output_format_protobuf_datetime64_legacy_seconds=1.
+# output_format_protobuf_datetime64_legacy_seconds=1. Float/double Protobuf fields always store
+# fractional Unix seconds and are unaffected by those settings.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -110,7 +111,7 @@ SETTINGS input_format_protobuf_datetime64_legacy_seconds = 1"
 
 DOUBLE_SCHEMA='syntax = "proto3"; message Row { double t = 1; }'
 
-echo '-- legacy double field stores fractional Unix seconds'
+echo '-- double field stores fractional Unix seconds (independent of legacy settings)'
 ${CLICKHOUSE_LOCAL} --query "
 INSERT INTO FUNCTION file('${FILE_LEGACY_DOUBLE}', 'Protobuf')
 SETTINGS format_schema_source = 'string',
@@ -119,27 +120,40 @@ SETTINGS format_schema_source = 'string',
          engine_file_truncate_on_insert = 1
 SELECT CAST(1577836800.125 AS Float64) AS t"
 
-echo '-- legacy double read preserves subseconds'
+echo '-- double read preserves subseconds without legacy input setting'
 ${CLICKHOUSE_LOCAL} --query "
 SELECT *
 FROM file('${FILE_LEGACY_DOUBLE}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
 SETTINGS format_schema_source = 'string',
          format_schema = '${DOUBLE_SCHEMA}',
-         format_schema_message_name = 'Row',
-         input_format_protobuf_datetime64_legacy_seconds = 1"
+         format_schema_message_name = 'Row'"
 
-echo '-- legacy double write intermediately preserves subseconds'
+echo '-- double write preserves subseconds without legacy output setting'
 ${CLICKHOUSE_LOCAL} --query "
 INSERT INTO FUNCTION file('${FILE_LEGACY_DOUBLE}', 'Protobuf')
 SETTINGS format_schema_source = 'string',
          format_schema = '${DOUBLE_SCHEMA}',
          format_schema_message_name = 'Row',
-         engine_file_truncate_on_insert = 1,
-         output_format_protobuf_datetime64_legacy_seconds = 1
+         engine_file_truncate_on_insert = 1
 SELECT toDateTime64('2020-01-01 00:00:00.125', 3, 'UTC') AS t"
 ${CLICKHOUSE_LOCAL} --query "
 SELECT t
 FROM file('${FILE_LEGACY_DOUBLE}', 'Protobuf', 't Float64')
+SETTINGS format_schema_source = 'string',
+         format_schema = '${DOUBLE_SCHEMA}',
+         format_schema_message_name = 'Row'"
+
+echo '-- fractional double 1.5 is Unix seconds, not truncated ticks'
+${CLICKHOUSE_LOCAL} --query "
+INSERT INTO FUNCTION file('${FILE_LEGACY_DOUBLE}', 'Protobuf')
+SETTINGS format_schema_source = 'string',
+         format_schema = '${DOUBLE_SCHEMA}',
+         format_schema_message_name = 'Row',
+         engine_file_truncate_on_insert = 1
+SELECT CAST(1.5 AS Float64) AS t"
+${CLICKHOUSE_LOCAL} --query "
+SELECT *
+FROM file('${FILE_LEGACY_DOUBLE}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
 SETTINGS format_schema_source = 'string',
          format_schema = '${DOUBLE_SCHEMA}',
          format_schema_message_name = 'Row'"
