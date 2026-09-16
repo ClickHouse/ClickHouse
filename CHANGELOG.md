@@ -22,6 +22,39 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release 39b87c13710b054e4a3be5f532c640aa9122ce52 (39b87c13710) FIXME as compared to 7dc4a129f21a36dd40fecf2198a51db0001b5ae8 (7dc4a129f21)
+
+#### Backward Incompatible Change
+* New setting `validate_group_by_all_key_types` (default `true`) gates the key type validation that `GROUP BY ALL` applies to the grouping keys it expands the `SELECT` expressions into. Since 26.7 it rejects a `Variant` or `Dynamic` grouping key, for example an untyped JSON subpath, that earlier versions accepted with the analyzer enabled (the default), with no way to keep such a query running across an upgrade. Setting `compatibility` to a version before 26.7, or `validate_group_by_all_key_types = 0`, restores the earlier behavior. An explicit `GROUP BY` is unaffected and still rejects such a key, as it did before 26.7. Closes [#119852](https://github.com/ClickHouse/ClickHouse/issues/119852). [#119868](https://github.com/ClickHouse/ClickHouse/pull/119868) ([Groene AI](https://github.com/groeneai)).
+
+#### Experimental Feature
+* PromQL: implemented range functions `present_over_time()`, `absent_over_time()`, `quantile_over_time()` and `predict_linear()`. [#112842](https://github.com/ClickHouse/ClickHouse/pull/112842) ([Valery Petrov](https://github.com/valerypetrov)).
+
+#### Performance Improvement
+* Speed up sorting of wide tables (`ORDER BY` over many columns) by skipping a per-row `ColumnReplicated` check in the merge step when no column can be replicated. This removes overhead that was noticeable on ARM. [#110627](https://github.com/ClickHouse/ClickHouse/pull/110627) ([Groene AI](https://github.com/groeneai)).
+* Read only the Map keys subcolumn when evaluating `has` and `notHas` over a Map when it is safe to do so. [#119190](https://github.com/ClickHouse/ClickHouse/pull/119190) ([Minh Vu](https://github.com/fallintoplace)).
+* Fix a slowdown of query analysis for large parameterized views: the substituted view query was re-hashed on every comparison of the query tree. Closes [#118736](https://github.com/ClickHouse/ClickHouse/issues/118736). [#119517](https://github.com/ClickHouse/ClickHouse/pull/119517) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Estimate query-plan `PREWHERE` column sizes and statistics from parts left after pruning, retaining existing byte-cost estimates when those parts have no per-column measurements. [#119607](https://github.com/ClickHouse/ClickHouse/pull/119607) ([Rory Shanks](https://github.com/rorylshanks)).
+* Avoid rebuilding the result for `arraySlice(arr, 1)`. [#119817](https://github.com/ClickHouse/ClickHouse/pull/119817) ([Minh Vu](https://github.com/fallintoplace)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fix reading a column that has two streams whose names differ only by escaping, for example a `Tuple` element named `size0` inside an `Array`, or a `JSON` typed path named like a substream of a sibling path. Such columns returned wrong values, failed with `CANNOT_READ_ALL_DATA` or a logical error, and made the table unmergeable. [#115670](https://github.com/ClickHouse/ClickHouse/pull/115670) ([Pavel Kruglov](https://github.com/Avogar)).
+* Fixed `least`, `greatest`, `bitShiftRight`, `midpoint` and `avg2` returning wrong results when the JIT-compiled expression had an `Int128` result, which happens at the default `compile_expressions = 1` after a few executions. The compiled code treated a signed `Int128` result as unsigned, so for instance `least` of a negative `Int128` and `0` returned `0` instead of the negative value. [#118363](https://github.com/ClickHouse/ClickHouse/pull/118363) ([Groene AI](https://github.com/groeneai)).
+* Fixed `ttl_only_drop_parts` preventing expired columns from ever being cleared. The setting trades the merges that delete expired rows for dropping whole parts, but a column `TTL` can only be honoured by rewriting the part, so with the setting enabled an expired column was silently kept forever. Such merges are now assigned by a separate selector, scheduled by the column `TTL`s of a part alone. [#118428](https://github.com/ClickHouse/ClickHouse/pull/118428) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Make `mergeTreeTextIndex` stricter with row policies: reading the text index is now denied whenever a row policy applies to the table, regardless of which columns the policy uses. [#119032](https://github.com/ClickHouse/ClickHouse/pull/119032) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* Fixes a bug where `optimize_extract_common_expressions` (on by default) could make `force_primary_key` incorrectly reject a query with `INDEX_NOT_USED`, even when the query's filter was a trivial primary-key condition. This happened when the optimization simplified a filter like `(A AND X) OR A` down to `A` and needed to wrap the result in an implicit cast to keep its type unchanged; `KeyCondition` didn't recognize that particular cast as safe to see through, so it stopped analyzing the primary key altogether. [#119083](https://github.com/ClickHouse/ClickHouse/pull/119083) ([kasimtj](https://github.com/kasimtj)).
+* Fix `groupNumericIndexedVector` returning a value that is too large for an index that repeats in the input (5 and then 3 read back as 13), and returning different results depending on `max_threads`. Also fix `numericIndexedVectorPointwiseMultiply` and `numericIndexedVectorPointwiseDivide` dropping an index whose result is zero instead of keeping it with a value of zero, and `numericIndexedVectorPointwiseDivide` by a vector of all ones keeping the value of an index the divisor is missing instead of zeroing it. A `groupNumericIndexedVectorState` that is already stored in a table is not repaired by the upgrade and has to be recomputed. [#119564](https://github.com/ClickHouse/ClickHouse/pull/119564) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `isNull` and `IS NULL` now return `1` for every `NULL` row, including when the column's NULL mask holds a byte other than `0` or `1`, which the Native format permits and which `if` produces from its condition column. Previously such a row could contribute its raw byte, so `sum(isNull(e))` returned `30` where `20` is correct. `if(cond, x, NULL)` with a `Nullable` `x` no longer returns `NULL` for a row whose condition byte was neither `0` nor `1`. If an older server stored a value computed from `isNull(...)` of such a column (sorting key, skip index, partition key, projection, `MATERIALIZED` or `DEFAULT` column), rebuild it. [#119785](https://github.com/ClickHouse/ClickHouse/pull/119785) ([Groene AI](https://github.com/groeneai)).
+* Preserve explicit timezones in `timeSeriesRange` `DateTime64` results. [#119858](https://github.com/ClickHouse/ClickHouse/pull/119858) ([Minh Vu](https://github.com/fallintoplace)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* ### Details. [#118586](https://github.com/ClickHouse/ClickHouse/pull/118586) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Not applicable — test-only change. [#120071](https://github.com/ClickHouse/ClickHouse/pull/120071) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Revert "Add agent instruction: do not create stacked pull requests". [#120174](https://github.com/ClickHouse/ClickHouse/pull/120174) ([Harikrishnan Prabakaran](https://github.com/harikrishnan94)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="269"></a> ClickHouse release 26.9, FIXME (in progress)
 
 #### Backward Incompatible Change
