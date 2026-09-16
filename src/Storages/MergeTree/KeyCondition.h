@@ -566,16 +566,15 @@ private:
 
     /// The result of pushing the predicate's constant through a key-side recipe.
     /// The transformed `value` and `type` live in the key space of `key_column_num`
-    /// and compare against that column directly. When the transform is not provably
-    /// injective, the resulting atom only describes a superset of the matching values,
-    /// so it must be relaxed.
+    /// and compare against that column directly. An exact atom requires an injective
+    /// transform whose input contains no NaN; otherwise the atom must be relaxed.
     struct TransformedConstant
     {
         size_t key_column_num = 0;
         DataTypePtr key_column_type;
         Field value;
         DataTypePtr type;
-        bool is_injective = false;
+        bool atom_is_exact = false;
         /// False when the key-side chain that produced this constant reverses comparison
         /// order; the consumer must reverse the comparison operator accordingly.
         bool chain_is_positive = true;
@@ -765,15 +764,18 @@ private:
     /// predicate's key-side expression, the materialized set columns and the analyzed
     /// key mapping, appends the direct set atom and, when `allow_wrapped_set_atoms` is
     /// set, one wrapped-set atom per remaining key column that is a deterministic
-    /// function of the expression.
+    /// function of the expression. `has_element_type` supplies the occupied element type of a
+    /// `has` array, so every atom checks that conversion preserves its comparison semantics.
     void extractSetAtomsForKeyArgument(
         const RPNBuilderTreeNode & key_arg,
         const BuildInfo & info,
         const Columns & set_columns,
         const DataTypes & set_types,
         SetIndexAnalysisResult analysis,
+        bool allow_constant_transformation,
         bool allow_wrapped_set_atoms,
-        RPN & out);
+        RPN & out,
+        const DataTypePtr & has_element_type = nullptr);
 
     /// Checks that the index can not be used.
     ///
@@ -850,11 +852,17 @@ private:
     };
     static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
 
+    struct SpaceFillingCurveArgument
+    {
+        String name;
+        DataTypePtr type;
+    };
+
     struct SpaceFillingCurveDescription
     {
         size_t key_column_pos{};
         String function_name;
-        std::vector<String> arguments;
+        std::vector<SpaceFillingCurveArgument> arguments;
         SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;

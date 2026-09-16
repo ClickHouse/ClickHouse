@@ -660,6 +660,17 @@ void RPNBuilder<RPNElement>::traverseTree(
     {
         auto function_node = node.toFunctionNode();
 
+        if constexpr (!RPNBuilderTraits<RPNElement>::expand_index_hint)
+        {
+            if (function_node.getFunctionName() == "indexHint")
+            {
+                RPNElement always_true;
+                always_true.function = RPNElement::ALWAYS_TRUE;
+                rpn_elements.emplace_back(std::move(always_true));
+                return;
+            }
+        }
+
         RPNElement operator_element;
         if (extractLogicalOperatorFromTree(function_node, operator_element))
         {
@@ -759,6 +770,13 @@ bool RPNBuilder<RPNElement>::extractLogicalOperatorFromTree(const RPNBuilderFunc
 
     return true;
 }
+
+/// Estimating selectivity is the one use that must not descend into `indexHint`.
+template <>
+struct RPNBuilderTraits<ConditionSelectivityEstimator::RPNElement>
+{
+    static constexpr bool expand_index_hint = false;
+};
 
 template class RPNBuilder<KeyCondition::RPNElement>;
 template class RPNBuilder<ConditionSelectivityEstimator::RPNElement>;

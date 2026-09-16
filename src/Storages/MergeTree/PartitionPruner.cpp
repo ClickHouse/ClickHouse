@@ -9,14 +9,17 @@ PartitionPruner::PartitionPruner(
     const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
     bool strict,
-    bool skip_analysis)
+    bool skip_analysis,
+    bool require_ready_sets)
     : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
     , partition_condition(
           filter_dag,
           context,
-          partition_key,
+          partition_key.column_names,
+          partition_key.expression,
           true /* single_point */,
-          skip_analysis)
+          skip_analysis,
+          require_ready_sets)
     /// Strict pruning needs the condition to represent the predicate exactly, so a relaxed
     /// condition makes the pruner useless. A predicate leaf that constrains several key columns
     /// emits one atom per column: when an exact atom of such a group has relaxed siblings, they
@@ -56,8 +59,8 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
 
         if (!is_valid)
         {
-            auto partition_str = part.partition.serializeToString(part.getMetadataSnapshot());
-            LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned", partition_str);
+            LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned",
+                part.partition.serializeToString(part.getMetadataSnapshot()));
         }
     }
 

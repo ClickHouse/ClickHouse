@@ -643,7 +643,10 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
     return need_inversion ? makeASTOperator("not", cloned_node) : cloned_node;
 }
 
-static bool isTrivialCast(const ActionsDAG::Node & node)
+/// `value_is_truth_tested` tells whether the consumer of this node only truth-tests its value
+/// (`boolean_context`), so neither the value itself nor its type is observed. It gates the
+/// `Nullable`-widening case below, which is the only one that changes the node's result type.
+static bool isTrivialCast(const ActionsDAG::Node & node, bool value_is_truth_tested)
 {
     /// Recognize both the user-facing `CAST` and the analyzer-internal `_CAST` here; they
     /// produce the same node shape and our caller treats them identically. Without `_CAST`
@@ -662,7 +665,29 @@ static bool isTrivialCast(const ActionsDAG::Node & node)
         return false;
 
     auto type_name = field.safeGet<String>();
-    return node.children[0]->result_type->getName() == type_name;
+    const auto & source_type = node.children[0]->result_type;
+    if (source_type->getName() == type_name)
+        return true;
+
+    /// A CAST that only wraps a non-nullable type into `Nullable` of that very same underlying
+    /// type can never turn a non-NULL value into NULL, so it preserves every row's value.
+    /// Such casts are inserted by query rewrites (e.g. `optimize_extract_common_expressions`)
+    /// that must keep a WHERE/PREWHERE/JOIN ON expression's static result type unchanged, even
+    /// though only the expression's truthiness matters there.
+    ///
+    /// Unlike a same-type cast, it is value-preserving but NOT type-preserving, so it may only be
+    /// dropped where the consumer merely truth-tests the result. In a value position the enclosing
+    /// function would be re-resolved over the narrower argument type, and a function whose constant
+    /// result is derived from the argument's type alone (`isNullable`, `toTypeName`, ... - see
+    /// `IFunctionBase::getConstantResultForNonConstArguments`) would then fold to a different
+    /// constant than the original DAG did. For `isNullable(_CAST(k, 'Nullable(UInt32)')) = 1` that
+    /// turns an always-true predicate into `equals(0, 1)`, i.e. an always-false `KeyCondition` that
+    /// prunes every granule.
+    if (value_is_truth_tested && !source_type->isNullable() && node.result_type->isNullable()
+        && removeNullable(node.result_type)->equals(*source_type))
+        return true;
+
+    return false;
 }
 
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
@@ -935,7 +960,8 @@ static bool predicateIsBooleanResult(const ActionsDAG::Node * predicate, bool al
     const ActionsDAG::Node * unwrapped = predicate;
     while (unwrapped->type == ActionsDAG::ActionType::ALIAS
            || (unwrapped->type == ActionsDAG::ActionType::FUNCTION
-               && (unwrapped->function_base->getName() == "materialize" || isTrivialCast(*unwrapped))))
+               && (unwrapped->function_base->getName() == "materialize"
+                   || isTrivialCast(*unwrapped, /* value_is_truth_tested */ true))))
     {
         if (unwrapped->children.empty())
             return false;
@@ -1268,6 +1294,15 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, boolean_context);
                 handled_inversion = true;
             }
+            else if (name == "indexHint" && need_inversion)
+            {
+                /// `indexHint` returns 1 for every row, so an inverted hint is 0 for every row. Index
+                /// analysis re-reads a hint's arguments from the `FunctionIndexHint` object, not from the
+                /// cloned children, so an inverted hint node would contribute its condition un-inverted.
+                auto uint8_type = std::make_shared<DataTypeUInt8>();
+                res = &inverted_dag.addColumn(uint8_type->createColumnConst(0, 0), uint8_type, "false");
+                handled_inversion = true;
+            }
             else if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
@@ -1279,7 +1314,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
+                            arg = &cloneDAGWithInversionPushDown(
+                                *arg, inverted_dag, inputs_mapping, context, /* need_inversion */ false, boolean_context);
                     }
                 }
 
@@ -1295,7 +1331,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT materialize(x = 0)` -> `not(notEquals(x, 0))`.
                 handled_inversion = true;
             }
-            else if (isTrivialCast(node))
+            else if (isTrivialCast(node, /* value_is_truth_tested */ boolean_context))
             {
                 /// Remove trivial cast and keep its first argument.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
@@ -1506,7 +1542,7 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
                 /// All arguments should be regular input columns.
                 if (child->type == ActionsDAG::ActionType::INPUT)
                 {
-                    curve.arguments.push_back(child->result_name);
+                    curve.arguments.push_back({child->result_name, child->result_type});
                 }
                 else
                 {
@@ -1516,7 +1552,9 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
             }
 
             /// So far we only support the case of two arguments.
-            if (2 == curve.arguments.size())
+            if (2 == curve.arguments.size()
+                && !WhichDataType(removeLowCardinality(curve.arguments[0].type)).isUInt64()
+                && !WhichDataType(removeLowCardinality(curve.arguments[1].type)).isUInt64())
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
@@ -2185,7 +2223,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
                 .key_column_type = chain.key_column_type,
                 .value = (*transformed_const_column)[0],
                 .type = transformed_const_type,
-                .is_injective = false,
+                .atom_is_exact = false,
                 .chain_is_positive = chain.chain_is_positive});
     }
 
@@ -2302,132 +2340,121 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
     return result;
 }
 
-/// Applies a deterministic key-transform DAG to `in_column` and writes the transformed column/type to
-/// `out_column`/`out_type`.
-/// Intended for transforming constants (or IN-set elements) into "key space", so that the transformed
-/// values can be compared against key marks directly.
+
+/// Materializes a transformed column and rejects a transformation that produced NULLs:
+/// - materialize output column (Const/LowCardinality)
+/// - reject if any NULLs were created as a result of transformation
+/// - strip Nullable/LowCardinality wrappers to get the actual column
+static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
+{
+    column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    type = removeLowCardinality(type);
+
+    if (column->isNullable())
+    {
+        const auto & n = assert_cast<const ColumnNullable &>(*column);
+        for (char8_t b : n.getNullMapData())
+            if (b)
+                return false;
+        column = n.getNestedColumnPtr();
+        type = removeNullable(type);
+    }
+    return true;
+}
+
+
+/// Cast column to target_type and fail if the cast introduces NULLs.
+static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
+{
+    if (canBeSafelyCast(type, target_type))
+    {
+        column = castColumnAccurate({column, type, ""}, target_type);
+        type = target_type;
+        return true;
+    }
+
+    /// `castColumnAccurateOrNull` needs a target that can represent NULLs so a lossy cast is
+    /// observable. `LowCardinality` is only an encoding and is not itself nullable-able, so run
+    /// the accuracy probe against the `LowCardinality`-stripped target; otherwise a key column of
+    /// type `LowCardinality(FixedString)` (and similar) is wrongly rejected here, which silently
+    /// disables partition/key pruning. The requested `target_type` is re-applied afterwards so the
+    /// transform DAG still receives the type it was built against.
+    const DataTypePtr probe_type = removeLowCardinality(target_type);
+
+    /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+    /// passes it and then throws in the cast below.
+    if ((!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+        || !canBeAccurateCastOrNullTarget(probe_type))
+    {
+        /// We cannot apply castColumnAccurateOrNull() because it will throw exception
+        return false;
+    }
+
+    ColumnPtr probe_column;
+    try
+    {
+        probe_column = castColumnAccurateOrNull({column, type, ""}, probe_type);
+    }
+    catch (const Exception &)
+    {
+        /// The OrNull contract applies per value: the cast yields NULL for values that cannot
+        /// be converted, but the conversion between the two types must exist. When it is not
+        /// implemented at all (for example, casting `IPv6` into `FixedString(16)`), building
+        /// the cast throws before any value is seen. There is no single error code for such
+        /// type pairs (`NOT_IMPLEMENTED`, `CANNOT_CONVERT_TYPE`, `TYPE_MISMATCH`, ... depending
+        /// on the target type), so treat any error as "this constant cannot be transformed
+        /// into the key space" and let the caller skip this candidate.
+        return false;
+    }
+
+    const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
+
+    /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
+    for (char8_t b : n.getNullMapData())
+        if (b)
+            return false;
+
+    /// No NULLs were introduced, so every value fits and the probe already holds the converted
+    /// values; reuse them instead of casting the source again. A Nullable target is exactly the
+    /// probe column, a plain target is its nested column.
+    if (probe_type->isNullable())
+        column = probe_column;
+    else
+        column = n.getNestedColumnPtr();
+    type = probe_type;
+
+    /// Only the `LowCardinality` wrapper stripped before the probe may remain; adding it back
+    /// is a lossless dictionary encoding of the already-converted values.
+    if (!probe_type->equals(*target_type))
+    {
+        column = castColumn({column, type, ""}, target_type);
+        type = target_type;
+    }
+
+    return true;
+}
+
+
+/// Converts `in_column` to the type the transform DAG consumes and writes it to `out_column`/`out_type`,
+/// so the value the transform will see is observable before the transform runs.
+/// Returns false when the conversion cannot be applied accurately to every value in `in_column`.
 ///
-/// The function is intentionally conservative and returns false if the transformation cannot be proven
-/// safe for all values in `in_column`. In particular, it will fail if:
-/// - A required type conversion cannot be applied accurately for all values (casts that would produce NULLs).
-/// - Executing the DAG throws for some value from `in_column`.
-/// - The output contains NULLs (Nullable output is allowed only if it contains no NULLs; it is then unwrapped).
-///
-/// If `in_type` differs from `dag.input_type`, we normally cast `in_column` to `dag.input_type` (without
-/// introducing NULLs) and then execute the DAG. However, if the extracted DAG is just a single CAST applied
-/// directly to the input, casting to `dag.input_type` first can be redundant or even unsafe. In this case,
-/// we try to apply the CAST directly to the input column to avoid a lossy round-trip through `dag.input_type`
-/// (e.g. String -> Dynamic -> String).
-///
-/// Examples:
-/// - DAG `p -> cityHash64(p)`:
-///   input:  `['abc']`  type `String`
-///   output: `[cityHash64('abc')]`  type `UInt64`
-/// - DAG `p -> CAST(p, 'UInt8')`:
-///   input:  `['123']`  type `String`
-///   output: `[123]`  type `UInt8`
-static bool applyDeterministicDagToColumn(
+/// `out_transform_applied` reports the direct-CAST fast path: the DAG's only work was a CAST on the input
+/// and this function applied it, so `out_column`/`out_type` are already the transform's output and
+/// `executeDeterministicDag` must not be run on them.
+static bool convertColumnForDeterministicDag(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
     const String & input_name,
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    bool & out_transform_applied)
 {
+    out_transform_applied = false;
+
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
-
-    /// This is the final check for the output column after DAG execution:
-    /// - materialize output column (Const/LowCardinality)
-    /// - reject if any NULLs were created as a result of transformation
-    /// - strip Nullable/LowCardinality wrappers to get the actual column
-    auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
-    {
-        column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-        type = removeLowCardinality(type);
-
-        if (column->isNullable())
-        {
-            const auto & n = assert_cast<const ColumnNullable &>(*column);
-            for (char8_t b : n.getNullMapData())
-                if (b)
-                    return false;
-            column = n.getNestedColumnPtr();
-            type = removeNullable(type);
-        }
-        return true;
-    };
-
-    /// Cast column to target_type and fail if the cast introduces NULLs or is impossible.
-    auto cast_without_nulls = [&](ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type) -> bool
-    {
-        if (canBeSafelyCast(type, target_type))
-        {
-            column = castColumnAccurate({column, type, ""}, target_type);
-            type = target_type;
-            return true;
-        }
-
-        /// `castColumnAccurateOrNull` needs a target that can represent NULLs so a lossy cast is
-        /// observable. `LowCardinality` is only an encoding and is not itself nullable-able, so run
-        /// the accuracy probe against the `LowCardinality`-stripped target; otherwise a key column of
-        /// type `LowCardinality(FixedString)` (and similar) is wrongly rejected here, which silently
-        /// disables partition/key pruning. The requested `target_type` is re-applied afterwards so the
-        /// transform DAG still receives the type it was built against.
-        const DataTypePtr probe_type = removeLowCardinality(target_type);
-
-        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
-        /// passes it and then throws in the cast below.
-        if ((!probe_type->isNullable() && !probe_type->canBeInsideNullable())
-            || !canBeAccurateCastOrNullTarget(probe_type))
-        {
-            /// We cannot apply castColumnAccurateOrNull() because it will throw exception
-            return false;
-        }
-
-        ColumnPtr probe_column;
-        try
-        {
-            probe_column = castColumnAccurateOrNull({column, type, ""}, probe_type);
-        }
-        catch (const Exception &)
-        {
-            /// The OrNull contract applies per value: the cast yields NULL for values that cannot
-            /// be converted, but the conversion between the two types must exist. When it is not
-            /// implemented at all (for example, casting `IPv6` into `FixedString(16)`), building
-            /// the cast throws before any value is seen. There is no single error code for such
-            /// type pairs (`NOT_IMPLEMENTED`, `CANNOT_CONVERT_TYPE`, `TYPE_MISMATCH`, ... depending
-            /// on the target type), so treat any error as "this constant cannot be transformed
-            /// into the key space" and let the caller skip this candidate.
-            return false;
-        }
-
-        const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
-
-        /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
-        for (char8_t b : n.getNullMapData())
-            if (b)
-                return false;
-
-        /// No NULLs were introduced, so every value fits and the probe already holds the converted
-        /// values; reuse them instead of casting the source again. A Nullable target is exactly the
-        /// probe column, a plain target is its nested column.
-        if (probe_type->isNullable())
-            column = probe_column;
-        else
-            column = n.getNestedColumnPtr();
-        type = probe_type;
-
-        /// Only the `LowCardinality` wrapper stripped before the probe may remain; adding it back
-        /// is a lossless dictionary encoding of the already-converted values.
-        if (!probe_type->equals(*target_type))
-        {
-            column = castColumn({column, type, ""}, target_type);
-            type = target_type;
-        }
-
-        return true;
-    };
 
     if (!input_type->equals(*dag.input_type))
     {
@@ -2483,21 +2510,40 @@ static bool applyDeterministicDagToColumn(
             out_column = input_column;
             out_type = input_type;
 
-            if (!input_type->equals(*cast_result_type) && !cast_without_nulls(out_column, out_type, cast_result_type))
+            if (!input_type->equals(*cast_result_type) && !castColumnWithoutNulls(out_column, out_type, cast_result_type))
                 return false;
 
-            return finalize_output_column_and_type(out_column, out_type);
+            return finalizeTransformedColumn(out_column, out_type);
         };
 
         if (try_apply_direct_cast_fast_path())
+        {
+            out_transform_applied = true;
             return true;
+        }
 
-        if (!cast_without_nulls(input_column, input_type, dag.input_type))
+        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
             return false;
     }
 
+    out_column = input_column;
+    out_type = input_type;
+    return true;
+}
+
+
+/// Executes the transform DAG on a column already converted by `convertColumnForDeterministicDag` and
+/// writes the transformed column/type to `out_column`/`out_type`.
+static bool executeDeterministicDag(
+    const DeterministicKeyTransformDag & dag,
+    const ColumnPtr & in_column,
+    const DataTypePtr & in_type,
+    const String & input_name,
+    ColumnPtr & out_column,
+    DataTypePtr & out_type)
+{
     Block block;
-    block.insert({input_column, input_type, input_name});
+    block.insert({in_column, in_type, input_name});
 
     /// This can throw. For example, `ORDER BY toUUID(p)` where p is String.
     /// Then,`WHERE p = 'not-a-uuid'` will throw. Maybe `CAST` function arguments could be checked earlier;
@@ -2515,7 +2561,58 @@ static bool applyDeterministicDagToColumn(
     const auto & res = block.getByName(dag.output_name);
     out_column = res.column;
     out_type = res.type;
-    return finalize_output_column_and_type(out_column, out_type);
+    return finalizeTransformedColumn(out_column, out_type);
+}
+
+
+/// Applies a deterministic key-transform DAG to `in_column` and writes the transformed column/type to
+/// `out_column`/`out_type`.
+/// Intended for transforming constants (or IN-set elements) into "key space", so that the transformed
+/// values can be compared against key marks directly.
+///
+/// The function is intentionally conservative and returns false if the transformation cannot be proven
+/// safe for all values in `in_column`. In particular, it will fail if:
+/// - A required type conversion cannot be applied accurately for all values (casts that would produce NULLs).
+/// - Executing the DAG throws for some value from `in_column`.
+/// - The output contains NULLs (Nullable output is allowed only if it contains no NULLs; it is then unwrapped).
+///
+/// If `in_type` differs from `dag.input_type`, we normally cast `in_column` to `dag.input_type` (without
+/// introducing NULLs) and then execute the DAG. However, if the extracted DAG is just a single CAST applied
+/// directly to the input, casting to `dag.input_type` first can be redundant or even unsafe. In this case,
+/// we try to apply the CAST directly to the input column to avoid a lossy round-trip through `dag.input_type`
+/// (e.g. String -> Dynamic -> String).
+///
+/// Examples:
+/// - DAG `p -> cityHash64(p)`:
+///   input:  `['abc']`  type `String`
+///   output: `[cityHash64('abc')]`  type `UInt64`
+/// - DAG `p -> CAST(p, 'UInt8')`:
+///   input:  `['123']`  type `String`
+///   output: `[123]`  type `UInt8`
+static bool applyDeterministicDagToColumn(
+    const ColumnPtr & in_column,
+    const DataTypePtr & in_type,
+    const String & input_name,
+    const DeterministicKeyTransformDag & dag,
+    ColumnPtr & out_column,
+    DataTypePtr & out_type)
+{
+    ColumnPtr transform_input_column;
+    DataTypePtr transform_input_type;
+    bool transform_applied = false;
+
+    if (!convertColumnForDeterministicDag(
+            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied))
+        return false;
+
+    if (transform_applied)
+    {
+        out_column = transform_input_column;
+        out_type = transform_input_type;
+        return true;
+    }
+
+    return executeDeterministicDag(dag, transform_input_column, transform_input_type, input_name, out_column, out_type);
 }
 
 
@@ -2643,16 +2740,34 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         if (zeroPaddedFixedStringConstantLosesPadding(value, type, candidate.dag.input_type))
             continue;
 
-        bool is_injective = isDeterministicTransformInjective(
-            candidate.dag.actions->getActionsDAG(), expr_name, candidate.dag.output_name);
-
         ColumnPtr const_column = type->createColumnConst(1, value);
 
-        ColumnPtr transformed_const_column;
-        DataTypePtr transformed_const_type;
-        if (!applyDeterministicDagToColumn(
-                const_column, type, expr_name, candidate.dag, transformed_const_column, transformed_const_type))
+        /// Conversion to the transform's input type can turn a `String` constant into a NaN.
+        /// Inspect that value before applying the key expression.
+        ColumnPtr transform_input_column;
+        DataTypePtr transform_input_type;
+        bool transform_applied = false;
+        if (!convertColumnForDeterministicDag(
+                const_column, type, expr_name, candidate.dag,
+                transform_input_column, transform_input_type, transform_applied))
             continue;
+
+        /// A direct `CAST` produces no intermediate value and is not an injective transform.
+        const bool transform_input_has_nan
+            = !transform_applied && anyFieldSatisfies((*transform_input_column)[0], isNaNField);
+
+        ColumnPtr transformed_const_column = transform_input_column;
+        DataTypePtr transformed_const_type = transform_input_type;
+        if (!transform_applied
+            && !executeDeterministicDag(
+                candidate.dag, transform_input_column, transform_input_type, expr_name,
+                transformed_const_column, transformed_const_type))
+            continue;
+
+        /// A NaN equals no value in the predicate's domain. Transforming it to an ordinary key
+        /// value cannot provide an exact atom, even when the key function claims injectivity.
+        const bool atom_is_exact = !transform_input_has_nan && isDeterministicTransformInjective(
+            candidate.dag.actions->getActionsDAG(), expr_name, candidate.dag.output_name);
 
         Field transformed_value = (*transformed_const_column)[0];
 
@@ -2666,7 +2781,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             .key_column_type = std::move(candidate.key_column_type),
             .value = std::move(transformed_value),
             .type = transformed_const_type,
-            .is_injective = is_injective});
+            .atom_is_exact = atom_is_exact});
     }
 
     return result;
@@ -2944,8 +3059,16 @@ static bool tryPrepareSetColumnsForIndex(
 ///     describes at the type level what the constant actually holds, so the caller narrows both to
 ///     the alternatives the constant column occupies before calling here; a bare `Dynamic` reaching
 ///     this check is declined.
+/// `only_permuting_casts` restricts the rule to the casts that make the set element stand for a
+/// *different* value than the one `has` compares at runtime - the by-name mappings, which make the
+/// transformed set miss a matching row. Everything else it rejects is about the set being an exact
+/// image of the predicate rather than an over-approximation of it, which a relaxed atom does not
+/// need: it only reports `can_be_true`, and for that an over-approximation is sound.
 static bool areTypesCompatibleForHasSetIndex(
-    const DataTypePtr & set_element_type, const DataTypePtr & key_column_type, bool within_container = false)
+    const DataTypePtr & set_element_type,
+    const DataTypePtr & key_column_type,
+    bool within_container = false,
+    bool only_permuting_casts = false)
 {
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
@@ -2955,6 +3078,11 @@ static bool areTypesCompatibleForHasSetIndex(
 
     if (set_type->equals(*key_type))
         return true;
+
+    /// The cast between two `Enum` types maps by name while the raw comparison compares the codes, so
+    /// the set element can stand for another code than the row the predicate matches holds.
+    if (isEnum(set_type) && isEnum(key_type))
+        return false;
 
     const bool set_is_native_integer = isNativeInteger(set_type);
     const bool key_is_native_integer = isNativeInteger(key_type);
@@ -2988,7 +3116,7 @@ static bool areTypesCompatibleForHasSetIndex(
     {
         for (const auto & alternative : set_variant_type->getVariants())
         {
-            if (!areTypesCompatibleForHasSetIndex(alternative, key_type, within_container))
+            if (!areTypesCompatibleForHasSetIndex(alternative, key_type, within_container, only_permuting_casts))
                 return false;
         }
         return true;
@@ -3019,7 +3147,7 @@ static bool areTypesCompatibleForHasSetIndex(
 
         for (size_t i = 0; i < set_elements.size(); ++i)
         {
-            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i], /*within_container=*/ true))
+            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i], /*within_container=*/ true, only_permuting_casts))
                 return false;
         }
         return true;
@@ -3029,13 +3157,27 @@ static bool areTypesCompatibleForHasSetIndex(
     const auto * key_array_type = typeid_cast<const DataTypeArray *>(key_type.get());
     if (set_array_type && key_array_type)
         return areTypesCompatibleForHasSetIndex(
-            set_array_type->getNestedType(), key_array_type->getNestedType(), /*within_container=*/ true);
+            set_array_type->getNestedType(), key_array_type->getNestedType(), /*within_container=*/ true, only_permuting_casts);
 
     const auto * set_map_type = typeid_cast<const DataTypeMap *>(set_type.get());
     const auto * key_map_type = typeid_cast<const DataTypeMap *>(key_type.get());
     if (set_map_type && key_map_type)
-        return areTypesCompatibleForHasSetIndex(set_map_type->getKeyType(), key_map_type->getKeyType(), /*within_container=*/ true)
-            && areTypesCompatibleForHasSetIndex(set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true);
+        return areTypesCompatibleForHasSetIndex(
+                   set_map_type->getKeyType(), key_map_type->getKeyType(), /*within_container=*/ true, only_permuting_casts)
+            && areTypesCompatibleForHasSetIndex(
+                   set_map_type->getValueType(), key_map_type->getValueType(), /*within_container=*/ true, only_permuting_casts);
+
+    /** A pair the rule does not describe is accepted for a relaxed atom only when the key side is a
+      * `Dynamic`, which carries the element's value as it is, so the transformed set still
+      * over-approximates what `has` compares at runtime.
+      *
+      * Anything else is declined even for a relaxed atom: relaxing permits false positives in
+      * `can_be_true`, not turning a comparison that raises at runtime - `has([toIPv4('1.2.3.4')], x)`
+      * over a `UInt32` column reports `Cannot compare DB::IPv4 with unsigned long` once a granule
+      * reaches the filter - into an empty result.
+      */
+    if (only_permuting_casts && WhichDataType(key_type).isDynamic())
+        return true;
 
     return false;
 }
@@ -3045,7 +3187,8 @@ static bool areSetAndKeyTypesCompatibleForHas(
     size_t key_args_count,
     const DataTypes & key_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping)
+    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
+    bool only_permuting_casts = false)
 {
     while (set_types.size() < key_args_count)
     {
@@ -3088,7 +3231,7 @@ static bool areSetAndKeyTypesCompatibleForHas(
         /// per-index comparison happens between the children of two `Tuple` `Field`s - with the plain
         /// `Field::operator==`, not the accurate one.
         if (!areTypesCompatibleForHasSetIndex(
-                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1))
+                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1, only_permuting_casts))
             return false;
     }
 
@@ -3151,8 +3294,10 @@ void KeyCondition::extractSetAtomsForKeyArgument(
     const Columns & set_columns,
     const DataTypes & set_types,
     SetIndexAnalysisResult analysis,
+    bool allow_constant_transformation,
     bool allow_wrapped_set_atoms,
-    RPN & out)
+    RPN & out,
+    const DataTypePtr & has_element_type)
 {
     chassert(set_types.size() == set_columns.size());
 
@@ -3161,7 +3306,8 @@ void KeyCondition::extractSetAtomsForKeyArgument(
     auto try_build_atom = [&](std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> atom_indexes_mapping,
                               const std::vector<std::optional<DeterministicKeyTransformDag>> & atom_set_transforming_dags,
                               const DataTypes & atom_data_types,
-                              size_t args_count) -> std::optional<RPNElement>
+                              size_t args_count,
+                              bool atom_is_relaxed) -> std::optional<RPNElement>
     {
         if (atom_indexes_mapping.empty())
             return std::nullopt;
@@ -3178,16 +3324,42 @@ void KeyCondition::extractSetAtomsForKeyArgument(
         /// the array elements of `has`, this branch is never taken.)
         if (args_count == 1 && atom_data_types.size() == 1 && atom_set_columns.size() > 1)
         {
-            DataTypePtr key_type = removeNullable(atom_data_types[0]);
+            /// The transformed set must match the key expression's input layout.
+            const bool key_is_transformed = atom_set_transforming_dags[0].has_value();
+            DataTypePtr key_type = removeNullable(
+                key_is_transformed ? atom_set_transforming_dags[0]->input_type : atom_data_types[0]);
             if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
             {
                 if (key_tuple_type->getElements().size() == atom_set_types.size())
                 {
+                    const auto * result_tuple_type
+                        = typeid_cast<const DataTypeTuple *>(removeNullable(atom_data_types[0]).get());
+                    const bool repacked_only_by_transform_input = key_is_transformed
+                        && !(result_tuple_type && result_tuple_type->getElements().size() == atom_set_types.size());
+
+                    /// A transform such as `toString` may claim injectivity while collapsing NaN
+                    /// payloads or repeated local hours. Repacking solely for its input therefore
+                    /// provides only a relaxed positive membership condition.
+                    if (repacked_only_by_transform_input)
+                    {
+                        if (!allow_constant_transformation)
+                            return std::nullopt;
+                        atom_is_relaxed = true;
+                    }
+
                     atom_set_columns = {ColumnTuple::create(atom_set_columns)};
                     atom_set_types = {std::make_shared<DataTypeTuple>(atom_set_types)};
                 }
             }
         }
+
+        /// A relaxed `has` atom still needs a sound positive condition. Casts that permute
+        /// named tuple fields or enum codes can otherwise remove matching values from the set.
+        /// Validate each mapping, including the packed-tuple and additional wrapped atoms.
+        if (has_element_type && !areSetAndKeyTypesCompatibleForHas(
+                {has_element_type}, args_count, atom_data_types, atom_set_transforming_dags,
+                atom_indexes_mapping, /*only_permuting_casts=*/ atom_is_relaxed))
+            return std::nullopt;
 
         if (!tryPrepareSetColumnsForIndex(
                 atom_set_columns,
@@ -3199,6 +3371,7 @@ void KeyCondition::extractSetAtomsForKeyArgument(
             return std::nullopt;
 
         RPNElement element;
+        element.relaxed = atom_is_relaxed;
         element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(atom_indexes_mapping));
 
         /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
@@ -3215,24 +3388,17 @@ void KeyCondition::extractSetAtomsForKeyArgument(
     };
 
     if (auto atom = try_build_atom(
-            std::move(analysis.indexes_mapping), analysis.set_transforming_dags, analysis.data_types, analysis.args_count))
-    {
-        /// Propagate relaxation from analyzePredicateExpressionForSetIndex (non-injective deterministic transforms).
-        if (analysis.is_relaxed)
-            atom->relaxed = true;
+            std::move(analysis.indexes_mapping), analysis.set_transforming_dags, analysis.data_types,
+            analysis.args_count, analysis.is_relaxed))
         out.emplace_back(std::move(*atom));
-    }
 
     if (auto atom = try_build_atom(
             std::move(analysis.whole_tuple_indexes_mapping),
             analysis.whole_tuple_set_transforming_dags,
             analysis.whole_tuple_data_types,
-            1))
-    {
-        if (analysis.whole_tuple_is_relaxed)
-            atom->relaxed = true;
+            1,
+            analysis.whole_tuple_is_relaxed))
         out.emplace_back(std::move(*atom));
-    }
 
     /// This records the key columns that are already covered by the direct atom.
     /// The wrapped-set candidates below only fill in the columns that have no atom yet,
@@ -3274,19 +3440,13 @@ void KeyCondition::extractSetAtomsForKeyArgument(
             DataTypes candidate_data_types;
             candidate_data_types.emplace_back(candidate.key_column_type);
 
+            /// A non-injective transform supplies only a necessary membership condition.
+            /// `try_build_atom` also relaxes mappings that cover only some tuple components.
             auto candidate_atom = try_build_atom(
-                std::move(candidate_indexes_mapping), candidate_dags, candidate_data_types, analysis.args_count);
+                std::move(candidate_indexes_mapping), candidate_dags, candidate_data_types,
+                analysis.args_count, !is_injective);
             if (!candidate_atom)
                 continue;
-
-            /// A non-injective transform relaxes the atom: the transformed set only describes a
-            /// superset of the matching values. An injective transform of a scalar predicate is
-            /// exact (`f(s) IN f(set)` is equivalent to `s IN set`), which lets negated membership
-            /// prune through this atom. An injective transform of one tuple component is still
-            /// only a necessary condition of the tuple membership; `try_build_atom` has already
-            /// marked such atoms relaxed through the mapping-size rule.
-            if (!is_injective)
-                candidate_atom->relaxed = true;
 
             for (size_t column_idx : candidate_atom->key_columns)
                 if (column_idx < has_atom_for_key_column.size())
@@ -3350,7 +3510,9 @@ void KeyCondition::tryPrepareSetAtomsForIn(
     const auto set_columns = prepared_set->getSetElements();
     const auto set_types = future_set->getTypes();
 
-    extractSetAtomsForKeyArgument(left_arg, info, set_columns, set_types, std::move(analysis), allow_wrapped_set_atoms, out);
+    extractSetAtomsForKeyArgument(
+        left_arg, info, set_columns, set_types, std::move(analysis),
+        allow_constant_transformation, allow_wrapped_set_atoms, out);
 }
 
 /// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
@@ -3408,7 +3570,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
 
     /// Wrapped-set atoms are extra atoms for the same predicate leaf, so building them requires
     /// both the relaxed-atom permission and the multiple-key-columns-per-condition analysis.
-    bool allow_wrapped_set_atoms = allow_constant_transformation && multiple_key_columns_per_condition;
+    const bool allow_wrapped_set_atoms = allow_constant_transformation && multiple_key_columns_per_condition;
 
     /// If no direct key mapping was found AND the wrapped-candidates pass of
     /// `extractSetAtomsForKeyArgument` cannot produce anything either, return early. This mirrors
@@ -3501,25 +3663,13 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     if (element_type_is_from_column && contains_float(checked_element_type))
         return;
 
-    /// The raw `Field` comparison of `has` and the accurate cast of `MergeTreeSetIndex` have to
-    /// agree, otherwise an exact atom could prune rows that satisfy the predicate under `notHas`.
-    /// A mapping that is already relaxed is only a necessary condition and cannot be used for that,
-    /// so it stays; but the wrapped-set pass may still add an exact atom, so it is switched off.
-    if (!areSetAndKeyTypesCompatibleForHas(
-            {checked_element_type}, analysis.args_count, analysis.data_types, analysis.set_transforming_dags,
-            analysis.indexes_mapping))
-    {
-        if (!analysis.is_relaxed)
-            return;
-
-        allow_wrapped_set_atoms = false;
-    }
-
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
-    extractSetAtomsForKeyArgument(key_arg, info, set_columns, set_types, std::move(analysis), allow_wrapped_set_atoms, out);
+    extractSetAtomsForKeyArgument(
+        key_arg, info, set_columns, set_types, std::move(analysis),
+        allow_constant_transformation, allow_wrapped_set_atoms, out, checked_element_type);
 }
 
 
@@ -3749,11 +3899,11 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChainImpl(
         {
             for (size_t i = 0, size = curve.arguments.size(); i < size; ++i)
             {
-                if (curve.arguments[i] == name)
+                if (curve.arguments[i].name == name)
                 {
                     out_key_column_num = curve.key_column_pos;
                     out_argument_num_of_space_filling_curve = i;
-                    out_key_column_type = sample_block.getByName(name).type;
+                    out_key_column_type = curve.arguments[i].type;
                     return true;
                 }
             }
@@ -4989,7 +5139,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             key_arg, info, const_value, const_type);
 
         for (const auto & transformed : transformed_candidates)
-            add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ !transformed.is_injective);
+            add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ !transformed.atom_is_exact);
     }
 
     if (candidates.empty())
@@ -5154,6 +5304,11 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             }
         }
 
+        /// The range endpoint must follow SQL comparison semantics, which do not order NaNs
+        /// after finite values as the `Field` total order does.
+        if (anyFieldSatisfies(candidate_const_value, isNaNField))
+            return std::nullopt;
+
         /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5".
         if (is_constant_transformed)
             relaxComparisonForTransformedConstant(candidate_func_name);
@@ -5244,10 +5399,12 @@ void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN
 {
     Field const_value;
     DataTypePtr const_type;
-    if (!node.tryGetConstant(const_value, const_type))
+    /// Constants without a boolean reading can occur inside `indexHint`, whose arguments
+    /// are never evaluated. Such constants provide no information about matching rows.
+    if (!node.tryGetConstant(const_value, const_type) || !const_type->canBeUsedInBooleanContext())
         return;
 
-    /// For cases where it says, for example, `WHERE 0 AND something`
+    /// For cases where it says, for example, `WHERE 0 AND something`.
     if (const_value.isNull())
         out.emplace_back(RPNElement::ALWAYS_FALSE);
     else if (const_value.getType() == Field::Types::UInt64)
@@ -5283,7 +5440,9 @@ void KeyCondition::extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, con
     /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
     /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
     /// reverts to reading and filtering those rows, which is correct.
-    if (node_type->isNullable() || !(isInteger(node_type) || isFloat(node_type)))
+    /// Wide integers and `BFloat16` have no boolean reading, so treating them as `key != 0`
+    /// would allow pruning rows for a predicate the row-level filter rejects.
+    if (node_type->isNullable() || !node_type->canBeUsedInBooleanContext())
         return;
 
     /// `notEquals` is in `no_relaxed_atom_functions`, so the relaxed monotonic constant
@@ -6228,6 +6387,9 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    if (functions.empty())
+        return key_range;
+
     /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
     current_type = recursiveRemoveLowCardinality(current_type);
@@ -7280,52 +7442,23 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
-                Range key_range = sparse_hyperrectangle[sparse_pos];
+                /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
+                /// the helper returns the range unchanged.
+                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+                    sparse_hyperrectangle[sparse_pos],
+                    element.monotonic_functions_chain,
+                    sparse_data_types[sparse_pos],
+                    single_point);
 
-                /// The case when the column is wrapped in a chain of possibly monotonic functions.
-                if (!element.monotonic_functions_chain.empty())
+                if (!new_range)
                 {
-                    std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                        key_range,
-                        element.monotonic_functions_chain,
-                        sparse_data_types[sparse_pos],
-                        single_point);
-
-                    if (!new_range)
-                    {
-                        /// Cannot determine monotonicity on this range – unknown.
-                        rpn_stack.emplace_back(true, true);
-                    }
-                    else
-                    {
-                        key_range = *new_range;
-
-                        bool intersects = element.range.intersectsRange(key_range);
-                        bool contains   = element.range.containsRange(key_range);
-
-                        /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-                        /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-                        /// analysis may incorrectly include NaN values.
-                        /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-                        ///   so no comparison condition can be true.
-                        /// - If only right bound is NaN: the range extends into NaN territory,
-                        ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                        if (unlikely(key_range.left.isNaN()))
-                        {
-                            intersects = false;
-                            contains = false;
-                        }
-                        else if (unlikely(key_range.right.isNaN()))
-                        {
-                            contains = false;
-                        }
-
-                        rpn_stack.emplace_back(intersects, !contains);
-                        /// we don't create bloom_filter_data if monotonic_functions_chain is present
-                    }
+                    /// Cannot determine monotonicity on this range – unknown.
+                    rpn_stack.emplace_back(true, true);
                 }
                 else
                 {
+                    const Range & key_range = *new_range;
+
                     bool intersects = element.range.intersectsRange(key_range);
                     bool contains = element.range.containsRange(key_range);
 
@@ -7347,7 +7480,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     }
 
                     rpn_stack.emplace_back(intersects, !contains);
-
                 }
             }
 
