@@ -209,7 +209,7 @@ void StorageSet::checkNoRowPolicy(const ContextPtr & context) const
 
     if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Cannot use table {} on the right side of IN because a row policy is applied on it. "
+            "Cannot use table {} on the right side of IN because a row policy applies to it. "
             "The Set engine has no read path that could filter the rows",
             storage_id.getNameForLogs());
 }

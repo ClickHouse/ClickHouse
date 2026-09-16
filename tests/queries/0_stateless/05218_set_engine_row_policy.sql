@@ -1,6 +1,5 @@
--- A row policy on a `Set` table cannot be applied: the right side of `IN` consumes the prebuilt set as a whole,
--- and the engine has no read path that could filter it. Such a query must fail instead of silently
--- returning the rows the policy hides.
+-- `IN` consumes a `Set` table as a whole and the engine has no read path that could filter it, so a row
+-- policy on the table cannot be applied. Such a query must fail instead of returning the rows the policy hides.
 
 DROP TABLE IF EXISTS set_rp;
 DROP TABLE IF EXISTS mt_rp;

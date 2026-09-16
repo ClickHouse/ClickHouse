@@ -265,8 +265,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 
-        /// The initiator has already refused a policed set, but this replica resolves the name against
-        /// its own tables and policies.
+        /// The initiator ran this check against its own policies; the replica's may differ.
         storage_set->checkNoRowPolicy(context);
 
         /// The `StorageSet` this replica resolved the name to, so its set is mutable like any other.
