@@ -59,7 +59,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
 
     /// First column's marks file is used for loadIndexGranularity, so it is better to have it first.
     const auto & part_columns = getColumns();
-    auto first_column_file = getFileNameForColumn(part_columns.front());
+    auto first_column_file = getFirstFileNameForColumn(part_columns.front());
     if (first_column_file)
         preferred_order.push_back(*first_column_file + getMarksFileExtension());
 
@@ -78,7 +78,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     /// Move all marks for the rest of columns before all data files.
     for (auto column_it = std::next(part_columns.begin()); column_it != part_columns.end(); ++column_it)
     {
-        auto column_file = getFileNameForColumn(*column_it);
+        auto column_file = getFirstFileNameForColumn(*column_it);
         if (column_file)
             preferred_order.push_back(*column_file + getMarksFileExtension());
     }
@@ -316,7 +316,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     if (getColumns().empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    auto any_column_filename = getFileNameForColumn(getColumns().front());
+    auto any_column_filename = getFirstFileNameForColumn(getColumns().front());
     if (!any_column_filename)
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
             "There are no files for column {} in part {}",
@@ -613,24 +613,47 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
     }
 }
 
-std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
+std::optional<String> MergeTreeDataPartWide::getFirstFileNameForColumn(const NameAndTypePair & column) const
 {
+    const auto & part_columns_substreams = getColumnsSubstreams();
+    if (!part_columns_substreams.empty())
+    {
+        const auto * substreams = part_columns_substreams.tryGetColumnSubstreams(column.name);
+        if (!substreams || substreams->empty())
+            return std::nullopt;
+
+        /// This method may be called when checksums are not initialized yet.
+        if (!checksums.empty())
+            return getStreamNameOrHash((*substreams)[0], DATA_FILE_EXTENSION, checksums);
+
+        return getStreamNameOrHash((*substreams)[0], DATA_FILE_EXTENSION, getDataPartStorage());
+    }
+
     std::optional<String> filename;
 
-    /// Fallback for the case when serializations was not loaded yet (called from loadColumns())
-    if (getSerializations().empty())
-        return getStreamNameForColumn(column, {}, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
+    /// Fallback when serializations are not loaded yet (called from loadColumns()).
+    SerializationPtr serialization = getSerializations().empty() ? column.type->getDefaultSerialization() : getSerialization(column.name);
 
-    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    ISerialization::StreamFileNameSettings stream_settings(*storage.getSettings());
+    ISerialization::StreamFileNameSettings unshared_settings = stream_settings;
+    unshared_settings.share_nested_offsets = false;
+
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        if (!filename.has_value())
-        {
-            /// This method may be called when checksums are not initialized yet.
-            if (!checksums.empty())
-                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-            else
-                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
-        }
+        if (filename.has_value())
+            return;
+
+        /// A stream whose name changes when offset sharing is turned off is named after the Nested
+        /// table, so it exists as soon as any sibling has data and cannot witness this column.
+        if (ISerialization::getFileNameForStream(column, substream_path, stream_settings)
+            != ISerialization::getFileNameForStream(column, substream_path, unshared_settings))
+            return;
+
+        /// This method may be called when checksums are not initialized yet.
+        if (!checksums.empty())
+            filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+        else
+            filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
     });
 
     return filename;
