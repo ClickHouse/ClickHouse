@@ -61,8 +61,10 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS};
 
-    INSERT INTO t_stats_copy VALUES (1, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
-    INSERT INTO t_stats_copy VALUES (2, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+    INSERT INTO t_stats_copy SETTINGS materialize_statistics_on_insert = 1
+        VALUES (1, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+    INSERT INTO t_stats_copy SETTINGS materialize_statistics_on_insert = 1
+        VALUES (2, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
     OPTIMIZE TABLE t_stats_copy FINAL;
     SELECT name, statistics FROM system.columns WHERE database = currentDatabase() AND table = 't_stats_copy' AND name = 't';
     SELECT count() FROM t_stats_copy;
@@ -89,8 +91,10 @@ ${CLICKHOUSE_CLIENT} -q "
     ENGINE = MergeTree ORDER BY k
     SETTINGS ${COMMON_SETTINGS};
 
-    INSERT INTO t_stats_lwd VALUES (1, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)), (2, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
-    INSERT INTO t_stats_lwd VALUES (3, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)), (4, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+    INSERT INTO t_stats_lwd SETTINGS materialize_statistics_on_insert = 1
+        VALUES (1, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)), (2, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+    INSERT INTO t_stats_lwd SETTINGS materialize_statistics_on_insert = 1
+        VALUES (3, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)), (4, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
     DELETE FROM t_stats_lwd WHERE k % 2 = 0;
     OPTIMIZE TABLE t_stats_lwd FINAL;
     SELECT name, statistics FROM system.columns WHERE database = currentDatabase() AND table = 't_stats_lwd' AND name = 't';

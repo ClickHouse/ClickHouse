@@ -52,8 +52,10 @@ ${CLICKHOUSE_CLIENT} -q "
         auto_statistics_types = 'basic, uniq_v2',
         allow_experimental_vertical_merge_tuple_subcolumns = 1;
 
-    INSERT INTO t_auto_basic VALUES (1, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
-    INSERT INTO t_auto_basic VALUES (2, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+    INSERT INTO t_auto_basic SETTINGS materialize_statistics_on_insert = 1
+        VALUES (1, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+    INSERT INTO t_auto_basic SETTINGS materialize_statistics_on_insert = 1
+        VALUES (2, (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
     OPTIMIZE TABLE t_auto_basic FINAL;
     SELECT name, statistics FROM system.columns WHERE database = currentDatabase() AND table = 't_auto_basic' AND name = 't';
     SELECT count() FROM t_auto_basic;

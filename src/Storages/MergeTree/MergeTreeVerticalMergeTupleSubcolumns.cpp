@@ -387,18 +387,18 @@ void foldLeafDataIntoParent(
     SerializationInfo & info,
     const DataTypePtr & type,
     const String & current_name,
-    const String & leaf_name,
-    const SerializationInfo & leaf_info)
+    const SerializationInfoByName & leaf_infos)
 {
-    if (current_name == leaf_name)
+    const auto * tuple_type = Nested::tryGetFlattenableTuple(type);
+    if (!tuple_type)
     {
-        info.replaceData(leaf_info);
+        if (auto leaf_info = leaf_infos.tryGet(current_name))
+            info.replaceData(*leaf_info);
         return;
     }
 
-    const auto * tuple_type = Nested::tryGetFlattenableTuple(type);
     auto * tuple_info = typeid_cast<SerializationInfoTuple *>(&info);
-    if (!tuple_type || !tuple_info)
+    if (!tuple_info)
         return;
 
     const auto & element_names = tuple_type->getElementNames();
@@ -406,8 +406,7 @@ void foldLeafDataIntoParent(
     for (size_t i = 0; i < element_names.size(); ++i)
     {
         const String child_name = Nested::concatenateName(current_name, element_names[i]);
-        if (leaf_name == child_name || leaf_name.starts_with(child_name + "."))
-            foldLeafDataIntoParent(*tuple_info->getElementInfo(i), element_types[i], child_name, leaf_name, leaf_info);
+        foldLeafDataIntoParent(*tuple_info->getElementInfo(i), element_types[i], child_name, leaf_infos);
     }
 }
 
@@ -480,8 +479,8 @@ void commitFlattenedTupleGroupMetadata(
             parent.name);
     }
 
-    for (const auto & [leaf_name, leaf_info] : leaf_infos)
-        foldLeafDataIntoParent(*parent_info, parent.type, parent.name, leaf_name, *leaf_info);
+    if (!leaf_infos.empty())
+        foldLeafDataIntoParent(*parent_info, parent.type, parent.name, leaf_infos);
 
     setTupleNodesInexact(*parent_info, parent.type, gathered_rows);
 }
