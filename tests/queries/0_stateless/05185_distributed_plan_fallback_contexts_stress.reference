@@ -25,6 +25,8 @@
 1
 1
 70000
+40001
+20001
 0	1
 1	1
 2	1
@@ -61,6 +63,8 @@ m2	33
 05185_dpc_29_explain_pipeline	0	['aggregation with a global GROUP BY limit (max_rows_to_group_by)']	[]
 05185_dpc_30_explain_estimate	0	['aggregation with a global GROUP BY limit (max_rows_to_group_by)']	[]
 05185_dpc_31_alter_delete	0	['ReadFromPreparedSource']	[]
+05185_dpc_31b_alter_delete_set_over_view	0	['ReadFromPreparedSource']	[]
+05185_dpc_31c_alter_delete_nested_set	0	['ReadFromPreparedSource']	[]
 05185_dpc_32_time_series_read	0	['ReadFromTimeSeries']	[]
 05185_dpc_33_time_series_filter_set	0	['aggregation with a global GROUP BY limit (max_rows_to_group_by)']	[]
 05185_dpc_positive_top_level	1
