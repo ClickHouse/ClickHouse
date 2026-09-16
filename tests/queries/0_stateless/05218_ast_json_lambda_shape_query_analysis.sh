@@ -41,3 +41,8 @@ run_json NUMBER_OF_ARGUMENTS_DOESNT_MATCH "$INDEX_JSON"
 #    `is_lambda_function` and the boundary check on that flag never inspects it.
 INDEX_JSON_TUPLE=$(${CLICKHOUSE_LOCAL} -q "SELECT replace(parseQueryToJSON('CREATE TABLE t (a UInt8, INDEX idx lambda(tuple(a), a) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY a'), '\"name\":\"tuple\",\"arguments\":{\"type\":\"ExpressionList\",\"children\":[{\"type\":\"Identifier\",\"name\":\"a\"}]}', '\"name\":\"tuple\"') FORMAT TSVRaw")
 run_json TYPE_MISMATCH "$INDEX_JSON_TUPLE"
+
+# 5. `CREATE FUNCTION` restores its core through the untyped `readChild`, and the validation that
+#    registration performs on it tests nothing about the node beyond `as<ASTFunction>()`, so neither
+#    the `is_lambda_function` boundary check nor a name test guards the argument list it then reads.
+run_json BAD_ARGUMENTS '{"type":"CreateSQLFunctionQuery","function_name":{"type":"Identifier","name":"udf_shape"},"function_core":{"type":"Function","name":"lambda"}}'

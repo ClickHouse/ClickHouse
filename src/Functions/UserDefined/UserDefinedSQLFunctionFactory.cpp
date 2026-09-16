@@ -71,10 +71,10 @@ namespace
         if (!lambda_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got: {}", function->formatForErrorMessage());
 
-        auto & lambda_function_expression_list = lambda_function->arguments->children;
-
-        if (lambda_function_expression_list.size() != 2)
+        if (!lambda_function->arguments || lambda_function->arguments->children.size() != 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have arguments and body");
+
+        auto & lambda_function_expression_list = lambda_function->arguments->children;
 
         const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
 
