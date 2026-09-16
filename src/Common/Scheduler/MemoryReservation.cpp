@@ -158,6 +158,7 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
         ResourceCost pending_decrease = 0;
         std::shared_ptr<MemorySpillScheduler> recovery_scheduler;
         UInt64 observed_recovery_epoch = 0;
+        auto recovery_deadline = std::chrono::steady_clock::time_point::max();
         bool recovery_timed_out = false;
         {
             std::unique_lock lock(mutex);
@@ -173,9 +174,11 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
             {
                 recovery_scheduler = memory_spill_scheduler.lock();
                 observed_recovery_epoch = recovery_epoch;
-                recovery_timed_out = settings.suction_queue_timeout_ms > 0
-                    && std::chrono::steady_clock::now() - recovery_started_at
-                        >= std::chrono::milliseconds(settings.suction_queue_timeout_ms);
+                if (settings.suction_queue_timeout_ms > 0)
+                {
+                    recovery_deadline = recovery_started_at + std::chrono::milliseconds(settings.suction_queue_timeout_ms);
+                    recovery_timed_out = std::chrono::steady_clock::now() >= recovery_deadline;
+                }
             }
 
             // Make sure reservation size is always respected. Decreases are approved asynchronously,
@@ -208,7 +211,16 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
         if (recovery_scheduler && observed_recovery_epoch != 0)
         {
             if (!recovery_timed_out)
-                recovery_scheduler->executeForcedSpill(observed_recovery_epoch);
+            {
+                if (recovery_deadline == std::chrono::steady_clock::time_point::max())
+                    recovery_scheduler->executeForcedSpill(observed_recovery_epoch);
+                else
+                    recovery_scheduler->executeForcedSpillUntil(observed_recovery_epoch, recovery_deadline);
+            }
+
+            if (recovery_deadline != std::chrono::steady_clock::time_point::max())
+                recovery_timed_out = std::chrono::steady_clock::now() >= recovery_deadline;
+
             const auto result = recovery_scheduler->getForcedSpillResult(observed_recovery_epoch);
             if (result.outcome != MemorySpillScheduler::ForcedSpillOutcome::Pending || recovery_timed_out)
             {
