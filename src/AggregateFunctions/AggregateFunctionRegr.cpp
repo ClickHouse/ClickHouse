@@ -273,8 +273,6 @@ struct RegrMoments
         count += rhs.count;
     }
 
-    /// Field by field: whenever sizeof(TX) + sizeof(TY) is not a multiple of 8 the layout has
-    /// padding between count and the sums, and padding is not part of the value.
     void write(WriteBuffer & buf) const
     {
         writeBinaryLittleEndian(count, buf);
