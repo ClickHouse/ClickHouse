@@ -757,6 +757,22 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         .pipeline_dump = std::move(pipeline_dump)};
 }
 
+static Context::AuditLogTypes classifyAuditType(IAST::QueryKind query_kind, const IAST * ast);
+
+bool decideAuditLog(const ContextPtr & context, const ASTPtr & ast, bool internal, bool audit_internal)
+{
+    if (internal && !audit_internal)
+        return false;
+
+    if (!getAuditLog())
+        return false;
+
+    /// Mirrors `QueryLogElement::query_kind`, which stays default-initialized when there is no AST
+    /// (a query that failed to parse, see `logExceptionBeforeStart`).
+    const IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::None;
+    return context->isEnabledAuditType(classifyAuditType(query_kind, ast.get()));
+}
+
 static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -767,7 +783,7 @@ static void logQueryFinishImpl(
     QueryResultCacheUsage query_result_cache_usage,
     bool internal,
     bool log_as_internal,
-    bool audit_internal,
+    bool audit,
     std::chrono::system_clock::time_point time)
 {
     const Settings & settings = context->getSettingsRef();
@@ -878,7 +894,7 @@ static void logQueryFinishImpl(
     if (!query_pipeline_finalized_info.processors_profile_infos.empty())
         logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
 
-    if (!internal || audit_internal)
+    if (audit)
         auditLog(elem, context, query_ast);
 }
 
@@ -892,11 +908,11 @@ void logQueryFinish(
     QueryResultCacheUsage query_result_cache_usage,
     bool internal,
     bool log_as_internal,
-    bool audit_internal)
+    bool audit)
 {
     const auto time_now = std::chrono::system_clock::now();
     auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
-    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, audit_internal, time_now);
+    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, audit, time_now);
 }
 
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
@@ -936,7 +952,7 @@ void logQueryException(
     bool internal,
     bool log_as_internal,
     bool log_error,
-    bool audit_internal)
+    bool audit)
 {
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries];
@@ -998,7 +1014,7 @@ void logQueryException(
         query_span->finish(time_now);
     }
 
-    if (!internal || audit_internal)
+    if (audit)
         auditLog(elem, context, query_ast);
 }
 
@@ -1011,7 +1027,7 @@ void logExceptionBeforeStart(
     UInt64 elapsed_milliseconds,
     bool internal,
     bool log_as_internal,
-    bool audit_internal)
+    bool audit)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -1141,7 +1157,7 @@ void logExceptionBeforeStart(
     /// Audit queries that fail before execution starts (malformed SQL, early DDL/DML failures).
     /// These never reach logQueryFinish/logQueryException, so without this they would be missing
     /// from the audit trail even though they appear in system.query_log.
-    if (!internal || audit_internal)
+    if (audit)
         auditLog(elem, context, ast);
 }
 
@@ -1358,18 +1374,19 @@ static Context::AuditLogTypes classifyAuditType(IAST::QueryKind query_kind, cons
 /// only if it actually ran; the wrapper produces one record of its own (`EXECUTE AS` as DCL, since
 /// impersonation is an access-control event; `PARALLEL WITH` as MISC) carrying the outcome of the
 /// query as a whole.
+///
+/// Whether the query is audited at all was decided by `decideAuditLog` when the query was admitted.
+/// The runtime gate and the type mask are deliberately not consulted again here: they may have been
+/// changed since, possibly by this very query (`SYSTEM RELOAD CONFIG`), and the audit trail must
+/// reflect the policy under which the query was admitted.
 void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
 {
-    auto * audit_log = DB::getAuditLog();
+    auto * audit_log = getGlobalAuditLog();
     if (!audit_log)
         return;
 
     const IAST::QueryKind query_kind = elem.query_kind;
     const Context::AuditLogTypes audit_type = classifyAuditType(query_kind, ast.get());
-
-    /// Check if audit type enabled for logging
-    if (!context->isEnabledAuditType(audit_type))
-        return;
 
     String object_names; /// tables / views / databases
     if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
@@ -2980,9 +2997,23 @@ static BlockIO executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, audit_internal);
+        logExceptionBeforeStart(
+            query_for_logging,
+            normalized_query_hash,
+            context,
+            out_ast,
+            query_span,
+            start_watch.elapsedMilliseconds(),
+            internal,
+            log_as_internal,
+            decideAuditLog(context, out_ast, internal, audit_internal));
         throw;
     }
+
+    /// The query is admitted: decide now, before anything executes, whether it is audited. The
+    /// decision must not depend on the state the query leaves behind (`SYSTEM RELOAD CONFIG`) or
+    /// on reloads that happen while it runs.
+    const bool audit = decideAuditLog(context, out_ast, internal, audit_internal);
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
@@ -3665,13 +3696,13 @@ static BlockIO executeQueryImpl(
                                     query_result_cache_usage,
                                     internal,
                                     log_as_internal,
-                                    audit_internal,
+                                    audit,
                                     implicit_tcl_executor,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, audit_internal, finish_time);
+                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, audit, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3680,7 +3711,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, audit_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, audit, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3698,7 +3729,7 @@ static BlockIO executeQueryImpl(
                         my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
                 }
 
-                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error, audit_internal);
+                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error, audit);
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
@@ -3717,7 +3748,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, audit_internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, audit);
 
         throw;
     }

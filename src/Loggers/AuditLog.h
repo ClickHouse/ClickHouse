@@ -64,6 +64,12 @@ void setAuditLoggingEnabled(bool enabled);
 /// Unlike getAuditLog, this ignores the allow_audit_logging flag.
 bool hasGlobalAuditLog();
 
+/// The writer regardless of the runtime gate (nullptr only if none was ever created). For writing
+/// records whose emission was already decided from the policy in effect when the query was admitted
+/// (see `decideAuditLog`): a `SYSTEM RELOAD CONFIG` that turns the gate off in the meantime must not
+/// make those records disappear. The writer is never destroyed once created.
+AuditLog * getGlobalAuditLog();
+
 }
 
 #define LOG_AUDIT(audit_log_ptr, ...) do                                                                    \

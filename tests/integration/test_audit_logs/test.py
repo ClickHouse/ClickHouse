@@ -659,6 +659,60 @@ def test_audit_log_reload_remove_sink(start_cluster):
     node_reload.query("SYSTEM RELOAD CONFIG")
 
 
+def test_audit_log_reload_records_the_statement_that_disables_its_own_type(start_cluster):
+    """`SYSTEM RELOAD CONFIG` is a `MISC` statement. When the reload it applies removes `MISC` from
+    `logger.auditlog_types`, the statement must still be recorded: whether a query is audited is
+    decided from the policy in effect when the query is admitted, not from the policy the query
+    itself leaves behind. The MISC statements that follow the reload must not be recorded."""
+    marker = f"audit_reload_misc_{uuid.uuid4().hex[:8]}"
+
+    # Enable audit logging with MISC on (the previous reload tests leave the flag disabled and the types at DDL).
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+    )
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<auditlog_types>DDL</auditlog_types>",
+        "<auditlog_types>DDL,MISC</auditlog_types>",
+    )
+    node_reload.query("SYSTEM RELOAD CONFIG")
+
+    # Sanity: MISC statements are recorded now.
+    node_reload.query(f"USE default /* {marker}_before */")
+    assert_audit_log_contain_with_retry(node_reload, f"{marker}_before")
+
+    # The reload that removes MISC must record itself, under the policy it was admitted with.
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<auditlog_types>DDL,MISC</auditlog_types>",
+        "<auditlog_types>DDL</auditlog_types>",
+    )
+    node_reload.query(f"SYSTEM RELOAD CONFIG /* {marker}_switch */")
+    assert_audit_log_contain_with_retry(node_reload, f"{marker}_switch")
+    switch_record = node_reload.grep_in_log(f"{marker}_switch", from_host=True, filename="clickhouse-server.audit.log")
+    assert "MISC, System, 0," in switch_record, f"The reload that disabled MISC must be recorded as a successful MISC statement, got: {switch_record}"
+
+    # MISC is off from now on: a later MISC statement leaves no record, while DDL is still recorded.
+    # The DDL record following it in the file proves the MISC statement had its chance to be written.
+    node_reload.query(f"USE default /* {marker}_after */")
+    node_reload.query(f"CREATE TABLE {marker}_ddl(a int) ENGINE=Memory")
+    assert_audit_log_contain_with_retry(node_reload, f"{marker}_ddl")
+    assert not node_reload.contains_in_log(
+        f"{marker}_after", from_host=True, filename="clickhouse-server.audit.log"
+    ), "MISC statement after the reload that disabled MISC must not appear in the audit log"
+
+    # Restore the config so later tests (and reruns) see the original state.
+    node_reload.query(f"DROP TABLE {marker}_ddl")
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+    )
+    node_reload.query("SYSTEM RELOAD CONFIG")
+
+
 def test_audit_log_reload_recovers_after_failed_open(start_cluster):
     """Enabling audit with an unusable `logger.auditlog` path makes the writer fail to open.
     The failure must not leave a half-initialized writer behind: after the operator fixes the

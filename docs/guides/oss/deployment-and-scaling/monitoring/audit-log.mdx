@@ -76,6 +76,12 @@ The wrapper itself produces one more record carrying the outcome of the query as
 `logger.auditlog_types`, and it can also enable audit logging for the first time, or disable it
 again by removing or emptying `logger.auditlog`.
 
+Whether a statement is audited is decided from the configuration in effect when the statement is
+admitted, before it executes, and does not change afterwards. A `SYSTEM RELOAD CONFIG` that
+disables audit logging, or removes `MISC` from `logger.auditlog_types`, is therefore itself
+recorded, and a reload never adds or removes the records of statements that were already running
+when it was applied.
+
 Changing the audit file *path* of an already-running audit log requires a server restart: the
 writer is deliberately never torn down while the server is running, so that concurrent audit
 writes cannot use a destroyed writer.

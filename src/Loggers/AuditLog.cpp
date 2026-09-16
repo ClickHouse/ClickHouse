@@ -53,6 +53,11 @@ bool hasGlobalAuditLog()
     return global_audit_log.load(std::memory_order_acquire) != nullptr;
 }
 
+AuditLog * getGlobalAuditLog()
+{
+    return global_audit_log.load(std::memory_order_acquire);
+}
+
 
 AuditLog::AuditLog(bool, size_t)
 {
