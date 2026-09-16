@@ -1756,15 +1756,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         const Names sorting_key_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
         const Names partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
-        auto is_key_column = [&](const String & name)
-        {
-            return std::find(sorting_key_columns.begin(), sorting_key_columns.end(), name) != sorting_key_columns.end()
-                || std::find(partition_key_columns.begin(), partition_key_columns.end(), name) != partition_key_columns.end();
-        };
-        auto reads_ephemeral_column = [&](const Names & inputs)
-        {
-            return std::ranges::any_of(inputs, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
-        };
 
         /// The recalculation stages below rewrite the stale MATERIALIZED columns in place, without
         /// re-sorting rows or moving parts between partitions, so a column the sorting or partition
@@ -1803,13 +1794,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
         }
 
-        /// A `CLEAR COLUMN` that makes any MATERIALIZED column stale re-evaluates every
-        /// MATERIALIZED expression of the table. That is long-standing behaviour and it is what
-        /// refreshes a column whose expression was changed by a metadata-only `MODIFY COLUMN`,
-        /// which schedules no mutation of its own. A column outside the stale closure is only
-        /// added when recomputing it is safe: an EPHEMERAL input cannot be read back from the
-        /// part, and a column the sorting or partition key depends on must not be rewritten in
-        /// place - such a column is not made stale by this clear, so leaving it alone is correct.
+        /// Only the MATERIALIZED columns the clear makes stale are recomputed. A MATERIALIZED
+        /// column that does not read a cleared column keeps its stored value, even when its
+        /// expression was changed by a metadata-only `MODIFY COLUMN` (which schedules no
+        /// mutation of its own) - the same rule `MutationsInterpreter` applies to `UPDATE`.
         if (!clear_stale_materialized.empty())
         {
             /// The recalculation reads the cleared column, which is not written to the new part,
@@ -1821,18 +1809,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 dependencies.emplace(name, ColumnDependency::PROJECTION);
                 cleared_columns_with_dependencies.insert(name);
-            }
-
-            for (const auto & [name, inputs] : materialized_column_inputs.by_column)
-            {
-                if (clear_rematerialized_columns.contains(name) || cleared_columns.contains(name))
-                    continue;
-
-                if (materialized_column_inputs.unsafe_legacy_columns.contains(name)
-                    || reads_ephemeral_column(inputs) || is_key_column(name))
-                    continue;
-
-                clear_rematerialized_columns.insert(name);
             }
         }
 

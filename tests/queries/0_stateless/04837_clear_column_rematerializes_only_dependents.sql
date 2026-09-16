@@ -1,13 +1,12 @@
--- A `CLEAR COLUMN` that makes any `MATERIALIZED` column stale re-evaluates every `MATERIALIZED`
--- expression of the table, so a column whose expression was changed by a metadata-only
--- `ALTER TABLE ... MODIFY COLUMN ... MATERIALIZED` is refreshed as well. The dependency closure of
--- the cleared column still matters: it decides the order the columns are recomputed in, which
--- columns make the ALTER fail up front, and which columns are left alone because recomputing them
--- is not safe (a sorting or partition key input, or a column reading an `EPHEMERAL` column).
+-- A `CLEAR COLUMN` recomputes only the `MATERIALIZED` columns it makes stale: the ones reading the
+-- cleared column directly or through another recomputed `MATERIALIZED` column. A column outside
+-- that closure keeps its stored value, even when its expression was changed by a metadata-only
+-- `ALTER TABLE ... MODIFY COLUMN ... MATERIALIZED`. The closure also decides the order the columns
+-- are recomputed in and which columns make the ALTER fail up front.
 
 SET mutations_sync = 2;
 
-SELECT '-- the dependency closure is recomputed in order, together with the other columns';
+SELECT '-- the dependency closure is recomputed in order, the other columns are left alone';
 
 DROP TABLE IF EXISTS t_clear_closure;
 
@@ -35,7 +34,7 @@ ALTER TABLE t_clear_closure CLEAR COLUMN c;
 
 -- `c` is now 0, so `direct` becomes 2 and `transitive` becomes 200: `transitive` is evaluated
 -- against the freshly recomputed `direct`, not against its pre-clear value. `unrelated` reads
--- nothing that the clear touches, but it is re-evaluated too and picks up its new expression.
+-- nothing that the clear touches, so it keeps the stored 100 despite its new expression.
 SELECT id, c, unrelated, direct, transitive FROM t_clear_closure ORDER BY id;
 
 DROP TABLE t_clear_closure;
@@ -45,7 +44,8 @@ SELECT '-- a key column outside the closure keeps its stored value';
 DROP TABLE IF EXISTS t_clear_key_materialized;
 
 -- `k` orders the part, so rewriting it in place could break the sort order. The clear does not
--- make it stale (it does not read `c`), so it is simply left alone instead of failing the ALTER.
+-- make it stale (it does not read `c`), so it is left alone like any other column outside the
+-- closure, and the ALTER does not fail.
 CREATE TABLE t_clear_key_materialized
 (
     id UInt64,
