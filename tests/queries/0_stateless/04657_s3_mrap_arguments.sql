@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the `s3` table function is unavailable in the fast-test build.
+
 SELECT * FROM s3('arn:aws:s3::123456789012:accesspoint/example.mrap', format='CSV', structure='x UInt8'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM s3('arn:aws:s3::123456789012:accesspoint/example.mrap', key='', format='CSV', structure='x UInt8'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM s3('arn:aws:s3:us-east-1:123456789012:accesspoint/example.mrap', key='key', format='CSV', structure='x UInt8'); -- { serverError BAD_ARGUMENTS }
