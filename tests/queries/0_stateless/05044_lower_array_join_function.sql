@@ -48,14 +48,14 @@ SELECT (SELECT groupArray((x, l)) FROM (SELECT arrayJoin(arraySort(a)) AS x, len
      = (SELECT groupArray((x, l)) FROM (SELECT arrayJoin(arraySort(a)) AS x, length(arraySort(a)) AS l FROM t_reuse ORDER BY x) SETTINGS query_plan_lower_array_join_function = 0);
 DROP TABLE t_reuse;
 
--- rand() next to an arrayJoin is evaluated per expanded row, as with the ARRAY JOIN clause: 2 x 3 distinct values
+-- rand() is evaluated per expanded row, like with the ARRAY JOIN clause
 SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1) = 6;
 
--- and it does not stop the lowering when it sits in the WHERE
+-- also in WHERE, and the join still lowers
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e FROM numbers(2) WHERE e > 0 AND rand() % 2 = 0 SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
 -- but a deterministic filter over the same arrayJoin still lowers
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e FROM numbers(2) WHERE e > 1 SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
--- count() over an arrayJoin whose element is unused still returns the right number of rows, and still lowers
+-- an unused element still multiplies the rows, and the join still lowers
 SELECT (SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTINGS query_plan_lower_array_join_function = 1)
      = (SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTINGS query_plan_lower_array_join_function = 0);
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT count() FROM (SELECT arrayJoin([1, 2, 3]) FROM numbers(4)) SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);

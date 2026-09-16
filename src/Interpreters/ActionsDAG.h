@@ -464,8 +464,7 @@ public:
 
     struct SplitArrayJoinResult;
 
-    /// Extract one `arrayJoin` function so it can become an ArrayJoinStep between `before` and `after`.
-    /// Takes the first ARRAY_JOIN node; the caller repeats for the rest. Returns nullopt if there is none.
+    /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
     std::optional<SplitArrayJoinResult> extractFirstArrayJoin() const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of

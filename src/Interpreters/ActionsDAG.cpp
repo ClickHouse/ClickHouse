@@ -3048,8 +3048,7 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     if (!array_join)
         return {};
 
-    /// The ARRAY_JOIN and its argument go to `before`, everything else to `after`, which reads the join result
-    /// as an input. The columns crossing the step get unique names, so the step can explode its column by name.
+    /// ARRAY_JOIN and its argument go to `before`, the rest to `after`; the crossing columns get unique names.
     auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true, /*avoid_duplicate_inputs=*/true);
     ActionsDAG before = std::move(split_res.first);
     ActionsDAG after = std::move(split_res.second);
@@ -3057,12 +3056,11 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
     const std::string name = aj_before->result_name;
     const Node * arg_before = aj_before->children.at(0);
 
-    /// An unused join result still multiplies the rows: the step needs the array and `after` has to consume the element.
+    /// Nobody reads the result, but the rows are still multiplied.
     if (std::ranges::none_of(after.inputs, [&](const Node * input) { return input->result_name == name; }))
         after.addInput(name, array_join->result_type);
 
-    /// Hand the array itself to the step under the join's name and drop the ARRAY_JOIN node; removeUnusedActions
-    /// would keep it, it never prunes a node that changes the number of rows.
+    /// The step gets the array under the join's name. Erase the node by hand, removeUnusedActions keeps array joins.
     const Node * arg_out = arg_before->result_name == name ? arg_before : &before.addAlias(*arg_before, name);
     bool replaced = false;
     for (auto & output : before.outputs)
