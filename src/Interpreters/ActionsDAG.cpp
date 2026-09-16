@@ -1372,6 +1372,9 @@ ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping
     for (const auto * output : outputs)
         actions.outputs.push_back(copy_map[output]);
 
+    /// No source DAG here -- this builds a sub-DAG from a node list -- so any ids stay with the
+    /// caller's actions. A node that carries one brings it along in `Node::scalar_subquery_id`.
+
     return actions;
 }
 
@@ -2118,6 +2121,12 @@ void ActionsDAG::removeFromOutputs(const NameSet & node_names)
     outputs = std::move(new_outputs);
 }
 
+void ActionsDAG::addScalarSubqueryId(size_t id)
+{
+    if (std::find(scalar_subquery_ids.begin(), scalar_subquery_ids.end(), id) == scalar_subquery_ids.end())
+        scalar_subquery_ids.push_back(id);
+}
+
 ActionsDAG ActionsDAG::clone() const
 {
     std::unordered_map<const Node *, const Node *> old_to_new_nodes;
@@ -2143,6 +2152,8 @@ ActionsDAG ActionsDAG::clone(std::unordered_map<const Node *, const Node *> & ol
 
     for (const auto & input_node : inputs)
         actions.inputs.push_back(old_to_new_nodes[input_node]);
+
+    actions.scalar_subquery_ids = scalar_subquery_ids;
 
     return actions;
 }
@@ -2639,6 +2650,9 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
         });
 
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
+
+    for (size_t id : second.scalar_subquery_ids)
+        first.addScalarSubqueryId(id);
 }
 
 void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)

@@ -28,6 +28,12 @@ SET log_query_plans = 1;
 SELECT count() FROM t_scalar_05220 WHERE v > (SELECT avg(v) FROM t_scalar_05220 WHERE k > 10)
     SETTINGS log_comment = '05220_scalar' FORMAT Null;
 
+-- The same in the SELECT list. Worth its own case: a constant projected under an alias is rebuilt
+-- as a fresh column under the alias's name, so the node the planner marked is gone by the time the
+-- plan is serialized -- which is why the id is recorded on the actions as well as on the node.
+SELECT (SELECT avg(v) FROM t_scalar_05220 WHERE k > 10) AS s
+    SETTINGS log_comment = '05220_projected' FORMAT Null;
+
 SELECT count() FROM t_scalar_05220 AS o
 WHERE v = (SELECT max(v) FROM t_scalar_05220 AS i WHERE i.k = o.k)
     SETTINGS log_comment = '05220_correlated' FORMAT Null;
@@ -56,7 +62,7 @@ SELECT
         JSONExtractArrayRaw(subqueries[1], 'ConsumedBy')) AS consumer_in_main_plan
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-    AND log_comment IN ('05220_scalar', '05220_correlated')
+    AND log_comment IN ('05220_scalar', '05220_correlated', '05220_projected')
 ORDER BY shape;
 
 DROP TABLE t_scalar_05220;

@@ -142,6 +142,12 @@ private:
     NodeRawConstPtrs inputs;
     NodeRawConstPtrs outputs;
 
+    /// Ids of the scalar subqueries whose folded values these actions use. Recorded on the DAG as
+    /// well as on the node (`Node::scalar_subquery_id`) because the node does not always survive:
+    /// a constant projected under an alias is re-materialised as a fresh column under the alias's
+    /// name, and the marked node disappears with the old one. The DAG outlives that.
+    std::vector<size_t> scalar_subquery_ids;
+
 public:
     ActionsDAG();
     ActionsDAG(ActionsDAG &&) noexcept;
@@ -151,6 +157,10 @@ public:
     ~ActionsDAG();
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
+
+    /// See `scalar_subquery_ids`.
+    const std::vector<size_t> & getScalarSubqueryIds() const { return scalar_subquery_ids; }
+    void addScalarSubqueryId(size_t id);
 
     const Nodes & getNodes() const { return nodes; }
     NodeRawConstPtrs getNodesPointers() const;

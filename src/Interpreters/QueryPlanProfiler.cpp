@@ -73,6 +73,10 @@ void recordConsumedSubqueries(QueryPlan & plan)
 {
     const auto collect_from_dag = [](const ActionsDAG & dag, IQueryPlanStep & step)
     {
+        /// Scalar subqueries, whose folded value may no longer be identifiable node by node.
+        for (size_t id : dag.getScalarSubqueryIds())
+            step.addConsumedSubqueryId(id);
+
         for (const auto & node : dag.getNodes())
         {
             if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)

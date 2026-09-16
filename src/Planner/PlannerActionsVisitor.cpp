@@ -654,6 +654,11 @@ public:
         bool is_masked_secret = false,
         std::optional<size_t> scalar_subquery_id = {})
     {
+        /// On the DAG as well as on the node: a constant projected under an alias is rebuilt as a
+        /// fresh column and the marked node goes away with the old one, but the actions survive.
+        if (scalar_subquery_id)
+            actions_dag.addScalarSubqueryId(*scalar_subquery_id);
+
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
         {
