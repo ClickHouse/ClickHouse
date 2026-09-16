@@ -442,7 +442,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             if (!VirtualColumnUtils::isDeterministic(output))
                                 continue;
 
-                            condition_hash = output->getHash();
+                            condition_hash = queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt);
                             break;
                         }
                     }
