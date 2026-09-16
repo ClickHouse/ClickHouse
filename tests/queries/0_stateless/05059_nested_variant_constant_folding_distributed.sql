@@ -11,15 +11,16 @@ SELECT tuple(42::UInt64::Variant(UInt64, String)) FROM remote('127.0.0.1', syste
 SELECT map('k', 42::UInt64::Variant(UInt64, String)) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 SELECT [[(0., 0.)::Point::Geometry]] FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 
--- An empty container has no member to name, and `map()` is inferred as `Map(Nothing, Nothing)`, which is not
--- convertible to a map type carrying a `Variant`: it has to keep the plain empty literal, in either position.
+-- An empty map has no member to name, and an argumentless `map` is inferred as `Map(Nothing, Nothing)`, which
+-- is not convertible to a map type carrying a `Variant`, in either position.
 SELECT mapExtractKeyLike(map('k', 42::UInt64::Variant(UInt64, String)), 'z%') FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
-SELECT mapFilter((k, v) -> false, map(42::UInt64::Variant(UInt64, String), 'x')) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
-SELECT arrayFilter(x -> false, [42::UInt64::Variant(UInt64, String)]) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
+SELECT mapExtractValueLike(map(42::UInt64::Variant(UInt64, String), 'x'), 'z%') FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 
--- The empty literal also has to name its own type, or a non-empty sibling in the same parent resolves against
--- an array: as `Array` elements that is a dimension mismatch, as `Map` values a missing supertype.
+-- The empty literal that replaces it has to name the map type as well, or a non-empty sibling in the same
+-- folded parent resolves against an array: a dimension mismatch as `Array` elements, a missing supertype as
+-- `Map` values.
 SELECT [mapExtractKeyLike(map('k', 42::UInt64::Variant(UInt64, String)), 'z%'), map('k', 42::UInt64::Variant(UInt64, String))] FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
+SELECT [mapExtractValueLike(map(42::UInt64::Variant(UInt64, String), 'x'), 'z%'), map(42::UInt64::Variant(UInt64, String), 'x')] FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0;
 SELECT map('a', mapExtractKeyLike(map('k', 42::UInt64::Variant(UInt64, String)), 'z%'), 'b', map('k', 42::UInt64::Variant(UInt64, String))) FROM remote('127.0.0.1', system.one) SETTINGS prefer_localhost_replica = 0, use_variant_as_common_type = 0;
 
 -- A `DateTime` member is exact only as its raw Unix timestamp: both epochs below format to the local
