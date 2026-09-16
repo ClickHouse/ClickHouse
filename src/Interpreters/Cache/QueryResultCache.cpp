@@ -1,5 +1,4 @@
 #include <Interpreters/Cache/QueryResultCache.h>
-
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -29,11 +28,10 @@
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-
-#include <random>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
+#include <random>
 
 
 namespace ProfileEvents
@@ -701,16 +699,10 @@ QueryResultCache::HerdTokenPtr QueryResultCache::acquireOrWaitHerdToken(
         existing_token = it->second;
     }
 
-    /// Poll instead of blocking indefinitely so that cancellation and (bounded) waiting can both be honored
-    /// without a condition_variable: `mutex` is unlocked by the executor exactly once, when it releases the
-    /// token, which we detect via try_lock_for() succeeding.
+    /// Poll with try_lock_for so we can honor both cancellation and timeout without a condition_variable.
+    /// The executor unlocks the mutex exactly once when releasing the token.
     static constexpr auto poll_interval = std::chrono::milliseconds(100);
-    /// Randomize each poll's duration a little. Many waiters typically start waiting on the same token at
-    /// almost the same instant (they are concurrent, identical queries), so without jitter they would also
-    /// keep polling in lockstep; the moment the executor dies and the token becomes abandoned, all of them
-    /// would notice on the very same tick and immediately stampede the coalescing map's mutex together to
-    /// re-probe the cache and race for takeover. Jittering desynchronizes their poll phases so that stampede
-    /// is spread out over a short window instead.
+    /// Jitter prevents concurrent waiters from polling in lockstep and stampeding the mutex when a token dies.
     static constexpr auto poll_jitter_max = std::chrono::milliseconds(40);
     const auto deadline = std::chrono::steady_clock::now() + timeout;
 
@@ -738,11 +730,7 @@ QueryResultCache::HerdTokenPtr QueryResultCache::acquireOrWaitHerdToken(
             return nullptr; /// caller is expected to detect and report the cancellation itself
     }
 
-    /// Timed out. Remove the token from the map (if it is still the current entry - it may already have been
-    /// replaced or removed) so that new queries stop coalescing onto what looks like a stuck execution, and mark
-    /// it abandoned so that any other waiter on the very same token can give up immediately as well. The owning
-    /// query itself is unaffected: it keeps running and, if it eventually succeeds, still inserts its result
-    /// into the cache normally.
+    /// Timed out: remove the token (if still current) and mark it abandoned so other waiters bail out immediately.
     {
         std::lock_guard lock(mutex);
         auto it = herd_tokens.find(key);
@@ -1166,14 +1154,8 @@ void QueryResultCache::clear(const std::optional<String> & tag)
     std::lock_guard lock(mutex);
     times_executed.clear();
 
-    /// Bump the generation so that already in-flight herd tokens are considered stale: new queries arriving
-    /// after this point must not coalesce onto an executor whose result (once written) would immediately be
-    /// wiped, or that was in fact already coalescing pre-clear entries which no longer exist. Already-waiting
-    /// queries are unaffected - they keep polling the very token they hold a reference to and unblock normally
-    /// once its owner finishes.
-    /// Bumped unconditionally, even for a tag-scoped clear: tracking staleness per tag would need to reproduce
-    /// the tag predicate at token-lookup time, for no real benefit (SYSTEM CLEAR QUERY CACHE is rare). The only
-    /// cost of being conservative here is that unrelated in-flight queries occasionally miss coalescing once.
+    /// Bump generation so new queries don't coalesce onto pre-clear executors. Already-waiting queries are unaffected.
+    /// Bumped unconditionally even for tagged clears (we're assuming that SYSTEM CLEAR QUERY CACHE is rare)
     ++clear_generation;
 }
 
