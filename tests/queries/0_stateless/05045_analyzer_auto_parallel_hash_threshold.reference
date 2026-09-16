@@ -1,7 +1,3 @@
-legacy_analyzer_serial
-1
-legacy_analyzer_parallel
-16
 join_switcher_serial
 1
 join_switcher_parallel
