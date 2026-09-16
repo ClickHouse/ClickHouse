@@ -150,3 +150,15 @@ Rejected: numeric key with interval
 Rejected: sub-day interval on Date key
 Rejected: negative interval
 Rejected: non-constant offset
+DST: DateTime key, calendar DAY and WEEK frames next to a fixed 24 HOUR frame
+2024-03-24 12:00:00	1	1	1	1	1
+2024-03-30 11:30:00	2	2	2	5	3
+2024-03-30 12:00:00	3	5	5	7	6
+2024-03-31 12:00:00	4	7	9	4	10
+2024-10-26 12:30:00	5	5	5	11	5
+2024-10-27 12:00:00	6	11	6	6	11
+DST: Nullable DateTime key, INTERVAL DAY
+2024-03-24 12:00:00	1	1
+2024-03-30 12:00:00	3	3
+2024-03-31 12:00:00	4	7
+\N	2	9

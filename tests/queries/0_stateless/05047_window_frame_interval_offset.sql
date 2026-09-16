@@ -109,3 +109,32 @@ SELECT 'Rejected: non-constant offset';
 SELECT sum(val) OVER (ORDER BY val ROWS BETWEEN val PRECEDING AND CURRENT ROW) FROM test_window_interval_offset; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE test_window_interval_offset;
+
+-- On a DateTime key, INTERVAL 1 DAY means the same wall-clock time on the previous day, like `ts - INTERVAL 1 DAY`.
+-- Across a DST switch that is 23 or 25 hours, not 24. In Berlin 2024-03-31 has 23 hours and 2024-10-27 has 25.
+-- From 2024-03-31 12:00, one day back is 2024-03-30 12:00 but 24 hours back is 11:00, so the 11:30 row is only in the 24 HOUR frame.
+-- From 2024-10-27 12:00, one day back is 2024-10-26 12:00 but 24 hours back is 13:00, so the 12:30 row is only in the DAY frame.
+
+DROP TABLE IF EXISTS test_window_interval_offset_dst;
+CREATE TABLE test_window_interval_offset_dst (ts DateTime('Europe/Berlin'), val UInt32) ENGINE = MergeTree ORDER BY ts;
+INSERT INTO test_window_interval_offset_dst VALUES
+    (toDateTime('2024-03-24 12:00:00', 'Europe/Berlin'), 1),
+    (toDateTime('2024-03-30 11:30:00', 'Europe/Berlin'), 2),
+    (toDateTime('2024-03-30 12:00:00', 'Europe/Berlin'), 3),
+    (toDateTime('2024-03-31 12:00:00', 'Europe/Berlin'), 4),
+    (toDateTime('2024-10-26 12:30:00', 'Europe/Berlin'), 5),
+    (toDateTime('2024-10-27 12:00:00', 'Europe/Berlin'), 6);
+
+SELECT 'DST: DateTime key, calendar DAY and WEEK frames next to a fixed 24 HOUR frame';
+SELECT ts, val,
+    sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS day_preceding,
+    sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 24 HOUR PRECEDING AND CURRENT ROW) AS h24_preceding,
+    sum(val) OVER (ORDER BY ts RANGE BETWEEN CURRENT ROW AND INTERVAL 1 DAY FOLLOWING) AS day_following,
+    sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 WEEK PRECEDING AND CURRENT ROW) AS week_preceding
+FROM test_window_interval_offset_dst;
+
+SELECT 'DST: Nullable DateTime key, INTERVAL DAY';
+SELECT ts, val, sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS day_preceding
+FROM (SELECT if(val = 2, NULL, ts) AS ts, val FROM test_window_interval_offset_dst WHERE val <= 4);
+
+DROP TABLE test_window_interval_offset_dst;

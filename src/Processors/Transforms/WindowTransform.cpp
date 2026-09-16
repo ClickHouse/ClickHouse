@@ -5,6 +5,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/SortCursor.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -244,10 +245,13 @@ static int compareValuesWithOffsetNullable(const IColumn * _compared_column,
         nest_reference_column.get(), reference_row, _offset, offset_is_preceding);
 }
 
-// A variant of compareValuesWithOffset for month-based intervals, which have
-// no fixed length and require calendar arithmetic. The offset is in months.
-// Only Date and Date32 keys get here: a month shift of a DateTime is not
-// monotonic (DST and day-of-month clamping), and the frame search requires it.
+// A variant of compareValuesWithOffset for intervals without a fixed length.
+// The offset is in months for Date/Date32 keys and in days for DateTime keys.
+// The frame search only moves boundaries forward, so it needs the shifted value
+// to be non-decreasing. addDays on a DateTime breaks this only inside a DST gap
+// or overlap hour, where the boundary may lag by up to that hour; this matches
+// subtractDays and is accepted. addMonths on a DateTime would reorder shifted
+// values by whole days (day-of-month clamping), so it is rejected.
 template <typename ColumnType>
 static int compareValuesWithOffsetCalendar(const IColumn * _compared_column,
     size_t compared_row, const IColumn * _reference_column,
@@ -262,21 +266,25 @@ static int compareValuesWithOffsetCalendar(const IColumn * _compared_column,
         _reference_column);
 
     using ValueType = typename ColumnType::ValueType;
-    const Int64 months = static_cast<Int64>(_offset.safeGet<UInt64>()) * (offset_is_preceding ? -1 : 1);
+    const Int64 delta = static_cast<Int64>(_offset.safeGet<UInt64>()) * (offset_is_preceding ? -1 : 1);
 
     const ValueType compared_value = compared_column->getData()[compared_row];
     const ValueType reference_value = reference_column->getData()[reference_row];
 
-    ValueType shifted_value;
+    /// Compare in Int64: addDays on a DateTime may leave the UInt32 range.
+    Int64 shifted_value;
     if constexpr (std::is_same_v<ValueType, UInt16>)
-        shifted_value = static_cast<ValueType>(time_zone.addMonths(DayNum(reference_value), months));
+        shifted_value = time_zone.addMonths(DayNum(reference_value), delta);
+    else if constexpr (std::is_same_v<ValueType, Int32>)
+        shifted_value = time_zone.addMonths(ExtendedDayNum(reference_value), delta);
     else
     {
-        static_assert(std::is_same_v<ValueType, Int32>);
-        shifted_value = static_cast<ValueType>(time_zone.addMonths(ExtendedDayNum(reference_value), months));
+        static_assert(std::is_same_v<ValueType, UInt32>);
+        shifted_value = time_zone.addDays(reference_value, delta);
     }
 
-    return compared_value < shifted_value ? -1 : compared_value == shifted_value ? 0 : 1;
+    const Int64 compared = compared_value;
+    return compared < shifted_value ? -1 : compared == shifted_value ? 0 : 1;
 }
 
 static WindowTransform::CompareValuesWithOffset makeCalendarComparator(const IColumn * column, const DateLUTImpl & time_zone)
@@ -314,16 +322,21 @@ static WindowTransform::CompareValuesWithOffset makeCalendarComparator(const ICo
         return make.template operator()<ColumnVector<UInt16>>();
     if (typeid_cast<const ColumnVector<Int32> *>(column))
         return make.template operator()<ColumnVector<Int32>>();
+    if (typeid_cast<const ColumnVector<UInt32> *>(column))
+        return make.template operator()<ColumnVector<UInt32>>();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
         "Calendar interval offset is not supported for ORDER BY column {}", column->getName());
 }
 
 // Converts an INTERVAL offset into the units of the ORDER BY key: days for
-// Date/Date32, seconds for DateTime. Month-based kinds are converted to months
-// and `is_calendar` is set, since they need calendar arithmetic. They are
-// rejected for DateTime keys, see compareValuesWithOffsetCalendar.
-static Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataTypePtr & key_type, bool & is_calendar)
+// Date/Date32, seconds for DateTime. Kinds without a fixed length set `is_calendar`
+// and are converted to months (MONTH/QUARTER/YEAR, Date keys only) or to days
+// (DAY/WEEK on a DateTime key in a time zone with a variable UTC offset), see
+// compareValuesWithOffsetCalendar. In a fixed-offset time zone a day is always
+// 86400 seconds and the plain arithmetic comparator is used.
+static Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataTypePtr & key_type,
+    const DateLUTImpl & time_zone, bool & is_calendar)
 {
     WhichDataType which(key_type);
     if (!which.isDate() && !which.isDate32() && !which.isDateTime())
@@ -341,43 +354,36 @@ static Field convertIntervalOffset(const Field & offset, IntervalKind kind, cons
     switch (kind.kind)
     {
         case IntervalKind::Kind::Month:
-            is_calendar = true;
-            units_per_interval = 1;
-            break;
         case IntervalKind::Kind::Quarter:
-            is_calendar = true;
-            units_per_interval = 3;
-            break;
         case IntervalKind::Kind::Year:
-            is_calendar = true;
-            units_per_interval = 12;
-            break;
-        default:
             if (which.isDateTime())
-            {
-                if (kind.kind < IntervalKind::Kind::Second)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Interval window frame offset INTERVAL {} {} is finer than the resolution of the DateTime ORDER BY column",
-                        count, kind.toKeyword());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Interval window frame offset INTERVAL {} {} is not supported for a DateTime ORDER BY column, use a Date key instead",
+                    count, kind.toKeyword());
+            is_calendar = true;
+            units_per_interval = kind.kind == IntervalKind::Kind::Month ? 1 : kind.kind == IntervalKind::Kind::Quarter ? 3 : 12;
+            break;
+        case IntervalKind::Kind::Day:
+        case IntervalKind::Kind::Week:
+            if (which.isDateTime() && time_zone.hasFixedOffset())
                 units_per_interval = kind.toAvgSeconds();
-            }
             else
             {
-                if (kind.kind == IntervalKind::Kind::Day)
-                    units_per_interval = 1;
-                else if (kind.kind == IntervalKind::Kind::Week)
-                    units_per_interval = 7;
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Interval window frame offset INTERVAL {} {} is finer than the resolution of the {} ORDER BY column",
-                        count, kind.toKeyword(), key_type->getName());
+                is_calendar = which.isDateTime();
+                units_per_interval = kind.kind == IntervalKind::Kind::Day ? 1 : 7;
             }
+            break;
+        default:
+            if (!which.isDateTime())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Interval window frame offset INTERVAL {} {} is finer than the resolution of the {} ORDER BY column",
+                    count, kind.toKeyword(), key_type->getName());
+            if (kind.kind < IntervalKind::Kind::Second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Interval window frame offset INTERVAL {} {} is finer than the resolution of the DateTime ORDER BY column",
+                    count, kind.toKeyword());
+            units_per_interval = kind.toAvgSeconds();
     }
-
-    if (is_calendar && which.isDateTime())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Interval window frame offset INTERVAL {} {} is not supported for a DateTime ORDER BY column, use a Date key instead",
-            count, kind.toKeyword());
 
     UInt64 result = 0;
     if (common::mulOverflow(static_cast<UInt64>(count), units_per_interval, result))
@@ -526,15 +532,19 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         compare_values_with_end_offset = compare_values_with_offset;
 
         const auto key_type = removeNullable(entry.type);
+        // Calendar arithmetic follows the time zone of the DateTime column; Date keys have none.
+        const DateLUTImpl & time_zone = WhichDataType(key_type).isDateTime()
+            ? assert_cast<const DataTypeDateTime &>(*key_type).getTimeZone()
+            : DateLUT::instance();
         auto prepare_offset = [&](Field & offset, const std::optional<IntervalKind> & interval_kind, CompareValuesWithOffset & comparator)
         {
             if (interval_kind)
             {
                 bool is_calendar = false;
-                offset = convertIntervalOffset(offset, *interval_kind, key_type, is_calendar);
+                offset = convertIntervalOffset(offset, *interval_kind, key_type, time_zone, is_calendar);
                 if (is_calendar)
                 {
-                    comparator = makeCalendarComparator(column, DateLUT::instance());
+                    comparator = makeCalendarComparator(column, time_zone);
                 }
                 return;
             }
