@@ -4,7 +4,7 @@
             <interval>
                 <duration>31556952</duration>
                 <queries>1000</queries>
-                <!-- A limit over a profile event, using a size suffix. -->
+                <!-- A limit over a profile event, using a size suffix (decimal: 1G = 10^9; use 1Gi for 2^30). -->
                 <NetworkSendBytes>1G</NetworkSendBytes>
                 <!-- Zero means "track this event but do not limit it". -->
                 <SelectQuery>0</SelectQuery>
