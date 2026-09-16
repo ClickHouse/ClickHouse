@@ -539,9 +539,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                 {
-                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
-                    /// form can still be a value the column holds, so this is not on its own a malformed
-                    /// manifest and stays out of the warning log.
+                    /// Pruning is skipped either way, but a bound narrower than the column is what a promotion
+                    /// (`int` -> `long`) leaves stored, and at scale 38 a bound that only loses its widened form
+                    /// can still be a value the column holds, so this is not on its own a malformed manifest.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "
@@ -639,9 +639,7 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
         *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), *this, context);
-    auto * raw_ptr = pruner.get();
-    pruners_by_schema_id.emplace(schema_id, std::move(pruner));
-    return raw_ptr;
+    return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
 bool ManifestFileIterator::isInitialized() const
