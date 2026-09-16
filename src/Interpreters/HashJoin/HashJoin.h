@@ -431,8 +431,8 @@ public:
 /// they are read back the same way (the output key column is the parent LowCardinality type).
 /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
 /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
-/// Only the serial types are listed: a `JoinSource` reads a `StorageJoin` map, and `StorageJoin`
-/// always builds with the serial layout.
+/// Only the single-level types are listed: a `JoinSource` reads the one table of a `StorageJoin`'s
+/// partitioned join, which builds no two-level map and runs no `range*` conversion.
 #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
     M(key8) \
     M(key16) \

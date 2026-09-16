@@ -5,6 +5,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 
 
@@ -12,8 +13,8 @@ namespace DB
 {
 
 class TableJoin;
-class HashJoin;
-using HashJoinPtr = std::shared_ptr<HashJoin>;
+class PartitionedHashJoin;
+using PartitionedHashJoinPtr = std::shared_ptr<PartitionedHashJoin>;
 
 /** Allows you save the state for later use on the right side of the JOIN.
   * When inserted into a table, the data will be inserted into the state,
@@ -48,17 +49,17 @@ public:
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
-    /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
-    /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
-    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const;
-    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const;
+    /// The query's join over this table: a `PartitionedHashJoin` sharing the table and the stored blocks
+    /// by pointer, holding the lock that protects them from insertions for as long as it lives.
+    JoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const;
+    JoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const;
 
     /// Get result type for function "joinGet(OrNull)"
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
 
     /// Execute function "joinGet(OrNull)" on data block.
     /// Takes rwlock for read to prevent parallel StorageJoin updates during processing data block
-    /// (but not during processing whole query, it's safe for joinGet that doesn't involve `used_flags` from HashJoin)
+    /// (but not during processing whole query, it's safe for joinGet that doesn't involve the join's used flags)
     ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add, ContextPtr context) const;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
@@ -113,10 +114,10 @@ private:
     bool overwrite;
 
     std::shared_ptr<TableJoin> table_join;
-    HashJoinPtr join;
+    PartitionedHashJoinPtr join;
 
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
-    /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
+    /// Lock is stored in the query's join instance during query and blocks concurrent insertions.
     mutable RWLock rwlock = RWLockImpl::create();
 
     mutable std::mutex mutate_mutex;

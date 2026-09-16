@@ -263,6 +263,8 @@ public:
 
 private:
     friend class NotJoinedPartitioned;
+    /// Reads a Join table's rows straight out of the table and the stored blocks.
+    friend class JoinSource;
 
     PartitionedHashJoin(
         std::shared_ptr<TableJoin> table_join_,
