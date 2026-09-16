@@ -3076,7 +3076,31 @@ static void processDefLevelsForInnermostColumn(
     out_num_encoded_values = num_encoded_values;
 }
 
-static void NO_INLINE processRepDefLevelsForArrayScalar(
+static void processRepDefLevelsForArrayScalar(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
+    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+{
+    UInt64 offset = out_offsets.back();
+
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        if (def[i] < parent_array_def)
+            continue;
+
+        if (rep[i] < array_rep)
+        {
+            out_offsets.back() = offset;
+            out_offsets.resize(out_offsets.size() + 1);
+        }
+
+        offset += rep[i] <= array_rep && def[i] >= array_def;
+    }
+
+    out_offsets.back() = offset;
+}
+
+#if defined(__AVX2__)
+static void NO_INLINE processRepDefLevelsForArrayScalarRange(
     size_t begin, size_t end, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
     UInt8 parent_array_def, UInt64 & offset, PaddedPODArray<UInt64> & out_offsets)
 {
@@ -3105,6 +3129,7 @@ static void NO_INLINE processRepDefLevelsForArrayScalar(
     }
     out_offsets.back() = offset;
 }
+#endif
 
 /// Produces array offsets at a given level of nested arrays.
 ///
@@ -3116,10 +3141,10 @@ static void processRepDefLevelsForArray(
     size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
     UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
 {
+#if defined(__AVX2__)
     UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
 
     size_t i = 0;
-#if defined(__AVX2__)
     constexpr size_t simd_width = 32;
     constexpr int max_boundaries_for_simd = 12;
 
@@ -3135,8 +3160,7 @@ static void processRepDefLevelsForArray(
 
         if (first_boundary_count > max_boundaries_for_simd && second_boundary_count > max_boundaries_for_simd)
         {
-            processRepDefLevelsForArrayScalar(
-                0, num_values, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
+            processRepDefLevelsForArrayScalar(num_values, def, rep, array_rep, array_def, parent_array_def, out_offsets);
             return;
         }
     }
@@ -3161,7 +3185,7 @@ static void processRepDefLevelsForArray(
 
         if (std::popcount(new_array_mask) > max_boundaries_for_simd)
         {
-            processRepDefLevelsForArrayScalar(
+            processRepDefLevelsForArrayScalarRange(
                 i, i + simd_width, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
             continue;
         }
@@ -3186,12 +3210,13 @@ static void processRepDefLevelsForArray(
         }
         offset += std::popcount(contributes_mask & ~processed_mask);
     }
-#endif
-
-    processRepDefLevelsForArrayScalar(i, num_values, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
+    processRepDefLevelsForArrayScalarRange(i, num_values, def, rep, array_rep, array_def, parent_array_def, offset, out_offsets);
     /// Note that the array may continue in the next page. In that case the next call to this
     /// function will read this offset back, add to it, and assign it again.
     out_offsets.back() = offset;
+#else
+    processRepDefLevelsForArrayScalar(num_values, def, rep, array_rep, array_def, parent_array_def, out_offsets);
+#endif
 }
 
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
