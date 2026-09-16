@@ -126,8 +126,6 @@ Consequently the invariant does not hold if the *top-level runner* is SIGKILL'd
 (the surviving workers would then hold the pipe themselves); that is a separate
 concern about worker lifetime.
 
-Regression tests: `ci/tests/test_test_process_does_not_hold_runner_stdio.py`.
-
 ---
 
 ## Solution: PGID tracking via per-worker group pid files
