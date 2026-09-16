@@ -289,9 +289,10 @@ The response looks like:
 - `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Default value is `false`.
 - `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
 - `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10.
-- `command_termination_timeout` — executable script should contain main read-write loop. After table function is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10.
+- `command_termination_timeout` — executable script should contain main read-write loop. After table function is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. The same budget applies once the command has finished writing its output: with `check_exit_code` enabled, a command that has not exited within `command_termination_timeout` seconds after that fails the query (its exit code could not be checked) and is sent SIGTERM, rather than being waited for indefinitely. Specified in seconds. Default value is 10.
 - `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000.
 - `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000.
+- `check_exit_code` - check the exit code of the command once it has finished writing its output: a non-zero exit code, or a command that has not exited within `command_termination_timeout` after that, fails the query. Default value is `false`.
 
 ## Passing Query Results to a Script {#passing-query-results-to-a-script}
 

@@ -1464,7 +1464,12 @@ namespace
                 /// are. What is left for this is the sliver between the server's final read and
                 /// this point - small, but the only part of the path where the query could
                 /// otherwise succeed while its own command was complaining.
-                if (!wait_for_command && command && timeout_command_out.stderrIsObserved())
+                ///
+                /// Not for a worker that `checkPooledWorkerAfterAnswering` has already waited for:
+                /// that wait read its stderr to the end and closed the descriptors, and a poll on a
+                /// closed number would be a poll on whatever another thread has opened under it
+                /// since.
+                if (!wait_for_command && command && !command->isWaitCalled() && timeout_command_out.stderrIsObserved())
                 {
                     static constexpr size_t late_stderr_drain_ms = 10;
                     timeout_command_out.drainStderrFully(late_stderr_drain_ms);
@@ -1521,6 +1526,15 @@ namespace
                         /// unless the command avoids being checked", which is the one command it
                         /// most needs to hold for. `check_exit_code = 0` is how a command that is
                         /// not expected to exit promptly is configured.
+                        ///
+                        /// Waited for even without `check_exit_code`, when stderr is observed: this
+                        /// is the last stretch in which the command can write, and a line it writes
+                        /// on its way out has to reach `stderr_reaction` whether or not its exit
+                        /// status is anyone's business. That costs a command which does not exit
+                        /// on stdin EOF nothing it was not already paying: `~ShellCommand` waits
+                        /// the same `command_termination_timeout` before it signals, and the two
+                        /// waits draw from one deadline (`remainingTerminationTimeoutMs`), so the
+                        /// budget is spent once, here instead of there.
                         const bool reaped = command->waitDrainingOutput(
                             [this](std::string_view str) { timeout_command_out.consumeStderrBytes(str); }, check_exit_code);
 
@@ -1599,6 +1613,13 @@ namespace
             /// or exactly this case - answered and exited - reports zeros. Idempotent, so
             /// `cleanup` calling it again afterwards is harmless.
             recordPooledResourceUsageNoThrow();
+
+            /// A pooled worker keeps its stdin open across borrows, and this one is not going back:
+            /// closed before the wait, so that a worker that hung up its stdout but is still alive
+            /// on its stdin sees EOF and exits at once, rather than sitting out the whole
+            /// `command_termination_timeout` and failing the query for an exit code that was a
+            /// close away. The send threads are joined by the caller, so nothing is writing into it.
+            command->in.close();
 
             try
             {
@@ -2402,7 +2423,11 @@ namespace
                         /// query's rows are already correct, but so are the rows of any command
                         /// whose exit code turns out to be non-zero - which is exactly what the
                         /// setting exists to reject. `check_exit_code = 0` is how a command that is
-                        /// not expected to exit promptly is configured.
+                        /// not expected to exit promptly is configured - and such a command is
+                        /// still waited for here when stderr is observed, for what it may say on
+                        /// its way out; that spends the budget `~ShellCommand` would otherwise
+                        /// spend before signalling it, not a second one (the two waits share one
+                        /// deadline), so nothing is stalled that was not stalled before.
                         const bool reaped = command->waitDrainingOutput(
                             [this](std::string_view str) { timeout_command_out->consumeStderrBytes(str); }, check_exit_code);
 

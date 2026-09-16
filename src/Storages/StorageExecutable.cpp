@@ -320,7 +320,7 @@ Here are the relevant settings for an `Executable` table:
   - Description: Send the number of rows in each chunk before sending a chunk to process. This setting can help to write your script in a more efficient way to preallocate some resources
   - Default value: false
 - `command_termination_timeout`
-  - Description: Command termination timeout in seconds
+  - Description: Command termination timeout in seconds. After the pipe to the command is closed, and likewise once the command has finished writing its output, the command has this long to exit before ClickHouse sends it SIGTERM; with `check_exit_code` enabled, a command that has not exited by then fails the query, as its exit code could not be checked
   - Default value: 10
 - `command_read_timeout`
   - Description: Timeout for reading data from command stdout in milliseconds
@@ -328,6 +328,9 @@ Here are the relevant settings for an `Executable` table:
 - `command_write_timeout`
   - Description: Timeout for writing data to command stdin in milliseconds
   - Default value: 10000
+- `check_exit_code`
+  - Description: Check the exit code of the command once it has finished writing its output: a non-zero exit code, or a command that has not exited within `command_termination_timeout` after that, fails the query
+  - Default value: false
 
 Let's look at an example. The following Python script is named `my_script.py` and is saved in the `user_scripts` folder. It reads in a number `i` and prints `i` random strings, with each string preceded by a number that is separated by a tab:
 
@@ -546,7 +549,7 @@ Here are the relevant settings for an `Executable` table:
   - Description: Send the number of rows in each chunk before sending a chunk to process. This setting can help to write your script in a more efficient way to preallocate some resources
   - Default value: false
 - `command_termination_timeout`
-  - Description: Command termination timeout in seconds
+  - Description: Command termination timeout in seconds. After the pipe to the command is closed, and likewise once the command has finished writing its output, the command has this long to exit before ClickHouse sends it SIGTERM; with `check_exit_code` enabled, a command that has not exited by then fails the query, as its exit code could not be checked
   - Default value: 10
 - `command_read_timeout`
   - Description: Timeout for reading data from command stdout in milliseconds
@@ -554,6 +557,9 @@ Here are the relevant settings for an `Executable` table:
 - `command_write_timeout`
   - Description: Timeout for writing data to command stdin in milliseconds
   - Default value: 10000
+- `check_exit_code`
+  - Description: Check the exit code of the command once it has finished writing its output: a non-zero exit code, or a command that has not exited within `command_termination_timeout` after that, fails the query
+  - Default value: false
 
 Let's look at an example. The following Python script is named `my_script.py` and is saved in the `user_scripts` folder. It reads in a number `i` and prints `i` random strings, with each string preceded by a number that is separated by a tab:
 

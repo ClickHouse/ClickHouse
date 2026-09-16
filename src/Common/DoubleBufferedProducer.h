@@ -77,14 +77,18 @@ public:
     {
         if (started)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DoubleBufferedProducer cannot be started twice");
-        started = true;
 
+        /// All or nothing: the thread may fail to be created (the global pool can refuse), and a
+        /// start that failed has not started anything - the owner may try again, or stop, and
+        /// neither must find the object claiming a run that never began. `started` is set last,
+        /// once there is a thread to stop.
         producer_fn = std::move(producer);
         thread = ThreadFromGlobalPool([this, group = std::move(thread_group), thread_name]() mutable
         {
             ThreadGroupSwitcher switcher(std::move(group), thread_name);
             run();
         });
+        started = true;
     }
 
     /// Consumer: blocks until the next buffer is ready; returns std::nullopt once the producer has

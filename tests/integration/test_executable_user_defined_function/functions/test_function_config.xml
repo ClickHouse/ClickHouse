@@ -496,6 +496,18 @@
     </function>
     <function>
         <type>executable_pool</type>
+        <name>test_function_pool_answer_close_stdout_wait_stdin_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <command>input_pool_answer_close_stdout_wait_stdin.py</command>
+        <command_termination_timeout>20</command_termination_timeout>
+    </function>
+    <function>
+        <type>executable_pool</type>
         <name>test_function_pool_stderr_then_late_exit_python</name>
         <return_type>UInt64</return_type>
         <argument>

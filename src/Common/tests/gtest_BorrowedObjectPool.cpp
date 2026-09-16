@@ -74,13 +74,16 @@ template <typename Pool>
 
 /// An object whose move construction - the operation `returnObject` uses to put it back into the
 /// pool - can be made to throw. Move assignment stays `noexcept` so that borrowing an object is
-/// unaffected: only the return path is interesting here.
+/// unaffected: only the return path is interesting here. Copyable, as the pool requires of a type
+/// whose move can throw: that is what lets `std::vector` relocate the pool's other objects without
+/// the throw reaching them.
 struct FailsToReturn
 {
     bool throw_on_move_construction = false;
 
     FailsToReturn() = default;
     explicit FailsToReturn(bool throw_on_move_construction_) : throw_on_move_construction(throw_on_move_construction_) {}
+    FailsToReturn(const FailsToReturn &) = default;
 
     /// Throwing is the whole point of this type.
     /// NOLINTNEXTLINE(performance-noexcept-move-constructor, hicpp-noexcept-move)

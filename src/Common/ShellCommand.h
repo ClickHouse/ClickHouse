@@ -187,16 +187,6 @@ public:
     using StderrSink = std::function<void(std::string_view)>;
     bool waitDrainingOutput(const StderrSink & stderr_sink = {}, bool check_exit_status = true);
 
-    /** Takes whatever is pending on the child's output pipes off them, without reaping it and
-      * without waiting for it to exit, handing what comes off stderr to `stderr_sink`.
-      *
-      * For a caller that has no interest in the exit status (`check_exit_code = 0`) but still owes
-      * the command's stderr to `stderr_reaction`. Waiting out `command_termination_timeout` for a
-      * command that was configured as one that does not exit promptly would stall every
-      * invocation, so this stops as soon as the pipes go quiet.
-      */
-    void drainPendingOutput(const StderrSink & stderr_sink, UInt64 budget_ms) const;
-
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;

@@ -849,16 +849,6 @@ void ShellCommand::drainOutputPipes(
 }
 
 
-void ShellCommand::drainPendingOutput(const StderrSink & stderr_sink, UInt64 budget_ms) const
-{
-    if (wait_called)
-        return;
-
-    int drain_fds[2] = {out.getFD(), err.getFD()};
-    drainOutputPipes(drain_fds, stderr_sink, budget_ms);
-}
-
-
 bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check_exit_status)
 {
     /// A child that writes past what the protocol asked of it fills the pipe and blocks in `write`.

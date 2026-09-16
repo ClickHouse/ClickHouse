@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <type_traits>
 #include <chrono>
 #include <mutex>
 #include <condition_variable>
@@ -96,6 +97,17 @@ public:
     /// Return object into pool. Client must return same object that was borrowed.
     void returnObject(T && object_to_return)
     {
+        /// The rollback below assumes that a `push` which throws has changed nothing - in
+        /// particular, that the objects already in the pool are where they were and not
+        /// moved-from halves of a relocation that gave up in the middle. `std::vector` promises
+        /// exactly that for an insertion at the end, but only for a type it can relocate without
+        /// throwing, or copy instead (`std::move_if_noexcept`); for any other type the effects of
+        /// a throw during relocation are unspecified, and no counter arithmetic could repair them.
+        static_assert(
+            std::is_nothrow_move_constructible_v<T> || std::is_copy_constructible_v<T>,
+            "BorrowedObjectPool needs a T that is nothrow move constructible or copy constructible: "
+            "otherwise a return that throws could leave the pool's other objects moved-from");
+
         {
             std::lock_guard lock(objects_mutex);
 
@@ -107,7 +119,8 @@ public:
             {
                 /// The object does not make it back into the pool, so the pool must not keep
                 /// counting it: otherwise every such failure permanently costs one slot of
-                /// `max_size`, and after enough of them borrowing only ever times out.
+                /// `max_size`, and after enough of them borrowing only ever times out. Nothing
+                /// else changed (see the `static_assert` above).
                 --allocated_objects_size;
                 --borrowed_objects_size;
 

@@ -643,6 +643,25 @@ def test_executable_function_discarded_pooled_worker_sees_the_end_of_its_stdin(s
     assert elapsed < 10, f"the query took {elapsed:.1f}s: the worker sat out its termination timeout"
 
 
+def test_executable_function_pooled_worker_that_closed_stdout_after_answering_sees_the_end_of_its_stdin(started_cluster):
+    """A pooled worker that answered in full and hung up its stdout gets EOF on its stdin before its exit code is read."""
+    skip_test_msan(node)
+
+    # The command answers, closes its stdout and reads its stdin to the end before exiting 0. A
+    # worker without a stdout cannot go back to the pool, so under `check_exit_code` its exit code
+    # is read right there; a pooled worker's stdin is kept open across borrows, and a server that
+    # waited with it still open would sit out `command_termination_timeout` (20 s here) on a
+    # command only waiting to be let go, then fail a query whose answer it already had. The stdin
+    # is closed first, the command exits at once, the exit code is 0, and the query succeeds.
+    started = time.monotonic()
+    assert node.query("SELECT test_function_pool_answer_close_stdout_wait_stdin_python(1)") == "Key 1\n"
+    elapsed = time.monotonic() - started
+    assert elapsed < 10, f"the query took {elapsed:.1f}s: the worker sat out its termination timeout"
+
+    # A fresh worker serves the next call the same way.
+    assert node.query("SELECT test_function_pool_answer_close_stdout_wait_stdin_python(2)") == "Key 2\n"
+
+
 def test_executable_function_query_cache(started_cluster):
     '''Test for issues #77553 and #59988: Users should be able to specify if externally-defined are non-deterministic, and the query cache should treat them correspondingly.'''
     '''Also see tests/0_stateless/test_query_cache_udf_sql.sql'''
