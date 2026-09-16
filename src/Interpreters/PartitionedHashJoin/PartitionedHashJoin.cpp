@@ -67,7 +67,7 @@ public:
 
     /// The transform sums this into the count `onProbePhaseFinish` receives; without it the join would
     /// publish zero matches and the planner would never enable the row store for the next run.
-    size_t getMatchedRightRows() const override { return result->getMatchedRightRows(); }
+    std::optional<size_t> getMatchedRightRows() const override { return result->getMatchedRightRows(); }
 
 private:
     JoinResultPtr result;

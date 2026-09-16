@@ -2780,11 +2780,12 @@ PartitionedHashJoin::~PartitionedHashJoin()
 
     /// The planner's row store decision for the next run of this query reads the matched count, as it
     /// does for the other hash joins, which publish it from their destructors too.
-    if (build_phase_finished && probe_phase_finished && match_stats_collecting_params.isCollectionAndUseEnabled())
+    if (build_phase_finished && probe_phase_finished && hash_table_matches.has_value()
+        && match_stats_collecting_params.isCollectionAndUseEnabled())
     {
         try
         {
-            getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, match_stats_collecting_params);
+            getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = *hash_table_matches}, match_stats_collecting_params);
         }
         catch (...)
         {

@@ -141,7 +141,7 @@ public:
 
     /// The planner reads the matched count of the previous run to decide on the row store, so it is
     /// published at destruction as the other hash joins publish theirs.
-    void onProbePhaseFinish(size_t matched_right_rows) override
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
         probe_phase_finished = true;
@@ -591,7 +591,8 @@ private:
     StatsCollectingParams stats_collecting_params;
     /// The matched-row statistics the planner's row store decision reads.
     StatsCollectingParams match_stats_collecting_params;
-    size_t hash_table_matches = 0;
+    /// Empty when the probe did not count matches, so nothing is published for that run.
+    std::optional<size_t> hash_table_matches;
     bool probe_phase_finished = false;
     std::vector<FillBlock> build_blocks; /// concatenated lanes, row-store block numbers assigned
     /// When every block and row number fits 16 bits the scattered locator column packs into

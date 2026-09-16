@@ -891,13 +891,18 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
 
     added_columns.join_on_keys.clear();
 
+    /// The count only advances while row refs are recorded; otherwise leave it empty rather than report
+    /// a zero the planner would take as measured.
+    const std::optional<size_t> matched_right_rows
+        = added_columns.record_row_refs ? std::optional<size_t>(added_columns.lazy_output.hash_table_matches) : std::nullopt;
+
     return std::make_unique<HashJoinResult>(
         std::move(added_columns.lazy_output),
         std::move(added_columns.columns),
         std::move(added_columns.offsets_to_replicate),
         std::move(added_columns.filter),
         std::move(added_columns.matched_rows),
-        added_columns.lazy_output.hash_table_matches,
+        matched_right_rows,
         std::move(scattered_block),
         HashJoinResult::Properties{
             *join.table_join,
