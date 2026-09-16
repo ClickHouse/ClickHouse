@@ -20,10 +20,10 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05212_map_contains_value_like_c
 SELECT map('key', 'one'), ['four']
 SETTINGS engine_file_truncate_on_insert = 1;
 
-SELECT 'optimized', countIf(mapContainsValueLike(m, '4%'))
+SELECT 'optimized', countIf(mapContainsValueLike(m, 'f%'))
 FROM file(currentDatabase() || '_05212_map_contains_value_like_ci.orc', ORC, 'm Map(String, String), `M.values` Array(String)')
 SETTINGS input_format_orc_case_insensitive_column_matching = 1, optimize_functions_to_subcolumns = 1;
 
-SELECT 'unoptimized', countIf(mapContainsValueLike(m, '4%'))
+SELECT 'unoptimized', countIf(mapContainsValueLike(m, 'f%'))
 FROM file(currentDatabase() || '_05212_map_contains_value_like_ci.orc', ORC, 'm Map(String, String), `M.values` Array(String)')
 SETTINGS input_format_orc_case_insensitive_column_matching = 1, optimize_functions_to_subcolumns = 0;

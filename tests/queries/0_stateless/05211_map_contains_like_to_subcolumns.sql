@@ -1,6 +1,7 @@
 -- Map LIKE predicates should read only the matching Map subcolumn.
 
 SET enable_analyzer = 1;
+SET enable_identifier_resolve_cache = 1;
 SET optimize_functions_to_subcolumns = 1;
 
 DROP TABLE IF EXISTS t_map_contains_like_subcolumns;
@@ -479,5 +480,34 @@ ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_map_contains_like_unused_lc;
+
+-- Reusing a scalar Map LIKE alias must not mutate the shared resolved function node.
+WITH mapContainsKeyLike(m, 'd%') AS hit
+SELECT id, hit, NOT hit
+FROM t_map_contains_like_subcolumns
+WHERE id < 3
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+WITH mapContainsKeyLike(m, 'd%') AS hit
+SELECT id, hit, NOT hit
+FROM t_map_contains_like_subcolumns
+WHERE id < 3
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
+
+WITH mapContainsValueLike(m, 'a%') AS hit
+SELECT id, hit, NOT hit
+FROM t_map_contains_like_subcolumns
+WHERE id < 3
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+WITH mapContainsValueLike(m, 'a%') AS hit
+SELECT id, hit, NOT hit
+FROM t_map_contains_like_subcolumns
+WHERE id < 3
+ORDER BY id
+SETTINGS optimize_functions_to_subcolumns = 1;
 
 DROP TABLE t_map_contains_like_subcolumns;

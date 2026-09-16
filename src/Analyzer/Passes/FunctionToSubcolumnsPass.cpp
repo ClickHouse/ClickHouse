@@ -612,7 +612,7 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
 {
     static_assert(map_element <= 1);
 
-    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    const auto & function_arguments_nodes = function_node.getArguments().getNodes();
     if (function_arguments_nodes.size() != 2)
         return;
 
@@ -660,7 +660,9 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
 
     auto like_function = std::make_shared<FunctionNode>("like");
     like_function->markAsOperator();
-    like_function->getArguments().getNodes() = {std::move(lambda_element), std::move(function_arguments_nodes[1])};
+    /// The resolved Map LIKE node may be shared by multiple alias references. Keep its pattern
+    /// argument intact while attaching the same node to the synthesized lambda.
+    like_function->getArguments().getNodes() = {std::move(lambda_element), function_arguments_nodes[1]};
     resolveOrdinaryFunctionNodeByName(*like_function, "like", ctx.context);
 
     auto lambda_type = std::make_shared<DataTypeFunction>(DataTypes{map_element_type}, like_function->getResultType());
