@@ -51,6 +51,8 @@ namespace ErrorCodes
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
     DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \
+    DECLARE(UInt64, catalog_cache_staleness_ms, 0, "Opt-in staleness window for cached `DataLakeCatalog` table storages (ms). The default 0 disables this cache. Catalog changes may be invisible until expiry or explicit invalidation; underlying data-lake metadata follows its own refresh settings.", 0) \
+    DECLARE(UInt64, catalog_cache_max_entries, 1000, "Maximum number of DataLake table metadata entries cached per database (LRU).", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
