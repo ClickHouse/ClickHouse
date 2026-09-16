@@ -342,24 +342,26 @@ private:
         return t >= 0 ? offset_is_whole_number_of_hours_during_epoch : offset_is_whole_number_of_hours_in_lut_range;
     }
 
-    bool offsetIsWholeNumberOfMinutes(Time t) const
-    {
-        return t >= 0 ? offset_is_whole_number_of_minutes_during_epoch : offset_is_whole_number_of_minutes_in_lut_range;
-    }
-
     /// Splitting a time of day into hours, minutes and seconds without three divisions in sequence.
     /// See https://www.benjoffe.com/fast-time-of-day
     static constexpr UInt64 seconds_per_minute_reciprocal = 4581298450; /// (1 << 38) / 60 + 1
     static constexpr UInt64 seconds_per_hour_reciprocal = 76354975;     /// (1 << 38) / 3600 + 1
     static constexpr UInt32 time_of_day_reciprocal_shift = 38;
-    /// The largest argument both reciprocals are exact for; the hour one is the binding constraint.
+    /// The largest argument both reciprocals are exact for; the hour one binds. Exactness over the whole range
+    /// is checked out of band, since a compile-time loop over it is past the constexpr step limit.
     static constexpr UInt32 time_of_day_reciprocal_max = 89949598;
+    static constexpr UInt32 time_of_day_first_inexact = time_of_day_reciprocal_max + 1;
     static_assert(seconds_per_minute_reciprocal == (1ULL << time_of_day_reciprocal_shift) / 60 + 1);
     static_assert(seconds_per_hour_reciprocal == (1ULL << time_of_day_reciprocal_shift) / 3600 + 1);
     static_assert(
         ((time_of_day_reciprocal_max * seconds_per_minute_reciprocal) >> time_of_day_reciprocal_shift) == time_of_day_reciprocal_max / 60);
     static_assert(
         ((time_of_day_reciprocal_max * seconds_per_hour_reciprocal) >> time_of_day_reciprocal_shift) == time_of_day_reciprocal_max / 3600);
+    static_assert(
+        ((time_of_day_first_inexact * seconds_per_minute_reciprocal) >> time_of_day_reciprocal_shift) == time_of_day_first_inexact / 60);
+    static_assert(
+        ((time_of_day_first_inexact * seconds_per_hour_reciprocal) >> time_of_day_reciprocal_shift) != time_of_day_first_inexact / 3600,
+        "the bound must be maximal");
 
     struct HoursMinutesSeconds
     {
@@ -558,9 +560,9 @@ private:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
             }
 
-        /// Below the epoch a value may sit in a period whose offset has a sub-hour component; rounding it by
-        /// modular arithmetic would land on a UTC-aligned boundary instead of the local one, so the helper
-        /// picks the flag that covers `x`. `toStartOfMinuteInterval` guards its own fast path the same way.
+        /// Below the epoch the offset can have a sub-hour component, so use the flag that covers `x`; it is the
+        /// one `secondIntervalModularDivisor` hands out as `valid_before_epoch`, so the fast path agrees with
+        /// the interval function. The origin overload passes a non-negative difference, so `x >= 0` there.
         if (offsetIsWholeNumberOfHours(static_cast<Time>(x))) [[likely]]
             return roundDownToMultiple(x, divisor);
 
@@ -1875,8 +1877,10 @@ public:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(t) - date) / divisor * divisor);
             }
 
-        /// Both sides of the epoch, for the same reason as in `roundDown` above.
-        if (offsetIsWholeNumberOfMinutes(static_cast<Time>(t))) [[likely]]
+        /// From the epoch onward only: a whole number of minutes (`date % 60 == 0`) does not align the start
+        /// of the local day to ten or fifteen minutes, so before the epoch a value has to stay on the
+        /// local-day path below.
+        if (static_cast<Time>(t) >= 0 && offset_is_whole_number_of_minutes_during_epoch) [[likely]]
             return roundDownToMultiple(t, divisor);
 
         const Time date = find(t).date;

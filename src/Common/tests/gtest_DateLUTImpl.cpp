@@ -336,6 +336,27 @@ TEST(DateLUTTest, StartOfIntervalPreEpochFloor)
     }
 }
 
+/// Called directly, so a pre-epoch sub-hour divisor reaches `roundDown`: the function rounds a negative value
+/// from the epoch when the whole-hours flag holds over the table (`UTC`: 1969-12-31 23:59:58 is -2) and from
+/// the start of the local day otherwise (`Europe/Moscow`, +02:30:17 until 1919: of the 40247 seconds into its
+/// local day, seven land on 40243 and thirty on 40230).
+TEST(DateLUTTest, SubHourIntervalPreEpoch)
+{
+    const DateLUTImpl & utc = DateLUT::instance("UTC");
+
+    EXPECT_EQ(utc.toStartOfSecondInterval(static_cast<Int64>(-2), 7), -7); /* floor(-2 / 7) * 7 */
+    EXPECT_EQ(utc.toStartOfSecondInterval(static_cast<Int64>(-2), 30), -30);
+    EXPECT_EQ(utc.toStartOfSecondInterval(static_cast<Int64>(-2), 45), -45);
+    EXPECT_EQ(utc.toStartOfHour(static_cast<Int64>(-2)), -3600); /* floor(-2 / 3600) * 3600 */
+
+    const DateLUTImpl & moscow = DateLUT::instance("Europe/Moscow");
+    const Int64 moscow_time = -2195911170; /* 1900-06-01 11:10:47 local */
+
+    EXPECT_EQ(moscow.toStartOfSecondInterval(moscow_time, 7), -2195911174); /* 40247 -> 40243 */
+    EXPECT_EQ(moscow.toStartOfSecondInterval(moscow_time, 30), -2195911187); /* 40247 -> 40230 */
+    EXPECT_EQ(moscow.toStartOfHour(moscow_time), -2195911817); /* 40247 -> 39600 */
+}
+
 /// Week / ISO computations are timezone-independent and repeat every 400 years. Verify the periodicity holds
 /// across the boundary (year Y vs Y + 400) for the out-of-range escape path.
 TEST(DateLUTTest, WeekFunctionsOutOfRangePeriodicity)

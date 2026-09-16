@@ -134,3 +134,20 @@ SELECT count() AS values, countIf(toString(CAST(number AS Time)) != concat(
     if(intDiv(number, 60) % 60 < 10, '0', ''), toString(intDiv(number, 60) % 60), ':',
     if(number % 60 < 10, '0', ''), toString(number % 60))) AS wrong
 FROM numbers(3600000);
+
+-- A sub-hour interval on a pre-epoch value: `UTC` rounds from the epoch (1969-12-31 23:59:58 is -2), while
+-- `Europe/Moscow`, +02:30:17 until 1919, rounds from the start of the local day (of the 40247 seconds into
+-- 1900-06-01, seven land on 40243 and thirty on 40230).
+SET enable_extended_results_for_datetime_functions = 1;
+SELECT 'pre_epoch_sub_hour',
+    toInt64(toStartOfInterval(toDateTime64('1969-12-31 23:59:58', 0, 'UTC'), INTERVAL 7 SECOND, 'UTC')) AS utc_7s,
+    toInt64(toStartOfInterval(toDateTime64('1969-12-31 23:59:58', 0, 'UTC'), INTERVAL 30 SECOND, 'UTC')) AS utc_30s,
+    toInt64(toStartOfInterval(toDateTime64('1900-06-01 11:10:47', 0, 'Europe/Moscow'), INTERVAL 7 SECOND, 'Europe/Moscow')) AS moscow_7s,
+    toInt64(toStartOfInterval(toDateTime64('1900-06-01 11:10:47', 0, 'Europe/Moscow'), INTERVAL 30 SECOND, 'Europe/Moscow')) AS moscow_30s;
+
+-- An interval with an origin is anchored there, not at the epoch: `Asia/Tokyo`'s midnight of 2020-01-01 is
+-- 1577804400, four seconds past an epoch-anchored seven second boundary.
+WITH toDateTime('2020-01-01 00:00:00', 'Asia/Tokyo') AS t0
+SELECT count() AS n,
+    countIf(toStartOfInterval(addSeconds(t0, number), INTERVAL 7 SECOND, t0) != addSeconds(t0, intDiv(number, 7) * 7)) AS wrong_bucket
+FROM numbers(2000);
