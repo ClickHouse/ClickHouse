@@ -16,7 +16,7 @@ ${CLICKHOUSE_CLIENT} -q "
     DROP USER IF EXISTS ${user}, ${blind};
     CREATE USER ${user}, ${blind};
     GRANT CREATE TABLE ON ${db}.* TO ${user}, ${blind};
-    GRANT TABLE ENGINE ON MergeTree TO ${user}, ${blind};
+    GRANT TABLE ENGINE ON MergeTree, TABLE ENGINE ON Null TO ${user}, ${blind};
     GRANT URL ON *.* TO ${user}, ${blind};
 
     CREATE TABLE ${db}.local_src (id UInt64) ENGINE = MergeTree ORDER BY id;
@@ -32,30 +32,35 @@ ${CLICKHOUSE_CLIENT} -q "
     GRANT SHOW COLUMNS ON ${db}.function_src_no_password TO ${user};
 "
 
-# Prints either the missing privilege or the engine of the copy that was created.
+# Prints either the missing privilege or the engine of the copy that was created. Any further argument
+# is passed to the client.
 function try_copy()
 {
-    echo "-- copy_of_${1}:"
-    ${CLICKHOUSE_CLIENT} --user "${user}" -q "CREATE TABLE ${db}.copy_of_${1} AS ${db}.${1}" 2>&1 \
+    local name=$1 source=$2
+    shift 2
+    echo "-- ${name}:"
+    ${CLICKHOUSE_CLIENT} --user "${user}" "${@}" -q "CREATE TABLE ${db}.${name} AS ${db}.${source}" 2>&1 \
         | grep -oE "necessary to have the grant [A-Z ]+ ON ${db}\.[a-z_]+" | head -n 1 | sed "s/${db}/db/"
-    ${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = 'copy_of_${1}'"
+    ${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = '${name}'"
 }
 
 echo "with SHOW COLUMNS only:"
-try_copy local_src
-try_copy url_src
-try_copy function_src
+try_copy copy_of_local_src local_src
+try_copy copy_of_url_src url_src
+try_copy copy_of_function_src function_src
 # Nothing is masked in these two, so they are copied as before.
-try_copy url_src_no_password
-try_copy function_src_no_password
+try_copy copy_of_url_src_no_password url_src_no_password
+try_copy copy_of_function_src_no_password function_src_no_password
+# The external engine is replaced by `Null` here, so nothing masked is inherited either.
+try_copy null_copy_of_url_src url_src --restore_replace_external_engines_to_null 1
 
 echo "after GRANT SELECT:"
 ${CLICKHOUSE_CLIENT} -q "
     GRANT SELECT ON ${db}.url_src TO ${user};
     GRANT SELECT ON ${db}.function_src TO ${user};
 "
-try_copy url_src
-try_copy function_src
+try_copy copy_of_url_src url_src
+try_copy copy_of_function_src function_src
 
 # A user who may not see the source at all is told so, whether or not the definition holds credentials.
 echo "without SHOW COLUMNS:"

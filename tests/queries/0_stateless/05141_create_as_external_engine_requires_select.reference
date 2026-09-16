@@ -9,6 +9,8 @@ necessary to have the grant SELECT ON db.function_src
 URL
 -- copy_of_function_src_no_password:
 Proxy
+-- null_copy_of_url_src:
+Null
 after GRANT SELECT:
 -- copy_of_url_src:
 URL

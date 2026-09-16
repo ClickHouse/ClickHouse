@@ -1440,6 +1440,9 @@ namespace
         {
             *ptr = nullptr;
         });
+        /// Those pointers were the only way this definition is formatted, but `children` still holds the
+        /// nodes and is still walked, by `hasSecretParts` among others. Nothing is left to keep.
+        storage.children.clear();
 
         auto engine_ast = make_intrusive<ASTFunction>();
         engine_ast->name = "Null";
@@ -1655,12 +1658,15 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         if (storage_def)
         {
-            /// The settings written in the new query are kept as they are and only the missing ones are
-            /// taken from the source, so a masked setting the query overrides is not inherited at all.
+            /// Judge the definition this query would store: the settings written in the new query are
+            /// kept and only the missing ones are taken from the source, and an external engine may be
+            /// replaced by `Null`, which inherits nothing at all.
             auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
             if (inherited->settings && create.storage && create.storage->settings)
                 for (const auto & change : create.storage->settings->changes)
                     inherited->settings->changes.removeSetting(change.name);
+            replaceExternalEngineWithNullIfNeeded(
+                *inherited, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
 
             check_access_to_inherited_definition(*inherited);
         }
