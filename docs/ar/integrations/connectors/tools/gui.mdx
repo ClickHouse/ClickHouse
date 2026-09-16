@@ -432,11 +432,25 @@ doc_type: 'reference'
   الميزات:
 
   * محرر SQL حديث مع الإكمال التلقائي وتنفيذ الاستعلامات في علامات تبويب متعددة.
-  * مستعرض schema لاستكشاف الجداول والـ views والأعمدة.
+  * مستعرض المخطط لاستكشاف الجداول والعروض والأعمدة.
   * حفظ الاستعلامات المفضلة وتنظيمها.
   * تطبيق مكتبي متعدد المنصات (Windows وmacOS وLinux)، إضافةً إلى إصدار ذاتي الاستضافة/عبر الويب.
 
   [دليل Beekeeper Studio وClickHouse](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
+</Accordion>
+
+<Accordion title="Tabularis">
+  [Tabularis](https://github.com/TabularisDB/tabularis) هو مساحة عمل مكتبية مفتوحة المصدر للعمل بـ SQL على Windows وmacOS وLinux، ومرخّص بموجب Apache 2.0. ويأتي دعم ClickHouse من plugin رسمي يُثبَّت من داخل التطبيق، ويتواصل مع HTTP interface (`8123`، أو `8443` with TLS) عبر عميل الـ `clickhouse` المكتوب بلغة Rust.
+
+  الميزات:
+
+  * استعراض قواعد البيانات والجداول والعروض مع أنواع ClickHouse الـ native، بما في ذلك data-skipping indexes مع نوعها وأعمدتها وgranularity الخاصة بها.
+  * محرر SQL مبني على Monaco، مع الإكمال التلقائي وتنفيذ عبارات متعددة ونتائج مقسّمة على صفحات.
+  * عمليات insert وupdate وdelete بشكل Inline من شبكة البيانات؛ وتوليد DDL لـ `CREATE TABLE` و`ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` و`ADD INDEX`.
+  * MCP server مدمج، بحيث يمكن لـ وكلاء AI قراءة الـ المخطط وتشغيل الاستعلامات من التطبيق نفسه.
+  * ClickHouse جنبًا إلى جنب مع PostgreSQL وMySQL وSQLite وDuckDB وRedis وMongoDB وغيرها من الـ محركات في window واحدة.
+
+  [plugin ClickHouse لـ Tabularis](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [الموقع الإلكتروني](https://tabularis.dev)
 </Accordion>
 
 ## تجاري {#commercial}

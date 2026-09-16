@@ -439,6 +439,20 @@ doc_type: 'reference'
   [Guía de Beekeeper Studio y ClickHouse](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
 </Accordion>
 
+<Accordion title="Tabularis">
+  [Tabularis](https://github.com/TabularisDB/tabularis) es un workspace SQL de escritorio de código abierto para Windows, macOS y Linux, con licencia Apache 2.0. La compatibilidad con ClickHouse se obtiene mediante un plugin oficial que se instala desde la propia aplicación y que se comunica con la interfaz HTTP (`8123`, o `8443` with TLS) a través del client `clickhouse` de Rust.
+
+  Características:
+
+  * Exploración de bases de datos, tablas y vistas con tipos nativos de ClickHouse, incluidos los índices de omisión de datos con su tipo, columnas y granularidad.
+  * Editor SQL basado en Monaco, con autocompletado, ejecución de varias sentencias y resultados paginados.
+  * Inserción, actualización y eliminación en línea desde la cuadrícula de datos; generación de DDL para `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` y `ADD INDEX`.
+  * MCP server integrado, de modo que los AI agents pueden leer el esquema y ejecutar consultas desde la misma aplicación.
+  * ClickHouse junto a PostgreSQL, MySQL, SQLite, DuckDB, Redis, MongoDB y otros motores en una sola ventana.
+
+  [Plugin de ClickHouse para Tabularis](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [Sitio web](https://tabularis.dev)
+</Accordion>
+
 ## Comercial {#commercial}
 
 <Accordion title="ADQM Notebook">

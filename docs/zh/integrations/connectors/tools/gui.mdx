@@ -439,6 +439,20 @@ doc_type: 'reference'
   [Beekeeper Studio 与 ClickHouse 指南](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
 </Accordion>
 
+<Accordion title="Tabularis">
+  [Tabularis](https://github.com/TabularisDB/tabularis) 是一款面向 Windows、macOS 和 Linux 的开源桌面 SQL workspace，采用 Apache 2.0 许可证。其 ClickHouse 支持由应用内安装的官方 插件 提供，该 插件 通过 Rust `clickhouse` 客户端与 HTTP 接口 (`8123`，启用 TLS 时为 `8443`) 通信。
+
+  功能特性：
+
+  * 浏览数据库、表和视图，支持 native ClickHouse 类型，包括 数据跳过索引 及其类型、列和 granularity。
+  * 基于 Monaco 的 SQL 编辑器，支持 自动补全、多语句执行和分页结果。
+  * 可在数据网格中直接进行 Inline insert、update 和删除；可为 `CREATE TABLE`、`ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` 和 `ADD INDEX` 生成 DDL。
+  * 内置 MCP Server，使 AI 智能体 能够在同一应用中读取 schema 并运行查询。
+  * 在同一 window 中同时管理 ClickHouse、PostgreSQL、MySQL、SQLite、DuckDB、Redis、MongoDB 以及其他引擎。
+
+  [Tabularis ClickHouse 插件](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [官网](https://tabularis.dev)
+</Accordion>
+
 ## 商业 {#commercial}
 
 <Accordion title="ADQM Notebook">

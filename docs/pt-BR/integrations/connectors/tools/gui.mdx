@@ -432,11 +432,25 @@ doc_type: 'reference'
   Recursos:
 
   * Editor SQL moderno com preenchimento automático e execução de consultas em múltiplas abas.
-  * Navegador de esquema para tabelas, visão e colunas.
+  * Navegador de esquema para tabelas, visões e colunas.
   * Salve e organize suas consultas favoritas.
   * Aplicativo desktop multiplataforma (Windows, macOS, Linux), além de uma edição auto-hospedada/web.
 
   [Guia do Beekeeper Studio e ClickHouse](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
+</Accordion>
+
+<Accordion title="Tabularis">
+  O [Tabularis](https://github.com/TabularisDB/tabularis) é um espaço de trabalho SQL desktop de código aberto para Windows, macOS e Linux, licenciado sob Apache 2.0. O suporte ao ClickHouse vem de um plugin oficial instalado dentro do próprio aplicativo, que se comunica com a interface HTTP (`8123`, ou `8443` with TLS) por meio do client `clickhouse` em Rust.
+
+  Recursos:
+
+  * Navegação por bancos de dados, tabelas e visões com tipos nativos do ClickHouse, incluindo data-skipping indexes com seu tipo, colunas e granularity.
+  * Editor SQL baseado no Monaco, com preenchimento automático, execução de múltiplas instruções e resultados paginados.
+  * Insert, update e delete inline diretamente na grade de dados; geração de DDL para `CREATE TABLE`, `ALTER TABLE ... ADD/MODIFY/RENAME COLUMN` e `ADD INDEX`.
+  * MCP server integrado, permitindo que AI agents leiam o schema e executem consultas a partir do mesmo aplicativo.
+  * ClickHouse lado a lado com PostgreSQL, MySQL, SQLite, DuckDB, Redis, MongoDB e outros motores em uma única janela.
+
+  [Plugin ClickHouse do Tabularis](https://github.com/TabularisDB/tabularis-clickhouse-plugin) · [Site](https://tabularis.dev)
 </Accordion>
 
 ## Comercial {#commercial}
