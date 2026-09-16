@@ -1,0 +1,36 @@
+name: Probe PR 112808 master merge
+
+on:
+  push:
+    branches: [agent/refreshable-mv-workload]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/refreshable-mv-workload
+          fetch-depth: 1
+      - name: Probe merge
+        if: ${{ github.event.head_commit.message == 'Probe current master merge for PR 112808' }}
+        run: |
+          git remote add upstream https://github.com/ClickHouse/ClickHouse.git
+          git fetch --no-tags --depth=700 upstream master
+          set +e
+          git merge --no-commit --no-ff upstream/master
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo '=== CONFLICTS ==='
+            git diff --name-only --diff-filter=U
+            echo '=== CONFLICT MARKERS ==='
+            for f in $(git diff --name-only --diff-filter=U); do
+              echo "--- $f"
+              grep -n -B8 -A18 '^<<<<<<<\|^=======\|^>>>>>>>' "$f" || true
+            done
+            exit 1
+          fi
+          echo 'MERGE_CLEAN'
