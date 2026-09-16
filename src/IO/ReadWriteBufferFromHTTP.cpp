@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseHTTPDate.h>
 #include <Common/NetException.h>
+#include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
@@ -163,7 +164,10 @@ bool ReadWriteBufferFromHTTP::checkIfActuallySeekable()
 
 String ReadWriteBufferFromHTTP::getFileName() const
 {
-    return initial_uri.toString();
+    std::string name = initial_uri.toString();
+    maskURIPassword(&name);
+    maskPresignedURLParameters(name);
+    return name;
 }
 
 void ReadWriteBufferFromHTTP::getHeadResponse(Poco::Net::HTTPResponse & response)

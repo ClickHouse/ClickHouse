@@ -27,6 +27,14 @@ namespace
             || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
             || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem";
     }
+
+    /// Keys of a dictionary source whose value is a URI that may embed a userinfo password
+    /// (`scheme://user:password@host`). Only the password is masked, not the whole value. Both
+    /// spellings are in use: the `HTTP` source takes `url`, other sources take `uri`.
+    bool isURIKey(const String & key)
+    {
+        return key == "uri" || key == "url";
+    }
 }
 
 String ASTPair::getID(char) const
@@ -81,9 +89,9 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
-    else if (!settings.show_secrets && (first == "uri"))
+    else if (!settings.show_secrets && isURIKey(first))
     {
-        // Hide password from URI in the defention of a dictionary
+        /// Hide the password embedded in the URI in the definition of a dictionary.
         WriteBufferFromOwnString temp_buf;
         FormatSettings tmp_settings(settings.one_line);
         FormatState tmp_state;
@@ -104,7 +112,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || second->hasSecretParts();
+    return isSecretKey(first) || isURIKey(first) || second->hasSecretParts();
 }
 
 
