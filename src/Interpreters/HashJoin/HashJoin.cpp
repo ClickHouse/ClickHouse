@@ -1687,27 +1687,6 @@ JoinResultPtr HashJoin::joinBlock(Block block)
     return runJoinDispatch(ScatteredBlock(std::move(block)));
 }
 
-JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
-{
-    if (!data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
-
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
-    for (const auto & onexpr : table_join->getClauses())
-    {
-        auto cond_column_name = onexpr.condColumnNames();
-        JoinCommon::checkTypesOfKeys(
-            block.getSourceBlock(),
-            onexpr.key_names_left,
-            cond_column_name.first,
-            right_sample_block,
-            onexpr.key_names_right,
-            cond_column_name.second);
-    }
-
-    return runJoinDispatch(std::move(block));
-}
-
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
 {
     std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;

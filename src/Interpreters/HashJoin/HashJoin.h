@@ -297,7 +297,6 @@ public:
       * Could be called from different threads in parallel.
       */
     JoinResultPtr joinBlock(Block block) override;
-    JoinResultPtr joinScatteredBlock(ScatteredBlock block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
