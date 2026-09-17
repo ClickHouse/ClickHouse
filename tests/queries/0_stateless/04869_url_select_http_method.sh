@@ -77,7 +77,9 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM urlCluster('test_cluster_two_shards_localho
 # `ENGINE = URL` picks its backend once, when the table is defined, so it rejects any explicit
 # http_method together with index-page wildcards, naming both instead of silently reading the
 # literal `*` resource.
-$CLICKHOUSE_CLIENT -q "CREATE TABLE url_wild_put_62352 (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV, http_method='PUT')" 2>&1 | grep -c "wildcards expanded from HTTP index pages cannot be combined with http_method='PUT'"
+# `--server_logs_file=/dev/null`: the server streams its own <Error> log line for the failed query
+# to the client's stderr too, which would make the count below depend on `send_logs_level`.
+$CLICKHOUSE_CLIENT --server_logs_file=/dev/null -q "CREATE TABLE url_wild_put_62352 (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV, http_method='PUT')" 2>&1 | grep -c "wildcards expanded from HTTP index pages cannot be combined with http_method='PUT'"
 # The url() table function decides per query instead: `PUT` applies to writes only, so a SELECT
 # takes the same GET-expanded index-page path as the default one (both stop at the experimental gate).
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://localhost:1/files/*.csv', 'CSV', 'x String')" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
