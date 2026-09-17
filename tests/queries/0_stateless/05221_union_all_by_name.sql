@@ -9,6 +9,26 @@ FROM
     SELECT 'two' AS b, 3 AS c
 );
 
+SELECT 'first-seen order with multiple operands';
+SELECT *
+FROM
+(
+    SELECT 1 AS b, 'left' AS a
+    UNION ALL BY NAME
+    SELECT 'middle' AS c, 2 AS b
+    UNION ALL BY NAME
+    SELECT 3 AS d, 'right' AS a
+);
+
+SELECT 'duplicate rows are preserved';
+SELECT a
+FROM
+(
+    SELECT 1 AS a
+    UNION ALL BY NAME
+    SELECT 1 AS a
+);
+
 SELECT 'projection pruning: a';
 SELECT a
 FROM
