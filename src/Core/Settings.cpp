@@ -297,10 +297,10 @@ Squash blocks passed to external table to specified size in rows, if blocks are 
 Squash blocks passed to the external table to a specified size in bytes, if blocks are not big enough.
 )", 0) \
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
-Maximum block size for JOIN result (if join algorithm supports it), and for the result of the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which is not selected through `join_algorithm`. 0 means unlimited.
+Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, max_joined_block_size_bytes, 4_MiB, R"(
-Maximum block size in bytes for JOIN result (if join algorithm supports it), and for the result of the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which is not selected through `join_algorithm`. 0 means unlimited.
+Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
@@ -3953,7 +3953,7 @@ Possible values:
 
  The sort-based [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
- The position in the list sets the priority: listed after other algorithms, as in the default value, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. When the `ON` section has more than two eligible inequality conditions, the two used by the algorithm are chosen by their estimated selectivity from the column min/max statistics (see the `basic` type in [Column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)); when the estimates are unavailable (no statistics, or [`use_statistics`](#use_statistics) is disabled), the first two in syntax order are used. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+ The position in the list sets the priority. Listed after other algorithms, as in the default value, `ie_join` is used only when the `ON` section has no equality conditions. Listed first, it is used whenever the `ON` section has two inequality conditions, and any remaining conditions are applied as a filter over the join result. When there are more than two inequality conditions, the two used by the algorithm are chosen by their estimated selectivity from [column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics); without statistics, the first two in syntax order are used. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other join kinds as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
  Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/reference/settings/session-settings#max_rows_in_join) and [`max_bytes_in_join`](/reference/settings/session-settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/reference/settings/session-settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
@@ -3980,16 +3980,16 @@ Possible values:
 
 )", 0) \
     DECLARE(Bool, allow_block_nested_loop_join, true, R"(
-Allow the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition) to execute a `JOIN` whose `ON` section determines no join key.
+Allow executing a `JOIN` with an arbitrary `ON` condition, one with no equality between the joined tables, as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
-The operator is the last resort of join planning, reached only when no [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) can execute the condition, so it is not selected through that setting. It examines every pair of rows, which costs the product of the two tables' row counts.
+It examines every pair of rows, which costs the product of the two tables' row counts. The operator is the last resort of join planning, reached only when no [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) can execute the condition, so it is not selected through that setting.
 
-When disabled, such a query is rejected with `INVALID_JOIN_ON_EXPRESSION` while it is being planned, as it was before the operator existed. Conditions the earlier planning paths claim are unaffected: an `ALL INNER JOIN` still becomes a `CROSS JOIN` with a filter, and `ie_join`, when enabled, still claims its pairs of inequalities.
+When the setting is disabled, a query that reaches the operator is rejected with `INVALID_JOIN_ON_EXPRESSION` while it is being planned.
 
 Possible values:
 
-- 0 — Reject a `JOIN` with no join key.
-- 1 — Execute it as a block nested loop join.
+- 0 — Reject such a query.
+- 1 — Execute it as a block nested loop join (default).
 )", 0) \
     DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
 Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
