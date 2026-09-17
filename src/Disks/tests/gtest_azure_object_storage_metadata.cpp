@@ -102,12 +102,14 @@ std::unique_ptr<DB::AzureObjectStorage> createObjectStorageWithoutETag()
     auto container_client = std::make_unique<DB::AzureBlobStorage::ContainerClient>(
         Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
 
+    DB::AzureBlobStorage::ConnectionParams connection_params;
+    connection_params.auth_method = DB::AzureBlobStorage::ConnectionString{""};
+
     return std::make_unique<DB::AzureObjectStorage>(
         "azure",
-        DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
         std::move(container_client),
         std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
-        DB::AzureBlobStorage::ConnectionParams{},
+        connection_params,
         /* object_namespace */ "container",
         /* description */ "http://azure.invalid/container",
         /* common_key_prefix */ "");

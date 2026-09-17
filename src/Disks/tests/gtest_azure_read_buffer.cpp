@@ -838,12 +838,14 @@ std::unique_ptr<DB::AzureObjectStorage> objectStorageOver(const std::shared_ptr<
     auto settings = std::make_unique<DB::AzureBlobStorage::RequestSettings>();
     settings->use_native_copy = use_native_copy;
 
+    DB::AzureBlobStorage::ConnectionParams connection_params;
+    connection_params.auth_method = DB::AzureBlobStorage::ConnectionString{""};
+
     return std::make_unique<DB::AzureObjectStorage>(
         "azure",
-        DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
         std::make_unique<DB::AzureBlobStorage::ContainerClient>(blobContainerClientOver(transport), /* blob_prefix */ ""),
         std::move(settings),
-        DB::AzureBlobStorage::ConnectionParams{},
+        connection_params,
         /* object_namespace */ "container",
         /* description */ "http://azure.invalid/container",
         /* common_key_prefix */ "");
