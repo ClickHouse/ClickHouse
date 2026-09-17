@@ -1524,7 +1524,7 @@ The same applies to an aggregate state held in a `Dynamic`: the column is typed 
 
 In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
 
-ClickHouse reads such a column back into the type the tag names, inside `Array`, `Tuple`, `Map` and `Nullable` as well. An alternative of a `Variant` is the exception: the Arrow union its alternatives form is decoded without consulting the tags, so reading one back into the same `Variant` fails in both modes. The data written is still well formed for other Arrow readers.
+ClickHouse reads such a column back into the type the tag names only where the reading side already knows that type, because a table declares it or a structure argument such as the one `file` and `s3` take names it; it then does so inside `Array`, `Tuple`, `Map` and `Nullable` as well. Schema inference does not consult the tag, so a column read without a type named for it still arrives as `String` holding the raw payload. An alternative of a `Variant` never reads back, even with the type named, because the Arrow union its alternatives form is decoded without consulting the tags. The data written is well formed for other Arrow readers in every case.
 
 Takes precedence over the older `output_format_arrow_unsupported_types_as_binary`, which is only consulted when this setting is left at its default.
 )", 0) \
