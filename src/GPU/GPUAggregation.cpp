@@ -5,6 +5,7 @@
 #include <GPU/GPUAggregationCudf.h>
 
 #include <Columns/ColumnVector.h>
+#include <Compression/CompressionInfo.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -12,6 +13,9 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstring>
+#include <map>
+#include <mutex>
 #include <numeric>
 #include <optional>
 #include <utility>
@@ -37,6 +41,126 @@ namespace
 {
 /// Room for a message coming back over the boundary. cuDF's are a line or two.
 constexpr size_t error_buffer_size = 1024;
+}
+
+namespace
+{
+
+class PinnedBufferPool
+{
+public:
+    static PinnedBufferPool & instance()
+    {
+        static PinnedBufferPool pool;
+        return pool;
+    }
+
+    std::pair<char *, size_t> acquire(size_t bytes)
+    {
+        {
+            std::lock_guard lock(mutex);
+            const auto it = free_buffers.lower_bound(bytes);
+            if (it != free_buffers.end())
+            {
+                const std::pair<char *, size_t> taken{it->second, it->first};
+                pooled_bytes -= it->first;
+                free_buffers.erase(it);
+                return taken;
+            }
+        }
+
+        void * fresh = nullptr;
+        char error[error_buffer_size] = {};
+        if (clickhouseGPUAllocPinned(bytes, &fresh, error, sizeof(error)) != 0)
+            throw Exception(
+                ErrorCodes::GPU_ERROR, "Cannot allocate {} bytes of pinned host memory: {}", bytes, error);
+
+        return {static_cast<char *>(fresh), bytes};
+    }
+
+    void release(char * buffer, size_t capacity) noexcept
+    {
+        if (buffer == nullptr)
+            return;
+
+        {
+            std::lock_guard lock(mutex);
+            if (pooled_bytes + capacity <= max_pooled_bytes)
+            {
+                free_buffers.emplace(capacity, buffer);
+                pooled_bytes += capacity;
+                return;
+            }
+        }
+
+        clickhouseGPUFreePinned(buffer);
+    }
+
+private:
+    ~PinnedBufferPool() = default;
+
+    static constexpr size_t max_pooled_bytes = 1024UL * 1024 * 1024;
+
+    std::mutex mutex;
+    std::multimap<size_t, char *> free_buffers TSA_GUARDED_BY(mutex);
+    size_t pooled_bytes TSA_GUARDED_BY(mutex) = 0;
+};
+
+}
+
+PinnedBuffer::~PinnedBuffer()
+{
+    PinnedBufferPool::instance().release(buffer, capacity);
+}
+
+PinnedBuffer::PinnedBuffer(PinnedBuffer && other) noexcept
+    : buffer(other.buffer), capacity(other.capacity), used(other.used)
+{
+    other.buffer = nullptr;
+    other.capacity = 0;
+    other.used = 0;
+}
+
+PinnedBuffer & PinnedBuffer::operator=(PinnedBuffer && other) noexcept
+{
+    if (this != &other)
+    {
+        clickhouseGPUFreePinned(buffer);
+        buffer = other.buffer;
+        capacity = other.capacity;
+        used = other.used;
+        other.buffer = nullptr;
+        other.capacity = 0;
+        other.used = 0;
+    }
+    return *this;
+}
+
+void PinnedBuffer::reserve(size_t bytes)
+{
+    if (bytes <= capacity)
+        return;
+
+    const size_t new_capacity = std::max(bytes, capacity * 2);
+
+    const auto [fresh, fresh_capacity] = PinnedBufferPool::instance().acquire(new_capacity);
+
+    if (used != 0)
+        memcpy(fresh, buffer, used);
+
+    PinnedBufferPool::instance().release(buffer, capacity);
+    buffer = fresh;
+    capacity = fresh_capacity;
+}
+
+void PinnedBuffer::append(const char * data, size_t bytes)
+{
+    if (bytes == 0)
+        return;
+
+    reserve(used + bytes);
+    memcpy(buffer + used, data, bytes);
+    used += bytes;
 }
 
 std::optional<int> elementTypeOf(const IDataType & type)
@@ -119,6 +243,16 @@ std::optional<int> sumTypeOf(const IDataType & type)
     }
 }
 
+std::optional<int> codecOf(UInt8 method_byte)
+{
+    switch (method_byte)
+    {
+        case static_cast<UInt8>(CompressionMethodByte::LZ4): return CLICKHOUSE_GPU_CODEC_LZ4;
+        case static_cast<UInt8>(CompressionMethodByte::ZSTD): return CLICKHOUSE_GPU_CODEC_ZSTD;
+        default: return {};
+    }
+}
+
 const String & deviceProbeError()
 {
     static const String error = []
@@ -165,16 +299,32 @@ int sumTypeOrThrow(const IDataType & result_type)
 }
 }
 
-SumAccumulator::SumAccumulator(const IDataType & argument_type, const IDataType & result_type, size_t batch_bytes_)
+SumAccumulator::SumAccumulator(
+    const IDataType & argument_type, const IDataType & result_type, size_t batch_bytes_, std::optional<int> codec_)
     : element_type(elementTypeOrThrow(argument_type, result_type))
     , sum_type(sumTypeOrThrow(result_type))
     , element_size(elementSizeOf(element_type))
     , batch_bytes(std::clamp(batch_bytes_, element_size, max_batch_rows * element_size))
+    , codec(codec_)
 {
+    staged.reserve(batch_bytes);
+}
+
+void SumAccumulator::flushIfBatchWouldOverflow(size_t incoming_rows, size_t incoming_bytes)
+{
+    if (staged_values_bytes == 0)
+        return;
+
+    if (staged_values_bytes + incoming_bytes > batch_bytes
+        || staged_values_bytes / element_size + incoming_rows > max_batch_rows)
+        sumBatchOnDevice();
 }
 
 void SumAccumulator::add(const IColumn & column)
 {
+    if (!block_offsets.empty())
+        throw Exception(ErrorCodes::GPU_ERROR, "A batch of compressed blocks cannot also take plain values");
+
     const std::string_view raw = column.getRawData();
     if (raw.size() != column.size() * element_size)
         throw Exception(
@@ -185,27 +335,65 @@ void SumAccumulator::add(const IColumn & column)
             raw.size(),
             column.size() * element_size);
 
-    if (staged.size() / element_size + column.size() > max_batch_rows)
-        sumBatchOnDevice();
+    flushIfBatchWouldOverflow(column.size(), raw.size());
 
-    staged.insert(raw.data(), raw.data() + raw.size());
+    staged.append(raw.data(), raw.size());
+    staged_values_bytes += raw.size();
 
-    if (staged.size() >= batch_bytes)
+    if (staged_values_bytes >= batch_bytes)
         sumBatchOnDevice();
+}
+
+void SumAccumulator::addBlock(const char * payload, size_t compressed_bytes, size_t decompressed_bytes)
+{
+    if (!codec)
+        throw Exception(ErrorCodes::GPU_ERROR, "A compressed block needs a codec the device can expand");
+
+    if (staged_values_bytes != 0 && block_offsets.empty())
+        throw Exception(ErrorCodes::GPU_ERROR, "A batch of plain values cannot also take compressed blocks");
+
+    if (decompressed_bytes % element_size != 0)
+        throw Exception(
+            ErrorCodes::GPU_ERROR,
+            "A compressed block expands to {} bytes, which is not a whole number of {}-byte values",
+            decompressed_bytes,
+            element_size);
+
+    flushIfBatchWouldOverflow(decompressed_bytes / element_size, decompressed_bytes);
+
+    block_offsets.push_back(staged.size());
+    block_compressed_sizes.push_back(compressed_bytes);
+    block_decompressed_sizes.push_back(decompressed_bytes);
+    staged.append(payload, compressed_bytes);
+    staged_values_bytes += decompressed_bytes;
 }
 
 void SumAccumulator::sumBatchOnDevice()
 {
-    if (staged.empty())
+    if (staged_values_bytes == 0)
         return;
 
-    const size_t num_rows = staged.size() / element_size;
+    const size_t num_rows = staged_values_bytes / element_size;
 
     UInt64 batch_sum = 0;
     char error[error_buffer_size] = {};
 
     Stopwatch watch;
-    const int status = clickhouseGPUSum(element_type, sum_type, staged.data(), num_rows, &batch_sum, error, sizeof(error));
+    const int status = block_offsets.empty()
+        ? clickhouseGPUSum(element_type, sum_type, staged.data(), num_rows, &batch_sum, error, sizeof(error))
+        : clickhouseGPUSumCompressed(
+              *codec,
+              element_type,
+              sum_type,
+              staged.data(),
+              block_offsets.data(),
+              block_compressed_sizes.data(),
+              block_decompressed_sizes.data(),
+              block_offsets.size(),
+              num_rows,
+              &batch_sum,
+              error,
+              sizeof(error));
     const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
 
     if (status != 0)
@@ -216,6 +404,10 @@ void SumAccumulator::sumBatchOnDevice()
     ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, elapsed_microseconds);
 
     staged.clear();
+    block_offsets.clear();
+    block_compressed_sizes.clear();
+    block_decompressed_sizes.clear();
+    staged_values_bytes = 0;
 
     if (sum_type == CLICKHOUSE_GPU_SUM_FLOAT64)
         float_sum += std::bit_cast<Float64>(batch_sum);
@@ -237,7 +429,6 @@ Field SumAccumulator::finalize()
             return Field(float_sum);
     }
 }
-
 
 bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argument_types, const DataTypes & result_types)
 {
@@ -405,6 +596,11 @@ GroupBySumAccumulator::GroupBySumAccumulator(
 
     if (status != 0)
         throw Exception(ErrorCodes::GPU_ERROR, "Cannot group by {} keys on the device: {}", key_element_types.size(), error);
+
+    for (size_t i = 0; i < staged_keys.size(); ++i)
+        staged_keys[i].reserve(batch_rows * key_element_sizes[i]);
+    for (size_t i = 0; i < staged_values.size(); ++i)
+        staged_values[i].reserve(batch_rows * value_element_sizes[i]);
 }
 
 GroupBySumAccumulator::~GroupBySumAccumulator()
@@ -436,13 +632,13 @@ void GroupBySumAccumulator::add(const Columns & key_columns, const Columns & val
     for (size_t i = 0; i < key_columns.size(); ++i)
     {
         const std::string_view raw = key_columns[i]->getRawData();
-        staged_keys[i].insert(raw.data(), raw.data() + raw.size());
+        staged_keys[i].append(raw.data(), raw.size());
     }
 
     for (size_t i = 0; i < value_columns.size(); ++i)
     {
         const std::string_view raw = value_columns[i]->getRawData();
-        staged_values[i].insert(raw.data(), raw.data() + raw.size());
+        staged_values[i].append(raw.data(), raw.size());
     }
 
     staged_rows += num_rows;

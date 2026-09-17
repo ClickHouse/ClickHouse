@@ -67,4 +67,28 @@ int clickhouseGPUGroupBySumCopyOut(
 
 void clickhouseGPUGroupBySumDestroy(void * handle);
 
+int clickhouseGPUAllocPinned(size_t bytes, void ** host_ptr, char * error, size_t error_size);
+
+void clickhouseGPUFreePinned(void * host_ptr);
+
+enum ClickHouseGPUCodec
+{
+    CLICKHOUSE_GPU_CODEC_LZ4 = 0,
+    CLICKHOUSE_GPU_CODEC_ZSTD = 1,
+};
+
+int clickhouseGPUSumCompressed(
+    int codec,
+    int element_type,
+    int sum_type,
+    const void * host_data,
+    const size_t * compressed_offsets,
+    const size_t * compressed_bytes,
+    const size_t * decompressed_bytes,
+    size_t num_blocks,
+    size_t num_rows,
+    void * result,
+    char * error,
+    size_t error_size);
+
 }

@@ -21,6 +21,9 @@
 
 #include <cuda_runtime_api.h>
 
+#include <nvcomp/lz4.h>
+#include <nvcomp/zstd.h>
+
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -130,6 +133,15 @@ void reduceIntoSum(const cudf::column_view & column, int sum_type, void * result
 }
 
 constexpr size_t sum_type_size = 8;
+
+void reduceDeviceValues(
+    const void * device_values, int element_type, int sum_type, size_t num_rows, void * result, rmm::cuda_stream_view stream)
+{
+    const ElementLayout element = elementLayoutOf(element_type);
+    const cudf::column_view column(
+        element.type, static_cast<cudf::size_type>(num_rows), device_values, nullptr, 0);
+    reduceIntoSum(column, sum_type, result, stream);
+}
 
 cudf::data_type cudfGroupBySumTargetTypeFor(cudf::data_type source)
 {
@@ -296,10 +308,148 @@ int clickhouseGPUSum(
 
         const rmm::device_buffer device_data(host_data, num_rows * element.size, stream);
 
-        const cudf::column_view column(
-            element.type, static_cast<cudf::size_type>(num_rows), device_data.data(), nullptr, 0);
+        reduceDeviceValues(device_data.data(), element_type, sum_type, num_rows, result, stream);
+        return 0;
+    }
+    catch (const std::exception & e)
+    {
+        writeError(error, error_size, e.what());
+        return 1;
+    }
+    catch (...)
+    {
+        writeError(error, error_size, "unknown exception");
+        return 1;
+    }
+}
 
-        reduceIntoSum(column, sum_type, result, stream);
+int clickhouseGPUSumCompressed(
+    int codec,
+    int element_type,
+    int sum_type,
+    const void * host_data,
+    const size_t * compressed_offsets,
+    const size_t * compressed_bytes,
+    const size_t * decompressed_bytes,
+    size_t num_blocks,
+    size_t num_rows,
+    void * result,
+    char * error,
+    size_t error_size)
+{
+    try
+    {
+        if (num_blocks == 0 || num_rows == 0)
+            throw std::logic_error("nothing to sum");
+
+        checkRowCountFitsCudf(num_rows, "a batch");
+
+        const ElementLayout element = elementLayoutOf(element_type);
+
+        size_t compressed_total = 0;
+        size_t decompressed_total = 0;
+        size_t max_decompressed = 0;
+        for (size_t i = 0; i < num_blocks; ++i)
+        {
+            compressed_total = std::max(compressed_total, compressed_offsets[i] + compressed_bytes[i]);
+            decompressed_total += decompressed_bytes[i];
+            max_decompressed = std::max(max_decompressed, decompressed_bytes[i]);
+        }
+
+        if (decompressed_total != num_rows * element.size)
+            throw std::logic_error(
+                "blocks expand to " + std::to_string(decompressed_total) + " bytes, expected "
+                + std::to_string(num_rows * element.size));
+
+        setUpDeviceMemoryResourceOnce();
+
+        const rmm::cuda_stream_view stream = cudf::get_default_stream();
+
+        const rmm::device_buffer device_compressed(host_data, compressed_total, stream);
+        rmm::device_buffer device_values(decompressed_total, stream);
+
+        std::vector<const void *> host_compressed_ptrs(num_blocks);
+        std::vector<void *> host_value_ptrs(num_blocks);
+        for (size_t i = 0, at = 0; i < num_blocks; ++i)
+        {
+            host_compressed_ptrs[i] = static_cast<const char *>(device_compressed.data()) + compressed_offsets[i];
+            host_value_ptrs[i] = static_cast<char *>(device_values.data()) + at;
+            at += decompressed_bytes[i];
+        }
+
+        const rmm::device_buffer d_compressed_ptrs(host_compressed_ptrs.data(), num_blocks * sizeof(void *), stream);
+        const rmm::device_buffer d_value_ptrs(host_value_ptrs.data(), num_blocks * sizeof(void *), stream);
+        const rmm::device_buffer d_compressed_bytes(compressed_bytes, num_blocks * sizeof(size_t), stream);
+        const rmm::device_buffer d_decompressed_bytes(decompressed_bytes, num_blocks * sizeof(size_t), stream);
+        rmm::device_buffer d_actual_bytes(num_blocks * sizeof(size_t), stream);
+        rmm::device_buffer d_statuses(num_blocks * sizeof(nvcompStatus_t), stream);
+
+        size_t temp_bytes = 0;
+        nvcompStatus_t status = codec == CLICKHOUSE_GPU_CODEC_ZSTD
+            ? nvcompBatchedZstdDecompressGetTempSizeAsync(
+                  num_blocks, max_decompressed, nvcompBatchedZstdDecompressDefaultOpts, &temp_bytes, decompressed_total)
+            : nvcompBatchedLZ4DecompressGetTempSizeAsync(
+                  num_blocks, max_decompressed, nvcompBatchedLZ4DecompressDefaultOpts, &temp_bytes, decompressed_total);
+        if (status != nvcompSuccess)
+            throw std::logic_error("nvcomp could not size its scratch space: " + std::to_string(static_cast<int>(status)));
+
+        rmm::device_buffer device_temp(temp_bytes, stream);
+
+        status = codec == CLICKHOUSE_GPU_CODEC_ZSTD
+            ? nvcompBatchedZstdDecompressAsync(
+                  static_cast<const void * const *>(d_compressed_ptrs.data()),
+                  static_cast<const size_t *>(d_compressed_bytes.data()),
+                  static_cast<const size_t *>(d_decompressed_bytes.data()),
+                  static_cast<size_t *>(d_actual_bytes.data()),
+                  num_blocks,
+                  device_temp.data(),
+                  temp_bytes,
+                  static_cast<void * const *>(d_value_ptrs.data()),
+                  nvcompBatchedZstdDecompressDefaultOpts,
+                  static_cast<nvcompStatus_t *>(d_statuses.data()),
+                  stream.value())
+            : nvcompBatchedLZ4DecompressAsync(
+                  static_cast<const void * const *>(d_compressed_ptrs.data()),
+                  static_cast<const size_t *>(d_compressed_bytes.data()),
+                  static_cast<const size_t *>(d_decompressed_bytes.data()),
+                  static_cast<size_t *>(d_actual_bytes.data()),
+                  num_blocks,
+                  device_temp.data(),
+                  temp_bytes,
+                  static_cast<void * const *>(d_value_ptrs.data()),
+                  nvcompBatchedLZ4DecompressDefaultOpts,
+                  static_cast<nvcompStatus_t *>(d_statuses.data()),
+                  stream.value())
+            ;
+        if (status != nvcompSuccess)
+            throw std::logic_error("nvcomp could not decompress: " + std::to_string(static_cast<int>(status)));
+
+        const auto copy_back = [&stream](void * destination, const void * source, size_t bytes, const char * what)
+        {
+            if (const cudaError_t copy_status
+                = cudaMemcpyAsync(destination, source, bytes, cudaMemcpyDeviceToHost, stream.value());
+                copy_status != cudaSuccess)
+                throw std::runtime_error(std::string("cannot copy ") + what + " back: " + cudaGetErrorString(copy_status));
+        };
+
+        std::vector<size_t> actual_bytes(num_blocks);
+        std::vector<nvcompStatus_t> statuses(num_blocks);
+        copy_back(actual_bytes.data(), d_actual_bytes.data(), num_blocks * sizeof(size_t), "the decompressed sizes");
+        copy_back(statuses.data(), d_statuses.data(), num_blocks * sizeof(nvcompStatus_t), "the decompression statuses");
+        stream.synchronize();
+
+        for (size_t i = 0; i < num_blocks; ++i)
+        {
+            if (statuses[i] != nvcompSuccess)
+                throw std::logic_error(
+                    "block " + std::to_string(i) + " did not decompress: " + std::to_string(static_cast<int>(statuses[i])));
+            if (actual_bytes[i] != decompressed_bytes[i])
+                throw std::logic_error(
+                    "block " + std::to_string(i) + " expanded to " + std::to_string(actual_bytes[i]) + " bytes, expected "
+                    + std::to_string(decompressed_bytes[i]));
+        }
+
+        reduceDeviceValues(device_values.data(), element_type, sum_type, num_rows, result, stream);
         return 0;
     }
     catch (const std::exception & e)
@@ -558,6 +708,30 @@ int clickhouseGPUGroupBySumCopyOut(
 void clickhouseGPUGroupBySumDestroy(void * handle)
 {
     delete static_cast<GroupBySumState *>(handle);
+}
+
+int clickhouseGPUAllocPinned(size_t bytes, void ** host_ptr, char * error, size_t error_size)
+{
+    *host_ptr = nullptr;
+
+    if (bytes == 0)
+        return 0;
+
+    const cudaError_t status = cudaHostAlloc(host_ptr, bytes, cudaHostAllocDefault);
+    if (status != cudaSuccess)
+    {
+        *host_ptr = nullptr;
+        writeError(error, error_size, cudaGetErrorString(status));
+        return 1;
+    }
+
+    return 0;
+}
+
+void clickhouseGPUFreePinned(void * host_ptr)
+{
+    if (host_ptr != nullptr)
+        cudaFreeHost(host_ptr);
 }
 
 }

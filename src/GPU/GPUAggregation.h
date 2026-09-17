@@ -20,6 +20,8 @@ std::optional<int> elementTypeOf(const IDataType & type);
 
 std::optional<int> sumTypeOf(const IDataType & type);
 
+std::optional<int> codecOf(UInt8 method_byte);
+
 size_t elementSizeOf(int element_type);
 
 
@@ -27,17 +29,55 @@ void * resizeForElementType(IColumn & column, size_t num_rows, int element_type)
 
 bool canSumOnDevice(const IDataType & argument_type, const IDataType & result_type);
 
+class PinnedBuffer
+{
+public:
+    PinnedBuffer() = default;
+    explicit PinnedBuffer(size_t capacity_) { reserve(capacity_); }
+    ~PinnedBuffer();
+
+    PinnedBuffer(PinnedBuffer && other) noexcept;
+    PinnedBuffer & operator=(PinnedBuffer && other) noexcept;
+
+    PinnedBuffer(const PinnedBuffer &) = delete;
+    PinnedBuffer & operator=(const PinnedBuffer &) = delete;
+
+    void reserve(size_t bytes);
+
+    void append(const char * data, size_t bytes);
+
+    void clear() { used = 0; }
+
+    const char * data() const { return buffer; }
+    size_t size() const { return used; }
+    bool empty() const { return used == 0; }
+
+private:
+    char * buffer = nullptr;
+    size_t capacity = 0;
+    size_t used = 0;
+};
+
+
 class SumAccumulator
 {
 public:
-    SumAccumulator(const IDataType & argument_type, const IDataType & result_type, size_t batch_bytes_);
+    SumAccumulator(
+        const IDataType & argument_type,
+        const IDataType & result_type,
+        size_t batch_bytes_,
+        std::optional<int> codec_ = {});
 
     void add(const IColumn & column);
+
+    void addBlock(const char * payload, size_t compressed_bytes, size_t decompressed_bytes);
 
     Field finalize();
 
 private:
     static constexpr size_t max_batch_rows = (1UL << 31) - 1;
+
+    void flushIfBatchWouldOverflow(size_t incoming_rows, size_t incoming_bytes);
 
     void sumBatchOnDevice();
 
@@ -45,8 +85,15 @@ private:
     const int sum_type;
     const size_t element_size;
     const size_t batch_bytes;
+    const std::optional<int> codec;
 
-    PODArray<char> staged;
+    PinnedBuffer staged;
+
+    std::vector<size_t> block_offsets;
+    std::vector<size_t> block_compressed_sizes;
+    std::vector<size_t> block_decompressed_sizes;
+
+    size_t staged_values_bytes = 0;
 
     UInt64 integer_sum = 0;
     Float64 float_sum = 0;
@@ -86,8 +133,8 @@ private:
 
     const size_t batch_rows;
 
-    std::vector<PODArray<char>> staged_keys;
-    std::vector<PODArray<char>> staged_values;
+    std::vector<PinnedBuffer> staged_keys;
+    std::vector<PinnedBuffer> staged_values;
     size_t staged_rows = 0;
 
     void * handle = nullptr;

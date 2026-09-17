@@ -9402,14 +9402,33 @@ Possible values:
 How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
 to the device.
 
-A block is 65536 rows, half a megabyte of `UInt64`, and a transfer that small spends its time in
-the launch rather than moving data - so blocks are gathered into a batch first. Bigger batches
-amortize more of it and need more memory, on the host and on the device both: while a query runs,
-one batch of this size is staged in host memory and a copy of it is on the device. Without
-`GROUP BY` the budget is per aggregated column; with it, one batch covers a whole row - every key
-column and every aggregated column together - since they have to be grouped as one.
+A block is 65536 rows, half a megabyte of `UInt64` - too little to occupy either the link or the
+device on its own, so blocks are gathered into a batch first. What size is best depends on which
+aggregation it is, and the two want opposite things, which is why one number cannot serve both
+well.
 
-The host side counts towards `max_memory_usage`. The device side is outside every memory limit the
+Without `GROUP BY` a batch is pure transfer, and a small one lets the host's reading and the
+device's work run at the same time where a large one does all of the reading and then all of the
+sending: measured on a Tesla T4 over 1.49 GiB of `UInt64`, `sum` took 0.70 s with a 256 MiB batch
+and 0.51 s with 3 MiB, against 0.35 s on sixteen cores.
+
+With `GROUP BY` every batch is merged into the groups seen so far, which costs what that partial
+result holds rather than what the batch holds - so more batches means more merges over the same
+groups, and larger is better. Over the same rows grouped into a million groups, the keyed `sum`
+took 9.41 s with a 4 MiB batch, 3.14 s with 32 MiB and 1.82 s with 256 MiB, against 1.01 s on
+sixteen cores. The default is sized for this path, because it is the one a wrong value hurts by
+five times rather than by one and a third.
+
+It also costs memory, on the host and on the device both: while a query runs, one batch of this
+size is staged in host memory and a copy of it is on the device. Without `GROUP BY` the budget is
+per aggregated column; with it, one batch covers a whole row - every key column and every
+aggregated column together - since they have to be grouped as one.
+
+The host staging is page-locked memory, pooled and reused across queries rather than locked per
+query: locking walks the pages it pins, which for a large batch costs more than the transfer it
+feeds.
+
+The device side is outside every memory limit the
 server knows about, and with `GROUP BY` so is the partial result, which holds one row per group
 seen so far for as long as the query runs.
 

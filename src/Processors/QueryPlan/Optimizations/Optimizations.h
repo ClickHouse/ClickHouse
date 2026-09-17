@@ -375,6 +375,8 @@ std::optional<String> optimizeUseNormalProjections(
 /// Returns `COUNT()` query directly from the text index posting metadata.
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
+bool optimizeAggregationFromGPUCompressedColumns(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
 /// Answers a keyless `sum` over a `MergeTree` table from columns held in GPU device memory,
 /// replacing the read under a `GPUAggregatingStep` with a source that emits one row of per-part
 /// sums. Refuses everything in a build without GPU support, where there is no such step.

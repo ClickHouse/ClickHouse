@@ -6,6 +6,7 @@ target_include_directories (clickhouse_gpu_cudf SYSTEM PRIVATE "${ClickHouse_SOU
 
 target_link_libraries (clickhouse_gpu_cudf PUBLIC
     ch_contrib::cudf
+    ch_contrib::nvcomp
     ch_gpu::cudart
 )
 
