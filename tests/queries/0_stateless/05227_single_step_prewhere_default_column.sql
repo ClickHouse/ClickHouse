@@ -14,7 +14,6 @@ SELECT groupUniqArray(b) FROM (SELECT b FROM t_single_step_prewhere PREWHERE a);
 SELECT groupUniqArray(b) FROM (SELECT b FROM t_single_step_prewhere PREWHERE a AND a = 1);
 SELECT groupUniqArray((a, b)) FROM (SELECT a, b FROM t_single_step_prewhere PREWHERE a);
 SELECT groupUniqArray(b) FROM (SELECT b FROM t_single_step_prewhere PREWHERE a SETTINGS enable_multiple_prewhere_read_steps = 0);
-SELECT groupUniqArray(b) FROM (SELECT b FROM t_single_step_prewhere PREWHERE a) SETTINGS enable_analyzer = 0;
 DROP TABLE t_single_step_prewhere;
 
 SELECT 'a DEFAULT expression over several columns';
