@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <type_traits>
+#include <utility>
 
 namespace DB
 {
@@ -38,6 +39,23 @@ constexpr bool canLosslesslyHold()
         return sizeof(T) > sizeof(BuildKey);
 }
 
+/// `BuildKey`'s value range expressed in `T`, which `canLosslesslyHold` guarantees is wide enough. Derived
+/// from the key's width rather than from `std::numeric_limits<BuildKey>`: widening an `Int8` limit reads
+/// as a character misuse to `bugprone-signed-char-misuse`.
+template <typename BuildKey, typename T>
+constexpr std::pair<T, T> valueRangeOf()
+{
+    if constexpr (sizeof(T) == sizeof(BuildKey))
+        return {std::numeric_limits<T>::min(), std::numeric_limits<T>::max()};
+    else if constexpr (std::is_signed_v<BuildKey>)
+    {
+        constexpr Int64 half = Int64(1) << (sizeof(BuildKey) * 8 - 1);
+        return {static_cast<T>(-half), static_cast<T>(half - 1)};
+    }
+    else
+        return {T(0), static_cast<T>((UInt64(1) << (sizeof(BuildKey) * 8)) - 1)};
+}
+
 /// One probe value is a member when it lies in `BuildKey`'s value range, and shifted by `min_key` lies in
 /// the table's range and the table has it. The null-mask merge is split into two loops so that each stays
 /// branchless and vectorizable.
@@ -54,8 +72,9 @@ void probeFixedHashMapLoop(
     using UnsignedBK = std::make_unsigned_t<BuildKey>;
     static_assert(canLosslesslyHold<BuildKey, T>(), "probeFixedHashMapLoop instantiated with a probe type that cannot hold BuildKey's full range");
 
-    constexpr T t_lo = static_cast<T>(std::numeric_limits<BuildKey>::min());
-    constexpr T t_hi = static_cast<T>(std::numeric_limits<BuildKey>::max());
+    constexpr std::pair<T, T> value_range = valueRangeOf<BuildKey, T>();
+    constexpr T t_lo = value_range.first;
+    constexpr T t_hi = value_range.second;
 
     auto probe_one = [&](size_t i) -> UInt8
     {
