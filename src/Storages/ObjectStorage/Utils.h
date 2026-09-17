@@ -41,7 +41,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     bool allow_page_cache = true);
 
 /// Joins an object's path under a storage prefix (a namespace, or a data source description).
-/// A leading separator is dropped only when there is a prefix to join under, since `fs::path`
+/// An ARN namespace keeps literal separators in the object key.
+/// For other non-empty prefixes, a leading separator is dropped before joining, since `fs::path`
 /// would otherwise treat the path as absolute and discard the prefix. An empty prefix leaves the
 /// path as written: on a filesystem-backed storage that separator is what makes a path absolute.
 std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path);

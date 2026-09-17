@@ -59,5 +59,10 @@ $CLICKHOUSE_CLIENT --query "GRANT CREATE TEMPORARY TABLE ON *.* TO ${grant_user}
 read_query="SELECT * FROM s3('arn:aws:s3::123456789012:accesspoint/example.mrap', key='my file.csv', access_key_id='TEST', secret_access_key='TEST', format='CSV', structure='x UInt8') LIMIT 0 FORMAT Null"
 check_access_denied "$read_query"
 $CLICKHOUSE_CLIENT --query "GRANT READ ON S3('arn:aws:s3::123456789012:accesspoint/example[.]mrap/my%20file[.]csv') TO ${grant_user}"
-$CLICKHOUSE_CLIENT --user "$grant_user" --query "$read_query"
 check_access_denied "SELECT * FROM s3('arn:aws:s3::123456789012:accesspoint/example.mrap', key='other file.csv', access_key_id='TEST', secret_access_key='TEST', format='CSV', structure='x UInt8') LIMIT 0 FORMAT Null"
+
+$CLICKHOUSE_CLIENT --query "GRANT READ ON S3('arn:aws:s3::123456789012:accesspoint/example[.]mrap/a/b') TO ${grant_user}"
+check_access_denied "SELECT * FROM s3('arn:aws:s3::123456789012:accesspoint/example.mrap', key='a//b', access_key_id='TEST', secret_access_key='TEST', format='CSV', structure='x UInt8') LIMIT 0 FORMAT Null"
+
+$CLICKHOUSE_CLIENT --query "GRANT READ ON S3('arn:aws:s3::123456789012:accesspoint/example[.]mrap/key') TO ${grant_user}"
+check_access_denied "SELECT * FROM s3('arn:aws:s3::123456789012:accesspoint/example.mrap', key='/key', access_key_id='TEST', secret_access_key='TEST', format='CSV', structure='x UInt8') LIMIT 0 FORMAT Null"

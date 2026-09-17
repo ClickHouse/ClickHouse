@@ -35,6 +35,7 @@ TEST(StorageS3MRAP, PathFilterCandidatesPreserveLiteralKeys)
     {
         const auto path = DB::formatObjectPath(configuration, key, /*include_connection_info=*/false);
         EXPECT_EQ(DB::candidateKeysUnderPrefix(configuration.getNamespace(), path), DB::Strings{key});
+        EXPECT_EQ(DB::joinPathUnderPrefix(configuration.getNamespace(), key), path);
     }
     EXPECT_TRUE(DB::candidateKeysUnderPrefix(configuration.getNamespace(), "other/key").empty());
 }

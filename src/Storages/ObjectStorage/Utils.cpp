@@ -154,6 +154,10 @@ std::string joinPathUnderPrefix(const std::string & prefix, const std::string & 
     if (prefix.empty())
         return path;
 
+    /// MRAP namespaces contain literal S3 keys, including repeated and leading separators.
+    if (prefix.starts_with("arn:"))
+        return prefix + "/" + path;
+
     std::string_view key = path;
     if (key.starts_with("/"))
         key.remove_prefix(1);
