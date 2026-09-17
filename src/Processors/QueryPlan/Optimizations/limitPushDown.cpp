@@ -200,7 +200,7 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     if (length == 0 || length > std::numeric_limits<UInt64>::max() - offset)
         return;
 
-    sort->updateLimitByHint(limit_by->getColumns(), length + offset);
+    sort->updateLimitByHint(limit_by->getColumns(), length + offset, limit_by->alwaysReadTillEnd());
 
     /// The pre-filter runs per stream, so the pipeline below the sort must keep several streams:
     /// `PrefetchingConcatProcessor` would otherwise collapse a single-part filtered read into one
