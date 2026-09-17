@@ -324,7 +324,8 @@ bool likePatternHasStringValueFilterConditions(const String & pattern)
     return !parseLikePattern(pattern).empty();
 }
 
-StringValueFiltersPtr extractStringValueFilters(const ActionsDAG & filter_dag, const String & filter_column_name)
+StringValueFiltersPtr extractStringValueFilters(
+    const ActionsDAG & filter_dag, const String & filter_column_name, const ActionsDAG * row_level_filter)
 {
     const auto * root = filter_dag.tryFindInOutputs(filter_column_name);
     if (!root)
@@ -381,6 +382,23 @@ StringValueFiltersPtr extractStringValueFilters(const ActionsDAG & filter_dag, c
 
             auto it = conditions_by_column.find(input->result_name);
             if (it != conditions_by_column.end() && !it->second.allowed_readers.contains(&node))
+                it->second.conditions.clear();
+        }
+    }
+
+    /// The row-level filter (row policy) is a separate expression that the readers evaluate on the
+    /// scanned columns before this one, so it observes the substituted values of every row, including
+    /// the rows that the extracted conditions reject afterwards. A column it reads in any way
+    /// (even only to output it) is therefore excluded.
+    if (row_level_filter)
+    {
+        for (const auto & node : row_level_filter->getNodes())
+        {
+            if (node.type != ActionsDAG::ActionType::INPUT)
+                continue;
+
+            auto it = conditions_by_column.find(node.result_name);
+            if (it != conditions_by_column.end())
                 it->second.conditions.clear();
         }
     }

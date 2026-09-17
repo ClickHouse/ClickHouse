@@ -5097,7 +5097,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && query_info.prewhere_info->need_filter)
     {
         reader_settings.string_value_filters = extractStringValueFilters(
-            query_info.prewhere_info->prewhere_actions, query_info.prewhere_info->prewhere_column_name);
+            query_info.prewhere_info->prewhere_actions,
+            query_info.prewhere_info->prewhere_column_name,
+            query_info.row_level_filter ? &query_info.row_level_filter->actions : nullptr);
     }
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of

@@ -1334,7 +1334,10 @@ void Reader::preparePrewhere()
     /// is applied, i.e. only for the rows that passed it.
     if (options.format.parquet.apply_string_filters && prewhere_info && prewhere_info->need_filter)
     {
-        if (auto filters = extractStringValueFilters(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+        if (auto filters = extractStringValueFilters(
+                prewhere_info->prewhere_actions,
+                prewhere_info->prewhere_column_name,
+                row_level_filter ? &row_level_filter->actions : nullptr))
         {
             for (auto & pc : primitive_columns)
             {

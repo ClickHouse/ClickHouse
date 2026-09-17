@@ -18,9 +18,14 @@ class Field;
   * non-matching values with empty strings during the scan (see `StringValueFilter`). This is only
   * correct if the filter expression is guaranteed to be applied to the read rows afterwards.
   *
+  * `row_level_filter` is the row policy expression that the readers evaluate on the same scanned
+  * columns before the filter expression, if any: a column that it reads is never filtered during
+  * the scan, because it would observe the substituted empty strings.
+  *
   * Returns nullptr if there are no suitable conditions.
   */
-StringValueFiltersPtr extractStringValueFilters(const ActionsDAG & filter_dag, const String & filter_column_name);
+StringValueFiltersPtr extractStringValueFilters(
+    const ActionsDAG & filter_dag, const String & filter_column_name, const ActionsDAG * row_level_filter = nullptr);
 
 /// Whether a LIKE pattern contains fixed substrings that can be used as a string value filter.
 bool likePatternHasStringValueFilterConditions(const String & pattern);
