@@ -128,7 +128,7 @@ struct TableFixture
         storage_snapshot = storage->getStorageSnapshot(metadata_handle, context);
     }
 
-    void insertOneRow()
+    void insertOneRow() const
     {
         auto type = std::make_shared<DataTypeUInt64>();
         auto column = type->createColumn();
@@ -153,7 +153,7 @@ struct TableFixture
 
     /// A read of the (empty) table, built through the same `readFromParts` entry point the
     /// deserializer uses, so both sides of the round-trip are shaped identically.
-    std::unique_ptr<ReadFromMergeTree> makeRead()
+    std::unique_ptr<ReadFromMergeTree> makeRead() const
     {
         const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
@@ -174,12 +174,10 @@ struct TableFixture
             /*max_block_size=*/DEFAULT_BLOCK_SIZE,
             /*num_streams=*/1);
 
-        auto * read = typeid_cast<ReadFromMergeTree *>(step.get());
-        if (!read)
+        if (!typeid_cast<ReadFromMergeTree *>(step.get()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "readFromParts did not produce a ReadFromMergeTree step");
 
-        step.release();
-        return std::unique_ptr<ReadFromMergeTree>(read);
+        return std::unique_ptr<ReadFromMergeTree>(static_cast<ReadFromMergeTree *>(step.release()));
     }
 };
 
@@ -234,12 +232,10 @@ std::unique_ptr<ReadFromMergeTree> deserializeRead(const String & bytes, const T
         in, registry, {}, context, input_headers, output_header, settings, 0, version, step_version, false};
 
     auto step = ReadFromMergeTree::deserialize(ctx);
-    auto * read = typeid_cast<ReadFromMergeTree *>(step.get());
-    if (!read)
+    if (!typeid_cast<ReadFromMergeTree *>(step.get()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "deserialize did not produce a ReadFromMergeTree step");
 
-    step.release();
-    return std::unique_ptr<ReadFromMergeTree>(read);
+    return std::unique_ptr<ReadFromMergeTree>(static_cast<ReadFromMergeTree *>(step.release()));
 }
 
 constexpr UInt64 too_old_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG - 1;
