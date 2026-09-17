@@ -91,8 +91,7 @@ void gatherFixedStride(
 
         if constexpr (from_row_list)
         {
-            for (const UInt64 ref_word : refsOf(word))
-                copy_ref(ref_word);
+            forEachRef(word, copy_ref);
         }
         else
         {
@@ -183,8 +182,7 @@ const UInt64 * flatWords(const RefWordSelection & selection, const GatherRowRema
                 if (!*word_i)
                     *out++ = 0;
                 else
-                    for (const UInt64 ref_word : refsOf(*word_i))
-                        *out++ = ref_word;
+                    forEachRef(*word_i, [&](UInt64 ref_word) { *out++ = ref_word; });
             }
             chassert(out == scratch.flat.data() + selection.rows);
             scratch.flat_ready = true;
@@ -216,7 +214,7 @@ const GatherRanges & rangesOf(const RefWordSelection & selection, EmitScratch & 
             }
             const RowRefList ref_list = RowRefList::fromWord(*word_i);
             /// A non-range list node would be mis-emitted here as a run of consecutive rows.
-            chassert(ref_list.isInline() || ref_list.asBatch()->is_range);
+            chassert(ref_list.isInline() || (ref_list.isBatch() && ref_list.asBatch()->is_range));
             const UInt64 start_word = ref_list.firstWord();
             appendGatherRange(scratch.ranges, refWordBlockNo(start_word), refWordRowNo(start_word), ref_list.rows());
         }
