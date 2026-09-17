@@ -1374,9 +1374,6 @@ ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping
     for (const auto * output : outputs)
         actions.outputs.push_back(copy_map[output]);
 
-    /// No source DAG here -- this builds a sub-DAG from a node list -- so any ids stay with the
-    /// caller's actions. A node that carries one brings it along in `Node::scalar_subquery_id`.
-
     return actions;
 }
 

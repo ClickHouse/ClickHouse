@@ -90,9 +90,8 @@ public:
         return source_expression;
     }
 
-    /// Ids of the scalar subqueries whose values this constant is made of, so that
-    /// `system.query_log.query_plan` can say which step ended up using them. The subqueries are
-    /// gone by planning time -- only their values are left -- so the ids have to be carried here
+    /// Links this constant to the scalar subqueries that were executed to produce its value. They
+    /// are gone by planning time -- only the value is left -- so the ids have to be carried here
     /// rather than recovered later.
     ///
     /// A list rather than one id because constant folding collapses whole expressions:

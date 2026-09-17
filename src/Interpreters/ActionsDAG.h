@@ -115,13 +115,10 @@ public:
         /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
         bool is_masked_secret = false;
-        /// Ids of the scalar subqueries this constant is made of. They are executed during
-        /// analysis and replaced by a literal named after its own value, so by planning time
-        /// nothing else distinguishes it from any other constant, and
-        /// `system.query_log.query_plan` could not otherwise say which step used the result. A
-        /// list because folding collapses expressions: `(SELECT a) + (SELECT b)` is one constant
-        /// from two subqueries. Living on the node means clone, split and merge carry it for free.
-        /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
+        /// Ids of the scalar subqueries this constant is made of. A list because folding
+        /// collapses expressions: `(SELECT a) + (SELECT b)` is one constant from two subqueries.
+        /// Living on the node means clone, split and merge carry it for free. Not part of the node
+        /// identity, so it is intentionally excluded from `updateHash`.
         std::vector<size_t> scalar_subquery_ids;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
@@ -143,10 +140,9 @@ private:
     NodeRawConstPtrs inputs;
     NodeRawConstPtrs outputs;
 
-    /// Ids of the scalar subqueries whose folded values these actions use. Recorded on the DAG as
-    /// well as on the node (`Node::scalar_subquery_id`) because the node does not always survive:
-    /// a constant projected under an alias is re-materialised as a fresh column under the alias's
-    /// name, and the marked node disappears with the old one. The DAG outlives that.
+    /// The same ids as `Node::scalar_subquery_ids`, kept on the actions as a whole because a node
+    /// does not always survive: a constant projected under an alias is re-materialised as a fresh
+    /// column under the alias's name, and the marked node disappears with the old one.
     std::vector<size_t> scalar_subquery_ids;
 
 public:
@@ -159,7 +155,6 @@ public:
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
 
-    /// See `scalar_subquery_ids`.
     const std::vector<size_t> & getScalarSubqueryIds() const { return scalar_subquery_ids; }
     void addScalarSubqueryId(size_t id);
 

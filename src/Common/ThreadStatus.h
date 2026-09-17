@@ -119,13 +119,7 @@ public:
         std::shared_ptr<std::atomic_size_t> plan_step_index = std::make_shared<std::atomic_size_t>(0);
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
-        /// Numbers the subqueries that run outside the query's plan tree -- an `IN (SELECT ...)`
-        /// whose set is built during planning, and in future the scalar subqueries folded away
-        /// during analysis. The id is assigned once, where the subquery is created, and carried to
-        /// both ends: onto the captured sub-plan, and onto every step that consumes its result. It
-        /// is deliberately assigned rather than derived from the subquery, so the two ends cannot
-        /// disagree. Shared and atomic for the same reason `plan_step_index` is: one query plans on
-        /// more than one thread.
+        /// Numbers the subqueries that run outside the query's plan tree.
         std::shared_ptr<std::atomic_size_t> subquery_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
@@ -352,7 +346,6 @@ public:
     size_t getNextPlanStepIndex() const;
     size_t getNextPipelineProcessorIndex() const;
 
-    /// Next id for a subquery that runs outside the plan tree. See `SharedData::subquery_index`.
     size_t getNextSubqueryIndex() const;
 
     double getEffectiveSampleProbability(UInt64 size) const

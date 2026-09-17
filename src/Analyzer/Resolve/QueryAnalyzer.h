@@ -342,10 +342,7 @@ private:
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_global;
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value_type_only;
 
-    /// The id a scalar subquery was captured under, keyed like the caches above. A cache hit hands
-    /// it back so the step reading the cached value links to the sub-plan that produced it, instead
-    /// of looking like it consumed nothing: the subquery runs once and is used twice, and the
-    /// stored plan should say so. See `system.query_log.query_plan`.
+    /// Ids of the scalar subqueries already executed, keyed like the caches above.
     std::unordered_map<QueryTreeNodePtrWithHash, size_t> scalar_subquery_to_subquery_id;
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;

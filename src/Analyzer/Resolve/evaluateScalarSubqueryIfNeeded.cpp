@@ -127,12 +127,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     Block scalar_block;
 
-    /// Identifies this subquery within the query, for `system.query_log.query_plan`. Assigned on
-    /// the cache miss below -- the branch that actually runs it -- and handed back on a hit, so a
-    /// value computed once and used twice links both readers to the one sub-plan that produced it.
-    /// Stays unset only when the value came from somewhere this analysis never ran, in which case
-    /// there is no local plan to point at. Declared out here because the constant the value is
-    /// folded into is built further down, outside those branches.
+    /// Identifies this subquery within the query.
+    ///
+    /// Stays unset when the value came from somewhere this analysis never ran, where there is no
+    /// local plan to point at. Declared out here because the constant the value is folded into is
+    /// built further down, outside those branches.
     std::optional<size_t> scalar_subquery_id;
 
     auto node_without_alias = node->clone();
@@ -156,8 +155,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         scalar_block = scalars_cache.at(node_with_hash);
 
-        /// Nothing runs here, but the value is this query's own and was captured under an id when
-        /// it was computed; reusing it is what makes the sub-plan list every step that reads it.
+        /// Nothing ran here, because this query computed the value earlier, and the id it was given
+        /// then is what links the step reading it to the sub-plan that produced it -- without
+        /// which a subquery used twice names only one of its readers in `query_plan`.
         if (const auto it = scalar_subquery_to_subquery_id.find(node_with_hash); it != scalar_subquery_to_subquery_id.end())
             scalar_subquery_id = it->second;
     }
@@ -304,11 +304,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
             /// This subquery runs here, during analysis, and its result is folded into the outer
             /// query as a literal -- the plan that is later stored keeps no trace of it at all, not
-            /// even a reference, while its rows still count towards the query. Captured so the
-            /// stored document names the tables it read. Inert when the query is not being profiled.
-            ///
-            /// Declared out here so it outlives the pipeline it describes, and left untouched on the
-            /// `skip_execution_for_exists` path: nothing ran there, so there is nothing to report.
+            /// even a reference, while its rows still count towards the query.
             SubPlanCapture sub_plan_capture;
 
             if (!skip_execution_for_exists)
@@ -353,8 +349,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
 
                 /// While the pipeline is still alive; the statistics are read from its processors.
-                /// The loop above stops at the first non-empty chunk rather than draining, so these
-                /// describe a pipeline that may have been cancelled early -- which is what ran.
                 sub_plan_capture.finish(io.pipeline);
             }
 
@@ -458,8 +452,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
         /// The subquery is gone from here on -- only its value remains -- so the id it was captured
-        /// under travels on the constant, for the planner to hand to the step that reads it. On a
-        /// cache hit this is the id of the evaluation that did run, so both readers point at it.
+        /// under travels on the constant, for the planner to hand to the step that reads it.
         if (scalar_subquery_id)
             constant_node->addScalarSubqueryId(*scalar_subquery_id);
 
