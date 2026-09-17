@@ -2662,9 +2662,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     if (final && params.bucket_top_k && !method.data.impls[bucket].empty())
         return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes);
 
-    /// A filled `topk_full_key_bytes` means the runtime dataflow statistics are measuring this
-    /// conversion, and they require the untruncated output because they price the parallel-replicas
-    /// plan, whose partial aggregation materializes every group (`RuntimeDataflowStatistics.h`).
+    /// A filled `topk_full_key_bytes` means dataflow statistics are measuring this conversion, and they need the untruncated output.
     const bool allow_having_prefilter = final && params.having_prefilter_op != Params::HavingPrefilterOp::Disabled
         && topk_full_key_bytes == nullptr;
 
@@ -3462,8 +3460,7 @@ Aggregator::convertToBlockImpl(
 
         init_out_cols();
 
-        /// `is_simple_count` means the lone aggregate is a `count()` whose state is the mapped value
-        /// itself, so there is nothing to destroy for a group the bound rejects.
+        /// Here the lone aggregate's state is the mapped value itself, so a rejected group has nothing to destroy.
         size_t skipped = 0;
 
         auto fill_blocks = [&]<bool is_final, bool prefilter>(const auto & key, auto & mapped)
@@ -3828,7 +3825,6 @@ Chunks Aggregator::convertToBlockImplFinal(
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
 
-    /// Only prepared for the pre-filtering instantiation: the ordinary one must pay nothing at all.
     size_t skipped = 0;
     size_t count_offset = 0;
     std::vector<size_t> nontrivial_destructors;
@@ -3848,8 +3844,7 @@ Chunks Aggregator::convertToBlockImplFinal(
             if (!havingPrefilterKeeps(getCountState(mapped + count_offset)))
             {
                 ++skipped;
-                /// The conversion clears the bucket, so a rejected cell's states are past the destructor
-                /// sweep; the null marks it destroyed for the sweep that does run if a materialization throws.
+                /// The conversion clears the bucket, so no later sweep will reach a rejected cell's states.
                 for (const auto i : nontrivial_destructors)
                     aggregate_functions[i]->destroy(mapped + offsets_of_aggregate_states[i]);
                 mapped = nullptr;

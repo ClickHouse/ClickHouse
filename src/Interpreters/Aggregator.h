@@ -164,9 +164,8 @@ public:
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_count_index = 0;
 
-        /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose
-        /// rejected groups may be skipped before their keys are materialized. The HAVING FilterStep
-        /// remains the authoritative filter, so skipping fewer than the bound permits is still correct.
+        /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose rejected
+        /// groups may be skipped. The filter above stays authoritative, so skipping fewer is still correct.
         enum class HavingPrefilterOp : UInt8
         {
             Disabled,
@@ -1048,8 +1047,6 @@ private:
     /// Used for single level merge.
     void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
-    /// A no-argument `count()`'s state is a bare UInt64, so a group's fate under the recorded
-    /// bound is decided without finalizing its cell.
     bool havingPrefilterKeeps(UInt64 count) const
     {
         switch (params.having_prefilter_op)
@@ -1064,8 +1061,7 @@ private:
         return true;
     }
 
-    /// `allow_having_prefilter` defaults to false: honouring the bound is sound only on a final
-    /// single-chunk conversion of a complete bucket, which each call site has to establish itself.
+    /// `allow_having_prefilter` is sound only on a final conversion of a complete bucket; each caller establishes that.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     Chunks convertToBlockImpl(

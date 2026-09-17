@@ -38,8 +38,6 @@ Op opFromFunctionName(const String & name)
     return Op::Disabled;
 }
 
-/// The conversion compares a UInt64 count, so a threshold that does not mean the same thing over the
-/// integers is refused rather than rounded; the FilterStep still evaluates such a bound as before.
 bool exactCountThreshold(const Field & field, UInt64 & threshold)
 {
     if (field.getType() == Field::Types::UInt64)
@@ -65,8 +63,7 @@ const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
     return node;
 }
 
-/// Pre-filtering on one conjunct of an `and` is sound because each conjunct is a necessary condition
-/// for the row to survive the FilterStep, which remains the authoritative filter.
+/// Each conjunct of an `and` is a necessary condition for the row to survive the filter.
 void collectConjuncts(const ActionsDAG::Node * node, std::vector<const ActionsDAG::Node *> & out)
 {
     node = unwrapAlias(node);
@@ -82,8 +79,7 @@ void collectConjuncts(const ActionsDAG::Node * node, std::vector<const ActionsDA
     out.push_back(node);
 }
 
-/// A materialized group always has a count of at least one, so these bounds keep every group and
-/// the selection scan would be pure overhead.
+/// A materialized group always has a count of at least one, so these bounds keep every group.
 bool boundKeepsEverything(Op op, UInt64 threshold)
 {
     return (op == Op::Greater && threshold == 0) || (op == Op::GreaterOrEqual && threshold <= 1);
@@ -91,18 +87,12 @@ bool boundKeepsEverything(Op op, UInt64 threshold)
 
 }
 
-/// This pass runs LAST, from the final traversal of `optimizeTreeSecondPass`, so the shape it reads is
-/// the one that will execute: the filter may already have been merged with an outer WHERE, split, or
-/// had conjuncts pushed below the aggregation, and the aggregation's own flags have settled.
-///
-/// The shape it looks for is a per-group filter directly above a final aggregation, requiring a bound on
-/// that aggregation's own no-argument `count()`. That is usually HAVING, but a `FilterStep` in that slot
-/// can also be QUALIFY or an outer WHERE - all per-group, so all sound.
+/// A `FilterStep` directly above a final aggregation is HAVING, QUALIFY or an outer WHERE, all of which are
+/// per-group. This pass reads the settled plan, so that filter is the one that will execute.
 size_t tryPushHavingPrefilterIntoAggregation(
     QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
-    /// A serialized or distributed plan carries none of these fields to whoever executes it, so
-    /// annotating one would only make EXPLAIN advertise an optimization that does not run.
+    /// A serialized or distributed plan does not carry these fields to whoever executes it.
     if (settings.make_distributed_plan || settings.serialize_query_plan)
         return 0;
 
@@ -115,23 +105,19 @@ size_t tryPushHavingPrefilterIntoAggregation(
         return 0;
 
     const auto & params = aggregating->getParams();
-    /// A non-final aggregation's counts are still partial; `overflow_row` emits one row standing
-    /// for everything past `max_rows_to_group_by`, whose count is not this group's count; and a
-    /// grouping-sets/ROLLUP level is derived from the conversion's output rather than beside it,
-    /// so dropping a row here would change a coarser level's aggregate.
+    /// None of these counts is the group's own: a non-final aggregation's is partial, `overflow_row`'s stands for
+    /// everything past `max_rows_to_group_by`, and a grouping-sets level is derived from this conversion's output.
     if (!aggregating->isFinal() || aggregating->isGroupingSets() || params.overflow_row || params.keys_size == 0)
         return 0;
     if (params.only_merge || aggregating->inOrder())
         return 0;
-    /// `skip_merging` routes the pipeline through a squashing transform that re-packs the per-bucket
-    /// chunks by row and byte thresholds, so a sparser chunk lands more buckets in one output block -
-    /// which `rowNumberInBlock` above the retained filter can see.
+    /// `skip_merging` squashes the per-bucket chunks by row and byte thresholds, so a sparser chunk lands more
+    /// buckets in one output block, which `rowNumberInBlock` can see.
     if (aggregating->isMergingSkipped())
         return 0;
     if (params.bucket_top_k || params.top_k || params.having_prefilter_op != Op::Disabled)
         return 0;
 
-    /// The retained filter cannot undo this: it is the thing being fed the shorter input.
     const auto & expression = filter->getExpression();
     if (isSensitiveToEvaluationCount(expression) || expression.hasArrayJoin())
         return 0;
@@ -176,13 +162,11 @@ size_t tryPushHavingPrefilterIntoAggregation(
         for (size_t i = 0; i < params.aggregates.size(); ++i)
         {
             const auto & aggregate = params.aggregates[i];
-            /// The filter is the aggregation's direct parent, so its input header is the aggregation's
-            /// output header and this name match is exact: no intervening step can have renamed it.
+            /// The filter's input header is the aggregation's output header, so this name match is exact.
             if (aggregate.column_name != lhs->result_name)
                 continue;
-            /// Only a no-argument `count()`: its state is the bare UInt64 the conversion reads.
-            /// `count(x)` can acquire a nullable adapter and a combinator changes the layout, so
-            /// neither is read directly.
+            /// Only a no-argument `count()` has the bare UInt64 state the conversion reads: `count(x)` can acquire
+            /// a nullable adapter and a combinator changes the layout.
             if (aggregate.function->getName() != "count" || !aggregate.argument_names.empty()
                 || !aggregate.parameters.empty())
                 break;

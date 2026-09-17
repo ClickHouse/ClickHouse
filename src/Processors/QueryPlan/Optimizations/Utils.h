@@ -76,11 +76,9 @@ enum class FilterResult
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
-/// True when the expression's result, or its side effects, depend on how many times and on which rows it
-/// is evaluated: it holds a function that is non-deterministic within the query (`rand`), stateful
-/// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`). An optimization that
-/// changes which rows such an expression is evaluated on changes what an observer sees, so it has to
-/// leave the expression alone.
+/// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
+/// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
+/// many times and on which rows it was evaluated.
 [[nodiscard]] bool isSensitiveToEvaluationCount(const ActionsDAG & dag);
 
 /// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
