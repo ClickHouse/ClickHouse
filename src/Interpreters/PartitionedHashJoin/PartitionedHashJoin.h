@@ -27,51 +27,46 @@ class TableJoin;
 
 /** Partitioned hash join (`join_algorithm = 'partitioned_hash'`).
   *
-  * `parallel_hash` probes one shared map; once the build side outgrows the last-level cache, every
-  * lookup is a cold miss. This join keeps ONE hash table for the whole right side but builds it in
-  * partitions: the cell buffer is split into `2^bits` contiguous ranges, a partition is the set of
-  * build rows whose home cell lies in one range, and one worker fills each range while it stays
-  * cache-resident. The probe side is never partitioned. A probe row hashes once and walks the one
-  * table, so transient memory does not scale with probe cardinality and rows flow downstream
-  * immediately.
+  * `parallel_hash` probes one shared map. Once the build side outgrows the last-level cache,
+  * every lookup is a cold miss. This join keeps one hash table for the whole right side and
+  * builds it in partitions. The cell buffer is `2^bits` contiguous ranges. A partition is the
+  * set of build rows whose home cell lies in one range. The route's top `bits` name a row's
+  * partition.
   *
-  * The phases:
+  * A worker fills one range while that range stays in cache. The probe side is never
+  * partitioned. A probe row hashes once and walks the one table. Extra memory does not grow
+  * with the probe side. Probe rows are joined and passed on at once. Nothing on the probe side
+  * is buffered.
   *
-  * - Fill accumulates right-side blocks per lane untouched. Per row it computes the map hash, saves
-  *   the top 16 bits of its placement word (`hashJoinTablePlacement`) as the row's route, and feeds a
-  *   per-lane sketch (a HyperLogLog) with a mix of the hash. Nothing is inserted.
-  * - The build barrier merges the sketches, sizes the table at the standard 50% max fill, and picks
-  *   the partition count: the smallest power of two whose range fits private L2, at least one range per
-  *   worker. The route's top `bits` name a row's partition, and by construction its home cell lies in
-  *   that partition's range. The table may later double in place when a wrapping insert would take the
-  *   last empty cell, or between waves when the projected fill would exceed 50%.
-  * - Post-build scatters only the key columns plus a row locator into per-partition chunks; the
-  *   payload stays in the shared row store. Workers claim partitions largest-first and insert. A walk
-  *   stops at its range end; rows that would cross it go to a private overflow buffer, and after the
-  *   barrier one thread drains the overflow with the global mask and wraparound. Duplicates of a key
-  *   are stored inline, as an exact span, or as a newest-first chain of spans (`SpanWriter`).
-  * - Probe hashes each row once and walks the table from its home cell. Above the prefetch threshold
-  *   this runs as two passes per block - an AMAC find ring out of order, then an in-order pass over its
-  *   results - and below it as the plain loop. AMAC (asynchronous memory access chaining) keeps a ring
-  *   of in-flight lookups whose cache misses overlap. Either way the emit, replication offsets, used
-  *   flags and per-kind logic are the standard `HashJoin` machinery.
+  * Fill stores right-side blocks per lane and records a 16-bit route plus a HyperLogLog sketch.
+  * Nothing is inserted yet. The barrier sizes the table at 50% max fill and picks the partition
+  * count. The partition count is the smallest power of two whose range fits private L2, at least
+  * one range per worker.
   *
-  * The table and everything that builds it - routing, plan, scatter, inserts, growth - live in `HashJoinClause`,
-  * one per ON clause (one today); this class owns the block store, the fill lanes, the used flags and the probe.
+  * Post-build scatters keys and row locators. Workers insert. One thread drains overflow that
+  * wrapped past a range end.
   *
-  * Used flags are one per-offset space of `cells + 1` entries (offset 0 is the zero-value cell), exactly
-  * the single-map layout `JoinUsedFlags` and the non-joined iteration expect.
+  * The table doubles in place when a wrapping insert would take the last empty cell. It also
+  * doubles between waves when the projected fill would exceed 50%. Duplicates of a key are
+  * stored inline, as an exact span, or as a newest-first chain of spans (`SpanWriter`).
   *
-  * Joins whose flags must be keyed per right-table row rather than per cell - multiple disjuncts - run
-  * the standard `HashJoin` whole behind this interface (`delegate_mode`). That case does not depend on
-  * partitioning and is rare, so it is not worth a partitioned build.
+  * Probe looks up from the home cell. Above the prefetch threshold, AMAC (asynchronous memory
+  * access chaining) keeps a ring of in-flight lookups whose cache misses overlap. Emit, used
+  * flags and per-kind logic are the standard `HashJoin` machinery.
+  *
+  * `HashJoinClause` owns the table and the build. This class owns the block store, fill lanes,
+  * used flags and the probe. Used flags are `cells + 1` entries (offset 0 is the zero-value cell).
+  * That is the layout `JoinUsedFlags` and the non-joined scan expect.
+  *
+  * Several ON disjuncts need used flags per right-table row, not per cell. Those joins run a
+  * standard `HashJoin` behind this interface (`delegate_mode`) instead of a partitioned build.
   */
 class PartitionedHashJoin : public IJoin
 {
 public:
     /// `build_rows_hint_` is the planner's right-side row estimate, when it has one. Below
-    /// `parallel_hash_join_threshold` the join builds on one fill thread: the pipeline keeps the
-    /// `hash` shape, the table is sized from the hint and grows like `hash`'s, and every block is
+    /// `parallel_hash_join_threshold` the join builds on one fill thread. The pipeline keeps the
+    /// `hash` shape. The table is sized from the hint and grows like `hash`'s. Every block is
     /// inserted as it arrives, so nothing is left for the barrier.
     PartitionedHashJoin(
         std::shared_ptr<TableJoin> table_join_,
@@ -96,8 +91,8 @@ public:
     JoinResultPtr joinBlock(Block block) override;
     JoinResultPtr joinBlock(Block block, size_t lane) override;
 
-    /// Every parallel fill stream reports totals at its end-of-fill, so unlike the base class's
-    /// unsynchronized default these need a guard, as the parallel `HashJoin` layout has.
+    /// Every parallel fill stream reports totals at its end-of-fill. Unlike the base class's
+    /// unsynchronized default, these need a guard, as the parallel `HashJoin` layout has.
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
 
@@ -118,8 +113,8 @@ public:
     bool hasPostBuildPhase() const override { return true; }
     void runPostBuildPhase() override;
 
-    /// The planner reads the matched count of the previous run to decide on the row store, so it is
-    /// published at destruction as the other hash joins publish theirs.
+    /// The planner reads the matched count of the previous run to decide on the row store. It is
+    /// published at destruction, as the other hash joins publish theirs.
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
@@ -130,7 +125,7 @@ public:
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// The table's cells are independent, so the non-joined scan splits them into `num_streams`
-    /// contiguous position ranges; stream 0 also emits the zero-value cell and the null-key rows. The
+    /// contiguous position ranges. Stream 0 also emits the zero-value cell and the null-key rows. The
     /// delegated path stays single-stream, because `HashJoin` does not advertise the parallel regime.
     bool supportParallelNonJoinedBlocksProcessing() const override;
 
@@ -151,12 +146,10 @@ public:
 
     void setEnableLazyColumnsIndexing(bool value) override;
 
-    /// Counters and geometry of one build: the plan, the table, the sketch, the overflow drained and
-    /// the duplicate storage. Read after `runPostBuildPhase`.
+    /// See `HashJoinClause::BuildStats`. Valid after `runPostBuildPhase`.
     using BuildStats = HashJoinClause::BuildStats;
     BuildStats getBuildStats() const;
 
-    /// The test hooks of the clause's build; see `HashJoinClause`.
     void setReserveSafetyFactorForTests(double factor) { clause.setReserveSafetyFactorForTests(factor); }
     void setReserveOverrideForTests(size_t reserve) { clause.setReserveOverrideForTests(reserve); }
     void setAmacEnabledForTests(bool value) { clause.setAmacEnabledForTests(value); }

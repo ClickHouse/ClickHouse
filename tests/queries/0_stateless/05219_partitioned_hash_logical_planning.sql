@@ -1,7 +1,7 @@
--- The logical join step's general planning (`buildDisjunctiveJoinConditionsGeneral`) with several disjuncts and
--- with conditions the usual planning cannot split, under `join_algorithm = 'partitioned_hash'` alone: the plan is
--- the one `hash` gets, the algorithm is `PartitionedHashJoin` (several disjuncts run on its delegated build), and
--- the rows are those of `hash`.
+-- The logical join step's general planning (`buildDisjunctiveJoinConditionsGeneral`) with several
+-- disjuncts, and with conditions the usual planning cannot split, under
+-- `join_algorithm = 'partitioned_hash'` alone. The plan is the one `hash` gets. The algorithm is
+-- `PartitionedHashJoin` (several disjuncts run on its delegated build). The rows are those of `hash`.
 
 SET enable_analyzer = 1;
 SET allow_general_join_planning = 1;

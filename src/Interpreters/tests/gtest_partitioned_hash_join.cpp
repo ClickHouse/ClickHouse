@@ -43,13 +43,12 @@ UInt64 keyOf(size_t i)
 using Key64Table = typename decltype(HashJoinTableMapsAll::key64)::element_type;
 
 /// One joined output row: `(k, probe_id, rk, build_id)`. The sorted multiset of these over a whole
-/// probe is an exact identity, so a dropped, duplicated or cross-wired row changes it. A build row
+/// probe is an exact identity. A dropped, duplicated or cross-wired row changes it. A build row
 /// inserted outside its owner's range is never found by the probe's walk from the key's home cell.
 /// Mis-routing therefore shows up as missing tuples.
 using JoinedRow = std::tuple<UInt64, UInt64, UInt64, UInt64>;
 using JoinedRows = std::vector<JoinedRow>;
 
-/// `UInt64` columns in the given order.
 Block uint64Block(const std::vector<std::pair<String, std::vector<UInt64>>> & columns)
 {
     Block block;
@@ -128,7 +127,6 @@ struct BuildOptions
     /// `partitioned_hash_join_max_fanout_per_pass`, lowered to force refine passes without a 500M-key
     /// build. Only the pass split changes; the partition count must not.
     std::optional<size_t> max_fanout_per_pass;
-    /// `partitioned_hash_join_cap_partitions_by_l1_descriptors`.
     bool cap_partitions_by_l1_descriptors = true;
     /// The planner's row store switch; the saved block of a RIGHT/FULL join has two UInt64 columns
     /// here, enough for a row store.
@@ -190,7 +188,7 @@ struct BuiltJoin
     std::shared_ptr<PartitionedHashJoin> join;
 };
 
-/// The join `buildJoin` fills, with every override in `options` applied and no block added yet.
+/// Empty join with test hooks from `options` applied.
 BuiltJoin makeJoin(
     const BuildOptions & options,
     const Block & probe_header = twoColumnBlock("k", "probe_id", {}, {}),
@@ -256,13 +254,11 @@ std::vector<UInt64> keysOf(const std::vector<size_t> & key_indexes)
     return keys;
 }
 
-/// One right-side block through the `IJoin` interface, from build worker `worker_id`.
 bool addBuildBlock(IJoin & join, const Block & block, size_t worker_id = 0)
 {
     return join.addBlockToJoin(block, block.rows(), worker_id, /*check_limits=*/true);
 }
 
-/// Feeds `distinct_keys * duplicates` rows in the layout `options` selects.
 void addBuildBlocks(PartitionedHashJoin & join, size_t distinct_keys, size_t duplicates, const BuildOptions & options)
 {
     forEachBuildBlock(
@@ -275,7 +271,6 @@ void addBuildBlocks(PartitionedHashJoin & join, size_t distinct_keys, size_t dup
         });
 }
 
-/// One build block of `keys` with ids continuing from `next_id`.
 void addBlock(PartitionedHashJoin & join, const std::vector<UInt64> & keys, UInt64 & next_id)
 {
     std::vector<UInt64> ids(keys.size());
@@ -284,7 +279,6 @@ void addBlock(PartitionedHashJoin & join, const std::vector<UInt64> & keys, UInt
     EXPECT_TRUE(addBuildBlock(join, twoColumnBlock("rk", "build_id", keys, ids)));
 }
 
-/// The barrier and the post-build phase.
 void finishBuild(BuiltJoin & built)
 {
     built.join->onBuildPhaseFinish();
@@ -303,9 +297,9 @@ BuiltJoin buildJoin(size_t distinct_keys, size_t duplicates, const BuildOptions 
 }
 
 /// Probes `keys` in blocks of `block_rows`, with `probe_id` the key's index, and returns every joined
-/// tuple. With `rotate_lanes` the blocks go through `joinBlock(block, lane)` and the lane cycles over
-/// `0..8`: the join has 2 x num_threads = 8 probe lanes, so lane 8 does not exist and takes the shared
-/// pool of `acquireProbeScratch`.
+/// tuple. With `rotate_lanes` the blocks go through `joinBlock(block, lane)`. The lane cycles over
+/// `0..8`. The join has 2 x num_threads = 8 probe lanes, so lane 8 does not exist. That call takes
+/// the shared pool of `acquireProbeScratch`.
 JoinedRows probeKeys(PartitionedHashJoin & join, const std::vector<UInt64> & keys, bool rotate_lanes = false)
 {
     JoinedRows rows;
@@ -328,7 +322,6 @@ JoinedRows probeKeys(PartitionedHashJoin & join, const std::vector<UInt64> & key
     return rows;
 }
 
-/// Sorts `actual` and checks it is exactly the sorted `expected` multiset.
 void expectSameRows(JoinedRows actual, const JoinedRows & expected)
 {
     std::sort(actual.begin(), actual.end());
@@ -399,7 +392,7 @@ String expectThrowsCode(int code, std::string_view what, F && fn)
 /// partition range. `fillers` unique keys arrive first and fill that window; then 2, 3 and 9 rows of
 /// three more such keys arrive in later blocks. Their owner inserts reach the range end and hand the
 /// rows to the overflow. The drain must place them past the buffer end, wrapping into partition 0,
-/// and build their exact runs there; the probe must wrap the same way to find them.
+/// and build their exact runs there. The probe must wrap the same way to find them.
 struct CrossingBuild
 {
     BuiltJoin built;
@@ -432,8 +425,8 @@ CrossingBuild buildCrossing(size_t num_threads, bool disable_amac, size_t bits)
     result.fillers = result.window + 192;
     const size_t window_begin = range_end - result.window;
 
-    /// Keys whose home cell lies inside the window, found by scanning candidates that cannot collide
-    /// with the random keys below: `n * key_step + 2` equals `i * key_step + 1` only for an `n - i`
+    /// Keys whose home cell lies inside the window. Found by scanning candidates that cannot collide
+    /// with the random keys below. `n * key_step + 2` equals `i * key_step + 1` only for an `n - i`
     /// far outside these ranges.
     std::vector<UInt64> window_keys;
     for (UInt64 candidate = 2; window_keys.size() < result.fillers + 3; candidate += key_step)
@@ -574,11 +567,12 @@ TEST(PartitionedHashJoin, UndersizedTableGrows)
     probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/100);
 }
 
-/// The L1 descriptor cap bounds the partition count to what a quarter of L1 holds, and only while it is switched on.
+/// The L1 descriptor cap bounds the partition count to what a quarter of L1 holds. It does so only
+/// while it is switched on.
 TEST(PartitionedHashJoin, DescriptorCapClampsPlan)
 {
-    /// With a 256-byte L1, a quarter of L1 holds four 16-byte per-partition descriptors, so the cap
-    /// limits a 2M-key build to four partitions. With the cap off the same L1 changes nothing.
+    /// With a 256-byte L1, a quarter of L1 holds four 16-byte per-partition descriptors. The cap
+    /// then limits a 2M-key build to four partitions. With the cap off the same L1 changes nothing.
     constexpr size_t distinct_keys = 2000000;
     constexpr size_t l1_bytes = 256;
 
@@ -653,12 +647,13 @@ TEST(PartitionedHashJoin, ForcedBitsSplitIntoPasses)
     }
 }
 
-/// Rows whose owner insert reaches the end of the last partition range overflow, and the drain wraps them into partition 0 as exact runs.
+/// Rows whose owner insert reaches the end of the last partition range overflow. The drain wraps
+/// them into partition 0 as exact runs.
 TEST(PartitionedHashJoin, RangeCrossingWraparound)
 {
     /// One worker over four partitions and eight workers over sixteen, AMAC on and off. The ring's
     /// combined read-and-insert step and the sequential walk must both hand the boundary rows to the
-    /// overflow; the drain of that one range must wrap them, and the other owners must never touch it.
+    /// overflow. The drain of that one range must wrap them. The other owners must never touch it.
     struct Case
     {
         size_t num_threads;
@@ -673,7 +668,8 @@ TEST(PartitionedHashJoin, RangeCrossingWraparound)
         }
 }
 
-/// The statistics cache receives every build's exact distinct count, and no later build under the same key sizes its table from it.
+/// The statistics cache receives every build's exact distinct count. No later build under the same
+/// key sizes its table from that count.
 TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
 {
     /// The count serves the planner's other consumers. A five times larger build under the same key
@@ -706,13 +702,14 @@ TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
     EXPECT_EQ(republished->ht_size, large_keys);
 }
 
-/// A single-partition insert grows its table mid-way, at the last free cell and at the load factor, one doubling per grow.
+/// A single-partition insert grows its table mid-way. Growth happens at the last free cell and at
+/// the load factor. Each grow doubles the table once.
 TEST(PartitionedHashJoin, SinglePartitionGrowsMidPass)
 {
     /// One partition, so the walk wraps instead of overflowing. At safety 0.4 the keys would fill
-    /// every cell, so the capacity guard fires; the degree ends at the initial one plus the resizes.
-    /// At safety 0.6 the cells outnumber the keys but the fill would pass 50%, so the load-factor grow
-    /// fires exactly once.
+    /// every cell, so the capacity guard fires. The degree ends at the initial one plus the resizes.
+    /// At safety 0.6 the cells outnumber the keys but the fill would pass 50%. The load-factor grow
+    /// then fires exactly once.
     constexpr size_t more_than_2x_keys = 131072;
     BuildOptions last_cell;
     last_cell.reserve_safety_for_tests = 0.4;
@@ -740,11 +737,12 @@ TEST(PartitionedHashJoin, SinglePartitionGrowsMidPass)
     probeAndCheck(load_factor_built, less_than_2x_keys, /*duplicates=*/1, /*misses=*/100);
 }
 
-/// Rows of a key already in the table are not projected as new keys, so 100000 more rows of one key force no grow.
+/// Rows of a key already in the table are not projected as new keys. 100000 more rows of one key
+/// therefore force no grow.
 TEST(PartitionedHashJoin, DuplicateRowsDoNotForceGrowth)
 {
     /// 1000 unique keys, then 100000 rows of the first key, over sixteen partitions. A wanted grow
-    /// would double the table; the build must want none and still hold every row.
+    /// would double the table. The build must want none and still hold every row.
     constexpr size_t distinct_keys = 1000;
     constexpr size_t duplicate_rows = 100000;
     BuildOptions options;
@@ -776,8 +774,8 @@ TEST(PartitionedHashJoin, DuplicateRowsDoNotForceGrowth)
     EXPECT_EQ(static_cast<size_t>(first_key_rows), duplicate_rows + 1);
 }
 
-/// A table past 2^32 cells is refused at the plan: the degree constructor throws, and a reserve that maps to degree 33
-/// fails the barrier with `LIMIT_EXCEEDED`.
+/// A table past 2^32 cells is refused at the plan. The degree constructor throws. A reserve that
+/// maps to degree 33 fails the barrier with `LIMIT_EXCEEDED`.
 TEST(PartitionedHashJoin, DegreeCapAtPlan)
 {
     /// `HashJoinTable.DegreeCap` checks that this reserve maps to degree 33 and that the table refuses it.

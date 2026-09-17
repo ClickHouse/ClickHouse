@@ -64,8 +64,8 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 namespace
 {
 
-/// The saved routes are 16 bits and the per-row bucket ids of the scatter are 16 bits too, with one drop
-/// bucket past the partitions, so a plan can address at most 2^15 partitions.
+/// The saved routes are 16 bits. The per-row bucket ids of the scatter are 16 bits too.
+/// One extra drop bucket sits past the partitions. A plan can address at most 2^15 partitions.
 constexpr size_t max_plan_bits = 15;
 
 constexpr size_t locator_piece_rows = 32768; /// locator synthesis scratch stays L2-resident
@@ -139,8 +139,8 @@ appendRowToMapped(Mapped & mapped, UInt64 ref, PassScratch & scratch, bool any_t
     }
 }
 
-/// What one section insert into the shared table works with, shared by the sequential loop, the AMAC
-/// policy and the drain so the three cannot diverge on the state machine.
+/// What one section insert into the shared table works with. Shared by the sequential loop, the AMAC
+/// policy and the drain, so the three cannot diverge on the state machine.
 template <typename Table>
 struct InsertTarget
 {
@@ -174,8 +174,8 @@ struct InsertTarget
     UInt64 claimed = 0;
 
     bool all_unique = true;
-    /// The single fill thread sized its table from a hint that may be low, so it grows at the load-factor
-    /// bound as `hash` does; the post-build inserts grow only when the last free cell is claimed.
+    /// The single fill thread sized its table from a hint that may be low. It grows at the load-factor
+    /// bound as `hash` does. The post-build inserts grow only when the last free cell is claimed.
     bool grow_at_max_fill = false;
     /// `growBound()`, cached so the per-row grow check below stays a register compare; refreshed by
     /// `growBeforeLastFreeCell` after a grow. A stale smaller value only costs an extra exact re-check there.
@@ -415,11 +415,11 @@ KeyGetter makeSectionKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & 
         return KeyGetter(key_columns, key_sizes, nullptr);
 }
 
-/// Inserts one compact section into the shared table on behalf of the owner of `target.range_end`, with the
-/// semantics of `insertFromBlockImplTypeCase`: one hash per build row, then the value shape's own append.
-/// The recorded ref comes from the scattered locator column - 8-byte encoded or 4-byte packed - or, on
-/// the single-partition path, from `RowRef(block_no, i)` with `skip_bytes` excluding the rows that must
-/// not be inserted.
+/// Inserts one compact section into the shared table on behalf of the owner of `target.range_end`.
+/// Semantics match `insertFromBlockImplTypeCase`: one hash per build row, then the value shape's own append.
+/// The recorded ref comes from the scattered locator column, 8-byte encoded or 4-byte packed.
+/// On the single-partition path it is `RowRef(block_no, i)`, with `skip_bytes` excluding rows that
+/// must not be inserted.
 template <typename KeyGetter, typename Table>
 void insertSectionShared(
     InsertTarget<Table> & target,
@@ -436,8 +436,8 @@ void insertSectionShared(
 {
     constexpr bool mapped_asof = InsertTarget<Table>::mapped_asof;
 
-    /// The ASOF value sits at the row's own index in the trailing key column, so this only works
-    /// where the compact index is the stored row - which is why ASOF plans stay single-partition.
+    /// The ASOF value sits at the row's own index in the trailing key column. This only works where
+    /// the compact index is the stored row. That is why ASOF plans stay single-partition.
     if constexpr (mapped_asof)
     {
         if (locators || narrow_locators || !target.wrap)
@@ -509,10 +509,10 @@ void insertSectionShared(
     }
 }
 
-/// The direct-index maps (`key8`, `key16`) have no ranges and no collisions: the standard `emplace`
-/// applies, and only the duplicate layout is shared with the partitioned build. ASOF keys of these widths
-/// (`HashJoin` picks the map by the equi-key width, so `UInt16` keys of an ASOF join land here) append to
-/// the per-key sorted lookup exactly as on the shared path.
+/// The direct-index maps (`key8`, `key16`) have no ranges and no collisions. The standard `emplace`
+/// applies. Only the duplicate layout is shared with the partitioned build. ASOF keys of these widths
+/// append to the per-key sorted lookup exactly as on the shared path. `HashJoin` picks the map by the
+/// equi-key width, so `UInt16` keys of an ASOF join land here.
 template <typename KeyGetter, typename Table>
 void insertSectionFixed(
     Table & table,
@@ -533,8 +533,8 @@ void insertSectionFixed(
     using Mapped = typename Table::mapped_type;
     constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
 
-    /// The ASOF value is read at the row's own index in the trailing key column, so the stored row must be
-    /// the compact index (the single-partition plan), and the getter excludes the inequality column.
+    /// The ASOF value is read at the row's own index in the trailing key column. The stored row must
+    /// therefore be the compact index (the single-partition plan). The getter excludes the inequality column.
     const IColumn * asof_column [[maybe_unused]] = nullptr;
     if constexpr (mapped_asof)
     {
@@ -583,10 +583,10 @@ void insertSectionFixed(
     }
 }
 
-/// The serial drain of one partition's overflow: the walk from the home cell with the global mask. A row
-/// here has no cell of its key inside its owner's range (otherwise its owner would have appended to it),
-/// so it either claims the first empty cell beyond the range or appends to a cell an earlier group or an
-/// earlier drained row created.
+/// Serial drain of one partition's overflow. The walk starts at the home cell and uses the global mask.
+/// A row here has no cell of its key inside its owner's range. Otherwise its owner would have appended
+/// to that cell. The row either claims the first empty cell beyond the range, or appends to a cell
+/// an earlier group or an earlier drained row created.
 template <typename Table>
 void drainPartitionOverflow(InsertTarget<Table> & target, UInt64 & appended)
 {
@@ -704,10 +704,10 @@ void forHashJoinTable(HashJoinTableMaps & maps, HashJoin::Type type, F && f)
 }
 }
 
-/// The stages communicate through exact per-bucket offsets: bucket `p` holds worker `w`'s stripe at
+/// The stages communicate through exact per-bucket offsets. Bucket `p` holds worker `w`'s stripe at
 /// `[starts[p * workers + w], + worker_hist[w][p])`, in worker order. The last bucket is the drop
-/// bucket: null-key and ON-filtered rows land there, are scattered like any other rows and are freed
-/// before the inserts, so a partition only ever sees insertable rows.
+/// bucket. Null-key and ON-filtered rows land there. They are scattered like any other rows and are
+/// freed before the inserts. A partition only ever sees insertable rows.
 struct HashJoinClause::PostBuildContext
 {
     size_t workers = 0;
@@ -867,10 +867,8 @@ HashJoinClause::~HashJoinClause() = default;
 
 void HashJoinClause::computeRoutes(FillBlock & fill, DenseHyperLogLog & sketch) const
 {
-    /// One map hash per row: the top 16 bits of its placement word saved as the route, the top 32 bits
-    /// of its mix fed to the sketch, for every insertable row. Skipped rows are never inserted and so do
-    /// not reach the sketch, but their routes are still written - the scatter's bucket derivation reads
-    /// them. ASOF hashes the equi-key prefix only; its inequality column is not part of the table key.
+    /// Skipped rows are not inserted and do not reach the sketch, but their routes are still written:
+    /// the scatter reads them. ASOF hashes the equi-key prefix only.
     const size_t rows = fill.rows;
     fill.routes.resize_exact(rows);
     const Sizes & key_sizes = hash_join.key_sizes[0];
@@ -940,8 +938,8 @@ HashJoinClause::BuildStats HashJoinClause::buildStats() const
 
 void HashJoinClause::decideAmacEngagement()
 {
-    /// The same heuristics that enable the standard loops' software prefetch: the user toggle plus
-    /// the table size past the L2 threshold, below which the cell reads hit anyway and pipelining them
+    /// The same heuristics that enable the standard loops' software prefetch: the user toggle, plus
+    /// a table larger than L2. Below that threshold the cell reads hit anyway. Pipelining them then
     /// costs more than it saves.
     amac_build_engaged = amac_enabled && bits > 0 && hash_join.enableSoftwarePrefetch() && ht_total_bytes > getMinBytesForPrefetchInJoin();
 }
@@ -1100,8 +1098,8 @@ bool HashJoinClause::growBeforeLastFreeCell(Target & target)
     if (target.scratch_high_water)
         *target.scratch_high_water = std::max(*target.scratch_high_water, used);
     target.foldClaimed();
-    /// At the last free cell the grow must happen; at the load-factor bound it may be refused under a
-    /// tight budget, and the walk then goes on until the table is full.
+    /// At the last free cell the grow must happen. At the load-factor bound it may be refused under a
+    /// tight budget. The walk then goes on until the table is full.
     const size_t cells_before = target.table.cellCount();
     const bool table_full = target.claimed >= cells_before - 1;
     grow(target.claimed, target.claimed + 1, table_full ? GrowReason::LastFreeCell : GrowReason::LoadFactor);
@@ -1291,8 +1289,8 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
     /// grow during post-build when the estimate was low.
     size_degree = sizeDegreeFor(reserveFor(rows, hll_estimate));
 
-    /// ASOF stays single-partition: its mapped values are per-key sorted vectors whose insert wants the
-    /// original row order, and that sorting dominates the build, so partitioning the equi-key table
+    /// ASOF stays single-partition. Its mapped values are per-key sorted vectors. Insert wants the
+    /// original row order, and that sorting dominates the build. Partitioning the equi-key table
     /// would pay a scattered insert order for nothing. The fixed-size maps have no ranges to split.
     bits = 0;
     if (!HashJoinTableMaps::isFixedSizeType(type) && hash_join.getStrictness() != JoinStrictness::Asof)
@@ -1332,14 +1330,14 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
         {
             /// A large build over few distinct keys: the table is small, so the L2 rule wants one
             /// partition, and one worker would insert every row after the barrier. Above the threshold
-            /// the planner reserves for parallel builds, give the insert one partition per worker, as
-            /// `parallel_hash` has one table per slot, but never more partitions than distinct keys.
+            /// the planner reserves for parallel builds. Give the insert one partition per worker, as
+            /// `parallel_hash` has one table per slot. Never more partitions than distinct keys.
             const size_t distinct = distinctEstimate();
             const size_t partitions_wanted = std::min(std::bit_ceil(num_threads), std::bit_ceil(distinct));
             size_t floor_bits = static_cast<size_t>(std::bit_width(partitions_wanted) - 1);
             if (descriptor_cap_bits)
                 floor_bits = std::min(floor_bits, *descriptor_cap_bits);
-            /// Every range keeps at least 2^10 cells, so the table widens for the floor where the
+            /// Every range keeps at least 2^10 cells. The table widens for that floor when the
             /// estimate alone sized it smaller (2^12 cells over 1024 keys become 2^13 for 8 workers).
             constexpr size_t min_range_bits = 10;
             bits = floor_bits;
@@ -1376,8 +1374,8 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
 void HashJoinClause::createHashJoinTable()
 {
     const HashJoin::Type type = hash_join.data->type;
-    /// From the degree, not the reserve: the partition floor may have widened the table past what the
-    /// reserve alone asks for, and the exactness check compares against what was actually created.
+    /// From the degree, not the reserve. The partition floor may have widened the table past what the
+    /// reserve alone asks for. The exactness check compares against what was actually created.
     ht_total_bytes = HashJoinTableMaps::bufferBytesForDegree(maps_variant_index, type, size_degree);
 
     table_maps = std::make_unique<HashJoinTableMaps>(maps_variant_index);
@@ -1457,9 +1455,9 @@ std::unique_ptr<ThreadPool> HashJoinClause::makePostBuildPool(size_t workers)
 
 size_t HashJoinClause::reserveFor(size_t rows, double distinct_estimate) const
 {
-    /// The safety factor covers the sketch's error; the row clamp says a table cannot hold more keys
-    /// than rows. Above 2^31 estimated words the 32-bit sketch is saturating, so the exact upper bound
-    /// takes over: at most a 2x over-reservation, only for builds already holding 64 GiB of cells.
+    /// The safety factor covers the sketch's error. The row clamp says a table cannot hold more keys
+    /// than rows. Above 2^31 estimated words the 32-bit sketch is saturating. The exact upper bound
+    /// then takes over: at most a 2x over-reservation, only for builds already holding 64 GiB of cells.
     if (reserve_override_for_tests)
         return *reserve_override_for_tests;
     const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * reserve_safety);
@@ -1471,8 +1469,8 @@ size_t HashJoinClause::reserveFor(size_t rows, double distinct_estimate) const
 
 bool HashJoinClause::postBuildSinglePartition(size_t rows)
 {
-    /// One partition over the whole build, with no scatter: rows go in straight from the stored blocks
-    /// with plain `RowRef(block_no, row)` refs, the walk wraps at the buffer end, and nothing overflows.
+    /// One partition over the whole build, with no scatter. Rows go in straight from the stored blocks
+    /// with plain `RowRef(block_no, row)` refs. The walk wraps at the buffer end. Nothing overflows.
     chassert(bits == 0 && !post_build_ctx);
     beginSinglePartitionInsert(reserveFor(rows, hll_estimate), rows, /*grow_at_max_fill_=*/false);
     for (auto & fill : build_blocks)
@@ -1483,7 +1481,7 @@ bool HashJoinClause::postBuildSinglePartition(size_t rows)
 void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, bool grow_at_max_fill_)
 {
     grow_at_max_fill = grow_at_max_fill_;
-    /// The barrier's plan already derived these for the post-build path; the single fill thread has no
+    /// The barrier's plan already derived these for the post-build path. The single fill thread has no
     /// plan and derives them here, from the hint, before its first block.
     size_degree = sizeDegreeFor(reserve);
     bits = 0;
@@ -1582,8 +1580,8 @@ void HashJoinClause::publishTableSize(const PostBuildContext & ctx)
     stats.claimed_per_partition = ctx.claimed_per_partition;
 }
 
-/// Debug and sanitizer builds only: the published table must carry no build-time word (every pass
-/// finished its scratch) and its duplicate layout must account for every inserted row. A leaked
+/// Debug and sanitizer builds only. The published table must carry no build-time word (every pass
+/// finished its scratch). Its duplicate layout must account for every inserted row. A leaked
 /// `TAG_COUNT` / `TAG_FILL*` would otherwise read as an empty key in the release build - silent row loss.
 template <typename Table>
 void HashJoinClause::verifyPublishedTable(const Table & table) const
@@ -1635,8 +1633,8 @@ size_t HashJoinClause::predictedTableAndArenaBytes(size_t rows, size_t distinct)
     ///
     /// Multiplicity inside `reserve_safety` is treated as unique for the arena term. A fill-phase
     /// distinct estimate that lags the row count by a sixteenth, or a HyperLogLog that undershoots
-    /// by a percent, would otherwise look like `m > 1` and charge every row of a unique build to the
-    /// arena. Real duplicate builds (m=5, m=8) sit far above the band. The factor already
+    /// by a percent, would otherwise look like `m > 1`. That would charge every row of a unique build
+    /// to the arena. Real duplicate builds (m=5, m=8) sit far above the band. The factor already
     /// covers sketch error for the table reserve; reusing it here keeps the unique/duplicate decision on
     /// the same inputs.
     if (maps_variant_index == 1)
@@ -2132,9 +2130,9 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
                 state.key_scratch[c].seed(p, ctx.fixed_base[c][p] + ctx.starts[p * ctx.workers + worker] * ctx.fixed_widths[c]);
         }
 
-        /// Whole-block batches sized by `scatterBatchRowsTarget`, with the per-(column, bucket)
-        /// cursors persisting across them and each batch's inputs dropped as soon as its last column
-        /// is scattered, so the scattered side cycles memory instead of doubling it.
+        /// Whole-block batches sized by `scatterBatchRowsTarget`. The per-(column, bucket)
+        /// cursors persist across them. Each batch's inputs are dropped as soon as its last column
+        /// is scattered. The scattered side then cycles memory instead of doubling it.
         const size_t batch_rows_target = ColumnsScatter::scatterBatchRowsTarget(ctx.fanout);
         std::vector<PaddedPODArray<UInt16>> batch_bucket_ids;
         size_t b = begin;
@@ -2205,7 +2203,7 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
     {
         if (begin == end)
         {
-            /// A group with fewer blocks than workers leaves this worker nothing to scatter; the consumers
+            /// A group with fewer blocks than workers leaves this worker nothing to scatter. The consumers
             /// still index its pieces by bucket, so they get empty columns of the right type.
             MutableColumns & pieces = ctx.pieces[c][worker];
             pieces.resize(ctx.fanout);
@@ -2226,8 +2224,8 @@ void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
 void HashJoinClause::refinePassWave(
     PostBuildContext & ctx, size_t refine_bits, size_t bits_done, std::atomic<UInt64> & stage_thread_us)
 {
-    /// Buckets are claimed dynamically because their sizes can be skewed, and each bucket's inputs are
-    /// freed as they are consumed, so the pass cycles memory instead of doubling the scattered side.
+    /// Buckets are claimed dynamically because their sizes can be skewed. Each bucket's inputs are
+    /// freed as they are consumed. The pass then cycles memory instead of doubling the scattered side.
     const size_t groups = ctx.current_buckets;
     const size_t sub_fanout = 1uz << refine_bits;
     const size_t new_buckets = groups * sub_fanout;

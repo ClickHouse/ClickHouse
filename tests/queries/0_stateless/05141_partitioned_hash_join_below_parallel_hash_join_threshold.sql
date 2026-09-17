@@ -1,7 +1,7 @@
--- When the planner estimates the right table below `parallel_hash_join_threshold` rows, `partitioned_hash`
--- builds it on one thread. The pipeline then has the `hash` shape: one `FillingRightJoinSide` transform and
--- no squashing after the join. The hash table starts at the estimated size and grows as `hash`'s does.
--- Results must match `hash` for every join kind.
+-- When the planner estimates the right table below `parallel_hash_join_threshold` rows,
+-- `partitioned_hash` builds it on one thread. The pipeline then has the `hash` shape: one
+-- `FillingRightJoinSide` transform and no squashing after the join. The hash table starts at the
+-- estimated size and grows as `hash`'s does. Results must match `hash` for every join kind.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -112,8 +112,8 @@ SELECT '50k full', h.1, h = pa FROM (SELECT
 SETTINGS log_comment = '05141 50k full';
 
 SELECT '-- a planner estimate far below the real row count only makes the table grow';
--- The hint reaches the join only through the greedy join-order optimizer without table statistics, and the
--- hash-table statistics cache of the earlier identical query must not override it.
+-- The hint reaches the join only through the greedy join-order optimizer without table statistics.
+-- The hash-table statistics cache of the earlier identical query must not override it.
 SET param__internal_join_table_stat_hints = '{"t_sf_50k": {"cardinality": 16, "distinct_keys": {"k": 16}}}';
 
 SELECT 'low hint', h.1, h = pa FROM (SELECT

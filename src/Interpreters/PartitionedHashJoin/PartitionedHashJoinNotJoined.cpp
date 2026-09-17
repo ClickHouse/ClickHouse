@@ -22,16 +22,14 @@ extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
-/** The RIGHT/FULL non-joined rows of the shared table; the counterpart of `NotJoinedHash` with per-offset
-  * used flags. The table is walked by cell position. Stream `i` of `n` owns positions
-  * `[i * cells / n, (i + 1) * cells / n)`, so parallel fillers emit disjoint rows. A cell's used flag is
-  * its position plus one, where the probe marked it; offset 0 is the zero-value cell. Stream 0 also emits
-  * the zero-value cell and the rows whose keys were never inserted (from the saved null maps, as in
-  * `NotJoinedHash`). Joins that need per-row used flags run on the delegated `HashJoin` and its own
-  * `NotJoinedHash`.
+/** RIGHT/FULL non-joined rows of the shared table; counterpart of `NotJoinedHash` with per-offset
+  * used flags. Stream `i` of `n` owns cell positions `[i * cells / n, (i + 1) * cells / n)`. A
+  * cell's used flag is its position plus one. Stream 0 also emits the zero-value cell and rows
+  * whose keys were never inserted (saved null maps). Several disjuncts run on the delegated
+  * `HashJoin` and its `NotJoinedHash`.
   *
-  * A stored block keeps its fixed-width payload in a row store and the rest columnar, so the output
-  * columns are filled through the join's access indexes, as `NotJoinedHash` does, never by position.
+  * Fixed-width payload is in a row store; remaining columns stay columnar. Output is filled
+  * through the join's access indexes, never by position.
   */
 class NotJoinedPartitioned final : public NotJoinedBlocks::RightColumnsFiller
 {

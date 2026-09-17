@@ -1,6 +1,6 @@
--- `partitioned_hash` stores the right side's fixed-width payload columns row by row while the build blocks
--- arrive, as the parallel `hash` layout does. The joined output and the RIGHT/FULL non-joined rows read those
--- columns back from that store. Checksums must match `hash`.
+-- `partitioned_hash` stores the right side's fixed-width payload columns row by row while the
+-- build blocks arrive, as the parallel `hash` layout does. The joined output and the RIGHT/FULL
+-- non-joined rows read those columns back from that store. Checksums must match `hash`.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;

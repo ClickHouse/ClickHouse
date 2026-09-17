@@ -1,10 +1,10 @@
--- The two settings that shape the partition plan of `partitioned_hash`:
--- `partitioned_hash_join_max_fanout_per_pass` bounds how many partitions one scatter pass writes to,
--- and `partitioned_hash_join_cap_partitions_by_l1_descriptors` limits the plan to the descriptors
--- that fit in a quarter of L1. Every variant must return what `hash` returns, and the query log
--- shows the partition count each got. Neither setting changes the partition count at this size: the
--- fan-out bound only splits the scatter into passes, and the descriptor cap allows far more partitions
--- than 300000 keys get.
+-- The two settings that shape the partition plan of `partitioned_hash`.
+-- `partitioned_hash_join_max_fanout_per_pass` bounds how many partitions one scatter pass writes to.
+-- `partitioned_hash_join_cap_partitions_by_l1_descriptors` limits the plan to the descriptors that
+-- fit in a quarter of L1. Every variant must return what `hash` returns. The query log shows the
+-- partition count each got. Neither setting changes the partition count at this size. The fan-out
+-- bound only splits the scatter into passes. The descriptor cap allows far more partitions than
+-- 300000 keys get.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;

@@ -1,8 +1,8 @@
--- A build with few distinct keys and many rows: the hash table is small, so sizing the partitions by
--- cache alone gives one partition, and one thread would insert every row. From
--- `parallel_hash_join_threshold` build rows on, `partitioned_hash` uses one partition per thread instead
--- (never more partitions than distinct keys), as `parallel_hash` has one table per thread. Results must
--- match `hash`.
+-- A build with few distinct keys and many rows. The hash table is small, so sizing the partitions
+-- by cache alone gives one partition, and one thread would insert every row. From
+-- `parallel_hash_join_threshold` build rows on, `partitioned_hash` uses one partition per thread
+-- instead (never more partitions than distinct keys), as `parallel_hash` has one table per thread.
+-- Results must match `hash`.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;

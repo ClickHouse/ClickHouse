@@ -6,9 +6,9 @@
         <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
     </settings>
 
-    <!-- Every left key matches 5000 right rows: 25 billion joined rows out of 5 million probe rows. The
-         joined blocks are already capped at max_joined_block_size_rows, so squashing them again would
-         copy every output row once more. -->
+    <!-- Every left key matches 5000 right rows: 25 billion joined rows out of 5 million probe rows.
+         The joined blocks are already capped at max_joined_block_size_rows. Squashing them again
+         would copy every output row once more. -->
     <create_query>CREATE TABLE phj_left (key UInt64, val String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE phj_right (key UInt64, val String) ENGINE = Memory</create_query>
     <fill_query>INSERT INTO phj_left SELECT number % 1000, toString(number) FROM numbers(5000000)</fill_query>
@@ -34,8 +34,8 @@
         SELECT * FROM phj_probe AS l FULL JOIN phj_build_x10 AS r ON (l.k % 1111111) = r.k
         FORMAT Null SETTINGS query_plan_convert_outer_join_to_inner_join = 0
     </query>
-    <!-- Low selectivity: about one probe row in a thousand matches, so the joined blocks are small and
-         go straight into the aggregation without being merged. -->
+    <!-- Low selectivity: about one probe row in a thousand matches. The joined blocks are small
+         and go straight into the aggregation without being merged. -->
     <query tag='inner_low_selectivity_agg'>
         SELECT count(), sum(r.a) FROM phj_probe AS l JOIN phj_build_x10 AS r ON (l.k % 1000000000) = r.k FORMAT Null
     </query>

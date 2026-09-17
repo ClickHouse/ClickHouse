@@ -9,14 +9,13 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-/** Each combination's maps shape mirrors the `MapGetter` table, and only the combinations a real
-  * query plan can reach are listed - anything else is a logic error, as in `HashJoin::joinBlock`.
-  * `prefer_use_maps_all` is set when the build barrier promoted ALL to RightAny on a unique-key
-  * build, in which case the ALL-built `RowRefList` maps are probed with RightAny semantics and the
-  * probe skips the replication machinery, as the other hash joins do.
+/** Each combination's maps shape mirrors the `MapGetter` table. Only combinations a real query plan
+  * can reach are listed; anything else is a logic error, as in `HashJoin::joinBlock`.
+  * `prefer_use_maps_all` is set when the barrier promoted ALL to RightAny on a unique-key build:
+  * the ALL-built `RowRefList` maps are probed with RightAny semantics and skip replication.
   *
-  * The bodies live in `PartitionedHashJoinProbeImpl.h`, explicitly instantiated per kind so no one
-  * translation unit has to compile them all.
+  * Bodies live in `PartitionedHashJoinProbeImpl.h`, instantiated per kind so no one translation
+  * unit compiles them all.
   */
 JoinResultPtr PartitionedHashJoin::probeDispatch(Block block, size_t lane)
 {

@@ -32,8 +32,8 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 /// Mapped values the find pass records by value. A `RowRef` encodes to its ref word and a `RowRefList`
-/// is one; both are 8-byte words. Neither is ever 0 for a built cell: a `RowRef` carries `INLINE_FLAG`
-/// in bit 63, and a `RowRefList` word is either an inline ref or a tagged non-null pointer. So 0
+/// is one; both are 8-byte words. Neither is ever 0 for a built cell. A `RowRef` carries `INLINE_FLAG`
+/// in bit 63. A `RowRefList` word is either an inline ref or a tagged non-null pointer. So 0
 /// encodes a miss. The second pass reads only the word, and the probe table is immutable, so the copy
 /// is as good as the cell.
 template <typename Mapped>
@@ -197,12 +197,12 @@ struct SharedAmacFindPolicy
         return true;
     }
 
-    /// Locality 3, not 1, and the whole cell rather than its first line. On AArch64 locality 1 ("not
-    /// revisited") compiles to `prfm pldl3keep`, which stages the line in L3 only; the visit's demand
-    /// load then pays the full L1-miss latency, which was the ring's dominant stall on wide keys. A line
-    /// that is not revisited pollutes L1 cheaply, but an L3-resident load is still slow. Cells wider
-    /// than 24 bytes often straddle two lines (a 40-byte cell does at about 61% of positions), so the
-    /// second line is prefetched too; otherwise its limb compares stall the same way.
+    /// Locality 3, not 1, and the whole cell rather than its first line. On AArch64 locality 1
+    /// ("not revisited") compiles to `prfm pldl3keep`, which stages the line in L3 only. The visit's
+    /// demand load then pays the full L1-miss latency. That was the ring's dominant stall on wide keys.
+    /// A line that is not revisited pollutes L1 cheaply, but an L3-resident load is still slow. Cells
+    /// wider than 24 bytes often straddle two lines (a 40-byte cell does at about 61% of positions).
+    /// The second line is prefetched too. Otherwise its limb compares stall the same way.
     static ALWAYS_INLINE void prefetchCell(const Cell * cell)
     {
         __builtin_prefetch(cell, 0, 3);
@@ -237,20 +237,18 @@ struct SharedAmacFindPolicy
     }
 };
 
-/** The probe over the shared table: the single-map `joinRightColumns` loop with the table's own walk.
-  * Probe blocks are never scattered, buffered or materialized, and everything around the lookup is the
-  * standard `HashJoin` machinery over the shared row store. Unlike `switchJoinRightColumns` this never
-  * splits the block: `HashJoinResult` caps the output.
+/** Probe of the shared table: the single-map `joinRightColumns` loop with this table's walk.
+  * Probe blocks are never scattered. Unlike `switchJoinRightColumns` this never splits the block:
+  * `HashJoinResult` caps the output.
   *
-  * Past the prefetch threshold and the row floor (`use_amac`) a block is probed in two passes: a find
-  * ring completes the lookups out of order into the pooled scratch, then an in-order pass consumes its
-  * results. When the output is lazy, the mapped value fits a word and no used flags are kept, that
-  * second pass is `word_loop`; otherwise it is the sequential `loop` with the lookup replaced by the
-  * recorded result. Either way the replication offsets, used-flag semantics and per-kind logic are
-  * untouched.
+  * When `use_amac` holds (past the prefetch threshold and the row floor), a block is probed in two
+  * passes. A find ring fills pooled scratch out of order. An in-order pass then consumes it
+  * (`word_loop` when the mapped value fits a word and no used flags are kept; otherwise `loop`
+  * with the lookup replaced by the recorded result). Either way the replication offsets,
+  * used-flag semantics and per-kind logic are untouched.
   *
-  * `MapsShape` is the standard maps type driving `JoinFeatures` and `processMatch`; `Map` is the shared
-  * table (or the fixed map) holding identical cells.
+  * `MapsShape` drives `JoinFeatures` and `processMatch`. `Map` is the shared table (or the fixed
+  * map) holding identical cells.
   */
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
 void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
@@ -311,11 +309,11 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
     }
 
     /// Where the ring is supported it is the probe path above the threshold. On string-key tables it
-    /// is also the only thing that overlaps cell misses: the look-ahead prefetcher is off there because
-    /// `getKeyHolder` per look-ahead is too expensive for its heuristic. The conditions are the
-    /// software-prefetch ones - the user toggle and a table of at least L2 size, which the probe
-    /// stream then keeps evicting - plus a row floor, below which the ring's prime and drain cost
-    /// more than the overlap wins.
+    /// is also the only thing that overlaps cell misses. The look-ahead prefetcher is off there
+    /// because `getKeyHolder` per look-ahead is too expensive for its heuristic. The conditions are
+    /// the software-prefetch ones: the user toggle, and a table of at least L2 size, which the probe
+    /// stream then keeps evicting. There is also a row floor. Below it the ring's prime and drain
+    /// cost more than the overlap wins.
     using MapNonConst = std::remove_const_t<Map>;
     constexpr bool amac_supported = amac_join_supported<KeyGetter, MapNonConst>;
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
@@ -425,19 +423,19 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
         }
     };
 
-    /// Whether the second pass is `word_loop`. Three conditions: the recorded word is the mapped value
-    /// itself, the output is lazy (one appended ref word per match), and the join keeps no per-row state
-    /// beyond the filter, the appended words and the replication offsets. Used-flag joins, ASOF and ANY
-    /// keep the full loop.
+    /// Whether the second pass is `word_loop`. Three conditions hold. The recorded word is the mapped
+    /// value itself. The output is lazy (one appended ref word per match). The join keeps no per-row
+    /// state beyond the filter, the appended words and the replication offsets. Used-flag joins, ASOF
+    /// and ANY keep the full loop.
     constexpr bool second_pass_is_word_loop = AddedColumnsType::isLazy() && amac_mapped_fits_word<typename MapNonConst::mapped_type>
         && !join_features.need_flags && !join_features.is_asof_join && !join_features.is_any_join;
 
-    /// Under those conditions `processMatch` reduces to marking the row matched and appending one word:
-    /// for ALL the list word, advancing the replication offset by its row count; otherwise the first
-    /// ref. So this pass reads `found_word` directly. Rebuilding a `FindResult` per row and calling the
-    /// outlined `appendFromBlock` forced the loop-carried state to spill. At most one append per row,
-    /// so the cursors write into pre-sized arrays without a capacity check. Row order, filter, offsets
-    /// and `row_count` match the full loop.
+    /// Under those conditions `processMatch` marks the row matched and appends one word. For ALL
+    /// that word is the list word, and the replication offset advances by its row count. Otherwise
+    /// it is the first ref. This pass reads `found_word` directly. Rebuilding a `FindResult` per row
+    /// and calling the outlined `appendFromBlock` forced the loop-carried state to spill. At most
+    /// one append per row, so the cursors write into pre-sized arrays without a capacity check. Row
+    /// order, filter, offsets and `row_count` match the full loop.
     auto word_loop = [&]<bool need_filter, bool with_refs>(const ProbeScratch & results [[maybe_unused]])
     {
         if constexpr (second_pass_is_word_loop)
@@ -547,14 +545,14 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
     /// The plain loop for fixed-width keys on the shared table - the common case. Every loop invariant
     /// is copied into a local, because the closure's fields sit behind a pointer that the compiler must
     /// reload after each opaque call. The locals are the row count, the table's placement shift and the
-    /// selector view; whether the lazy output records ref words at all is the `with_refs` template
-    /// parameter, so a miss on the lazy path costs one offset increment and nothing else. The lookup is
-    /// the table's `find` inlined, with the same offset semantics; zero keys go through the table object.
+    /// selector view. Whether the lazy output records ref words at all is the `with_refs` template
+    /// parameter. A miss on the lazy path then costs one offset increment and nothing else. The lookup
+    /// is the table's `find` inlined, with the same offset semantics. Zero keys go through the table object.
     auto flat_loop = [&]<bool need_filter, bool with_skip, bool selector_is_range, bool with_refs>()
     {
-        /// The call sites are gated on the same constant, but instantiating the enclosing function
-        /// substitutes into this body whether the lambda is called or not, and the lookup below is
-        /// only well-formed for the gated table types.
+        /// The call sites are gated on the same constant. Instantiating the enclosing function still
+        /// substitutes into this body whether the lambda is called or not. The lookup below is only
+        /// well-formed for the gated table types.
         if constexpr (flat_lookup_supported)
         {
             using Cell = typename MapNonConst::cell_type;
@@ -652,8 +650,8 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
                 {
                     if constexpr (join_features.is_anti_join && join_features.left)
                         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-                    /// `addNotFoundRow` inlined with the record flag resolved at compile time: the lazy
-                    /// output takes a zero word only when it records refs, the eager output counts the
+                    /// `addNotFoundRow` inlined, with the record flag resolved at compile time. The lazy
+                    /// output takes a zero word only when it records refs. The eager output counts the
                     /// default row as before.
                     if constexpr (join_features.add_missing)
                     {
@@ -676,9 +674,9 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
     {
         if constexpr (amac_supported)
         {
-            /// Every row gets a result - `start` records skipped and zero-key rows synchronously,
-            /// `step` records hits and misses - so the arrays need no pre-fill and the second pass
-            /// needs no skip logic. Offsets are recorded, and sized, only for the joins that keep flags.
+            /// Every row gets a result. `start` records skipped and zero-key rows synchronously.
+            /// `step` records hits and misses. The arrays therefore need no pre-fill, and the second
+            /// pass needs no skip logic. Offsets are recorded, and sized, only for the joins that keep flags.
             scratch = acquireProbeScratch(lane);
             auto & results = *scratch;
             results.found_word.resize(rows);

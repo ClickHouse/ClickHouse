@@ -1,9 +1,9 @@
--- Join-kind matrix of `join_algorithm = 'partitioned_hash'` against `hash` AND `parallel_hash`:
--- INNER/LEFT/RIGHT/FULL x ALL/ANY/SEMI/ANTI over a build side large enough to partition, with
--- RIGHT/FULL non-joined rows, dedup (ANY/SEMI/ANTI) semantics, `join_use_nulls`, NULLs in keys,
--- a duplicate-heavy right side, USING, and empty sides. The query log check at the end asserts that
--- the partitioned build ran. ANY/SEMI joins pick an arbitrary row per key, so their checksums use
--- only key-determined expressions.
+-- Join-kind matrix of `join_algorithm = 'partitioned_hash'` against `hash` and `parallel_hash`.
+-- INNER/LEFT/RIGHT/FULL crossed with ALL/ANY/SEMI/ANTI, over a build side large enough to partition.
+-- Coverage includes RIGHT/FULL non-joined rows, ANY/SEMI/ANTI dedup, `join_use_nulls`, NULLs in
+-- keys, a duplicate-heavy right side, USING, and empty sides. The query log check at the end
+-- asserts that the partitioned build ran. ANY/SEMI joins pick an arbitrary row per key, so their
+-- checksums use only key-determined expressions.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -147,8 +147,8 @@ SELECT 'empty probe side full', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(b.v))) FROM (SELECT * FROM t_kp WHERE 0) AS p FULL JOIN t_kb AS b ON p.k64 = b.k64 SETTINGS join_algorithm = 'partitioned_hash') AS pa)
 SETTINGS log_comment = '04928 empty probe full';
 
--- The large builds must use more than one partition and insert rows (`HashJoinInsertedRows`
--- > 0); the duplicate-heavy build over 1000 keys may end with one partition but must still insert its rows.
+-- The large builds must use more than one partition and insert rows (`HashJoinInsertedRows` > 0).
+-- The duplicate-heavy build over 1000 keys may end with one partition but must still insert its rows.
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'partition plans';

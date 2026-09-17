@@ -1,7 +1,7 @@
--- Result parity of `partitioned_hash` with `hash` and `parallel_hash` when the build is partitioned (more
--- than one partition of the shared hash table), for every hash-table key type. The build side is large
--- enough that every key type except the fixed-size ones (`UInt8`, `UInt16`) gets more than one partition;
--- the query log check at the end asserts that.
+-- Result parity of `partitioned_hash` with `hash` and `parallel_hash` when the build is partitioned
+-- (more than one partition of the shared hash table), for every hash-table key type. The build side
+-- is large enough that every key type except the fixed-size ones (`UInt8`, `UInt16`) gets more than
+-- one partition. The query log check at the end asserts that.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -174,8 +174,8 @@ SELECT 'uint16 inner (one partition)', h.1, h = ph, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(b.v, p.pv))) FROM t_probe_small AS p INNER JOIN t_build_small AS b ON p.k16 = b.k16 SETTINGS join_algorithm = 'partitioned_hash') AS pa)
 SETTINGS log_comment = '04927 single uint16 inner';
 
--- Every build tagged `04927 <case>` must have used more than one partition and a non-empty hash table;
--- the `UInt8`/`UInt16` builds (`04927 single ...`) must have used exactly one.
+-- Every build tagged `04927 <case>` must have used more than one partition and a non-empty hash table.
+-- The `UInt8`/`UInt16` builds (`04927 single ...`) must have used exactly one.
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'partition plans';

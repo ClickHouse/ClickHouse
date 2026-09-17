@@ -1,8 +1,8 @@
--- ASOF joins, ON-clause filter conditions on one side, and multi-disjunct ON (`OR` of key sets) under
--- `partitioned_hash`, against `hash` and `parallel_hash`. ASOF and multi-disjunct builds use one partition
--- by design; the query log check at the end asserts that. The ON-filter builds partition as usual, and
--- right rows the filter removed still appear as non-joined rows of RIGHT and FULL joins. Mixed non-equi
--- ON conditions fall back at plan time (04926 asserts that).
+-- ASOF joins, ON-clause filter conditions on one side, and multi-disjunct ON (`OR` of key sets)
+-- under `partitioned_hash`, against `hash` and `parallel_hash`. ASOF and multi-disjunct builds use
+-- one partition by design. The query log check at the end asserts that. The ON-filter builds
+-- partition as usual. Right rows the filter removed still appear as non-joined rows of RIGHT and
+-- FULL joins. Mixed non-equi ON conditions fall back at plan time (04926 asserts that).
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;

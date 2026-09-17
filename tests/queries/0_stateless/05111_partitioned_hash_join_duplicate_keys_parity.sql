@@ -1,8 +1,8 @@
--- Result parity of `join_algorithm = 'partitioned_hash'` with `hash` over a duplicate-heavy build whose
--- keys carry 1, 2, 3, 7, 8, 9 and 300 rows each, spread over blocks, so every duplicate layout of the
--- shared hash table - inline, pair, run, run list - is produced and read back: across join kinds and
--- strictnesses, key types, ON filters, USING, `join_use_nulls`, thread counts, and empty or all-miss
--- inputs. Each line prints the row count and whether the two results are equal.
+-- Result parity of `join_algorithm = 'partitioned_hash'` with `hash` over a duplicate-heavy build.
+-- Keys carry 1, 2, 3, 7, 8, 9 and 300 rows each, spread over blocks. Every duplicate layout of the
+-- shared hash table is produced and read back: inline, pair, run, and run list. Coverage includes
+-- join kinds and strictnesses, key types, ON filters, USING, `join_use_nulls`, thread counts, and
+-- empty or all-miss inputs. Each line prints the row count and whether the two results are equal.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -166,8 +166,9 @@ SELECT 'right all uint8 (fixed map)', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 300) AS p RIGHT JOIN (SELECT * FROM t_ir_build WHERE k < 3000) AS b ON p.k8 = b.k8 SETTINGS join_algorithm = 'hash') AS h,
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 300) AS p RIGHT JOIN (SELECT * FROM t_ir_build WHERE k < 3000) AS b ON p.k8 = b.k8 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
 
--- ASOF picks among equal `ts` values in insertion order, which depends on the block arrival order, so the
--- narrow-key builds are restricted to ranges where the narrow key is unique per `k` (no ties).
+-- ASOF picks among equal `ts` values in insertion order. That order depends on the block arrival
+-- order. The narrow-key builds are therefore restricted to ranges where the narrow key is unique
+-- per `k` (no ties).
 SELECT 'asof inner >= uint16 (fixed map)', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 20000) AS p ASOF JOIN (SELECT * FROM t_ir_build WHERE k < 50000) AS b ON p.k16 = b.k16 AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS h,
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 20000) AS p ASOF JOIN (SELECT * FROM t_ir_build WHERE k < 50000) AS b ON p.k16 = b.k16 AND p.ts >= b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa);

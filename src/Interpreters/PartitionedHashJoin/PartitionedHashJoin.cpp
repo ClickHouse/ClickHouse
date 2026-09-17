@@ -62,8 +62,8 @@ public:
         return result->next();
     }
 
-    /// The transform sums this into the count `onProbePhaseFinish` receives; without it the join would
-    /// publish zero matches and the planner would never enable the row store for the next run.
+    /// The transform sums this into the count `onProbePhaseFinish` receives. Without it the join would
+    /// publish zero matches. The planner would then never enable the row store for the next run.
     std::optional<size_t> getMatchedRightRows() const override { return result->getMatchedRightRows(); }
 
 private:
@@ -127,12 +127,10 @@ PartitionedHashJoin::PartitionedHashJoin(
 
 PartitionedHashJoin::~PartitionedHashJoin()
 {
-    /// Explicit destruction inside the timer, in dependency order: cells point into the arenas and the
-    /// row store, so the table goes first.
+    /// Table first: cells point into the arenas and the row store.
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinTeardownMicroseconds);
 
-    /// The planner's row store decision for the next run of this query reads the matched count, as it
-    /// does for the other hash joins, which publish it from their destructors too.
+    /// Other hash joins publish the matched count from their destructors too.
     if (build_phase_finished && probe_phase_finished && hash_table_matches.has_value()
         && match_stats_collecting_params.isCollectionAndUseEnabled())
     {
@@ -155,11 +153,12 @@ PartitionedHashJoin::~PartitionedHashJoin()
 
 bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
 {
-    /// Everything the single-level `HashJoin` machinery serves: INNER/LEFT/RIGHT/FULL crossed with
-    /// ALL/ANY/RightAny/SEMI/ANTI, plus ASOF, null maps, per-clause ON filters, USING, and any number
-    /// of disjuncts. Out: special storages, and the Cross/Comma/Paste and ON-constant joins, which are
-    /// routed before the algorithm loop. Also out: mixed non-equi ON conditions, which the parallel
-    /// `hash` layout serves better than a delegated single-threaded build would.
+    /// Everything the single-level `HashJoin` machinery serves. Kinds: INNER, LEFT, RIGHT, FULL.
+    /// Strictness: ALL, ANY, RightAny, SEMI, ANTI, plus ASOF. Also null maps, per-clause ON filters,
+    /// USING, and any number of disjuncts. Out: special storages, and the Cross/Comma/Paste and
+    /// ON-constant joins. Those are routed before the algorithm loop. Also out: mixed non-equi ON
+    /// conditions. The parallel `hash` layout serves those better than a delegated single-threaded
+    /// build would.
     const JoinKind kind = table_join.kind();
     const JoinStrictness strictness = table_join.strictness();
 
@@ -223,8 +222,8 @@ PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane(size_t worker_i
 
     /// First block of this lane: one mutexed emplace into the deque, whose elements are stable, and
     /// every later block takes the atomic load above. A worker id is unique per filling transform
-    /// and a transform's work is serialized, so the slot is single-writer once published - even
-    /// though executor threads migrate between transforms.
+    /// and a transform's work is serialized. The slot is therefore single-writer once published,
+    /// even though executor threads migrate between transforms.
     std::lock_guard lock(fill_mutex);
     if (FillLane * raced = fill_lane_slots[worker_id].load(std::memory_order_relaxed))
         return *raced;
@@ -264,9 +263,9 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     FillBlock fill;
     fill.rows = rows;
 
-    /// Exactly what the probe side does in `JoinOnKeyColumns`: materialize, keep a live
-    /// LowCardinality column only for the dictionary-aware map types, extract the merged null map,
-    /// strip to the nested columns. For ASOF the null map covers the inequality column too, so a
+    /// Exactly what the probe side does in `JoinOnKeyColumns`. Materialize. Keep a live
+    /// LowCardinality column only for the dictionary-aware map types. Extract the merged null map.
+    /// Strip to the nested columns. For ASOF the null map covers the inequality column too, so a
     /// row with a NULL ASOF key never joins.
     const auto & on_clause = table_join->getOnlyClause();
     fill.keys_holder = HashJoin::isLowCardinalityType(hash_join->data->type)
@@ -286,8 +285,8 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
             fill.skip_bytes[i] = ((nulls && (*nulls)[i]) || fill.join_mask.isRowFiltered(i)) ? 1 : 0;
     }
 
-    /// The payload in stored form. The row store layout was decided in the constructor, and the columns
-    /// it admits are packed row-wise right here, so the probe reads one row pointer per output row
+    /// The payload in stored form. The constructor already decided the row store layout. The columns
+    /// it admits are packed row-wise here. The probe then reads one row pointer per output row,
     /// instead of one random column read per output column. The remaining columns stay columnar.
     Block prepared = HashJoin::prepareRightBlock(materialized, hash_join->savedBlockSample());
     assertBlocksHaveEqualStructureAllowReplicated(hash_join->data->sample_block, prepared, "joined block");
@@ -295,9 +294,9 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
 
     if (single_fill_thread)
     {
-        /// One fill thread and no partition plan, so no routes and no sketch: the block is stored and
-        /// its rows go into the table right away, which grows like `hash`'s when the hint was low. The
-        /// fill block stays alive through the insert because its key pointers point into its holders.
+        /// One fill thread and no partition plan, so no routes and no sketch. The block is stored and
+        /// its rows go into the table right away. The table grows like `hash`'s when the hint was low.
+        /// The fill block stays alive through the insert because its key pointers point into its holders.
         accumulated_rows.fetch_add(rows, std::memory_order_relaxed);
         accumulated_bytes.fetch_add(fill.stored.allocatedBytes(), std::memory_order_relaxed);
         storeBlockInRowStore(fill);
@@ -321,8 +320,8 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
 
     FillLane & lane = getFillLane(worker_id);
     {
-        /// Exclusive merge of the sketches must not race `add` on a live lane: a torn register
-        /// would persist into the barrier's `hll_estimate`, which the post-build gate then uses.
+        /// Exclusive merge of the sketches must not race `add` on a live lane. A torn register
+        /// would persist into the barrier's `hll_estimate`. The post-build gate then uses that value.
         std::shared_lock hll_lock(fill_mutex);
         clause.computeRoutes(fill, lane.hll);
     }
@@ -513,11 +512,11 @@ void PartitionedHashJoin::runPostBuildPhase()
     ProfileEvents::increment(
         ProfileEvents::HashJoinDuplicateRunBytes, built.owner_duplicates.arena_bytes + built.drain_duplicates.arena_bytes);
 
-    /// For the next run of this query: join reordering, `rhs_size_estimation` and the runtime-filter
-    /// sizing read `HashJoinEntry` whatever algorithm produced it, and the exact distinct count is what
-    /// `ht_size` means. Never read to size this build: a grow during post-build has already happened,
-    /// and a cached count would not depend on the data. `hash_join` holds no stats params, so nothing
-    /// else writes this key for this join.
+    /// The entry is for the next run of this query. Join reordering, `rhs_size_estimation` and
+    /// runtime-filter sizing read `HashJoinEntry` whatever algorithm produced it. `ht_size` is the
+    /// exact distinct count. It is never read to size this build. A grow during post-build has
+    /// already happened, and a cached count would not depend on the data. `hash_join` holds no
+    /// stats params, so nothing else writes this key for this join.
     if (stats_collecting_params.isCollectionAndUseEnabled() && built.distinct_keys)
         getHashTablesStatistics<HashJoinEntry>().update(
             {.ht_size = built.distinct_keys, .source_rows = hash_join->data->rows_to_join}, stats_collecting_params);
@@ -542,9 +541,8 @@ void PartitionedHashJoin::runPostBuildPhase()
 
 void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
 {
-    /// The leaf join's own barrier: used-flags init over its empty map, the ALL -> RightAny promotion
-    /// when every build key turned out unique - the probe dispatches on the promoted strictness - and
-    /// the non-joined status. The flags are then resized to span the whole table.
+    /// Leaf barrier over the empty map. ALL becomes RightAny when every key was unique. The probe
+    /// dispatches on the promoted strictness. Flags are then resized to the whole table.
     hash_join->all_values_unique = all_values_unique;
     hash_join->onBuildPhaseFinish();
     reinitUsedFlags();
@@ -554,10 +552,8 @@ void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
 
 void PartitionedHashJoin::reinitUsedFlags()
 {
-    /// One per-offset space of `cells + 1`, offset 0 being the zero-value cell, exactly the
-    /// `getBufferSizeInCells() + 1` the standard join sizes. `reinit` only grows, and does nothing for
-    /// shapes without right-side flags. It has to run after the leaf join's barrier, which sized the
-    /// flags to its own empty map.
+    /// One per-offset space of `cells + 1` (offset 0 is the zero-value cell). Must run after the leaf
+    /// barrier, which sized flags to its empty map. `reinit` only grows.
     const size_t flags = clause.tableCells() + 1;
     joinDispatch(
         hash_join->getKind(),
@@ -659,8 +655,8 @@ std::unique_ptr<PartitionedHashJoin::ProbeScratch> PartitionedHashJoin::acquireP
 
 void PartitionedHashJoin::releaseProbeScratch(std::unique_ptr<ProbeScratch> scratch, size_t lane)
 {
-    /// Park it back when the slot is free; a collision or an out-of-range lane falls through to the
-    /// pool, so the scratch is neither lost nor doubly owned.
+    /// Park it back when the slot is free. A collision or an out-of-range lane falls through to the
+    /// pool. The scratch is then neither lost nor doubly owned.
     if (lane < probe_scratch_slots.size())
     {
         ProbeScratch * expected = nullptr;

@@ -1,8 +1,9 @@
--- An INNER ALL join whose ON expression has no equality key is converted by the logical join step into a CROSS
--- join with the expression as a filter (`tryAddDisjunctiveConditions`, `JoinStepLogical.cpp`) when a hash family
--- algorithm is enabled. `partitioned_hash` alone qualifies now; the cross join itself is executed by
--- `ConstantJoin`, the one implementation of CROSS joins, whatever `join_algorithm` lists - so the plan shows that
--- algorithm, not `PartitionedHashJoin`, and the rows are those of `hash`. Strictness ANY is not converted for
+-- An INNER ALL join whose ON expression has no equality key is converted by the logical join step
+-- into a CROSS join with the expression as a filter. That conversion is `tryAddDisjunctiveConditions`
+-- in `JoinStepLogical.cpp`. It runs when a hash family algorithm is enabled. `partitioned_hash`
+-- alone qualifies now. The cross join itself is executed by `ConstantJoin`, the one implementation of
+-- CROSS joins, whatever `join_algorithm` lists. The plan therefore shows that algorithm, not
+-- `PartitionedHashJoin`, and the rows are those of `hash`. Strictness ANY is not converted for
 -- either algorithm.
 
 SET enable_analyzer = 1;

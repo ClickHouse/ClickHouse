@@ -1,7 +1,8 @@
--- A hash table far smaller than the L2 cache is probed without prefetching (`getMinBytesForPrefetchInJoin`):
--- one table read per probe row and a linear walk on a collision. Sequential and hashed probe keys place the
--- rows differently in the table; queries that read no right column and queries that read `b.v` take
--- different code paths. Results must match `hash`.
+-- A hash table far smaller than the L2 cache is probed without prefetching
+-- (`getMinBytesForPrefetchInJoin`). That is one table read per probe row and a linear walk on a
+-- collision. Sequential and hashed probe keys place the rows differently in the table. Queries that
+-- read no right column and queries that read `b.v` take different code paths. Results must match
+-- `hash`.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;

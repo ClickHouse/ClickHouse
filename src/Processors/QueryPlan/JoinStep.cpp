@@ -219,8 +219,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    /// A join whose blocks already respect `max_joined_block_size_*` would only pay one more copy of
-    /// every output row here.
+    /// Skip when the join already caps blocks at `max_joined_block_size_*`. Squashing would only copy.
     if (join->supportParallelJoin() && !join->emitsSizedOutputBlocks() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
         /// Do not squash past `max_joined_block_size_rows` / `max_joined_block_size_bytes`: those

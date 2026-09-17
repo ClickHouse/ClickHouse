@@ -1,10 +1,9 @@
 -- Plan-level integration of `join_algorithm = 'partitioned_hash'` with the optimizations that
--- previously enumerated only `hash` / `parallel_hash`:
---   * JOIN runtime filters are built for it (`supportsRuntimeFilter`),
---   * RIGHT/FULL non-joined rows are emitted by the parallel `NonJoinedBlocksTransform` sources
---     instead of by the one `JoiningTransform` that finishes last,
---   * `query_plan_convert_join_to_in` rewrites its qualifying joins,
--- each together with a result-parity check against `hash` and `parallel_hash`.
+-- previously enumerated only `hash` / `parallel_hash`. JOIN runtime filters are built for it
+-- (`supportsRuntimeFilter`). RIGHT/FULL non-joined rows are emitted by the parallel
+-- `NonJoinedBlocksTransform` sources instead of by the one `JoiningTransform` that finishes last.
+-- `query_plan_convert_join_to_in` rewrites its qualifying joins. Each case also checks result
+-- parity against `hash` and `parallel_hash`.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -20,8 +19,8 @@ DROP TABLE IF EXISTS t_phj_plan_probe;
 CREATE TABLE t_phj_plan_build (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_phj_plan_probe (k UInt64, p UInt64) ENGINE = MergeTree ORDER BY k;
 
--- The key ranges overlap on a quarter of each side, so a runtime filter has most probe rows to
--- prune and the RIGHT/FULL output has plenty of unmatched build rows to emit.
+-- The key ranges overlap on a quarter of each side. A runtime filter then has most probe rows to
+-- prune. The RIGHT/FULL output has plenty of unmatched build rows to emit.
 INSERT INTO t_phj_plan_build SELECT number, number * 2 FROM numbers(200000);
 INSERT INTO t_phj_plan_probe SELECT number + 150000, number FROM numbers(200000);
 

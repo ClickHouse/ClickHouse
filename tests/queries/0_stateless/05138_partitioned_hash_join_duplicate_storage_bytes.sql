@@ -1,8 +1,9 @@
--- Duplicate keys under `partitioned_hash` against `hash`: join kinds and strictness over builds where every
--- key has the same number of rows (1, 2, 3, 8, 300), duplicates arriving in build blocks of 100000 rows, a
--- key of 32766 rows (its duplicates fill one run) and a key of 32767 rows (its duplicates split into two
--- runs), a zero key, string keys, and query log checks that the duplicate storage used exactly 8 bytes per
--- duplicate row, plus a header for the second run.
+-- Duplicate keys under `partitioned_hash` against `hash`. Coverage includes join kinds and
+-- strictness over builds where every key has the same number of rows (1, 2, 3, 8, 300).
+-- Duplicates arrive in build blocks of 100000 rows. One key has 32766 rows (its duplicates fill
+-- one run). One key has 32767 rows (its duplicates split into two runs). Also a zero key, string
+-- keys, and query log checks that the duplicate storage used exactly 8 bytes per duplicate row,
+-- plus a header for the second run.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;

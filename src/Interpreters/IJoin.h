@@ -200,8 +200,8 @@ public:
     /// processing depends on the algorithm used.
     virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
 
-    /// Whether the joined blocks already respect `max_joined_block_size_*`, so the squashing that follows a
-    /// widened join (`supportParallelJoin`) would only copy them; `JoinStep` then leaves it out of the pipeline.
+    /// True when joined blocks already respect `max_joined_block_size_*`. `JoinStep` then skips the
+    /// squashing that would only copy those blocks after a parallel join.
     virtual bool emitsSizedOutputBlocks() const { return false; }
 
     /// Get non-joined blocks for a specific stream partition

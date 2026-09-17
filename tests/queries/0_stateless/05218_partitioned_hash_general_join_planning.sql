@@ -1,10 +1,11 @@
--- `partitioned_hash` is a member of the hash join family, so the general join planning of the logical join step
--- (`buildDisjunctiveJoinConditionsGeneral` in `PlannerJoinsLogical.cpp`) applies to it: the ON expression is split
--- into equality clauses, one-sided filters and a residual condition, exactly as for `hash`. The two shapes below
--- are planned the same way for both algorithms - the second one used to leave a post-join `Filter` step behind
--- when `partitioned_hash` was planned by the usual path - and return the same rows.
--- (`buildJoinClausesAndActions` in `PlannerJoins.cpp`, the other general planning entry, has no caller since the
--- logical join step became the only join planner, so it is not exercised.)
+-- `partitioned_hash` is a member of the hash join family. The general join planning of the logical
+-- join step (`buildDisjunctiveJoinConditionsGeneral` in `PlannerJoinsLogical.cpp`) therefore applies
+-- to it. The ON expression is split into equality clauses, one-sided filters and a residual
+-- condition, exactly as for `hash`. The two shapes below are planned the same way for both
+-- algorithms and return the same rows. The second shape used to leave a post-join `Filter` step
+-- when `partitioned_hash` was planned by the usual path.
+-- `buildJoinClausesAndActions` in `PlannerJoins.cpp` is the other general planning entry. It has no
+-- caller since the logical join step became the only join planner, so this test does not exercise it.
 
 SET enable_analyzer = 1;
 SET allow_general_join_planning = 1;

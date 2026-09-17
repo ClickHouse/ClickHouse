@@ -26,19 +26,18 @@ namespace DB
 
 class TableJoin;
 
-/** The hash table of one ON clause of a `PartitionedHashJoin`, and everything that builds it: the
-  * per-row routing of the fill, the plan taken at the build barrier (table degree, partition count,
-  * scatter passes), the histogram, scatter, insert and drain waves after it, table growth, and the
-  * counters of one build. It works on the join's block store through the `HashJoin` helper (map type,
-  * key sizes, stored blocks) and on the join's list of fill blocks; the join owns the store, the fill
-  * lanes, the used flags and the probe. One instance per join today; a join with several disjuncts is
-  * meant to hold one per clause over the same store.
+/** Hash table of one ON clause of `PartitionedHashJoin`, and the build that fills it.
+  * That build covers routing, the barrier plan, histogram, scatter, insert, drain, growth,
+  * and the counters of one build.
+  *
+  * Uses the join's `HashJoin` helper (map type, key sizes, stored blocks) and the join's fill
+  * blocks. The join owns the store, fill lanes, used flags and the probe. One instance per join
+  * today. Several disjuncts are meant to share the store with one clause each.
   */
 class HashJoinClause
 {
 public:
-    /// One accumulated right-side block: the payload in stored form (row store plus columnar
-    /// remainder, a full selector), the prepared key columns, and the saved routes.
+    /// One right-side block: stored payload, prepared keys, and saved routes.
     struct FillBlock
     {
         StoredBlock stored;
@@ -49,8 +48,8 @@ public:
         /// The clause's right-side ON condition; rows it filters are not inserted, as in the
         /// standard build.
         JoinCommon::JoinMask join_mask;
-        /// Null-key rows OR mask-filtered rows, materialized only when the mask actually filters -
-        /// otherwise `skipData` returns the plain null map.
+        /// Null-key rows OR mask-filtered rows. Materialized only when the mask actually filters.
+        /// Otherwise `skipData` returns the plain null map.
         PaddedPODArray<UInt8> skip_bytes;
         PaddedPODArray<UInt16> routes;
         size_t rows = 0;
@@ -63,7 +62,7 @@ public:
             return null_map ? null_map->data() : nullptr;
         }
 
-        /// Drops the prepared keys, masks and routes once the rows are inserted or scattered; the stored
+        /// Drops the prepared keys, masks and routes once the rows are inserted or scattered. The stored
         /// payload stays. Returns the route bytes freed, for the byte count.
         size_t releaseInputs()
         {
@@ -79,8 +78,7 @@ public:
         }
     };
 
-    /// Counters and geometry of one build: the plan, the table, the sketch, the overflow drained and
-    /// the duplicate storage. Read after the build finished.
+    /// Counters of one build, read after the build finished.
     struct BuildStats
     {
         size_t bits = 0;
@@ -88,20 +86,18 @@ public:
         /// MSB-first radix bits per scatter pass; more than one when the plan wants a fanout above a
         /// single pass's ceiling.
         std::vector<size_t> pass_bits;
-        /// Final per-partition insertable row counts.
+        /// Final per-partition insertable row counts (insertable = null-key and ON-filtered rows excluded).
         std::vector<UInt64> partition_row_counts;
         double hll_estimate = 0;
-        /// The one table: its buffer degree, cells and bytes. `predictions_exact` says the created
-        /// buffer matched the plan's prediction.
+        /// `predictions_exact` is true when the created buffer matched the plan's prediction.
         size_t table_size_degree = 0;
         size_t table_cells = 0;
         size_t ht_total_bytes = 0;
         bool predictions_exact = true;
         bool amac_build_engaged = false;
-        /// Rows fed to the inserts, distinct keys the table ended with, and rows the owner walks handed to
-        /// the serial drain because they reached their range end.
         UInt64 inserted_rows = 0;
         UInt64 distinct_keys = 0;
+        /// Rows that wrapped past their range end and went to the serial drain.
         UInt64 overflow_rows = 0;
         /// Distinct keys the drain claimed and rows it appended to keys the owners had already stored.
         UInt64 drain_claimed_keys = 0;
@@ -119,9 +115,8 @@ public:
         UInt64 row_store_blocks = 0;
     };
 
-    /// `hash_join_` is the join's helper (map type, key sizes, the block store the inserts reference);
-    /// `build_blocks_` the join's concatenated fill blocks, which the post-build stages read and release,
-    /// giving the freed route bytes back to the join's byte count `accumulated_bytes_`.
+    /// `hash_join_` is the schema helper; `build_blocks_` is the join's fill list; freed route bytes
+    /// go back into `accumulated_bytes_`.
     HashJoinClause(
         HashJoin & hash_join_,
         const TableJoin & table_join,
@@ -132,8 +127,8 @@ public:
         LoggerPtr log_);
     ~HashJoinClause();
 
-    /// The fill's per-row work: one map hash per row, the top 16 bits of its placement word saved as
-    /// the row's route, the top 32 bits of its mix fed to `sketch`, for every insertable row.
+    /// One map hash per insertable row. The top 16 bits of the placement word are the route.
+    /// The top 32 bits of its mix are fed to `sketch`.
     void computeRoutes(FillBlock & fill, DenseHyperLogLog & sketch) const;
 
     /// The barrier's decision for `rows` build rows, from the sketch estimate set with
@@ -147,17 +142,16 @@ public:
     /// Builds the table from the fill blocks after the barrier. Returns whether every inserted key was
     /// unique, which drives the RightAny promotion.
     bool postBuild(size_t rows);
-    /// The single-partition insert in three steps, so a single fill thread can run the middle one per
-    /// block as it arrives: create the table of `reserve` cells with its context and arenas (sized for
-    /// `rows` rows so far; `grow_at_max_fill_` lets the walks double the table at max fill, since no
-    /// barrier plan comes later), insert one block, finish the scratch and publish.
+    /// Create the table, insert one block, then finish scratch and publish. A single fill thread
+    /// runs the middle step per block. `reserve` is the cell count of the table created. `rows` is
+    /// the row count so far, which sizes the arenas. `grow_at_max_fill_` lets walks double the table
+    /// at max fill when no barrier plan will size it later.
     void beginSinglePartitionInsert(size_t reserve, size_t rows, bool grow_at_max_fill_);
     void insertSingleLaneBlock(FillBlock & fill);
     bool finishSinglePartitionInsert();
     /// Frees the post-build context and pool once the build is published.
     void releaseBuildScratch();
-    /// Frees the table and the arenas in dependency order: cells point into the arenas and the row
-    /// store, so the table goes first.
+    /// Frees the table and arenas. The table goes first: cells point into the arenas and the row store.
     void releaseTable();
 
     /// The table reserve the plan derives from a distinct estimate: safety factor, row clamp, and the
@@ -183,8 +177,8 @@ public:
     void setReserveOverrideForTests(size_t reserve) { reserve_override_for_tests = reserve; }
     /// Pins both phases onto the sequential loops, so tests can cross-check the ring against them.
     void setAmacEnabledForTests(bool value) { amac_enabled = value; }
-    /// The L1 partition cap binds only past a few hundred partitions, a build too large for a unit test;
-    /// a tiny L1 makes it bind on a small one.
+    /// The L1 partition cap binds only past a few hundred partitions, a build too large for a unit test.
+    /// A tiny L1 makes it bind on a small one.
     void setL1CacheSizeForTests(size_t bytes) { l1_cache_bytes_for_tests = bytes; }
     /// Forces the partition count (clamped to the table's degree), so plans of thousands of partitions
     /// can be executed on a build that fits a test.
@@ -220,9 +214,9 @@ private:
     /// Rows the partitioned inserts will see: the sum of the exact per-partition counts.
     UInt64 insertableRows() const;
 
-    /// How the key columns are scattered: fixed-width keys by their raw bytes, anything else
-    /// (`String`, `LowCardinality`, ...) through `ColumnsScatter`, with an 8-byte hash word per column
-    /// in the chunk.
+    /// How the key columns are scattered. Fixed-width keys go by their raw bytes. Anything else
+    /// (`String`, `LowCardinality`, ...) goes through `ColumnsScatter`, with an 8-byte hash word per
+    /// column in the chunk.
     struct KeyLayout
     {
         std::vector<size_t> fixed_widths;
@@ -255,7 +249,8 @@ private:
     UInt64 claimedBufferCells() const;
     void drainOverflow(PostBuildContext & ctx);
     /// Why the table doubles: the walk is about to take the last free cell (this grow cannot be
-    /// refused), or the projected fill exceeds the load factor (skipped only at the 2^32-cell cap).
+    /// refused), or the projected fill exceeds the load factor. The load-factor grow is skipped
+    /// only at the 2^32-cell cap.
     enum class GrowReason : UInt8
     {
         LastFreeCell,
@@ -275,10 +270,10 @@ private:
     /// Sets the table's distinct-key count from the owners' and the drain's claims.
     void publishTableSize(const PostBuildContext & ctx);
 
-    /// Inserts one compact section of `rows` rows into partition `partition`'s range on behalf of
-    /// `worker`, or - when `partition` is `single_partition` - into the whole table from the stored
-    /// blocks, which is the only path where `skip_bytes` applies. Row i's stored ref is `locators[i]`,
-    /// the decoded `narrow_locators[i]`, or `RowRef(block_no, i)` when neither is set.
+    /// Inserts one compact section of `rows` rows into partition `partition`'s range for `worker`.
+    /// When `partition` is `single_partition`, inserts into the whole table from the stored blocks.
+    /// That is the only path where `skip_bytes` applies. Row i's stored ref is `locators[i]`, the
+    /// decoded `narrow_locators[i]`, or `RowRef(block_no, i)` when neither is set.
     static constexpr size_t single_partition = std::numeric_limits<size_t>::max();
     void insertPartitionSection(
         PostBuildContext & ctx,
@@ -314,9 +309,7 @@ private:
     size_t partitions = 1;
     /// MSB-first slices of the route word, summing to `bits`.
     std::vector<size_t> pass_bits;
-    /// `partitioned_hash_join_max_fanout_per_pass`.
     size_t max_fanout_per_pass;
-    /// `partitioned_hash_join_cap_partitions_by_l1_descriptors`.
     bool cap_partitions_by_l1_descriptors;
     /// `parallel_hash_join_threshold`: from this many build rows on, the insert phase gets at least one
     /// partition per worker, as `parallel_hash` gets one table per slot.
@@ -325,16 +318,16 @@ private:
     std::optional<size_t> forced_bits_for_tests;
     double hll_estimate = 0;
     /// Reserve factor over the sketch estimate. Also the multiplicity band below which the arena
-    /// prediction treats the build as unique (`predictedTableAndArenaBytes`); that second use needs the
-    /// wide margin, the ~1.15% sketch error alone would not.
+    /// prediction treats the build as unique (`predictedTableAndArenaBytes`). That second use needs
+    /// the wide margin. The ~1.15% sketch error alone would not.
     double reserve_safety = 1.2;
     /// The table's buffer degree, fixed at the barrier: `2^size_degree` cells, `2^bits` ranges.
     size_t size_degree = 0;
     /// Set for the fill-time single-partition insert: the walks double the table at max fill, since no
     /// barrier plan sizes it afterwards.
     bool grow_at_max_fill = false;
-    /// When every block and row number fits 16 bits the scattered locator column packs into
-    /// `(block_no << 16) | row_no` and is decoded at insert, halving the largest scatter transient.
+    /// When every block and row number fits 16 bits, the scattered locator column packs into
+    /// `(block_no << 16) | row_no`. It is decoded at insert. That halves the largest scatter transient.
     bool narrow_locators = false;
 
     /// The one table. `build_arenas` hold the string keys and the duplicate spans the cells point at,

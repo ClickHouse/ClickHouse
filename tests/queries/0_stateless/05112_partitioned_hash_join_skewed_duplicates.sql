@@ -1,7 +1,7 @@
--- Duplicate-heavy and skewed builds under `partitioned_hash` against `hash`: one key with more rows than
--- one run of duplicates can hold (its rows span several runs), a Zipf-like skew where a few keys hold most
--- rows, duplicates of a key spread over many small build blocks, and several thread counts. Each line
--- prints the row count and whether the two results are equal.
+-- Duplicate-heavy and skewed builds under `partitioned_hash` against `hash`. One key has more rows
+-- than one run of duplicates can hold, so its rows span several runs. A Zipf-like skew puts most
+-- rows on a few keys. Duplicates of a key spread over many small build blocks. Several thread
+-- counts are used. Each line prints the row count and whether the two results are equal.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -22,9 +22,9 @@ SELECT if(number % 10 = 0, 7, number % 60000) AS k, number AS v FROM numbers(400
 CREATE TABLE t_ird_probe ENGINE = MergeTree ORDER BY tuple() AS
 SELECT number AS k, number AS p FROM numbers(70000);
 
--- A heavily skewed build: 300000 rows over 540 keys (the cube of a uniform variate, scaled), from about
--- 185 rows per key at the tail to about 37000 at key 0, so every key's duplicates fill one long run or
--- several.
+-- A heavily skewed build: 300000 rows over 540 keys (the cube of a uniform variate, scaled). The
+-- count runs from about 185 rows per key at the tail to about 37000 at key 0. Every key's duplicates
+-- fill one long run or several.
 CREATE TABLE t_ird_zipf ENGINE = MergeTree ORDER BY tuple() AS
 SELECT toUInt64(floor(pow((number % 1000000) / 1000000., 3) * 20000)) AS k, number AS v FROM numbers(300000);
 
