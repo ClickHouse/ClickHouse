@@ -587,7 +587,7 @@ public:
         if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>)
             addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
         else
-            /// Only this Data has a batched insert; the rest are faster on the base's non-null loop.
+            /// Unlike its addBatch, the base's non-null variant skips the per-row places[] test.
             IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatchWithNonNullPlaces(
                 row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
