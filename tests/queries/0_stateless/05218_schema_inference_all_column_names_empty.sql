@@ -36,7 +36,7 @@ DESCRIBE file(currentDatabase() || '_05218_all_empty.csv'); -- { serverError CAN
 DESCRIBE file(currentDatabase() || '_05218_all_empty.csv'); -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
 
 DESCRIBE file(currentDatabase() || '_05218_one_empty.csv');
-DESCRIBE file(currentDatabase() || '_05218_one_empty.csv');
+DESCRIBE file(currentDatabase() || '_05218_one_empty.csv') /* 05218 warm default */;
 -- An empty column name reaching the analyzer aborts the server, so reading the cached structure back
 -- is the strongest assertion in this file.
 SELECT * FROM file(currentDatabase() || '_05218_one_empty.csv');
@@ -60,8 +60,8 @@ WHERE storage = 'File' AND source LIKE '%_05218_all_empty.csv%' AND schema IS NO
 INSERT INTO FUNCTION file(currentDatabase() || '_05218_union/A', 'RawBLOB') SELECT '{"": [1], "x": [1]}' SETTINGS engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_05218_union/B', 'RawBLOB') SELECT '{"": [[1]]}' SETTINGS engine_file_truncate_on_insert = 1;
 SELECT sleep(1) FORMAT Null;
-DESCRIBE file(currentDatabase() || '_05218_union/*', 'JSONColumns') SETTINGS schema_inference_mode = 'union';
-DESCRIBE file(currentDatabase() || '_05218_union/*', 'JSONColumns') SETTINGS schema_inference_mode = 'union';
+DESCRIBE file(currentDatabase() || '_05218_union/*', 'JSONColumns') /* 05218 cold union */ SETTINGS schema_inference_mode = 'union';
+DESCRIBE file(currentDatabase() || '_05218_union/*', 'JSONColumns') /* 05218 warm union */ SETTINGS schema_inference_mode = 'union';
 
 -- A caller that passes its own structure needs only the detected format name, so an inferred
 -- structure that is unusable on its own must not fail the read. The `DESCRIBE` pins that this file's
@@ -74,3 +74,19 @@ SELECT count() FROM (SELECT * FROM file(currentDatabase() || '_05218_format_only
 -- The `*Cluster` twin resolves the format name the same way, through a separate call site.
 SELECT count() FROM (SELECT * FROM fileCluster('test_cluster_two_shards_localhost',
     currentDatabase() || '_05218_format_only', auto, 'a Nullable(Int64)'));
+-- `union` mode merges the per-file structures before empty names are dropped, so the format-only
+-- carve-out has to survive that path too.
+SELECT count() FROM (SELECT * FROM file(currentDatabase() || '_05218_format_only', auto, 'a Nullable(Int64)'))
+SETTINGS schema_inference_mode = 'union';
+
+-- A read that is supposed to be warm has to actually consume the cached structure: otherwise the
+-- repeated reads above silently become repeated cold reads and keep matching.
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['SchemaInferenceCacheSchemaHits'] > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+  AND query LIKE '%05218 warm default%' AND query NOT LIKE '%ProfileEvents%'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+SELECT ProfileEvents['SchemaInferenceCacheSchemaHits'] > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+  AND query LIKE '%05218 warm union%' AND query NOT LIKE '%ProfileEvents%'
+ORDER BY event_time_microseconds DESC LIMIT 1;

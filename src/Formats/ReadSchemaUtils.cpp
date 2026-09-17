@@ -522,7 +522,11 @@ try
                 names_and_types.emplace_back(name, names_to_types[name]);
         }
 
-        if (names_and_types.empty())
+        /// An empty merge in UNION mode can also mean every file was read and contributed only empty names.
+        const bool inferred_all_files_in_union_mode
+            = mode == SchemaInferenceMode::UNION && !schemas_for_union_mode.empty();
+
+        if (names_and_types.empty() && !inferred_all_files_in_union_mode)
         {
             if (iterations <= 1)
             {
