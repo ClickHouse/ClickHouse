@@ -655,6 +655,58 @@ inline RowRefList refsOf(UInt64 word)
     return RowRefList::fromWord(word);
 }
 
+/// The run and chain layouts (`TAG_RUN`, `TAG_CHAIN`) of `forEachRef`, out of line: the standard `HashJoin`
+/// never publishes them, and keeping their decode out of the emit loop's inlined body is what lets that
+/// loop close on one conditional back-edge.
+template <typename F>
+NO_INLINE void forEachRefOfRangeChain(UInt64 word, F & f)
+{
+    for (const UInt64 ref_word : refsOf(word))
+        f(ref_word);
+}
+
+/// Applies `f` to every encoded ref of a non-zero cell / LazyOutput word, in `ForwardIterator` order.
+/// The inline word, the `Batch` layouts (cell run `refs[0 .. size)`, or `refs[0 .. SLOTS)` plus the
+/// overflow chain newest-first when chained) and the range node are walked with plain pointer ranges,
+/// so an emit loop that inlines this has one exit per run instead of the iterator's run-end switch;
+/// only a run or chain word takes the iterator, out of line.
+template <typename F>
+ALWAYS_INLINE void forEachRef(UInt64 word, F && f)
+{
+    const RowRefList list = RowRefList::fromWord(word);
+    if (list.isInline())
+    {
+        f(word);
+        return;
+    }
+    if (!list.isBatch()) [[unlikely]]
+    {
+        forEachRefOfRangeChain(word, f);
+        return;
+    }
+    const RowRefList::Batch * b = list.asBatch();
+    if (b->is_range)
+    {
+        UInt64 ref_word = b->refs[0];
+        for (UInt64 n = b->total_rows; n != 0; --n, ++ref_word)
+            f(ref_word);
+        return;
+    }
+    const bool chained = b->size != b->total_rows;
+    const UInt64 * cur = &b->refs[0];
+    for (const UInt64 * end = cur + (chained ? RowRefList::Batch::SLOTS : static_cast<size_t>(b->size)); cur != end; ++cur)
+        f(*cur);
+    if (!chained)
+        return;
+    for (const auto * node = reinterpret_cast<const RowRefList::Batch *>(b->refs[RowRefList::Batch::SLOTS]); node != nullptr; /// NOLINT(performance-no-int-to-ptr)
+         node = reinterpret_cast<const RowRefList::Batch *>(node->refs[0])) /// NOLINT(performance-no-int-to-ptr)
+    {
+        cur = &node->refs[1];
+        for (const UInt64 * end = cur + node->size; cur != end; ++cur)
+            f(*cur);
+    }
+}
+
 /// Encoded ref word of a key's first row: the "any row of the key" semantics used by ANY/RightAny/Semi
 /// matches and by `StorageJoin` fills, on both MapsOne (RowRef) and MapsAll (RowRefList) cells.
 template <typename Mapped>

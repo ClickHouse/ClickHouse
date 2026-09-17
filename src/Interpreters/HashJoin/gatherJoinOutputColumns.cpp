@@ -91,8 +91,7 @@ void gatherFixedStride(
 
         if constexpr (from_row_list)
         {
-            for (const UInt64 ref_word : refsOf(word))
-                copy_ref(ref_word);
+            forEachRef(word, copy_ref);
         }
         else
         {
@@ -183,8 +182,7 @@ const UInt64 * flatWords(const RefWordSelection & selection, const GatherRowRema
                 if (!*word_i)
                     *out++ = 0;
                 else
-                    for (const UInt64 ref_word : refsOf(*word_i))
-                        *out++ = ref_word;
+                    forEachRef(*word_i, [&](UInt64 ref_word) { *out++ = ref_word; });
             }
             chassert(out == scratch.flat.data() + selection.rows);
             scratch.flat_ready = true;
