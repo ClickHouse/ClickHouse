@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
 #include <base/arithmeticOverflow.h>
+#include <algorithm>
 #include <limits>
 
 namespace DB
@@ -141,8 +142,23 @@ LimitRangeTransform::LimitRangeTransform(
     const Block & header = getInputPort().getHeader();
     if (start_all)
     {
-        all_boundaries_evaluation.emplace(header, conditions.clone(), start_column_name, end_column_name, actions_settings);
+        combined_evaluation.emplace(header, conditions.clone(), start_column_name, end_column_name, actions_settings);
         return;
+    }
+
+    if (end_column_name)
+    {
+        ActionsDAG end_conditions = conditions.clone();
+        end_conditions.removeUnusedActions(Names{*end_column_name});
+        /// Skipping chunks changes the values of stateful and query-scope non-deterministic functions,
+        /// including those inside lambdas. Keep both boundaries together to preserve their evaluation.
+        if (start_column_name && end_conditions.hasNonDeterministicOrStatefulFunctions())
+        {
+            combined_evaluation.emplace(header, conditions.clone(), start_column_name, end_column_name, actions_settings);
+            return;
+        }
+
+        end_only_evaluation.emplace(header, std::move(end_conditions), std::nullopt, end_column_name, actions_settings);
     }
 
     if (start_column_name && end_column_name)
@@ -161,13 +177,6 @@ LimitRangeTransform::LimitRangeTransform(
     else if (start_column_name)
     {
         start_only_evaluation.emplace(header, conditions.clone(), start_column_name, std::nullopt, actions_settings);
-    }
-
-    if (end_column_name)
-    {
-        ActionsDAG end_conditions = conditions.clone();
-        end_conditions.removeUnusedActions(Names{*end_column_name});
-        end_only_evaluation.emplace(header, std::move(end_conditions), std::nullopt, end_column_name, actions_settings);
     }
 }
 
@@ -288,21 +297,35 @@ void LimitRangeTransform::transform(Chunk & chunk)
 
     const size_t num_rows = chunk.getNumRows();
 
+    ColumnPtr start_col;
+    ColumnPtr end_col;
+    if (combined_evaluation)
+    {
+        auto boundaries = combined_evaluation->evaluate(chunk.getColumns(), num_rows);
+        start_col = combined_evaluation->getStartColumn(boundaries);
+        end_col = combined_evaluation->getEndColumn(boundaries);
+    }
+
     if (start_all)
     {
-        auto boundaries = all_boundaries_evaluation->evaluate(chunk.getColumns(), num_rows);
-        transformAll(chunk, all_boundaries_evaluation->getStartColumn(boundaries), all_boundaries_evaluation->getEndColumn(boundaries));
+        chassert(combined_evaluation);
+        transformAll(chunk, start_col, end_col);
         return;
     }
 
     rows_read += num_rows;
 
-    ColumnPtr end_col;
-    size_t output_start = 0;
+    Columns start_columns;
     if (!started && start_only_evaluation)
     {
-        auto start_columns = start_only_evaluation->evaluate(chunk.getColumns(), num_rows);
-        output_start = BoundaryColumnView(start_only_evaluation->getStartColumn(start_columns)).findTrue(0, num_rows);
+        start_columns = start_only_evaluation->evaluate(chunk.getColumns(), num_rows);
+        start_col = start_only_evaluation->getStartColumn(start_columns);
+    }
+
+    size_t output_start = 0;
+    if (!started && start_col)
+    {
+        output_start = BoundaryColumnView(start_col).findTrue(0, num_rows);
         if (output_start == num_rows)
         {
             chunk.clear();

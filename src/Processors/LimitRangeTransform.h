@@ -91,8 +91,8 @@ private:
     /// Stops emitting rows. If always_read_till_end, keeps draining input to preserve row counts.
     void setDone();
 
-    /// Evaluates both boundaries together for `ALL` ranges.
-    std::optional<BoundaryEvaluation> all_boundaries_evaluation;
+    /// Evaluates both boundaries together for `ALL` or when `UNTIL` cannot skip pre-start chunks.
+    std::optional<BoundaryEvaluation> combined_evaluation;
     /// Evaluates `AFTER` while waiting for the single range to start.
     std::optional<BoundaryEvaluation> start_only_evaluation;
     /// Evaluates `UNTIL` using the starting chunk's shared intermediates from `AFTER`.

@@ -3273,6 +3273,8 @@ Stream order (the order rows are read) defines “first” match; use `ORDER BY`
 
 With `AFTER` and without `ALL`, the range step evaluates `AFTER` until it finds a chunk containing a start match. It then evaluates `UNTIL` in that chunk and subsequent chunks while the range remains open. Expressions are evaluated over whole chunks, so `UNTIL` can still be evaluated for rows before the start within the starting chunk.
 
+If `UNTIL` contains stateful functions such as `rowNumberInAllBlocks`, or functions that are non-deterministic within the query, both boundaries are evaluated from the first chunk to preserve those functions' behavior. End matches before the start still have no effect.
+
 **Examples:**
 
 First 3 rows starting from the first row where `number >= 3`:
