@@ -15,6 +15,7 @@
 #include <Common/SettingSource.h>
 #include <Common/checkStackSize.h>
 #include <Core/Settings.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -102,6 +103,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
             if (ast_with_elem && scope.keep_materialized_cte && ast_with_elem->is_materialized)
             {
                 /// Inside its own body the name keeps the meaning it has in the enclosing scope.
+                chassert(new_data);
                 Data body_data = *new_data;
                 body_data.materialized_ctes.erase(ast_with_elem->name);
                 if (scope.materialized_ctes.contains(ast_with_elem->name))
@@ -152,14 +154,18 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
             auto subquery_it = data.subqueries.find(table_id.table_name);
             if (subquery_it != data.subqueries.end())
             {
-                auto old_alias = table.database_and_table_name->tryGetAlias();
-                table.children.clear();
-                table.database_and_table_name.reset();
-                table.subquery = subquery_it->second->clone();
-                table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
-                if (!old_alias.empty())
-                    table.subquery->setAlias(old_alias);
-                table.children.emplace_back(table.subquery);
+                /// A recording pass only classifies references; it must not re-expand the clones the first pass made.
+                if (!data.kept_cte_references)
+                {
+                    auto old_alias = table.database_and_table_name->tryGetAlias();
+                    table.children.clear();
+                    table.database_and_table_name.reset();
+                    table.subquery = subquery_it->second->clone();
+                    table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
+                    if (!old_alias.empty())
+                        table.subquery->setAlias(old_alias);
+                    table.children.emplace_back(table.subquery);
+                }
             }
             else if (data.kept_cte_references && data.materialized_ctes.contains(table_id.table_name))
                 data.kept_cte_references->insert(table.database_and_table_name.get());
@@ -183,14 +189,19 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 auto subquery_it = data.subqueries.find(name);
                 if (subquery_it != data.subqueries.end())
                 {
-                    auto old_alias = func.arguments->children[1]->tryGetAlias();
-                    func.arguments->children[1] = subquery_it->second->clone();
-                    func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
-                    if (!old_alias.empty())
-                        func.arguments->children[1]->setAlias(old_alias);
+                    /// A recording pass only classifies references; it must not re-expand the clones the first pass made.
+                    if (!data.kept_cte_references)
+                    {
+                        auto old_alias = func.arguments->children[1]->tryGetAlias();
+                        func.arguments->children[1] = subquery_it->second->clone();
+                        func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
+                        if (!old_alias.empty())
+                            func.arguments->children[1]->setAlias(old_alias);
+                    }
                 }
                 else if (data.materialized_ctes.contains(name))
                 {
+                    /// Stays unconditional: it must keep blocking the literal fallback below even when not recording.
                     if (data.kept_cte_references)
                         data.kept_cte_references->insert(ast.get());
                 }
@@ -199,10 +210,13 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                     auto literal_it = data.literals.find(name);
                     if (literal_it != data.literals.end())
                     {
-                        auto old_alias = func.arguments->children[1]->tryGetAlias();
-                        func.arguments->children[1] = literal_it->second->clone();
-                        if (!old_alias.empty())
-                            func.arguments->children[1]->setAlias(old_alias);
+                        if (!data.kept_cte_references)
+                        {
+                            auto old_alias = func.arguments->children[1]->tryGetAlias();
+                            func.arguments->children[1] = literal_it->second->clone();
+                            if (!old_alias.empty())
+                                func.arguments->children[1]->setAlias(old_alias);
+                        }
                     }
                 }
             }
@@ -219,10 +233,14 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
             auto literal_it = data.literals.find(name);
             if (literal_it != data.literals.end())
             {
-                auto old_alias = dict_name_arg->tryGetAlias();
-                dict_name_arg = literal_it->second->clone();
-                /// Always reset the alias name, otherwise the aliases will not match after AddDefaultDatabaseVisitor
-                dict_name_arg->setAlias(old_alias);
+                /// A recording pass only classifies references; it must not re-expand the clones the first pass made.
+                if (!data.kept_cte_references)
+                {
+                    auto old_alias = dict_name_arg->tryGetAlias();
+                    dict_name_arg = literal_it->second->clone();
+                    /// Always reset the alias name, otherwise the aliases will not match after AddDefaultDatabaseVisitor
+                    dict_name_arg->setAlias(old_alias);
+                }
             }
         }
     }
@@ -235,6 +253,8 @@ std::unordered_set<const IAST *> ApplyWithSubqueryVisitor::visitKeepingMateriali
     /// Expanding a plain CTE clones its body, so classify the references only on the final tree.
     visit(select, data);
 
+    /// The second pass only records the identifiers of the final tree; it transforms nothing, so the
+    /// tree stays byte-for-byte what the first pass produced even when it descends into its clones.
     std::unordered_set<const IAST *> kept_cte_references;
     data.kept_cte_references = &kept_cte_references;
     visit(select, data);
