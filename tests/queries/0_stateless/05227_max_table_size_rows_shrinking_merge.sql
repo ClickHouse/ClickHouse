@@ -34,8 +34,14 @@ INSERT INTO t_max_table_size_rows SELECT 1, number + 1000, 'f' FROM numbers(20);
 
 SET mutations_sync = 2;
 
--- A mutation that deletes only some of the rows is allowed as well, even though the table is still
--- far above the limit afterwards: the mutated part holds fewer rows than the part it replaces.
+-- A mutation of the small partition alone is allowed as well, even though the table stays far above
+-- the limit afterwards: the mutated part holds fewer rows than the part it replaces. The check sees
+-- `5100 - 100` rows outside the replaced part, which is over the limit, so this commit is possible
+-- only through the carve-out for a replacement that does not add rows.
+ALTER TABLE t_max_table_size_rows DELETE IN PARTITION 1 WHERE id < 10;
+SELECT count() FROM t_max_table_size_rows;
+
+-- The same for a mutation that deletes only some of the rows of the big part.
 ALTER TABLE t_max_table_size_rows DELETE WHERE p = 0 AND id < 2000;
 SELECT count() FROM t_max_table_size_rows;
 
