@@ -1794,7 +1794,9 @@ def test_optimize_manifest_parent_summary_missing_totals(
     "Cannot parse Int64".
 
     This test simulates that situation by stripping those fields from the latest
-    metadata file before ClickHouse first sees the table.
+    metadata file before ClickHouse first sees the table. Like Spark, ClickHouse
+    carries an unknown total forward as unknown (the field stays absent) rather
+    than inventing a "0", while totals the parent does know keep their values.
     """
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -1871,6 +1873,16 @@ def test_optimize_manifest_parent_summary_missing_totals(
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
+    parent_summary = get_current_snapshot_summary(TABLE_PATH)
+    assert parent_summary, "Could not read the stripped parent snapshot summary"
+    for stripped in stripped_fields:
+        assert stripped not in parent_summary, (
+            f"{stripped} was not stripped from the parent summary"
+        )
+    known_totals = ("total-data-files", "total-records", "total-files-size")
+    for known in known_totals:
+        assert known in parent_summary, f"{known} is missing from the parent summary"
+
     # Create the table only after the edit so no metadata cache is populated
     # with the original (full) summary.
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
@@ -1887,7 +1899,8 @@ def test_optimize_manifest_parent_summary_missing_totals(
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 30
 
-    # The newly-written manifest-only snapshot must carry the missing totals as "0".
+    # The newly-written manifest-only snapshot must leave the missing totals unknown
+    # (absent) and carry the known ones forward unchanged.
     default_download_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
@@ -1900,9 +1913,14 @@ def test_optimize_manifest_parent_summary_missing_totals(
         f"Expected operation='replace', got: {summary.get('operation')}"
     )
     for stripped in stripped_fields:
-        assert summary.get(stripped) == "0", (
-            f"Expected {stripped}='0' on the new manifest-only snapshot, "
+        assert stripped not in summary, (
+            f"Expected {stripped} to stay unknown (absent) on the new manifest-only snapshot, "
             f"got: {summary.get(stripped)!r}"
+        )
+    for known in known_totals:
+        assert summary.get(known) == parent_summary[known], (
+            f"Expected {known}={parent_summary[known]!r} to be carried forward, "
+            f"got: {summary.get(known)!r}"
         )
 
 
