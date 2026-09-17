@@ -1353,6 +1353,139 @@ def test_materialized_postgresql_tables_list_rejects_empty_element(started_clust
         cursor.execute(f"DROP TABLE IF EXISTS {table}")
 
 
+def test_materialized_postgresql_legacy_replication_slot_sql_injection(started_cluster):
+    # `checkReplicationSlot` bounds the replication slot name to `[a-z0-9_]`, so neither a
+    # user-managed slot name nor a generated one can carry a quote into
+    # `pg_logical_slot_peek_binary_changes`, `pg_replication_slot_advance` or
+    # `pg_drop_replication_slot`. The legacy, schema-blind slot name is not passed through that check:
+    # it is `<database>_<remote table>_ch_replication_slot`, and on attach
+    # `adoptLegacyReplicationIdentityIfNeeded` looks it up in `pg_replication_slots` as a string
+    # literal while the schema-aware slot is missing. The remote table name reaches PostgreSQL as SQL
+    # there, executed as the role ClickHouse connects with:
+    # https://github.com/ClickHouse/ClickHouse/issues/118954
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    conn = get_postgres_conn(ip=ip, port=port, database=True)
+    cursor = conn.cursor()
+
+    def marker_count():
+        cursor.execute(
+            "SELECT count(*) FROM pg_tables WHERE tablename = 'injected_marker'"
+        )
+        return cursor.fetchall()[0][0]
+
+    schema = "slot_inj_schema"
+    # The composed slot name is folded by `normalizeReplicationSlot` (lower-cased, `-` mapped to
+    # `_`), so the payload closes with `select '` rather than with a `--` comment: the appended
+    # `_ch_replication_slot` suffix then lands inside a third statement and the injected statement
+    # list stays syntactically complete, which the whole string has to be for any of it to run.
+    payload = "t'; create table injected_marker(x integer); select '"
+    ch_table = "pg_slot_inj"
+    try:
+        error = instance.query_and_get_error(
+            f"CREATE TABLE {ch_table} (key Int32, value Int32) ENGINE = MaterializedPostgreSQL("
+            f"'{ip}:{port}', 'postgres_database', 'any_table', 'postgres', '{pg_pass}') "
+            "ORDER BY key SETTINGS materialized_postgresql_replication_slot = 'user''slot'"
+        )
+        assert "Replication slot can contain lower-case letters" in error, error
+
+        cursor.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        cursor.execute(f"CREATE SCHEMA {schema}")
+        quoted = f'{schema}."' + payload.replace('"', '""') + '"'
+        cursor.execute(f"CREATE TABLE {quoted} (key integer PRIMARY KEY, value integer)")
+        cursor.execute(
+            f"INSERT INTO {quoted} SELECT i, i FROM generate_series(0, 49) AS i"
+        )
+
+        # A non-default schema is what makes the generated slot name differ from the legacy one, so
+        # that the attach below looks the legacy name up at all.
+        literal = payload.replace("\\", "\\\\").replace("'", "''")
+        instance.query(
+            f"CREATE TABLE {ch_table} (key Int32, value Int32) ENGINE = MaterializedPostgreSQL("
+            f"'{ip}:{port}', 'postgres_database', '{literal}', 'postgres', '{pg_pass}') "
+            f"ORDER BY key SETTINGS materialized_postgresql_schema = '{schema}', "
+            "materialized_postgresql_backoff_min_ms = 100, "
+            "materialized_postgresql_backoff_max_ms = 100"
+        )
+        wait_for_replicated_rows(ch_table, 50)
+
+        # The schema-aware slot has to be absent for the legacy name to be looked up at all, which is
+        # the state of a deployment whose slot was dropped on the PostgreSQL side. Dropping it needs
+        # the server down, because PostgreSQL refuses to drop a slot its consumer still holds.
+        instance.stop_clickhouse()
+        cursor.execute("SELECT slot_name FROM pg_replication_slots")
+        slots = [row[0] for row in cursor.fetchall()]
+        assert slots, "no replication slot to drop, so the attach path would not look one up"
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                for slot in slots:
+                    cursor.execute("SELECT pg_drop_replication_slot(%s)", (slot,))
+                break
+            except Exception:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(1)
+        cursor.execute("SELECT slot_name FROM pg_replication_slots")
+        assert not cursor.fetchall(), "a replication slot survived, so the lookup is not reached"
+
+        # Written while the server is down, so these rows can only arrive if the attach gets past the
+        # legacy lookup and resumes replication.
+        cursor.execute(
+            f"INSERT INTO {quoted} SELECT i, i FROM generate_series(50, 54) AS i"
+        )
+        instance.start_clickhouse()
+
+        deadline = time.monotonic() + 180
+        keys = None
+        while time.monotonic() < deadline:
+            if marker_count() != 0:
+                break
+            try:
+                keys = instance.query(f"SELECT uniqExact(key) FROM {ch_table}").strip()
+            except Exception as e:
+                keys = str(e)
+            if keys == "55":
+                break
+            time.sleep(1)
+
+        assert marker_count() == 0, (
+            "the remote table name was executed as SQL by PostgreSQL: the legacy replication slot "
+            "name was looked up as a raw string literal"
+        )
+        assert keys == "55", (
+            "replication did not resume after the attach, so the legacy replication slot lookup was "
+            f"never reached and the assertion above could not have seen an injection: {keys}"
+        )
+
+        # The lookup also has to be observable, otherwise the assertions above would hold just as well
+        # for a build that never issues it. This cluster runs PostgreSQL with `log_statement=all`, so
+        # the statement it received is on record: the whole slot name inside one literal, with the
+        # quote doubled, which is both the proof that the sink was reached and the fix itself.
+        composed = f"postgres_database_{payload}_ch_replication_slot".lower().replace(
+            "-", "_"
+        )
+        expected = "slot_name = '" + composed.replace("'", "''") + "'"
+        deadline = time.monotonic() + 60
+        logged = ""
+        while time.monotonic() < deadline:
+            logged = started_cluster.exec_in_container(
+                started_cluster.postgres_id,
+                ["bash", "-c", "cat /postgres/logs/*.log"],
+            )
+            if expected in logged:
+                break
+            time.sleep(1)
+        assert expected in logged, (
+            "PostgreSQL never logged the legacy replication slot lookup carrying the whole name in "
+            f"one literal, so the assertions above could not have seen an injection: {expected}"
+        )
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
+        cursor.execute("DROP TABLE IF EXISTS injected_marker")
+        cursor.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
