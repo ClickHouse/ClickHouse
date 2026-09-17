@@ -1,5 +1,7 @@
 #include <Planner/CollectTableExpressionData.h>
 
+#include <unordered_set>
+
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageSnapshot.h>
@@ -62,7 +64,16 @@ public:
         /// Instead, we prepare an ActionsDAG for its arguments and store it inside a function (see ActionsDAG::buildFilterActionsDAG).
         /// So this optimization allows not to read arguments of "indexHint" (if not needed in other contexts) but only to use index analysis for them.
         if (is_inside_index_hint_function && isColumnSourceMergeTree(*column_node))
+        {
+            /// The column is not read, but index analysis over it prunes granules, and which granules
+            /// survive is observable in the result. Keep enforcing column grants for it.
+            if (select_added_columns)
+            {
+                auto & index_hint_table_expression_data = planner_context->getOrCreateTableExpressionData(column_node->getColumnSource());
+                index_hint_table_expression_data.markColumnForAccessCheck(column_node->getColumnName());
+            }
             return;
+        }
 
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
@@ -102,10 +113,13 @@ public:
 
                 if (!keep_alias_columns)
                 {
-                    /// For PREWHERE we can just replace ALIAS column with it's expression,
-                    /// because ActionsDAG for PREWHERE applied right on top of table expression
-                    /// and cannot affect subqueries or other table expressions.
-                    node = column_node->getExpression();
+                    /// The ALIAS column is about to be replaced by its expression but the user observes its values through the
+                    /// filter, so column grants still have to be enforced for it.
+                    if (select_added_columns)
+                        table_expression_data.markColumnForAccessCheck(column_node->getColumnName());
+
+                    /// The replacement is performed in leaveImpl()
+                    nodes_to_inline.insert(node.get());
                     return;
                 }
 
@@ -174,6 +188,9 @@ public:
             is_inside_index_hint_function = false;
             return;
         }
+
+        if (nodes_to_inline.erase(node.get()))
+            node = node->as<ColumnNode &>().getExpression();
     }
 
     static bool isAliasColumn(const QueryTreeNodePtr & node)
@@ -263,6 +280,9 @@ private:
 
     /// True if we are traversing arguments of function "indexHint".
     bool is_inside_index_hint_function = false;
+
+    /// ALIAS column nodes that need to be replaced by their expressions
+    std::unordered_set<const IQueryTreeNode *> nodes_to_inline;
 };
 
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
