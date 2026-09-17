@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Core/QualifiedTableName.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -212,18 +213,54 @@ private:
     }
 
     /// Qualify the table names which are carried by function arguments rather than by table
-    /// expressions, in the same way as `visit(ASTFunction &)` of the full traversal does:
-    /// the dictionary name in the first argument of `dictGet` and the table name in the right
-    /// argument of `IN` (and of the similar operators). The subqueries among the arguments are
-    /// covered by the generic recursion of `visitTableExpressionsImpl`.
+    /// expressions: the dictionary name in the first argument of `dictGet`, the table name in the
+    /// first argument of `joinGet` and the table name in the right argument of `IN` (and of the
+    /// similar operators) - the same carriers `MarkTableIdentifiersVisitor` and the dependency
+    /// visitors know. The subqueries among the arguments are covered by the generic recursion of
+    /// `visitTableExpressionsImpl`.
+    ///
+    /// `joinGet` is qualified here although `visit(ASTFunction &)` of the full traversal leaves it
+    /// alone: the loading dependency graph resolves a bare name against the database owning the
+    /// definition, while `joinGet` itself resolves it against the current database of the query
+    /// reading the view or inserting into the table. Persisting the qualified name is what makes
+    /// the two agree.
     void visitFunctionTableNameArguments(ASTFunction & function) const
     {
         const bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         const bool is_dict_get = functionIsDictGet(function.name);
-        if (!is_operator_in && !is_dict_get)
+        const bool is_join_get = functionIsJoinGet(function.name);
+        if (!is_operator_in && !is_dict_get && !is_join_get)
             return;
 
         auto & arguments = function.arguments->children;
+
+        if (is_join_get && !arguments.empty())
+        {
+            if (auto * identifier = arguments[0]->as<ASTIdentifier>())
+            {
+                /// A compound identifier is already qualified, a parameterized name is only known
+                /// when the view is called, a temporary table has no database, and an alias of an
+                /// expression is not a table name at all.
+                if (!identifier->compound() && !identifier->isParam()
+                    && !external_tables.contains(identifier->name()) && !expression_aliases.contains(identifier->name()))
+                {
+                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
+                }
+            }
+            else if (auto * literal = arguments[0]->as<ASTLiteral>())
+            {
+                auto & literal_value = literal->value;
+                if (literal_value.getType() == Field::Types::String)
+                {
+                    auto qualified_table_name = QualifiedTableName::tryParseFromString(literal_value.safeGet<String>());
+                    if (qualified_table_name && qualified_table_name->database.empty() && !external_tables.contains(qualified_table_name->table))
+                    {
+                        qualified_table_name->database = database_name;
+                        literal_value = qualified_table_name->getFullName();
+                    }
+                }
+            }
+        }
 
         if (is_dict_get && !arguments.empty())
         {

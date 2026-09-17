@@ -87,9 +87,7 @@ def test_legacy_unqualified_view_select(started_cluster):
     node.query("INSERT INTO db2.source VALUES (42)")
     node.query("CREATE VIEW db2.v AS SELECT id FROM db2.source")
 
-    restart_with_edited_metadata(
-        get_metadata_path("db2", "v"), "db2.source", "source"
-    )
+    restart_with_edited_metadata(get_metadata_path("db2", "v"), "db2.source", "source")
 
     # The view SELECT persisted with a bare `FROM source` runs under the current database of the
     # reading query. It has been qualified with `db2`, which owns the view, when the metadata was
@@ -164,9 +162,7 @@ def test_legacy_unqualified_dictget_is_the_only_carrier(started_cluster):
         " ENGINE = MergeTree ORDER BY tuple()"
     )
 
-    restart_with_edited_metadata(
-        get_metadata_path("db4", "t"), "'db4.dict'", "'dict'"
-    )
+    restart_with_edited_metadata(get_metadata_path("db4", "t"), "'db4.dict'", "'dict'")
 
     # The dependency graphs are built out of the repaired definition, so the sole bare `dict`
     # is registered as `db4.dict` and not as a `default.dict` that does not exist.
@@ -228,3 +224,48 @@ def test_legacy_unqualified_in_table_in_constraint(started_cluster):
     node.query("DROP TABLE db5.t")
     node.query("DROP TABLE db5.allowed")
     node.query("DROP DATABASE db5")
+
+
+def test_legacy_unqualified_joinget_default(started_cluster):
+    node.query("CREATE DATABASE db6")
+    node.query(
+        "CREATE TABLE db6.join_source (key UInt64, value String)"
+        " ENGINE = Join(ANY, LEFT, key)"
+    )
+    node.query("INSERT INTO db6.join_source VALUES (1, 'right')")
+    # A Join table of the same name in the default database of the server, which is also the
+    # current database of the inserting query below: a bare name must not be resolved against it.
+    node.query(
+        "CREATE TABLE default.join_source (key UInt64, value String)"
+        " ENGINE = Join(ANY, LEFT, key)"
+    )
+    node.query("INSERT INTO default.join_source VALUES (1, 'wrong')")
+    node.query(
+        "CREATE TABLE db6.t (x UInt64,"
+        " v String DEFAULT joinGet('db6.join_source', 'value', x))"
+        " ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+    restart_with_edited_metadata(
+        get_metadata_path("db6", "t"), "'db6.join_source'", "'join_source'"
+    )
+
+    # The bare name is repaired against the database owning the table, in the attached definition
+    # and in the loading dependency graph alike.
+    assert (
+        node.query(
+            "SELECT loading_dependencies_database, loading_dependencies_table"
+            " FROM system.tables WHERE database = 'db6' AND name = 't'"
+        )
+        == "['db6']\t['join_source']\n"
+    )
+    assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error(
+        "DROP TABLE db6.join_source"
+    )
+    node.query("INSERT INTO db6.t (x) VALUES (1)", database="default")
+    assert node.query("SELECT v FROM db6.t") == "right\n"
+
+    node.query("DROP TABLE db6.t")
+    node.query("DROP TABLE db6.join_source")
+    node.query("DROP TABLE default.join_source")
+    node.query("DROP DATABASE db6")
