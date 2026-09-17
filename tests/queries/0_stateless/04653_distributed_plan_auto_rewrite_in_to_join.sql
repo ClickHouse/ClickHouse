@@ -35,8 +35,10 @@ FROM (EXPLAIN SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_fil
 WHERE explain ILIKE '%CreatingSet%' LIMIT 1;
 
 SELECT 'the explicit rewrite still turns IN into a JOIN';
+-- Pinned too: a local plan after a fallback also contains a `Join`, so the `%Join%` check alone cannot tell whether
+-- the distributed planner accepted the rewritten query.
 SELECT 'rewritten to join'
-FROM (EXPLAIN SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter) SETTINGS make_distributed_plan = 1, rewrite_in_to_join = 1)
+FROM (EXPLAIN SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter) SETTINGS make_distributed_plan = 1, rewrite_in_to_join = 1, distributed_plan_fallback_to_local_execution = 0)
 WHERE explain ILIKE '%Join%' LIMIT 1;
 
 SELECT 'distributed result matches single-node';

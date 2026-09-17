@@ -56,7 +56,9 @@ SELECT 'BEYOND THRESHOLD distributed', a, substring(payload, 1, 4) FROM t_dist_l
 SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'WITH TIES local', count() FROM (SELECT a FROM t_dist_lazy ORDER BY a % 7 LIMIT 3 WITH TIES SETTINGS make_distributed_plan = 0);
-SELECT 'WITH TIES distributed', count() FROM (SELECT a FROM t_dist_lazy ORDER BY a % 7 LIMIT 3 WITH TIES SETTINGS make_distributed_plan = 1);
+-- A `SETTINGS` clause must be outside the subquery does to apply to the statement that executes
+SELECT 'WITH TIES distributed', count() FROM (SELECT a FROM t_dist_lazy ORDER BY a % 7 LIMIT 3 WITH TIES)
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, max_rows_to_group_by = 0;
 
 -- `payload` must not be read for every scanned row. Read a key-only query as the baseline for what
 -- the sort itself costs, then compare the extra cost of `payload` with and without the rewrite.
