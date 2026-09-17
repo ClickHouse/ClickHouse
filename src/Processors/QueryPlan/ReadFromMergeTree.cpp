@@ -4418,8 +4418,9 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         /// A Summing merge decides whether to remove a row by looking at all aggregated columns,
         /// so the read has to fetch all of them even when the query needs only a subset of them.
         NameSet columns_required_by_the_summing_merge;
-        /// The subset of the above that is read as a column of its own (not through a tuple ancestor).
-        NameSet aggregated_columns_in_the_read_set;
+        /// Every column of the read set that carries an aggregated column into the merge - the aggregated
+        /// column itself or a tuple ancestor of it - in merge-header order.
+        Names carriers_of_aggregated_columns;
         if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
         {
             const auto aggregated_columns = getColumnsAggregatedForSummingFinal(storage_snapshot->metadata, data.merging_params);
@@ -4433,39 +4434,53 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             std::vector<Strings> flattened_ancestors;
             if (data.merging_params.allow_tuple_element_aggregation)
                 header = Nested::flattenTupleRecursive(header, &flattened_ancestors);
-            /// The column that carries a flattened leaf into the merge: the outermost tuple ancestor
-            /// the read set already contains. `flattened_ancestors` lists ancestors from the root
-            /// column inwards, so the first match is the outermost one - and picking the outermost
-            /// keeps a single carrier per leaf when several ancestors of the same leaf are read.
-            auto covering_ancestor = [&](size_t position) -> const String *
+            NameSet known_carriers;
+            auto register_carrier = [&](const String & carrier)
             {
-                if (position >= flattened_ancestors.size())
-                    return nullptr;
-                for (const auto & ancestor : flattened_ancestors[position])
-                    if (names.contains(ancestor))
-                        return &ancestor;
-                return nullptr;
+                if (known_carriers.emplace(carrier).second)
+                    carriers_of_aggregated_columns.push_back(carrier);
             };
             for (size_t position = 0; const auto & column : header)
             {
                 if (aggregated_columns.contains(column.name))
                 {
+                    /// The column that carries a flattened leaf into the merge: the outermost tuple ancestor
+                    /// the read set already contains. `flattened_ancestors` lists ancestors from the root
+                    /// column inwards, so the first match is the outermost one - and picking the outermost
+                    /// keeps a single carrier per leaf when several ancestors of the same leaf are read.
+                    const String * covering_ancestor = nullptr;
+                    if (position < flattened_ancestors.size())
+                    {
+                        for (const auto & ancestor : flattened_ancestors[position])
+                        {
+                            if (!names.contains(ancestor))
+                                continue;
+                            if (!covering_ancestor)
+                                covering_ancestor = &ancestor;
+                            register_carrier(ancestor);
+                        }
+                    }
+
                     /// Whichever column carries the leaf has to reach the merge, so remember it:
                     /// a `PREWHERE` consumes its inputs, and a carrier that is only a `PREWHERE`
                     /// input (a tuple ancestor such as `tup.inner`) is not in the query output and
                     /// would be dropped from the block after filtering, leaving the merge to decide
                     /// row removal without the leaves that ancestor covers.
-                    if (const auto * ancestor = covering_ancestor(position))
+                    if (covering_ancestor)
                     {
-                        columns_required_by_the_summing_merge.insert(*ancestor);
+                        columns_required_by_the_summing_merge.insert(*covering_ancestor);
                     }
                     else
                     {
                         columns_required_by_the_summing_merge.insert(column.name);
-                        aggregated_columns_in_the_read_set.insert(column.name);
                         if (names.emplace(column.name).second)
                             column_names_to_read.push_back(column.name);
                     }
+                    /// The leaf itself may be in the read set as well, next to an ancestor that also
+                    /// carries it (an output subcolumn with its tuple in `PREWHERE`, or a query reading
+                    /// both). The merge then receives the leaf twice, through both carriers.
+                    if (names.contains(column.name))
+                        register_carrier(column.name);
                 }
                 ++position;
             }
@@ -4475,23 +4490,20 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             /// `SummingSortedAlgorithm::defineColumns` reads a `...Map` group positionally - the first
             /// array of the group is a key column - so `SELECT GoodMap.V FROM t FINAL` would hand the
             /// merge `GoodMap.V` before `GoodMap.ID` and turn a valid one-key map into the
-            /// composite-key `mergeMap` path. Normalize the whole aggregated read set to the merge
-            /// header order, leaving the other columns where they are.
-            std::vector<size_t> aggregated_positions;
+            /// composite-key `mergeMap` path. The same happens through a tuple carrier: with
+            /// `ratesMap Tuple(ID Array(UInt64), Value Array(UInt64))`, a read set of
+            /// `ratesMap.Value, ratesMap` flattens to `ratesMap.Value, ratesMap.ID, ratesMap.Value`
+            /// and the value leaf becomes a key. Normalize every carrier of an aggregated column to the
+            /// merge header order - a carrier takes the position of the first leaf it covers, and an
+            /// ancestor goes ahead of its descendants - leaving the other columns where they are.
+            std::vector<size_t> carrier_positions;
             for (size_t position = 0; position < column_names_to_read.size(); ++position)
-                if (aggregated_columns_in_the_read_set.contains(column_names_to_read[position]))
-                    aggregated_positions.push_back(position);
+                if (known_carriers.contains(column_names_to_read[position]))
+                    carrier_positions.push_back(position);
 
-            size_t slot = 0;
-            for (const auto & column : header)
-            {
-                if (!aggregated_columns_in_the_read_set.contains(column.name))
-                    continue;
-                chassert(slot < aggregated_positions.size());
-                column_names_to_read[aggregated_positions[slot]] = column.name;
-                ++slot;
-            }
-            chassert(slot == aggregated_positions.size());
+            chassert(carrier_positions.size() == carriers_of_aggregated_columns.size());
+            for (size_t slot = 0; slot < carrier_positions.size(); ++slot)
+                column_names_to_read[carrier_positions[slot]] = carriers_of_aggregated_columns[slot];
         }
 
         return spreadMarkRangesAmongStreamsFinal(
