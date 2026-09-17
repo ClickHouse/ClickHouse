@@ -79,11 +79,13 @@ PartitionedHashJoin::PartitionedHashJoin(
     size_t num_threads_,
     bool any_take_last_row_,
     const HashJoinStatsCollectingParams & stats_collecting_params_,
+    size_t max_bytes_before_external_join_,
     std::optional<size_t> build_rows_hint_)
     : table_join(std::move(table_join_))
     , right_sample_block(std::move(right_sample_block_))
     , any_take_last_row(any_take_last_row_)
     , num_threads(std::max<size_t>(1, num_threads_))
+    , max_bytes_before_external_join(max_bytes_before_external_join_)
     , hash_join(
           std::make_unique<HashJoin>(
               table_join,
@@ -101,7 +103,7 @@ PartitionedHashJoin::PartitionedHashJoin(
     , stats_collecting_params(stats_collecting_params_.build)
     , match_stats_collecting_params(stats_collecting_params_.match)
     , log(getLogger("PartitionedHashJoin"))
-    , clause(*hash_join, *table_join, any_take_last_row, num_threads, build_blocks, accumulated_bytes, log)
+    , clause(*hash_join, *table_join, any_take_last_row, num_threads, max_bytes_before_external_join, build_blocks, accumulated_bytes, log)
 {
     if (!HashJoinTableMaps::isSupportedType(hash_join->data->type))
         throw Exception(
@@ -474,6 +476,18 @@ void PartitionedHashJoin::onBuildPhaseFinish()
     ProfileEvents::increment(ProfileEvents::HashJoinPartitions, clause.partitionCount());
 }
 
+PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
+{
+    if (max_bytes_before_external_join == 0 || delegate_mode)
+        return PostBuildPlan::Fits;
+
+    /// Everything is already resident: the stored blocks, the table and the duplicate runs.
+    if (single_fill_thread)
+        return getTotalByteCount() <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
+
+    return clause.planPostBuild(accumulated_rows.load(std::memory_order_relaxed));
+}
+
 void PartitionedHashJoin::runPostBuildPhase()
 {
     chassert(!build_phase_finished);
@@ -690,6 +704,7 @@ PartitionedHashJoin::clone(const std::shared_ptr<TableJoin> & table_join_, Share
         num_threads,
         any_take_last_row,
         HashJoinStatsCollectingParams{.build = stats_collecting_params, .match = match_stats_collecting_params},
+        max_bytes_before_external_join,
         build_rows_hint);
 }
 

@@ -74,6 +74,7 @@ public:
         size_t num_threads_,
         bool any_take_last_row_ = false,
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
+        size_t max_bytes_before_external_join_ = 0,
         std::optional<size_t> build_rows_hint_ = {});
 
     ~PartitionedHashJoin() override;
@@ -155,6 +156,19 @@ public:
     void setAmacEnabledForTests(bool value) { clause.setAmacEnabledForTests(value); }
     void setL1CacheSizeForTests(size_t bytes) { clause.setL1CacheSizeForTests(bytes); }
     void setPartitionBitsForTests(size_t value) { clause.setPartitionBitsForTests(value); }
+    void setGrowBudgetForTests(size_t bytes) { clause.setGrowBudgetForTests(bytes); }
+    void setGrowBudgetForDrainForTests(size_t bytes) { clause.setGrowBudgetForDrainForTests(bytes); }
+    size_t predictedArenaBytesForTests(bool grouped) const { return clause.predictedArenaBytesForTests(grouped); }
+    size_t predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const
+    {
+        return clause.predictedDuplicateScratchBytesForTests(rows_in_range, first_group);
+    }
+
+    /// The post-build memory verdict, taken once at the barrier from numbers that already exist. A
+    /// delegated build always fits: its table is built. A single fill thread's resident set is compared
+    /// with the budget. A partitioned build asks the clause (`HashJoinClause::planPostBuild`).
+    using PostBuildPlan = HashJoinClause::PostBuildPlan;
+    PostBuildPlan planPostBuild();
 
 private:
     friend class NotJoinedPartitioned;
@@ -213,6 +227,8 @@ private:
     SharedHeader right_sample_block;
     const bool any_take_last_row;
     const size_t num_threads;
+    /// Zero disables the post-build memory gate and the grow budget of the clause.
+    const size_t max_bytes_before_external_join;
 
     /// Owns everything the emit machinery needs: block preparation, the saved block sample, the
     /// shared row store, the used flags, the output samples. Its own map stays empty and the shared
