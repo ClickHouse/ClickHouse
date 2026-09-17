@@ -955,9 +955,9 @@ These variables are supported:
 - `version`
 - `max_allowed_packet`
 
-:::note
+<Note>
 By now these variables are stubs and don't correspond to anything.
-:::
+</Note>
 
 Example:
 

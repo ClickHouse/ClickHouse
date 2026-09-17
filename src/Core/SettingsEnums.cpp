@@ -289,7 +289,8 @@ IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
                        {{"ordered", ObjectStorageQueueMode::ORDERED},
-                        {"unordered", ObjectStorageQueueMode::UNORDERED}})
+                        {"unordered", ObjectStorageQueueMode::UNORDERED},
+                        {"exclusive", ObjectStorageQueueMode::EXCLUSIVE}})
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},
@@ -465,7 +466,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
      {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
-     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
+     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED},
+     {"advanced_chunked", MergeTreeObjectSharedDataSerializationVersion::ADVANCED_CHUNKED}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeDynamicSerializationVersion,
