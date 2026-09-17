@@ -1174,6 +1174,58 @@ def test_nonexistent_roles_storage_fails_the_first_run(janedoe_in_role_a):
         restore_node_bad()
 
 
+def test_max_users_guard(janedoe_in_role_a):
+    """`max_users` bounds the enumeration itself: the run stops at the first entry beyond the limit,
+    before the plan, and applies nothing: the users of the earlier runs stay, and no role is created,
+    not even one that was dropped. `node_bad` is restarted with the limit set to the live count
+    (`permanent`, `janedoe` and `johndoe`, whom it does not exclude) and with the roles created in
+    `local_directory`; one more member of `clickhouse-role_a` takes the search over the limit."""
+    live_entries = ldap_count_synced_entries()
+    try:
+        restart_node_bad_with(
+            directories_bad_config(
+                max_users=str(live_entries),
+                create_roles="true",
+                roles_storage="local_directory",
+            ),
+            server_config=read_config("ldap_server.xml"),
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(node_bad, ldap_users_query()) == f"{live_entries}\n"
+        assert (
+            admin(node_bad, "SELECT count() FROM system.roles WHERE name IN ('role_a', 'role_b')")
+            == "2\n"
+        )
+
+        ldap_add_user("overflow")
+        ldap_set_memberships("overflow", {ROLE_A_GROUP})
+        wait_ldap_synced_entries(live_entries + 1)
+        admin(node_bad, "DROP ROLE role_b")
+        failures_before = event_value(node_bad, "LDAPSyncFailures")
+        error = admin_error(node_bad, "SYSTEM RELOAD USERS")
+        assert (
+            f"returned more than {live_entries} entries; refusing to continue" in error
+        ), error
+        assert admin(node_bad, ldap_users_query()) == f"{live_entries}\n"
+        assert admin(node_bad, ldap_users_query("overflow")) == "0\n"
+        assert admin(node_bad, "SELECT count() FROM system.roles WHERE name = 'role_b'") == "0\n"
+        assert event_value(node_bad, "LDAPSyncFailures") > failures_before
+
+        # Back under the limit, the next run succeeds and creates the dropped role again.
+        ldap_set_memberships("overflow", set())
+        ldap_delete(user_dn("overflow"))
+        wait_ldap_synced_entries(live_entries)
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(node_bad, ldap_users_query()) == f"{live_entries}\n"
+        assert admin(node_bad, "SELECT count() FROM system.roles WHERE name = 'role_b'") == "1\n"
+    finally:
+        ldap_set_memberships("overflow", set())
+        ldap_delete(user_dn("overflow"), ignore_missing=True)
+        restore_node_bad()
+        # The roles live in `local_directory` and survive the restart; the other tests of `node_bad` start from none.
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
 def with_second_ldap_directory(name, sync=None, after=False):
     """`directories_bad.xml` with a second `ldap` directory named `name`, backed by the same server and
     declared right before (with `after`, right after) the synchronised one. `sync` is the content of its
