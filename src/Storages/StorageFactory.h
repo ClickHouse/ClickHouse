@@ -79,10 +79,6 @@ public:
         /// serialize `unique_key`, which would allow replicas to diverge silently.
         bool supports_unique_key = false;
         bool supports_sql_security = false;
-        /// See also IStorage::supportsBackupPartition(). Lets BACKUP ... PARTITION ... validate
-        /// partition support by engine name alone, for a table whose StoragePtr is not available
-        /// locally (e.g. a Replicated/Shared database table this replica has not created yet).
-        bool supports_backup_partition = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -122,7 +118,6 @@ public:
         .supports_schema_inference = false,
         .supports_unique_key = false,
         .supports_sql_security = false,
-        .supports_backup_partition = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});
