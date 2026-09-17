@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string_view>
 #include <vector>
 #include <Common/MultiVersion.h>
 
@@ -75,6 +76,15 @@ public:
 
     size_t rulesCount() const;
 };
+
+/// Redacts the physicalization apply token without requiring configured
+/// masking rules. This is also applied to parser diagnostics that never produce
+/// an AST and therefore cannot use the query node's secret formatter.
+void maskPhysicalizationApplyTokens(std::string & data);
+
+/// Allocation-free companion used before a parser diagnostic is assembled.
+/// It lets the error path fail closed without copying an unbounded request.
+bool containsPhysicalizationApplyToken(std::string_view data);
 
 /// Wipes sensitive data and cuts to a specified maximum length in one function call.
 /// If the maximum length is zero then the function doesn't cut to the maximum length.

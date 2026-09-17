@@ -4,6 +4,7 @@
 #include <DataTypes/UDT/Record.h>
 
 #include <Databases/UDT/AtomicAuthorityStartupStatus.h>
+#include <Databases/UDT/PhysicalizationPlan.h>
 
 #include <Core/Types.h>
 #include <Core/UUID.h>
@@ -42,6 +43,43 @@ struct LifecycleActor
     UUID principal_uuid = UUIDHelpers::Nil;
     String principal_display_name;
     bool internal_query = false;
+};
+
+class IPhysicalizationApplyAuthorization;
+
+class IPhysicalizationDryRunAuthorization
+{
+public:
+    virtual ~IPhysicalizationDryRunAuthorization() = default;
+
+    /// Cooperative query-cancellation checkpoint. Implementations without a
+    /// query lifetime may retain the default no-op behavior.
+    virtual void checkCancellation() const { }
+
+    /// Coarse database privilege checked before selecting a closure or
+    /// decoding authority records.
+    virtual void requireDatabaseVisibility() const { }
+    /// Exact selected identity/name privilege checked before durable metadata
+    /// or sidecar reconciliation.
+    virtual void requireObjectIdentityVisibility(const SchemaObjectID &, std::string_view) const { }
+    /// Database-wide visibility required before exposing catalog-integrity
+    /// diagnostics for an object whose exact current name cannot be trusted.
+    virtual void requireDatabaseObjectDiagnosticsVisibility() const { }
+    /// Database-wide type visibility required before reconciling a
+    /// definition-only DROP UNUSED plan whose exact manifest is not built yet.
+    virtual void requireDatabaseDefinitionVisibility() const { }
+
+    /// Dry run must not disclose a partial loss/validation closure. Every
+    /// selected object and every definition retained in the manifest is
+    /// checked before a token is issued.
+    virtual void requireObjectVisibility(const PhysicalizationManifestObject & object) const = 0;
+    virtual void requireDefinitionVisibility(const PhysicalizationManifestDefinition & definition) const = 0;
+};
+
+struct PhysicalizationDryRunResult
+{
+    String opaque_token;
+    PhysicalizationPlan plan;
 };
 
 /// One immutable, backend-owned view used by SHOW/DESCRIBE. A durable Atomic
@@ -120,6 +158,14 @@ public:
     virtual void rename(const ASTRenameTypeQuery & query, const LifecycleActor & actor) = 0;
     virtual void comment(const ASTAlterTypeCommentQuery & query, const LifecycleActor & actor) = 0;
     virtual void dropRestrict(const ASTDropTypeQuery & query, const LifecycleActor & actor) = 0;
+
+    virtual PhysicalizationDryRunResult physicalizationDryRun(
+        PhysicalizationSelector selector, const LifecycleActor & actor, const IPhysicalizationDryRunAuthorization & authorization) = 0;
+    virtual void physicalizationApply(
+        std::string_view opaque_token, const LifecycleActor & actor, const IPhysicalizationApplyAuthorization & authorization) = 0;
+    /// Best-effort cleanup when a dry-run result cannot be delivered to its
+    /// caller. Tokens are process-local, so no durable work is required.
+    virtual void discardPhysicalizationToken(std::string_view, const LifecycleActor &) noexcept { }
 };
 
 ILifecycleAdapter & getUnsupportedLifecycleAdapter() noexcept;

@@ -1,5 +1,7 @@
 #include <Client/LineReader.h>
 
+#include <Common/SensitiveDataMasker.h>
+
 #include <iostream>
 #include <string_view>
 #include <algorithm>
@@ -321,7 +323,9 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
 
     if (!line.empty() && line != prev_line && !line.starts_with(" "))
     {
-        addToHistory(line);
+        String line_for_history(line);
+        maskPhysicalizationApplyTokens(line_for_history);
+        addToHistory(line_for_history);
         prev_line = line;
     }
 

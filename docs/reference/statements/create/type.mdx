@@ -171,6 +171,75 @@ For a mapped Materialized View with an owned inner table, `DROP ... SYNC` first 
 
 Backup archives do not carry the complete database authority, persisted verification-scheduler and resource-quota overrides, or object sidecars. `BACKUP` is therefore rejected for an Atomic database once its UDT authority is active or durable, and `RESTORE` cannot target such an authority. Physicalization does not remove the durable activation marker. For a physical-only backup, first physicalize the objects and copy their physical schemas and data into a never-enabled database.
 
+## Remove UDT bindings with PHYSICALIZE TYPE REFERENCES {#physicalize-type-references}
+
+`PHYSICALIZE TYPE REFERENCES` is the explicit rollback and downgrade mechanism. It removes logical UDT provenance from selected table metadata while leaving the already physical column schema and table data unchanged. It is a two-step operation: first produce and review a complete loss manifest, then apply the exact plan using its opaque token.
+
+Physicalization supports Atomic `TABLE`, `VIEW`, `MATERIALIZED VIEW`, and `DICTIONARY` objects in these scopes:
+
+```sql
+PHYSICALIZE TYPE REFERENCES OBJECT TABLE [database.]table
+    [DROP UNUSED TYPES] DRY RUN;
+
+PHYSICALIZE TYPE REFERENCES CLOSURE OF TABLE [database.]table
+    [DROP UNUSED TYPES] DRY RUN;
+
+PHYSICALIZE TYPE REFERENCES OBJECT VIEW [database.]view
+    [DROP UNUSED TYPES] DRY RUN;
+
+PHYSICALIZE TYPE REFERENCES OBJECT MATERIALIZED VIEW [database.]view
+    [DROP UNUSED TYPES] DRY RUN;
+
+PHYSICALIZE TYPE REFERENCES OBJECT DICTIONARY [database.]dictionary
+    [DROP UNUSED TYPES] DRY RUN;
+
+PHYSICALIZE TYPE REFERENCES DATABASE database
+    [DROP UNUSED TYPES] DRY RUN;
+```
+
+The dry run returns one row with:
+
+- `apply_token`;
+- `database_uuid` (`UUID`), `database_catalog_epoch` (`UInt64`), and `inventory_root`;
+- `scope_digest` and `scope_count` (`UInt64`);
+- `manifest_digest` and `manifest_count` (`UInt64`);
+- a human-readable `loss_summary` and the exact `canonical_loss_manifest_base64`.
+
+Digests are lowercase hexadecimal `String` values. `canonical_loss_manifest_base64` is the canonical binary manifest encoded as standard padded Base64, so it remains safe in JSON and other text-only transports.
+
+Review the complete scope and loss summary, then apply the returned token without modifying the selector:
+
+```sql
+PHYSICALIZE TYPE REFERENCES APPLY TOKEN '<apply_token>';
+```
+
+`DROP UNUSED TYPES` is part of the token-bound plan. It removes only definitions with no references after the rewrite; without it, definitions remain in the catalog.
+
+### Authorization and token safety {#authorization-and-token-safety}
+
+The dry run requires `SHOW TABLES` and `SHOW COLUMNS` on every table in the plan, plus `SHOW TYPES` for its definitions. Apply recomputes the plan and requires `ALTER TABLE` on every table actually rewritten. It additionally requires `DROP TYPE` only for definitions selected by `DROP UNUSED TYPES`. Provenance erasure does not require `USAGE TYPE`.
+
+Treat `apply_token` as a short-lived secret:
+
+- it is bound to the authenticated principal, database identity and catalog epoch, selector, authority root, exact scope, and exact manifest;
+- it expires after 15 minutes, is kept only in memory, and is invalid after server restart;
+- it is single-use and cannot be replayed or used by another principal;
+- apply rebuilds the complete plan under the schema-mutation guard and rejects a stale token before changing metadata;
+- SQL formatting and diagnostics redact apply-token literals.
+
+If apply rejects a token, run a new dry run and review the new manifest. Do not edit or remove sidecar metadata manually: missing or inconsistent binding metadata fails closed during activation.
+
+## Downgrade procedure {#downgrade-procedure}
+
+Before starting a server version that does not understand UDT metadata:
+
+1. Stop reference-bearing schema changes. Disable the experimental setting for application profiles, but keep it enabled in the administrative session used for physicalization.
+2. Run a database-scope dry run, review the complete manifest, and apply its token. Repeat for every Atomic database that can contain UDT references.
+3. Verify that `udt_declared_type` and `udt_references` are empty for the selected tables, and that `SHOW CREATE TABLE` contains only physical types.
+4. Verify representative reads and, for MergeTree tables, data and part checksums. Physicalization must not rewrite parts.
+5. If definitions must also be removed, bind `DROP UNUSED TYPES` in the reviewed dry run or drop each now-unused type with `DROP TYPE ... RESTRICT`.
+6. Disable `allow_experimental_user_defined_types` for all profiles, restart, and only then install the older server version.
+
 ## Verification, quarantine, and resource limits {#verification-quarantine-and-resource-limits}
 
 An enabled Atomic authority periodically verifies canonical definition records, dependent-object sidecars, installation records, and the exact authority inventory root. Work is bounded by configured object, byte, work, memory, I/O, wall-time, CPU-time, and load thresholds. Cursor progress and per-database overrides are durable and UUID-bound.

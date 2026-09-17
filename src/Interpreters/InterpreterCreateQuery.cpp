@@ -2308,6 +2308,44 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     std::optional<UDTTableCreateState> udt_state;
     std::shared_ptr<UDT::SelectedOutputTypeBindingCollector> selected_output_collector;
 
+    if (stored_object_preparation.route == UDT::StoredObjectCreatePreparationRoute::PhysicalizeTableFunctionSchema)
+    {
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_user_defined_types])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED, "Table-function schema UDT resolution requires allow_experimental_user_defined_types");
+        }
+        if (mode != LoadingStrictnessLevel::CREATE || !need_ddl_guard || create.attach || create.isTemporary() || create.if_not_exists
+            || create.replace_view || create.replace_table || create.create_or_replace || create.has_attach_from_path
+            || create.attach_short_syntax || create.attach_as_replicated.has_value() || !create.cluster.empty())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Table-function schema UDT physicalization supports only a fresh local CREATE TABLE");
+        }
+
+        try
+        {
+            UDT::physicalizeInferredTableFunctionSchema(create, stored_object_classification, stored_object_preparation, getContext());
+        }
+        catch (const UDT::ScalarAliasColumnBinderError & error)
+        {
+            rethrowUDTScalarAliasColumnBinderError(error);
+        }
+        catch (const UDT::StoredObjectTypeBindingPreparationError & error)
+        {
+            rethrowStoredObjectTypeBindingPreparationError(error);
+        }
+
+        const auto physical_classification = UDT::classifyStoredObjectCreateQuery(create, is_restore_from_backup);
+        const auto physical_decision = UDT::classifyStoredObjectCreatePreparation(
+            create, physical_classification, getContext()->getSettingsRef()[Setting::allow_experimental_user_defined_types]);
+        if (physical_decision.route != UDT::StoredObjectCreatePreparationRoute::PhysicalOnly || physical_decision.has_positive_udt_evidence)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Table-function schema UDT physicalization left a persistent logical reference candidate");
+        }
+    }
+
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(
         create,

@@ -20,11 +20,12 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/DNSResolver.h>
-#include <Common/QueryScope.h>
 #include <Common/Exception.h>
+#include <Common/QueryScope.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
 #include <Common/formatReadable.h>
@@ -97,6 +98,13 @@ Client::~Client() = default;
 
 void Client::processError(std::string_view query) const
 {
+    String query_for_error;
+    if (!is_interactive)
+    {
+        query_for_error.assign(query);
+        maskPhysicalizationApplyTokens(query_for_error);
+    }
+
     if (server_exception)
     {
         fmt::print(
@@ -116,7 +124,7 @@ void Client::processError(std::string_view query) const
         }
         else
         {
-            fmt::print(stderr, "(query: {})\n", query);
+            fmt::print(stderr, "(query: {})\n", query_for_error);
         }
     }
 
@@ -130,7 +138,7 @@ void Client::processError(std::string_view query) const
         }
         else
         {
-            fmt::print(stderr, "(query: {})\n", query);
+            fmt::print(stderr, "(query: {})\n", query_for_error);
         }
     }
 

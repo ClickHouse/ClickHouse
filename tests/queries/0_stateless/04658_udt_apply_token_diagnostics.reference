@@ -1,0 +1,12 @@
+before	1	1	0
+truncated	OK
+malformed	OK
+output_tail	OK
+multi_diagnostic	OK
+multi_no_effects	OK
+raw_echo	OK
+formatted_echo	OK
+hint_mismatch	OK
+after	1	1	0
+state_unchanged	OK
+output_file_absent	OK

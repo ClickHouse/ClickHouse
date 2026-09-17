@@ -1,8 +1,8 @@
-#include <Common/Exception.h>
-#include <Common/SensitiveDataMasker.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLException.h>
+#include <Common/Exception.h>
+#include <Common/SensitiveDataMasker.h>
 
 #pragma clang diagnostic ignored "-Wsign-compare"
 #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
@@ -29,7 +29,6 @@ extern const int LOGICAL_ERROR;
 
 TEST(Common, SensitiveDataMasker)
 {
-
     Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_xml_config = new Poco::Util::XMLConfiguration();
     DB::SensitiveDataMasker masker(*empty_xml_config, "");
     masker.addMaskingRule("all a letters", "a+", "--a--", /*throw_on_match=*/false);
@@ -52,7 +51,8 @@ TEST(Common, SensitiveDataMasker)
     DB::SensitiveDataMasker masker2(*empty_xml_config, "");
     masker2.addMaskingRule("hide root password", "qwerty123", "******", /*throw_on_match=*/false);
     masker2.addMaskingRule("hide SSN", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "000-00-0000", /*throw_on_match=*/false);
-    masker2.addMaskingRule("hide email", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,4}", "hidden@hidden.test", /*throw_on_match=*/false);
+    masker2.addMaskingRule(
+        "hide email", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,4}", "hidden@hidden.test", /*throw_on_match=*/false);
 
     std::string query = "SELECT id FROM mysql('localhost:3308', 'database', 'table', 'root', 'qwerty123') WHERE ssn='123-45-6789' or "
                         "email='JonhSmith@secret.domain.test'";
@@ -87,7 +87,7 @@ TEST(Common, SensitiveDataMasker)
 
     try
     {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::istringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule>
@@ -108,15 +108,13 @@ TEST(Common, SensitiveDataMasker)
     }
     catch (const DB::Exception & e)
     {
-        EXPECT_EQ(
-            std::string(e.what()),
-            "query_masking_rules configuration contains more than one rule named 'test'.");
+        EXPECT_EQ(std::string(e.what()), "query_masking_rules configuration contains more than one rule named 'test'.");
         EXPECT_EQ(e.code(), DB::ErrorCodes::INVALID_CONFIG_PARAMETER);
     }
 
     try
     {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::istringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule><name>test</name></rule>
@@ -130,15 +128,13 @@ TEST(Common, SensitiveDataMasker)
     }
     catch (const DB::Exception & e)
     {
-        EXPECT_EQ(
-            std::string(e.what()),
-            "query_masking_rules configuration, rule 'test' has no <regexp> node or <regexp> is empty.");
+        EXPECT_EQ(std::string(e.what()), "query_masking_rules configuration, rule 'test' has no <regexp> node or <regexp> is empty.");
         EXPECT_EQ(e.code(), DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     }
 
     try
     {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::istringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule><name>test</name><regexp>())(</regexp></rule>
@@ -154,13 +150,13 @@ TEST(Common, SensitiveDataMasker)
     {
         EXPECT_EQ(
             std::string(e.message()),
-            "SensitiveDataMasker: cannot compile re2: ())(, error: unexpected ): ())(. Look at https://github.com/google/re2/wiki/Syntax for reference: while adding query masking rule 'test'."
-        );
+            "SensitiveDataMasker: cannot compile re2: ())(, error: unexpected ): ())(. Look at https://github.com/google/re2/wiki/Syntax "
+            "for reference: while adding query masking rule 'test'.");
         EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }
 
     {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::istringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             xml_isteam(R"END(
 <clickhouse>
     <query_masking_rules>
@@ -223,7 +219,7 @@ TEST(Common, ExceptionAddMessageMasked)
 
     // Build a masker with one rule that masks an URL-encoded password parameter,
     // matching the security-sensitive case described in issue #106441.
-    std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::istringstream // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         xml_isteam(R"END(<clickhouse>
     <query_masking_rules>
         <rule>
@@ -257,10 +253,8 @@ TEST(Common, ExceptionAddMessageMasked)
         e.addMessage(fmt::format("(in file/uri {})", sensitive_url));
 
         const std::string what = e.what();
-        EXPECT_EQ(what.find("password%3Ds3cr3t"), std::string::npos)
-            << "raw secret leaked through addMessage: " << what;
-        EXPECT_NE(what.find("password%3D***"), std::string::npos)
-            << "expected masked replacement not present: " << what;
+        EXPECT_EQ(what.find("password%3Ds3cr3t"), std::string::npos) << "raw secret leaked through addMessage: " << what;
+        EXPECT_NE(what.find("password%3D***"), std::string::npos) << "expected masked replacement not present: " << what;
     }
 
     // Restore the global masker to a no-op so other gtests in this binary
@@ -268,4 +262,65 @@ TEST(Common, ExceptionAddMessageMasked)
     Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_xml_config = new Poco::Util::XMLConfiguration();
     auto empty_masker = std::make_unique<SensitiveDataMasker>(*empty_xml_config, "");
     SensitiveDataMasker::setInstance(std::move(empty_masker));
+}
+
+TEST(Common, PhysicalizeTypeApplyTokenIsMaskedBeforeParsing)
+{
+    const auto mask = [](std::string text)
+    {
+        DB::maskPhysicalizationApplyTokens(text);
+        return text;
+    };
+
+    EXPECT_EQ(
+        mask("pHySiCaLiZe /* planner */ TYPE -- split\n REFERENCES APPLY TOKEN 'top''secret' FORMAT JSON"),
+        "pHySiCaLiZe /* planner */ TYPE -- split\n REFERENCES APPLY TOKEN '[HIDDEN]' FORMAT JSON");
+    EXPECT_EQ(mask("PHYSICALIZE TYPE REFERENCES APPLY TOKEN 'unterminated-secret"), "PHYSICALIZE TYPE REFERENCES APPLY TOKEN '[HIDDEN]'");
+    EXPECT_EQ(
+        mask("PHYSICALIZE TYPE REFERENCES APPLY TOKEN bare-secret trailing text"), "PHYSICALIZE TYPE REFERENCES APPLY TOKEN '[HIDDEN]'");
+    EXPECT_EQ(
+        mask("PHYSICALIZE // one\n TYPE # two\n REFERENCES /* outer /* nested */ end */ APPLY TOKEN 'secret'"),
+        "PHYSICALIZE // one\n TYPE # two\n REFERENCES /* outer /* nested */ end */ APPLY TOKEN '[HIDDEN]'");
+    EXPECT_EQ(
+        mask(
+            "PHYSICALIZE\xC2\xA0"
+            "TYPE REFERENCES APPLY TOKEN\xC2\xA0"
+            "'unicode-space-secret'"),
+        "PHYSICALIZE\xC2\xA0"
+        "TYPE REFERENCES APPLY TOKEN\xC2\xA0"
+        "'[HIDDEN]'");
+    EXPECT_EQ(mask("PHYSICALIZE TYPE REFERENCES APPLY TOKEN #\t'malformed-secret'"), "PHYSICALIZE TYPE REFERENCES APPLY TOKEN '[HIDDEN]'");
+    EXPECT_EQ(mask("PHYSICALIZE TYPE REFERENCES APPLY #\t TOKEN 'pre-token-secret'"), "PHYSICALIZE TYPE REFERENCES APPLY '[HIDDEN]'");
+    EXPECT_EQ(mask("PHYSICALIZE TYPE REFERENCES APPLY /* TOKEN 'block-secret'"), "PHYSICALIZE TYPE REFERENCES APPLY '[HIDDEN]'");
+    EXPECT_EQ(mask("PHYSICALIZE TYPE REFERENCES APPLY -- TOKEN 'line-secret'"), "PHYSICALIZE TYPE REFERENCES APPLY '[HIDDEN]'");
+    EXPECT_EQ(mask("PHYSICALIZE TYPE REFERENCES APPLY TOKEN /* token-secret"), "PHYSICALIZE TYPE REFERENCES APPLY TOKEN '[HIDDEN]'");
+    EXPECT_EQ(
+        mask("PHYSICALIZE TYPE REFERENCE APPLY TOKEN 'misspelled-reference-secret'"), "PHYSICALIZE TYPE REFERENCE APPLY TOKEN '[HIDDEN]'");
+    EXPECT_EQ(
+        mask("PHYSICALIZE TYPE REFERENCES APPLYY TOKEN 'misspelled-apply-secret'"), "PHYSICALIZE TYPE REFERENCES APPLYY TOKEN '[HIDDEN]'");
+    EXPECT_EQ(mask("PHYSICALIZE TYPE REFERENCE APPLY TOKN 'combined-misspelling-secret'"), "PHYSICALIZE TYPE REFERENCE APPLY '[HIDDEN]'");
+    EXPECT_EQ(mask("PHYSICALIZE TYPE REFERENCES OBJECT TABLE token DRY RUN"), "PHYSICALIZE TYPE REFERENCES OBJECT TABLE token DRY RUN");
+    EXPECT_EQ(
+        mask("SELECT ';' AS marker; PHYSICALIZE TYPE REFERENCES APPLY TOKEN 'later-secret'"),
+        "SELECT ';' AS marker; PHYSICALIZE TYPE REFERENCES APPLY TOKEN '[HIDDEN]'");
+
+    /// The marker inside a literal or comment is data, not a top-level token sequence.
+    EXPECT_EQ(mask("SELECT 'PHYSICALIZE TYPE REFERENCES APPLY TOKEN secret'"), "SELECT 'PHYSICALIZE TYPE REFERENCES APPLY TOKEN secret'");
+    EXPECT_EQ(
+        mask("-- PHYSICALIZE TYPE REFERENCES APPLY TOKEN secret\nSELECT 1"), "-- PHYSICALIZE TYPE REFERENCES APPLY TOKEN secret\nSELECT 1");
+
+    std::string batch;
+    std::string expected_batch;
+    constexpr size_t statement_count = 2048;
+    for (size_t index = 0; index < statement_count; ++index)
+    {
+        if (index)
+        {
+            batch += "; ";
+            expected_batch += "; ";
+        }
+        batch += "PHYSICALIZE TYPE REFERENCES APPLY TOKEN ''";
+        expected_batch += "PHYSICALIZE TYPE REFERENCES APPLY TOKEN '[HIDDEN]'";
+    }
+    EXPECT_EQ(mask(std::move(batch)), expected_batch);
 }

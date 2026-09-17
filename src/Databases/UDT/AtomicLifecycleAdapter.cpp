@@ -8,6 +8,8 @@
 #include <Databases/UDT/AuthorityVerificationRuntimeState.h>
 #include <Databases/UDT/AuthorityVerificationScheduler.h>
 #include <Databases/UDT/DefinitionMutationPlanner.h>
+#include <Databases/UDT/PhysicalizationApplyCoordinator.h>
+#include <Databases/UDT/PhysicalizationTokenStore.h>
 #include <Databases/UDT/ResourceLimitAdapters.h>
 
 #include <DataTypes/BuiltInDataTypeFamilyClassifier.h>
@@ -112,6 +114,19 @@ void logNeverEnabledScaffoldCleanupFailureNoThrow(UUID database_uuid, Int32 erro
 [[noreturn]] void logicalError(std::string_view message)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic user-defined type lifecycle invariant failed: {}", message);
+}
+
+PhysicalizationPlanLimits physicalizationPlanLimitsForRoot(const CompositeRoot & root)
+{
+    PhysicalizationPlanLimits limits;
+    const UInt64 effective_definitions = root.getDatabaseResourceQuota().getLimits().get(ResourceLimit::DefinitionsPerDatabase);
+    if (!effective_definitions || effective_definitions > physicalization_maximum_validation_definitions)
+        logicalError("the published database definition quota exceeds the physicalization implementation domain");
+    /// The normative default remains 10k. A root carrying an exact persisted
+    /// database override may raise only the validation-definition traversal;
+    /// selected-object/token/manifest ceilings remain independent limits.
+    limits.maximum_validation_definitions = effective_definitions;
+    return limits;
 }
 
 using CanonicalLifecycleTouchSet = std::set<SchemaObjectID>;
@@ -226,6 +241,23 @@ std::vector<SchemaObjectID> collectDefinitionMutationTouchSet(const CompositeRoo
 
     expandLifecycleTouchForwardClosure(
         touched, current_root.getSchemaObjectDependencyGraph(), std::addressof(replacement_root.getSchemaObjectDependencyGraph()));
+    return {touched.begin(), touched.end()};
+}
+
+std::vector<SchemaObjectID> collectPhysicalizationTouchSet(
+    const CompositeRoot & current_root, std::span<const SchemaObjectID> selected_objects, bool include_all_definitions)
+{
+    CanonicalLifecycleTouchSet touched;
+    for (const auto & object : selected_objects)
+        addLifecycleTouch(touched, object);
+    if (include_all_definitions)
+    {
+        for (const auto & record : current_root.getDefinitionRecords())
+            addLifecycleTouch(touched, definitionObject(record.identity));
+    }
+    if (touched.empty())
+        logicalError("a material physicalization operation has an empty rooted touch set");
+    expandLifecycleTouchForwardClosure(touched, current_root.getSchemaObjectDependencyGraph());
     return {touched.begin(), touched.end()};
 }
 
@@ -981,6 +1013,14 @@ private:
     AtomicAuthorityStartupStatusSnapshot::Ptr degraded_status;
     AuthorityQuarantinePlan::Ptr quarantine;
     bool verification_runtime_fail_closed = false;
+};
+
+UInt64 currentPhysicalizationTimeMicroseconds()
+{
+    const auto value = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (value <= 0 || !std::in_range<UInt64>(value))
+        invalid("current monotonic physicalization time is outside the UInt64 microsecond domain");
+    return static_cast<UInt64>(value);
 }
 
 bool isMappedStorageObjectKind(SchemaObjectKind kind) noexcept
@@ -997,6 +1037,20 @@ bool storageMatchesMappedObjectKind(const IStorage & storage, SchemaObjectKind k
     if (kind == SchemaObjectKind::Dictionary)
         return storage.isDictionary();
     return false;
+}
+
+StoragePtr findLivePhysicalizationTable(DatabaseAtomic & database, const SchemaObjectID & object)
+{
+    if (!isMappedStorageObjectKind(object.kind) || object.database_uuid != database.getUUID() || object.object_uuid == UUIDHelpers::Nil)
+        logicalError("physicalization selected a non-local storage identity");
+    const auto [mapped_database, table] = DatabaseCatalog::instance().tryGetByUUID(object.object_uuid);
+    if (!mapped_database || mapped_database.get() != std::addressof(database) || !table)
+        logicalError("the physicalization-selected Atomic table is absent from the live catalog");
+    const auto storage_id = table->getStorageID();
+    if (storage_id.uuid != object.object_uuid || storage_id.database_name != database.getDatabaseName() || storage_id.table_name.empty()
+        || !storageMatchesMappedObjectKind(*table, object.kind))
+        logicalError("the live Atomic storage identity differs from the physicalization authority root");
+    return table;
 }
 
 template <typename RequireExactAuthorization, typename RequireDatabaseDiagnosticsAuthorization>
@@ -1055,6 +1109,229 @@ StoragePtr findAuthorizedLivePhysicalizationTable(
 
     std::invoke(require_exact_authorization, std::string_view(storage_id.table_name));
     return table;
+}
+
+class AtomicStoredObjectPhysicalizationAdapter final : public IPhysicalizationObjectProvider, public IPhysicalizationRewriteAdapter
+{
+public:
+    AtomicStoredObjectPhysicalizationAdapter(
+        DatabaseAtomic & database_,
+        AtomicDatabaseSchemaMutationStorage & durability_storage_,
+        AtomicDatabaseSchemaMutationReconciliation reconciliation_,
+        std::function<void()> cancellation_checkpoint_)
+        : database(database_)
+        , durability_storage(durability_storage_)
+        , reconciliation(std::move(reconciliation_))
+        , cancellation_checkpoint(std::move(cancellation_checkpoint_))
+    {
+        for (size_t index = 0; index < reconciliation.dependent_objects.size(); ++index)
+            if (!image_by_object.emplace(reconciliation.dependent_objects[index].expectation.object, index).second)
+                logicalError("the reconciled Atomic physicalization image repeats an object identity");
+    }
+
+    void checkCancellation() const override
+    {
+        if (cancellation_checkpoint)
+            cancellation_checkpoint();
+    }
+
+    PhysicalizationObject load(const SidecarExpectationRecord & expectation) const override
+    {
+        if (!isMappedStorageObjectKind(expectation.object.kind) || expectation.object.database_uuid != database.getUUID())
+            logicalError("the Atomic stored-object physicalization provider received an unsupported object identity");
+        const auto & image = findImage(expectation.object);
+        if (image.expectation != expectation || image.object_name.empty())
+            logicalError("the reconciled table image differs from its pinned authority expectation");
+
+        PersistedTypeReferences references;
+        try
+        {
+            references = decodePersistedTypeReferences(image.canonical_sidecar_bytes);
+        }
+        catch (const PersistedTypeReferencesError &)
+        {
+            logicalError("the reconciled stored-object sidecar is not a canonical reference record");
+        }
+
+        const auto table = findLiveTable(image);
+        const auto metadata = table->getInMemoryMetadataPtr(nullptr, false);
+        metadata->validateBoundUDTReferences();
+        const auto & bound = metadata->getBoundUDTReferences();
+        const auto & retained_expectation = metadata->getBoundUDTExpectation();
+        if (!bound || !retained_expectation || *retained_expectation != expectation || bound->getObject() != expectation.object
+            || bound->getObjectSchemaRevision() != expectation.object_schema_revision || bound->getSidecarHash() != expectation.sidecar_hash
+            || bound->getPhysicalSchemaFingerprint() != expectation.physical_schema_fingerprint)
+            logicalError("the active table binding differs from the reconciled physicalization image");
+
+        std::vector<SemanticCapabilityMask> selected_capabilities;
+        selected_capabilities.reserve(bound->getUses().size());
+        for (const auto & use : bound->getUses())
+            selected_capabilities.push_back(use.getSemanticCapabilities());
+
+        return {
+            .object = expectation.object,
+            .object_schema_revision = expectation.object_schema_revision,
+            .diagnostic_name = image.object_name,
+            .canonical_metadata_hash = computeDatabaseSchemaWALStagedArtifactHash(
+                DatabaseSchemaWALStagedArtifactKind::DependentObjectMetadata, image.canonical_metadata_bytes),
+            .references = std::move(references),
+            .selected_semantic_capabilities = std::move(selected_capabilities),
+        };
+    }
+
+    std::vector<PhysicalizationRewriteImage> prepareRewriteImages(const PhysicalizationPlan & plan) const override
+    {
+        prepared_metadata.clear();
+        prepared_metadata.reserve(plan.getObjects().size());
+        std::vector<PhysicalizationRewriteImage> result;
+        result.reserve(plan.getObjects().size());
+        for (const auto & object : plan.getObjects())
+        {
+            if (!isMappedStorageObjectKind(object.object.kind))
+                logicalError("the Atomic stored-object physicalization rewrite received an unsupported object kind");
+            const auto & image = findImage(object.object);
+            const Digest metadata_hash = computeDatabaseSchemaWALStagedArtifactHash(
+                DatabaseSchemaWALStagedArtifactKind::DependentObjectMetadata, image.canonical_metadata_bytes);
+            if (image.expectation.object_schema_revision != object.object_schema_revision
+                || image.expectation.physical_schema_fingerprint != object.physical_schema_fingerprint
+                || metadata_hash != object.canonical_metadata_hash)
+                logicalError("the Atomic table physicalization rewrite image differs from the freshly recomputed plan");
+
+            auto table = findLiveTable(image);
+            const auto current_metadata = table->getInMemoryMetadataPtr(nullptr, false);
+            current_metadata->validateBoundUDTReferences();
+            if (!current_metadata->getBoundUDTReferences())
+                logicalError("the Atomic table physicalization rewrite lost its active logical binding");
+            StorageInMemoryMetadata physical_only(*current_metadata);
+            if (object.object.kind == SchemaObjectKind::View)
+            {
+                auto & select = physical_only.select;
+                if (!select.select_query && !select.inner_query)
+                    logicalError("the Atomic View physicalization rewrite has no runtime SELECT metadata");
+                if (select.select_query)
+                    physicalizeViewStoredSelectRuntimeAnnotations(select.select_query);
+                if (select.inner_query && select.inner_query.get() != select.select_query.get())
+                    physicalizeViewStoredSelectRuntimeAnnotations(select.inner_query);
+            }
+            physical_only.setColumns(physical_only.columns);
+            prepared_metadata.push_back({.table = std::move(table), .metadata = std::move(physical_only)});
+
+            result.push_back({
+                .object = object.object,
+                .before_object_schema_revision = object.object_schema_revision,
+                .after_object_schema_revision = object.object_schema_revision + 1,
+                .before_canonical_metadata_bytes = image.canonical_metadata_bytes,
+                .after_canonical_metadata_bytes = image.canonical_metadata_bytes,
+                .before_physical_schema_fingerprint = object.physical_schema_fingerprint,
+                .after_physical_schema_fingerprint = object.physical_schema_fingerprint,
+            });
+        }
+        return result;
+    }
+
+    void publishCommittedRewrite() const noexcept override
+    {
+        try
+        {
+            for (const auto & prepared : prepared_metadata)
+                prepared.table->setInMemoryMetadata(prepared.metadata);
+            prepared_metadata.clear();
+        }
+        catch (...)
+        {
+            /// The durable transaction has already committed and the authority
+            /// replacement must not become visible over stale logical runtime
+            /// metadata, so publication failure is fail-stop.
+            std::terminate();
+        }
+    }
+
+    std::optional<DatabaseSchemaWALCommit> recoverIndeterminateRewrite(
+        IDatabaseSchemaMutationDurableStorage & storage,
+        DatabaseSchemaMutationGuard & mutation_guard,
+        const DatabaseSchemaWALValidatedTransition & transition,
+        const DatabaseSchemaMutationIndeterminateDurabilityError & error) const noexcept override
+    {
+        try
+        {
+            const auto & prepare = transition.getPrepare();
+            if (std::addressof(storage) != std::addressof(durability_storage) || error.transaction_id != prepare.transaction_id
+                || durability_storage.getRecoveryRequiredTransactionID() != error.transaction_id)
+            {
+                throw DatabaseSchemaMutationReplayConflictError(
+                    "physicalization recovery identity differs from the retained durable transition");
+            }
+
+            const auto transaction_ids = durability_storage.listDurableTransactionIDs();
+            if (!std::binary_search(transaction_ids.begin(), transaction_ids.end(), error.transaction_id))
+            {
+                discardUnpreparedDatabaseSchemaMutationStaging(durability_storage, mutation_guard, error.transaction_id);
+                return std::nullopt;
+            }
+
+            auto image = durability_storage.loadTransactionForRecovery(error.transaction_id);
+            const auto expected_bytes = transition.getStagedArtifactBytes();
+            if (image.prepare != prepare || image.staged_artifact_bytes.size() != expected_bytes.size()
+                || !std::equal(
+                    image.staged_artifact_bytes.begin(), image.staged_artifact_bytes.end(), expected_bytes.begin(), expected_bytes.end()))
+            {
+                throw DatabaseSchemaMutationReplayConflictError(
+                    "physicalization recovery image differs from the retained durable transition");
+            }
+            if (image.recovery_decision == DatabaseSchemaWALRecoveryDecision::RollBackPrepared && image.commit)
+                throw DatabaseSchemaMutationReplayConflictError("rolled-back physicalization also has a Commit marker");
+            if (image.recovery_decision == DatabaseSchemaWALRecoveryDecision::CompleteCommitted && !image.commit)
+                throw DatabaseSchemaMutationReplayConflictError("completed physicalization has no Commit marker");
+
+            const auto decision = recoverDatabaseSchemaMutation(durability_storage, mutation_guard, transition, image.commit);
+            if (decision == DatabaseSchemaWALRecoveryDecision::RollBackPrepared)
+            {
+                retireRolledBackDatabaseSchemaMutation(durability_storage, mutation_guard, error.transaction_id);
+                return std::nullopt;
+            }
+            if (!image.commit)
+                throw DatabaseSchemaMutationReplayConflictError("committed physicalization recovery lost its Commit marker");
+            return *image.commit;
+        }
+        catch (...)
+        {
+            /// The token is already consumed and the durable Before/After
+            /// choice is unknown. Continuing with either runtime image could
+            /// expose logical metadata against a physical-only durable table.
+            std::terminate();
+        }
+    }
+
+private:
+    struct PreparedMetadata
+    {
+        StoragePtr table;
+        StorageInMemoryMetadata metadata;
+    };
+
+    const AtomicDatabaseSchemaMutationDependentObjectImage & findImage(const SchemaObjectID & object) const
+    {
+        const auto found = image_by_object.find(object);
+        if (found == image_by_object.end())
+            logicalError("the pinned authority expectation has no reconciled table image");
+        return reconciliation.dependent_objects[found->second];
+    }
+
+    StoragePtr findLiveTable(const AtomicDatabaseSchemaMutationDependentObjectImage & image) const
+    {
+        auto table = findLivePhysicalizationTable(database, image.expectation.object);
+        const auto storage_id = table->getStorageID();
+        if (storage_id.table_name != image.object_name)
+            logicalError("the live Atomic table identity differs from its metadata installation record");
+        return table;
+    }
+
+    DatabaseAtomic & database;
+    AtomicDatabaseSchemaMutationStorage & durability_storage;
+    const AtomicDatabaseSchemaMutationReconciliation reconciliation;
+    std::map<SchemaObjectID, size_t> image_by_object;
+    mutable std::vector<PreparedMetadata> prepared_metadata;
+    std::function<void()> cancellation_checkpoint;
 }
 }
 
@@ -1881,6 +2158,410 @@ void AtomicLifecycleAdapter::dropRestrict(const ASTDropTypeQuery & query, const 
         {
         }
     }
+}
+
+PhysicalizationDryRunResult AtomicLifecycleAdapter::physicalizationDryRun(
+    PhysicalizationSelector selector, const LifecycleActor & actor, const IPhysicalizationDryRunAuthorization & authorization)
+{
+    /// Defense in depth for direct adapter callers: authorization must win
+    /// over every authority lifecycle or durability diagnostic below.
+    authorization.requireDatabaseVisibility();
+    if (actor.principal_uuid == UUIDHelpers::Nil)
+        invalid("PHYSICALIZE TYPE REFERENCES requires an authenticated principal");
+
+    authorization.checkCancellation();
+    UniqueLock schema_lock(database.udt_schema_mutation_mutex);
+    AtomicAuthority * authority = nullptr;
+    AtomicDatabaseSchemaMutationStorage * storage = nullptr;
+    std::optional<AtomicAuthority::RootSnapshot> current_snapshot;
+    {
+        std::lock_guard lock(database.udt_authority_mutex);
+        if (database.udt_authority_shutdown)
+            rejectAfterShutdown("dry-run user-defined type physicalization");
+        if (database.udt_table_startup_state)
+            rejectDuringMappedTableStartup("dry-run user-defined type physicalization");
+        if (database.udt_degraded_startup_status)
+            rejectDuringDegradedAuthorityStartup("dry-run user-defined type physicalization");
+        if (!database.udt_authority || !database.udt_mutation_storage)
+            invalid("PHYSICALIZE TYPE REFERENCES requires an active dependent-object-capable Atomic authority");
+        authority = database.udt_authority.get();
+        current_snapshot.emplace(authority->acquireCurrentRoot());
+        storage = database.udt_mutation_storage.get();
+    }
+    if (!*current_snapshot)
+        logicalError("an active Atomic authority has no published root");
+    const auto & current_root = current_snapshot->get();
+    const auto inventory = current_root.pinAuthorityInventory();
+    const auto graph = current_root.pinSchemaObjectDependencyGraph();
+    if (!inventory || !graph)
+        logicalError("the current Atomic authority root has no pinned inventory or graph");
+    const auto physicalization_plan_limits = physicalizationPlanLimitsForRoot(current_root);
+
+    const auto selected_objects = [&]
+    {
+        try
+        {
+            return PhysicalizationPlanner::selectObjectIdentities(current_root, selector, physicalization_plan_limits);
+        }
+        catch (...)
+        {
+            const auto error = std::current_exception();
+            authorization.requireDatabaseObjectDiagnosticsVisibility();
+            std::rethrow_exception(error);
+        }
+    }();
+    const bool definition_only_drop_unused
+        = selected_objects.empty() && selector.scope == PhysicalizationScope::Database && selector.drop_unused_types;
+    if (definition_only_drop_unused)
+        authorization.requireDatabaseDefinitionVisibility();
+    else if (selected_objects.empty())
+    {
+        authorization.requireDatabaseObjectDiagnosticsVisibility();
+        invalid("physicalization selected no mapped table");
+    }
+    for (const auto & object : selected_objects)
+    {
+        authorization.checkCancellation();
+        static_cast<void>(findAuthorizedLivePhysicalizationTable(
+            database,
+            object,
+            [&](std::string_view table_name) { authorization.requireObjectIdentityVisibility(object, table_name); },
+            [&] { authorization.requireDatabaseObjectDiagnosticsVisibility(); }));
+    }
+
+    const auto quarantine_touched = collectPhysicalizationTouchSet(
+        current_root, selected_objects, selector.scope == PhysicalizationScope::Database && selector.drop_unused_types);
+    database.assertUDTTypeLifecycleOperationAllowed(
+        std::addressof(current_root), quarantine_touched, "dry-run user-defined type physicalization");
+
+    schema_lock.unlock();
+    std::optional<AtomicDatabaseSchemaMutationReconciliation> reconciliation;
+    std::exception_ptr reconciliation_error;
+    try
+    {
+        if (definition_only_drop_unused)
+            reconciliation.emplace(storage->readAndReconcileAuthorityRecords(*inventory, *graph));
+        else
+            reconciliation.emplace(storage->readAndReconcileAuthorityRecordsForObjects(
+                *inventory, *graph, std::span<const SchemaObjectID>(selected_objects.data(), selected_objects.size())));
+    }
+    catch (...)
+    {
+        reconciliation_error = std::current_exception();
+    }
+    authorization.checkCancellation();
+    schema_lock.lock();
+    {
+        std::lock_guard lock(database.udt_authority_mutex);
+        if (database.udt_authority_shutdown)
+            rejectAfterShutdown("dry-run user-defined type physicalization");
+        if (database.udt_table_startup_state)
+            rejectDuringMappedTableStartup("dry-run user-defined type physicalization");
+        if (database.udt_degraded_startup_status)
+            rejectDuringDegradedAuthorityStartup("dry-run user-defined type physicalization");
+        if (database.udt_authority.get() != authority || database.udt_mutation_storage.get() != storage)
+            invalid("the Atomic authority changed while preparing physicalization; retry the dry run");
+        auto latest_snapshot = authority->acquireCurrentRoot();
+        if (!latest_snapshot || std::addressof(latest_snapshot.get()) != std::addressof(current_root))
+            invalid("the Atomic authority changed while preparing physicalization; retry the dry run");
+    }
+    /// Quarantine may have been published while schema serialization was
+    /// released for bounded durable reconciliation. Recheck the same complete
+    /// rooted closure after reacquiring the mutex so token issuance is
+    /// linearized with invalidation.
+    database.assertUDTTypeLifecycleOperationAllowed(
+        std::addressof(current_root), quarantine_touched, "dry-run user-defined type physicalization");
+    if (reconciliation_error)
+        std::rethrow_exception(reconciliation_error);
+    if (!reconciliation)
+        logicalError("physicalization reconciliation produced no result");
+
+    AtomicStoredObjectPhysicalizationAdapter adapter(
+        database, *storage, std::move(*reconciliation), [&authorization] { authorization.checkCancellation(); });
+    authorization.checkCancellation();
+    auto plan = PhysicalizationPlanner::build(current_root, std::move(selector), adapter, physicalization_plan_limits);
+    if (plan.getObjects().empty()
+        && std::none_of(
+            plan.getDefinitions().begin(),
+            plan.getDefinitions().end(),
+            [](const auto & definition) { return definition.selected_for_drop; }))
+    {
+        authorization.requireDatabaseObjectDiagnosticsVisibility();
+        invalid("physicalization selected neither a mapped table nor an unused type");
+    }
+    for (const auto & object : plan.getObjects())
+    {
+        authorization.checkCancellation();
+        authorization.requireObjectVisibility(object);
+    }
+    for (const auto & definition : plan.getDefinitions())
+    {
+        authorization.checkCancellation();
+        authorization.requireDefinitionVisibility(definition);
+    }
+
+    authorization.checkCancellation();
+    const UInt64 now_microseconds = currentPhysicalizationTimeMicroseconds();
+    String token = physicalization_tokens->issue(plan, actor.principal_uuid, now_microseconds);
+    try
+    {
+        const auto binding = physicalization_tokens->inspectForApply(token, actor.principal_uuid, now_microseconds);
+        PhysicalizationTokenRouter::registerToken(
+            token, database.getUUID(), actor.principal_uuid, now_microseconds, binding.getExpiresAtMicroseconds());
+    }
+    catch (...)
+    {
+        physicalization_tokens->discard(token, actor.principal_uuid);
+        throw;
+    }
+    return {.opaque_token = std::move(token), .plan = std::move(plan)};
+}
+
+void AtomicLifecycleAdapter::physicalizationApply(
+    std::string_view opaque_token, const LifecycleActor & actor, const IPhysicalizationApplyAuthorization & authorization)
+{
+    if (actor.principal_uuid == UUIDHelpers::Nil || opaque_token.empty())
+        invalid("PHYSICALIZE TYPE REFERENCES APPLY requires an authenticated principal and a token");
+
+    AtomicAuthority * authority_to_scan = nullptr;
+    {
+        UniqueLock schema_lock(database.udt_schema_mutation_mutex);
+        AtomicAuthority * authority = nullptr;
+        AtomicDatabaseSchemaMutationStorage * storage = nullptr;
+        std::optional<AtomicAuthority::RootSnapshot> current_snapshot;
+        {
+            std::lock_guard lock(database.udt_authority_mutex);
+            if (database.udt_authority_shutdown)
+                rejectAfterShutdown("apply user-defined type physicalization");
+            if (database.udt_table_startup_state)
+                rejectDuringMappedTableStartup("apply user-defined type physicalization");
+            if (database.udt_degraded_startup_status)
+                rejectDuringDegradedAuthorityStartup("apply user-defined type physicalization");
+            if (!database.udt_authority || !database.udt_mutation_storage)
+                invalid("PHYSICALIZE TYPE REFERENCES APPLY requires an active dependent-object-capable Atomic authority");
+            authority = database.udt_authority.get();
+            storage = database.udt_mutation_storage.get();
+            current_snapshot.emplace(authority->acquireCurrentRoot());
+        }
+        if (!*current_snapshot)
+            logicalError("an active Atomic authority has no published root");
+        const auto & current_root = current_snapshot->get();
+        const auto inventory = current_root.pinAuthorityInventory();
+        const auto graph = current_root.pinSchemaObjectDependencyGraph();
+        if (!inventory || !graph)
+            logicalError("the current Atomic authority root has no pinned inventory or graph");
+        const auto physicalization_plan_limits = physicalizationPlanLimitsForRoot(current_root);
+
+        authorization.checkCancellation();
+        const UInt64 now_microseconds = currentPhysicalizationTimeMicroseconds();
+        const auto inspected = physicalization_tokens->inspectForApply(opaque_token, actor.principal_uuid, now_microseconds);
+        const auto reject_stale_token = [&](std::string_view message)
+        {
+            physicalization_tokens->discard(opaque_token, actor.principal_uuid);
+            PhysicalizationTokenRouter::unregisterToken(opaque_token, database.getUUID());
+            throw PhysicalizationApplyCoordinatorError(PhysicalizationApplyCoordinatorError::Code::StaleToken, message);
+        };
+        if (inspected.getDatabaseUUID() != current_root.getDatabaseUUID()
+            || inspected.getDatabaseCatalogEpoch() != current_root.getDatabaseCatalogEpoch()
+            || inspected.getInventoryRoot() != current_root.getInventorySummary().merkle_radix_root)
+        {
+            reject_stale_token("physicalization apply token is anchored to an obsolete authority root");
+        }
+        const auto selected_objects = [&]
+        {
+            try
+            {
+                return PhysicalizationPlanner::selectObjectIdentities(current_root, inspected.getSelector(), physicalization_plan_limits);
+            }
+            catch (...)
+            {
+                const auto error = std::current_exception();
+                authorization.requireDatabaseObjectRewriteDiagnostics();
+                std::rethrow_exception(error);
+            }
+        }();
+        const bool definition_only_drop_unused = selected_objects.empty() && inspected.getSelector().scope == PhysicalizationScope::Database
+            && inspected.getSelector().drop_unused_types;
+        if (definition_only_drop_unused)
+            authorization.requireDatabaseDefinitionDrop();
+        else if (selected_objects.empty())
+        {
+            authorization.requireDatabaseObjectRewriteDiagnostics();
+            invalid("physicalization apply selected no mapped table");
+        }
+        std::vector<StoragePtr> selected_tables;
+        selected_tables.reserve(selected_objects.size());
+        for (const auto & object : selected_objects)
+        {
+            authorization.checkCancellation();
+            selected_tables.push_back(findAuthorizedLivePhysicalizationTable(
+                database,
+                object,
+                [&](std::string_view table_name) { authorization.requireObjectRewriteIdentity(object, table_name); },
+                [&] { authorization.requireDatabaseObjectRewriteDiagnostics(); }));
+        }
+
+        const auto quarantine_touched = collectPhysicalizationTouchSet(
+            current_root,
+            selected_objects,
+            inspected.getSelector().scope == PhysicalizationScope::Database && inspected.getSelector().drop_unused_types);
+        database.assertUDTTypeLifecycleOperationAllowed(
+            std::addressof(current_root), quarantine_touched, "apply user-defined type physicalization");
+
+        /// ALTER prepares its storage-owned publication package while holding
+        /// this lock, then takes the database schema mutex to commit it. APPLY
+        /// must take the same locks first, otherwise a package prepared from the
+        /// pre-physicalization metadata can be admitted again after APPLY has
+        /// erased its provenance. Database DETACH takes multiple ALTER locks in
+        /// this same stable order before the schema mutex.
+        auto tables_to_lock = selected_tables;
+        std::sort(
+            tables_to_lock.begin(),
+            tables_to_lock.end(),
+            [](const StoragePtr & lhs, const StoragePtr & rhs)
+            { return lhs->getStorageID().getNameForLogs() < rhs->getStorageID().getNameForLogs(); });
+        tables_to_lock.erase(
+            std::unique(
+                tables_to_lock.begin(),
+                tables_to_lock.end(),
+                [](const StoragePtr & lhs, const StoragePtr & rhs) { return lhs.get() == rhs.get(); }),
+            tables_to_lock.end());
+
+        schema_lock.unlock();
+
+        constexpr auto cancellation_poll_interval = std::chrono::milliseconds(10);
+        const auto lock_timeout = std::max(authorization.getTableAlterLockAcquireTimeout(), std::chrono::milliseconds::zero());
+        const auto lock_deadline = std::chrono::steady_clock::now() + lock_timeout;
+        std::vector<IStorage::AlterLockHolder> table_alter_locks;
+        table_alter_locks.reserve(tables_to_lock.size());
+        for (const auto & table : tables_to_lock)
+        {
+            std::optional<IStorage::AlterLockHolder> table_alter_lock;
+            while (!table_alter_lock)
+            {
+                authorization.checkCancellation();
+                table_alter_lock = table->tryLockForAlter(Poco::Timespan(0));
+                if (table_alter_lock)
+                    break;
+
+                const auto now = std::chrono::steady_clock::now();
+                if (now >= lock_deadline)
+                {
+                    throw Exception(
+                        ErrorCodes::DEADLOCK_AVOIDED,
+                        "Locking selected table ALTER locks for Atomic user-defined type physicalization in database UUID {} "
+                        "has timed out! ({} ms) Possible deadlock avoided. Client should retry.",
+                        database.getUUID(),
+                        lock_timeout.count());
+                }
+                const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(lock_deadline - now);
+                std::this_thread::sleep_for(std::max(std::chrono::milliseconds(1), std::min(cancellation_poll_interval, remaining)));
+            }
+            table_alter_locks.emplace_back(std::move(*table_alter_lock));
+        }
+        authorization.checkCancellation();
+
+        std::optional<AtomicDatabaseSchemaMutationReconciliation> reconciliation;
+        std::exception_ptr reconciliation_error;
+        try
+        {
+            if (definition_only_drop_unused)
+                reconciliation.emplace(storage->readAndReconcileAuthorityRecords(*inventory, *graph));
+            else
+                reconciliation.emplace(storage->readAndReconcileAuthorityRecordsForObjects(
+                    *inventory, *graph, std::span<const SchemaObjectID>(selected_objects.data(), selected_objects.size())));
+        }
+        catch (...)
+        {
+            reconciliation_error = std::current_exception();
+        }
+        authorization.checkCancellation();
+        schema_lock.lock();
+        bool authority_changed_during_reconciliation = false;
+        {
+            std::lock_guard lock(database.udt_authority_mutex);
+            if (database.udt_authority_shutdown)
+                rejectAfterShutdown("apply user-defined type physicalization");
+            if (database.udt_table_startup_state)
+                rejectDuringMappedTableStartup("apply user-defined type physicalization");
+            if (database.udt_degraded_startup_status)
+                rejectDuringDegradedAuthorityStartup("apply user-defined type physicalization");
+            authority_changed_during_reconciliation
+                = database.udt_authority.get() != authority || database.udt_mutation_storage.get() != storage;
+            if (!authority_changed_during_reconciliation)
+            {
+                auto latest_snapshot = authority->acquireCurrentRoot();
+                authority_changed_during_reconciliation
+                    = !latest_snapshot || std::addressof(latest_snapshot.get()) != std::addressof(current_root);
+            }
+        }
+        if (authority_changed_during_reconciliation)
+            reject_stale_token("the Atomic authority changed while preparing physicalization apply; rerun the dry run");
+        if (reconciliation_error)
+            std::rethrow_exception(reconciliation_error);
+        if (!reconciliation)
+            logicalError("physicalization reconciliation produced no result");
+
+        for (size_t index = 0; index < selected_objects.size(); ++index)
+        {
+            authorization.checkCancellation();
+            const auto live_table = findAuthorizedLivePhysicalizationTable(
+                database,
+                selected_objects[index],
+                [&](std::string_view table_name) { authorization.requireObjectRewriteIdentity(selected_objects[index], table_name); },
+                [&] { authorization.requireDatabaseObjectRewriteDiagnostics(); });
+            if (live_table.get() != selected_tables[index].get())
+                reject_stale_token("a physicalization-selected table changed while acquiring its ALTER lock; rerun the dry run");
+        }
+
+        /// ALTER-lock acquisition and durable reconciliation deliberately run
+        /// without the schema mutex. Repeat the exact preliminary decision
+        /// after reacquiring it, before mutation-guard issuance, so a newly
+        /// published quarantine cannot be crossed by APPLY.
+        database.assertUDTTypeLifecycleOperationAllowed(
+            std::addressof(current_root), quarantine_touched, "apply user-defined type physicalization");
+
+        AtomicStoredObjectPhysicalizationAdapter adapter(
+            database, *storage, std::move(*reconciliation), [&authorization] { authorization.checkCancellation(); });
+        storage->maintainCheckpointBeforeMutation(current_root);
+        auto mutation_guard = storage->issueMutationGuard();
+        const UInt64 predecessor = mutation_guard.getDurablePredecessorTransactionID();
+        if (predecessor == std::numeric_limits<UInt64>::max())
+            invalid("durable schema transaction ID domain is exhausted");
+        PhysicalizationApplyLimits apply_limits;
+        apply_limits.plan = physicalization_plan_limits;
+        static_cast<void>(PhysicalizationApplyCoordinator::apply(
+            current_root,
+            *authority,
+            *storage,
+            mutation_guard,
+            *physicalization_tokens,
+            opaque_token,
+            actor.principal_uuid,
+            currentPhysicalizationTimeMicroseconds(),
+            predecessor + 1,
+            adapter,
+            adapter,
+            authorization,
+            apply_limits,
+            [] { return currentPhysicalizationTimeMicroseconds(); }));
+        PhysicalizationTokenRouter::unregisterToken(opaque_token, database.getUUID());
+        authority_to_scan = authority;
+    }
+
+    try
+    {
+        static_cast<void>(authority_to_scan->scanRetired());
+    }
+    catch (...)
+    {
+    }
+}
+
+void AtomicLifecycleAdapter::discardPhysicalizationToken(std::string_view opaque_token, const LifecycleActor & actor) noexcept
+{
+    physicalization_tokens->discard(opaque_token, actor.principal_uuid);
+    PhysicalizationTokenRouter::unregisterToken(opaque_token, database.getUUID());
 }
 
 }

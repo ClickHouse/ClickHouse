@@ -281,8 +281,64 @@ def first_nested_occurrence_child_offset(payload):
     raise AssertionError("the test table sidecar has no nested occurrence path")
 
 
+def physicalization_plan(database):
+    output = query(
+        f"PHYSICALIZE TYPE REFERENCES OBJECT TABLE {database}.{TABLE} "
+        "DRY RUN FORMAT JSONEachRow"
+    )
+    rows = [json.loads(line) for line in output.split("\n") if line]
+    assert len(rows) == 1
+    assert rows[0]["scope_count"] == 1
+    assert rows[0]["manifest_count"] > 0
+    assert rows[0]["apply_token"]
+    assert base64.b64decode(rows[0]["canonical_loss_manifest_base64"], validate=True)
+    return rows[0]
 
 
+def crash_during_physicalization(database, failpoint):
+    plan = physicalization_plan(database)
+    apply_sql = (
+        "PHYSICALIZE TYPE REFERENCES APPLY TOKEN "
+        + sql_string(plan["apply_token"])
+    )
+    outcome = {"returned": False, "error": None}
+
+    def apply_in_background():
+        try:
+            query(apply_sql, timeout=180)
+            outcome["returned"] = True
+        except BaseException as ex:  # noqa: BLE001 - surfaced in the main thread.
+            outcome["error"] = ex
+
+    query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    worker = threading.Thread(target=apply_in_background, daemon=True)
+    worker.start()
+    crashed = False
+    try:
+        query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        assert worker.is_alive(), "APPLY returned instead of pausing at the failpoint"
+        node.stop_clickhouse(kill=True)
+        assert node.get_process_pid("clickhouse") is None
+        crashed = True
+    finally:
+        if not crashed and node.get_process_pid("clickhouse") is not None:
+            try:
+                query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+            except Exception:
+                pass
+            try:
+                query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+        worker.join(timeout=60)
+        if crashed:
+            node.start_clickhouse()
+
+    assert crashed
+    assert not worker.is_alive(), "APPLY client did not observe the killed server"
+    assert not outcome["returned"], "APPLY unexpectedly returned across SIGKILL"
+    assert outcome["error"] is not None
+    return plan
 
 
 def crash_query_at_schema_wal_failpoint(sql, failpoint):
@@ -325,6 +381,94 @@ def crash_query_at_schema_wal_failpoint(sql, failpoint):
     assert outcome["error"] is not None
 
 
+@pytest.mark.parametrize(
+    ("failpoint", "expect_mapped"),
+    [
+        ("database_schema_mutation_pause_after_prepare", True),
+        ("database_schema_mutation_pause_after_first_artifact_action", True),
+        ("database_schema_mutation_pause_after_installation_barrier", True),
+        ("database_schema_mutation_pause_after_commit", False),
+    ],
+    ids=[
+        "rollback-after-prepare",
+        "rollback-partial-after-image",
+        "rollback-installed-before-commit",
+        "complete-after-commit",
+    ],
+)
+def test_physicalization_recovers_across_sigkill(started_cluster, failpoint, expect_mapped):
+    database = unique_database("wal")
+    test_failed = False
+    try:
+        create_mapped_table(database)
+        paths = durable_artifact_paths(database)
+        before = {name: read_container_file(path) for name, path in paths.items()}
+        parts_before = active_parts_snapshot(database)
+
+        crashed_plan = crash_during_physicalization(database, failpoint)
+
+        def assert_recovered_outcome():
+            if expect_mapped:
+                assert_mapped_table(database)
+                assert {
+                    name: read_container_file(path) for name, path in paths.items()
+                } == before
+            else:
+                assert_physical_table(database)
+                assert node.file_exists_in_container(paths["metadata"])
+                # Ordinary Atomic metadata is already the canonical physical-only
+                # image; Commit removes provenance without rewriting those bytes.
+                assert read_container_file(paths["metadata"]) == before["metadata"]
+                for name in ("references", "expectation", "installation"):
+                    assert not node.file_exists_in_container(paths[name]), name
+            assert active_parts_snapshot(database) == parts_before
+            # Physicalization without DROP UNUSED TYPES must retain the definition.
+            assert query(
+                "SELECT count() FROM system.user_defined_types "
+                f"WHERE database = '{database}' AND name = 'UserId'"
+            ).strip() == "1"
+
+        assert_recovered_outcome()
+
+        # APPLY consumes the token before entering the durable transition. A
+        # process crash therefore makes that token unusable regardless of which
+        # side of Commit recovery selected.
+        replay_error = query_error(
+            "PHYSICALIZE TYPE REFERENCES APPLY TOKEN "
+            + sql_string(crashed_plan["apply_token"])
+        )
+        assert "physicalization token was rejected" in replay_error.lower()
+
+        # Recovery is durable, not merely a one-start in-memory publication.
+        node.restart_clickhouse()
+        assert_recovered_outcome()
+
+        if expect_mapped:
+            # A rolled-back prepared transaction must not wedge future schema
+            # mutations. A fresh token completes the same operation normally.
+            retry_plan = physicalization_plan(database)
+            query(
+                "PHYSICALIZE TYPE REFERENCES APPLY TOKEN "
+                + sql_string(retry_plan["apply_token"])
+            )
+            assert_physical_table(database)
+            assert active_parts_snapshot(database) == parts_before
+            for name in ("references", "expectation", "installation"):
+                assert not node.file_exists_in_container(paths[name]), name
+            node.restart_clickhouse()
+            assert_physical_table(database)
+            assert active_parts_snapshot(database) == parts_before
+    except BaseException:
+        test_failed = True
+        raise
+    finally:
+        try:
+            if node.get_process_pid("clickhouse") is None:
+                node.start_clickhouse()
+            query(f"DROP DATABASE IF EXISTS {database} SYNC")
+        except Exception:
+            if not test_failed:
+                raise
 
 
 @pytest.mark.parametrize(

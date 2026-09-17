@@ -15,6 +15,7 @@ class AtomicAuthority;
 class AtomicDatabaseSchemaMutationStorage;
 class AuthorityRoot;
 class BoundObjectTypeReferences;
+class PhysicalizationTokenStore;
 class EffectiveResourceLimits;
 struct PersistedTypeReferences;
 struct DefinitionMutationRequest;
@@ -39,6 +40,11 @@ public:
     void rename(const ASTRenameTypeQuery & query, const LifecycleActor & actor) override;
     void comment(const ASTAlterTypeCommentQuery & query, const LifecycleActor & actor) override;
     void dropRestrict(const ASTDropTypeQuery & query, const LifecycleActor & actor) override;
+    PhysicalizationDryRunResult physicalizationDryRun(
+        PhysicalizationSelector selector, const LifecycleActor & actor, const IPhysicalizationDryRunAuthorization & authorization) override;
+    void physicalizationApply(
+        std::string_view opaque_token, const LifecycleActor & actor, const IPhysicalizationApplyAuthorization & authorization) override;
+    void discardPhysicalizationToken(std::string_view opaque_token, const LifecycleActor & actor) noexcept override;
 
 private:
     friend class DB::DatabaseAtomic;
@@ -50,6 +56,7 @@ private:
     AtomicAuthority * executeMutationLocked(const AuthorityRoot * current_root, DefinitionMutationRequest request);
 
     DatabaseAtomic & database;
+    std::unique_ptr<PhysicalizationTokenStore> physicalization_tokens;
 };
 
 }

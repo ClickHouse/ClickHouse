@@ -21,29 +21,30 @@
 #include <Client/AI/AIConfiguration.h>
 #endif
 
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/DateLUT.h>
-#include <Common/MemoryTracker.h>
-#include <Common/formatReadable.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/NetException.h>
+#include <Common/SensitiveDataMasker.h>
+#include <Common/SignalHandlers.h>
+#include <Common/StringUtils.h>
+#include <Common/TerminalSize.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
-#include <Common/TerminalSize.h>
-#include <Common/StringUtils.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/NetException.h>
-#include <Common/SignalHandlers.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Formats/FormatFactory.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -1563,7 +1564,11 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         if (server_exception)
             server_exception->rethrow();
         if (!is_interactive)
-            e.addMessage("(in query: {})", full_query);
+        {
+            String query_for_error(full_query);
+            maskPhysicalizationApplyTokens(query_for_error);
+            e.addMessage("(in query: {})", query_for_error);
+        }
         throw;
     }
 
@@ -3309,6 +3314,7 @@ void ClientBase::echoQuery(std::string_view full_query, const ASTPtr & parsed_qu
     else
     {
         text = String{full_query};
+        maskPhysicalizationApplyTokens(text);
     }
 
 #if USE_REPLXX
@@ -3539,6 +3545,16 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // (or their absence).
                 bool error_matches_hint = true;
                 bool need_retry = test_hint.needRetry(server_exception, &retries_count);
+                String query_for_diagnostic;
+                const auto get_query_for_diagnostic = [&]() -> const String &
+                {
+                    if (query_for_diagnostic.empty())
+                    {
+                        query_for_diagnostic.assign(full_query);
+                        maskPhysicalizationApplyTokens(query_for_diagnostic);
+                    }
+                    return query_for_diagnostic;
+                };
 
                 if (need_retry)
                 {
@@ -3555,7 +3571,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                                 error_matches_hint = false;
                                 error_stream << fmt::format(
                                     "Expected one of the server error codes '{}' but got '{}' (query: {}).\n",
-                                    test_hint.serverErrors(), server_exception->code(), full_query);
+                                    test_hint.serverErrors(),
+                                    server_exception->code(),
+                                    get_query_for_diagnostic());
                             }
                         }
                         else if (client_exception)
@@ -3565,15 +3583,16 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                                 error_matches_hint = false;
                                 error_stream << fmt::format(
                                     "Expected one of the client error codes '{}' but got '{}' (query: {}).\n",
-                                    test_hint.clientErrors(), client_exception->code(), full_query);
+                                    test_hint.clientErrors(),
+                                    client_exception->code(),
+                                    get_query_for_diagnostic());
                             }
                         }
                         else
                         {
                             error_matches_hint = false;
                             error_stream << fmt::format(
-                                "Expected either a server or client error, but got none (query: {}).\n",
-                                full_query);
+                                "Expected either a server or client error, but got none (query: {}).\n", get_query_for_diagnostic());
                         }
                     }
                     else if (test_hint.hasServerErrors())
@@ -3581,14 +3600,19 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         if (!server_exception)
                         {
                             error_matches_hint = false;
-                            error_stream << fmt::format("Expected server error code '{}' but got no server error (query: {}).\n",
-                                       test_hint.serverErrors(), full_query);
+                            error_stream << fmt::format(
+                                "Expected server error code '{}' but got no server error (query: {}).\n",
+                                test_hint.serverErrors(),
+                                get_query_for_diagnostic());
                         }
                         else if (!test_hint.hasExpectedServerError(server_exception->code()))
                         {
                             error_matches_hint = false;
-                            error_stream << fmt::format("Expected server error code: {} but got: {} (query: {}).\n",
-                                              test_hint.serverErrors(), server_exception->code(), full_query);
+                            error_stream << fmt::format(
+                                "Expected server error code: {} but got: {} (query: {}).\n",
+                                test_hint.serverErrors(),
+                                server_exception->code(),
+                                get_query_for_diagnostic());
                         }
                     }
                     else if (test_hint.hasClientErrors())
@@ -3596,14 +3620,19 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                         if (!client_exception)
                         {
                             error_matches_hint = false;
-                            error_stream << fmt::format("Expected client error code '{}' but got no client error (query: {}).\n",
-                                       test_hint.clientErrors(), full_query);
+                            error_stream << fmt::format(
+                                "Expected client error code '{}' but got no client error (query: {}).\n",
+                                test_hint.clientErrors(),
+                                get_query_for_diagnostic());
                         }
                         else if (!test_hint.hasExpectedClientError(client_exception->code()))
                         {
                             error_matches_hint = false;
-                            error_stream << fmt::format("Expected client error code '{}' but got '{}' (query: {}).\n",
-                                       test_hint.clientErrors(), client_exception->code(), full_query);
+                            error_stream << fmt::format(
+                                "Expected client error code '{}' but got '{}' (query: {}).\n",
+                                test_hint.clientErrors(),
+                                client_exception->code(),
+                                get_query_for_diagnostic());
                         }
                     }
                     else
@@ -3620,22 +3649,25 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     {
                         error_matches_hint = false;
                         error_stream << fmt::format(
-                                   "The query succeeded but server or client errors '{}' were expected (query: {}).\n",
-                                   test_hint.serverErrors(), full_query);
+                            "The query succeeded but server or client errors '{}' were expected (query: {}).\n",
+                            test_hint.serverErrors(),
+                            get_query_for_diagnostic());
                     }
                     else if (test_hint.hasClientErrors())
                     {
                         error_matches_hint = false;
                         error_stream << fmt::format(
-                                   "The query succeeded but the client error '{}' was expected (query: {}).\n",
-                                   test_hint.clientErrors(), full_query);
+                            "The query succeeded but the client error '{}' was expected (query: {}).\n",
+                            test_hint.clientErrors(),
+                            get_query_for_diagnostic());
                     }
                     else if (test_hint.hasServerErrors())
                     {
                         error_matches_hint = false;
                         error_stream << fmt::format(
-                                   "The query succeeded but the server error '{}' was expected (query: {}).\n",
-                                   test_hint.serverErrors(), full_query);
+                            "The query succeeded but the server error '{}' was expected (query: {}).\n",
+                            test_hint.serverErrors(),
+                            get_query_for_diagnostic());
                     }
                 }
 

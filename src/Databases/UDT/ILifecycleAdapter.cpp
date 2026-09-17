@@ -38,6 +38,17 @@ public:
 
     void dropRestrict(const ASTDropTypeQuery &, const LifecycleActor &) override { unsupported("DROP TYPE RESTRICT"); }
 
+    PhysicalizationDryRunResult
+    physicalizationDryRun(PhysicalizationSelector, const LifecycleActor &, const IPhysicalizationDryRunAuthorization &) override
+    {
+        unsupported("PHYSICALIZE TYPE REFERENCES DRY RUN");
+    }
+
+    void physicalizationApply(std::string_view, const LifecycleActor &, const IPhysicalizationApplyAuthorization &) override
+    {
+        unsupported("PHYSICALIZE TYPE REFERENCES APPLY");
+    }
+
 private:
     [[noreturn]] static void unsupported(std::string_view operation)
     {
