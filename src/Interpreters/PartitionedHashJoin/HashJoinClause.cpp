@@ -70,6 +70,9 @@ namespace
 constexpr size_t max_plan_bits = 15;
 
 constexpr size_t locator_piece_rows = 32768; /// locator synthesis scratch stays L2-resident
+/// A single fill thread inserts in sections of this many rows and may finish its duplicate scratch after
+/// each; a section's duplicated cells, its scratch and the spans it writes stay L2-resident.
+constexpr size_t single_lane_section_rows = 32768;
 
 size_t ceilDiv(size_t a, size_t b)
 {
@@ -424,16 +427,17 @@ KeyGetter makeSectionKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & 
         return KeyGetter(key_columns, key_sizes, nullptr);
 }
 
-/// Inserts one compact section into the shared table on behalf of the owner of `target.range_end`.
-/// Semantics match `insertFromBlockImplTypeCase`: one hash per build row, then the value shape's own append.
-/// The recorded ref comes from the scattered locator column, 8-byte encoded or 4-byte packed.
-/// On the single-partition path it is `RowRef(block_no, i)`, with `skip_bytes` excluding rows that
-/// must not be inserted.
+/// Inserts one compact section - rows `[first_row, first_row + rows)` of the columns - into the shared
+/// table on behalf of the owner of `target.range_end`. Semantics match `insertFromBlockImplTypeCase`:
+/// one hash per build row, then the value shape's own append. The recorded ref comes from the
+/// scattered locator column, 8-byte encoded or 4-byte packed. On the single-partition path it is
+/// `RowRef(block_no, i)`, with `skip_bytes` excluding rows that must not be inserted.
 template <typename KeyGetter, typename Table>
 void insertSectionShared(
     InsertTarget<Table> & target,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
+    size_t first_row,
     size_t rows,
     const UInt64 * locators,
     const UInt32 * narrow_locators,
@@ -456,6 +460,9 @@ void insertSectionShared(
     }
 
     auto key_getter = makeSectionKeyGetter<KeyGetter, mapped_asof>(key_columns, key_sizes);
+
+    /// Sections start past row 0 only on the single fill thread, whose wrapping target never runs the ring.
+    chassert(first_row == 0 || target.wrap);
 
     /// The ring replaces the sequential loop once the caller has decided the cell misses dominate
     /// and the section is long enough to amortize prime and drain. ASOF stays sequential: appending
@@ -482,19 +489,22 @@ void insertSectionShared(
     if constexpr (can_prefetch)
         use_prefetch = enable_prefetch && target.table.reservedBytes() > getMinBytesForPrefetchInJoin();
 
+    /// The prefetcher counts the section's own rows. It calibrates its look-ahead at a fixed iteration
+    /// from the start of the loop it drives; fed absolute row numbers, a section starting past row 0
+    /// would keep the uncalibrated minimum for all of its rows.
     auto prefetcher = makeJoinPrefetcher(
         use_prefetch,
         rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                target.table.prefetch(key_getter.getKeyHolder(k, pool));
+                target.table.prefetch(key_getter.getKeyHolder(first_row + k, pool));
         });
 
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = first_row, end = first_row + rows; i < end; ++i)
     {
         if constexpr (can_prefetch)
-            prefetcher.prefetchAt(i);
+            prefetcher.prefetchAt(i - first_row);
 
         if (skip_bytes && skip_bytes[i])
             continue;
@@ -528,6 +538,7 @@ void insertSectionFixed(
     const HashJoin & join,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
+    size_t first_row,
     size_t rows,
     const UInt64 * locators,
     const UInt32 * narrow_locators,
@@ -553,7 +564,7 @@ void insertSectionFixed(
     }
     auto key_getter = makeSectionKeyGetter<KeyGetter, mapped_asof>(key_columns, key_sizes);
 
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = first_row, end = first_row + rows; i < end; ++i)
     {
         if (skip_bytes && skip_bytes[i])
             continue;
@@ -1042,6 +1053,7 @@ void HashJoinClause::insertPartitionSection(
     size_t worker,
     size_t partition,
     const ColumnRawPtrs & key_columns,
+    size_t first_row,
     size_t rows,
     const UInt64 * locators,
     const UInt32 * narrow_locators_data,
@@ -1092,6 +1104,7 @@ void HashJoinClause::insertPartitionSection(
                 target, \
                 key_columns, \
                 key_sizes, \
+                first_row, \
                 rows, \
                 locators, \
                 narrow_locators_data, \
@@ -1110,6 +1123,7 @@ void HashJoinClause::insertPartitionSection(
                 hash_join, \
                 key_columns, \
                 key_sizes, \
+                first_row, \
                 rows, \
                 locators, \
                 narrow_locators_data, \
@@ -1865,18 +1879,30 @@ void HashJoinClause::shareTable(const HashJoinClause & source)
 void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
 {
     auto & ctx = *post_build_ctx;
-    insertPartitionSection(
-        ctx,
-        /*worker=*/0,
-        single_partition,
-        fill.key_columns,
-        fill.rows,
-        /*locators=*/nullptr,
-        /*narrow_locators_data=*/nullptr,
-        fill.block_no,
-        fill.skipData());
+    auto & state = ctx.worker_state[0];
+    /// In sections, each finished on the spot when its duplicate groups look complete (see
+    /// `PassScratch::cheapToFinish`). The cells a section touched and the scratch it filled are then
+    /// still cache-resident; one finish over the whole build at the end walks every duplicated key's
+    /// cell from memory again. A build whose duplicates are spread over the blocks keeps accumulating
+    /// and is finished once, in `finishSinglePartitionInsert`.
+    for (size_t first_row = 0; first_row < fill.rows; first_row += single_lane_section_rows)
+    {
+        insertPartitionSection(
+            ctx,
+            /*worker=*/0,
+            single_partition,
+            fill.key_columns,
+            first_row,
+            std::min(single_lane_section_rows, fill.rows - first_row),
+            /*locators=*/nullptr,
+            /*narrow_locators_data=*/nullptr,
+            fill.block_no,
+            fill.skipData());
+        if (state.scratch.cheapToFinish())
+            state.scratch_used_high_water = std::max(state.scratch_used_high_water, finishPassScratch(state.scratch, *state.writer));
+    }
     ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, fill.rows);
-    ctx.worker_state[0].inserted_rows += fill.rows;
+    state.inserted_rows += fill.rows;
     fill.releaseInputs();
 }
 
@@ -3068,6 +3094,7 @@ void HashJoinClause::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
                 worker,
                 partition,
                 section_columns,
+                /*first_row=*/0,
                 partition_rows,
                 narrow_locators ? nullptr : ctx.locators[partition].data(),
                 narrow_locators ? ctx.locators32[partition].data() : nullptr,
@@ -3090,6 +3117,7 @@ void HashJoinClause::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
                     worker,
                     partition,
                     section_columns,
+                    /*first_row=*/0,
                     piece_rows,
                     narrow_locators ? nullptr : ctx.locators[partition].data() + piece_start,
                     narrow_locators ? ctx.locators32[partition].data() + piece_start : nullptr,

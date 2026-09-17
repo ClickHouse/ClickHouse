@@ -356,16 +356,18 @@ private:
     /// Sets the table's distinct-key count from the owners' and the drain's claims.
     void publishTableSize(const PostBuildContext & ctx);
 
-    /// Inserts one compact section of `rows` rows into partition `partition`'s range for `worker`.
-    /// When `partition` is `single_partition`, inserts into the whole table from the stored blocks.
-    /// That is the only path where `skip_bytes` applies. Row i's stored ref is `locators[i]`, the
-    /// decoded `narrow_locators[i]`, or `RowRef(block_no, i)` when neither is set.
+    /// Inserts one compact section - rows `[first_row, first_row + rows)` of `key_columns` - into partition
+    /// `partition`'s range for `worker`. When `partition` is `single_partition`, inserts into the whole
+    /// table from the stored blocks. That is the only path where `skip_bytes` applies and where a section
+    /// starts past row 0. Row i's stored ref is `locators[i]`, the decoded `narrow_locators[i]`, or
+    /// `RowRef(block_no, i)` when neither is set.
     static constexpr size_t single_partition = std::numeric_limits<size_t>::max();
     void insertPartitionSection(
         PostBuildContext & ctx,
         size_t worker,
         size_t partition,
         const ColumnRawPtrs & key_columns,
+        size_t first_row,
         size_t rows,
         const UInt64 * locators,
         const UInt32 * narrow_locators_data,
