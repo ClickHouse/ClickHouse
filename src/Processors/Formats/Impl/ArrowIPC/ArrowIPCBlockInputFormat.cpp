@@ -611,6 +611,9 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
         auto decoded = batch_decoder.decodeDictionaryValues(
             *dict_batch.data(), body_buffer, value_field, use, &requested_field_target_types);
         ColumnWithTypeAndName values(decoded.column, decoded.type, value_field.name);
+        /// No field: a dictionary is how a `LowCardinality` is written, and that wraps only numbers, strings,
+        /// `Date` and `DateTime`, each of which has an Arrow type of its own. So a dictionary's values are
+        /// never an opaque column, and the rewrite has no field metadata to act on here.
         if (use.hint)
             reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr);
 
