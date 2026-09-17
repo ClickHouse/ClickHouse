@@ -227,12 +227,17 @@ SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
     AND table = 't_sibling_materialized_cleared_rebuilt' AND active AND column = 'c';
 ALTER TABLE t_sibling_materialized_cleared_rebuilt MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
 ALTER TABLE t_sibling_materialized_cleared_rebuilt ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
-ALTER TABLE t_sibling_materialized_cleared_rebuilt CLEAR COLUMN e, MATERIALIZE INDEX idx_new
-    SETTINGS mutations_sync = 2, alter_sync = 2;
+-- Same batching as case 33 of 05030_skip_index_stale_type_index_lifecycle: `CLEAR COLUMN` queues a
+-- mutation entry of its own, and only two pending entries reach the part as one command set.
 SYSTEM STOP MERGES t_sibling_materialized_cleared_rebuilt;
--- One command set, or the case stops covering the shape it is about.
-SELECT uniqExact(mutation_id) = 1 FROM system.mutations WHERE database = currentDatabase()
-    AND table = 't_sibling_materialized_cleared_rebuilt' AND command LIKE '%idx_new%';
+ALTER TABLE t_sibling_materialized_cleared_rebuilt CLEAR COLUMN e SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_sibling_materialized_cleared_rebuilt MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 0, alter_sync = 0;
+-- Both entries are pending together, so the executor applies them to the part as one command set.
+SELECT count() = 2 FROM system.mutations WHERE database = currentDatabase()
+    AND table = 't_sibling_materialized_cleared_rebuilt' AND NOT is_done;
+SYSTEM START MERGES t_sibling_materialized_cleared_rebuilt;
+ALTER TABLE t_sibling_materialized_cleared_rebuilt UPDATE d = d WHERE 0 SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_materialized_cleared_rebuilt;
 SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase()
     AND table = 't_sibling_materialized_cleared_rebuilt' AND active AND column = 'c';
 -- m was recomputed from the cleared e, so idx_old was written from current data rather than carried.
