@@ -5,6 +5,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionAbsent.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionTimestamp.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
@@ -59,6 +61,12 @@ SQLQueryPiece applyFunction(
 
     if (isLabelManipulationFunction(function_name))
         return applyLabelManipulationFunction(function_node, std::move(arguments), context);
+
+    if (isFunctionPredictLinear(function_name))
+        return applyFunctionPredictLinear(function_node, std::move(arguments), context);
+
+    if (isFunctionQuantileOverTime(function_name))
+        return applyFunctionQuantileOverTime(function_node, std::move(arguments), context);
 
     /// Checked before isFunctionOverRange(): applyFunctionOverRange()'s impl_map also has an entry for
     /// "timestamp" (reused internally by applyFunctionTimestamp() once it has peeled the argument down to a
