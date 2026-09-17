@@ -197,27 +197,23 @@ bool MergeTreeConditionBloomFilterText::canRejectSomeGranule(RPNElement & out)
             return !is_unconstraining(*out.bloom_filter);
 
         case RPNElement::FUNCTION_MATCH:
-            /// `bloom_filter` is allocated but left empty when alternatives are present, and
-            /// `mayBeTrueOnGranule` gives the alternatives precedence.
+            /// When alternatives are present, `bloom_filter` is allocated but empty and unused.
             if (!out.set_bloom_filters.empty())
                 return std::ranges::none_of(out.set_bloom_filters[0], is_unconstraining);
             return out.bloom_filter && !is_unconstraining(*out.bloom_filter);
 
         case RPNElement::FUNCTION_MULTI_SEARCH:
         case RPNElement::FUNCTION_HAS_ANY:
-            /// A disjunction over the needles. An empty needle list is a different thing: it makes the
-            /// function always false, which does reject every granule, and `none_of` keeps it.
+            /// An empty needle list makes the function always false, so it does reject every granule.
             return std::ranges::none_of(out.set_bloom_filters[0], is_unconstraining);
 
         case RPNElement::FUNCTION_HAS_ALL:
-            /// A conjunction over the needles, so an unconstraining one is a no-op.
             std::erase_if(out.set_bloom_filters[0], is_unconstraining);
             return !out.set_bloom_filters[0].empty();
 
         case RPNElement::FUNCTION_IN:
         case RPNElement::FUNCTION_NOT_IN:
         {
-            /// A disjunction over the set rows, each row a conjunction over the key columns.
             const size_t num_rows = out.set_bloom_filters.back().size();
             for (size_t row = 0; row < num_rows; ++row)
             {
@@ -272,7 +268,7 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
     {
         if (element.cannot_reject_granule)
         {
-            /// May-be-true everywhere, and not `true`: a surrounding NOT would otherwise reject every granule.
+            /// May-be-true and may-be-false, so that a surrounding NOT does not reject the granule.
             rpn_stack.emplace_back(true, true);
             if (update_partial_disjunction_result_fn)
             {

@@ -137,8 +137,7 @@ private:
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    /// Whether some granule filter can fail to contain the element's filters. Also erases the `hasAll`
-    /// needles that no granule filter can fail to contain. Mirrors `mayBeTrueOnGranule` per element kind.
+    /// Mutates `out`: drops the `hasAll` needles that no granule filter can fail to contain.
     static bool canRejectSomeGranule(RPNElement & out);
 
     bool traverseTreeEquals(
