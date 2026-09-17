@@ -10,6 +10,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropHistogramValues.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -46,17 +47,6 @@ namespace
                             function_name, ResultType::RANGE_VECTOR,
                             getPromQLText(argument, context), argument.type);
         }
-    }
-
-    /// Returns the fixed @ modifier directly applied to a range-vector argument, if any. Range-vector pieces keep
-    /// this node after setEvaluationTime, so the fixed evaluation time is resolved here without hidden state in SQLQueryPiece.
-    const PrometheusQueryTree::Offset * getFixedAtModifier(const SQLQueryPiece & argument)
-    {
-        if (argument.type != ResultType::RANGE_VECTOR || !argument.node || argument.node->node_type != NodeType::Offset)
-            return nullptr;
-
-        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(argument.node);
-        return offset_node->hasAtModifier() ? offset_node : nullptr;
     }
 
     struct ImplInfo
@@ -134,6 +124,12 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"present_over_time",
+             {
+                 "timeSeriesPresentToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             {"deriv",
              {
                  "timeSeriesDerivToGrid",
@@ -171,12 +167,8 @@ namespace
              }},
 
             /// TODO:
-            /// predict_linear
-            /// quantile_over_time
             /// stddev_over_time"
             /// stdvar_over_time
-            /// present_over_time
-            /// absent_over_time
             /// mad_over_time
             /// ts_of_last_over_time
             /// first_over_time
@@ -340,7 +332,8 @@ SQLQueryPiece applyFunctionOverRange(
     const Node * node,
     std::string_view function_name,
     std::vector<SQLQueryPiece> && arguments,
-    ConverterContext & context)
+    ConverterContext & context,
+    std::optional<bool> drop_metric_name)
 {
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
@@ -359,27 +352,12 @@ SQLQueryPiece applyFunctionOverRange(
     auto argument = std::move(arguments[0]);
 
     const auto * fixed_at_node = getFixedAtModifier(argument);
-    auto aggregation_start_time = start_time;
-    auto aggregation_end_time = end_time;
-    auto aggregation_step = step;
-
-    if (fixed_at_node)
-    {
-        /// Under a fixed @ modifier the range function is evaluated once at the fixed timestamp, while the
-        /// range-vector argument retains its own inner grid.
-        const auto & fixed_range = context.node_range_getter.get(fixed_at_node->getExpression());
-        chassert(fixed_range.start_time == fixed_range.end_time);
-        aggregation_start_time = fixed_range.start_time;
-        aggregation_end_time = fixed_range.end_time;
-        aggregation_step = DurationType{0};
-    }
+    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
 
     SQLQueryPiece res = argument;
     res.node = node;
     res.type = ResultType::INSTANT_VECTOR;
 
-    const auto aggregation_grid_size = stepsInTimeSeriesRange(
-        aggregation_start_time, aggregation_end_time, aggregation_step);
     const auto result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
     bool has_group = false;
@@ -474,9 +452,11 @@ SQLQueryPiece applyFunctionOverRange(
             values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
             res.store_method = StoreMethod::VECTOR_GRID;
 
-            /// The float aggregate consumes only the float samples via the -If combinator.
-            float_if_condition = makeASTFunction(
-                "equals", make_intrusive<ASTIdentifier>(ColumnNames::IsHistogram), make_intrusive<ASTLiteral>(UInt64{0}));
+            /// The float aggregate consumes only the float samples via the -If combinator. `present_over_time` is the
+            /// exception: it only checks that a sample exists, so it must see the histogram samples too.
+            if (function_name != "present_over_time")
+                float_if_condition = makeASTFunction(
+                    "equals", make_intrusive<ASTIdentifier>(ColumnNames::IsHistogram), make_intrusive<ASTLiteral>(UInt64{0}));
 
             if (!impl_info->ch_histogram_function_name.empty())
             {
@@ -566,7 +546,8 @@ SQLQueryPiece applyFunctionOverRange(
             /// Range-vector functions compute new float values from `values`, dropping the histogram payloads of a combined grid
             /// (see dropHistogramValues); `last_over_time` and the rate family are the histogram-preserving exceptions.
             if (impl_info->ch_histogram_function_name.empty() && function_name != "last_over_time")
-                return applyFunctionOverRange(node, function_name, {dropHistogramValues(std::move(argument), context)}, context);
+                return applyFunctionOverRange(
+                    node, function_name, {dropHistogramValues(std::move(argument), context)}, context, drop_metric_name);
 
             if (!impl_info->ch_histogram_function_name.empty())
             {
@@ -746,26 +727,19 @@ SQLQueryPiece applyFunctionOverRange(
 
     /// Adds the grid parameters (start, end, step, window) to an aggregate function; for a fixed @ modifier the result
     /// is evaluated once (Prometheus semantics), so it is repeated across the outer grid via `arrayResize` instead of sliding.
-    auto add_grid_parameters = [&](boost::intrusive_ptr<ASTFunction> aggregate)
+    auto add_grid_parameters = [&](boost::intrusive_ptr<ASTFunction> aggregate) -> ASTPtr
     {
-        aggregate = addParametersToAggregateFunction(
+        ASTPtr with_parameters = addParametersToAggregateFunction(
             std::move(aggregate),
-            timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
             timeSeriesDurationToAST(window, context.timestamp_data_type));
 
         if (fixed_at_node)
-        {
-            aggregate = makeASTFunction(
-                "arrayResize",
-                make_intrusive<ASTLiteral>(Array{}),
-                make_intrusive<ASTLiteral>(result_grid_size),
-                makeASTFunction(
-                    "arrayElement", std::move(aggregate), make_intrusive<ASTLiteral>(aggregation_grid_size)));
-        }
+            with_parameters = repeatFixedAtResultOverGrid(std::move(with_parameters), aggregation_range, result_grid_size);
 
-        return aggregate;
+        return with_parameters;
     };
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
@@ -813,7 +787,7 @@ SQLQueryPiece applyFunctionOverRange(
     if (!sample_kinds_helpers.empty())
         res.select_query = buildRateFamilyProjection(std::move(res.select_query), *impl_info, context);
 
-    if (has_group && impl_info->drop_metric_name)
+    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
         res = dropMetricName(std::move(res), context);
 
     return res;

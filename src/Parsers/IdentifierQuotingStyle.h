@@ -11,6 +11,10 @@ enum class IdentifierQuotingStyle : uint8_t
     Backticks, /// `clickhouse` style
     DoubleQuotes, /// "postgres" style
     BackticksMySQL, /// `mysql` style, most same as Backticks, but it uses '``' to escape '`'
+    /// "postgres" style as PostgreSQL actually reads it: `"` is escaped by doubling it, and a backslash
+    /// is a literal byte. Deliberately absent from the `show_create_query_identifier_quoting_style` value
+    /// map (`SettingsEnums.cpp`): this is a dialect for queries sent out, not a `SHOW CREATE` style.
+    DoubleQuotesPostgreSQL,
 };
 
 enum class IdentifierQuotingRule : uint8_t
