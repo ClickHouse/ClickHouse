@@ -190,6 +190,14 @@ public:
     /// saturation clamp above `2^31` estimated words.
     size_t reserveFor(size_t rows, double distinct_estimate) const;
     UInt64 claimedTotal() const;
+    /// Bytes the table and the duplicate storage will need for `rows` build rows holding `distinct`
+    /// distinct keys. The post-build gate evaluates this with exact counts; the fill (the join's
+    /// `predictedResidentBytes`) evaluates it with the running sketch estimate. `groups_est` is 1 for the
+    /// ungrouped call and for the fill-phase gate; the grouped call receives the value `planPostBuild`
+    /// computed from the ungrouped floor.
+    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est = 1) const;
+    /// The pool of the post-build waves; the join's drain into another join runs on one too.
+    static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     bool hasTable() const { return table_maps != nullptr; }
     const HashJoinTableMaps & tableMaps() const { return *table_maps; }
@@ -250,11 +258,6 @@ private:
     void runGroupStages(size_t block_begin, size_t block_end);
     size_t chunkBytesForBlockRange(size_t b0, size_t b1) const;
 
-    /// Bytes the table and the duplicate storage will need for `rows` build rows holding `distinct`
-    /// distinct keys. The post-build gate evaluates this with exact counts; the fill evaluates it with
-    /// the running sketch estimate. `groups_est` is 1 for the ungrouped call and for the fill-phase
-    /// gate; the grouped call receives the value `planPostBuild` computed from the ungrouped floor.
-    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est = 1) const;
     size_t predictedArenaBytes(size_t insertable_rows, bool grouped) const;
     size_t duplicateScratchBytesForRows(size_t rows_in_range, bool first_group) const;
     /// The scratch a block range needs at once: `workers` live partitions plus the drain's.
@@ -279,7 +282,6 @@ private:
     KeyLayout keyLayout() const;
     /// Total bytes of the prepared key columns over every build block, while the blocks still hold them.
     size_t keyColumnBytes() const;
-    static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     void measureGenericKeyBytes();
     void createHashJoinTable();

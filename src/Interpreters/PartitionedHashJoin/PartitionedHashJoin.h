@@ -100,6 +100,20 @@ public:
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
 
+    /// The peak this build is heading for if every accumulated row ends up in the table: the row
+    /// store and routes that are already allocated, plus the table and arena that are not yet.
+    /// `SpillingHashJoin` compares this against the external-join threshold. `getTotalByteCount` is
+    /// different: it is the currently allocated amount and feeds `max_bytes_in_join` and `EXPLAIN`.
+    /// With `at_barrier` the fill is complete, so a single fill thread's table has a doubling ahead of
+    /// it only when the claimed count already exceeds the maximum fill.
+    size_t predictedResidentBytes(bool at_barrier = false) const;
+
+    /// Bytes the stored rows would take once loaded into a single in-memory join: the row store as it
+    /// stands plus the ungrouped table and arena prediction from the barrier's exact totals. On the
+    /// `MustSpill` path `SpillingHashJoin` divides this by the grace per-bucket cap to pick the initial
+    /// bucket count, instead of letting `GraceHashJoin` discover it through 1 -> 2 -> 4 rehashes.
+    size_t graceInMemoryEstimateBytes() const;
+
     StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
@@ -109,6 +123,10 @@ public:
     bool supportParallelJoin() const override { return !delegate_mode && !single_fill_thread; }
     /// Probe blocks are joined whole, never scattered across slots, and the result caps its own blocks.
     bool emitsSizedOutputBlocks() const override { return true; }
+
+    /// One fill thread inserting as it goes: the rows live in the stored blocks and the table, never
+    /// in fill lanes, so a spill switch drains the stored blocks.
+    bool isSingleLaneBuild() const { return single_fill_thread; }
 
     void onBuildPhaseFinish() override;
     bool hasPostBuildPhase() const override { return true; }
@@ -170,6 +188,23 @@ public:
     using PostBuildPlan = HashJoinClause::PostBuildPlan;
     PostBuildPlan planPostBuild();
 
+    size_t getNumFillLanes() const;
+    /// Drops per-block fill transients that GraceHashJoin re-derives from the stored block. Call
+    /// once the switch is decided, before the drain, so they are not still allocated while grace
+    /// is also allocating.
+    void dropFillAuxiliary();
+    /// Pops one stored block from `lane`. An empty Block means the lane is exhausted.
+    Block releaseNextFillLaneBlock(size_t lane);
+    /// Clears barrier transients so `releaseNextStoredBlock` can drain the row store one block at a
+    /// time. After this the instance is only a source of stored blocks.
+    void beginStoredBlockDrain();
+    /// Pops one row-store block. An empty Block means the row store is gone.
+    Block releaseNextStoredBlock();
+    /// Feeds every remaining row-store block to `target` from up to `num_threads` workers. Call after
+    /// `beginStoredBlockDrain`; `target.addBlockToJoin` must accept concurrent callers, as
+    /// `GraceHashJoin` does.
+    void drainStoredBlocksInto(IJoin & target);
+
 private:
     friend class NotJoinedPartitioned;
 
@@ -193,6 +228,9 @@ private:
     /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and
     /// filtered rows for RIGHT/FULL output.
     void storeBlockInRowStore(FillBlock & fill);
+    /// The saved-block form of one stored block, for the drains that hand blocks to another join.
+    Block storedBlockToBlock(StoredBlock && stored) const;
+    size_t liveDistinctEstimate() const;
     void finishBuildPhase(bool all_values_unique);
     /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
     void reinitUsedFlags();
@@ -245,14 +283,21 @@ private:
     /// `lanes` owns the per-lane state and the barrier iterates it. The slot table resolves a
     /// pipeline-carried lane index without a lock: one mutexed emplace on a lane's first block, then
     /// atomic loads. It is sized once and never resized, so the fast path cannot race a rehash.
-    /// Lane-less callers keep the thread-id map. Shared with the per-lane sketch `add`, exclusive for
-    /// the merge: a torn register would persist into the barrier's estimate.
-    SharedMutex fill_mutex;
+    /// Lane-less callers keep the thread-id map.
+    /// Mutable because `predictedResidentBytes` is a `const` query that still has to refresh the
+    /// cached distinct estimate under this lock. Shared with the per-lane sketch `add`, exclusive
+    /// for the merge: a torn register would persist into the barrier's estimate.
+    mutable SharedMutex fill_mutex;
     std::deque<FillLane> lanes;
     std::unordered_map<std::thread::id, FillLane *> lane_by_thread;
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
+    /// Fill-phase distinct estimate for `predictedResidentBytes`. Merging every lane on every block
+    /// would cost `lanes * 8 KiB`, so the value is reused until the row count has grown by a
+    /// sixteenth. A slightly stale value only delays the switch by one refresh interval.
+    mutable std::atomic<size_t> cached_distinct_estimate{0};
+    mutable std::atomic<size_t> distinct_estimate_at_rows{0};
 
     std::optional<size_t> build_rows_hint;
     /// An estimated build below `parallel_hash_join_threshold` runs on one fill thread, which inserts
@@ -268,6 +313,9 @@ private:
     std::optional<size_t> hash_table_matches;
     bool probe_phase_finished = false;
     std::vector<FillBlock> build_blocks; /// concatenated lanes, row-store block numbers assigned
+    /// After `beginStoredBlockDrain` the row store is being drained and this instance must not be
+    /// used except for `releaseNextStoredBlock`.
+    bool stored_blocks_released = false;
 
     bool build_phase_finished = false;
     /// Stored blocks whose fixed-width payload went into a row store.
