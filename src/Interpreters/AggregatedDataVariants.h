@@ -4,6 +4,7 @@
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
 
+#include <atomic>
 #include <memory>
 #include <boost/noncopyable.hpp>
 
@@ -484,6 +485,12 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// bucket's drained and merged states free early. States adopted from the producers'
     /// mixed arenas stay in `aggregates_pools` and live until the variants die.
     Arenas adaptive_merge_bucket_arenas;
+
+    /// Keys consumed and produced by the two-level bucket merges that have completed
+    /// (`Aggregator::mergeBucketImpl`). The buckets are uniform hash samples of one key set,
+    /// so the measured result/input ratio predicts the merged size of the remaining buckets.
+    std::atomic<UInt64> merged_buckets_input_keys{0};
+    std::atomic<UInt64> merged_buckets_result_keys{0};
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;
