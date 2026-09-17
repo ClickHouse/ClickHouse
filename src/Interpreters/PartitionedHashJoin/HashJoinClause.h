@@ -220,8 +220,7 @@ public:
     PostBuildPlan planPostBuild(size_t rows, ThreadPool & pool);
 
     /// Builds the table from the fill blocks after the barrier, its waves on `pool`, the join's post-build
-    /// pool of `postBuildWorkers` threads. Returns whether every inserted key was unique, which drives the
-    /// RightAny promotion.
+    /// pool. Returns whether every inserted key was unique, which drives the RightAny promotion.
     bool postBuild(size_t rows, ThreadPool & pool);
     /// `HashJoin`'s post-build conversion: a built `key32` / `key64` table whose keys span a dense range
     /// of at most 2^18 values becomes a `range*` fixed map indexed by `key - min_key`. The probe reads

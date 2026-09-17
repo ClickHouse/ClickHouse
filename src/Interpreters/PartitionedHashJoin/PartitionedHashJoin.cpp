@@ -403,7 +403,6 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     if (allocate_per_row_flags)
         fill.per_row_flags = JoinStuff::JoinUsedFlags::UsedFlagsForColumns(rows);
 
-    /// Each clause prepares its own keys, null map and ON mask from the one materialized block.
     fill.clauses.resize(clauses.size());
     for (const auto & clause : clauses)
         clause.prepareInput(materialized, fill);

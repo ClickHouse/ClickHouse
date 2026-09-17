@@ -419,9 +419,8 @@ private:
 
     /// The Join table engine's mode; see the class comment.
     const bool join_table_mode;
-    /// The used flags are keyed per right-table row instead of per cell: several ON clauses, or a mixed
-    /// non-equi ON condition on a RIGHT or FULL join (`HashJoin::needUsedFlagsForPerRightTableRow`). A
-    /// right row is then reachable through several keys, so a cell's flag cannot stand for its rows.
+    /// The used flags are keyed per right-table row instead of per cell (`HashJoin::needUsedFlagsForPerRightTableRow`);
+    /// see the class comment.
     const bool used_flags_per_row;
     /// Whether the shape keeps used flags at all (`MapGetter::flagged`); with `used_flags_per_row` every
     /// stored block then carries one flag per row.
