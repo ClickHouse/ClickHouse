@@ -2,11 +2,15 @@
 
 #include <cmath>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
@@ -500,6 +504,24 @@ bool MergeTreeIndexConditionCuckooFilter::traverseFunction(const RPNBuilderTreeN
     return false;
 }
 
+/// True when the index column is an `Array` and the set holds an empty array. A set column that is
+/// not a `ColumnArray` cannot be inspected, so it counts as holding one.
+static bool setHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & set_column, size_t row_size)
+{
+    if (!WhichDataType(index_type).isArray())
+        return false;
+
+    const auto * array_column = checkAndGetColumn<ColumnArray>(set_column.get());
+    if (!array_column)
+        return true;
+
+    for (size_t row = 0; row < row_size; ++row)
+        if (array_column->getSize(row) == 0)
+            return true;
+
+    return false;
+}
+
 bool MergeTreeIndexConditionCuckooFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -516,6 +538,14 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeIn(
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
+
+        /// An `Array` index holds one hash per element, so a set array is looked up by its elements
+        /// and an empty one has no hash that can stand for it. Contribute no predicate at all: a
+        /// tuple `IN` shares this element, and a sibling component would re-enable the lookup.
+        if ((function_name == "in" || function_name == "globalIn")
+            && setHasEmptyArray(index_type, converted_column, row_size))
+            return false;
+
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")
@@ -651,12 +681,86 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeIn(
 }
 
 
-static ColumnPtr createColumnFromConstantArray(const Field & value_field, const DataTypePtr & actual_type)
+/// The string-like search functions (`has`, `indexOf`, `hasAny`, `hasAll`, `mapContainsKey`,
+/// `mapContainsValue`, `mapContains`) do not compare the raw constant bytes against a `FixedString`
+/// or `LowCardinality` element: they first coerce the constant the way the runtime function does.
+///
+/// Replicate that coercion at the `Field` level: strip the padding of a `FixedString` constant, then
+/// re-pad it to the width of the element type, which is the stored form of every element the function
+/// can match. Returns a null `Field` (the `convertFieldToType` convention) when no stored element can
+/// match, or when the runtime CAST would throw `TOO_LARGE_STRING_SIZE`; the caller must then decline
+/// the index, so that the error stays reachable instead of turning into silently pruned granules.
+static Field coerceStringFieldLikeSearchFunction(
+    const Field & field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool cast_to_supertype)
+{
+    if (field.isNull())
+        return {};
+
+    String value = field.safeGet<String>();
+    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+    if (isFixedString(removeLowCardinalityAndNullable(value_type)))
+    {
+        /// The direct cast to a dictionary type rejects a `FixedString` constant wider than the
+        /// element up front, by width alone, while the supertype cast strips the padding first.
+        if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
+            return {};
+
+        value.resize(value.find_last_not_of('\0') + 1);
+    }
+
+    if (fixed_string_type)
+    {
+        if (value.size() > fixed_string_type->getN())
+            return {};
+
+        value.resize(fixed_string_type->getN(), '\0');
+    }
+
+    return Field(std::move(value));
+}
+
+/// True for the element/constant types whose comparison `coerceStringFieldLikeSearchFunction`
+/// replicates. Numeric elements take `executeIntegral`, which compares without coercing.
+static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const DataTypePtr & actual_type)
+{
+    return value_type
+        && isStringOrFixedString(removeLowCardinalityAndNullable(value_type))
+        && isStringOrFixedString(actual_type);
+}
+
+/// Convert a constant for hashing against the elements of an indexed array column, the way the
+/// functions built on arrayIndex.h (`has`, `indexOf`, `mapContainsKey`, `mapContainsValue`,
+/// `mapContains`, and `has` over a `Map`) compare it. Over a plain `String` element they compare
+/// the constant's raw padded bytes (arrayIndex.h `executeString`), so the padded form is the value
+/// to hash. The test must read the type before `getPrimitiveType` strips `LowCardinality`, whose
+/// elements do coerce.
+static Field convertConstantForArrayIndexFunction(
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
+{
+    if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
+        return convertFieldToType(value_field, *actual_type, value_type.get());
+
+    return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
+}
+
+static ColumnPtr createColumnFromConstantArray(
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool coerce_like_search_function)
 {
     if (value_field.getType() != Field::Types::Array)
         return nullptr;
 
+    /// The elements' own type. `convertFieldToType` needs it to convert a value that carries a unit -
+    /// a `Date` day number probed against an `Array(DateTime)` column - instead of re-basing its raw
+    /// number as seconds, which hashes something the column can never hold.
+    DataTypePtr element_type;
+    if (value_type)
+        if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
+            element_type = value_array_type->getNestedType();
+
+    const bool coerce = coerce_like_search_function && element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();
+    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
     auto mutable_column = actual_type->createColumn();
 
     for (const auto & f : value_field.safeGet<Array>())
@@ -664,7 +768,19 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        auto converted = convertFieldToType(f, *actual_type);
+        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast.
+        /// An over-wide value therefore cannot match a narrower `FixedString` scalar, but
+        /// `ColumnFixedString::insert` would throw while preparing the index. Decline the
+        /// index and let the function evaluate normally instead.
+        if (!coerce && fixed_string_type && f.getType() == Field::Types::String
+            && f.safeGet<String>().size() > fixed_string_type->getN())
+        {
+            return nullptr;
+        }
+
+        Field converted = coerce
+            ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
+            : convertFieldToType(f, *actual_type, element_type.get());
         if (converted.isNull())
             return nullptr;
 
@@ -779,8 +895,9 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
                 if (function_name == "has" || indexOfCanUseBloomFilter(parent))
                 {
                     out.function = RPNElement::FUNCTION_HAS;
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    const DataTypePtr & nested_type = array_type->getNestedType();
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(nested_type);
+                    Field converted_field = convertConstantForArrayIndexFunction(value_field, value_type, nested_type, actual_type);
                     if (converted_field.isNull())
                         return false;
 
@@ -789,8 +906,10 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
             }
             else if (function_name == "has")
             {
+                /// `has(<constant array>, <indexed scalar>)` compares `Field`s directly
+                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion.
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
+                ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ false);
 
                 if (!column)
                     return false;
@@ -805,7 +924,7 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
                 return false;
 
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
+            ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ true);
 
             if (!column)
                 return false;
@@ -822,6 +941,27 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+
+            /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
+            /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
+            /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
+            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
+            {
+                /// A `Variant` or `Dynamic` constant carries the nested padded value under its
+                /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
+                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+                const bool constant_may_be_fixed_string
+                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+                const size_t constant_bytes = value_field.safeGet<String>().size();
+                const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+                if (constant_may_be_fixed_string && !fixed_index_type)
+                    return false;
+
+                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
+                    return false;
+            }
+
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
@@ -867,9 +1007,35 @@ bool MergeTreeIndexConditionCuckooFilter::traverseTreeEquals(
         if (!array_type)
             return false;
 
+        /// `mapContainsKey`/`mapContainsValue`/`mapContains`, and `has` over a `Map`, are adapters
+        /// of the same arrayIndex.h machinery, so the constant must be coerced the same way as for
+        /// `has` over an array. The `mapKeys`/`mapValues` index expression strips the
+        /// `LowCardinality` wrapper of the key/value type, so the coercion mode must be read from
+        /// the `Map` type itself, not from the index header.
+        DataTypePtr element_type;
+        if (const auto * map_type = typeid_cast<const DataTypeMap *>(key_node.getDAGNode()->result_type.get()))
+        {
+            element_type = function_name == "mapContainsValue" ? map_type->getValueType() : map_type->getKeyType();
+
+            /// The `mapContains*` adapters run over the keys/values subcolumn, which keeps the
+            /// wrapper, so they compare against the dictionary. `has` over a `Map` instead goes
+            /// through `executeMap`, which rewrites the map to an array of its keys and strips
+            /// `LowCardinality` from both arguments before comparing (arrayIndex.h), so it compares
+            /// the raw padded bytes exactly like `has` over an `Array(String)`.
+            if (function_name == "has")
+                element_type = recursiveRemoveLowCardinality(element_type);
+        }
+
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+
+        /// Without the `Map` type the padded and the coerced form cannot be told apart.
+        if (!element_type && searchFunctionCoercesConstant(value_type, actual_type))
+            return false;
+
+        Field converted_field = element_type
+            ? convertConstantForArrayIndexFunction(value_field, value_type, element_type, actual_type)
+            : convertFieldToType(value_field, *actual_type, value_type.get());
         if (converted_field.isNull())
             return false;
 
