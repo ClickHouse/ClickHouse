@@ -116,6 +116,7 @@ node_bad = cluster.add_instance(
         "configs/sync_logger.xml",
         "configs/ldap_server_bad_lookup.xml",
         "configs/directories_bad.xml",
+        "configs/remote_servers.xml",
     ],
     user_configs=["configs/users.xml"],
     stay_alive=True,
@@ -1705,6 +1706,115 @@ def test_synced_users_hold_the_role_the_name_resolves_to(janedoe_in_role_a):
                 "rm -rf /var/lib/clickhouse/access_after /var/lib/clickhouse/access_before",
             ],
             user="root",
+        )
+        restore_node_bad()
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
+def test_interserver_materialised_user_promoted_by_a_run_needs_no_lookup(
+    janedoe_in_role_a,
+):
+    """A fanout under the cluster secret materialises `promoted` on `node_bad` (`only_synced_users`
+    false) without asking the directory, so `EXECUTE AS promoted` confirms the name upstream first.
+    Once a run returns `promoted` in the snapshot, the name belongs to the synchronisation and
+    `EXECUTE AS` resolves it from the snapshot alone: with the lookup identity broken afterwards it
+    still works, as it does for every synchronised user."""
+    base_entries = ldap_count_synced_entries()
+    ldap_add_user("promoted")
+    admin(node1, "CREATE USER promoted IDENTIFIED BY 'local'")
+    try:
+        admin(node1, "GRANT REMOTE ON *.* TO promoted")
+        restart_node_bad_with(
+            directories_bad_config(
+                only_synced_users="false",
+                create_roles="true",
+                roles_storage="local_directory",
+            ),
+            server_config=read_config("ldap_server.xml"),
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(node_bad, ldap_users_query("promoted")) == "0\n"
+
+        # Whether the remote half may read is irrelevant; the name is materialised at authentication.
+        node1.query_and_get_answer_with_error(
+            "SELECT count() FROM clusterAllReplicas('test_ldap_cluster_bad', system.one)",
+            user="promoted",
+            password="local",
+        )
+        assert admin(node_bad, ldap_users_query("promoted")) == "1\n"
+
+        ldap_set_memberships("promoted", {ROLE_A_GROUP})
+        wait_ldap_synced_entries(base_entries + 1)
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(node_bad, granted_roles_query("promoted")) == TSV([["role_a"]])
+
+        # A lookup would fail from now on; a synchronised user does not need one.
+        node_bad.replace_config(
+            f"{CONFIG_D}/ldap_server_bad_lookup.xml",
+            read_config("ldap_server_bad_lookup.xml"),
+        )
+        admin(node_bad, "SYSTEM RELOAD CONFIG")
+        assert admin(node_bad, "EXECUTE AS promoted SELECT currentUser()") == TSV(
+            [["promoted"]]
+        )
+    finally:
+        admin(node1, "DROP USER IF EXISTS promoted")
+        ldap_set_memberships("promoted", set())
+        ldap_delete(user_dn("promoted"), ignore_missing=True)
+        restore_node_bad()
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
+def test_renamed_role_follows_name_resolution(janedoe_in_role_a):
+    """A granted role renamed into a name that resolves to a copy in an earlier storage must not be
+    granted under the new name as well. `role_a` resolves to a hand-written copy in
+    `local_directory_before`; the run-created `role_b`, granted to `johndoe`, is renamed into `role_a`
+    on disk (as a restored file would be) and `johndoe` keeps exactly the copy the name resolves to.
+    """
+    id_before = "44444444-4444-4444-4444-444444444444"
+    try:
+        config = directories_bad_config(
+            create_roles="true", roles_storage="local_directory"
+        )
+        anchor = "        <local_directory>\n"
+        assert config.count(anchor) == 1
+        config = config.replace(anchor, LOCAL_DIRECTORY_BEFORE + anchor)
+        restart_node_bad_with(config, server_config=read_config("ldap_server.xml"))
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        role_b_id = admin(
+            node_bad, "SELECT id FROM system.roles WHERE name = 'role_b'"
+        ).strip()
+
+        admin(node_bad, "DROP ROLE role_a")
+        node_bad.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo 'ATTACH ROLE role_a;' > /var/lib/clickhouse/access_before/{id_before}.sql",
+            ],
+            user="root",
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert role_grant_ids(node_bad, "johndoe", "role_a") == f"{id_before}\n"
+
+        node_bad.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo 'ATTACH ROLE role_a;' > /var/lib/clickhouse/access/{role_b_id}.sql",
+            ],
+            user="root",
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert role_grant_ids(node_bad, "johndoe", "role_a") == f"{id_before}\n"
+        # The run created `role_b` again, since the renamed copy no longer carries the name.
+        assert (
+            admin(node_bad, "SELECT count() FROM system.roles WHERE name = 'role_b'")
+            == "1\n"
+        )
+    finally:
+        node_bad.exec_in_container(
+            ["bash", "-c", "rm -rf /var/lib/clickhouse/access_before"], user="root"
         )
         restore_node_bad()
         admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")

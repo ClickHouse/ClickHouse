@@ -15,5 +15,22 @@
                 </replica>
             </shard>
         </test_ldap_cluster>
+        <!-- For `test_interserver_materialised_user_promoted_by_a_run_needs_no_lookup`: a fanout from `node1`
+             reaches `node_bad` under the cluster secret. -->
+        <test_ldap_cluster_bad>
+            <secret>my_secret</secret>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node_bad</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_ldap_cluster_bad>
     </remote_servers>
 </clickhouse>
