@@ -163,7 +163,7 @@ public:
         while (reader.next())
         {
             const auto & pair = reader.get();
-            counts[normalizeModeKey(pair.first)] = pair.second;
+            counts[normalizeModeKey(pair.first)] += pair.second;
         }
     }
 
