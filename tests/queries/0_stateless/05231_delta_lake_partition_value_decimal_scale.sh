@@ -4,16 +4,22 @@
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/120521
-# A partitioned DeltaLake INSERT committed a decimal partition value with fewer fractional
-# digits than the column scale: 1.50 was committed as "1.5" and 10.00 as "10" (no decimal
-# point at all), because the value was rendered with toString, whose Decimal path drops
-# trailing fractional zeros. delta-kernel-rs requires the fractional digit count to equal the
-# declared scale exactly, so SELECT on the table ClickHouse had just written failed with
-# DELTA_KERNEL_ERROR, and delta-rs and Spark could not read it either.
+# A DeltaLake decimal partition value did not survive a write-then-read, for two reasons.
+#
+# Write: the partition value was committed with fewer fractional digits than the column
+# scale (1.50 as "1.5", 10.00 as "10", with no decimal point at all), because it was rendered
+# with toString, whose Decimal path drops trailing fractional zeros. delta-kernel-rs requires
+# the fractional digit count to equal the declared scale exactly, so SELECT on the table
+# ClickHouse had just written failed with DELTA_KERNEL_ERROR, and delta-rs and Spark could not
+# read it either.
+#
+# Read: a decimal partition value with precision 19 or higher (Decimal128) had its two 64-bit
+# halves transposed while being decoded, and came back as a different number with no error.
+# That half is engine-independent: it also affects Spark-written and delta-rs-written tables.
 #
 # Every case asserts BOTH the exact committed partitionValues JSON (the protocol string under
-# test) and a successful SELECT: the JSON alone would not prove readability, and the SELECT
-# alone would not distinguish the scale-exact form from a lenient parse.
+# test) and a SELECT returning the value: the JSON alone would not prove readability, and the
+# SELECT alone would not distinguish the scale-exact form from a lenient parse.
 #
 # The empty Delta tables are bootstrapped by hand (a v0 _delta_log with only protocol +
 # metaData), because ClickHouse cannot initialize a Delta transaction log itself.
@@ -81,13 +87,21 @@ committed_paths "${ROOT}/dec2"
 # (id Int32 NOT NULL, p Nullable(Decimal(38, 10))) partitioned by p
 SCHEMA_DEC38='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"decimal(38,10)\",\"nullable\":true,\"metadata\":{}}]}'
 
-echo "-- decimal(38,10) (Decimal128 width): the fraction is padded to the full scale"
+echo "-- decimal(38,10) (Decimal128 width): the fraction is padded to the full scale, and the"
+echo "-- value must read back unchanged. The unscaled magnitude of the third value exceeds 2^64,"
+echo "-- so it is the row that pins the high half of the decode; the negative one pins both signs."
 bootstrap "${ROOT}/dec38" "${SCHEMA_DEC38}" '["p"]'
+# Explicit toDecimal128 expressions: a bare 29-digit literal is parsed as Float64 and would
+# lose precision before the sink ever sees it.
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
-    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/dec38') VALUES (1, 1.5);
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/dec38') VALUES
+        (1, toDecimal128('1.5', 10)),
+        (2, toDecimal128('-1.5', 10)),
+        (3, toDecimal128('1234567890123456789.0123456789', 10));
     SELECT id, p FROM deltaLakeLocal('${ROOT}/dec38') ORDER BY id;
 "
-echo "committed partitionValues: $(committed_partition_values "${ROOT}/dec38")"
+echo "committed partitionValues:"
+committed_partition_values "${ROOT}/dec38"
 
 # (id Int32 NOT NULL, p Nullable(Decimal(10, 0))) partitioned by p
 SCHEMA_DEC0='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"decimal(10,0)\",\"nullable\":true,\"metadata\":{}}]}'
@@ -113,10 +127,11 @@ committed_partition_values "${ROOT}/dec_null"
 echo "committed paths:"
 committed_paths "${ROOT}/dec_null"
 
-# (id Int32 NOT NULL, p Nullable(Decimal(10, 2)), s Nullable(String)) partitioned by p, s
-SCHEMA_TWO='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"decimal(10,2)\",\"nullable\":true,\"metadata\":{}},{\"name\":\"s\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}}]}'
+# (id Int32 NOT NULL, p Nullable(Decimal(9, 2)), s Nullable(String)) partitioned by p, s
+SCHEMA_TWO='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"decimal(9,2)\",\"nullable\":true,\"metadata\":{}},{\"name\":\"s\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}}]}'
 
-echo "-- a decimal partition column composes with a non-decimal one (which is unaffected)"
+echo "-- a decimal partition column composes with a non-decimal one (which is unaffected);"
+echo "-- decimal(9,2) is also the Decimal32 decode arm, which must stay correct"
 bootstrap "${ROOT}/two" "${SCHEMA_TWO}" '["p","s"]'
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
     INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/two') VALUES (1, 1.5, 'x');
@@ -132,3 +147,16 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --delta_lake_accurate_write_cast
     SELECT id, p FROM deltaLakeLocal('${ROOT}/plain_cast') ORDER BY id;
 "
 echo "committed partitionValues: $(committed_partition_values "${ROOT}/plain_cast")"
+
+# (id Int32 NOT NULL, p Nullable(Decimal(19, 0))) partitioned by p
+SCHEMA_DEC19='{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":false,\"metadata\":{}},{\"name\":\"p\",\"type\":\"decimal(19,0)\",\"nullable\":true,\"metadata\":{}}]}'
+
+echo "-- precision 19 is the first width that maps to Decimal128, and at scale 0 the committed"
+echo "-- string carries no fraction, so this table is byte-identical to what Spark writes and to"
+echo "-- what ClickHouse wrote before the write fix: only the decode can get it wrong"
+bootstrap "${ROOT}/dec19" "${SCHEMA_DEC19}" '["p"]'
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
+    INSERT INTO FUNCTION deltaLakeLocal('${ROOT}/dec19') VALUES (1, 5);
+    SELECT id, p FROM deltaLakeLocal('${ROOT}/dec19') ORDER BY id;
+"
+echo "committed partitionValues: $(committed_partition_values "${ROOT}/dec19")"

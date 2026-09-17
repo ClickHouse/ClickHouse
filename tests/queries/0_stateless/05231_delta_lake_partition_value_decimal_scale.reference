@@ -22,9 +22,16 @@ p=-1.50/<uuid>.parquet
 p=1.05/<uuid>.parquet
 p=1.50/<uuid>.parquet
 p=10.00/<uuid>.parquet
--- decimal(38,10) (Decimal128 width): the fraction is padded to the full scale
+-- decimal(38,10) (Decimal128 width): the fraction is padded to the full scale, and the
+-- value must read back unchanged. The unscaled magnitude of the third value exceeds 2^64,
+-- so it is the row that pins the high half of the decode; the negative one pins both signs.
 1	1.5
-committed partitionValues: "partitionValues":{"p":"1.5000000000"}
+2	-1.5
+3	1234567890123456789.0123456789
+committed partitionValues:
+"partitionValues":{"p":"-1.5000000000"}
+"partitionValues":{"p":"1.5000000000"}
+"partitionValues":{"p":"1234567890123456789.0123456789"}
 -- decimal(10,0) already conformed and must stay unchanged: no decimal point is added
 1	5
 committed partitionValues: "partitionValues":{"p":"5"}
@@ -39,10 +46,16 @@ committed partitionValues:
 committed paths:
 p=1.50/<uuid>.parquet
 p=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
--- a decimal partition column composes with a non-decimal one (which is unaffected)
+-- a decimal partition column composes with a non-decimal one (which is unaffected);
+-- decimal(9,2) is also the Decimal32 decode arm, which must stay correct
 1	1.5	x
 committed partitionValues: "partitionValues":{"p":"1.50","s":"x"}
 committed paths: p=1.50/s=x/<uuid>.parquet
 -- the plain (non-accurate) write cast produces the same protocol form
 1	1.5
 committed partitionValues: "partitionValues":{"p":"1.50"}
+-- precision 19 is the first width that maps to Decimal128, and at scale 0 the committed
+-- string carries no fraction, so this table is byte-identical to what Spark writes and to
+-- what ClickHouse wrote before the write fix: only the decode can get it wrong
+1	5
+committed partitionValues: "partitionValues":{"p":"5"}
