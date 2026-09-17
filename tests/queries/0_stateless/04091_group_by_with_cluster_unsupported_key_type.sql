@@ -4,6 +4,7 @@
 -- column.
 
 -- 2D tuple with String elements.
+SET enable_analyzer = 1;
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT count() FROM VALUES('x UInt64, y UInt64', (1, 2))

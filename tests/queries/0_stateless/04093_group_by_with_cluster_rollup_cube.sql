@@ -5,6 +5,7 @@
 -- `GROUPING SETS` has its own element grammar that does not accept the
 -- `WITH CLUSTER` modifier, so that combination is already rejected by the parser.
 
+SET enable_analyzer = 1;
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT count() FROM (SELECT toUInt64(number) AS x FROM numbers(4))

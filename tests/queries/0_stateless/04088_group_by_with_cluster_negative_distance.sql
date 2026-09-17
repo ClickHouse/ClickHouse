@@ -2,6 +2,7 @@
 -- as `distance == 0` (which used to be the case for the numeric/2D paths).
 
 -- 1D numeric.
+SET enable_analyzer = 1;
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT count() FROM VALUES('x UInt64', (1), (2))

@@ -1,4 +1,5 @@
 -- Multiple keys with `WITH CLUSTER` are not supported and must be rejected.
+SET enable_analyzer = 1;
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT a, b, count() FROM VALUES('a UInt64, b UInt64', (1, 1), (2, 2))

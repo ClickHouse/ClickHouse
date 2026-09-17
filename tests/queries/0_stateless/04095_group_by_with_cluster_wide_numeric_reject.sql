@@ -6,6 +6,7 @@
 -- decimal boundaries depend on binary rounding. Reject the unsupported numeric
 -- key types upfront with a clear `BAD_ARGUMENTS` instead of silently misclustering.
 
+SET enable_analyzer = 1;
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT count() FROM VALUES('x Int128', (toInt128(1)))
