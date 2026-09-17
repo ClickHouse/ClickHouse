@@ -60,6 +60,10 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
+#include <algorithm>
+
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <memory>
 
 
@@ -1269,6 +1273,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     StoragePtr table = getTable(query);
     setInsertContextValues(context, query, table);
+    resolveInsertByNameColumns(query);
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
@@ -1418,6 +1423,33 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
     }
 
     context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
+}
+
+void InterpreterInsertQuery::resolveInsertByNameColumns(ASTInsertQuery & query)
+{
+    if (!query.by_name)
+        return;
+
+    auto context = getContext();
+    SharedHeader header;
+    auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, context, select_query_options);
+    else
+        header = InterpreterSelectWithUnionQuery::getSampleBlock(query.select, context);
+
+    auto columns = make_intrusive<ASTExpressionList>(',');
+    columns->children.reserve(header->columns());
+    for (const auto & name : header->getNames())
+        columns->children.emplace_back(make_intrusive<ASTIdentifier>(name));
+
+    query.columns = columns;
+    auto insert_position = std::find_if(query.children.begin(), query.children.end(), [&](const ASTPtr & child)
+    {
+        return child == query.settings_ast || child == query.select || child == query.infile || child == query.compression;
+    });
+    query.children.insert(insert_position, columns);
+    query.by_name = false;
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory);

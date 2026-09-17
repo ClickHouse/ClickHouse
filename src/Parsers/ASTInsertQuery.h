@@ -23,6 +23,7 @@ public:
     ASTPtr table;
 
     ASTPtr columns;
+    bool by_name = false;
     String format;
     ASTPtr table_function;
     ASTPtr partition_by;

@@ -90,6 +90,8 @@ private:
     QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
+    void resolveInsertByNameColumns(ASTInsertQuery & query);
+
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
     std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo>
     buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context);

@@ -1,0 +1,69 @@
+DROP TABLE IF EXISTS insert_by_name_dst_05227;
+DROP TABLE IF EXISTS insert_by_name_src_05227;
+
+CREATE TABLE insert_by_name_dst_05227
+(
+    a UInt64,
+    b String DEFAULT 'missing',
+    c UInt64 DEFAULT a + 10,
+    d String
+)
+ENGINE = Memory;
+
+CREATE TABLE insert_by_name_src_05227
+(
+    b String,
+    a UInt64
+)
+ENGINE = Memory;
+
+INSERT INTO insert_by_name_src_05227 VALUES ('hello', 42), ('world', 7);
+
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT * FROM insert_by_name_src_05227;
+SELECT a, b, c, d FROM insert_by_name_dst_05227 ORDER BY a FORMAT TSVRaw;
+
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT 'alias' AS b, toInt32(5) AS a;
+SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
+
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+FROM insert_by_name_src_05227
+SELECT b, a;
+SELECT a, b, c, d FROM insert_by_name_dst_05227 ORDER BY a FORMAT TSVRaw;
+
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT * EXCEPT(a) FROM insert_by_name_src_05227;
+SELECT a, b, c, d FROM insert_by_name_dst_05227 ORDER BY b FORMAT TSVRaw;
+
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT b, a FROM input('a UInt64, b String') FORMAT TSV
+100	input
+SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
+
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT a, b FROM input() FORMAT TSV
+42	hello
+SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
+
+SELECT JSONExtractBool(
+    parseQueryToJSON('INSERT INTO insert_by_name_dst_05227 BY NAME SELECT 1 AS a'),
+    'by_name')
+FORMAT TSVRaw;
+SELECT position(
+    formatQueryFromJSON(parseQueryToJSON('INSERT INTO insert_by_name_dst_05227 BY NAME SELECT 1 AS a')),
+    'BY NAME') > 0
+FORMAT TSVRaw;
+
+INSERT INTO insert_by_name_dst_05227 BY NAME SELECT 1 AS does_not_exist_05227; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+INSERT INTO insert_by_name_dst_05227 BY NAME SELECT 1 AS a, 2 AS a; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+INSERT INTO insert_by_name_dst_05227 (a) BY NAME SELECT 1; -- { clientError SYNTAX_ERROR }
+INSERT INTO insert_by_name_dst_05227 BY NAME VALUES (1, 'x'); -- { clientError SYNTAX_ERROR }
+
+DROP TABLE insert_by_name_src_05227;
+DROP TABLE insert_by_name_dst_05227;
