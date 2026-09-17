@@ -24,8 +24,8 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (time_series, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the three inner target tables (Tags, Samples, Metrics).
+/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
+/// into blocks for the target tables (Tags, Samples, RecentSamples, Histograms, MetricFamilies).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -71,11 +71,11 @@ private:
     };
 
     void initTagsAndSamplesPipelines();
-    void initMetricsPipeline();
+    void initMetricFamiliesPipeline();
     std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
 
     void consumeTagsAndSamples(const Block & block);
-    void consumeMetrics(const Block & block);
+    void consumeMetricFamilies(const Block & block);
 
     /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
     ColumnPtr calculateId(const Block & tags_block) const;
@@ -86,7 +86,7 @@ private:
 
     bool insert_tags_and_samples = false;
     bool insert_histograms = false;
-    bool insert_metrics = false;
+    bool insert_metric_families = false;
     bool async_insert = false;
 
     /// Source header for the tags pipeline WITHOUT the `id` column.
@@ -106,7 +106,7 @@ private:
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> histograms_pipeline;
-    std::unique_ptr<TargetPipeline> metrics_pipeline;
+    std::unique_ptr<TargetPipeline> metric_families_pipeline;
 };
 
 }
