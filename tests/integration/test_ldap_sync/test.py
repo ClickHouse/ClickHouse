@@ -75,6 +75,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=[
+        "configs/sync_logger.xml",
         "configs/ldap_server.xml",
         "configs/directories_cluster.xml",
         "configs/remote_servers.xml",
@@ -87,6 +88,7 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=[
+        "configs/sync_logger.xml",
         "configs/ldap_server.xml",
         "configs/directories_cluster.xml",
         "configs/remote_servers.xml",
@@ -98,34 +100,54 @@ node2 = cluster.add_instance(
 
 node_dry = cluster.add_instance(
     "node_dry",
-    main_configs=["configs/ldap_server.xml", "configs/directories_dry.xml"],
+    main_configs=[
+        "configs/sync_logger.xml",
+        "configs/ldap_server.xml",
+        "configs/directories_dry.xml",
+    ],
     user_configs=["configs/users.xml"],
 )
 
 node_bad = cluster.add_instance(
     "node_bad",
-    main_configs=["configs/ldap_server_bad_lookup.xml", "configs/directories_bad.xml"],
+    main_configs=[
+        "configs/sync_logger.xml",
+        "configs/ldap_server_bad_lookup.xml",
+        "configs/directories_bad.xml",
+    ],
     user_configs=["configs/users.xml"],
     stay_alive=True,
 )
 
 node_stale = cluster.add_instance(
     "node_stale",
-    main_configs=["configs/ldap_server.xml", "configs/directories_stale.xml"],
+    main_configs=[
+        "configs/sync_logger.xml",
+        "configs/ldap_server.xml",
+        "configs/directories_stale.xml",
+    ],
     user_configs=["configs/users_stale.xml"],
     stay_alive=True,
 )
 
 node_mem = cluster.add_instance(
     "node_mem",
-    main_configs=["configs/ldap_server.xml", "configs/directories_mem.xml"],
+    main_configs=[
+        "configs/sync_logger.xml",
+        "configs/ldap_server.xml",
+        "configs/directories_mem.xml",
+    ],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
 )
 
 node_manual = cluster.add_instance(
     "node_manual",
-    main_configs=["configs/ldap_server.xml", "configs/directories_manual.xml"],
+    main_configs=[
+        "configs/sync_logger.xml",
+        "configs/ldap_server.xml",
+        "configs/directories_manual.xml",
+    ],
     user_configs=["configs/users.xml"],
     stay_alive=True,
 )
