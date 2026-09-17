@@ -2186,6 +2186,12 @@ bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr 
     return true;
 }
 
+/// True if `path` lies below `ancestor` in the JSON path tree: "a.b" does, "ab" does not.
+bool isDescendantPath(std::string_view path, std::string_view ancestor)
+{
+    return path.size() > ancestor.size() && path.starts_with(ancestor) && path[ancestor.size()] == '.';
+}
+
 struct ObjectConversionPlan
 {
     /// Typed paths in destination but not in source (need dynamic->typed).
@@ -2212,6 +2218,11 @@ struct ObjectConversionPlan
 
     /// Whether any changed typed path involves a structural type.
     bool has_structural_type_change = false;
+
+    /// New typed paths with no other destination typed path below them. The parser treats those as
+    /// scalar slots and never descends into an object there, so rows holding data below them are
+    /// invalid; a new typed path that does have one below it makes the parser descend instead.
+    UnorderedSetWithMemoryTracking<String> new_leaf_typed_paths;
 
     bool canOptimize() const
     {
@@ -2288,6 +2299,13 @@ ObjectConversionPlan buildObjectConversionPlan(
             plan.new_skip_paths.insert(path);
     }
 
+    for (const auto & [path, _] : plan.new_typed_paths)
+    {
+        auto is_below_path = [&](const auto & entry) { return isDescendantPath(entry.first, path); };
+        if (std::none_of(dst_typed.begin(), dst_typed.end(), is_below_path))
+            plan.new_leaf_typed_paths.insert(path);
+    }
+
     const auto & src_regexps = src_type.getPathRegexpsToSkip();
     const auto & dst_regexps = dst_type.getPathRegexpsToSkip();
     UnorderedSetWithMemoryTracking<String> src_regexp_set(src_regexps.begin(), src_regexps.end());
@@ -2346,6 +2364,165 @@ bool sharedDataIsAffected(
         if (shouldSkip(path))
             return true;
     }
+    return false;
+}
+
+/// Finds rows the JSON parser would reject: a new leaf typed path with no scalar value in the row
+/// but with source data below it. Reusing the paths below and defaulting the leaf would invent a
+/// value the row never had, which is why format+parse raises INCORRECT_DATA here.
+/// Returns whether such a row exists; with `throw_on_invalid_row` the first one raises instead.
+/// Destination skip rules are irrelevant here: the parser fails at the leaf before descending, so
+/// skipping a path below it changes nothing, and a typed path can never itself match a SKIP rule.
+bool validateNewLeafTypedPaths(
+    const ColumnObject & src,
+    const ObjectConversionPlan & plan,
+    size_t rows,
+    bool throw_on_invalid_row)
+{
+    /// Nothing to reject in an empty block: the parser would not read any value either.
+    if (plan.new_leaf_typed_paths.empty() || rows == 0)
+        return false;
+
+    const auto & src_dynamic_paths = src.getDynamicPaths();
+    const auto & sorted_dynamic_paths = src.getSortedDynamicPaths();
+    auto [shared_data_paths, shared_data_values] = src.getSharedDataPathsAndValues();
+    const auto & shared_data_offsets = src.getSharedDataOffsets();
+    const bool has_shared_data = !shared_data_paths->empty();
+
+    /// A dynamic path column is NULL exactly in the rows where the path is absent, and ColumnVariant
+    /// counts its NULLs from the variant sizes without touching the data.
+    auto absent_rows = [](const IColumn & column) { return column.getNumberOfDefaultRows(); };
+
+    struct Leaf
+    {
+        std::string_view path;
+        const IDataType * type = nullptr;           /// for the error message
+        const IColumn * scalar = nullptr;           /// dynamic path at the leaf, absent in some rows
+        VectorWithMemoryTracking<const IColumn *> below;
+        bool always_below = false;                  /// data below the leaf in every row
+    };
+
+    VectorWithMemoryTracking<Leaf> leaves;
+
+    for (const auto & path : plan.new_leaf_typed_paths)
+    {
+        Leaf leaf;
+        leaf.path = path;
+        leaf.type = plan.new_typed_paths.at(path).get();
+
+        if (auto it = src_dynamic_paths.find(path); it != src_dynamic_paths.end())
+        {
+            size_t absent = absent_rows(*it->second);
+            /// A scalar in every row, so the parser always fills the typed path.
+            if (absent == 0)
+                continue;
+            if (absent != rows)
+                leaf.scalar = it->second.get();
+        }
+
+        /// A source typed path below the leaf is necessarily removed, since a destination path below
+        /// the leaf would have kept it out of new_leaf_typed_paths. Typed paths hold a value in every
+        /// row, so such a path puts data below the leaf in every row.
+        leaf.always_below = std::any_of(
+            plan.removed_typed_paths.begin(),
+            plan.removed_typed_paths.end(),
+            [&](const auto & entry) { return isDescendantPath(entry.first, path); });
+
+        /// Everything below the leaf is one contiguous range starting at "<leaf>.".
+        String path_prefix = path + '.';
+        for (auto it = sorted_dynamic_paths.lower_bound(path_prefix); it != sorted_dynamic_paths.end() && it->starts_with(path_prefix); ++it)
+        {
+            const auto & column = src_dynamic_paths.at(String(*it));
+            size_t absent = absent_rows(*column);
+            if (absent == rows)
+                continue;
+            if (absent == 0)
+                leaf.always_below = true;
+            else
+                leaf.below.push_back(column.get());
+        }
+
+        /// Nothing below this leaf in this source, so no row can be invalid.
+        if (!leaf.always_below && leaf.below.empty() && !has_shared_data)
+            continue;
+
+        /// Every row holds data below the leaf and nothing can supply a scalar.
+        if (leaf.always_below && !leaf.scalar && !has_shared_data)
+        {
+            if (!throw_on_invalid_row)
+                return true;
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot insert data into JSON column: cannot read {} value from a JSON object "
+                "(while reading path {})",
+                leaf.type->getName(),
+                leaf.path);
+        }
+
+        leaves.push_back(std::move(leaf));
+    }
+
+    if (leaves.empty())
+        return false;
+
+    /// Sorted so the lower bound found for one leaf bounds the search for the next one in the row.
+    std::sort(leaves.begin(), leaves.end(), [](const Leaf & lhs, const Leaf & rhs) { return lhs.path < rhs.path; });
+
+    for (size_t row = 0; row != rows; ++row)
+    {
+        size_t search_start = has_shared_data ? shared_data_offsets[row - 1] : 0;
+        const size_t search_end = has_shared_data ? shared_data_offsets[row] : 0;
+
+        for (const auto & leaf : leaves)
+        {
+            if (leaf.scalar && !leaf.scalar->isNullAt(row))
+                continue;
+
+            bool has_value_below = leaf.always_below;
+
+            if (search_start != search_end)
+            {
+                /// Paths are sorted within a row, so the first entry at or after the leaf is either
+                /// the leaf itself or the first path below it — one search answers both questions.
+                size_t lower_bound
+                    = ColumnObject::findPathLowerBoundInSharedData(leaf.path, *shared_data_paths, search_start, search_end);
+                search_start = lower_bound;
+                if (lower_bound != search_end)
+                {
+                    auto entry = shared_data_paths->getDataAt(lower_bound);
+                    if (entry == leaf.path)
+                        continue;
+                    if (isDescendantPath(entry, leaf.path))
+                        has_value_below = true;
+                }
+            }
+
+            if (!has_value_below)
+            {
+                for (const auto * column : leaf.below)
+                {
+                    if (!column->isNullAt(row))
+                    {
+                        has_value_below = true;
+                        break;
+                    }
+                }
+            }
+
+            if (has_value_below)
+            {
+                if (!throw_on_invalid_row)
+                    return true;
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cannot insert data into JSON column: cannot read {} value from a JSON object "
+                    "(while reading path {})",
+                    leaf.type->getName(),
+                    leaf.path);
+            }
+        }
+    }
+
     return false;
 }
 
@@ -2564,14 +2741,16 @@ ColumnPtr convertObjectColumns(
     for (const auto & pattern : plan.new_skip_regexps)
         compiled_new_skip_regexps.push_back(std::make_unique<re2::RE2>(pattern));
 
+    const bool has_new_skip_rules = plan.hasNewSkipRules();
+
     auto shouldSkip = [&](std::string_view path) -> bool
     {
+        if (!has_new_skip_rules)
+            return false;
+
         for (const auto & skip_path : plan.new_skip_paths)
         {
-            if (path == skip_path)
-                return true;
-            if (path.starts_with(skip_path) && path.size() > skip_path.size()
-                && path[skip_path.size()] == '.')
+            if (path == skip_path || isDescendantPath(path, skip_path))
                 return true;
         }
 
@@ -2591,6 +2770,12 @@ ColumnPtr convertObjectColumns(
 
         return false;
     };
+
+    /// With type_json_skip_invalid_typed_paths the parser defaults such a path and drops the data
+    /// below it. Reproducing that would mean rewriting the reused sub-columns and shared data.
+    const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
+    if (validateNewLeafTypedPaths(src, plan, rows, /*throw_on_invalid_row=*/!skip_invalid))
+        return {};
 
     /// ======================== Phase 2: Classify source dynamic paths ========================
 
@@ -2638,7 +2823,6 @@ ColumnPtr convertObjectColumns(
     }
 
     /// Changed typed paths: CAST (unless a new skip rule matches).
-    const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
     for (const auto & [path, type_pair] : plan.changed_typed_paths)
     {
         const auto & [from_tp, to_tp] = type_pair;
@@ -3083,11 +3267,18 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
                 FormatSettings::DateTimeOverflowBehavior::Saturate,
                 captured_format_settings.date_time_input_format,
                 /*cast_keep_nullable_=*/false);
-            return [captured_plan = std::move(plan), captured_format_settings, captured_convert_settings]
-                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+            return [this, requested_result_is_nullable, captured_plan = std::move(plan), captured_format_settings, captured_convert_settings]
+                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
             {
                 const auto & dst_type_obj = assert_cast<const DataTypeObject &>(*result_type);
-                return convertObjectColumns(arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings, captured_convert_settings);
+                if (auto result = convertObjectColumns(
+                        arguments[0].column, dst_type_obj, captured_plan, input_rows_count, captured_format_settings, captured_convert_settings))
+                    return result;
+
+                /// The block needs semantics the optimized path cannot reproduce.
+                return convertObjectViaFormatParse(
+                    arguments, result_type, nullable_source, input_rows_count,
+                    settings, requested_result_is_nullable, cast_type);
             };
         }
 
