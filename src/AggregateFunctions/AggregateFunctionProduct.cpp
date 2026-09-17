@@ -1,5 +1,4 @@
 #include <bit>
-#include <cstring>
 #include <memory>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -135,15 +134,13 @@ private:
             {
                 /// Multiplying a discarded NaN or Inf by an arithmetic mask is not safe.
                 /// Select the bit pattern of the multiplicative identity instead.
-                UInt64 value_bits;
-                std::memcpy(&value_bits, &converted, sizeof(converted));
+                UInt64 value_bits = std::bit_cast<UInt64>(converted);
 
                 constexpr UInt64 identity_bits = 0x3ff0000000000000ULL;
                 const UInt64 mask = 0 - static_cast<UInt64>(keep != 0);
                 value_bits = (value_bits & mask) | (identity_bits & ~mask);
 
-                std::memcpy(&converted, &value_bits, sizeof(converted));
-                return converted;
+                return std::bit_cast<Float64>(value_bits);
             }
 
             return keep ? converted : 1.0;
