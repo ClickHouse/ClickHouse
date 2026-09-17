@@ -128,4 +128,44 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
+class ASTColumnsRenameTransformer : public IASTColumnsTransformer
+{
+public:
+    class Rename : public IAST
+    {
+    public:
+        String getID(char) const override { return "ColumnsRenameTransformer::Rename"; }
+        ASTPtr clone() const override
+        {
+            return make_intrusive<Rename>(*this);
+        }
+
+        void appendColumnName(WriteBuffer & ostr) const override;
+        void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+        void writeJSON(WriteBuffer & out) const override;
+        void readJSON(const Poco::JSON::Object & json) override;
+
+        String source_name;
+        String target_name;
+
+    protected:
+        void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    };
+
+    String getID(char) const override { return "ColumnsRenameTransformer"; }
+    ASTPtr clone() const override
+    {
+        auto clone = make_intrusive<ASTColumnsRenameTransformer>(*this);
+        clone->cloneChildren();
+        return clone;
+    }
+    void appendColumnName(WriteBuffer & ostr) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+};
+
 }

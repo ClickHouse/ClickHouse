@@ -100,7 +100,7 @@ protected:
     Highlight highlight_type;
 };
 
-/** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...)
+/** *, t.*, db.table.*, COLUMNS('<regular expression>') APPLY(...) or EXCEPT(...) or REPLACE(...) or RENAME(...)
   */
 class ParserColumnsTransformers : public IParserBase
 {
@@ -110,12 +110,15 @@ public:
         APPLY,
         EXCEPT,
         REPLACE,
+        RENAME,
     };
     using ColumnTransformers = MultiEnum<ColumnTransformer, UInt8>;
-    static constexpr auto AllTransformers
+    static constexpr auto SelectTransformers
+        = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE, ColumnTransformer::RENAME};
+    static constexpr auto InsertTransformers
         = ColumnTransformers{ColumnTransformer::APPLY, ColumnTransformer::EXCEPT, ColumnTransformer::REPLACE};
 
-    explicit ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = AllTransformers, bool is_strict_ = false)
+    explicit ParserColumnsTransformers(ColumnTransformers allowed_transformers_ = SelectTransformers, bool is_strict_ = false)
         : allowed_transformers(allowed_transformers_)
         , is_strict(is_strict_)
     {
@@ -134,7 +137,7 @@ class ParserAsterisk : public IParserBase
 {
 public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    explicit ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+    explicit ParserAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::SelectTransformers)
         : allowed_transformers(allowed_transformers_)
     {
     }
@@ -150,9 +153,18 @@ protected:
   */
 class ParserQualifiedAsterisk : public IParserBase
 {
+public:
+    using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
+    explicit ParserQualifiedAsterisk(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::SelectTransformers)
+        : allowed_transformers(allowed_transformers_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "qualified asterisk"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    ColumnTransformers allowed_transformers;
 };
 
 /** COLUMNS(columns_names) or COLUMNS('<regular expression>')
@@ -161,7 +173,7 @@ class ParserColumnsMatcher : public IParserBase
 {
 public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    explicit ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+    explicit ParserColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::SelectTransformers)
         : allowed_transformers(allowed_transformers_)
     {
     }
@@ -179,7 +191,7 @@ class ParserQualifiedColumnsMatcher : public IParserBase
 {
 public:
     using ColumnTransformers = ParserColumnsTransformers::ColumnTransformers;
-    explicit ParserQualifiedColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::AllTransformers)
+    explicit ParserQualifiedColumnsMatcher(ColumnTransformers allowed_transformers_ = ParserColumnsTransformers::SelectTransformers)
         : allowed_transformers(allowed_transformers_)
     {
     }
