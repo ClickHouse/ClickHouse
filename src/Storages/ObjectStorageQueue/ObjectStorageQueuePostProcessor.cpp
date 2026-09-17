@@ -727,8 +727,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 object_from.remote_path, source_info.etag, object_from.etag);
                         /// Everything below must describe the generation this HEAD saw, which the check above ties
                         /// to the one that was read: the provenance a later attempt matches against, the tags, and
-                        /// the copied bytes. Empty on unversioned buckets.
-                        const String source_version_id = move_if_none_match.empty() ? String{} : source_info.version_id;
+                        /// the copied bytes. The version names that generation whatever the destination guard is, so
+                        /// an unguarded move (a preserved path, a prefixless one) pins its copy and its delete to it
+                        /// too instead of taking whatever the key holds by then. Empty on unversioned buckets.
+                        const String & source_version_id = source_info.version_id;
                         /// A guarded move re-uploads the object, so the tags are read explicitly rather than through
                         /// the `HeadObject` tag count, which restricted credentials do not get to see.
                         std::optional<ObjectAttributes> source_tags;

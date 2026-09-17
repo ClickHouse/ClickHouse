@@ -505,6 +505,16 @@ def move_source_rewrites(node):
     )
 
 
+def moved_objects(node):
+    return int(
+        node.query(
+            "SELECT value FROM system.events "
+            "WHERE name = 'ObjectStorageQueueMovedObjects' "
+            "SETTINGS system_events_show_zero_values = 1"
+        )
+    )
+
+
 PAUSE_AFTER_MOVE_COPY_FAILPOINT = "object_storage_queue_pause_after_move_copy"
 
 
@@ -1423,6 +1433,62 @@ def test_move_copies_the_generation_its_provenance_names(started_cluster):
     }
     assert versions == {rewritten}
     assert move_collisions(node) == collisions_before
+
+
+def test_unguarded_external_move_deletes_only_the_copied_version(started_cluster):
+    """A move to another bucket that preserves the path needs no destination guard, but its delete
+    must still take only the version the copy consumed: a re-upload of the same bytes carries the
+    same `ETag`, so nothing but the version tells the two generations apart."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    destination_bucket = f"sink-{token}"
+    table_name = f"move_unguarded_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    data = b"1,2,3\n"
+    client = started_cluster.minio_client
+    client.make_bucket(bucket)
+    client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    recreate_minio_bucket(started_cluster, destination_bucket)
+    put_s3_file_content(started_cluster, source_key, data, bucket=bucket)
+    ingested_version = client.stat_object(bucket, source_key).version_id
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        move_to_bucket=destination_bucket,
+        preserve_move_path=True,
+        bucket=bucket,
+    )
+    moved_before = moved_objects(node)
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_MOVE_COPY_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_AFTER_MOVE_COPY_FAILPOINT)
+        # The copy is committed and the delete has not run yet. The same bytes under a new version
+        # carry the `ETag` the ingested generation had, so only the version refuses this one.
+        put_s3_file_content(started_cluster, source_key, data, bucket=bucket)
+        rewritten_version = client.stat_object(bucket, source_key).version_id
+        assert rewritten_version != ingested_version
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_MOVE_COPY_FAILPOINT}")
+
+    wait_until(lambda: moved_objects(node) > moved_before)
+    assert (
+        count_minio_objects(started_cluster, destination_bucket, processed_prefix) == 1
+    )
+    # The generation that was ingested is gone; the newer one is still the object, not a version
+    # hidden behind a delete marker.
+    assert client.stat_object(bucket, source_key).version_id == rewritten_version
+    assert read_s3_object(started_cluster, bucket, source_key) == data
 
 
 def test_move_after_processing_many_objects(started_cluster):
