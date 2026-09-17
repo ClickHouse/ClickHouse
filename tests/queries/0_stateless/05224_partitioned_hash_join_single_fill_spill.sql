@@ -1,9 +1,9 @@
 -- At `max_threads = 1` a `partitioned_hash` build runs on one fill thread: every right block is stored and inserted
--- as it arrives into a table that starts at 2^8 cells when the planner has no row estimate and doubles as the
--- keys come, as the `hash` build does. Under `max_bytes_before_external_join` those doublings must not be
--- refused by the budget: the spilling wrapper judges the resident set between blocks and at the barrier and
--- hands the stored blocks to `GraceHashJoin` when they do not fit. The right side here has no row estimate (a
--- subquery over `numbers`) and arrives in two blocks of eight UInt64 columns (4 MiB each); the budget of 11 MiB
+-- as it arrives into a table that starts at 2^8 cells when no earlier run of the query has left a distinct-key count
+-- in the hash table statistics cache, and doubles as the keys come, as the `hash` build does. Under
+-- `max_bytes_before_external_join` those doublings must not be refused by the budget: the spilling wrapper
+-- judges the resident set between blocks and at the barrier and hands the stored blocks to `GraceHashJoin` when
+-- they do not fit. The right side here arrives in two blocks of eight UInt64 columns (4 MiB each); the budget of 11 MiB
 -- lies between the wrapper's prediction before the second block (4 MiB stored, the 2 MiB table and its doubling)
 -- and the resident set at the barrier (8 MiB stored and a 4 MiB table), so the switch is taken at the barrier.
 -- Both queries must return the same rows.
