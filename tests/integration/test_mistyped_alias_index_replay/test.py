@@ -80,3 +80,45 @@ def test_replay_of_committed_alter_is_not_rejected(start_cluster):
 
     for node in (node_old, node_new):
         node.query("DROP TABLE t_alias_index_replay SYNC")
+
+
+def test_replicated_database_follower_replay_is_not_rejected(start_cluster):
+    # A `Replicated` database re-executes the same ALTER on every replica, and only the first
+    # run decides whether it is allowed. A follower on the new version reaches the reject through
+    # `checkAlterIsPossible`, not `setTableStructure`, so that path has to know it is a replay too:
+    # otherwise it keeps failing an entry a replica on the old version has already committed.
+    for node in (node_old, node_new):
+        node.query(
+            "CREATE DATABASE rdb_alias ENGINE = Replicated('/clickhouse/rdb_alias', 'shard1', '{replica}')".replace(
+                "{replica}", node.name
+            )
+        )
+
+    node_old.query(
+        """
+        CREATE TABLE rdb_alias.t (event String, tok FixedString(3) ALIAS lower(event))
+        ENGINE = MergeTree ORDER BY tuple()
+        """
+    )
+    assert_eq_with_retry(
+        node_new,
+        "SELECT count() FROM system.tables WHERE database = 'rdb_alias' AND name = 't'",
+        "1",
+    )
+
+    # The old replica accepts the index over the mistyped ALIAS; the follower replays the entry.
+    node_old.query("ALTER TABLE rdb_alias.t ADD INDEX i tok TYPE tokenbf_v1(256, 2, 0)")
+    assert_eq_with_retry(
+        node_new,
+        "SELECT count() FROM system.tables"
+        " WHERE database = 'rdb_alias' AND name = 't' AND create_table_query LIKE '%tokenbf_v1%'",
+        "1",
+    )
+
+    # A fresh violation initiated on the new replica is still rejected.
+    assert "BAD_ARGUMENTS" in node_new.query_and_get_error(
+        "ALTER TABLE rdb_alias.t ADD INDEX j tok TYPE ngrambf_v1(3, 256, 2, 0)"
+    )
+
+    for node in (node_old, node_new):
+        node.query("DROP DATABASE rdb_alias SYNC")

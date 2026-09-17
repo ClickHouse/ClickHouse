@@ -1125,8 +1125,8 @@ bool isIndexMatchedByExactColumnName(const String & index_type)
         || index_type == "sparse_grams" || index_type == "bloom_filter";
 }
 
-/// The ALIAS columns referenced by an index whose declared type differs from the type their own
-/// expression produces, mapped to that expression type.
+/// The ALIAS columns named directly in a single-expression index whose declared type differs from
+/// the type their own expression produces, mapped to that expression type.
 ///
 /// For an index type matched by exact column name (`isIndexMatchedByExactColumnName`) such an
 /// index can never be used. `IndexDescription::initExpressionInfo` expands the ALIAS, so the
@@ -1135,11 +1135,25 @@ bool isIndexMatchedByExactColumnName(const String & index_type)
 /// skipped - the files are written and merged all the same, so the cost is paid and nothing
 /// reads them.
 ///
-/// The mismatch belongs to the ALIAS column, not to the shape of the index expression, so every
-/// identifier in that expression is examined rather than only a bare `INDEX idx alias_col`.
+/// Two deliberate limits keep this from rejecting an index that still works:
+///
+/// - Only a single-expression index is examined. A tuple index (`INDEX i (a, b)`) matches each
+///   member independently (`MergeTreeConditionBloomFilterText` builds `key_tuple_mapping` per
+///   member), so a mistyped ALIAS in one member leaves predicates on the others usable.
+///
+/// - Only the ALIAS columns named directly in the index expression are examined; the bodies of
+///   those aliases are not followed. An index over a well-typed ALIAS whose own definition happens
+///   to reference a mistyped one is left alone.
+///
+/// The types are compared by name, exactly as `QueryAnalyzer` decides whether to wrap the column
+/// in a `CAST`: a difference `equals` would ignore (a time zone, a `LowCardinality` wrapper) still
+/// produces the `CAST`, and none of the matchers above look through it, so the index is dead.
 std::map<String, DataTypePtr> findMistypedAliasColumnsOfIndex(
     const IndexDescription & index, const ColumnsDescription & columns, ContextPtr context)
 {
+    if (index.sample_block.columns() != 1)
+        return {};
+
     const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
     ASTPtr index_expression = index_ast ? index_ast->getExpression() : nullptr;
     if (!index_expression)
@@ -1148,32 +1162,6 @@ std::map<String, DataTypePtr> findMistypedAliasColumnsOfIndex(
     NameSet bound_names;
     std::set<String> referenced_aliases;
     collectAliasColumnsInExpression(index_expression, columns, bound_names, referenced_aliases);
-
-    /// An ALIAS may be written in terms of another, and the index is built over the whole chain
-    /// expanded, so a mistyped ALIAS anywhere in it makes the index unreachable just as surely as one
-    /// named in the index expression: `b ALIAS toJSONString(a)` is typed consistently with its own
-    /// expression while `a` under it is not. Follow the bodies, guarding against a cycle.
-    std::set<String> pending = referenced_aliases;
-    while (!pending.empty())
-    {
-        auto current = std::move(pending);
-        pending.clear();
-
-        for (const auto & name : current)
-        {
-            auto column_default = columns.getDefault(name);
-            if (!column_default)
-                continue;
-
-            std::set<String> nested;
-            NameSet nested_bound_names;
-            collectAliasColumnsInExpression(column_default->expression, columns, nested_bound_names, nested);
-
-            for (const auto & nested_name : nested)
-                if (referenced_aliases.insert(nested_name).second)
-                    pending.insert(nested_name);
-        }
-    }
 
     std::map<String, DataTypePtr> mistyped;
     for (const auto & name : referenced_aliases)
@@ -1186,13 +1174,7 @@ std::map<String, DataTypePtr> findMistypedAliasColumnsOfIndex(
         if (!expression_type)
             continue;
 
-        /// A difference that is only a `LowCardinality` wrapper does not make the index dead: the
-        /// index conditions strip `LowCardinality` before matching (`removeLowCardinality` in
-        /// `MergeTreeIndexBloomFilterText` and the `KeyCondition` chain), so the `CAST` the column
-        /// is read through still matches the indexed expression. Compare with it removed, so a
-        /// `LowCardinality(T)` ALIAS over a `T` expression is not wrongly rejected, while a real
-        /// type change (`String` vs `Array(String)`) still is.
-        if (!recursiveRemoveLowCardinality(column_description->type)->equals(*recursiveRemoveLowCardinality(expression_type)))
+        if (column_description->type->getName() != expression_type->getName())
             mistyped.emplace(name, expression_type);
     }
 
@@ -6437,7 +6419,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /*allow_empty_sorting_key=*/ false,
         allow_nullable_key,
         local_context,
-        /*is_metadata_replay=*/ false,
+        /*is_metadata_replay=*/ is_replay_on_another_replica,
         alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 

@@ -51,16 +51,34 @@ INSERT INTO t_still_usable VALUES ('AbC'), ('dEf');
 SELECT count() FROM t_still_usable WHERE tok = toFixedString('abc', 3);
 DROP TABLE t_still_usable;
 
--- A declared type that differs from the expression only by a `LowCardinality` wrapper is not a
--- mistype: the index conditions strip `LowCardinality` before matching, so the index still works.
--- `k * 2` produces `UInt64`; `k` is `LowCardinality(UInt64)`, so declaring `lc` that way matches.
-CREATE TABLE t_low_cardinality
+-- A declared type that differs from the expression only by a `LowCardinality` wrapper is a
+-- mistype all the same: query analysis still wraps the column in a `CAST`, and none of these
+-- index conditions look through it, so the index is dead and the table is rejected.
+CREATE TABLE t_low_cardinality (event String, tok LowCardinality(String) ALIAS lower(event), INDEX i tok TYPE tokenbf_v1(256, 2, 0))
+    ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_low_cardinality (event String, tok LowCardinality(String) ALIAS lower(event), INDEX i tok TYPE bloom_filter(0.01))
+    ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+-- A tuple index matches each member independently, so a mistyped ALIAS in one member leaves the
+-- others usable: the index is accepted and a predicate on the well-typed member still works.
+CREATE TABLE t_tuple
 (
-    k UInt64,
-    lc LowCardinality(UInt64) ALIAS k,
-    doubled UInt64 ALIAS lc * 2,
-    INDEX i_bloom doubled TYPE bloom_filter GRANULARITY 1
-) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_suspicious_low_cardinality_types = 1;
-INSERT INTO t_low_cardinality VALUES (3), (4);
-SELECT count() FROM t_low_cardinality WHERE doubled = 6;
-DROP TABLE t_low_cardinality;
+    event String,
+    good String ALIAS upper(event),
+    bad FixedString(3) ALIAS lower(event),
+    INDEX i (good, bad) TYPE tokenbf_v1(256, 2, 0)
+) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_tuple VALUES ('abc'), ('def');
+SELECT count() FROM t_tuple WHERE hasToken(good, 'ABC');
+DROP TABLE t_tuple;
+
+-- Only the ALIAS named directly in the index expression is examined. An index over a well-typed
+-- ALIAS is accepted even when that ALIAS is written in terms of a mistyped one.
+CREATE TABLE t_indirect
+(
+    event String,
+    a String ALIAS JSONExtractKeys(event),
+    b String ALIAS toJSONString(a),
+    INDEX i b TYPE tokenbf_v1(256, 2, 0)
+) ENGINE = MergeTree ORDER BY tuple();
+DROP TABLE t_indirect;
