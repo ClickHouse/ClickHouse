@@ -63,6 +63,9 @@ SET query_plan_join_swap_table = 0;
 -- the threshold, in which case no runtime filter is built and the probe never reaches the filter.
 SET query_plan_optimize_join_order_randomize = 0;
 SET join_runtime_filter_min_probe_rows = 0;
+-- A shared fixed-hash-table filter is published already finished and replaces the registered
+-- Set/bloom filter, so the probe would never reach an unfinished one; keep it off.
+SET join_runtime_filter_from_fixed_hash_table = 0;
 
 {% for i in range(60) -%}
 SELECT count() FROM rf_probe AS l JOIN rf_build AS r ON l.k = r.k FORMAT Null;
