@@ -3,17 +3,8 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# Delta Lake writes are a Beta feature behind `allow_delta_lake_writes` (alias
-# `allow_experimental_delta_lake_writes`). This test pins the gate itself, which the other
-# write tests bypass by enabling the setting up front:
-#   * with the default settings an INSERT is rejected with SUPPORT_IS_DISABLED, the message names
-#     the setting, and nothing is written (no data file, no new `_delta_log` version);
-#   * the alias, `SET`, and a `SETTINGS` clause on the INSERT statement all enable writes;
-#   * a read-only session cannot write even with the setting on;
-#   * with writes on but the delta-kernel disabled the INSERT is rejected before anything is written.
-#
-# The empty Delta table is bootstrapped by hand (a v0 _delta_log with only protocol + metaData),
-# so the gate is exercised on an existing table, exactly as a Cloud user attaching to a lake would.
+# The `allow_delta_lake_writes` gate on an existing table: rejected INSERTs write nothing; the alias,
+# SET and a SETTINGS clause enable writes; read-only and kernel-disabled sessions are rejected.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +21,6 @@ cat > "${TABLE}/_delta_log/00000000000000000000.json" <<EOF
 {"metaData":{"id":"${CLICKHOUSE_DATABASE}-gate","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1700000000000}}
 EOF
 
-# Number of committed versions (log files) and of data files under the table root.
 state() {
     echo "versions: $(find "${TABLE}/_delta_log" -name '*.json' | wc -l | tr -d ' '), data files: $(find "${TABLE}" -name '*.parquet' | wc -l | tr -d ' ')"
 }

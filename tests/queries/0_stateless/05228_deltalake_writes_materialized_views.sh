@@ -3,14 +3,8 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# How Cloud customers actually write to Delta Lake: not with ad-hoc INSERTs but through
-# materialized views. Two patterns, both must produce one Delta version per push and must fail
-# closed when the writes setting is not in effect for the pushing query:
-#   * a regular materialized view `TO delta_table` fed by INSERTs into a MergeTree source;
-#   * a refreshable materialized view `REFRESH ... APPEND TO delta_table` (the ETL pattern), whose
-#     refresh runs with the view's own settings, not the creator's session.
-# The two differ in where `allow_delta_lake_writes` has to live: for a regular MV it is the
-# inserting session (or its profile), for a refreshable MV it is the SETTINGS clause of the view.
+# Writes through a regular MV (setting must be on the inserting session) and a refreshable
+# `APPEND TO` MV (setting in the view's SETTINGS clause); one version per push, fail closed otherwise.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
