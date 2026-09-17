@@ -116,14 +116,17 @@ namespace
     /// Checks that a table named by EXCEPT DATA FROM TABLE/TABLES is a table whose data can be excluded at all.
     void checkTableCanHaveDataExcluded(const String & database_name, const String & table_name)
     {
-        /// Asked of the live catalog, so that the answer is about the table the user named and nothing else.
-        /// Deriving it from the enumeration instead would make it depend on which *other* tables the query
-        /// happens to select. A `MaterializedPostgreSQL` nested table is recognised through the outer table
-        /// which named it, and an element naming only the nested table enumerates no outer table, so the very
-        /// same clause would be rejected when a second element happened to name the outer table as well and
-        /// accepted when it did not.
-        if (BackupUtils::isInnerTableInCatalog(database_name, table_name))
-            throwInnerTableNamedByExceptDataClause(database_name, table_name);
+        /// Inner tables are never named by the BACKUP query: they are backed up through their outer table
+        /// (a materialized view, a TimeSeries table), which is also where the exclusion has to be written.
+        if (BackupUtils::isInnerTable(database_name, table_name))
+        {
+            throw Exception(
+                ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
+                "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
+                "Table: {}.{}. Use the outer table name instead.",
+                backQuoteIfNeed(database_name),
+                backQuoteIfNeed(table_name));
+        }
     }
 }
 
@@ -709,60 +712,6 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     {
         e.addMessage("While collecting tables for backup in database {}", backQuoteIfNeed(database_name));
         throw;
-    }
-
-    /// The tables which this enumeration itself shows to be inner tables of other tables in it. Unless an
-    /// element names one directly, they are backed up through their outer table and never as tables of their
-    /// own, so they are dropped below. Deciding it here, against the enumeration, is what keeps the answer
-    /// consistent with the tables actually being backed up. Asking the live `DatabaseCatalog` instead would
-    /// make it depend on how far this replica has caught up, and on a `Replicated` replica which has not
-    /// created the outer table yet a hidden table would be backed up as a table of its own.
-    auto inner_table_names = BackupUtils::findInnerTables(db_tables);
-
-    for (const auto & inner_table_name : inner_table_names)
-    {
-        /// A clause naming an inner table has already been rejected by `checkTableCanHaveDataExcluded`,
-        /// which asks the same question of the live catalog. This is the enumeration's own answer, for the
-        /// table the catalog cannot classify: on a `Replicated` replica which has applied the inner table's
-        /// DDL entry but not its outer table's, the catalog lookup finds no outer table while the Keeper
-        /// listing enumerated here holds both. Without this the clause would quietly apply to a table which
-        /// is then dropped from the backup as an inner table, and the user would be told nothing.
-        if (!database_info.isTableNamedByExceptDataClause(inner_table_name))
-            continue;
-
-        throwInnerTableNamedByExceptDataClause(database_name, inner_table_name);
-    }
-
-    if (!inner_table_names.empty())
-    {
-        std::erase_if(
-            db_tables,
-            [&](const std::pair<ASTPtr, StoragePtr> & db_table)
-            {
-                const auto * create = db_table.first->as<ASTCreateQuery>();
-                if (!create || !inner_table_names.contains(create->getTable()))
-                    return false;
-
-                /// A table named by an element of its own is kept: that element asks for it, and its request
-                /// wins over a wider one - the same rule `isTableSelectedByAnyElement` applies against
-                /// `EXCEPT TABLES`, asked here the same way it asks it, through `tables`, which holds exactly
-                /// the names the single-table elements wrote. Only the inner tables which reached this
-                /// enumeration through a `DATABASE` or `ALL` element are hidden, which is what keeps them out
-                /// of a backup that merely covers their database.
-                ///
-                /// Without this a wider element decided the answer for the single-table one beside it. In
-                ///
-                ///     BACKUP DATABASE db, TABLE db.`<uuid>_nested`
-                ///
-                /// the `DATABASE` element is what brings the outer table into the enumeration, and so what
-                /// makes the nested table recognisable at all; the table the user had named by hand was then
-                /// dropped here and reported as `UNKNOWN_TABLE`.
-                ///
-                /// This can only ever keep a `MaterializedPostgreSQL` nested table. The reserved `.inner*`
-                /// families never reach this point: `filter_by_table_name` rejects them by name, so the
-                /// database engine does not enumerate them and no element can name one, as on `master`.
-                return !database_info.tables.contains(create->getTable());
-            });
     }
 
     std::unordered_set<String> found_table_names;

@@ -1,7 +1,6 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
-#include <Core/UUID.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>

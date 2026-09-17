@@ -28,32 +28,10 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
 bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context);
 bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context);
 
-/// Returns true if this table is an inner table by name, i.e. carries one of the reserved `.inner*`
-/// prefixes. Usable wherever only names are available, in particular on the RESTORE path, where the
-/// names come out of a backup and the tables they belong to need not exist.
+/// Returns true if this table should be skipped while making a backup because it's an inner table.
 bool isInnerTable(const QualifiedTableName & table_name);
 bool isInnerTable(const String & database_name, const String & table_name);
 
-/// Returns the names in `db_tables` which are inner tables of another table in the same set and so
-/// must not be backed up in their own right. On top of `isInnerTable` this recognises inner tables
-/// whose names carry no reserved prefix and can only be identified through the outer table owning
-/// them.
-///
-/// The answer is derived from the create queries of `db_tables` alone, never from the live
-/// `DatabaseCatalog`. `db_tables` is one enumeration of one database - for a `Replicated` database a
-/// Keeper metadata snapshot, in which the outer table may not have been created on this replica yet
-/// - so asking the catalog instead would make the classification depend on how far this replica has
-/// caught up, and a lagging replica would back up a hidden table as a table of its own.
-std::unordered_set<String> findInnerTables(const std::vector<std::pair<ASTPtr, StoragePtr>> & db_tables);
-
-/// Returns true if the live `DatabaseCatalog` shows this name to be an inner table of another table, by the
-/// same rule `findInnerTables` applies to an enumeration - the two share the classification and differ only
-/// in where the outer table is looked up.
-///
-/// Use this to validate a table name written in a query, never to decide what a backup contains. The answer
-/// depends on what this replica has created so far, so on a `Replicated` database it can differ between
-/// replicas; deciding the contents of a backup that way is what `findInnerTables` exists to avoid.
-bool isInnerTableInCatalog(const String & database_name, const String & table_name);
 
 }
 
