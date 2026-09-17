@@ -2886,6 +2886,12 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
         filter_id, column_name, is_primary_key_column, has_applicable_skip_index);
 }
 
+void ReadFromMergeTree::copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step)
+{
+    for (const auto & descr : replaced_step.join_runtime_filters_for_index_analysis)
+        addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+}
+
 void ReadFromMergeTree::buildPartitionPruningIndexes(
     Indexes & indexes,
     const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
@@ -5109,6 +5115,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     MergeTreeIndexBuildContextPtr index_build_context;
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
+
+    /// A projection read built by `optimizeUseNormalProjections` arrives with its analysis result already
+    /// computed, so `selectRangesToRead` never ran for this step and no indexes were built. The join
+    /// runtime filter pruning below needs the key condition templates, so build them here on demand.
+    if (!join_runtime_filters_for_index_analysis.empty() && !indexes.has_value())
+        buildIndexes(
+            indexes,
+            query_info.filter_actions_dag.get(),
+            data,
+            getParts(),
+            vector_search_parameters,
+            top_k_filter_info,
+            context,
+            query_info,
+            storage_snapshot->metadata,
+            skip_partition_pruning);
 
     /// Now check if we have to use primary-key or skip indexes for join pruning
     bool runtime_prune_primary_key = false;
