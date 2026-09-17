@@ -296,6 +296,24 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
         }
         else // Added a role.
         {
+            /// A second role of a name that is granted already: another storage published it (a replicated storage
+            /// refreshed from ZooKeeper, a file loaded by a disk storage), or the synchronisation created its copy
+            /// before that one appeared. The users must hold exactly the role the name resolves to, the first one in
+            /// `user_directories` order (`AccessControl::find`), which is the one `GRANT ... TO role_name` reaches;
+            /// granting the second id as well would split the role between the users who have the old id and those
+            /// who get the new one.
+            const auto granted_it = granted_role_ids.find(new_role_name);
+            if (granted_it != granted_role_ids.end() && granted_it->second != id)
+            {
+                const auto resolved = access_control.find<Role>(new_role_name);
+                if (!resolved || *resolved == granted_it->second)
+                    return; /// The new copy is shadowed by the granted one; nothing changes for the users.
+
+                applyRoleChangeNoLock(false /* revoke */, granted_it->second, new_role_name);
+                applyRoleChangeNoLock(true /* grant */, *resolved, new_role_name);
+                return;
+            }
+
             applyRoleChangeNoLock(true /* grant */, id, new_role_name);
         }
     }
@@ -303,8 +321,13 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
     {
         if (it != granted_role_names.end()) // Removed a granted role.
         {
-            const auto & old_role_name = it->second;
+            const auto old_role_name = it->second;
             applyRoleChangeNoLock(false /* revoke */, id, old_role_name);
+
+            /// Another role of the name may have been shadowed by the removed one; the users get it now, like a
+            /// login or a run would grant it.
+            if (const auto resolved = access_control.find<Role>(old_role_name))
+                applyRoleChangeNoLock(true /* grant */, *resolved, old_role_name);
         }
     }
 }
@@ -1186,7 +1209,29 @@ void LDAPAccessStorage::sync()
 
     size_t roles_created = 0;
     if (roles_target)
+    {
         roles_created = createMissingRoles(roles_to_create, *roles_target);
+
+        /// A role of an allow-listed name in several storages: published by one of them later, or created here
+        /// before it appeared. The name resolves to the first copy in `user_directories` order and
+        /// `processRoleChange` keeps the users on that one; the other copies are left to the operator, since a role
+        /// can carry grants of its own.
+        for (const auto & role_name : getAllowListedRoleNames())
+        {
+            Strings holders;
+            for (const auto & storage : access_control.getStorages())
+            {
+                if (storage->find(AccessEntityType::ROLE, role_name))
+                    holders.push_back(backQuote(storage->getStorageName()));
+            }
+            if (holders.size() < 2)
+                continue;
+
+            LOG_WARNING(getLogger(),
+                "Role '{}' exists in storages {}; the name resolves to the copy in {}, which the users of LDAP directory {} hold; drop the other copies",
+                role_name, fmt::join(holders, ", "), holders.front(), backQuote(getStorageName()));
+        }
+    }
 
     /// Phase 4: apply, in memory only, then notify the subscribers without the mutex.
     SyncApplyResult result;
