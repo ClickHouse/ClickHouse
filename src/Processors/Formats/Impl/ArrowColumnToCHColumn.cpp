@@ -1856,6 +1856,16 @@ static bool isColumnJSON(const std::shared_ptr<arrow::Field> & field, DataTypePt
     return logical_type.ok() && *logical_type == "JSON";
 }
 
+/// The `i`-th child of an Arrow field, or null when the field is unknown or has no such child. A container's
+/// child is read with its own field, so metadata belonging to the child - the `clickhouse.opaque` tag, a JSON
+/// logical type - is seen on the child rather than looked for on the parent, where it never is.
+static std::shared_ptr<arrow::Field> arrowChildField(const std::shared_ptr<arrow::Field> & field, int i)
+{
+    if (!field || !field->type() || i >= field->type()->num_fields())
+        return nullptr;
+    return field->type()->field(i);
+}
+
 /// Whether this is a column the Arrow writer could not map to an Arrow type, wrote with `serializeBinary`,
 /// and tagged with the ClickHouse type now being asked for.
 ///
@@ -2109,6 +2119,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
 
             auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column, column_name);
+            /// A Map's single Arrow child is its `entries` struct, which is what was just unwrapped.
+            const auto entries_field = arrowChildField(arrow_field, 0);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -2118,7 +2130,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 true /*is_map_nested_column*/,
                 geo_metadata,
                 settings,
-                arrow_field,
+                entries_field,
                 parquet_columns_to_clickhouse,
                 clickhouse_columns_to_parquet);
             if (!nested_column.column)
@@ -2221,6 +2233,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }();
 
+            const auto element_field = arrowChildField(arrow_field, 0);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -2230,7 +2243,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 false /*is_map_nested_column*/,
                 geo_metadata,
                 settings,
-                arrow_field,
+                element_field,
                 parquet_columns_to_clickhouse,
                 clickhouse_columns_to_parquet);
             if (!nested_column.column)
@@ -2379,7 +2392,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     false /*is_map_nested_column*/,
                     geo_metadata,
                     settings,
-                    arrow_field,
+                    field,
                     parquet_columns_to_clickhouse,
                     clickhouse_columns_to_parquet);
                 if (!column_with_type_and_name.column)

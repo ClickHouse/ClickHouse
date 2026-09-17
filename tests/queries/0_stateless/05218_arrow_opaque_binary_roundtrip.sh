@@ -46,4 +46,28 @@ ${CLICKHOUSE_LOCAL} --multiquery --query "
     -- Without a requested type the tag is not acted on, so the payload still arrives as the raw bytes.
     SELECT 'as String' AS mode, hex(q) AS qbit FROM file('${FILE}.binary', 'ArrowStream', 'q String');"
 
+# The tag sits on the field that owns the type, so for a container it is the child that carries it, and the
+# rewrite has to find it there. A `Nullable` root keeps its null map across the rewrite; the second row is
+# NULL to hold that.
+WRAPPED="nj Nullable(JSON), nq Nullable(QBit(BFloat16, 3)), aj Array(JSON), tj Tuple(j JSON), mj Map(String, JSON)"
+
+wrapped() {
+    echo "SELECT if(number = 0, CAST('{\"a\":1}'::JSON, 'Nullable(JSON)'), NULL) AS nj,
+                 if(number = 0, CAST([1,2,3]::QBit(BFloat16, 3), 'Nullable(QBit(BFloat16, 3))'), NULL) AS nq,
+                 ['{\"b\":2}','{\"c\":3}']::Array(JSON) AS aj,
+                 tuple('{\"d\":4}'::JSON)::Tuple(j JSON) AS tj,
+                 CAST(map('k', '{\"e\":5}'), 'Map(String, JSON)') AS mj
+          FROM numbers(2)"
+}
+
+echo "=== nullable and nested, written as binary and as text ==="
+${CLICKHOUSE_LOCAL} --multiquery --query "
+    INSERT INTO FUNCTION file('${FILE}.wbin', 'ArrowStream') $(wrapped)
+        SETTINGS ${COMMON}, output_format_arrow_unsupported_types = 'binary';
+    INSERT INTO FUNCTION file('${FILE}.wtxt', 'ArrowStream') $(wrapped)
+        SETTINGS ${COMMON}, output_format_arrow_unsupported_types = 'text';
+    SELECT 'binary' AS mode, * FROM file('${FILE}.wbin', 'ArrowStream', '${WRAPPED}') FORMAT Vertical;
+    SELECT 'text' AS mode, * FROM file('${FILE}.wtxt', 'ArrowStream', '${WRAPPED}') FORMAT Vertical;
+    SELECT 'original' AS mode, * FROM ($(wrapped)) FORMAT Vertical;"
+
 rm -f "${FILE}".*

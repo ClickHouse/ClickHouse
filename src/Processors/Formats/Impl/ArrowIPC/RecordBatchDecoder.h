@@ -172,6 +172,9 @@ public:
         String name;
         DataTypePtr type;
         ColumnPtr column;
+        /// The schema field this came from, so the post-decode rewrite can read its metadata. Points into
+        /// the decoder's schema, which outlives every batch.
+        const ArrowField * field = nullptr;
     };
 
     using DecodedColumns = VectorWithMemoryTracking<DecodedColumn>;

@@ -1918,6 +1918,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
 
     DecodedColumn decoded;
     decoded.name = field.name;
+    decoded.field = &field;
     /// Dictionary values retain the type produced by their requested hints. The referencing field
     /// determines whether that type keeps its outer `Nullable` wrapper.
     if (field.dictionary)
@@ -1960,25 +1961,6 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
             /*invisible_rows=*/nullptr,
             decoded_null_map);
     }
-    /// A column with no Arrow mapping that this writer wrote with `serializeBinary` carries the ClickHouse
-    /// type it came from. Decoding it as `String` and leaving the caller to CAST would run the text parser
-    /// over binary bytes, so deserialize it properly here - and here rather than in `decodeInner`, because
-    /// `decoded.type` is derived from the Arrow field alone and the block would otherwise claim `String`
-    /// while holding the decoded type.
-    if (!constant && !field.nullable && !field.dictionary && field.type.kind == TypeKind::Binary)
-    {
-        if (const auto * str = typeid_cast<const ColumnString *>(decoded.column.get()))
-        {
-            const DataTypePtr opaque_type = stripHint(resolveTargetHint(target_hint, path, list_depth));
-            if (MutableColumnPtr typed
-                = deserializeOpaqueBinaryLeaf(*str, /*null_map=*/nullptr, opaque_type, field, settings))
-            {
-                decoded.column = std::move(typed);
-                decoded.type = opaque_type;
-            }
-        }
-    }
-
     /// Struct null maps survive decoding even when the inferred type has no nullable wrapper.
     decoded.type = matchColumnNullability(decoded.type, decoded.column);
     if (constant)
