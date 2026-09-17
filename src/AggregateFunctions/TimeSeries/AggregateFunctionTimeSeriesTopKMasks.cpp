@@ -25,6 +25,19 @@ namespace Setting
 
 namespace
 {
+    /// `limitk` ranks by the sampling key, so its `rank` already is it, and a 3-argument call has none:
+    /// only the 4-argument `topk`/`bottomk` keep a sampling key in their entries.
+    template <TimeSeriesTopKMasksKind kind, typename ValueType>
+    AggregateFunctionPtr createWithStateLayout(const DataTypes & argument_types)
+    {
+        if constexpr (kind != TimeSeriesTopKMasksKind::LimitK)
+        {
+            if (argument_types.size() == 4)
+                return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, ValueType, true>>(argument_types);
+        }
+        return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, ValueType, false>>(argument_types);
+    }
+
     template <TimeSeriesTopKMasksKind kind>
     AggregateFunctionPtr createAggregateFunctionTimeSeriesTopKMasks(
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -81,9 +94,9 @@ namespace
                             (values_argument_index == 3) ? "4th" : "3rd", name);
 
         if (value_type->getTypeId() == TypeIndex::Float64)
-            return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float64>>(argument_types);
+            return createWithStateLayout<kind, Float64>(argument_types);
         else
-            return std::make_shared<AggregateFunctionTimeSeriesTopKMasks<kind, Float32>>(argument_types);
+            return createWithStateLayout<kind, Float32>(argument_types);
     }
 
     FunctionDocumentation::ReturnedValue getReturnedValueDocumentation()
@@ -101,10 +114,12 @@ void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & fac
     FunctionDocumentation::Description description_topk = R"(
 Selects the time series with the k greatest values at each time step of a time grid.
 
-Each input row is one time series: `key` identifies the series and `values` contains its values aligned to a common
-time grid, so the `values` arrays of all rows must have the same size. At each time step, the series with the k greatest
-non-NULL values at that step are selected (NaN is considered smaller than any other value). Value ties are broken by
-preferring the series with the smaller `key`.
+Each input row is one time series: `key` identifies the series, the optional `sampling_key` is a per-series hash used
+to break a tie between equal values, and `values` contains the values of the series aligned to a common time grid, so
+the `values` arrays of all rows must have the same size. At each time step, the series with the k greatest non-NULL
+values at that step are selected (NaN is considered smaller than any other value). A value tie is broken by preferring
+the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a `sampling_key` a
+tie falls back to `key`, which the caller assigns in the order the rows were read in.
 
 This function implements the `topk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -114,11 +129,12 @@ This function is in private preview, enable it by setting `enable_time_series_ag
 </Note>
     )";
     FunctionDocumentation::Syntax syntax_topk = R"(
-timeSeriesTopKMasks(k, key, values)
+timeSeriesTopKMasks(k, key[, sampling_key], values)
     )";
     FunctionDocumentation::Arguments arguments_topk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
         {"key", "Identifier of the time series.", {"UInt64"}},
+        {"sampling_key", "Optional. A per-series hash breaking a tie between equal values, e.g. `timeSeriesGroupToSamplingKey(key)`. Without it a tie is broken by `key` instead.", {"UInt64"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
     FunctionDocumentation::Parameters parameters = {};
@@ -147,10 +163,12 @@ FROM (SELECT arrayJoin(series) AS s);
     FunctionDocumentation::Description description_bottomk = R"(
 Selects the time series with the k smallest values at each time step of a time grid.
 
-Each input row is one time series: `key` identifies the series and `values` contains its values aligned to a common
-time grid, so the `values` arrays of all rows must have the same size. At each time step, the series with the k smallest
-non-NULL values at that step are selected (NaN is considered greater than any other value). Value ties are broken by
-preferring the series with the smaller `key`.
+Each input row is one time series: `key` identifies the series, the optional `sampling_key` is a per-series hash used
+to break a tie between equal values, and `values` contains the values of the series aligned to a common time grid, so
+the `values` arrays of all rows must have the same size. At each time step, the series with the k smallest non-NULL
+values at that step are selected (NaN is considered greater than any other value). A value tie is broken by preferring
+the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a `sampling_key` a
+tie falls back to `key`, which the caller assigns in the order the rows were read in.
 
 This function implements the `bottomk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -160,7 +178,7 @@ This function is in private preview, enable it by setting `enable_time_series_ag
 </Note>
     )";
     FunctionDocumentation::Syntax syntax_bottomk = R"(
-timeSeriesBottomKMasks(k, key, values)
+timeSeriesBottomKMasks(k, key[, sampling_key], values)
     )";
     FunctionDocumentation::Examples examples_bottomk = {
     {
@@ -202,7 +220,7 @@ timeSeriesLimitKMasks(k, key, sampling_key, values)
     FunctionDocumentation::Arguments arguments_limitk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
         {"key", "Identifier of the time series.", {"UInt64"}},
-        {"sampling_key", "A per-series hash defining the selection order, e.g. `timeSeriesGroupToSamplingKey(key)`.", {"UInt64"}},
+        {"sampling_key", "Required. A per-series hash defining the selection order, e.g. `timeSeriesGroupToSamplingKey(key)`.", {"UInt64"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
     FunctionDocumentation::Examples examples_limitk = {

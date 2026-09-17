@@ -28,6 +28,26 @@ SELECT '--- the sampling key is optional: without one a tie falls back to the ke
 WITH [(1::UInt64, [1.]), (2::UInt64, [1.])]::Array(Tuple(UInt64, Array(Float64))) AS series
 SELECT timeSeriesBottomKMasks(1, s.1, s.2) FROM (SELECT arrayJoin(series) AS s);
 
+SELECT '--- the sampling key survives a State/Merge round-trip ---';
+-- One partial state per series, cast through its serialized bytes, so only the merge can resolve the tie.
+-- If serialization dropped the sampling key the tie would fall back to the smaller key and return [(1,[1])].
+WITH [(1::UInt64, 500::UInt64, [1.]), (2::UInt64, 100::UInt64, [1.])]::Array(Tuple(UInt64, UInt64, Array(Float64))) AS series
+SELECT timeSeriesTopKMasksMerge(CAST(state, 'AggregateFunction(timeSeriesTopKMasks, UInt64, UInt64, UInt64, Array(Float64))'))
+FROM (SELECT s.1 AS series_key, CAST(timeSeriesTopKMasksState(1::UInt64, s.1, s.2, s.3) AS String) AS state
+      FROM (SELECT arrayJoin(series) AS s) GROUP BY series_key);
+
+SELECT '--- limitk ties the same way whichever side crossed a serialization boundary ---';
+-- Both series tie on sampling key 7, so the smaller key must win. One partial state goes through its
+-- serialized bytes and the other does not, so an entry read back must rank exactly as a freshly added one.
+SELECT timeSeriesLimitKMasksMerge(st) FROM (
+    SELECT timeSeriesLimitKMasksState(1::UInt64, 1::UInt64, 7::UInt64, [1.]) AS st
+    UNION ALL
+    SELECT CAST(CAST(timeSeriesLimitKMasksState(1::UInt64, 2::UInt64, 7::UInt64, [1.]) AS String), 'AggregateFunction(timeSeriesLimitKMasks, UInt64, UInt64, UInt64, Array(Float64))') AS st);
+SELECT timeSeriesLimitKMasksMerge(st) FROM (
+    SELECT timeSeriesLimitKMasksState(1::UInt64, 2::UInt64, 7::UInt64, [1.]) AS st
+    UNION ALL
+    SELECT CAST(CAST(timeSeriesLimitKMasksState(1::UInt64, 1::UInt64, 7::UInt64, [1.]) AS String), 'AggregateFunction(timeSeriesLimitKMasks, UInt64, UInt64, UInt64, Array(Float64))') AS st);
+
 SELECT '--- rejected: limitk still requires the sampling key it ranks by ---';
 SELECT timeSeriesLimitKMasks(1, 1::UInt64, [1.]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT timeSeriesTopKMasks(1, 1::UInt64, 'x', [1.]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
