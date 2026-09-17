@@ -9,6 +9,7 @@
 SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_version;
+DROP TABLE IF EXISTS ts_version_3;
 DROP TABLE IF EXISTS ts_version_2;
 DROP TABLE IF EXISTS ts_version_1;
 DROP TABLE IF EXISTS ts_version_0;
@@ -34,14 +35,17 @@ SELECT extract(create_table_query, 'version = (\d+)'),
     FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version';
 
 SELECT '--- PromQL works on tables of every supported version ---';
+CREATE TABLE ts_version_3 ENGINE = TimeSeries SETTINGS version = 3;
 CREATE TABLE ts_version_2 ENGINE = TimeSeries SETTINGS version = 2;
 CREATE TABLE ts_version_1 ENGINE = TimeSeries SETTINGS version = 1;
 CREATE TABLE ts_version_0 ENGINE = TimeSeries SETTINGS version = 0;
 SELECT count() FROM prometheusQuery(ts_version_0, 'up', 1000);
 SELECT count() FROM prometheusQuery(ts_version_1, 'up', 1000);
 SELECT count() FROM prometheusQuery(ts_version_2, 'up', 1000);
+SELECT count() FROM prometheusQuery(ts_version_3, 'up', 1000);
 
 DROP TABLE ts_version_0;
 DROP TABLE ts_version_1;
 DROP TABLE ts_version_2;
+DROP TABLE ts_version_3;
 DROP TABLE ts_version;
