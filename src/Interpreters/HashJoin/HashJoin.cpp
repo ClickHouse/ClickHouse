@@ -1818,7 +1818,8 @@ HashJoin::~HashJoin()
 
 void HashJoin::parallelDestroyRightTableData()
 {
-    /// The map cells are trivially destructible; the cost is the stored columns and the arenas.
+    /// The maps stay in `data` and are freed serially: their cells are trivially destructible, except the ASOF lookup vectors.
+    /// The parallel work is the stored columns and the arenas.
     std::vector<WorkerStoredData> workers_to_destroy = std::move(data->workers);
     std::vector<std::unique_ptr<Arena>> pools_to_destroy = std::move(data->pools);
 
