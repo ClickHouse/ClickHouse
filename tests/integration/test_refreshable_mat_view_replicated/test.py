@@ -845,6 +845,9 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
 def _drop_randomize_objects():
     node.query("DROP TABLE IF EXISTS randomize_rmv ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS randomize_multi_rmv ON CLUSTER default SYNC")
+    # The dependent goes first, so the dependency is never dropped out from under it.
+    node.query("DROP TABLE IF EXISTS randomize_child_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS randomize_dep_rmv ON CLUSTER default SYNC")
 
 
 def _next_refresh_time(n, view, after=None):
@@ -994,5 +997,45 @@ def test_randomize_for_offset_in_znode_stays_compatible(module_setup_tables):
 
     redrawn = _znode_randomness(node, "randomize_rmv")
     assert redrawn != drawn, f"the coordination znode still carries offset {drawn} after a refresh, so a replica running an older version would keep reusing it"
+
+    _drop_randomize_objects()
+
+
+def test_randomize_for_is_applied_before_the_first_refresh(module_setup_tables):
+    """A view that has not refreshed yet still has to randomize its first refresh.
+
+    REFRESH AFTER ... DEPENDS ON reports no next_refresh_time at all until the dependency refreshes,
+    so it picks its first one while it has never refreshed itself.
+    """
+    # Retry because there's a tiny chance the random next_refresh_time values coincide by chance.
+    for attempt in range(2):
+        _drop_randomize_objects()
+
+        # Not EMPTY, so the dependency refreshes at once and then not again for a year, which pins
+        # the deadline the dependent counts from.
+        node.query(
+            "CREATE MATERIALIZED VIEW randomize_dep_rmv ON CLUSTER default REFRESH EVERY 1 YEAR "
+            "ENGINE = ReplicatedMergeTree ORDER BY tuple() AS SELECT 1 AS x"
+        )
+        node.query_with_retry(
+            "SELECT last_success_time IS NOT NULL FROM system.view_refreshes WHERE view = 'randomize_dep_rmv'",
+            check_callback=lambda r: r.strip() == "1",
+            retry_count=600,
+            sleep_time=0.3,
+        )
+
+        # A wide window keeps the two draws from landing on the same second, which next_refresh_time
+        # rounds to.
+        node.query(
+            "CREATE MATERIALIZED VIEW randomize_child_rmv ON CLUSTER default "
+            "REFRESH AFTER 1 YEAR RANDOMIZE FOR 300 DAY DEPENDS ON randomize_dep_rmv "
+            "ENGINE = ReplicatedMergeTree ORDER BY tuple() AS SELECT 1 AS x"
+        )
+
+        time1 = _next_refresh_time(node, "randomize_child_rmv")
+        time2 = _next_refresh_time(node2, "randomize_child_rmv")
+        if time1 != time2:
+            break  # success
+        assert attempt == 0, f"both replicas scheduled the first refresh for {time1}, so it carries no per-replica offset"
 
     _drop_randomize_objects()

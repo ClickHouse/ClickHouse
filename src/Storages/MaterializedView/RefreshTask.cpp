@@ -187,6 +187,10 @@ RefreshTask::RefreshTask(
     /// The first znode write has to carry a random offset for replicas running older versions.
     coordination.root_znode.randomness_obsolete = drawRandomness();
 
+    /// randomness_drawn_for_timeslot and last_completed_timeslot are both zero until the first
+    /// successful refresh, so the redraw keyed on that timeslot doesn't happen before then.
+    scheduling.randomness = drawRandomness();
+
     if (empty)
     {
         /// To skip initial refresh, set the initial scheduling-related state as if this view was just refreshed.
