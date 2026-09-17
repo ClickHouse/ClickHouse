@@ -887,9 +887,9 @@ public:
     BlocksList releaseJoinedBlocksChunk(size_t chunk_idx);
     void releaseJoinMaps();
 
-    /// Rebuilds one stored block's columns in saved-block order: the row store is scattered back into
-    /// columns, the selector is applied to both parts, and the access indexes put every column back at
-    /// its saved position. Consumes the row store.
+    /// Rebuilds one stored block's columns in saved-block order. The row store is scattered back into
+    /// columns. The selector is applied to both parts. The access indexes put every column back at its
+    /// saved position. Consumes the row store.
     static Columns materializeStoredBlock(StoredBlock & stored_block, const ColumnAccessIndexes & access_indexes);
 
     /// Modify right block (update structure according to sample block) to save it in block list
@@ -914,8 +914,8 @@ public:
     /// Creates a row store based on the already initialized layout and fills from block columns.
     RowDataStorePtr createRowStoreForBlock(const Block & block) const;
     /// Packs a prepared right block (`prepareRightBlock`) into its stored form. When the row store is
-    /// initialized, the columns its layout admits go into a `RowDataStore` and the rest stay columnar;
-    /// otherwise every column stays columnar. A caller that already built this block's row store passes it in.
+    /// initialized, the columns its layout admits go into a `RowDataStore` and the rest stay columnar.
+    /// Otherwise every column stays columnar. A caller that already built this block's row store passes it in.
     StoredBlock createStoredBlock(
         const Block & block_to_save, ScatteredBlock::Selector selector, RowDataStorePtr row_store = nullptr) const;
 
@@ -933,7 +933,7 @@ private:
     friend class NotJoinedHash;
     friend class JoinSource;
     /// Uses a `HashJoin` as its schema delegate and row-store owner while building and probing its
-    /// own partitioned maps, so it needs the access the join methods have.
+    /// own partitioned maps. It needs the access the join methods have.
     friend class PartitionedHashJoin;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
@@ -1140,7 +1140,8 @@ private:
     bool isRowStoreSupported() const;
 
     /// Layout is from the sample block, before any fill thread. `may_rerange` is false for a caller
-    /// that never reorders the stored rows, so the row store need not yield to the rerange optimization.
+    /// that never reorders the stored rows. For such a caller the row store need not yield to the
+    /// rerange optimization.
     void initRowStore(const Block & block, bool may_rerange = true);
 
     void reinitUsedFlags();

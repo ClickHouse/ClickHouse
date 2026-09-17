@@ -10,14 +10,14 @@
 namespace DB
 {
 
-/** Distinct-key estimate that sizes the one `HashJoinTable`. One sketch per fill thread; `add`
+/** Distinct-key estimate that sizes the one `HashJoinTable`. One sketch per fill thread. `add`
   * receives one 32-bit word per insertable build row (`computeJoinRoutesForFill`: the top 32 bits of
-  * `hashJoinTableMix`, or the key itself for `key8`/`key16`), and the build merges the sketches when the
+  * `hashJoinTableMix`, or the key itself for `key8`/`key16`). The build merges the sketches when the
   * fill ends.
   *
   * Not `HyperLogLogCounter`, although it can be fed the same words through `TrivialHash`. Its `update`
   * reads and writes a 5-bit rank through `CompactArray` (an unaligned 16-bit load, shift and mask each
-  * way) and, on every rank increase, adjusts a floating-point denominator and a zero count. `add` here
+  * way). On every rank increase it adjusts a floating-point denominator and a zero count. `add` here
   * runs inside the fill's row loop, so the registers stay plain bytes, one load and one store per row,
   * and all arithmetic waits for `estimate`. `estimate` also applies the large-range correction that
   * `HyperLogLogCounter::fixRawEstimate` skips above `2^32 / 30`.
@@ -86,7 +86,7 @@ struct DenseHyperLogLog
             return m * std::log(m / static_cast<double>(zeros));
 
         /// Large-range correction. The sketch counts distinct 32-bit words, not keys (`add` sees 32 bits
-        /// whatever the map hash's width), so once the estimate reaches a few percent of 2^32, birthday
+        /// whatever the map hash's width). Once the estimate reaches a few percent of 2^32, birthday
         /// collisions among the words undercount the keys. Inverting `E = 2^32 * (1 - exp(-n / 2^32))`
         /// recovers `n`. Past 2^32 the sketch has saturated, and `reserveFor` clamps the reserve to the
         /// row count anyway.
