@@ -1036,41 +1036,14 @@ struct PutObjectPreconditionFailedAndHeadFailsInjection : InjectionModel
     }
 };
 
-/// Replays the lost-response scenario for a conditional CompleteMultipartUpload: the first attempt
-/// completes the upload server-side but its response is lost (reported as the MinIO NO_SUCH_KEY that
-/// WriteBufferFromS3 retries), so the replay sees the object it just wrote and gets 412.
+/// The first completion lands the object server-side but its response is lost, so the write is
+/// replayed. The replay is refused by the name AWS uses, or -- when `refusal_status` is set -- by HTTP
+/// status alone, the way an endpoint with no AWS name for the code answers.
 struct CompleteMPULostResponseThenPreconditionFailed : InjectionModel
 {
-    explicit CompleteMPULostResponseThenPreconditionFailed(std::shared_ptr<S3MemStrore> store_)
-        : store(std::move(store_)) {}
-
-    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
-        const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
-    {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
-
-        if (calls++ > 0)
-            return makePreconditionFailedError();
-
-        std::vector<std::string> etags;
-        for (const auto & part : request.GetMultipartUpload().GetParts())
-            etags.push_back(part.GetETag());
-        store->GetBucketStore(request.GetBucket()).CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
-
-        return Aws::Client::AWSError<Aws::S3::S3Errors>(
-            Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "The specified key does not exist.", false);
-    }
-
-    std::shared_ptr<S3MemStrore> store;
-    size_t calls = 0;
-};
-
-/// The multipart twin of `PutObjectLostResponseThenStatusOnlyRefusal`: the first completion lands the
-/// object server-side but its response is lost, and the replay is refused by HTTP status alone.
-struct CompleteMPULostResponseThenStatusOnlyRefusal : InjectionModel
-{
-    explicit CompleteMPULostResponseThenStatusOnlyRefusal(std::shared_ptr<S3MemStrore> store_)
-        : store(std::move(store_)) {}
+    explicit CompleteMPULostResponseThenPreconditionFailed(
+        std::shared_ptr<S3MemStrore> store_, std::optional<Aws::Http::HttpResponseCode> refusal_status_ = {})
+        : store(std::move(store_)), refusal_status(refusal_status_) {}
 
     std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
         const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
@@ -1079,9 +1052,12 @@ struct CompleteMPULostResponseThenStatusOnlyRefusal : InjectionModel
 
         if (calls++ > 0)
         {
+            if (!refusal_status)
+                return makePreconditionFailedError();
+
             auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
                 Aws::Client::CoreErrors::UNKNOWN, "conditionNotMet", "The condition was not met", false);
-            error.SetResponseCode(Aws::Http::HttpResponseCode::PRECONDITION_FAILED);
+            error.SetResponseCode(*refusal_status);
             return error;
         }
 
@@ -1095,6 +1071,7 @@ struct CompleteMPULostResponseThenStatusOnlyRefusal : InjectionModel
     }
 
     std::shared_ptr<S3MemStrore> store;
+    std::optional<Aws::Http::HttpResponseCode> refusal_status;
     size_t calls = 0;
 };
 
@@ -2125,6 +2102,9 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
         {
             ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
             EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
+            /// The multipart carrier of the same naming contract: the consumer above this layer sees
+            /// only the message, so the refusal is named here too, whatever the endpoint calls it.
+            EXPECT_THAT(e.what(), testing::HasSubstr("PreconditionFailed"));
             throw;
         }
       }, DB::S3Exception);
@@ -2374,7 +2354,8 @@ TEST_P(SyncAsync, SinglepartConditionalPutRecognisesRefusalByStatus) {
 /// reach the write-token replay check, so a completion whose response was lost is not reported as a lost
 /// race on an endpoint that spells the code its own way.
 TEST_P(SyncAsync, MultipartConditionalCompleteRecognisesRefusalByStatus) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPULostResponseThenStatusOnlyRefusal>(client->store));
+    setInjectionModel(std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(
+        client->store, Aws::Http::HttpResponseCode::PRECONDITION_FAILED));
 
     getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
     getSettings()[Setting::s3_min_upload_part_size] = 1;
