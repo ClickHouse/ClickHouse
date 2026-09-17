@@ -1842,9 +1842,9 @@ column during merge
 If true, lightweight delete is optimized on vertical merge.
 )", 0) \
     DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
-If true, rows TTL delete is optimized on vertical merge only for `MergeTree` tables. Instead of
-forcing horizontal merge, the TTL filter is evaluated and passed to the merging algorithm which
-sets skip flags in row sources.
+If true, a merge that removes rows expired by TTL can use the vertical merge algorithm instead of
+falling back to a horizontal merge. Not applied to engines that build an output row out of a whole
+group of rows, such as `SummingMergeTree`.
 )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 The maximum postpone time for failed mutations.
