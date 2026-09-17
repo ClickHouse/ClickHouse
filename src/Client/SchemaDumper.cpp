@@ -261,6 +261,8 @@ struct TableInfo
     /// Database-less references no dumped database contains. They resolve against `database` on
     /// replay, which does not contain them either, so the dump cannot create them.
     std::vector<String> unresolved_references;
+    /// Named collections the stored CREATE names; they live on the server, not in a database.
+    std::vector<String> named_collections;
 };
 
 /// One `system.tables` row as fetched, before implicit storage tables are filtered out and the
@@ -276,6 +278,7 @@ struct RawTableRow
     std::vector<std::pair<String, String>> loading_dependencies;
     std::vector<std::pair<String, String>> dependents; /// views/dictionaries that read from this table
     std::vector<String> unresolved_references;
+    std::vector<String> named_collections;
     String target_database; /// materialized view only: its `TO` target, explicit or implicit
     String target_table;
 };
@@ -1175,6 +1178,19 @@ void collectFunctionArgumentReferences(
     }
 }
 
+/// Collects the named collections a `remote*` call names, local replica or not. A collection is a
+/// server-level object no `CREATE DATABASE`/`TABLE` in the dump creates, so replay needs it already there.
+void collectRemoteNamedCollections(const IAST & node, const ClusterLocality & clusters, std::vector<String> & out)
+{
+    const auto * function = node.as<ASTFunction>();
+    if (!function || !isRemoteTableFunctionName(function->name) || !function->arguments || function->arguments->children.empty())
+        return;
+    String name;
+    if (tryGetIdentifierNameInto(function->arguments->children[0], name)
+        && tryGetRemoteNamedCollection(*function, name, clusters))
+        out.push_back(name);
+}
+
 /// Combines server dependency columns with parsed view references and drops implicit storage.
 std::vector<TableInfo> resolveTables(
     std::vector<RawTableRow> rows, const ClusterLocality & clusters, const std::set<String> & undumped_databases,
@@ -1405,6 +1421,7 @@ std::vector<TableInfo> resolveTables(
                 references.push_back({table_id->getDatabaseName(), table_id->shortName()});
             collectFunctionArgumentReferences(node, clusters, references);
             collectMergeAndLoopReferences(node, all_table_names_by_db, undumped_databases, undumped_tables_by_db, row.database, references);
+            collectRemoteNamedCollections(node, clusters, row.named_collections);
         });
         for (const auto & candidate : references)
             add_dependency(candidate);
@@ -1430,6 +1447,7 @@ std::vector<TableInfo> resolveTables(
         table.create_query = std::move(row.create_query);
         table.dependencies = std::move(row.loading_dependencies);
         table.unresolved_references = std::move(row.unresolved_references);
+        table.named_collections = std::move(row.named_collections);
         /// A dependency on an omitted helper table is remapped onto the owning object - which is what
         /// creates the helper on replay - so the edge survives instead of dangling on a skipped row.
         for (auto & dependency : table.dependencies)
@@ -1592,6 +1610,13 @@ void reportDependenciesOutsideDumpSet(
             if (!dumped_databases.contains(dependency.first) && !DatabaseCatalog::isPredefinedDatabase(dependency.first))
                 missing.emplace(table.database, table.name, dependency.first, dependency.second);
 
+    /// A named collection is not in any database, so it is outside every dump set. Its values can
+    /// include credentials, which a schema dump must not print, so it is reported rather than emitted.
+    std::set<std::tuple<String, String, String>> collections;
+    for (const auto & table : tables)
+        for (const auto & collection : table.named_collections)
+            collections.emplace(table.database, table.name, collection);
+
     /// The original session database is unknown; replay binds these names to the owner database.
     std::set<std::tuple<String, String, String>> unresolved;
     for (const auto & table : tables)
@@ -1603,12 +1628,17 @@ void reportDependenciesOutsideDumpSet(
             << backQuoteIfNeed(dependency_database) << "." << backQuoteIfNeed(dependency_name)
             << ", which is outside the dumped database(s) and will not be created by this dump.\n";
 
+    for (const auto & [database, name, collection] : collections)
+        err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " depends on named collection "
+            << backQuoteIfNeed(collection) << ", which lives on the server rather than in a database and will not be "
+            << "created by this dump; its values can include credentials, so the dump does not carry them.\n";
+
     for (const auto & [database, name, reference] : unresolved)
         err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " references "
             << backQuoteIfNeed(reference) << " without a database; no dumped database contains it, and on replay it "
             << "will resolve against " << backQuoteIfNeed(database) << ", which does not contain it either.\n";
 
-    if (!missing.empty() || !unresolved.empty())
+    if (!missing.empty() || !unresolved.empty() || !collections.empty())
         err << "Warning: replaying this dump into a fresh instance requires those objects to already exist.\n";
 }
 

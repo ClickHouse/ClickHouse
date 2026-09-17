@@ -51,6 +51,12 @@ replayed MATERIALIZED table present: 1
 --- a remote() named collection on a loopback address names a local dependency ---
 OK: named-collection source dumped before aaa_nc_reader
 OK: named-collection source dumped before aab_nc_reader_override
+--- a remote() named collection is reported, not emitted, and its readers break on replay ---
+readers warned about the collection: 2
+collection emitted into the dump: 0
+collection values leaked into the dump: 0
+OK: schema replayed without the collection
+replayed reader needs the collection: 1
 --- a remote() named collection the dump session cannot read is refused, not assumed remote ---
 masked named collection refused: 1
 --- a remote() identifier that names neither a cluster nor a collection is refused ---

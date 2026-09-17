@@ -356,6 +356,25 @@ else
 fi
 rm -f "$NC_DUMP_FILE"
 
+echo '--- a remote() named collection is reported, not emitted, and its readers break on replay ---'
+# A collection lives on the server rather than in a database, and its values can include credentials,
+# so the dump names it in a warning instead of a CREATE NAMED COLLECTION that would print them.
+# A stored view carries its column list, so replay creates the reader and only reading it fails.
+NC_REPLAY_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_replay"
+rm -rf "$NC_REPLAY_PATH"
+$CLICKHOUSE_LOCAL --config-file "$NC_CONF" --path "$NC_PATH" --format_display_secrets_in_show_and_select=1 \
+    --dump-schema="${DB}" > "$NC_DUMP_FILE" 2>"$ERR_FILE"
+echo "readers warned about the collection: $(grep -c 'depends on named collection `nc_local`' "$ERR_FILE")"
+echo "collection emitted into the dump: $(grep -c 'CREATE NAMED COLLECTION' "$NC_DUMP_FILE")"
+echo "collection values leaked into the dump: $(grep -c '127\.0\.0\.1' "$NC_DUMP_FILE")"
+$CLICKHOUSE_LOCAL --path "$NC_REPLAY_PATH" --queries-file "$NC_DUMP_FILE" 2>"$ERR_FILE"
+rc=$?
+[[ $rc -eq 0 ]] && echo 'OK: schema replayed without the collection' || echo "FAIL: replay rejected: $(cat "$ERR_FILE")"
+$CLICKHOUSE_LOCAL --path "$NC_REPLAY_PATH" --query "SELECT count() FROM ${DB}.aaa_nc_reader" > /dev/null 2>"$ERR_FILE"
+echo "replayed reader needs the collection: $(grep -c 'nc_local' "$ERR_FILE")"
+rm -rf "$NC_REPLAY_PATH"
+rm -f "$NC_DUMP_FILE"
+
 echo '--- a remote() named collection the dump session cannot read is refused, not assumed remote ---'
 # Same fixture without the secrets config: every value is [HIDDEN], so the address is unknown.
 if $CLICKHOUSE_LOCAL --path "$NC_PATH" --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"; then
