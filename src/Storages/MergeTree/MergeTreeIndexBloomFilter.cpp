@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -617,6 +619,30 @@ static Field coerceConstantForBloomFilterHash(
     }
 
     return convertFieldToType(value_field, *actual_type, value_type.get());
+}
+
+/// Whether `equals(<default of the map's value type>, constant)` holds, i.e. whether a row without
+/// the key can satisfy `m['k'] = constant`: `arrayElement` yields the value type's default for a
+/// missing key. The comparison is padding-aware for the string family (`'\0'` equals the
+/// `FixedString(3)` default, and so does any all-zero string of any length) and type-converting
+/// elsewhere, so the question is asked of `equals` itself, with the same argument types the query
+/// has, instead of re-deriving the rules from the constant's own type.
+static bool missingMapKeyMayCompareEqual(
+    const DataTypePtr & map_value_type, const DataTypePtr & value_type, const Field & value_field, const ContextPtr & context)
+{
+    ColumnsWithTypeAndName arguments
+    {
+        {map_value_type->createColumnConstWithDefaultValue(1), map_value_type, "default"},
+        {value_type->createColumnConst(1, value_field), value_type, "constant"},
+    };
+
+    auto equals = FunctionFactory::instance().get("equals", context)->build(arguments);
+    auto result = equals->execute(arguments, equals->getResultType(), 1, /*dry_run=*/ false)->convertToFullColumnIfConst();
+
+    /// A `Nullable` value type compares as NULL for a missing key, which never selects the row.
+    Field result_field;
+    result->get(0, result_field);
+    return !result_field.isNull() && result_field.safeGet<UInt64>() != 0;
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
@@ -1236,12 +1262,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
               * materializes as `N` zero bytes, so the raw default is not the value the comparison
               * sees. Test the constant against the materialized default the way the `IN` path
               * above does, and keep the raw default for the types whose two forms coincide.
+              *
+              * Both of those are defaults of the constant's own type, and the comparison happens in
+              * the map's value type instead: `m['absent'] = '\0'` is true over
+              * `Map(String, FixedString(3))` because `equals` zero-pads the shorter `String` side,
+              * although `'\0'` is no default of `String`. So also ask `equals` itself whether the
+              * value type's default can match the constant, and decline the index if it can.
               */
             auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
             Field materialized_default;
             default_column->get(0, materialized_default);
 
             if (value_field == materialized_default || value_field == value_type->getDefault())
+                return false;
+
+            const auto & map_value_type = key_node.getDAGNode()->result_type;
+            if (missingMapKeyMayCompareEqual(map_value_type, value_type, value_field, getContext()))
                 return false;
 
             size_t position = 0;

@@ -89,6 +89,26 @@ OPTIMIZE TABLE t_bf_map_absent_keys FINAL;
 SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('', 3);
 SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('', 3) SETTINGS use_skip_indexes = 0;
 
+SELECT 'absent map key with an all-zero String constant';
+-- The comparison is padding-aware: a `String` constant of any length that holds only zero bytes is
+-- equal to the `FixedString(3)` default of a missing key, although it is no default of `String`.
+-- The guard has to decide the question in the map's value type, or both arms prune those rows.
+SELECT count() FROM t_bf_map_absent_values WHERE m['absent'] = '\0';
+SELECT count() FROM t_bf_map_absent_values WHERE m['absent'] = '\0' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_absent_values WHERE m['absent'] = '\0\0\0\0';
+SELECT count() FROM t_bf_map_absent_values WHERE m['absent'] = '\0\0\0\0' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = '\0';
+SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = '\0' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = '\0\0\0\0';
+SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = '\0\0\0\0' SETTINGS use_skip_indexes = 0;
+
+SELECT 'a String value type compares exactly, so a zero byte still prunes';
+-- Over `Map(String, String)` the missing key is the empty string and `equals` of two `String`
+-- values is exact, so `'\0'` cannot match a missing key and the index may keep pruning.
+SELECT count() FROM t_bf_map_str WHERE m['absent'] = '\0';
+SELECT count() FROM t_bf_map_str WHERE m['absent'] = '\0' SETTINGS use_skip_indexes = 0;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_map_str WHERE m['absent'] = '\0') WHERE explain LIKE '%Granules: 0/%';
+
 SELECT 'a non-default FixedString constant still prunes';
 SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('abc', 3);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('abc', 3)) WHERE explain LIKE '%Granules: 0/%';

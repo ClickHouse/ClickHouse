@@ -33,6 +33,19 @@ absent map key with a FixedString value
 3
 3
 3
+absent map key with an all-zero String constant
+3
+3
+3
+3
+3
+3
+3
+3
+a String value type compares exactly, so a zero byte still prunes
+0
+0
+1
 a non-default FixedString constant still prunes
 0
 1
