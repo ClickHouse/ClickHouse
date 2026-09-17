@@ -14,13 +14,13 @@ failure cases look at the reason logged by `AccessControl::authenticate` in the 
 """
 
 import logging
-import os
 import re
 import time
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.fake_ldap import start_fake_ldap_server
 from helpers.test_tools import TSV, assert_logs_contain_with_retry
 
 LDAP_ADMIN_BIND_DN = "cn=admin,dc=example,dc=org"
@@ -69,43 +69,9 @@ def wait_ldaps_ready(timeout=180):
     raise Exception("Timed out waiting for the LDAPS listener")
 
 
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+# Served by `helpers/fake_ldap_server.py` inside the node, see `stalled_bind` and `stalled_search`
+# in `configs/ldap_servers.xml`.
 FAKE_LDAP_SERVERS = {3890: "bind", 3891: "search"}
-
-
-def start_fake_ldap_servers(timeout=60):
-    """Runs `fake_ldap_server.py` inside the node, once per mode, and waits until both listen."""
-    node.copy_file_to_container(
-        os.path.join(SCRIPT_DIR, "fake_ldap_server.py"), "/fake_ldap_server.py"
-    )
-    for port, mode in FAKE_LDAP_SERVERS.items():
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"python3 /fake_ldap_server.py {port} {mode}"
-                f" > /var/log/clickhouse-server/fake_ldap_server_{port}.log 2>&1",
-            ],
-            detach=True,
-            user="root",
-        )
-    deadline = time.time() + timeout
-    for port in FAKE_LDAP_SERVERS:
-        while True:
-            listening = node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    f"grep -c 'listening on {port}' /var/log/clickhouse-server/fake_ldap_server_{port}.log",
-                ],
-                nothrow=True,
-            )
-            if listening.strip() == "1":
-                break
-            assert (
-                time.time() < deadline
-            ), f"fake LDAP server on port {port} did not start"
-            time.sleep(0.5)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -113,7 +79,8 @@ def started_cluster():
     try:
         cluster.start()
         wait_ldaps_ready()
-        start_fake_ldap_servers()
+        for port, mode in FAKE_LDAP_SERVERS.items():
+            start_fake_ldap_server(node, port, mode)
         yield cluster
     finally:
         cluster.shutdown()
