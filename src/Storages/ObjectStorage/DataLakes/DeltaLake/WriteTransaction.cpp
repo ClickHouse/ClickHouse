@@ -79,8 +79,10 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
+        /// The kernel JSON-encodes this struct into `add.stats`, so its field names are the
+        /// committed JSON keys and must be the protocol's own.
         {std::make_shared<DB::DataTypeTuple>(
-                DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
+                DB::DataTypes{std::make_shared<DB::DataTypeInt64>()}, DB::Names{"numRecords"}), "stats"}
     };
 
     DB::MutableColumns columns;
@@ -101,9 +103,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         columns[1]->insert(partition_values);
         columns[2]->insert(size_bytes);
         columns[3]->insert(getCurrentTime());
-        std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
-        DB::Tuple stats{stats_json};
-        columns[4]->insert(stats);
+        columns[4]->insert(DB::Tuple{DB::Field(static_cast<Int64>(size_rows))});
     }
 
     DB::FormatSettings format_settings;
