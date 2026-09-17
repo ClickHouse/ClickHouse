@@ -348,7 +348,7 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
 /// segment only, and the sole validation pass over those - the dry-run `MutationsInterpreter`
 /// below - is skipped when the user sets `validate_mutation_query = 0`. Hence this unconditional
 /// check, next to the other always-on submission-time mutation validation.
-static void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const Settings & settings)
+void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const Settings & settings)
 {
     if (settings[Setting::allow_statistics])
         return;
