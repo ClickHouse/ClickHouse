@@ -440,7 +440,10 @@ void WriteBufferFromS3::createMultipartUpload()
             ErrorCodes::UNSUPPORTED_METHOD,
             "Google Cloud Storage does not support conditional writes (If-None-Match / If-Match) on a "
             "multipart upload, so the requested compare-and-swap on {} cannot be performed atomically. "
-            "Raise s3_max_single_part_upload_size above the object size to write it in one part",
+            "Only a single-part upload can carry the precondition: the object has to be no larger than "
+            "s3_max_single_part_upload_size, and it has to fit in the first upload part, which is "
+            "s3_strict_upload_part_size when that setting is set and is bounded by "
+            "s3_max_upload_part_size otherwise",
             key);
 
     LOG_TEST(limited_log, "Create multipart upload. {}", getShortLogDetails());

@@ -956,7 +956,6 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
     std::vector<BucketMemStore::Metadata> seen_metadata;
 };
 
-
 /// Refuses every conditional PutObject by HTTP status alone, spelling `<Code>` its own way so the
 /// refusal never reaches the exception name AWS uses. `refusal_status` selects that status.
 struct PutObjectStatusOnlyRefusalInjection : InjectionModel
@@ -2235,6 +2234,34 @@ TEST_P(SyncAsync, ConditionalMultipartOnGCSIsRefused) {
     EXPECT_EQ(client->counters.multiUploadComplete, 0u);
     EXPECT_EQ(client->counters.putObject, 0u);
     EXPECT_TRUE(client->store->GetBucketStore(bucket).objects["conditional_mpu_gcs"].empty());
+
+    /// Strict part sizing never reads `s3_max_single_part_upload_size`, so an object far below that
+    /// threshold still goes out as several parts and is refused. The threshold and the first part are
+    /// two independent conditions, which is why the message names both.
+    getSettings()[Setting::s3_strict_upload_part_size] = 1;
+    getSettings()[Setting::s3_max_single_part_upload_size] = 1024;
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_mpu_gcs_strict", conditionalCreateWriteSettings());
+            buffer->write('A');
+            buffer->write('B');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::UNSUPPORTED_METHOD, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("does not support conditional writes"));
+            EXPECT_THAT(e.what(), testing::HasSubstr("s3_strict_upload_part_size"));
+            throw;
+        }
+      }, DB::Exception);
+
+    EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+    EXPECT_EQ(client->counters.putObject, 0u);
+    EXPECT_TRUE(client->store->GetBucketStore(bucket).objects["conditional_mpu_gcs_strict"].empty());
 }
 
 /// The other condition a caller can ask for is `If-Match: <etag>` (the Iceberg replace-this-version
