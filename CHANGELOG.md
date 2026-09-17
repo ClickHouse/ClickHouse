@@ -22,6 +22,37 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release 718e603a5d63fecbf85b834d605fbd419201f4ad (718e603a5d6) FIXME as compared to v26.10.1.1-new (6e598803749)
+
+#### New Feature
+* `DISTINCT` can now spill data to disk, like external aggregation and external sort: the new settings `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` set the threshold; by default, spilling is triggered once query memory usage exceeds half the available memory under applicable server or user. A `DISTINCT` that follows an `ORDER BY` keeps the sorted order when it spills. [#116569](https://github.com/ClickHouse/ClickHouse/pull/116569) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+
+#### Performance Improvement
+* Avoid copying whole columns when slicing them, including in `ARRAY JOIN`. [#118788](https://github.com/ClickHouse/ClickHouse/pull/118788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+
+#### Improvement
+* Plan-based parallel replicas now distribute queries with an `IN (subquery)` predicate instead of falling back to single-node execution. [#114086](https://github.com/ClickHouse/ClickHouse/pull/114086) ([Igor Nikonov](https://github.com/devcrafter)).
+* Added a `flat_namespaces` setting for the `DataLakeCatalog` database engine. Set it for Iceberg REST catalogs that have only single-level namespaces and reject the `parent` query parameter of the list-namespaces endpoint, such as Apache Polaris federated to AWS Glue: only top-level namespaces are then listed and sub-namespaces are not requested. [#117329](https://github.com/ClickHouse/ClickHouse/pull/117329) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* Iceberg partition pruning now uses the partition value of a `day`, `month`, `year` or `hour` transform for a filter that wraps the partition source column in a monotonic function, such as `WHERE toDate(ts) = '2024-01-20'`, including for partition values from before 1970. [#119302](https://github.com/ClickHouse/ClickHouse/pull/119302) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fixed `ALTER TABLE ... MATERIALIZE TTL` failing with `UNKNOWN_IDENTIFIER` and being retried forever on a table with `ttl_only_drop_parts = 1` when a part still holds a column that the table dropped while that part's partition was detached. Mutating such a partition after cloning it into another table with `ATTACH PARTITION FROM` no longer fails with a logical error either. [#115962](https://github.com/ClickHouse/ClickHouse/pull/115962) ([Groene AI](https://github.com/groeneai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Fix two bugs in the JSON object size limit. [#115795](https://github.com/ClickHouse/ClickHouse/pull/115795) ([Pavel Kruglov](https://github.com/Avogar)).
+* Prepare changelog for 26.9. [#116237](https://github.com/ClickHouse/ClickHouse/pull/116237) ([clickhouse-gh[bot]](https://github.com/apps/clickhouse-gh)).
+* Update exclude-authors.txt. [#117504](https://github.com/ClickHouse/ClickHouse/pull/117504) ([Sergei Trifonov](https://github.com/serxa)).
+* Add integration tests for Iceberg manifest bounds narrower than the column. [#118364](https://github.com/ClickHouse/ClickHouse/pull/118364) ([Groene AI](https://github.com/groeneai)).
+* Not required (CI only). [#119999](https://github.com/ClickHouse/ClickHouse/pull/119999) ([Groene AI](https://github.com/groeneai)).
+* Refactoring: Extract relation statistics, bloom filter sizing preparing for MinMaxRuntimeFilter. [#120232](https://github.com/ClickHouse/ClickHouse/pull/120232) ([Christoph Viebig](https://github.com/cv4g)).
+* Relax the `Native` spec-sync rule in `AGENTS.md` and the review skill. [#120410](https://github.com/ClickHouse/ClickHouse/pull/120410) ([Raufs Dunamalijevs](https://github.com/rienath)).
+* Not user-facing: the affected code was added to `master` earlier today and has never been in a release. [#120418](https://github.com/ClickHouse/ClickHouse/pull/120418) ([Groene AI](https://github.com/groeneai)).
+* Update README.md. [#120472](https://github.com/ClickHouse/ClickHouse/pull/120472) ([Zoe Steinkamp](https://github.com/zoesteinkamp)).
+* Reorder items in the changelog. [#120482](https://github.com/ClickHouse/ClickHouse/pull/120482) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="269"></a> ClickHouse release 26.9, FIXME (in progress)
 
 #### Backward Incompatible Change
