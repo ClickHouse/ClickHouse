@@ -48,4 +48,11 @@ $CLICKHOUSE_CLIENT --query "SELECT count(), sum(id) FROM dl"
 VERSIONS=$(($(find "${TABLE}/_delta_log" -name '*.json' | wc -l | tr -d ' ') - 1))
 echo "versions in [4, 5]: $(( VERSIONS >= 4 && VERSIONS <= 5 ))"
 
+echo "-- a queued insert (no wait) is flushed later with the inserting session's setting"
+$CLICKHOUSE_CLIENT --allow_delta_lake_writes=1 --async_insert=1 --wait_for_async_insert=0 --async_insert_use_adaptive_busy_timeout=0 --async_insert_busy_timeout_ms=600000 --query "INSERT INTO dl VALUES (20)"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH ASYNC INSERT QUEUE dl"
+$CLICKHOUSE_CLIENT --query "SELECT count(), sum(id) FROM dl"
+VERSIONS_AFTER=$(($(find "${TABLE}/_delta_log" -name '*.json' | wc -l | tr -d ' ') - 1))
+echo "one more version after the explicit flush: $(( VERSIONS_AFTER == VERSIONS + 1 ))"
+
 $CLICKHOUSE_CLIENT --query "DROP TABLE dl"
