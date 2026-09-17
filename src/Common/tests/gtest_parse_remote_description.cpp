@@ -162,6 +162,68 @@ TEST(ParseRemoteDescription, TooManyAddressesReportsTheWholeCardinality)
     EXPECT_THAT(overflowing, testing::HasSubstr("generates too many result addresses, while at most 1000 are allowed"));
 }
 
+TEST(ParseRemoteDescription, WithFailoverLimitsTheTotal)
+{
+    /// Shards and replicas are expanded in two stages, and the limit is on the number of addresses the
+    /// whole first argument generates, not on what each stage generates on its own: two shards with
+    /// two replicas each are four addresses.
+    const auto shards = parseRemoteDescriptionWithFailover("example01-0{1,2}-{1|2}", 4);
+    ASSERT_EQ(shards.size(), 2);
+    EXPECT_EQ(shards[0].description, "example01-01-{1|2}");
+    EXPECT_EQ(shards[0].replicas, (std::vector<String>{"example01-01-1", "example01-01-2"}));
+    EXPECT_EQ(shards[1].description, "example01-02-{1|2}");
+    EXPECT_EQ(shards[1].replicas, (std::vector<String>{"example01-02-1", "example01-02-2"}));
+
+    EXPECT_THROW(parseRemoteDescriptionWithFailover("example01-0{1,2}-{1|2}", 3), Exception);
+
+    /// A top-level `|` splits every generated shard: four shards with two replicas each.
+    EXPECT_EQ(parseRemoteDescriptionWithFailover("h{1..2}|h{3..4}", 8).size(), 4);
+    EXPECT_THROW(parseRemoteDescriptionWithFailover("h{1..2}|h{3..4}", 7), Exception);
+
+    /// The replica pattern may differ between the shards.
+    const auto uneven = parseRemoteDescriptionWithFailover("a|b,c", 3);
+    ASSERT_EQ(uneven.size(), 2);
+    EXPECT_EQ(uneven[0].replicas, (std::vector<String>{"a", "b"}));
+    EXPECT_EQ(uneven[1].replicas, (std::vector<String>{"c"}));
+    EXPECT_THROW(parseRemoteDescriptionWithFailover("a|b,c", 2), Exception);
+}
+
+TEST(ParseRemoteDescription, WithFailoverReportsTheWholeCardinality)
+{
+    /// Whichever of the two stages hits the limit, the reported number covers both of them.
+    auto message = [](const String & description, size_t max_addresses)
+    {
+        try
+        {
+            parseRemoteDescriptionWithFailover(description, max_addresses, {});
+        }
+        catch (const Exception & e)
+        {
+            return String(e.message());
+        }
+        return String("no exception");
+    };
+
+    /// Neither stage exceeds the limit on its own; the total does.
+    EXPECT_THAT(message("example01-0{1,2}-{1|2}", 3), testing::HasSubstr("too many result addresses: 4, while at most 3 are allowed"));
+
+    /// The shard stage exceeds the limit before the replicas are looked at: 2000 * 2, not 2000.
+    EXPECT_THAT(message("h{1..2000}-{1|2}", 1000), testing::HasSubstr("too many result addresses: 4000, while at most 1000 are allowed"));
+
+    /// The replica stage of one shard exceeds the limit: 2 * 11, not 11.
+    EXPECT_THAT(
+        message("{a,b}-{1|2|3|4|5|6|7|8|9|10|11}", 10), testing::HasSubstr("too many result addresses: 22, while at most 10 are allowed"));
+
+    /// A top-level `|` splits every generated shard: 2 * 2 shards, 2 replicas each.
+    EXPECT_THAT(message("h{1..2}|h{3..4}", 7), testing::HasSubstr("too many result addresses: 8, while at most 7 are allowed"));
+
+    /// The replica pattern may differ between the shards: 2 + 1.
+    EXPECT_THAT(message("a|b,c", 2), testing::HasSubstr("too many result addresses: 3, while at most 2 are allowed"));
+
+    /// A single-stage description is still counted as before.
+    EXPECT_THAT(message("{1..600},{1..600}", 1000), testing::HasSubstr("too many result addresses: 1200,"));
+}
+
 TEST(ParseRemoteDescription, LongDescription)
 {
     /// Parsing used to rebuild the accumulated strings once per character,

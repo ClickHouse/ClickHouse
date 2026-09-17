@@ -338,16 +338,16 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     {
         /// Create new cluster from the scratch
         size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-        Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses, caller);
+        /// The limit applies to the total number of addresses, over both the shards and their replicas.
+        auto shards = parseRemoteDescriptionWithFailover(cluster_description, max_addresses, caller);
 
         HostsByShard names;
         names.reserve(shards.size());
-        for (const auto & shard : shards)
+        for (auto & shard : shards)
         {
-            auto replicas = parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses, caller);
-            if (replicas.empty())
+            if (shard.replicas.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
-            names.push_back(std::move(replicas));
+            names.push_back(std::move(shard.replicas));
         }
 
         if (names.empty())

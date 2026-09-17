@@ -72,6 +72,23 @@ std::vector<String> parseRemoteDescription(
     size_t max_addresses,
     const RemoteDescriptionCaller & caller = {});
 
+/// A shard of a `shards,separated,by,commas` description together with its `replicas|separated|by|bars`.
+struct RemoteDescriptionShard
+{
+    /// The shard as produced by the first stage, with the replica pattern still unexpanded, e.g.
+    /// `example01-1-{1|2}`. This is the form that is handed over to the workers of the cluster
+    /// table functions, which expand the replicas on their own.
+    String description;
+    std::vector<String> replicas;
+};
+
+/// Parse a description that generates both shards and replicas: the shards are separated by `,` and
+/// every shard is then expanded into its replicas separated by `|`, e.g. `example01-0{1,2}-{1|2}` is
+/// two shards with two replicas each. `max_addresses` bounds the total number of generated addresses,
+/// not the number generated at each of the two stages, since that is what the setting promises.
+std::vector<RemoteDescriptionShard> parseRemoteDescriptionWithFailover(
+    const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller = {});
+
 /// Parse remote description for external database (MySQL or PostgreSQL).
 std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDatabase(
     const String & description, size_t max_addresses, UInt16 default_port, const RemoteDescriptionCaller & caller);

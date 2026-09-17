@@ -43,24 +43,15 @@ using URLShardsWithFailover = std::vector<URLFailoverOptions>;
 
 URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const RemoteDescriptionCaller & caller)
 {
-    auto disclosed_urls = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, caller);
+    /// The limit is on the whole first argument: the failover options of all the comma-separated URLs
+    /// are summed up, and the number reported when it is exceeded is the cardinality of the whole
+    /// pattern, not of the URLs disclosed so far.
+    auto url_shards = parseRemoteDescriptionWithFailover(uri, max_addresses, caller);
 
     URLShardsWithFailover result;
-    result.reserve(disclosed_urls.size());
-    size_t url_options_count = 0;
-
-    for (const auto & disclosed_url : disclosed_urls)
-    {
-        auto failover_options
-            = parseRemoteDescription(disclosed_url, 0, disclosed_url.size(), '|', max_addresses, caller);
-        /// The limit is on the whole first argument, so the failover options of all the comma-separated
-        /// URLs are summed up. Reuse the same helper to keep the explanation identical on every path.
-        if (url_options_count + failover_options.size() > max_addresses)
-            throwTooManyAddresses(caller, max_addresses, url_options_count + failover_options.size());
-
-        url_options_count += failover_options.size();
-        result.push_back(std::move(failover_options));
-    }
+    result.reserve(url_shards.size());
+    for (auto & url_shard : url_shards)
+        result.push_back(std::move(url_shard.replicas));
 
     return result;
 }

@@ -167,10 +167,12 @@ String getSampleURI(String uri, ContextPtr context, const RemoteDescriptionCalle
 {
     if (urlWithGlobs(uri))
     {
-        auto uris = parseRemoteDescription(
-            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], caller);
-        if (!uris.empty())
-            return uris[0];
+        /// This runs when the table is created, so a pattern that generates too many addresses is
+        /// rejected right away, and the check has to be the same two-stage one as when reading.
+        auto url_shards = parseRemoteDescriptionWithFailover(
+            uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], caller);
+        if (!url_shards.empty())
+            return url_shards[0].description;
     }
     return uri;
 }
@@ -307,7 +309,13 @@ public:
     {
         if (split_uris)
         {
-            uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses, caller);
+            /// The failover options (`|`) of every URL are expanded again by `getFailoverOptions` while
+            /// reading, but the limit applies to the total number of addresses the first argument
+            /// generates, so the whole two-stage expansion is checked here, up front.
+            auto url_shards = parseRemoteDescriptionWithFailover(uri_, max_addresses, caller);
+            uris.reserve(url_shards.size());
+            for (auto & url_shard : url_shards)
+                uris.push_back(std::move(url_shard.description));
         }
         else
         {
@@ -1142,8 +1150,14 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
 
     std::vector<String> urls_to_check;
     if (urlWithGlobs(uri))
-        urls_to_check = parseRemoteDescription(
-            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], caller);
+    {
+        /// The same two-stage check as in `DisclosedGlobIterator`: the limit is on the total.
+        auto url_shards = parseRemoteDescriptionWithFailover(
+            uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], caller);
+        urls_to_check.reserve(url_shards.size());
+        for (auto & url_shard : url_shards)
+            urls_to_check.push_back(std::move(url_shard.description));
+    }
     else
         urls_to_check = {uri};
 

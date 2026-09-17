@@ -87,11 +87,48 @@ struct Cardinality
     size_t value = 0;
 };
 
+/// Arithmetic on cardinalities that remembers whether it has overflowed `size_t` instead of wrapping.
+struct SaturatingCounter
+{
+    size_t value = 0;
+    bool overflow = false;
+
+    void add(const SaturatingCounter & other)
+    {
+        if (overflow || other.overflow || value > std::numeric_limits<size_t>::max() - other.value)
+            overflow = true;
+        else
+            value += other.value;
+    }
+
+    void multiply(const SaturatingCounter & other)
+    {
+        if (overflow || other.overflow || (other.value != 0 && value > std::numeric_limits<size_t>::max() / other.value))
+            overflow = true;
+        else
+            value *= other.value;
+    }
+};
+
 /// The number of addresses the description expands to, computed without materializing them.
 /// The parser itself never learns this number: it throws as soon as a single factor of the direct
 /// product exceeds the limit, so the count it has at hand ignores both the already expanded prefix
 /// and the factors that follow. This pass mirrors the parser, but only multiplies the sizes.
-Cardinality countAddresses(const String & description, size_t l, size_t r, char separator)
+///
+/// A description is a sum (over `separator`) of direct products (over the factors). When
+/// `replica_separator` is given, the description is parsed in two stages, the way
+/// `parseRemoteDescriptionWithFailover` does it: the shards are separated by `separator`, and every
+/// generated shard is then expanded again, with `replica_separator`. The second stage sees a brace
+/// group with replicas, e.g. `{1|2}`, that the first stage copied verbatim, and it also splits the
+/// shard at a top-level `|`. A shard `p1|p2` therefore generates `count(p1) + count(p2)` replicas,
+/// and all the shards of a product share the same replica structure, so the cardinality of a product
+/// is the product of its shard-stage factors times the sum over its replica segments of the product of
+/// their replica-stage factors. The only pattern this formula does not follow exactly is a `,`-group
+/// whose alternative contains a top-level `|`, e.g. `{a|b,c}{d|e}`: there the segments of the outer
+/// product are cut by the inner `|` and the result is an overestimate, never an underestimate, so
+/// the number is still consistent with the limit having been exceeded.
+Cardinality countAddresses(
+    const String & description, size_t l, size_t r, char separator, std::optional<char> replica_separator)
 {
     checkStackSize();
 
@@ -99,12 +136,23 @@ Cardinality countAddresses(const String & description, size_t l, size_t r, char 
     if (l >= r)
         return {CardinalityStatus::Known, 1};
 
-    static constexpr auto max_value = std::numeric_limits<size_t>::max();
+    SaturatingCounter total;
+    /// The factors of the current product that are expanded at the shard stage.
+    SaturatingCounter product{1};
+    /// The factors of the current replica segment that are expanded at the replica stage.
+    SaturatingCounter segment{1};
+    /// The already finished replica segments of the current product.
+    SaturatingCounter segments;
 
-    /// The description is a sum (over the separator) of direct products (over the factors).
-    size_t total = 0;
-    size_t product = 1;
-    bool overflow = false;
+    auto finish_product = [&]
+    {
+        segments.add(segment);
+        product.multiply(segments);
+        total.add(product);
+        product = SaturatingCounter{1};
+        segment = SaturatingCounter{1};
+        segments = SaturatingCounter{};
+    };
 
     for (size_t i = l; i < r; ++i)
     {
@@ -114,6 +162,7 @@ Cardinality countAddresses(const String & description, size_t l, size_t r, char 
             ssize_t last_dot = -1;
             size_t m = 0;
             bool have_splitter = false;
+            bool have_replica_splitter = false;
 
             for (m = i + 1; m < r; ++m)
             {
@@ -125,6 +174,8 @@ Cardinality countAddresses(const String & description, size_t l, size_t r, char 
                     last_dot = m;
                 if (description[m] == separator)
                     have_splitter = true;
+                if (replica_separator && description[m] == *replica_separator)
+                    have_replica_splitter = true;
                 if (cnt == 0)
                     break;
             }
@@ -132,7 +183,6 @@ Cardinality countAddresses(const String & description, size_t l, size_t r, char 
             if (cnt != 0)
                 return {CardinalityStatus::Malformed, 0};
 
-            size_t factor = 1;
             if (last_dot != -1)
             {
                 size_t left = 0;
@@ -142,55 +192,63 @@ Cardinality countAddresses(const String & description, size_t l, size_t r, char 
                     || !parseNumber(description, last_dot + 1, m, right)
                     || left > right)
                     return {CardinalityStatus::Malformed, 0};
-                factor = right - left + 1;
+                product.multiply({right - left + 1});
             }
             else if (have_splitter)
             {
-                const auto nested = countAddresses(description, i + 1, m, separator);
+                const auto nested = countAddresses(description, i + 1, m, separator, replica_separator);
                 if (nested.status != CardinalityStatus::Known)
                     return nested;
-                factor = nested.value;
+                product.multiply({nested.value});
+            }
+            else if (have_replica_splitter)
+            {
+                /// Copied verbatim by the shard stage and expanded by the replica stage.
+                const auto nested = countAddresses(description, i + 1, m, *replica_separator, std::nullopt);
+                if (nested.status != CardinalityStatus::Known)
+                    return nested;
+                segment.multiply({nested.value});
             }
             /// A brace group without a separator inside is copied verbatim: a single-element set.
-
-            if (factor != 0 && product > max_value / factor)
-                overflow = true;
-            else
-                product *= factor;
 
             i = m;
         }
         else if (description[i] == separator)
         {
-            if (overflow || product > max_value - total)
-                overflow = true;
-            else
-                total += product;
-            product = 1;
+            finish_product();
+        }
+        else if (replica_separator && description[i] == *replica_separator)
+        {
+            segments.add(segment);
+            segment = SaturatingCounter{1};
         }
         /// Any other character is a single-element set and does not change the cardinality.
     }
 
-    if (overflow || product > max_value - total)
+    finish_product();
+
+    if (total.overflow)
         return {CardinalityStatus::Overflow, 0};
 
-    return {CardinalityStatus::Known, total + product};
+    return {CardinalityStatus::Known, total.value};
 }
 
 /// The whole description the parser was given, so that the number of addresses reported in the
-/// error message is the cardinality of the entire first argument rather than of one factor.
+/// error message is the cardinality of the entire first argument rather than of one factor - or,
+/// for `parseRemoteDescriptionWithFailover`, of one of its two stages.
 struct DescriptionContext
 {
     const String & description;
     size_t l;
     size_t r;
     char separator;
+    std::optional<char> replica_separator;
 };
 
 [[noreturn]] void throwTooManyAddressesForDescription(
     const DescriptionContext & ctx, const RemoteDescriptionCaller & caller, size_t max_addresses)
 {
-    const auto cardinality = countAddresses(ctx.description, ctx.l, ctx.r, ctx.separator);
+    const auto cardinality = countAddresses(ctx.description, ctx.l, ctx.r, ctx.separator, ctx.replica_separator);
 
     /// A count that does not exceed the limit contradicts the fact that we are throwing, so it
     /// cannot be trusted: report the number only when it is consistent with the failure.
@@ -241,15 +299,17 @@ void append(
 }
 
 
+/// `ctx` is only used to report the cardinality of the whole first argument when the limit is hit; the
+/// string being parsed is `description`, which is a part of it at some stage of the expansion.
 std::vector<String> parseRemoteDescriptionImpl(
-    const DescriptionContext & ctx,
+    const String & description,
     size_t l,
     size_t r,
+    char separator,
     size_t max_addresses,
-    const RemoteDescriptionCaller & caller)
+    const RemoteDescriptionCaller & caller,
+    const DescriptionContext & ctx)
 {
-    const String & description = ctx.description;
-    const char separator = ctx.separator;
 
     /// Nested braces are parsed recursively, and `max_addresses` bounds the number of generated
     /// addresses, not the nesting depth: `{{{{...,...}}}}` recurses once per level.
@@ -341,7 +401,7 @@ std::vector<String> parseRemoteDescriptionImpl(
                 }
             }
             else if (have_splitter) /// If there is a current delimiter inside, then generate a set of resulting rows
-                buffer = parseRemoteDescriptionImpl(ctx, i + 1, m, max_addresses, caller);
+                buffer = parseRemoteDescriptionImpl(description, i + 1, m, separator, max_addresses, caller, ctx);
             else                     /// Otherwise just copy, spawn will occur when you call with the correct delimiter
                 buffer.push_back(description.substr(i, m - i + 1));
             /// Add all possible received extensions to the current set of lines
@@ -381,8 +441,36 @@ std::vector<String> parseRemoteDescription(
     size_t max_addresses,
     const RemoteDescriptionCaller & caller)
 {
-    const DescriptionContext ctx{description, l, r, separator};
-    return parseRemoteDescriptionImpl(ctx, l, r, max_addresses, caller);
+    const DescriptionContext ctx{description, l, r, separator, std::nullopt};
+    return parseRemoteDescriptionImpl(description, l, r, separator, max_addresses, caller, ctx);
+}
+
+
+std::vector<RemoteDescriptionShard> parseRemoteDescriptionWithFailover(
+    const String & description, size_t max_addresses, const RemoteDescriptionCaller & caller)
+{
+    /// Whichever of the two stages hits the limit, the message reports the whole first argument.
+    const DescriptionContext ctx{description, 0, description.size(), ',', '|'};
+
+    auto shards = parseRemoteDescriptionImpl(description, 0, description.size(), ',', max_addresses, caller, ctx);
+
+    std::vector<RemoteDescriptionShard> result;
+    result.reserve(shards.size());
+
+    /// Each stage on its own stays within the limit, so at most twice the limit is ever materialized.
+    size_t total = 0;
+    for (auto & shard : shards)
+    {
+        auto replicas = parseRemoteDescriptionImpl(shard, 0, shard.size(), '|', max_addresses, caller, ctx);
+
+        if (replicas.size() > max_addresses - total)
+            throwTooManyAddressesForDescription(ctx, caller, max_addresses);
+        total += replicas.size();
+
+        result.push_back({std::move(shard), std::move(replicas)});
+    }
+
+    return result;
 }
 
 
