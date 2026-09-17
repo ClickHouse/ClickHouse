@@ -601,7 +601,6 @@
                 "reference/functions/aggregate-functions/median",
                 "reference/functions/aggregate-functions/min",
                 "reference/functions/aggregate-functions/minMap",
-                "reference/functions/aggregate-functions/mode",
                 "reference/functions/aggregate-functions/quantile",
                 "reference/functions/aggregate-functions/quantileGK",
                 "reference/functions/aggregate-functions/quantileBFloat16",
