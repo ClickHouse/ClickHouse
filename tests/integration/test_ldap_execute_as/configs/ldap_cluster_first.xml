@@ -5,10 +5,6 @@
             <port>1389</port>
             <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
             <enable_tls>no</enable_tls>
-            <!-- Service-bind credentials so the forced lookup that refreshes a
-                 poisoned cache entry (see test
-                 `test_execute_as_refreshes_distributed_cache_poisoned_entry`)
-                 can resolve the user without a real password. -->
             <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
             <lookup_password>clickhouse</lookup_password>
             <user_dn_detection>
@@ -17,7 +13,11 @@
             </user_dn_detection>
         </openldap>
     </ldap_servers>
-    <user_directories>
+    <!-- The `ldap` directory precedes `users_xml`, which defines `ghost` locally (see
+         `users_with_local_ghost.xml`): a phantom `ghost` that the interserver path materialises in the
+         LDAP storage shadows the local user, and `EXECUTE AS ghost` must hand the resolution over to
+         `users_xml` once the directory refuses to confirm the name. -->
+    <user_directories replace="replace">
         <ldap>
             <server>openldap</server>
             <role_mapping>
@@ -28,30 +28,11 @@
                 <prefix>clickhouse-</prefix>
             </role_mapping>
         </ldap>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
     </user_directories>
-    <!-- Two-shard cluster configured with `<secret>foo</secret>` so the
-         interserver protocol authenticates remote queries via
-         `AlwaysAllowCredentials{initial_user}`. The shard receiving the
-         remote half of an `EXECUTE AS <ldap_user> ... FROM clusterAllReplicas(...)`
-         goes through `LDAPAccessStorage::authenticateImpl` with
-         `AlwaysAllowCredentials`, which short-circuits role resolution and
-         leaves the cache entry with empty `users_external_roles`. The
-         regression test then runs a local `EXECUTE AS` on that shard and
-         verifies the role mapping was refreshed (without the fix the local
-         `EXECUTE AS` would inherit only the common roles). -->
     <remote_servers>
-        <ldap_cluster>
-            <secret>foo</secret>
-            <node>
-                <host>shard1_node</host>
-                <port>9000</port>
-            </node>
-            <node>
-                <host>shard2_node</host>
-                <port>9000</port>
-            </node>
-        </ldap_cluster>
-        <!-- `shard1_node` and `shard_ldap_first` (see `ldap_cluster_first.xml`). -->
         <ldap_cluster_first>
             <secret>foo</secret>
             <node>

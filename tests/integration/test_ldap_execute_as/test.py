@@ -174,6 +174,17 @@ shard2_node = cluster.add_instance(
     stay_alive=True,
 )
 
+# Second shard of `ldap_cluster_first`, with the `ldap` directory declared BEFORE `users_xml`,
+# which defines `ghost` locally: the fanout materialises a phantom `ghost` in the LDAP storage
+# that shadows the local one, and `EXECUTE AS ghost` must hand the resolution over to `users_xml`
+# once the directory refuses to confirm the name.
+shard_ldap_first = cluster.add_instance(
+    "shard_ldap_first",
+    main_configs=["configs/ldap_cluster_first.xml"],
+    user_configs=["configs/users_with_local_ghost.xml"],
+    stay_alive=True,
+)
+
 # Instance with TWO LDAP user-directories backed by the same OpenLDAP container,
 # each with a distinct role-mapping prefix so the directory that resolves a user
 # can be identified by the role granted on materialization. Used to verify that
@@ -650,6 +661,49 @@ def test_execute_as_refuses_a_name_the_interserver_path_materialised_without_the
             "EXECUTE AS ghost SELECT currentUser()", user="admin", password="qwerty"
         )
         assert "There is no user `ghost`" in error, error
+    finally:
+        shard1_node.query("DROP USER IF EXISTS ghost", user="admin", password="qwerty")
+
+
+def test_execute_as_hands_a_refused_cached_entry_over_to_a_later_storage(
+    started_cluster,
+):
+    """The other outcome of the fallback: on `shard_ldap_first` the `ldap` directory precedes
+    `users_xml`, which defines `ghost` locally with a profile setting `max_threads` to 7. A fanout
+    under `<secret>` as `ghost` (a local user of `shard1_node`) materialises a phantom `ghost` in the
+    LDAP storage of `shard_ldap_first`, shadowing the local user. A local `EXECUTE AS ghost` there
+    must neither impersonate the phantom nor end with `UNKNOWN_USER`: the directory refuses to
+    confirm the name and the resolution goes on to `users_xml`, whose setting shows through.
+    """
+    shard1_node.query(
+        "CREATE USER ghost IDENTIFIED BY 'ghostpwd'", user="admin", password="qwerty"
+    )
+    try:
+        shard1_node.query(
+            "GRANT SELECT, SHOW COLUMNS, REMOTE ON *.* TO ghost",
+            user="admin",
+            password="qwerty",
+        )
+        shard1_node.query_and_get_answer_with_error(
+            "SELECT count() FROM clusterAllReplicas('ldap_cluster_first', system.one)",
+            user="ghost",
+            password="ghostpwd",
+        )
+        storages = shard_ldap_first.query(
+            "SELECT storage FROM system.users WHERE name = 'ghost' ORDER BY storage",
+            user="admin",
+            password="qwerty",
+        )
+        assert storages == TSV([["ldap"], ["users_xml"]]), storages
+
+        assert (
+            shard_ldap_first.query(
+                "EXECUTE AS ghost SELECT getSetting('max_threads')",
+                user="admin",
+                password="qwerty",
+            ).strip()
+            == "7"
+        )
     finally:
         shard1_node.query("DROP USER IF EXISTS ghost", user="admin", password="qwerty")
 

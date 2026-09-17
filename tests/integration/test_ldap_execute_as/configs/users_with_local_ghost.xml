@@ -1,0 +1,22 @@
+<clickhouse>
+    <users>
+        <default remove="remove">
+        </default>
+        <admin>
+            <password>qwerty</password>
+            <access_management>1</access_management>
+            <readonly>0</readonly>
+        </admin>
+        <!-- Defined in the `users_xml` storage that FOLLOWS the `ldap` directory on `shard_ldap_first`;
+             the profile tells this principal apart from a same-named phantom in the LDAP storage. -->
+        <ghost>
+            <password>local</password>
+            <profile>ghost_profile</profile>
+        </ghost>
+    </users>
+    <profiles>
+        <ghost_profile>
+            <max_threads>7</max_threads>
+        </ghost_profile>
+    </profiles>
+</clickhouse>
