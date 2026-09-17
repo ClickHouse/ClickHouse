@@ -19,6 +19,7 @@
 #include <IO/S3/getObjectInfo.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/getRandomASCIIString.h>
+#include <aws/core/http/HttpResponse.h>
 
 #include <utility>
 
@@ -66,6 +67,7 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 /// Custom object metadata key carrying the write token, see WriteBufferFromS3::write_token.
@@ -100,6 +102,15 @@ static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3Reques
     allocation_settings.max_single_size = settings[S3RequestSetting::max_single_part_upload_size];
 
     return BufferAllocationPolicy::create(allocation_settings);
+}
+
+/// Whether the endpoint refused the write because the precondition did not hold. The SDK has no typed
+/// model error for it, so the raw code is kept in the exception name, which not every endpoint spells
+/// the same way; the status is `412` on all of them.
+static bool isRefusedPrecondition(const Aws::S3::S3Error & error)
+{
+    return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED
+        || error.GetExceptionName() == "PreconditionFailed";
 }
 
 
@@ -411,6 +422,17 @@ void WriteBufferFromS3::writeMultipartUpload()
 
 void WriteBufferFromS3::createMultipartUpload()
 {
+    /// GCS's XML API evaluates no precondition on a multipart upload: `x-goog-if-generation-match` is
+    /// answered `400 NotImplemented`, and the `If-None-Match` it does accept applies to reads only.
+    if (client_ptr->isClientForGCS()
+        && (!write_settings.object_storage_write_if_none_match.empty() || !write_settings.object_storage_write_if_match.empty()))
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Google Cloud Storage does not support conditional writes (If-None-Match / If-Match) on a "
+            "multipart upload, so the requested compare-and-swap on {} cannot be performed atomically. "
+            "Raise s3_max_single_part_upload_size above the object size to write it in one part",
+            key);
+
     LOG_TEST(limited_log, "Create multipart upload. {}", getShortLogDetails());
 
     S3::CreateMultipartUploadRequest req;
@@ -717,7 +739,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
         /// A 412, or a NO_SUCH_UPLOAD reporting an upload id the server already consumed, on our own
         /// object means this completion was replayed after it had succeeded. Anything we cannot prove
         /// we wrote is a pre-existing object and must still throw.
-        const bool replayed_after_success = error.GetExceptionName() == "PreconditionFailed"
+        const bool replayed_after_success = isRefusedPrecondition(error)
             || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
         if (replayed_after_success && isObjectWrittenByThisBuffer())
         {
@@ -861,7 +883,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             {
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
                 /// not a genuine error — the caller handles it.
-                if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
+                if (isRefusedPrecondition(outcome.GetError()))
                 {
                     /// A 412 on our own object means this PUT was replayed after it had succeeded.
                     /// Anything we cannot prove we wrote is a pre-existing object and must still throw.

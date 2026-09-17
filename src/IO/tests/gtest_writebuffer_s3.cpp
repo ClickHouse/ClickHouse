@@ -83,6 +83,7 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
     extern const int FILE_CHANGED_DURING_READ;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 }
@@ -940,6 +941,43 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
     bool store_first_attempt;
     size_t calls = 0;
     std::vector<BucketMemStore::Metadata> seen_metadata;
+};
+
+/// The same lost-response replay, refused by an endpoint that reports the refusal by HTTP status while
+/// spelling `<Code>` its own way: Google documents the `412` status of `x-goog-if-generation-match` but
+/// not the code. `replay_status` selects the status the replay is refused with, so a test can show that
+/// the status is what identifies the refusal.
+struct PutObjectLostResponseThenStatusOnlyRefusal : InjectionModel
+{
+    PutObjectLostResponseThenStatusOnlyRefusal(std::shared_ptr<S3MemStrore> store_, Aws::Http::HttpResponseCode replay_status_)
+        : store(std::move(store_)), replay_status(replay_status_) {}
+
+    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
+    {
+        EXPECT_FALSE(request.GetIfNoneMatch().empty());
+
+        BucketMemStore::Metadata metadata;
+        for (const auto & [name, value] : request.GetMetadata())
+            metadata[name] = value;
+
+        if (calls++ > 0)
+        {
+            auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
+                Aws::Client::CoreErrors::UNKNOWN, "conditionNotMet", "The condition was not met", false);
+            error.SetResponseCode(replay_status);
+            return error;
+        }
+
+        const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
+        store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), data, metadata);
+
+        return Aws::Client::AWSError<Aws::S3::S3Errors>(
+            Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "The specified key does not exist.", false);
+    }
+
+    std::shared_ptr<S3MemStrore> store;
+    Aws::Http::HttpResponseCode replay_status;
+    size_t calls = 0;
 };
 
 /// Every PutObject attempt fails with 412 -- a genuinely pre-existing object, written by somebody
@@ -2095,6 +2133,122 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteStillRecoversNoSuchUpload) {
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload"], "A");
     EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].contains("clickhouse-write-token"));
+}
+
+/// GCS evaluates no precondition on an XML-API multipart upload, so the compare-and-swap cannot be
+/// expressed there at all. The write must be refused rather than performed unconditionally, and refused
+/// before the endpoint is contacted so that nothing is created and no generation is overwritten.
+TEST_P(SyncAsync, ConditionalMultipartOnGCSIsRefused) {
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_mpu_gcs", conditionalCreateWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::UNSUPPORTED_METHOD, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("does not support conditional writes"));
+            throw;
+        }
+      }, DB::Exception);
+
+    EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+    EXPECT_EQ(client->counters.multiUploadComplete, 0u);
+    EXPECT_EQ(client->counters.putObject, 0u);
+    EXPECT_TRUE(client->store->GetBucketStore(bucket).objects["conditional_mpu_gcs"].empty());
+}
+
+/// In-range control for the refusal: the single-part shape is the one GCS can express, so a conditional
+/// create on the same GCS client still goes through, still carrying the fence.
+TEST_P(SyncAsync, SinglepartConditionalPutOnGCSStillSucceeds) {
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    auto buffer = getWriteBuffer("conditional_put_gcs", conditionalCreateWriteSettings());
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.putObject, 1u);
+    EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["conditional_put_gcs"], "A");
+    ASSERT_FALSE(bStore.put_if_none_match.empty());
+    EXPECT_EQ(bStore.put_if_none_match[0], "*");
+}
+
+/// In-range control for the provider predicate: S3 does evaluate the fence on a multipart completion,
+/// so the refusal must not reach any other endpoint.
+TEST_P(SyncAsync, ConditionalMultipartOnNonGCSStillSucceeds) {
+    ASSERT_FALSE(client->isClientForGCS());
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto buffer = getWriteBuffer("conditional_mpu_non_gcs", conditionalCreateWriteSettings());
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.multiUploadCreate, 1u);
+    EXPECT_EQ(client->counters.multiUploadComplete, 1u);
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["conditional_mpu_non_gcs"], "A");
+}
+
+/// A refusal identified only by its `412` status still has to reach the write-token replay check, so a
+/// conditional write whose response was lost is not reported as a lost race by an endpoint that spells
+/// the code its own way.
+TEST_P(SyncAsync, SinglepartConditionalPutRecognisesRefusalByStatus) {
+    setInjectionModel(std::make_shared<MockS3::PutObjectLostResponseThenStatusOnlyRefusal>(
+        client->store, Aws::Http::HttpResponseCode::PRECONDITION_FAILED));
+
+    auto buffer = getWriteBuffer("conditional_put_status_only_412", conditionalCreateWriteSettings());
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    /// Two PUT attempts (NO_SUCH_KEY then the status-only 412) and one HEAD that verified our token.
+    EXPECT_EQ(client->counters.putObject, 2u);
+    EXPECT_EQ(client->counters.headObject, 1u);
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["conditional_put_status_only_412"], "A");
+}
+
+/// The status is what identifies the refusal, and nothing else is: the same unrecognised code on a
+/// status that is not `412` must still throw, even though the object at the key does carry our token.
+TEST_P(SyncAsync, SinglepartConditionalPutStillThrowsOnAnotherStatus) {
+    setInjectionModel(std::make_shared<MockS3::PutObjectLostResponseThenStatusOnlyRefusal>(
+        client->store, Aws::Http::HttpResponseCode::CONFLICT));
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_put_status_409", conditionalCreateWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("The condition was not met"));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 0u);
 }
 
 /// A transient MinIO `InvalidPart` on CompleteMultipartUpload must be retried, not surfaced as a
