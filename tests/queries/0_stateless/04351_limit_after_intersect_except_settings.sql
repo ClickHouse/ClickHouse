@@ -1,19 +1,19 @@
 -- The `limit`/`offset` settings cap must be applied once over the final set-operation result, not once
 -- per branch. INTERSECT/EXCEPT also plan through UnionNode, so range branches must move their
 -- settings cap onto the set-operation node just like UNION ALL.
--- INTERSECT/EXCEPT do not promise the order of their result, so it is ordered before applying the cap to
--- keep the assertions deterministic; the cap is still applied once over the whole set-operation result.
+-- The results below are deterministic because INTERSECT/EXCEPT emit rows in the (sorted) order of their
+-- first input.
 
 -- { echo }
 
 -- INTERSECT of 0..9 with itself = 0..9; settings limit caps to 3.
-SELECT n FROM ((SELECT number AS n FROM numbers(10) LIMIT AFTER number >= 0) INTERSECT (SELECT number AS n FROM numbers(10) LIMIT AFTER number >= 0)) ORDER BY n SETTINGS limit = 3;
+(SELECT number AS n FROM numbers(10) LIMIT AFTER number >= 0) INTERSECT (SELECT number AS n FROM numbers(10) LIMIT AFTER number >= 0) SETTINGS limit = 3;
 
 -- EXCEPT: 0..9 except 0..4 = 5..9; settings limit caps to 2.
-SELECT n FROM ((SELECT number AS n FROM numbers(10) LIMIT AFTER number >= 0) EXCEPT (SELECT number AS n FROM numbers(5) LIMIT AFTER number >= 0)) ORDER BY n SETTINGS limit = 2;
+(SELECT number AS n FROM numbers(10) LIMIT AFTER number >= 0) EXCEPT (SELECT number AS n FROM numbers(5) LIMIT AFTER number >= 0) SETTINGS limit = 2;
 
 -- UNTIL branch variant: left branch 0..7 (until 8), intersect with 0..9 = 0..7, cap to 2.
-SELECT n FROM ((SELECT number AS n FROM numbers(10) LIMIT UNTIL number >= 8) INTERSECT (SELECT number AS n FROM numbers(10) LIMIT AFTER number >= 0)) ORDER BY n SETTINGS limit = 2;
+(SELECT number AS n FROM numbers(10) LIMIT UNTIL number >= 8) INTERSECT (SELECT number AS n FROM numbers(10) LIMIT AFTER number >= 0) SETTINGS limit = 2;
 
 -- Branch-local settings must remain scoped to their own subqueries.
 SELECT * FROM (SELECT * FROM (SELECT number AS n FROM numbers(5) LIMIT AFTER number >= 0 SETTINGS limit = 2, offset = 1) UNION ALL SELECT * FROM (SELECT number AS n FROM numbers(5) LIMIT AFTER number >= 0 SETTINGS limit = 2, offset = 2)) ORDER BY n;

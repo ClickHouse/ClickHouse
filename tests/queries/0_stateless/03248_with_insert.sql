@@ -1,6 +1,3 @@
--- The output order of INTERSECT depends on the number of threads.
-SET max_threads = 1;
-
 DROP TABLE IF EXISTS x;
 
 CREATE TABLE x ENGINE = Log AS SELECT * FROM numbers(0);
