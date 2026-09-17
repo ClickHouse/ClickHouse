@@ -929,7 +929,7 @@ groupArraySample(max_size[, seed])(x)
     };
     FunctionDocumentation::Parameters parameters_groupArraySample = {
         {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
-        {"seed", "Optional. Seed for the random number generator. Default value: 123456.", {"UInt64"}},
+        {"seed", "Optional. Seed for the random number generator. When omitted, every aggregation state seeds itself from a thread-local generator, so the sample is different for every evaluation and the function is non-deterministic. Pass a seed for a reproducible sample.", {"UInt64"}},
         {"x", "Argument (column name or expression).", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {
