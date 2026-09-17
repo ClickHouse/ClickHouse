@@ -1024,6 +1024,23 @@ void addQueryAccessInfoForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, c
     }
 }
 
+/// Drops the `max_threads` cap stored with a cached plan from the plan itself and from the source
+/// plan of every `IN`-subquery set reachable from it (sets nest: a set source may contain further
+/// sets), so the thread fan-out of a hit is decided by the current query, as on a miss.
+static void resetStoredMaxThreads(QueryPlan & plan)
+{
+    plan.setMaxThreads(0);
+    forEachSubquerySet(
+        &plan,
+        [](FutureSetFromSubquery & set)
+        {
+            if (auto * source = set.getQueryPlan())
+                source->setMaxThreads(0);
+            /// Descend into the source plan: the sets nested in it are live and rebuilt too.
+            return true;
+        });
+}
+
 QueryPlan materializeCachedQueryPlan(
     std::string_view serialized_plan,
     const ContextPtr & context,
@@ -1044,12 +1061,15 @@ QueryPlan materializeCachedQueryPlan(
     /// applies through `limitMaxThreads`. They describe the execution the plan was stored for, not
     /// its structure, and `max_threads` is deliberately not part of the cache key (see
     /// `isSettingIgnoredInQueryPlanCache`), so replaying the stored value would let a warm-up with
-    /// `SETTINGS max_threads = 1` cap every later hit. The analyzer - which builds every cacheable
-    /// plan - never sets this field (only `InterpreterSelectQuery`, i.e. the old analyzer, and
-    /// `DistributedPlanExecutor` do), so clearing it reproduces the miss path exactly. The other
-    /// limit, `concurrency_control`, is re-derived from the current context by
-    /// `InterpreterSelectQueryFromPlan::execute`.
-    plan.setMaxThreads(0);
+    /// `SETTINGS max_threads = 1` cap every later hit. The planner stamps the limit on every plan it
+    /// builds for a table expression (`PlannerJoinTree`), and an `IN (SELECT ...)` set source is a
+    /// plan of its own that `QueryPlan::makeSets` has just rebuilt with its stored value and that
+    /// `FutureSetFromSubquery::build` turns into a pipeline on its own, so clearing the outer plan
+    /// alone would leave the set-building sub-pipelines pinned. The other limit,
+    /// `concurrency_control`, is derived from `use_concurrency_control`, which is part of the key,
+    /// so the stored value always equals the current one (and the outer plan's copy is re-derived
+    /// anyway by `InterpreterSelectQueryFromPlan::execute`).
+    resetStoredMaxThreads(plan);
 
     /// Replace `ReadFromTable` placeholders with storage-specific reads against the current data
     /// snapshots, requiring every leaf to resolve to a storage that `validateQueryPlanCacheEntry`
