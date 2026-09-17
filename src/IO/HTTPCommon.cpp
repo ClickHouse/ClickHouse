@@ -18,8 +18,6 @@
 #endif
 
 
-#include <algorithm>
-#include <array>
 #include <istream>
 #include <Common/ProxyConfiguration.h>
 

@@ -140,8 +140,7 @@ public:
         }
         else
         {
-            const auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(context, false);
-            auto inner_storage_snapshot = inner_storage->getStorageSnapshot(metadata_snapshot, context);
+            auto inner_storage_snapshot = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(), context);
             inner_storage->read(
                     plan,
                     column_names,
@@ -160,7 +159,6 @@ public:
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
             query_pipeline = QueryPipeline(std::move(pipe));
             query_pipeline.addResources(std::move(resources));
-            query_pipeline.disableProfileEventUpdate();
             executor = std::make_unique<PullingPipelineExecutor>(query_pipeline);
         }
         loop = true;
