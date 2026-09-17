@@ -28,7 +28,7 @@ extern const int UNSUPPORTED_JOIN_KEYS;
   * cell's used flag is its position plus one. Stream 0 also emits the zero-value cell and rows
   * whose keys were never inserted (saved null maps). With per-row used flags (`used_flags_per_row`:
   * several ON clauses, or a mixed ON condition on a RIGHT or FULL join) the stored blocks are walked
-  * instead, row by row, the streams taking the blocks round-robin by block number. A row nothing
+  * instead, row by row; the streams take the blocks round-robin by block number. A row nothing
   * marked is emitted whether or not its key ever entered a table, so no null maps are kept for that
   * shape.
   *

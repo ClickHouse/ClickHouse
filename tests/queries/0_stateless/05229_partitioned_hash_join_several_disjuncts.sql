@@ -47,7 +47,7 @@ SELECT 'inner all or3', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(l.a, l.b, r.a, r.b, r.c))) FROM t_or_l AS l INNER JOIN t_or_r AS r ON l.a = r.a OR l.b = r.b OR l.c = r.c SETTINGS join_algorithm = 'hash') AS h,
     (SELECT (count(), sum(cityHash64(l.a, l.b, r.a, r.b, r.c))) FROM t_or_l AS l INNER JOIN t_or_r AS r ON l.a = r.a OR l.b = r.b OR l.c = r.c SETTINGS join_algorithm = 'partitioned_hash') AS pa);
 -- ANY claims a right row for the first left row that reaches it, so with several probe threads the pairs depend on the
--- thread order (on `hash` too); one thread makes them deterministic and the two algorithms agree exactly.
+-- thread order (on `hash` too). One thread makes them deterministic, and the two algorithms then agree exactly.
 SELECT 'inner any or2', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(l.a, l.b, r.a, r.b, r.c))) FROM t_or_l AS l ANY INNER JOIN t_or_r AS r ON l.a = r.a OR l.b = r.b SETTINGS join_algorithm = 'hash', max_threads = 1) AS h,
     (SELECT (count(), sum(cityHash64(l.a, l.b, r.a, r.b, r.c))) FROM t_or_l AS l ANY INNER JOIN t_or_r AS r ON l.a = r.a OR l.b = r.b SETTINGS join_algorithm = 'partitioned_hash', max_threads = 1) AS pa);
@@ -110,8 +110,8 @@ SELECT 'full all or2 one thread', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(l.a, l.b, r.a, r.b, r.c))) FROM t_or_l AS l FULL JOIN t_or_r AS r ON l.a = r.a OR l.b = r.b SETTINGS join_algorithm = 'partitioned_hash', max_threads = 1) AS pa);
 
 
--- A dictionary on the right side of a RIGHT / FULL join with a mixed ON condition: the shape whose probe dispatch needs the
--- RIGHT/FULL arms under `preferUseMapsAll` once `hash` runs on the partitioned join; the planner picks the algorithm here.
+-- A dictionary on the right side of a RIGHT / FULL join with a mixed ON condition. Once `hash` runs on the partitioned join,
+-- this shape's probe dispatch needs the RIGHT/FULL arms under `preferUseMapsAll`; here the planner picks the algorithm.
 DROP DICTIONARY IF EXISTS d_or_r;
 CREATE DICTIONARY d_or_r (a UInt64, b UInt64, c UInt64, v UInt8) PRIMARY KEY a
 SOURCE(CLICKHOUSE(TABLE 't_or_r' DATABASE currentDatabase())) LAYOUT(HASHED()) LIFETIME(0);

@@ -531,9 +531,9 @@ bool PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
         ProfileEvents::increment(ProfileEvents::HashJoinRowStoreBlocks);
     }
 
-    /// Per-row used flags cover every stored row, the ones that never enter a table included: a row
-    /// nothing marks is emitted as non-joined, so no null map is kept for it, as `HashJoin` keeps none.
-    /// Attached here, on the one thread that stores blocks, before any probe can read them.
+    /// Per-row used flags cover every stored row, the ones that never enter a table included. A row
+    /// nothing marks is emitted as non-joined, so no null map is kept for it; `HashJoin` keeps none either.
+    /// The flags are attached here, on the one thread that stores blocks, before any probe can read them.
     if (allocate_per_row_flags)
     {
         auto & flags = hash_join->used_flags->per_row_flags;
@@ -712,7 +712,7 @@ void PartitionedHashJoin::runPostBuildPhase()
     }
     else
     {
-        /// One clause after another on the one pool: a clause's scatter releases only its own inputs, so
+        /// One clause after another on the one pool. A clause's scatter releases only its own inputs, so
         /// the next clause still finds its keys and routes in the fill blocks. Each build's budget counts
         /// the tables built before it and the ones predicted after it.
         const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
@@ -823,7 +823,7 @@ ThreadPool & PartitionedHashJoin::postBuildPool()
 void PartitionedHashJoin::reinitUsedFlags()
 {
     /// The per-row shape marks the flags of the stored rows and never reads a per-offset flag, so the
-    /// `cells + 1` space would be allocated and zeroed for nothing; `HashJoin::reinitUsedFlags` skips it
+    /// `cells + 1` space would be allocated and zeroed for nothing. `HashJoin::reinitUsedFlags` skips it
     /// for the same shape.
     if (used_flags_per_row)
         return;

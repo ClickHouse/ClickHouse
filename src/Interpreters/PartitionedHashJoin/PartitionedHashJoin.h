@@ -48,9 +48,9 @@ class TableJoin;
   * wrapped past a range end.
   *
   * A join with several disjuncts (`ON a OR b`) holds one clause per disjunct over the one store, as
-  * `HashJoin` holds one map per disjunct: the fill routes every row to every clause, the tables are built
-  * one after another at the barrier, and the probe walks the clauses in order, emitting a right row once
-  * however many keys reach it (`KnownRowsHolder`).
+  * `HashJoin` holds one map per disjunct. The fill routes every row to every clause, the tables are built
+  * one after another at the barrier, and the probe walks the clauses in order. A right row reached
+  * through several keys is emitted once (`KnownRowsHolder`).
   *
   * The table doubles in place when a wrapping insert would take the last empty cell. It also
   * doubles between waves when the projected fill would exceed 50%. Duplicates of a key are

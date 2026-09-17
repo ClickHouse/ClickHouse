@@ -95,8 +95,8 @@ void accumulateRows(const Block & block, JoinedRows & rows)
         rows.emplace_back(k[i], probe_id[i], rk[i], build_id[i]);
 }
 
-/// Drains one result. Returns the probe rows the join did not process - `HashJoin` stops a block at
-/// `max_joined_block_rows` and hands the rest back, as `JoiningTransform` re-feeds it - or an empty block.
+/// Drains one result and returns the probe rows the join did not process, or an empty block. `HashJoin`
+/// stops a block at `max_joined_block_rows` and hands the rest back; `JoiningTransform` re-feeds it.
 Block drainResult(IJoinResult & result, JoinedRows & rows)
 {
     while (true)
@@ -662,9 +662,9 @@ TEST(PartitionedHashJoin, SeveralClausesMatchHashJoin)
     hash_join->onBuildPhaseFinish();
     EXPECT_EQ(hash_join->getTotalRowCount(), built.join->getTotalRowCount());
 
-    /// Probe row `i` carries `k = keyOf(i)` and `probe_id = i`: the first clause finds the `duplicates`
-    /// rows of key `i`, the second the one row whose `build_id` is `i` - which for `i = 0` the first clause
-    /// already emitted, so it appears once.
+    /// Probe row `i` carries `k = keyOf(i)` and `probe_id = i`. The first clause finds the `duplicates`
+    /// rows of key `i`; the second finds the one row whose `build_id` is `i`. For `i = 0` the first clause
+    /// already emitted that row, so it appears once.
     std::vector<UInt64> keys(distinct_keys);
     for (size_t i = 0; i < keys.size(); ++i)
         keys[i] = keyOf(i);
