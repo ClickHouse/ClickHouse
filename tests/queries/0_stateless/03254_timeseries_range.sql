@@ -7,6 +7,46 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:00:0
 -- Different scales
 SELECT timeSeriesRange('2025-06-01 00:00:00.0'::DateTime64(1), '2025-06-01 00:00:01.00'::DateTime64(2), '0.123'::Decimal64(3));
 
+SELECT
+    toTypeName(result),
+    result
+FROM
+(
+    SELECT timeSeriesRange(
+        toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Tokyo'),
+        toDateTime64('2025-01-01 00:00:02', 3, 'Asia/Tokyo'),
+        1
+    ) AS result
+)
+SETTINGS session_timezone = 'UTC';
+
+SELECT
+    toTypeName(result),
+    result
+FROM
+(
+    SELECT timeSeriesFromGrid(
+        toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Tokyo'),
+        toDateTime64('2025-01-01 00:00:02', 3, 'Asia/Tokyo'),
+        1,
+        [toUInt64(100), toUInt64(200), toUInt64(300)]
+    ) AS result
+)
+SETTINGS session_timezone = 'UTC';
+
+SELECT
+    toTypeName(result),
+    result
+FROM
+(
+    SELECT timeSeriesRange(
+        toDateTime('2025-01-01 00:00:00', 'Asia/Tokyo'),
+        toDateTime('2025-01-01 00:00:01', 'Asia/Tokyo'),
+        CAST(0.5, 'Decimal32(1)')
+    ) AS result
+)
+SETTINGS session_timezone = 'UTC';
+
 -- Wrong range: end_timestamp < start_timestamp
 SELECT timeSeriesRange('2025-06-01 00:01:00'::DateTime64(3), '2025-06-01 00:00:00.000'::DateTime64(3), 30); -- {serverError BAD_ARGUMENTS}
 SELECT timeSeriesRange('2025-06-01 00:01:00'::DateTime64(3), '2025-06-01 00:00:00.000'::DateTime64(3), -30); -- {serverError BAD_ARGUMENTS}
