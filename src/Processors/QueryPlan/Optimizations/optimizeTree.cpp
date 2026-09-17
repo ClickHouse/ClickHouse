@@ -874,6 +874,15 @@ void optimizeTreeSecondPass(
     {
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
     }
+
+    /// Also an admission check on the settled plan, for the same reason, plus one of its own: it reads
+    /// the HAVING filter that will actually run, so every rewrite of that filter has to be behind it.
+    /// After the pass above, whose `top_k` it then refuses, which keeps the two mutually exclusive.
+    if (optimization_settings.aggregation_having_prefilter)
+    {
+        traverseQueryPlan(
+            stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
+    }
 }
 
 void addStepsToBuildSets(

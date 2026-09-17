@@ -86,6 +86,7 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
+    bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
 
     /// If we can swap probe/build tables in join
