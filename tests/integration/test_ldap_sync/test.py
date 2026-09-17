@@ -1166,19 +1166,26 @@ def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
         assert "refusing to resolve user 'janedoe'" in error, error
 
         # The interserver path goes through the same gate: a fanout from node1 under the cluster
-        # secret reaches node_stale as janedoe (`AlwaysAllowCredentials`) and is refused there.
-        admin(node1, "GRANT REMOTE ON *.* TO role_a")
-        refusals = count_in_log(node_stale, "refusing to authenticate user 'janedoe'")
-        error = node1.query_and_get_error(
-            "SELECT count() FROM clusterAllReplicas('test_ldap_cluster_stale', system.one)",
-            user="janedoe",
-            password="qwerty",
-        )
-        assert "Authentication failed" in error, error
-        assert (
-            count_in_log(node_stale, "refusing to authenticate user 'janedoe'")
-            > refusals
-        )
+        # secret reaches node_stale as janedoe (`AlwaysAllowCredentials`), the second shard, which is
+        # stale and refuses her. The query needs enough to build and run the cluster function on node1,
+        # where she is fresh; the exact error the initiator surfaces varies, so node_stale's log is the
+        # signal that the gate ran on the interserver path.
+        admin(node1, "GRANT SELECT, SHOW COLUMNS, REMOTE ON *.* TO role_a")
+        try:
+            refusals = count_in_log(
+                node_stale, "refusing to authenticate user 'janedoe'"
+            )
+            node1.query_and_get_error(
+                "SELECT count() FROM clusterAllReplicas('test_ldap_cluster_stale', system.one)",
+                user="janedoe",
+                password="qwerty",
+            )
+            assert (
+                count_in_log(node_stale, "refusing to authenticate user 'janedoe'")
+                > refusals
+            )
+        finally:
+            admin(node1, "REVOKE SELECT, SHOW COLUMNS, REMOTE ON *.* FROM role_a")
 
         # Gate order: the local user behind the directory and an unknown name are unaffected.
         assert login(node_stale, "local_after", "local") == TSV([["local_after"]])
@@ -1431,6 +1438,11 @@ def test_sync_server_must_have_a_lookup_identity():
             != ""
         )
 
+        # The two cases above left node_bad stopped (expected_to_fail); bring it back with a good
+        # server so the reload-config case below starts from a running node.
+        restart_node_bad_with(
+            directories_bad_config(), server_config=read_config("ldap_server.xml")
+        )
         admin(node_bad, "SYSTEM RELOAD USERS")
         node_bad.replace_config(
             f"{CONFIG_D}/ldap_server_bad_lookup.xml", LDAP_SERVER_WITHOUT_LOOKUP
