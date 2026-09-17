@@ -8,8 +8,9 @@
 #include <string>
 #include <vector>
 
-/** Regression coverage for the `statementIsReadOnly` logic in `programs/server/play.html` and its
-  * two consumers, `queryIsReadOnly` and `splitAllQueries`.
+/** Regression coverage for the `statementKeyword` logic in `programs/server/play.html` and its
+  * consumers: `statementIsReadOnly` (behind `queryIsReadOnly` and `splitAllQueries`) and
+  * `queryIsShapeable`.
   *
   * The Web UI retries a query without framing when the server rejects the page's `EventStream`
   * request, but a side-effecting statement (`INSERT`, DDL) may already have run before returning a
@@ -30,8 +31,15 @@
   * There is no JavaScript/WebAssembly runtime in CI, so we cannot run the browser code directly.
   * Instead we reproduce the token-walking algorithm here on top of the real `DB::Lexer`. The lexer
   * (the part most likely to evolve) is shared; only the small detection below is a port. Keep this
-  * in sync with `statementIsReadOnly` / `queryIsReadOnly` / `splitAllQueries` in
-  * `programs/server/play.html`.
+  * in sync with `statementKeyword` / `statementIsReadOnly` / `queryIsReadOnly` / `splitAllQueries` /
+  * `queryIsShapeable` in `programs/server/play.html`.
+  *
+  * The same statement-kind resolution also decides whether the result table offers per-column
+  * sorting: sorting re-runs the query with the `order` query-construction setting, which the server
+  * materializes only for a `SELECT` / `UNION` (it wraps it as a derived table with an outer
+  * `ORDER BY`). Offering the arrows for a statement the setting does not shape would leave an active
+  * sort indicator over an unsorted result, so `queryIsShapeable` accepts a strictly narrower set of
+  * statement kinds than the read-only classification does.
   */
 
 namespace
@@ -101,16 +109,17 @@ bool isClosingBracket(DB::TokenType type)
         || type == DB::TokenType::ClosingCurlyBrace;
 }
 
-/// Faithful port of `statementIsReadOnly` from play.html: classifies one statement given as its
-/// significant tokens. Shared - there as here - by the `queryIsReadOnly` retry gate and the
-/// `splitAllQueries` per-statement `is_select` classification.
-bool statementIsReadOnly(const std::vector<Tok> & tokens)
+/// Faithful port of `statementKeyword` from play.html: resolves the statement kind of one statement
+/// given as its significant tokens, or an empty string when the walk cannot name one. Shared - there
+/// as here - by `statementIsReadOnly` (the `queryIsReadOnly` retry gate and the `splitAllQueries`
+/// per-statement `is_select` classification) and `queryIsShapeable` (the result header sort arrows).
+std::string statementKeyword(const std::vector<Tok> & tokens)
 {
     for (size_t i = 0; i + 1 < tokens.size(); ++i)
     {
         if (tokens[i].type == DB::TokenType::BareWord && toUpper(tokens[i].text) == "PARALLEL"
             && tokens[i + 1].type == DB::TokenType::BareWord && toUpper(tokens[i + 1].text) == "WITH")
-            return false;
+            return {};
     }
     int depth = 0;
     /// Bracket depth at which the leading `WITH` sits; -1 until the leading keyword is seen.
@@ -143,9 +152,10 @@ bool statementIsReadOnly(const std::vector<Tok> & tokens)
         if (with_depth < 0)
         {
             /// The first significant keyword (possibly wrapped in leading brackets). If it is not a
-            /// leading `WITH`, it is the statement kind.
+            /// leading `WITH`, it is the statement kind - whatever it is, including a keyword no
+            /// caller recognizes (`USE`, `SET`, `CHECK`, ...), which they all reject.
             if (keyword != "WITH")
-                return parallelizable_keywords.contains(keyword);
+                return keyword;
             with_depth = depth;
             continue;
         }
@@ -170,18 +180,37 @@ bool statementIsReadOnly(const std::vector<Tok> & tokens)
         /// form - skip it too; a real statement keyword is never followed by `AS`.
         if (i + 1 < tokens.size() && tokens[i + 1].type == DB::TokenType::BareWord && toUpper(tokens[i + 1].text) == "AS")
             continue;
-        if (write_statement_keywords.contains(keyword))
-            return false;
-        if (parallelizable_keywords.contains(keyword))
-            return true;
+        if (write_statement_keywords.contains(keyword) || parallelizable_keywords.contains(keyword))
+            return keyword;
     }
-    return false;
+    return {};
+}
+
+/// Faithful port of `statementIsReadOnly` from play.html: an unresolved statement kind is not
+/// read-only, so a statement whose kind we could not name is never resubmitted or parallelized.
+bool statementIsReadOnly(const std::vector<Tok> & tokens)
+{
+    const std::string keyword = statementKeyword(tokens);
+    return !keyword.empty() && parallelizable_keywords.contains(keyword);
 }
 
 /// Faithful port of `queryIsReadOnly` from play.html (the WebAssembly-available branch).
 bool queryIsReadOnly(const std::string & query)
 {
     return statementIsReadOnly(tokenizeSignificant(query));
+}
+
+/// Mirror of `SHAPEABLE_STATEMENT_KEYWORDS` in play.html.
+const std::set<std::string> shapeable_statement_keywords = {"SELECT", "FROM"};
+
+/// Faithful port of `queryIsShapeable` from play.html (the WebAssembly-available branch): whether the
+/// result header may offer the sort arrows, i.e. whether the server parses the statement into an
+/// `ASTSelectWithUnionQuery` and can therefore wrap it with an outer `ORDER BY` for the `order`
+/// query-construction setting. Narrower than read-only: `SHOW` / `DESCRIBE` / `EXISTS` / `EXPLAIN`
+/// are read-only yet not wrappable that way.
+bool queryIsShapeable(const std::string & query)
+{
+    return shapeable_statement_keywords.contains(statementKeyword(tokenizeSignificant(query)));
 }
 
 /// Faithful port of the `splitAllQueries` splitting-and-classification loop from play.html
@@ -364,4 +393,37 @@ TEST(PlayQueryIsReadOnly, LargeQueryIsTokenizedWithoutALimit)
     EXPECT_EQ(
         splitAllQueriesIsSelect("SELECT '" + padding + "'; INSERT INTO t VALUES (1); SELECT 2"),
         (std::vector<bool>{true, false, true}));
+}
+
+TEST(PlayQueryIsReadOnly, ShapeableIsNarrowerThanReadOnly)
+{
+    /// The statement kinds the `order` query-construction setting shapes: the result header may offer
+    /// the sort arrows exactly for these.
+    EXPECT_TRUE(queryIsShapeable("SELECT number FROM numbers(10)"));
+    EXPECT_TRUE(queryIsShapeable("  \n/* c */ select 1"));
+    EXPECT_TRUE(queryIsShapeable("(SELECT 1) UNION ALL (SELECT 2)"));
+    EXPECT_TRUE(queryIsShapeable("FROM numbers(10) SELECT number"));
+    /// The real statement kind behind a CTE list decides, exactly as for the read-only walk.
+    EXPECT_TRUE(queryIsShapeable("WITH y AS (SELECT 1) SELECT * FROM y"));
+    EXPECT_TRUE(queryIsShapeable("WITH 1 AS select SELECT select"));
+
+    /// Read-only but NOT wrappable by the `order` setting: the server would silently ignore it, so
+    /// the arrows must not be offered (they would indicate a sort the rows do not have).
+    for (const auto & query : {"SHOW TABLES", "DESCRIBE TABLE t", "DESC t", "EXISTS TABLE t", "EXPLAIN SELECT 1"})
+    {
+        EXPECT_TRUE(queryIsReadOnly(query)) << query;
+        EXPECT_FALSE(queryIsShapeable(query)) << query;
+    }
+
+    /// Writes and statements of an unresolved kind are neither read-only nor sortable.
+    for (const auto & query :
+         {"INSERT INTO t VALUES (1)",
+          "WITH y AS (SELECT 1) INSERT INTO t SELECT * FROM y",
+          "PARALLEL WITH SELECT 1 AND SELECT 2",
+          "USE db",
+          "SET max_threads = 1"})
+    {
+        EXPECT_FALSE(queryIsReadOnly(query)) << query;
+        EXPECT_FALSE(queryIsShapeable(query)) << query;
+    }
 }

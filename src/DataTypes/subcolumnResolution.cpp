@@ -124,10 +124,13 @@ std::unique_ptr<IDataType::SubcolumnInfo> resolveDynamicSubcolumn(
     auto resolved_path = dynamic_parent_path;
     if (resolved_path[parent].creator)
     {
+        /// Build the serialization before the type is wrapped, so that a creator inspecting its
+        /// prev_type argument sees the type the serialization actually serializes. Same order as in
+        /// ISerialization::createFromPath.
         const auto & creator = *resolved_path[parent].creator;
+        dynamic_subcolumn->data.serialization = creator.create(dynamic_subcolumn->data.serialization, dynamic_subcolumn->data.type);
         dynamic_subcolumn->data.type = creator.create(dynamic_subcolumn->data.type);
         dynamic_subcolumn->data.column = creator.create(dynamic_subcolumn->data.column);
-        dynamic_subcolumn->data.serialization = creator.create(dynamic_subcolumn->data.serialization, dynamic_subcolumn->data.type);
     }
 
     resolved_path[parent].data = dynamic_subcolumn->data;

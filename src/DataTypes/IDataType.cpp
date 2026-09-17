@@ -1,8 +1,6 @@
 #include <cstddef>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnReplicated.h>
 
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
@@ -15,6 +13,7 @@
 #include <DataTypes/subcolumnResolution.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -88,17 +87,10 @@ MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
-    auto kind_stack = serialization.getKindStack();
-    auto column = createColumn();
-    for (auto kind : kind_stack)
-    {
-        if (kind == ISerialization::Kind::SPARSE)
-            column = ColumnSparse::create(std::move(column));
-        else if (kind == ISerialization::Kind::REPLICATED)
-            column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
-    }
-
-    return column;
+    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
+    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
+    /// the ColumnConst produced by the quantized-vector codebook serialization.
+    return serialization.wrapColumnForDeserialization(createColumn());
 }
 
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
@@ -136,6 +128,18 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
     bool throw_if_null)
 {
     return SubcolumnResolution::findSubcolumn(subcolumn_name, data, initial_array_level, throw_if_null);
+}
+
+String IDataType::getSubcolumnNameForZeroArrayLevel(std::string_view subcolumn_name, const SubstreamPath & resolved_path)
+{
+    if (!SerializationArray::isArraySizesSubcolumn(resolved_path))
+        return String(subcolumn_name);
+
+    /// `ArraySizes` is terminal, so the number is always in the last component, and the depth of the
+    /// sizes inside the resolved path is the number they get at level 0.
+    auto dot_pos = subcolumn_name.rfind('.');
+    auto prefix = dot_pos == std::string_view::npos ? std::string_view{} : subcolumn_name.substr(0, dot_pos + 1);
+    return String(prefix) + "size" + toString(ISerialization::getArrayLevel(resolved_path));
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getDynamicSubcolumnInfo(
@@ -260,13 +264,15 @@ MutableSerializationInfoPtr IDataType::createSerializationInfo(const Serializati
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
 {
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn());
+    return getSerializationInfo(column, SerializationInfoSettings::enableAllSupportedSerializations());
+}
 
-    /// Enable all supported serialization features when deriving info from an existing column. Since the column
-    /// reflects the actual in-memory state, the serialization info must accept any variant that the column may contain.
-    return std::make_shared<SerializationInfo>(
-        ISerialization::getKindStack(column), SerializationInfoSettings::enableAllSupportedSerializations());
+SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
+{
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+
+    return std::make_shared<SerializationInfo>(ISerialization::getKindStack(column), settings);
 }
 
 SerializationPtr IDataType::getDefaultSerialization() const
@@ -397,6 +403,7 @@ bool isDateTime(TYPE data_type) { return WhichDataType(data_type).isDateTime(); 
 bool isTime(TYPE data_type) { return WhichDataType(data_type).isTime(); } \
 bool isDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTime64(); } \
 bool isTime64(TYPE data_type) { return WhichDataType(data_type).isTime64(); } \
+bool isTimeOrTime64(TYPE data_type) { return WhichDataType(data_type).isTimeOrTime64(); } \
 bool isDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTimeOrDateTime64(); } \
 bool isDateOrDate32OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrDateTimeOrDateTime64(); } \
 bool isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(); } \

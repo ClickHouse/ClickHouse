@@ -138,7 +138,11 @@ public:
     Names getSubcolumnNames() const;
 
     virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const;
-    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
+    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const;
+    /// Convenience overload that enables all supported serializations. Callers that do not care about
+    /// the serialization versions (most of them) use this one; only the Native writer/reader pass
+    /// explicit settings to pick the protocol-version-dependent variants.
+    SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
@@ -181,7 +185,7 @@ public:
 
     /** Create empty column for corresponding type and serialization.
      */
-    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
@@ -208,6 +212,10 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     void insertManyDefaultsInto(IColumn & column, size_t n) const;
+
+    /// Returns true if insertDefaultInto simply calls column.insertDefault()
+    /// without any type-specific logic (e.g., Enum inserts first enum value instead of zero).
+    virtual bool isDefaultInsertTrivial() const { return true; }
 
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
@@ -384,7 +392,14 @@ protected:
         size_t initial_array_level,
         bool throw_if_null);
 
-
+    /// "sizeN" counts `Array` wrappers from the root of the column, so the array sizes get a
+    /// different number once the name is resolved against the type of a dynamically typed value
+    /// alone, which is what a serialization keeping the name does later: the inner sizes of an
+    /// element of type `Array(Array(Int64))` are "size2" below one wrapper and "size1" there. No
+    /// other name depends on the level, hence `resolved_path` rather than the name alone.
+    static String getSubcolumnNameForZeroArrayLevel(
+        std::string_view subcolumn_name,
+        const SubstreamPath & resolved_path);
 };
 
 
