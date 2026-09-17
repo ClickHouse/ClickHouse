@@ -1282,6 +1282,107 @@ def test_max_users_guard(janedoe_in_role_a):
         admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
 
 
+LDAP_SERVER_WITHOUT_LOOKUP = """<clickhouse>
+    <ldap_servers>
+        <openldap_strict>
+            <host>openldap_strict</host>
+            <port>1389</port>
+            <enable_tls>no</enable_tls>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+        </openldap_strict>
+    </ldap_servers>
+</clickhouse>
+"""
+
+SYNC_SERVER_REFUSED = "LDAP sync requires 'lookup_bind_dn' on server 'openldap_strict'"
+
+
+def test_sync_server_must_have_a_lookup_identity():
+    """The enumeration binds as the lookup identity of the server. A synchronised directory whose server
+    has none would only find out at its first run, with nobody able to log in through it meanwhile
+    (`only_synced_users`). The check runs when the main configuration is applied, against the
+    configuration as given: at startup it fails the start, and a `SYSTEM RELOAD CONFIG` that would take
+    the lookup identity away fails and leaves the previous servers in effect."""
+    try:
+        restart_node_bad_with(
+            directories_bad_config(),
+            server_config=LDAP_SERVER_WITHOUT_LOOKUP,
+            expected_to_fail=True,
+        )
+        for expected in (
+            SYNC_SERVER_REFUSED,
+            "while checking LDAP server 'openldap_strict' of user directory .ldap., which has a 'sync' section",
+        ):
+            assert (
+                node_bad.grep_in_log(expected, filename=ERR_LOG, only_latest=True) != ""
+            ), expected
+
+        restart_node_bad_with(
+            directories_bad_config(), server_config=read_config("ldap_server.xml")
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        node_bad.replace_config(
+            f"{CONFIG_D}/ldap_server_bad_lookup.xml", LDAP_SERVER_WITHOUT_LOOKUP
+        )
+        error = admin_error(node_bad, "SYSTEM RELOAD CONFIG")
+        assert SYNC_SERVER_REFUSED in error, error
+        # The previous server definition is still the one in effect.
+        admin(node_bad, "SYSTEM RELOAD USERS")
+    finally:
+        restore_node_bad()
+
+
+def test_only_synced_users_false_serves_lazy_logins(janedoe_in_role_a):
+    """With `only_synced_users` false the directory keeps its lazy path for names outside the snapshot.
+    `lazylogin` is in no group, so the search never returns them, yet the password login works and
+    materialises them here, with no roles; a run leaves them alone (it removes only the users it
+    materialised itself). Once a group returns them, a run grants the roles and owns the user from
+    then on, so leaving the group removes them like any synchronised user."""
+    ldap_add_user("lazylogin")
+    try:
+        restart_node_bad_with(
+            directories_bad_config(
+                only_synced_users="false",
+                create_roles="true",
+                roles_storage="local_directory",
+            ),
+            server_config=read_config("ldap_server.xml"),
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        base_users = int(admin(node_bad, ldap_users_query()).strip())
+        assert admin(node_bad, ldap_users_query("lazylogin")) == "0\n"
+
+        assert login(node_bad, "lazylogin") == TSV([["lazylogin"]])
+        assert admin(node_bad, ldap_users_query("lazylogin")) == "1\n"
+        assert (
+            node_bad.query(
+                "SELECT count() FROM system.current_roles",
+                user="lazylogin",
+                password="qwerty",
+            )
+            == "0\n"
+        )
+
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(node_bad, ldap_users_query("lazylogin")) == "1\n"
+        assert admin(node_bad, ldap_users_query()) == f"{base_users + 1}\n"
+
+        ldap_set_memberships("lazylogin", {ROLE_A_GROUP})
+        wait_ldap_synced_entries(base_users + 1)
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(node_bad, granted_roles_query("lazylogin")) == TSV([["role_a"]])
+
+        ldap_set_memberships("lazylogin", set())
+        wait_ldap_synced_entries(base_users)
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(node_bad, ldap_users_query("lazylogin")) == "0\n"
+    finally:
+        ldap_set_memberships("lazylogin", set())
+        ldap_delete(user_dn("lazylogin"), ignore_missing=True)
+        restore_node_bad()
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
 def with_second_ldap_directory(name, sync=None, after=False):
     """`directories_bad.xml` with a second `ldap` directory named `name`, backed by the same server and
     declared right before (with `after`, right after) the synchronised one. `sync` is the content of its
