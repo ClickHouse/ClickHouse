@@ -82,8 +82,67 @@ SELECT countIf(toStartOfInterval(d, INTERVAL 1 WEEK) >= toDate('2100-01-01')) FR
 SELECT count() FROM t_interval_epoch WHERE toStartOfInterval(d, INTERVAL 1 WEEK) <= toDate('1970-01-05');
 SELECT countIf(toStartOfInterval(d, INTERVAL 1 WEEK) <= toDate('1970-01-05')) FROM t_interval_epoch;
 
+SELECT 'the window follows the rounding, not a fixed cutoff: a year or month rounding of a late-2149 day still fits Date';
+-- 2149-06-06 is the last day `Date` holds, but the year rounding of every day of 2149 is 2149-01-01 and
+-- the month rounding of every day of June 2149 is 2149-06-01, so those ranges stay monotonic and prunable.
+DROP TABLE IF EXISTS t_interval_late_2149;
+CREATE TABLE t_interval_late_2149 (d Date32) ENGINE = MergeTree ORDER BY d
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_interval_late_2149 SELECT toDate32('2149-06-07') + number FROM numbers(24);
+SELECT count() FROM t_interval_late_2149 WHERE toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2149-01-01') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2149-01-01')) FROM t_interval_late_2149;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_late_2149 WHERE toStartOfInterval(d, INTERVAL 1 YEAR) < toDate('2149-01-01')) WHERE explain LIKE '%Granules: 0/24%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_late_2149 WHERE toStartOfInterval(d, INTERVAL 1 MONTH) < toDate('2149-06-01')) WHERE explain LIKE '%Granules: 0/24%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_late_2149 WHERE toStartOfInterval(d, INTERVAL 1 QUARTER) < toDate('2149-04-01')) WHERE explain LIKE '%Granules: 0/24%';
+-- The month rounding of July 2149 does not fit any more and wraps, so it is not mapped through.
+INSERT INTO t_interval_late_2149 SELECT toDate32('2149-07-01') + number FROM numbers(3);
+SELECT toStartOfInterval(toDate32('2149-07-01'), INTERVAL 1 MONTH);
+SELECT count() FROM t_interval_late_2149 WHERE toStartOfInterval(d, INTERVAL 1 MONTH) >= toDate('2149-06-01');
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 MONTH) >= toDate('2149-06-01')) FROM t_interval_late_2149;
+-- The first days of 1970 round back before the epoch by week, but not by month or year.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_epoch WHERE toStartOfInterval(d, INTERVAL 1 YEAR) < toDate('1970-01-01')) WHERE explain LIKE '%Granules: 0/1%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_epoch WHERE toStartOfInterval(d, INTERVAL 1 MONTH) < toDate('1970-01-01')) WHERE explain LIKE '%Granules: 0/1%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_epoch WHERE toStartOfInterval(d, INTERVAL 1 WEEK) < toDate('1970-01-01')) WHERE explain LIKE '%Granules: 1/1%';
+
+SELECT 'a Nullable(Date32) key is guarded as well';
+DROP TABLE IF EXISTS t_interval_nullable;
+CREATE TABLE t_interval_nullable (d Nullable(Date32)) ENGINE = MergeTree ORDER BY d
+    SETTINGS allow_nullable_key = 1, index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_interval_nullable VALUES ('1900-01-01'),('1969-12-31'),('2000-01-01'),('2149-06-06'),('2200-01-01'),('2299-12-31'),(NULL);
+SELECT count() FROM t_interval_nullable WHERE toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2050-01-01', 'UTC');
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2050-01-01', 'UTC')) FROM t_interval_nullable;
+SELECT count() FROM t_interval_nullable WHERE toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2100-01-01');
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2100-01-01')) FROM t_interval_nullable;
+SELECT count() FROM t_interval_nullable WHERE dateTrunc('day', d) >= toDateTime('2050-01-01', 'UTC') SETTINGS function_date_trunc_return_type_behavior = 1;
+SELECT countIf(dateTrunc('day', d) >= toDateTime('2050-01-01', 'UTC')) FROM t_interval_nullable SETTINGS function_date_trunc_return_type_behavior = 1;
+SELECT count() FROM t_interval_nullable WHERE dateTrunc('year', d) >= toDate('2100-01-01') SETTINGS function_date_trunc_return_type_behavior = 1;
+SELECT countIf(dateTrunc('year', d) >= toDate('2100-01-01')) FROM t_interval_nullable SETTINGS function_date_trunc_return_type_behavior = 1;
+
+SELECT 'a day rounding west of UTC runs out of DateTime a day earlier than in UTC';
+-- The last UTC midnight that fits `UInt32` seconds is 2106-02-07, but the local midnight of that day in
+-- America/Hermosillo (UTC-7) is already past it and wraps. The single granule spans the wrap. A time zone
+-- given as a third argument keeps the function out of index analysis altogether, so the zone comes from
+-- the session here, which is where the result type takes it from as well.
+DROP TABLE IF EXISTS t_interval_tz;
+CREATE TABLE t_interval_tz (d Date32) ENGINE = MergeTree ORDER BY d
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_interval_tz VALUES ('2106-02-05'),('2106-02-06'),('2106-02-07');
+SET session_timezone = 'America/Hermosillo';
+SELECT toStartOfInterval(toDate32('2106-02-07'), INTERVAL 1 DAY, 'UTC'), toStartOfInterval(toDate32('2106-02-07'), INTERVAL 1 DAY);
+SELECT count() FROM t_interval_tz WHERE toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2106-02-06 00:00:00');
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2106-02-06 00:00:00')) FROM t_interval_tz;
+SELECT count() FROM t_interval_tz WHERE dateTrunc('day', d) >= toDateTime('2106-02-06 00:00:00') SETTINGS function_date_trunc_return_type_behavior = 1;
+SELECT countIf(dateTrunc('day', d) >= toDateTime('2106-02-06 00:00:00')) FROM t_interval_tz SETTINGS function_date_trunc_return_type_behavior = 1;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_tz WHERE toStartOfInterval(d, INTERVAL 1 DAY) < toDateTime('2106-02-05 00:00:00')) WHERE explain LIKE '%Granules: 1/1%';
+-- In UTC the same range still fits, stays monotonic and is pruned.
+SET session_timezone = 'UTC';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_interval_tz WHERE toStartOfInterval(d, INTERVAL 1 DAY) < toDateTime('2106-02-05 00:00:00')) WHERE explain LIKE '%Granules: 0/1%';
+
 DROP TABLE t_interval_date32;
 DROP TABLE t_interval_in_range;
 DROP TABLE t_interval_dt64;
 DROP TABLE t_interval_date_result;
 DROP TABLE t_interval_epoch;
+DROP TABLE t_interval_late_2149;
+DROP TABLE t_interval_nullable;
+DROP TABLE t_interval_tz;
