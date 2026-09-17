@@ -2,6 +2,11 @@ SET enable_analyzer = 1; -- FuseSiblingAggregateSubqueriesPass is an Analyzer pa
 -- The fused branches must read one snapshot of each table, so the pass refuses when sibling branches
 -- can capture their own. CI randomizes this setting, and arm 25 toggles it deliberately.
 SET enable_shared_storage_snapshot_in_query = 1;
+-- The pass refuses whenever any of these is set at all, whatever the value, and the stateless test
+-- profile (tests/config/users.d/limits.yaml) sets eight of them in the default profile, so without
+-- this every arm asserting a rewrite would assert one that cannot happen. Arms 29a/29b/29c set their
+-- own in query-level SETTINGS, which override this.
+SET max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0, max_columns_to_read = 0, max_temporary_columns = 0, max_temporary_non_const_columns = 0, max_rows_in_join = 0, max_bytes_in_join = 0;
 
 -- Each arm prints its answer with the optimization off and then on (the two lines must agree), plus a
 -- query-tree assertion, because equal answers alone cannot tell a correct rewrite from no rewrite.
@@ -10,6 +15,7 @@ DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS tn;
 DROP TABLE IF EXISTS m;
 DROP TABLE IF EXISTS lo;
+DROP TABLE IF EXISTS dyn;
 DROP TABLE IF EXISTS dflt;
 DROP TABLE IF EXISTS dec;
 DROP TABLE IF EXISTS f1;
@@ -42,6 +48,14 @@ INSERT INTO m SELECT number, number FROM numbers(10);
 -- Holds the Int64 minimum, the value intDiv(k, -1) overflows on.
 CREATE TABLE lo (id Int64, k Int64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO lo VALUES (1, -9223372036854775808), (2, 5), (3, 7);
+
+-- d1 = d2 compares the tuples element by element, so the Dynamic elements dispatch on each row's own
+-- types and the p = 1 row, whose elements are a String and an integer, has no supertype to compare in.
+-- ORDER BY tuple() keeps primary-key pruning from dropping that row from the fused read; PARTITION BY p
+-- keeps it out of the unfused branch's read whatever the plan does with that branch's AND, so arm 03d
+-- measures the pass rather than filter push-down.
+CREATE TABLE dyn (p UInt8, d1 Tuple(Dynamic), d2 Tuple(Dynamic)) ENGINE = MergeTree PARTITION BY p ORDER BY tuple();
+INSERT INTO dyn VALUES (0, tuple(42), tuple(42)), (1, tuple('x'), tuple(42));
 
 -- x is added after the parts are written, so the parts do not store it and reading a row evaluates its
 -- DEFAULT expression inside the reader.
@@ -140,6 +154,19 @@ SELECT '03b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TR
 
 SELECT '-- 03c the guard also covers a shared conjunct, whose position in the fused AND changes';
 SELECT '03c fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM m WHERE k != 0 AND intDiv(1, k) > 0) AS x, (SELECT count() AS b FROM m WHERE k > 0 AND intDiv(1, k) > 0) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+
+-- 03d executes its answers, unlike 03/03b/03c: the throwing row is in a partition the unfused branch
+-- prunes. A comparison of two equal types reads the values as they are stored and cannot throw, which
+-- is why Variant/Dynamic/JSON are excluded from that rule, but only at the top level: nested in a tuple
+-- they still dispatch per row. The sweep is on the answer with the optimization on because
+-- force_enable defers the residual and would answer even if the pass wrongly fused.
+SELECT '-- 03d a Dynamic nested in a tuple dispatches on each row own types, so it is refused';
+SELECT '03d', a, b FROM (SELECT count() AS a FROM dyn WHERE p = 0 AND d1 = d2) AS x, (SELECT count() AS b FROM dyn WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;
+SELECT '03d', a, b FROM (SELECT count() AS a FROM dyn WHERE p = 0 AND d1 = d2) AS x, (SELECT count() AS b FROM dyn WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1;
+SELECT '03d disable', a, b FROM (SELECT count() AS a FROM dyn WHERE p = 0 AND d1 = d2) AS x, (SELECT count() AS b FROM dyn WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, short_circuit_function_evaluation = 'disable';
+SELECT '03d enable', a, b FROM (SELECT count() AS a FROM dyn WHERE p = 0 AND d1 = d2) AS x, (SELECT count() AS b FROM dyn WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, short_circuit_function_evaluation = 'enable';
+SELECT '03d force', a, b FROM (SELECT count() AS a FROM dyn WHERE p = 0 AND d1 = d2) AS x, (SELECT count() AS b FROM dyn WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, short_circuit_function_evaluation = 'force_enable';
+SELECT '03d fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM dyn WHERE p = 0 AND d1 = d2) AS x, (SELECT count() AS b FROM dyn WHERE p = 1) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
 
 SELECT '-- 04 a branch whose conjuncts are all shared has no -If and keeps every row the shared part keeps';
 SELECT '04', a, b FROM (SELECT count() AS a FROM t WHERE v > 10) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0;

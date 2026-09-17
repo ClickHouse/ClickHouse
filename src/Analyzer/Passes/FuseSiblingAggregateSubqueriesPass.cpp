@@ -111,6 +111,23 @@ QueryTreeNodePtr makeLogicalFunction(const String & function_name, QueryTreeNode
     return function_node;
 }
 
+/// A comparison of two equal types reads the values as they are stored, except where the type
+/// dispatches on each row's own type: `Variant`, `Dynamic` and `JSON`. The comparison excludes those
+/// at the top level (`FunctionsComparison.h`); nested in a tuple its elements are compared by a
+/// comparison of their own, so they have to be excluded at any depth.
+bool typeDispatchesPerRow(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        result |= which.isVariant() || which.isDynamic() || which.isObject();
+    };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
 /// Whether this expression yields a value for every row, whatever the column values are. Fusion
 /// evaluates a branch's conjuncts on rows that branch's own filter excluded and reorders the shared
 /// ones, so totality has to be proven rather than assumed. `IFunction::canThrow` cannot prove it: it
@@ -134,7 +151,7 @@ bool isTotalOnEveryRow(const QueryTreeNodePtr & root)
 
         if (const auto * column_node = current->as<ColumnNode>())
         {
-            if (column_node->hasExpression())
+            if (column_node->hasExpression() || typeDispatchesPerRow(*column_node->getColumnType()))
                 return false;
             continue;
         }
@@ -152,7 +169,11 @@ bool isTotalOnEveryRow(const QueryTreeNodePtr & root)
 
             DataTypesWithConstInfo argument_types;
             for (const auto & argument_column : function_node->getArgumentColumns())
+            {
+                if (typeDispatchesPerRow(*argument_column.type))
+                    return false;
                 argument_types.push_back({argument_column.type, argument_column.column != nullptr});
+            }
 
             if (adaptor->getFunction()->canThrow(argument_types))
                 return false;
@@ -495,13 +516,7 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
 
         for (size_t position = 0; position < branch_projection_nodes.size(); ++position)
         {
-            /// Onto the kept branch's sources, like the conjuncts: an aggregate that keeps a column of
-            /// a branch this fusion removes would leave that column without a source.
             auto aggregate = branch_projection_nodes[position]->cloneAndReplace(substitution);
-            NodeSet aggregate_sources;
-            if (!collectColumnSources(aggregate, base_sources, aggregate_sources))
-                return {};
-
             const auto & output_column = branch_projection_columns[position];
 
             if (condition)

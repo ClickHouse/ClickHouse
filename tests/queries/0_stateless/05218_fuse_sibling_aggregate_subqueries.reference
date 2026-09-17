@@ -20,6 +20,13 @@
 03b fused	0
 -- 03c the guard also covers a shared conjunct, whose position in the fused AND changes
 03c fused	0
+-- 03d a Dynamic nested in a tuple dispatches on each row own types, so it is refused
+03d	1	1
+03d	1	1
+03d disable	1	1
+03d enable	1	1
+03d force	1	1
+03d fused	0
 -- 04 a branch whose conjuncts are all shared has no -If and keeps every row the shared part keeps
 04	994	1
 04	994	1

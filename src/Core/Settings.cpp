@@ -6368,6 +6368,12 @@ branches did not. Spilling is a graceful fallback rather than an error, but it c
 
 A query tree cannot see access paths, hence the opt-in default.
 
+The rewrite is also skipped for the whole query when any of `max_rows_to_read`, `max_bytes_to_read`,
+`max_rows_to_read_leaf`, `max_bytes_to_read_leaf`, `max_columns_to_read`, `max_temporary_columns`,
+`max_temporary_non_const_columns`, `max_rows_in_join` or `max_bytes_in_join` is set to a non-zero
+value, whatever that value is: each of them is checked against the fused read or join instead of the
+per-branch ones, and a query tree cannot tell how either compares to the bound.
+
 :::note
 Supported only with the analyzer (`enable_analyzer = 1`).
 :::
