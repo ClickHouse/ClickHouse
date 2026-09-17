@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Window functions can be executed under make_distributed_plan=1: WindowStep is serialized for remote
 -- execution and produces the same result as the non-distributed plan. This includes windows with
 -- PARTITION BY, which may run per bucket below a sorted gather (see
