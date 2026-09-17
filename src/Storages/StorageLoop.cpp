@@ -16,7 +16,9 @@ namespace DB
             , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
         auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-        setInMemoryMetadata(*metadata_snapshot);
+        /// loop() is a transient table function with an independent StorageID;
+        /// it exposes the source's physical rows, not its durable UDT identity.
+        setInMemoryMetadata(metadata_snapshot->cloneAsPhysicalOnlyForIndependentStorage());
     }
 
     QueryProcessingStage::Enum StorageLoop::getQueryProcessingStage(
@@ -29,6 +31,11 @@ namespace DB
         /// a `MergingAggregatedStep`, which then trips on the missing chunk info — see
         /// issue #104863.
         return QueryProcessingStage::FetchColumns;
+    }
+
+    StoragePtr StorageLoop::getInnerStorage() const
+    {
+        return inner_storage;
     }
 
     void StorageLoop::read(

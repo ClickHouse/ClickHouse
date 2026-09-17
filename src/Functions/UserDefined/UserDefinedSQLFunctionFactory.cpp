@@ -19,6 +19,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/UDT/UDTExecutionBoundary.h>
 
 #include <filesystem>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
@@ -35,10 +36,12 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
-    extern const SettingsSetOperationMode union_default_mode;
-    extern const SettingsBool log_queries;
+extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsBool allow_experimental_user_defined_types;
+extern const SettingsSetOperationMode except_default_mode;
+extern const SettingsSetOperationMode intersect_default_mode;
+extern const SettingsSetOperationMode union_default_mode;
+extern const SettingsBool log_queries;
 }
 
 namespace ErrorCodes
@@ -382,7 +385,14 @@ void UserDefinedSQLFunctionFactory::reloadDriverBasedFunctions(
             recreate_driver_ast.if_not_exists = false;
 
             ASTPtr query = recreate_ast;
-            auto interpreter = InterpreterFactory::instance().get(query, current_context);
+            const auto & settings = current_context->getSettingsRef();
+            auto udt_execution_boundary = UDT::validateUDTExecutionBoundary(
+                query,
+                {
+                    .allow_experimental_analyzer = static_cast<bool>(settings[Setting::allow_experimental_analyzer]),
+                    .allow_experimental_user_defined_types = static_cast<bool>(settings[Setting::allow_experimental_user_defined_types]),
+                });
+            auto interpreter = InterpreterFactory::instance().get(query, current_context, std::move(udt_execution_boundary));
             interpreter->execute();
         }
         catch (...)

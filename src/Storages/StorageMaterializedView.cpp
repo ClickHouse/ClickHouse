@@ -1,4 +1,6 @@
 #include <thread>
+#include <DataTypes/UDT/BoundObjectTypeReferences.h>
+#include <DataTypes/UDT/TableColumnTypeAlterBindings.h>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/ColumnDefault.h>
@@ -14,19 +16,21 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/DefinerDependencies.h>
+#include <Databases/IDatabase.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Interpreters/executeQuery.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -51,6 +55,8 @@
 
 #include <Backups/BackupEntriesCollector.h>
 
+#include <exception>
+
 namespace DB
 {
 namespace Setting
@@ -73,12 +79,14 @@ namespace RefreshSetting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
-    extern const int INCORRECT_QUERY;
-    extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
-    extern const int TOO_MANY_MATERIALIZED_VIEWS;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
+extern const int ABORTED;
+extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
+extern const int INCORRECT_QUERY;
+extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
+extern const int SUPPORT_IS_DISABLED;
+extern const int TOO_MANY_MATERIALIZED_VIEWS;
+extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace ActionLocks
@@ -113,6 +121,24 @@ namespace
         for (const auto & column : select_query_output_columns)
             if (!target_table_columns.has(column.name))
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
+    }
+
+    void assertSameMappedStorageImage(
+        const StorageMetadataPtr & caller_metadata, const StorageMetadataPtr & own_metadata, const StorageID & storage_id)
+    {
+        caller_metadata->validateBoundUDTReferences();
+        own_metadata->validateBoundUDTReferences();
+        const auto & caller = caller_metadata->getBoundUDTReferences();
+        const auto & own = own_metadata->getBoundUDTReferences();
+        if (!caller || !own || caller->getObject() != own->getObject()
+            || caller->getObjectSchemaRevision() != own->getObjectSchemaRevision() || caller->getSidecarHash() != own->getSidecarHash()
+            || caller->getPhysicalSchemaFingerprint() != own->getPhysicalSchemaFingerprint())
+        {
+            throw Exception(
+                ErrorCodes::ABORTED,
+                "Mapped UDT MaterializedView {} received a foreign or stale metadata image",
+                storage_id.getNameForLogs());
+        }
     }
 }
 
@@ -481,10 +507,30 @@ void StorageMaterializedView::readImpl(
     }
 }
 
-SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert)
+SinkToStoragePtr StorageMaterializedView::write(
+    const ASTPtr & query, const StorageMetadataPtr & outer_metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
-    auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+    auto view_metadata = IStorage::getInMemoryMetadataPtr(local_context, false);
+    StorageMetadataPtr exact_view_metadata = view_metadata;
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
+
+    /// InterpreterInsertQuery normally passes the exact outer snapshot which
+    /// was admitted at query start. Do not trust that forwarding contract as
+    /// the only indication that this logical storage is mapped, though: an
+    /// internal caller may pass no snapshot (or a physical target snapshot).
+    /// A mapped caller snapshot must describe this exact current view image;
+    /// otherwise it could fence a different object from the same database.
+    StorageMetadataPtr outer_commit_metadata = outer_metadata_snapshot;
+    if (outer_commit_metadata && outer_commit_metadata->getBoundUDTReferences())
+        assertSameMappedStorageImage(outer_commit_metadata, exact_view_metadata, getStorageID());
+    else if (exact_view_metadata->getBoundUDTReferences())
+        outer_commit_metadata = exact_view_metadata;
+
+    if (outer_commit_metadata && outer_commit_metadata->getBoundUDTReferences())
+    {
+        UDT::assertAuthorityStorageNewOperationAllowed(*this, outer_commit_metadata, UDT::AuthorityQuarantineOperationKind::Write);
+    }
+
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
@@ -500,6 +546,17 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
     }
 
     auto sink = storage->write(query, metadata_snapshot, context, async_insert);
+
+    if (outer_commit_metadata && outer_commit_metadata->getBoundUDTReferences())
+    {
+        StoragePtr outer_storage_owner = shared_from_this();
+        sink->addAdditionalCommitGuardFactory(
+            [outer_storage = std::move(outer_storage_owner), outer_commit_metadata]
+            {
+                return UDT::acquireAuthorityStorageNewOperationCommitGuard(
+                    *outer_storage, outer_commit_metadata, UDT::AuthorityQuarantineOperationKind::Write);
+            });
+    }
 
     sink->addInterpreterContext(context);
     sink->addTableLock(lock);
@@ -533,6 +590,29 @@ void StorageMaterializedView::drop()
     /// but DROP acquires DDLGuard for the name of MV. And we cannot acquire second DDLGuard for the inner name in DROP,
     /// because it may lead to lock-order-inversion (DDLGuards must be acquired in lexicographical order).
     dropInnerTableIfAny(/* sync */ false, getContext());
+
+    if (is_dropped && has_inner_table && !isRefreshable())
+    {
+        const auto inner_table_id = getTargetTableId();
+        const auto database = DatabaseCatalog::instance().tryGetDatabase(inner_table_id.database_name);
+        if (database)
+        {
+            const auto metadata_path = database->getObjectMetadataPath(inner_table_id.table_name);
+            if (!metadata_path.empty() && database->getDisk()->existsFile(metadata_path))
+            {
+                /// During restart the outer tombstone is loaded before live
+                /// database tables. Keep that tombstone in the retry queue
+                /// until the owned child is attached and can go through its
+                /// ordinary physical DROP; otherwise an early no-op would
+                /// orphan the inner table permanently.
+                throw Exception(
+                    ErrorCodes::ABORTED,
+                    "MaterializedView {} cleanup cannot finish while inner-table metadata {} is still live",
+                    table_id.getNameForLogs(),
+                    metadata_path);
+            }
+        }
+    }
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
@@ -567,8 +647,23 @@ void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_co
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    if (has_inner_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, getTargetTableId(), true);
+    if (!has_inner_table)
+        return;
+
+    const auto outer_metadata = IStorage::getInMemoryMetadataPtr(local_context, true);
+    if (outer_metadata->getBoundUDTReferences())
+    {
+        /// ReplicatedMergeTree may only enqueue the truncate log entry and
+        /// return when alter_sync is disabled. The background publication
+        /// cannot retain the exact logical MaterializedView image, so a short
+        /// authority fence around this forwarding call would be insufficient.
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "TRUNCATE is not supported for mapped UDT MaterializedView {}",
+            getStorageID().getNameForLogs());
+    }
+
+    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, getTargetTableId(), true);
 }
 
 void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_context) const
@@ -615,6 +710,18 @@ bool StorageMaterializedView::optimize(
     ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
+    const auto outer_metadata = IStorage::getInMemoryMetadataPtr(local_context, true);
+    if (outer_metadata->getBoundUDTReferences())
+    {
+        /// ReplicatedMergeTree OPTIMIZE may publish only a log entry before
+        /// returning (for example with alter_sync=0). Its later background
+        /// commits have no durable carrier for the exact outer view image.
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "OPTIMIZE is not supported for mapped UDT MaterializedView {}",
+            getStorageID().getNameForLogs());
+    }
+
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(local_context, false);
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
@@ -628,6 +735,13 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     client_info.client_name = "refreshable materialized view";
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
     auto refresh_context = view_metadata->getSQLSecurityOverriddenContext(table_context, &client_info);
+    if (const auto & references = view_metadata->getBoundUDTReferences())
+    {
+        refresh_context->setUDTStoredExpressionTypeReferences(references);
+        table_context->setQueryResultCacheBlockedByUDT();
+        refresh_context->setQueryResultCacheBlockedByUDT();
+    }
+    refresh_context->setIsViewInnerQuery(true);
     refresh_context->setClientInfo(client_info);
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setSetting("log_comment", log_comment);
@@ -820,20 +934,30 @@ void StorageMaterializedView::alter(
     {
         checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
     }
+    new_metadata.prepareUDTAlterPublication();
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    auto & instance = DefinerDependencies::instance();
-    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeDependencies(table_id);
+    try
+    {
+        auto & instance = DefinerDependencies::instance();
+        if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
+            instance.removeDependencies(table_id);
 
-    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addDependency(*new_metadata.definer, table_id);
+        if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
+            instance.addDependency(*new_metadata.definer, table_id);
 
-    setInMemoryMetadata(new_metadata);
+        setInMemoryMetadata(new_metadata);
 
-    if (refresher)
-        refresher->alterRefreshParams(new_metadata.refresh->as<const ASTRefreshStrategy &>());
+        if (refresher)
+            refresher->alterRefreshParams(new_metadata.refresh->as<const ASTRefreshStrategy &>());
+    }
+    catch (...)
+    {
+        if (const auto & pending = new_metadata.getPendingUDTColumnAlter(); pending && pending->getCompletedPublication())
+            std::terminate();
+        throw;
+    }
 }
 
 
@@ -867,6 +991,14 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
 void StorageMaterializedView::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
 {
     checkStatementCanBeForwarded();
+    auto outer_metadata = IStorage::getInMemoryMetadataPtr(nullptr, false);
+    if (outer_metadata->getBoundUDTReferences())
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Mutations are not supported for mapped UDT MaterializedView {}",
+            getStorageID().getNameForLogs());
+    }
     getTargetTable()->checkMutationIsPossible(commands, settings);
 }
 
@@ -874,6 +1006,21 @@ Pipe StorageMaterializedView::alterPartition(
     const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
+    const auto outer_metadata = IStorage::getInMemoryMetadataPtr(local_context, true);
+    if (outer_metadata->getBoundUDTReferences())
+    {
+        /// Most MergeTree partition commands finish before returning and their
+        /// optional Pipe only exposes an already-built result. MOVE can instead
+        /// publish from a background executor, and an intermediate forwarding
+        /// storage may replace this logical snapshot with physical target
+        /// metadata before MergeTree's mapped-command rejection sees it. Until
+        /// the exact outer image can be propagated to every such final commit,
+        /// reject the complete mapped forwarding surface fail closed.
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "ALTER PARTITION is not supported for mapped UDT MaterializedView {}",
+            getStorageID().getNameForLogs());
+    }
     return getTargetTable()->alterPartition(metadata_snapshot, commands, local_context);
 }
 
@@ -882,16 +1029,54 @@ void StorageMaterializedView::checkAlterPartitionIsPossible(
     const Settings & settings, ContextPtr local_context) const
 {
     checkStatementCanBeForwarded();
+    const auto outer_metadata = IStorage::getInMemoryMetadataPtr(local_context, true);
+    if (outer_metadata->getBoundUDTReferences())
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "ALTER PARTITION is not supported for mapped UDT MaterializedView {}",
+            getStorageID().getNameForLogs());
+    }
     getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, local_context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
+    auto outer_metadata_handle = IStorage::getInMemoryMetadataPtr(local_context, true);
+    if (outer_metadata_handle->getBoundUDTReferences())
+    {
+        /// MergeTree publishes the durable mutation entry synchronously but may
+        /// replace active parts after this call returns. Holding the outer
+        /// authority fence until background completion would block quarantine,
+        /// while releasing it here would let later commits bypass the logical
+        /// MaterializedView image. A durable propagation format does not exist.
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Mutations are not supported for mapped UDT MaterializedView {}",
+            getStorageID().getNameForLogs());
+    }
     getTargetTable()->mutate(commands, local_context);
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
+{
+    const auto no_op = [] {};
+    renameInMemoryImpl(new_table_id, no_op, no_op);
+}
+
+void StorageMaterializedView::renameInMemoryWithNestedTableCallbacks(
+    const StorageID & new_table_id,
+    const std::function<void()> & before_nested_table_rename,
+    const std::function<void()> & after_nested_table_rename)
+{
+    renameInMemoryImpl(new_table_id, before_nested_table_rename, after_nested_table_rename);
+}
+
+void StorageMaterializedView::renameInMemoryImpl(
+    const StorageID & new_table_id,
+    const std::function<void()> & before_nested_table_rename,
+    const std::function<void()> & after_nested_table_rename)
 {
     auto old_table_id = getStorageID();
     auto inner_table_id = getTargetTableId();
@@ -906,7 +1091,17 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         auto rename = make_intrusive<ASTRenameQuery>();
         rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_target_table_name);
 
-        InterpreterRenameQuery(rename, getContext()).execute();
+        before_nested_table_rename();
+        try
+        {
+            InterpreterRenameQuery(rename, getContext()).execute();
+        }
+        catch (...)
+        {
+            after_nested_table_rename();
+            throw;
+        }
+        after_nested_table_rename();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
     }
 
@@ -997,8 +1192,23 @@ void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries
 
 void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
-    if (hasInnerTable() && fixed_uuid)
-        getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    if (!hasInnerTable() || !fixed_uuid)
+        return;
+
+    const auto outer_metadata = IStorage::getInMemoryMetadataPtr(getContext(), true);
+    if (outer_metadata->getBoundUDTReferences())
+    {
+        /// Target engines may register asynchronous restore tasks. Those tasks
+        /// retain the physical target, not this exact mapped outer image, so
+        /// admitting only the forwarding call would let their final commits
+        /// escape an authority transition.
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "RESTORE is not supported for mapped UDT MaterializedView {}",
+            getStorageID().getNameForLogs());
+    }
+
+    getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
 }
 
 void StorageMaterializedView::finalizeRestoreFromBackup()

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <Parsers/IAST_fwd.h>
 
@@ -84,6 +85,10 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
+    void renameInMemoryWithNestedTableCallbacks(
+        const StorageID & new_table_id,
+        const std::function<void()> & before_nested_table_rename,
+        const std::function<void()> & after_nested_table_rename);
 
     void startup() override;
     void flushAndPrepareForShutdown() override;
@@ -153,6 +158,10 @@ private:
     friend class RefreshTask;
 
     void checkStatementCanBeForwarded() const;
+    void renameInMemoryImpl(
+        const StorageID & new_table_id,
+        const std::function<void()> & before_nested_table_rename,
+        const std::function<void()> & after_nested_table_rename);
 
     ContextMutablePtr createRefreshContext(const String & log_comment) const;
     /// Prepare to refresh a refreshable materialized view: create temporary table (if needed) and

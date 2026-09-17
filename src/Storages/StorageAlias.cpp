@@ -61,6 +61,37 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
 
+void StorageAlias::observeTargetResolution(
+    const ContextPtr & query_context,
+    const StorageID & source_alias_id,
+    const StoragePtr & target,
+    const StorageID & target_id_at_observation,
+    const StorageMetadataPtr & metadata) const
+{
+    if (!query_context || !target)
+        return;
+
+    auto observer = query_context->getUDTAliasResolutionObserver();
+    if (!observer)
+        return;
+
+    (*observer)(source_alias_id, target, target_id_at_observation, metadata);
+}
+
+StorageMetadataHandle StorageAlias::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+{
+    const auto source_alias_id = getStorageID();
+    auto target = tryGetTargetTable();
+    if (!target)
+        return std::make_shared<StorageInMemoryMetadata>();
+
+    const auto target_id_at_observation = target->getStorageID();
+    auto metadata_handle = target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    StorageMetadataPtr metadata = metadata_handle;
+    observeTargetResolution(query_context, source_alias_id, target, target_id_at_observation, metadata);
+    return metadata_handle;
+}
+
 bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     if (!query_context)
@@ -417,12 +448,26 @@ std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
+    const auto source_alias_id = getStorageID();
+    auto target = getTargetTable();
+    const auto target_id_at_observation = target->getStorageID();
+    auto snapshot = target->getStorageSnapshot(metadata_snapshot, query_context);
+    observeTargetResolution(query_context, source_alias_id, target, target_id_at_observation, metadata_snapshot);
+    if (snapshot && snapshot->metadata && snapshot->metadata != metadata_snapshot)
+        observeTargetResolution(query_context, source_alias_id, target, target_id_at_observation, snapshot->metadata);
+    return snapshot;
 }
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+    const auto source_alias_id = getStorageID();
+    auto target = getTargetTable();
+    const auto target_id_at_observation = target->getStorageID();
+    auto snapshot = target->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+    observeTargetResolution(query_context, source_alias_id, target, target_id_at_observation, metadata_snapshot);
+    if (snapshot && snapshot->metadata && snapshot->metadata != metadata_snapshot)
+        observeTargetResolution(query_context, source_alias_id, target, target_id_at_observation, snapshot->metadata);
+    return snapshot;
 }
 
 bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const

@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/UDT/StoredObjectTableFunctionSources.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -29,6 +30,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -100,8 +102,26 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
     StoragePtr storage;
     auto columns = getActualTableStructure(context, is_insert_query);
 
-    if (isPermitted(context, columns))
+    const bool permitted = isPermitted(context, columns);
+    if (permitted)
     {
+        /// The output header is always inferred from ELSE, even when the SELECT
+        /// branch is selected.  In that case no ELSE storage is constructed,
+        /// so an exact logical source cannot be handed to inferred-schema
+        /// validation without executing the unselected branch.  Fail closed
+        /// only while that validation observer is installed; ordinary query
+        /// execution and its access ordering remain unchanged.
+        if (context->getUDTTableFunctionStorageObserver()
+            && UDT::classifyStoredObjectTableFunctionSource(else_table_function->getName())
+                != UDT::StoredObjectTableFunctionSourceProvenance::PhysicalInference)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot infer a physical-only schema from table function '{}' because its unselected ELSE table function '{}' "
+                "requires an exact source storage",
+                getName(),
+                else_table_function->getName());
+        }
         storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
     }
     else

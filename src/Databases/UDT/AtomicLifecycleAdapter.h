@@ -18,6 +18,10 @@ class BoundObjectTypeReferences;
 class PhysicalizationTokenStore;
 class EffectiveResourceLimits;
 struct PersistedTypeReferences;
+class StoredObjectUDTPublicationAdmissionProof;
+struct PreparedViewOutputTypeBindings;
+enum class StoredObjectKind : UInt8;
+enum class StoredObjectSourceMode : UInt8;
 struct DefinitionMutationRequest;
 
 /// DatabaseAtomic-owned lifecycle boundary. The object itself is in-memory
@@ -45,6 +49,42 @@ public:
     void physicalizationApply(
         std::string_view opaque_token, const LifecycleActor & actor, const IPhysicalizationApplyAuthorization & authorization) override;
     void discardPhysicalizationToken(std::string_view opaque_token, const LifecycleActor & actor) noexcept override;
+
+    /// Issues a one-shot CREATE publication proof only after registering the
+    /// same complete adapter implementation used by dry-run/apply for every
+    /// admitted View/MV/Dictionary route.
+    [[nodiscard]] StoredObjectUDTPublicationAdmissionProof authorizeStoredObjectCreate(
+        const AuthorityRoot & planning_root,
+        AtomicDatabaseSchemaMutationStorage & storage,
+        StoredObjectKind object_kind,
+        const ASTCreateQuery & create,
+        const PreparedViewOutputTypeBindings & bindings,
+        bool uses_selected_output_classification) const;
+    [[nodiscard]] StoredObjectUDTPublicationAdmissionProof authorizeStoredObjectCreate(
+        const AuthorityRoot & planning_root,
+        AtomicDatabaseSchemaMutationStorage & storage,
+        const ASTCreateQuery & create,
+        const PreparedDictionaryAttributeTypeBindings & bindings) const;
+
+    /// Validates the immutable source-sidecar provenance retained by native
+    /// Table AS/CLONE while the caller owns the exact Atomic planning root.
+    /// This authorizes no mutation by itself; the retargeted package is still
+    /// revalidated and committed by the ordinary mapped-table CREATE boundary.
+    void authorizeTableSourceSidecarCopy(
+        const AuthorityRoot & planning_root,
+        AtomicDatabaseSchemaMutationStorage & storage,
+        StoredObjectSourceMode source_mode,
+        const PersistedTypeReferences & source_references,
+        const BoundObjectTypeReferences & bound_source_references) const;
+
+    /// Validates a complete analyzer-selected Table output classification
+    /// against the exact prepared sidecar and the registered Table adapter.
+    void authorizeTableSelectedOutputs(
+        const AuthorityRoot & planning_root,
+        AtomicDatabaseSchemaMutationStorage & storage,
+        StoredObjectSourceMode source_mode,
+        UInt64 classified_output_count,
+        const PersistedTypeReferences & references) const;
 
 private:
     friend class DB::DatabaseAtomic;

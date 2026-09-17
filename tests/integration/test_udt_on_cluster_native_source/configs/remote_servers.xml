@@ -1,0 +1,13 @@
+<clickhouse>
+    <remote_servers>
+        <udt_worker_only>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </udt_worker_only>
+    </remote_servers>
+</clickhouse>

@@ -22,6 +22,7 @@
 #include <Databases/UDT/AtomicCrossDatabaseGuard.h>
 #include <Databases/UDT/AtomicDatabaseSchemaMutationStorage.h>
 #include <Databases/UDT/AtomicLifecycleAdapter.h>
+#include <Databases/UDT/AtomicStoredObjectUDTMetadataValidator.h>
 #include <Databases/UDT/AtomicTableMetadataValidator.h>
 #include <Databases/UDT/AuthorityStorageOperationGate.h>
 #include <Databases/UDT/AuthorityVerificationBatchExecutor.h>
@@ -35,6 +36,7 @@
 #include <Databases/UDT/DependentObjectMutationCoordinator.h>
 #include <Databases/UDT/DependentObjectMutationPlanner.h>
 #include <Databases/UDT/ResourceLimitAdapters.h>
+#include <Databases/UDT/StoredObjectUDTPublicationCoordinator.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -42,6 +44,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/UDT/StoredObjectTypeBindingPreparation.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -324,6 +327,37 @@ UDT::SchemaObjectKind mappedSchemaObjectKindForStorage(const IStorage & storage)
     if (storage.isView())
         return UDT::SchemaObjectKind::View;
     return UDT::SchemaObjectKind::Table;
+}
+
+bool isAtomicMaterializedViewInnerTableName(std::string_view table_name) noexcept
+{
+    return table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner_id.");
+}
+
+std::optional<UUID> tryGetAtomicMaterializedViewOwnerUUID(std::string_view table_name)
+{
+    constexpr std::string_view inner_prefix = ".inner_id.";
+    constexpr std::string_view temporary_inner_prefix = ".tmp.inner_id.";
+    std::string_view uuid_text;
+    if (table_name.starts_with(inner_prefix))
+        uuid_text = table_name.substr(inner_prefix.size());
+    else if (table_name.starts_with(temporary_inner_prefix))
+        uuid_text = table_name.substr(temporary_inner_prefix.size());
+    else
+        return std::nullopt;
+
+    /// Generated Atomic inner names use the canonical 36-byte UUID spelling.
+    /// A user-created lookalike with another suffix is not an ownership key.
+    if (uuid_text.size() != 36)
+        return std::nullopt;
+    try
+    {
+        return parse<UUID>(uuid_text);
+    }
+    catch (const Exception &)
+    {
+        return std::nullopt;
+    }
 }
 
 std::vector<UDT::SchemaObjectID> collectMappedObjectDependencies(
@@ -1968,6 +2002,31 @@ bool DatabaseAtomic::hasDatabaseOwnedUDTTableBinding(const StoragePtr & table, C
     return has_database_owned_expectation || metadata->getBoundUDTReferences() || metadata->getBoundUDTExpectation();
 }
 
+void DatabaseAtomic::assertNotLiveMappedMaterializedViewInnerTable(const StoragePtr & table, std::string_view operation) const
+{
+    if (!table)
+        return;
+    assertNotLiveMappedMaterializedViewInnerTable(table->getStorageID().table_name, operation);
+}
+
+void DatabaseAtomic::assertNotLiveMappedMaterializedViewInnerTable(std::string_view table_name, std::string_view operation) const
+{
+    const auto owner_uuid = tryGetAtomicMaterializedViewOwnerUUID(table_name);
+    if (!owner_uuid || !hasDatabaseOwnedTableExpectationForCrossDatabaseMove(*owner_uuid))
+        return;
+
+    /// Resolve ownership from the generated name plus the database authority,
+    /// not from the live catalog: a temporarily detached mapped outer MV still
+    /// owns its physical child and must protect it from independent mutation.
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot {} physical inner table {}.{} while mapped MaterializedView UUID {} still owns it",
+        operation,
+        getDatabaseName(),
+        table_name,
+        toString(*owner_uuid));
+}
+
 void DatabaseAtomic::assertUDTTableAllowsOrdinaryMetadataMutation(
     const StoragePtr & table, ContextPtr local_context, std::string_view operation) const
 {
@@ -1979,6 +2038,20 @@ void DatabaseAtomic::assertUDTTableAllowsOrdinaryMetadataMutation(
         "metadata transaction is implemented",
         operation,
         table->getStorageID().getNameForLogs());
+}
+
+void DatabaseAtomic::assertUDTPhysicalInnerTableOperationAllowed(const StoragePtr & table, std::string_view operation) const
+{
+    waitDatabaseStarted();
+    std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
+    assertNotLiveMappedMaterializedViewInnerTable(table, operation);
+}
+
+void DatabaseAtomic::assertUDTPhysicalInnerTableNameOperationAllowed(std::string_view table_name, std::string_view operation) const
+{
+    waitDatabaseStarted();
+    std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
+    assertNotLiveMappedMaterializedViewInnerTable(table_name, operation);
 }
 
 void DatabaseAtomic::assertUDTTableUUIDAllowsOrdinaryMetadataMutation(
@@ -2589,6 +2662,20 @@ DatabaseAtomic::TableCreateGuard DatabaseAtomic::acquireUDTTableCreateGuard()
         std::make_unique<TableCreateGuard::Impl>(*this, std::move(schema_lock), *authority, *storage, std::move(*planning_root)));
 }
 
+void DatabaseAtomic::authorizeUDTTableSourceSidecarCopy(
+    const TableCreateGuard & guard,
+    UDT::StoredObjectSourceMode source_mode,
+    const UDT::PersistedTypeReferences & source_references,
+    const UDT::BoundObjectTypeReferences & bound_source_references) const
+{
+    if (!guard.impl || guard.impl->owner != this || !guard.impl->schema_lock.owns_lock()
+        || guard.impl->schema_lock.mutex() != &udt_schema_mutation_mutex || !guard.impl->authority || !guard.impl->storage
+        || !guard.impl->planning_root || !udt_lifecycle_adapter)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic Table source-sidecar admission guard is invalid");
+    udt_lifecycle_adapter->authorizeTableSourceSidecarCopy(
+        guard.impl->planning_root.get(), *guard.impl->storage, source_mode, source_references, bound_source_references);
+}
+
 void DatabaseAtomic::createTableWithUDTBindings(
     TableCreateGuard guard,
     ContextPtr query_context,
@@ -2908,6 +2995,366 @@ void DatabaseAtomic::createTableWithUDTBindings(
     }
 }
 
+void DatabaseAtomic::createStoredObjectWithUDTBindings(
+    TableCreateGuard guard,
+    ContextPtr query_context,
+    const ASTPtr & physical_create_query,
+    const StoragePtr & object_storage,
+    UDT::PreparedStoredObjectTypeBindingHandoff bindings)
+{
+    using UDT::AtomicStoredObjectUDTMetadataValidator;
+    using UDT::AuthorityQuarantineOperationKind;
+    using UDT::BoundObjectPhysicalSchema;
+    using UDT::DatabaseSchemaMutationIndeterminateDurabilityError;
+    using UDT::DatabaseSchemaMutationReplayConflictError;
+    using UDT::discardUnpreparedDatabaseSchemaMutationStaging;
+    using UDT::DurablyCommittedStoredObjectUDTPublication;
+    using UDT::encodePersistedTypeReferences;
+    using UDT::PersistedTypeReferences;
+    using UDT::SidecarExpectationRecord;
+    using UDT::StoredObjectKind;
+    using UDT::StoredObjectUDTPublicationAdmissionProof;
+    using UDT::StoredObjectUDTPublicationCoordinator;
+
+    bool startup_attempted = false;
+    bool durable_confirmed = false;
+    bool publication_complete = false;
+    SCOPE_EXIT({
+        if (object_storage && !publication_complete && !durable_confirmed)
+        {
+            if (guard.impl && guard.impl->schema_lock.owns_lock())
+                guard.impl->schema_lock.unlock();
+            if (startup_attempted)
+            {
+                try
+                {
+                    object_storage->shutdown();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to stop an unpublished Atomic mapped stored object");
+                }
+            }
+            try
+            {
+                /// View/MV/Dictionary drop hooks also unwind constructor-side
+                /// dependencies and inner-object ownership when the wrapper
+                /// itself stores no data. Generic fresh CREATE invokes drop on
+                /// every failed storage for the same reason.
+                object_storage->drop();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to clean up an unpublished Atomic mapped stored object");
+            }
+        }
+    });
+
+    if (!guard.impl || guard.impl->owner != this || !guard.impl->schema_lock.owns_lock()
+        || guard.impl->schema_lock.mutex() != &udt_schema_mutation_mutex || !guard.impl->authority || !guard.impl->storage
+        || !guard.impl->planning_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic stored-object CREATE guard is invalid");
+    if (!query_context || !physical_create_query || !object_storage || !bindings.hasAppliedPhysicalTypeASTs())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic stored-object CREATE has an incomplete input");
+
+    const auto * create = physical_create_query->as<ASTCreateQuery>();
+    const auto storage_id = object_storage->getStorageID();
+    const auto object_kind = bindings.getObjectKind();
+    const bool is_view = object_kind == StoredObjectKind::View && create && create->is_ordinary_view && object_storage->getName() == "View"
+        && object_storage->as<StorageView>();
+    const auto * materialized_view = object_storage->as<StorageMaterializedView>();
+    const bool is_materialized_view = object_kind == StoredObjectKind::MaterializedView && create && create->is_materialized_view
+        && object_storage->getName() == "MaterializedView" && materialized_view;
+    const bool is_dictionary
+        = object_kind == StoredObjectKind::Dictionary && create && create->is_dictionary && object_storage->isDictionary();
+    const bool authorized_materialized_view_surface = is_materialized_view && !create->refresh_strategy
+        && materialized_view->hasInnerTable() == create->is_materialized_view_with_inner_table();
+    if (!create || (!is_view && !is_materialized_view && !is_dictionary) || create->isTemporary() || create->attach || create->if_not_exists
+        || create->replace_view || create->replace_table || create->create_or_replace || !create->cluster.empty()
+        || (is_materialized_view && !authorized_materialized_view_surface)
+        || (!is_materialized_view && (create->is_populate || create->targets)) || create->refresh_strategy)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mapped stored-object CREATE surface is not authorized");
+    if (create->getDatabase() != getDatabaseName() || create->getTable() != storage_id.table_name || create->uuid != storage_id.uuid
+        || storage_id.database_name != getDatabaseName() || storage_id.uuid == UUIDHelpers::Nil
+        || bindings.getObject().database_uuid != db_uuid || bindings.getObject().object_uuid != storage_id.uuid)
+        throw Exception(ErrorCodes::ABORTED, "Atomic stored-object identity changed before admission");
+
+    auto initial_metadata_handle = object_storage->getInMemoryMetadataPtr(query_context, false);
+    if (!initial_metadata_handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic stored object has no runtime metadata snapshot");
+    StorageMetadataPtr initial_metadata = initial_metadata_handle;
+    if (is_materialized_view && materialized_view->hasInnerTable())
+    {
+        const auto inner_table = materialized_view->getTargetTable();
+        const auto inner_metadata = inner_table ? inner_table->getInMemoryMetadataPtr(query_context, false) : nullptr;
+        if (!inner_table || !inner_metadata)
+            throw Exception(ErrorCodes::ABORTED, "Mapped MaterializedView has no complete physical inner table");
+        inner_metadata->validateBoundUDTReferences();
+        if (inner_metadata->getBoundUDTReferences() || inner_metadata->getPendingUDTColumnAlter()
+            || inner_metadata->getColumns().getAllPhysical() != initial_metadata->getColumns().getAllPhysical())
+        {
+            throw Exception(
+                ErrorCodes::ABORTED,
+                "Mapped MaterializedView inner table must remain physical-only and exactly match its outer runtime schema");
+        }
+    }
+
+    const PersistedTypeReferences * final_persisted_references = nullptr;
+    if (const auto * prepared = bindings.tryGetViewBindings())
+    {
+        if (!prepared->persisted_references || !prepared->bound_physical_schema || !prepared->sidecar_expectation
+            || prepared->persisted_references->object != bindings.getObject() || prepared->persisted_references->object_schema_revision != 1
+            || prepared->bound_physical_schema->object != bindings.getObject()
+            || prepared->bound_physical_schema->object_schema_revision != 1
+            || prepared->physical_schema_fingerprint != prepared->persisted_references->physical_schema_fingerprint
+            || prepared->bound_physical_schema->physical_schema_fingerprint != prepared->persisted_references->physical_schema_fingerprint
+            || prepared->sidecar_expectation->object != bindings.getObject() || prepared->sidecar_expectation->object_schema_revision != 1
+            || prepared->sidecar_expectation->physical_schema_fingerprint != prepared->persisted_references->physical_schema_fingerprint
+            || prepared->physical_outputs != initial_metadata->getColumns().getAllPhysical())
+        {
+            throw Exception(ErrorCodes::ABORTED, "Atomic View runtime outputs differ from their prepared declaration bindings");
+        }
+        final_persisted_references = std::addressof(*prepared->persisted_references);
+    }
+    else if (const auto * dictionary_bindings = bindings.tryGetDictionaryBindings())
+    {
+        if (!dictionary_bindings->persisted_references || !dictionary_bindings->bound_physical_schema
+            || !dictionary_bindings->sidecar_expectation || dictionary_bindings->persisted_references->object != bindings.getObject()
+            || dictionary_bindings->persisted_references->object_schema_revision != 1
+            || dictionary_bindings->bound_physical_schema->object != bindings.getObject()
+            || dictionary_bindings->bound_physical_schema->object_schema_revision != 1
+            || dictionary_bindings->physical_schema_fingerprint != dictionary_bindings->persisted_references->physical_schema_fingerprint
+            || dictionary_bindings->bound_physical_schema->physical_schema_fingerprint
+                != dictionary_bindings->persisted_references->physical_schema_fingerprint
+            || dictionary_bindings->sidecar_expectation->object != bindings.getObject()
+            || dictionary_bindings->sidecar_expectation->object_schema_revision != 1
+            || dictionary_bindings->sidecar_expectation->physical_schema_fingerprint
+                != dictionary_bindings->persisted_references->physical_schema_fingerprint
+            || dictionary_bindings->physical_attributes != initial_metadata->getColumns().getAllPhysical())
+        {
+            throw Exception(ErrorCodes::ABORTED, "Atomic Dictionary runtime attributes differ from their prepared declaration bindings");
+        }
+        final_persisted_references = std::addressof(*dictionary_bindings->persisted_references);
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic stored-object CREATE lost its prepared exact bindings");
+
+    /// Move the existing mandatory canonical validation before the mutation
+    /// guard. The final ACL decision below uses this same descriptor dictionary
+    /// that will be persisted by the CREATE.
+    String canonical_sidecar_bytes = encodePersistedTypeReferences(*final_persisted_references);
+
+    auto & authority = *guard.impl->authority;
+    auto & storage = *guard.impl->storage;
+    StoredObjectUDTPublicationAdmissionProof admission_proof = [&]
+    {
+        if (const auto * view_bindings = bindings.tryGetViewBindings())
+            return udt_lifecycle_adapter->authorizeStoredObjectCreate(
+                guard.impl->planning_root.get(),
+                storage,
+                object_kind,
+                *create,
+                *view_bindings,
+                bindings.usesSelectedOutputClassification());
+        if (const auto * dictionary_bindings = bindings.tryGetDictionaryBindings())
+            return udt_lifecycle_adapter->authorizeStoredObjectCreate(
+                guard.impl->planning_root.get(), storage, *create, *dictionary_bindings);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic stored-object CREATE lost its prepared exact bindings");
+    }();
+    checkUsageAccessForFinalPersistedUDTDescriptors(query_context, *final_persisted_references);
+    auto object_dependencies = collectMappedObjectDependencies(
+        *this,
+        guard.impl->planning_root.get(),
+        physical_create_query,
+        storage_id.getQualifiedName(),
+        final_persisted_references->object,
+        query_context);
+
+    storage.maintainCheckpointBeforeMutation(guard.impl->planning_root.get());
+    auto mutation_guard = storage.issueMutationGuard();
+    const UInt64 durable_predecessor = mutation_guard.getDurablePredecessorTransactionID();
+    if (durable_predecessor == std::numeric_limits<UInt64>::max())
+        throw DatabaseSchemaMutationReplayConflictError("Atomic stored-object transaction ID domain is exhausted");
+
+    BoundObjectPhysicalSchema physical_schema;
+    SidecarExpectationRecord expectation;
+    if (bindings.tryGetViewBindings())
+    {
+        auto prepared = std::move(bindings).releaseViewBindings();
+        if (!prepared.persisted_references || !prepared.bound_physical_schema || !prepared.sidecar_expectation
+            || prepared.physical_outputs != initial_metadata->getColumns().getAllPhysical())
+            throw Exception(ErrorCodes::ABORTED, "Atomic View runtime outputs differ from their prepared declaration bindings");
+        physical_schema = std::move(*prepared.bound_physical_schema);
+        expectation = *prepared.sidecar_expectation;
+    }
+    else
+    {
+        auto prepared = std::move(bindings).releaseDictionaryBindings();
+        if (!prepared.persisted_references || !prepared.bound_physical_schema || !prepared.sidecar_expectation
+            || prepared.physical_attributes != initial_metadata->getColumns().getAllPhysical())
+            throw Exception(ErrorCodes::ABORTED, "Atomic Dictionary runtime attributes differ from their prepared declaration bindings");
+        physical_schema = std::move(*prepared.bound_physical_schema);
+        expectation = *prepared.sidecar_expectation;
+    }
+
+    AtomicStoredObjectUDTMetadataValidator metadata_validator(db_uuid, physical_create_query, 1);
+    auto prepared_commit = StoredObjectUDTPublicationCoordinator::prepareCreateCommit(
+        std::move(guard.impl->planning_root),
+        authority,
+        storage,
+        mutation_guard,
+        durable_predecessor + 1,
+        std::move(admission_proof),
+        std::move(physical_schema),
+        getObjectDefinitionFromCreateQuery(physical_create_query),
+        std::move(canonical_sidecar_bytes),
+        expectation,
+        std::move(object_dependencies),
+        metadata_validator);
+    assertUDTNewDefinitionClosureOperationAllowed(*prepared_commit.getBoundUDTReferences(), AuthorityQuarantineOperationKind::DDL);
+
+    StorageInMemoryMetadata bound_metadata(*initial_metadata);
+    bound_metadata.setColumnsAndBoundStoredObjectUDTReferences(
+        initial_metadata->getColumns(), prepared_commit.getBoundUDTReferences(), prepared_commit.getExpectationRecord());
+    bound_metadata.setBoundUDTVerificationStamp(prepared_commit.getVerificationStamp());
+    object_storage->setInMemoryMetadata(bound_metadata);
+    auto bound_metadata_handle = object_storage->IStorage::getInMemoryMetadataPtr(nullptr, true);
+    StorageMetadataPtr exact_bound_metadata = bound_metadata_handle;
+    if (!exact_bound_metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic stored object lost its bound runtime metadata snapshot");
+    exact_bound_metadata->validateBoundUDTReferences();
+
+    try
+    {
+        startup_attempted = true;
+        object_storage->startup();
+
+        const String object_name = storage_id.table_name;
+        String object_data_path = getTableDataPath(*create);
+        auto database = shared_from_this();
+        auto attached_metrics = getAttachedCountersForStorage(object_storage);
+        createDirectories();
+
+        UniqueLock tables_lock(mutex);
+        if (create->getDatabase() != database_name || storage_id.database_name != database_name)
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed before mapped stored-object publication");
+        if (tables.contains(object_name) || table_name_to_path.contains(object_name) || snapshot_detached_tables.contains(object_name))
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS, "Stored object {} already exists or is detached", storage_id.getFullTableName());
+        assertDetachedTableNotInUse(storage_id.uuid);
+        const auto reserved_mapping = DatabaseCatalog::instance().tryGetByUUID(storage_id.uuid);
+        if (!DatabaseCatalog::instance().hasUUIDMapping(storage_id.uuid) || reserved_mapping.first || reserved_mapping.second)
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "UUID reservation for {} is no longer empty", storage_id.getNameForLogs());
+        auto current_metadata_handle = object_storage->IStorage::getInMemoryMetadataPtr(nullptr, true);
+        StorageMetadataPtr current_metadata = current_metadata_handle;
+        if (!current_metadata || current_metadata != exact_bound_metadata)
+            throw Exception(ErrorCodes::ABORTED, "Atomic stored-object runtime metadata changed before durable admission");
+
+        auto [table_it, object_inserted] = tables.emplace(object_name, object_storage);
+        if (!object_inserted)
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Stored object {} already exists", storage_id.getFullTableName());
+        try
+        {
+            const auto [path_it, path_inserted] = table_name_to_path.emplace(object_name, std::move(object_data_path));
+            static_cast<void>(path_it);
+            if (!path_inserted)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic mapped stored-object path already exists");
+        }
+        catch (...)
+        {
+            tables.erase(table_it);
+            throw;
+        }
+
+        DurablyCommittedStoredObjectUDTPublication durable = [&]
+        {
+            try
+            {
+                return StoredObjectUDTPublicationCoordinator::commitPreparedCreateDurably(
+                    storage, mutation_guard, std::move(prepared_commit));
+            }
+            catch (const DatabaseSchemaMutationIndeterminateDurabilityError & error)
+            {
+                const auto original = std::current_exception();
+                bool rolled_back = false;
+                std::optional<DurablyCommittedStoredObjectUDTPublication> recovered;
+                try
+                {
+                    if (error.transaction_id != prepared_commit.getTransactionID()
+                        || storage.getRecoveryRequiredTransactionID() != error.transaction_id)
+                        throw DatabaseSchemaMutationReplayConflictError("Atomic stored-object recovery latch changed identity");
+                    const auto transaction_ids = storage.listDurableTransactionIDs();
+                    if (!std::binary_search(transaction_ids.begin(), transaction_ids.end(), error.transaction_id))
+                    {
+                        discardUnpreparedDatabaseSchemaMutationStaging(storage, mutation_guard, error.transaction_id);
+                        rolled_back = true;
+                    }
+                    else
+                    {
+                        auto image = storage.loadTransactionForRecovery(error.transaction_id);
+                        const auto & transition = prepared_commit.getRecoveryTransition();
+                        const auto expected_bytes = transition.getStagedArtifactBytes();
+                        if (image.prepare != transition.getPrepare() || image.staged_artifact_bytes.size() != expected_bytes.size()
+                            || !std::equal(
+                                image.staged_artifact_bytes.begin(),
+                                image.staged_artifact_bytes.end(),
+                                expected_bytes.begin(),
+                                expected_bytes.end()))
+                            throw DatabaseSchemaMutationReplayConflictError(
+                                "Atomic stored-object recovery image differs from its retained transition");
+                        auto recovered_commit = StoredObjectUDTPublicationCoordinator::recoverPreparedCreateDurably(
+                            storage, mutation_guard, std::move(prepared_commit), image.commit);
+                        rolled_back = !recovered_commit;
+                        if (recovered_commit)
+                            recovered.emplace(std::move(*recovered_commit));
+                    }
+                }
+                catch (...)
+                {
+                    std::terminate();
+                }
+                if (rolled_back)
+                    std::rethrow_exception(original);
+                return std::move(*recovered);
+            }
+            catch (...)
+            {
+                table_name_to_path.erase(object_name);
+                tables.erase(table_it);
+                tables_lock.unlock();
+                throw;
+            }
+        }();
+        durable_confirmed = true;
+        static_cast<void>(StoredObjectUDTPublicationCoordinator::publishDurablyCommittedCreate(authority, std::move(durable)));
+
+        object_storage->is_detached = false;
+        DatabaseCatalog::instance().publishReservedUUIDMappingNoThrow(storage_id.uuid, std::move(database), object_storage);
+        if (object_storage->storesDataOnDisk())
+            tryCreateSymlink(object_storage);
+        if (!object_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+            for (const auto metric : attached_metrics)
+                CurrentMetrics::add(metric);
+        tables_lock.unlock();
+
+        guard.impl->schema_lock.unlock();
+        publication_complete = true;
+        try
+        {
+            static_cast<void>(authority.scanRetired());
+        }
+        catch (...)
+        {
+        }
+    }
+    catch (...)
+    {
+        if (durable_confirmed)
+            std::terminate();
+        throw;
+    }
+}
+
 bool DatabaseAtomic::empty() const
 {
     std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
@@ -2959,6 +3406,56 @@ void DatabaseAtomic::reclaimRetiredUDTRootsNoThrow() noexcept
     catch (...)
     {
     }
+}
+
+StoredObjectMetadataLoadDecision
+DatabaseAtomic::decideStoredObjectMetadataLoadBeforeParsing(std::string_view canonical_file_object_name) const
+{
+    std::shared_ptr<const UDT::AtomicAuthorityStartupStatusSnapshot> degraded_status;
+    {
+        std::lock_guard authority_lock(udt_authority_mutex);
+        degraded_status = udt_degraded_startup_status;
+    }
+    if (!degraded_status)
+        return {};
+    if (degraded_status->hasUnknownDependentObjectScope())
+        return {.action = StoredObjectMetadataLoadAction::SkipUnavailable};
+    if (const auto * object = degraded_status->findExpectedDependentObject(canonical_file_object_name))
+    {
+        return {
+            .action = StoredObjectMetadataLoadAction::SkipUnavailable,
+            .reserved_uuid = object->object_uuid,
+        };
+    }
+    return {};
+}
+
+StoredObjectMetadataLoadDecision
+DatabaseAtomic::decideStoredObjectMetadataLoadAfterParsing(std::string_view canonical_file_object_name, const ASTCreateQuery & query) const
+{
+    std::shared_ptr<const UDT::AtomicAuthorityStartupStatusSnapshot> degraded_status;
+    {
+        std::lock_guard authority_lock(udt_authority_mutex);
+        degraded_status = udt_degraded_startup_status;
+    }
+    if (!degraded_status)
+        return {};
+    if (degraded_status->hasUnknownDependentObjectScope())
+        return {.action = StoredObjectMetadataLoadAction::SkipUnavailable};
+
+    const UDT::AtomicAuthorityStartupDependentObjectIdentity * unavailable = nullptr;
+    if (const auto * by_file_name = degraded_status->findExpectedDependentObject(canonical_file_object_name))
+        unavailable = by_file_name;
+    else if (const auto * by_parsed_name = degraded_status->findExpectedDependentObject(query.getTable()))
+        unavailable = by_parsed_name;
+    else if (const auto * by_uuid = degraded_status->findExpectedDependentObject(query.uuid))
+        unavailable = by_uuid;
+    if (!unavailable)
+        return {};
+    return {
+        .action = StoredObjectMetadataLoadAction::SkipUnavailable,
+        .reserved_uuid = unavailable->object_uuid,
+    };
 }
 
 bool DatabaseAtomic::forceEagerTableLoadAtStartup(const ASTCreateQuery & query) const
@@ -3473,6 +3970,330 @@ bool DatabaseAtomic::rollbackUDTTableAlter(
     }
     reclaimRetiredUDTRootsNoThrow();
     return true;
+}
+
+UDT::CompletedTableColumnTypeAlterPublication DatabaseAtomic::alterUDTStoredObject(
+    ContextPtr local_context,
+    const StorageID & table_id,
+    const StoragePtr & table,
+    const StorageInMemoryMetadata & metadata,
+    bool validate_new_create_query,
+    bool trusted_boundary_rollback,
+    const StorageInMemoryMetadata * expected_current_metadata)
+{
+    using UDT::AtomicAuthority;
+    using UDT::AtomicDatabaseSchemaMutationDependentObjectImage;
+    using UDT::AtomicDatabaseSchemaMutationStorage;
+    using UDT::AuthorityInventoryRecordKind;
+    using UDT::AuthorityQuarantineOperationKind;
+    using UDT::DatabaseSchemaMutationReplayConflictError;
+    using UDT::DependentObjectMutationCoordinator;
+    using UDT::DependentObjectMutationKind;
+    using UDT::DependentObjectMutationPlanner;
+    using UDT::DependentObjectMutationRequest;
+    using UDT::PersistedTypeReferences;
+    using UDT::rebaseBoundStoredObjectTypeReferences;
+    using UDT::rebaseBoundTableColumnTypeReferences;
+    using UDT::SchemaObjectID;
+    using UDT::SchemaObjectKind;
+
+    const auto actual_table_id = table->getStorageID();
+    if (actual_table_id.database_name != getDatabaseName() || actual_table_id.table_name != table_id.table_name
+        || actual_table_id.uuid != table_id.uuid || actual_table_id.uuid == UUIDHelpers::Nil)
+    {
+        throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Mapped Atomic object identity changed before ALTER");
+    }
+    const auto object_kind = mappedSchemaObjectKindForStorage(*table);
+    const String engine_name = table->getName();
+    const bool supported_table = object_kind == SchemaObjectKind::Table
+        && ((engine_name == "Memory" && !table->storesDataOnDisk())
+            || (table->isMergeTree() && table->storesDataOnDisk() && !table->isSharedStorage() && !engine_name.starts_with("Replicated")
+                && !engine_name.starts_with("Shared")));
+    const auto * ordinary_view = table->as<StorageView>();
+    const auto * materialized_view = table->as<StorageMaterializedView>();
+    const bool supported_view = object_kind == SchemaObjectKind::View
+        && ((engine_name == "View" && ordinary_view)
+            || (engine_name == "MaterializedView" && materialized_view && !materialized_view->isRefreshable()));
+    const bool supported_dictionary
+        = object_kind == SchemaObjectKind::Dictionary && engine_name == "Dictionary" && table->as<StorageDictionary>();
+    if (!supported_table && !supported_view && !supported_dictionary)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Mapped Atomic ALTER does not support storage engine {} for object kind {}",
+            engine_name,
+            static_cast<unsigned>(object_kind));
+    }
+    if (supported_view && materialized_view && materialized_view->hasInnerTable())
+    {
+        const auto inner_table = materialized_view->getTargetTable();
+        const auto inner_metadata = inner_table ? inner_table->getInMemoryMetadataPtr(local_context, false) : nullptr;
+        if (!inner_table || !inner_metadata)
+            throw Exception(ErrorCodes::ABORTED, "Mapped MaterializedView lost its physical inner table before ALTER");
+        inner_metadata->validateBoundUDTReferences();
+        if (inner_metadata->getBoundUDTReferences() || inner_metadata->getPendingUDTColumnAlter()
+            || inner_metadata->getColumns().getAllPhysical() != metadata.getColumns().getAllPhysical())
+        {
+            throw Exception(
+                ErrorCodes::ABORTED,
+                "Mapped MaterializedView ALTER cannot change or assign authority identity to its physical-only inner table");
+        }
+    }
+
+    AtomicAuthority * authority = nullptr;
+    AtomicDatabaseSchemaMutationStorage * storage = nullptr;
+    std::optional<AtomicAuthority::RootSnapshot> planning_root;
+    {
+        std::lock_guard authority_lock(udt_authority_mutex);
+        if (udt_authority_shutdown || udt_table_startup_state || !udt_authority || !udt_mutation_storage
+            || active_udt_authority.load(std::memory_order_acquire) != udt_authority.get())
+            throw Exception(ErrorCodes::ABORTED, "Mapped object ALTER requires one active, fully recovered Atomic authority");
+        authority = udt_authority.get();
+        storage = udt_mutation_storage.get();
+        planning_root.emplace(authority->acquireCurrentRoot());
+    }
+    if (!*planning_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped object ALTER has no authority root");
+
+    const SchemaObjectID object{
+        .kind = object_kind,
+        .database_uuid = db_uuid,
+        .object_uuid = actual_table_id.uuid,
+    };
+    if (object.kind == SchemaObjectKind::Table)
+    {
+        if (isAtomicMaterializedViewInnerTableName(actual_table_id.table_name))
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Atomic MaterializedView physical inner table {} cannot acquire a separate user-defined type authority identity",
+                actual_table_id.getNameForLogs());
+        }
+        for (auto iterator = getTablesIterator(local_context, {}, false); iterator->isValid(); iterator->next())
+        {
+            const auto owner = iterator->table();
+            const auto * owner_materialized_view = owner ? owner->as<StorageMaterializedView>() : nullptr;
+            if (owner_materialized_view && owner_materialized_view->hasInnerTable()
+                && owner_materialized_view->getTargetTableId().uuid == object.object_uuid)
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "The physical inner table of MaterializedView {} cannot acquire a separate user-defined type authority identity",
+                    owner->getStorageID().getNameForLogs());
+            }
+        }
+    }
+    const auto pending = metadata.getPendingUDTColumnAlter();
+    const bool initial_admission = planning_root->get().findExpectationRecord(object) == nullptr;
+    std::optional<AtomicDatabaseSchemaMutationDependentObjectImage> before_image;
+    String before_object_name;
+    String before_canonical_metadata;
+    UInt64 before_object_schema_revision = 0;
+    if (initial_admission)
+    {
+        if (object.kind != SchemaObjectKind::Table)
+            throw Exception(ErrorCodes::ABORTED, "Only a physical Table can enter mapped ALTER admission");
+        const bool has_trusted_restore_binding
+            = trusted_boundary_rollback && metadata.getBoundUDTReferences() && metadata.getBoundUDTExpectation();
+        if ((!pending || !pending->getDesiredReferences()) && !has_trusted_restore_binding)
+            throw Exception(ErrorCodes::ABORTED, "Physical-to-mapped Table ALTER has no final logical binding");
+        if (planning_root->get().getSchemaObjectDependencyGraph().containsNode(object)
+            || planning_root->get().pinAuthorityInventory()->find({
+                .record_kind = AuthorityInventoryRecordKind::SidecarExpectation,
+                .object_uuid = object.object_uuid,
+            }))
+        {
+            throw Exception(ErrorCodes::ABORTED, "Physical-to-mapped Table ALTER identity is partially present in the authority root");
+        }
+        auto live_metadata = table->getInMemoryMetadataPtr(local_context, false);
+        if (!live_metadata)
+            throw Exception(ErrorCodes::ABORTED, "Physical-to-mapped Table ALTER has no live metadata snapshot");
+        live_metadata->validateBoundUDTReferences();
+        if (!trusted_boundary_rollback
+            && (live_metadata->getBoundUDTReferences() || live_metadata->getBoundUDTExpectation()
+                || live_metadata->getPendingUDTColumnAlter()))
+        {
+            throw Exception(ErrorCodes::ABORTED, "Physical-to-mapped Table ALTER live metadata is not physical-only");
+        }
+        before_object_name = table_id.table_name;
+        before_canonical_metadata = readMetadataFile(getDisk(), getObjectMetadataPath(table_id.table_name));
+        before_object_schema_revision = 1;
+    }
+    else
+    {
+        const auto planning_inventory = planning_root->get().pinAuthorityInventory();
+        const auto planning_graph = planning_root->get().pinSchemaObjectDependencyGraph();
+        if (!planning_inventory || !planning_graph)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped object ALTER authority root has no inventory or dependency graph");
+        auto reconciliation = storage->readAndReconcileAuthorityRecords(*planning_inventory, *planning_graph);
+        before_image.emplace(findExactDependentObjectImage(std::move(reconciliation), object));
+        if (before_image->object_name != table_id.table_name)
+            throw Exception(ErrorCodes::ABORTED, "Mapped object ALTER name differs from its durable installation mapping");
+        before_object_name = before_image->object_name;
+        before_canonical_metadata = before_image->canonical_metadata_bytes;
+        before_object_schema_revision = before_image->expectation.object_schema_revision;
+    }
+
+    if (expected_current_metadata)
+    {
+        ParserCreateQuery expected_parser;
+        ASTPtr expected_ast = parseQuery(
+            expected_parser,
+            before_canonical_metadata.data(),
+            before_canonical_metadata.data() + before_canonical_metadata.size(),
+            "mapped Atomic object rollback metadata",
+            0,
+            local_context->getSettingsRef()[Setting::max_parser_depth],
+            local_context->getSettingsRef()[Setting::max_parser_backtracks]);
+        applyMetadataChangesToCreateQuery(expected_ast, *expected_current_metadata, local_context, false);
+        if (getObjectDefinitionFromCreateQuery(expected_ast) != before_canonical_metadata)
+            throw Exception(ErrorCodes::ABORTED, "Mapped Atomic object rollback no longer targets the committed metadata image");
+    }
+
+    std::optional<PersistedTypeReferences> desired_references;
+    if (pending)
+    {
+        if (pending->getObject() != object || pending->getBeforeObjectSchemaRevision() != before_object_schema_revision
+            || pending->getAfterPhysicalColumns() != metadata.getColumns().getAllPhysical())
+        {
+            throw Exception(ErrorCodes::ABORTED, "Mapped object ALTER plan is stale or belongs to another object");
+        }
+        desired_references = pending->getDesiredReferences();
+    }
+    else if (trusted_boundary_rollback)
+    {
+        metadata.validateBoundUDTReferences();
+        const auto & restore_references = metadata.getBoundUDTReferences();
+        const auto & restore_expectation = metadata.getBoundUDTExpectation();
+        if (restore_references || restore_expectation)
+        {
+            if (object.kind != SchemaObjectKind::Table || !restore_references || !restore_expectation
+                || restore_references->getObject() != object)
+                throw Exception(ErrorCodes::ABORTED, "Trusted mapped-table rollback has incomplete restore provenance");
+            desired_references = rebaseBoundTableColumnTypeReferences(
+                metadata.getColumns().getAllPhysical(), *restore_references, *restore_expectation, before_object_schema_revision);
+        }
+    }
+    else
+    {
+        metadata.validateBoundUDTReferences();
+        const auto & retained_references = metadata.getBoundUDTReferences();
+        const auto & retained_expectation = metadata.getBoundUDTExpectation();
+        if (!retained_references || !retained_expectation || retained_references->getObject() != object)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "A mapped object can lose logical provenance only through its prepared ALTER/physicalization path");
+        }
+        if (object.kind == SchemaObjectKind::Table)
+        {
+            desired_references = rebaseBoundTableColumnTypeReferences(
+                metadata.getColumns().getAllPhysical(), *retained_references, *retained_expectation, before_object_schema_revision);
+        }
+        else
+            desired_references = rebaseBoundStoredObjectTypeReferences(*retained_references, *retained_expectation);
+    }
+
+    ParserCreateQuery parser;
+    ASTPtr after_ast = parseQuery(
+        parser,
+        before_canonical_metadata.data(),
+        before_canonical_metadata.data() + before_canonical_metadata.size(),
+        "mapped Atomic object metadata",
+        0,
+        local_context->getSettingsRef()[Setting::max_parser_depth],
+        local_context->getSettingsRef()[Setting::max_parser_backtracks]);
+    auto & after_create = after_ast->as<ASTCreateQuery &>();
+    if (after_create.uuid != table_id.uuid)
+        throw Exception(ErrorCodes::ABORTED, "Mapped object ALTER metadata UUID differs from the live storage");
+    const bool metadata_kind_matches = (object.kind == SchemaObjectKind::Table && !after_create.isView() && !after_create.is_dictionary)
+        || (object.kind == SchemaObjectKind::View && after_create.isView() && !after_create.is_dictionary)
+        || (object.kind == SchemaObjectKind::Dictionary && after_create.is_dictionary);
+    if (!metadata_kind_matches)
+        throw Exception(ErrorCodes::ABORTED, "Mapped object ALTER metadata kind differs from its stable storage identity");
+    applyMetadataChangesToCreateQuery(after_ast, metadata, local_context, validate_new_create_query);
+    String after_canonical_metadata = getObjectDefinitionFromCreateQuery(after_ast);
+    if (validate_new_create_query)
+    {
+        const size_t max_query_size = local_context->getSettingsRef()[Setting::max_query_size];
+        if (max_query_size && after_canonical_metadata.size() > max_query_size)
+        {
+            throw Exception(
+                ErrorCodes::QUERY_IS_TOO_LARGE,
+                "The resulting metadata of table {} ({} bytes) would exceed max_query_size ({})",
+                table_id.getNameForLogs(),
+                after_canonical_metadata.size(),
+                max_query_size);
+        }
+    }
+    auto ref_dependencies = getDependenciesFromCreateQuery(
+        local_context->getGlobalContext(), table_id.getQualifiedName(), after_ast, local_context->getCurrentDatabase());
+    auto loading_dependencies
+        = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), after_ast);
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(
+        table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
+    std::vector<SchemaObjectID> after_object_dependencies;
+    if (desired_references)
+    {
+        after_object_dependencies
+            = collectMappedObjectDependencies(*this, planning_root->get(), after_ast, table_id.getQualifiedName(), object, local_context);
+    }
+
+    storage->maintainCheckpointBeforeMutation(planning_root->get());
+    auto mutation_guard = storage->issueMutationGuard();
+    const UInt64 predecessor = mutation_guard.getDurablePredecessorTransactionID();
+    if (predecessor == std::numeric_limits<UInt64>::max())
+        throw DatabaseSchemaMutationReplayConflictError("Atomic schema transaction ID domain is exhausted");
+    DependentObjectMutationRequest request;
+    request.kind = initial_admission ? DependentObjectMutationKind::AlterAdmission : DependentObjectMutationKind::Alter;
+    request.object = object;
+    request.transaction_id = predecessor + 1;
+    request.expected_database_catalog_epoch = planning_root->get().getDatabaseCatalogEpoch();
+    if (initial_admission)
+    {
+        request.physical_before_object_name = std::move(before_object_name);
+        request.physical_before_canonical_metadata_bytes = std::move(before_canonical_metadata);
+    }
+    else
+        request.before_image = std::move(*before_image);
+    request.physical_columns = metadata.getColumns().getAllPhysical();
+    request.after_canonical_metadata_bytes = std::move(after_canonical_metadata);
+    request.after_persisted_references = std::move(desired_references);
+    request.after_object_dependencies = std::move(after_object_dependencies);
+    auto planned = DependentObjectMutationPlanner::plan(planning_root->get(), std::move(request));
+    const auto planned_kind = planned.getKind();
+
+    if (static_cast<bool>(planned.getBoundUDTReferences()) != static_cast<bool>(planned.getSidecarExpectation())
+        || static_cast<bool>(planned.getBoundUDTReferences()) != static_cast<bool>(planned.getVerificationStamp()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped object ALTER planner produced an incomplete binding package");
+    if (planned.getBoundUDTReferences())
+        assertUDTNewDefinitionClosureOperationAllowed(*planned.getBoundUDTReferences(), AuthorityQuarantineOperationKind::DDL);
+    auto prepared = DependentObjectMutationCoordinator::prepareCommit(
+        std::move(*planning_root), *authority, *storage, mutation_guard, std::move(planned));
+    auto published = commitMappedTableMutationWithRecovery(*authority, *storage, mutation_guard, prepared);
+    if (published.kind != planned_kind || static_cast<bool>(published.bound_references) != static_cast<bool>(published.expectation)
+        || static_cast<bool>(published.bound_references) != static_cast<bool>(published.verification_stamp))
+        std::terminate();
+
+    try
+    {
+        if (pending)
+            pending->completePublication(published.bound_references, published.expectation, published.verification_stamp);
+        DatabaseCatalog::instance().updateDependencies(
+            table_id,
+            ref_dependencies.dependencies,
+            loading_dependencies,
+            ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+    }
+    catch (...)
+    {
+        std::terminate();
+    }
+    return {
+        .bound_references = std::move(published.bound_references),
+        .expectation = std::move(published.expectation),
+        .verification_stamp = std::move(published.verification_stamp),
+    };
 }
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)

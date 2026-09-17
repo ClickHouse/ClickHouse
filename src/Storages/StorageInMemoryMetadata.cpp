@@ -45,6 +45,66 @@ namespace ErrorCodes
 namespace
 {
 
+void validateBoundStoredObjectTypeReferences(
+    const ColumnsDescription & columns,
+    const std::shared_ptr<const UDT::BoundObjectTypeReferences> & bound_references,
+    const std::shared_ptr<const UDT::SidecarExpectationRecord> & expectation,
+    const std::optional<UDT::Digest> & runtime_columns_fingerprint)
+{
+    if (!bound_references && !expectation && !runtime_columns_fingerprint)
+        return;
+    if (!bound_references || !expectation || !runtime_columns_fingerprint)
+    {
+        throw UDT::TableColumnTypeBindingError(
+            UDT::TableColumnTypeBindingError::Code::SidecarMismatch,
+            "storage metadata bindings, durable expectation, and runtime schema anchor must be retained together");
+    }
+
+    try
+    {
+        static_cast<void>(UDT::encodeSidecarExpectationRecord(*expectation));
+    }
+    catch (const UDT::SidecarExpectationRecordError & error)
+    {
+        throw UDT::TableColumnTypeBindingError(
+            UDT::TableColumnTypeBindingError::Code::SidecarMismatch, error.what());
+    }
+
+    const auto & object = bound_references->getObject();
+    if (!object.isValid()
+        || (object.kind != UDT::SchemaObjectKind::Table && object.kind != UDT::SchemaObjectKind::View
+            && object.kind != UDT::SchemaObjectKind::Dictionary)
+        || !bound_references->getObjectSchemaRevision())
+    {
+        throw UDT::TableColumnTypeBindingError(
+            UDT::TableColumnTypeBindingError::Code::InvalidObject,
+            "storage metadata bindings have an invalid object identity or schema revision");
+    }
+
+    if (expectation->object != object || expectation->object_schema_revision != bound_references->getObjectSchemaRevision()
+        || expectation->sidecar_hash != bound_references->getSidecarHash()
+        || expectation->physical_schema_fingerprint != bound_references->getPhysicalSchemaFingerprint())
+    {
+        throw UDT::TableColumnTypeBindingError(
+            UDT::TableColumnTypeBindingError::Code::SidecarMismatch,
+            "storage metadata bindings differ from their database-owned durable expectation");
+    }
+
+    const auto current_runtime_fingerprint = UDT::computeTableColumnPhysicalSchemaFingerprint(columns.getAllPhysical());
+    if (current_runtime_fingerprint != *runtime_columns_fingerprint)
+    {
+        throw UDT::TableColumnTypeBindingError(
+            UDT::TableColumnTypeBindingError::Code::PhysicalSchemaMismatch,
+            "storage metadata runtime columns changed after their logical binding was published");
+    }
+    if (object.kind == UDT::SchemaObjectKind::Table && current_runtime_fingerprint != expectation->physical_schema_fingerprint)
+    {
+        throw UDT::TableColumnTypeBindingError(
+            UDT::TableColumnTypeBindingError::Code::PhysicalSchemaMismatch,
+            "storage metadata physical columns differ from their table-column bindings");
+    }
+}
+
 void validateBoundVerificationStamp(
     const std::shared_ptr<const UDT::BoundObjectTypeReferences> & references,
     const std::shared_ptr<const UDT::SidecarExpectationRecord> & expectation,
@@ -299,6 +359,31 @@ void StorageInMemoryMetadata::setColumnsAndBoundUDTReferences(
 {
     if (columns_.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns passed");
+    auto retained_expectation = std::make_shared<const UDT::SidecarExpectationRecord>(expectation_);
+    auto runtime_columns_fingerprint = UDT::computeTableColumnPhysicalSchemaFingerprint(columns_.getAllPhysical());
+    validateBoundStoredObjectTypeReferences(columns_, bound_references_, retained_expectation, runtime_columns_fingerprint);
+    columns = std::move(columns_);
+    bound_udt_references = std::move(bound_references_);
+    bound_udt_expectation = std::move(retained_expectation);
+    bound_udt_verification_stamp.reset();
+    bound_udt_runtime_columns_fingerprint = runtime_columns_fingerprint;
+    pending_udt_column_alter.reset();
+}
+
+void StorageInMemoryMetadata::setColumnsAndBoundStoredObjectUDTReferences(
+    ColumnsDescription columns_,
+    std::shared_ptr<const UDT::BoundObjectTypeReferences> bound_references_,
+    const UDT::SidecarExpectationRecord & expectation_)
+{
+    if (columns_.getAllPhysical().empty())
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns passed");
+    if (!bound_references_
+        || (bound_references_->getObject().kind != UDT::SchemaObjectKind::View
+            && bound_references_->getObject().kind != UDT::SchemaObjectKind::Dictionary))
+    {
+        throw UDT::TableColumnTypeBindingError(
+            UDT::TableColumnTypeBindingError::Code::InvalidObject, "stored-object runtime binding requires a View or Dictionary identity");
+    }
     auto retained_expectation = std::make_shared<const UDT::SidecarExpectationRecord>(expectation_);
     auto runtime_columns_fingerprint = UDT::computeTableColumnPhysicalSchemaFingerprint(columns_.getAllPhysical());
     validateBoundStoredObjectTypeReferences(columns_, bound_references_, retained_expectation, runtime_columns_fingerprint);

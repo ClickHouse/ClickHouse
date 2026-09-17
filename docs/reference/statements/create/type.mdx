@@ -85,6 +85,31 @@ Temporary objects, `ALIAS` and `EPHEMERAL` table columns, defaults, constraints,
 
 Inferred logical output bindings require the analyzer and a fresh local create. Parameterized views are physical-only. An inferred mapped Materialized View must be non-refreshable. It may use an external target or its ordinary owned inner table. For an owned inner table, the analyzed output must exactly match the complete physical inner-table schema; the outer Materialized View owns the only logical sidecar and authority identity, while the inner table remains physical-only. While that mapped outer object is live, the guarded direct statement set on the owned inner table is rejected: `INSERT`; `UPDATE`, `DELETE`, and mutation commands; every `ALTER TABLE` command (including partition `ATTACH`, `FETCH`, `MOVE`, and `REPLACE`); `OPTIMIZE`; `TRUNCATE`; table `ATTACH`, `DETACH`, `DROP`, `UNDROP`, and `RENAME`; and cross-database moves. An explicitly addressed ordinary `SELECT` from the hidden inner name remains a physical-only read and exposes no logical UDT identity. Replicated database admission and `ON CLUSTER` are not supported.
 
+### Stored type-string inventory {#stored-type-string-inventory}
+
+Type and column-schema strings are recognized only in the closed slots below. ClickHouse does not search arbitrary string arguments for UDT names.
+
+| Stored owner | Approved function or setting | Exact owned slot | UDT behavior |
+|---|---|---|---|
+| View or Materialized View table function | `input`, `null`, `generateRandom` | first argument when the registered layout supplies a schema | retained as an exact schema-string binding |
+| View or Materialized View table function | `format` | second argument of the three-argument layout | retained as an exact format-schema binding |
+| View or Materialized View table function | `file`, `executable`, `redis` | third argument in the registered layout | retained as an exact schema-string binding |
+| View or Materialized View table function | `hive` | fourth argument of the five-argument layout | retained as an exact schema-string binding |
+| View or Materialized View table function | `ytsaurus` | final non-`SETTINGS` argument in its registered two- or four-value layout | retained as an exact schema-string binding |
+| View or Materialized View expression | `CAST` | second argument | retained as a stored-expression binding |
+| View or Materialized View expression | `structureToProtobufSchema`, `structureToCapnProtoSchema` | first argument | retained as an exact format-schema binding |
+| View or Materialized View query setting | `schema_inference_hints` | setting value | retained as an exact format-schema binding |
+
+Each retained column-schema string must contain only `name type` declarations. `DEFAULT`, `MATERIALIZED`, `ALIAS`, `EPHEMERAL`, comments, codecs, statistics, TTL, collation, null modifiers, primary-key markers, and column settings are rejected in this surface.
+
+One nested table-function branch is followed only where the owner grammar is exact: the first and only argument of `loop(nested_table_function(...))`, or the second argument of `viewIfPermitted(query, nested_table_function(...))`. The terminal nested function must be registered, and only its exact literal slot from the table above is treated as schema grammar. The two-argument `loop(database, table)` form remains scalar even when either scalar is represented by an AST function. Malformed arity, a different argument kind, an unregistered terminal function, or any other apparent nesting rejects before metadata is changed.
+
+Context-dependent `values` layouts and adapter-owned URL, object-storage, data-lake, MongoDB, named-collection, and cluster table-function layouts are not admitted in persisted Table, View, or Materialized View metadata while UDT admission is enabled. A create-time adapter snapshot is insufficient because the external input can change before restart; support requires an exact owned AST slot that is rewritten to an immutable canonical physical literal and then passes the complete inventory scan. They cannot establish logical UDT identity. Other registered type-string consumers, including `_CAST`, `accurateCast*`, `reinterpret`, `dynamicElement`, `variantElement`, `defaultValueOfTypeName`, `getTypeSerializationStreams`, and `JSONExtract*`, are not durable UDT sites and fail closed when their owned string contains a qualified UDT candidate.
+
+For `CREATE TABLE ... AS table_function()` without destination columns, inferred output identity remains physical. A qualified UDT in one of the exact literal schema slots above is resolved and rewritten to its physical type before the table-function AST is persisted; it creates no sidecar or dependency edge. Explicit destination columns are the only way for that destination table to retain logical identity.
+
+Query- or object-backed sources that require an exact logical authority, including `eval`, `view`, `dictionary`, and the name/table forms of `loop`, are not accepted as physical schema-inference proof: an inferred stored object must retain an analyzer-proven exact output or an approved exact auxiliary binding. An unregistered table-function source rejects while UDT admission is enabled. In particular, the query string passed to `eval` is opaque stored query grammar, not a schema-string slot, so a fast-negative physical header cannot authorize its persistence.
+
 ## Explicit CAST and semantic identity {#explicit-cast-and-semantic-identity}
 
 An explicitly qualified UDT can be used as a cast target:

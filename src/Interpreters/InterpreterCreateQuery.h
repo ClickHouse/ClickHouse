@@ -18,6 +18,8 @@ namespace DB
 namespace UDT
 {
 class PreparedViewSchemaStringBindingHandoff;
+class SelectedOutputTypeBindingCollector;
+class UDTStoredObjectDDLSelectBoundaryHandoff;
 }
 
 class ASTCreateQuery;

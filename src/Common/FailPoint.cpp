@@ -341,6 +341,7 @@ static struct InitFiu
     PAUSEABLE(atomic_populate_pause_before_subscription) \
     PAUSEABLE(atomic_populate_pause_after_view_publication) \
     PAUSEABLE(atomic_populate_pause_before_source_guard) \
+    PAUSEABLE_ONCE(udt_inferred_schema_pause_after_legacy_analysis) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \

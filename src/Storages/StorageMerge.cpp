@@ -392,6 +392,27 @@ bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predica
     }) != nullptr;
 }
 
+void StorageMerge::forEachChildTableForSchemaInspection(
+    const ContextPtr & query_context,
+    const std::function<void(const String &, const String &, const StoragePtr &)> & callback) const
+{
+    auto database_table_iterators = database_name_or_regexp.getDatabaseIterators(query_context);
+    for (auto & iterator : database_table_iterators)
+    {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+        while (iterator->isValid())
+        {
+            const auto & nested = iterator->table();
+            if (nested.get() != this)
+            {
+                if (auto table = tableForRead(database, iterator->name(), nested, query_context))
+                    callback(iterator->databaseName(), iterator->name(), table);
+            }
+            iterator->next();
+        }
+    }
+}
+
 bool StorageMerge::supportsPrewhere() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;

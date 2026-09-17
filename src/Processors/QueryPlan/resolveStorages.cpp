@@ -274,6 +274,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
 
+        snapshot->assertUDTReadContinuationAllowed();
         storage->read(
             reading_plan,
             column_names,

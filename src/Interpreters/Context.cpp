@@ -3189,10 +3189,15 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                                                      /* comment */ "",
                                                      /* is_parameterized_view */ true);
             res->startup();
+            observeUDTTableFunctionStorage(table_expression, res);
             function->setPreferSubqueryToFunctionFormatting(true);
             return res;
         }
     }
+    ASTPtr original_observed_invocation;
+    if (udt_table_function_storage_observer)
+        original_observed_invocation = table_expression->clone();
+
     auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     auto key = toString(hash);
 
@@ -3389,6 +3394,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             table_function_results[key] = res;
         }
     }
+    observeUDTTableFunctionStorage(table_expression, res);
+    if (original_observed_invocation)
+        observeUDTTableFunctionStorage(original_observed_invocation, res);
     return res;
 }
 
@@ -3436,7 +3444,19 @@ StoragePtr Context::executeTableFunction(
         table_function_results[key] = res;
     }
 
+    observeUDTTableFunctionStorage(table_expression, res);
     return res;
+}
+
+StoragePtr Context::tryGetCachedASTTableFunctionResult(const ASTPtr & table_expression) const
+{
+    if (!table_expression)
+        return {};
+
+    const auto key = toString(table_expression->getTreeHash(/*ignore_aliases=*/ true));
+    std::lock_guard lock(table_function_results_mutex);
+    const auto it = table_function_results.find(key);
+    return it == table_function_results.end() ? StoragePtr{} : it->second;
 }
 
 
@@ -5568,6 +5588,66 @@ void Context::setQueryResultCacheBlockedByUDT() const
 bool Context::isQueryResultCacheBlockedByUDT() const
 {
     return query_result_cache_blocked_by_udt.load(std::memory_order_acquire);
+}
+
+void Context::setUDTSelectedOutputTypeBindingCollector(std::shared_ptr<UDT::SelectedOutputTypeBindingCollector> collector)
+{
+    udt_selected_output_binding_collector = std::move(collector);
+}
+
+std::shared_ptr<UDT::SelectedOutputTypeBindingCollector> Context::getUDTSelectedOutputTypeBindingCollector() const
+{
+    return udt_selected_output_binding_collector;
+}
+
+void Context::setUDTTableFunctionStorageObserver(std::shared_ptr<UDT::TableFunctionStorageObserver> observer)
+{
+    udt_table_function_storage_observer = std::move(observer);
+}
+
+std::shared_ptr<UDT::TableFunctionStorageObserver> Context::getUDTTableFunctionStorageObserver() const
+{
+    return udt_table_function_storage_observer;
+}
+
+void Context::setUDTAliasResolutionObserver(std::shared_ptr<UDT::AliasResolutionObserver> observer)
+{
+    udt_alias_resolution_observer = std::move(observer);
+}
+
+std::shared_ptr<UDT::AliasResolutionObserver> Context::getUDTAliasResolutionObserver() const
+{
+    return udt_alias_resolution_observer;
+}
+
+void Context::setUDTStoredExpressionTypeReferences(std::shared_ptr<const UDT::BoundObjectTypeReferences> references)
+{
+    udt_stored_expression_type_references = std::move(references);
+}
+
+std::shared_ptr<const UDT::BoundObjectTypeReferences> Context::getUDTStoredExpressionTypeReferences() const
+{
+    return udt_stored_expression_type_references;
+}
+
+void Context::setRejectStoredUDTSyntaxInSQLUDFBodies(bool reject)
+{
+    reject_stored_udt_syntax_in_sql_udf_bodies = reject;
+}
+
+bool Context::shouldRejectStoredUDTSyntaxInSQLUDFBodies() const
+{
+    return reject_stored_udt_syntax_in_sql_udf_bodies;
+}
+
+void Context::setStoredObjectSQLUDFSubstitutionFrozen(bool frozen)
+{
+    stored_object_sql_udf_substitution_frozen = frozen;
+}
+
+bool Context::isStoredObjectSQLUDFSubstitutionFrozen() const
+{
+    return stored_object_sql_udf_substitution_frozen;
 }
 
 void Context::initializeUDTQueryResultCacheStorageDependencyCollector(bool boundary_saw_storage_reference, UInt8 contextual_sink_candidates)

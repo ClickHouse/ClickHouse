@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # unqualified table in the body is resolved in the database of the updated table as well.
 # The name of a user-defined function is global, not scoped to a database, so it is built from the
 # name of the test database to keep concurrent runs of this test independent.
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --ignore-error -q "
   CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DATABASE_1};
 
   CREATE TABLE ${CLICKHOUSE_DATABASE_1}.t_lwu (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
@@ -24,6 +24,12 @@ $CLICKHOUSE_CLIENT -q "
 
   CREATE FUNCTION ${CLICKHOUSE_DATABASE}_udf_lwu_src AS () -> (SELECT max(id) FROM t_lwu_src);
   CREATE FUNCTION ${CLICKHOUSE_DATABASE}_udf_lwu_in_src AS (x) -> (x IN (SELECT id FROM t_lwu_src));
+
+  -- Stored-definition UDF inspection is scoped to each CREATE/ALTER. Neither
+  -- successful path may leave the shared multiquery context frozen before the
+  -- following mutation expands these newly visible SQL UDFs.
+  ALTER TABLE ${CLICKHOUSE_DATABASE_1}.t_lwu COMMENT COLUMN v 'updated value';
+  ALTER TABLE ${CLICKHOUSE_DATABASE_1}.t_lwu COMMENT COLUMN missing 'expected failure';
 
   -- The whole row is printed after every statement, so a read-back also fails if the statement does
   -- not update any row at all.
@@ -45,4 +51,4 @@ $CLICKHOUSE_CLIENT -q "
 
   DROP TABLE t_lwu_src;
   DROP DATABASE ${CLICKHOUSE_DATABASE_1};
-"
+" 2>/dev/null

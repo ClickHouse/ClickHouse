@@ -1,14 +1,16 @@
 #include <Access/DefinerDependencies.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/UDT/BoundObjectTypeReferences.h>
+#include <DataTypes/UDT/TableColumnTypeAlterBindings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -53,6 +55,8 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
+
+#include <exception>
 
 namespace DB
 {
@@ -330,6 +334,15 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    if (const auto & references = storage_snapshot->metadata->getBoundUDTReferences())
+    {
+        view_context->setUDTStoredExpressionTypeReferences(references);
+        if (references->getSemanticCapabilities() != 0)
+        {
+            context->setQueryResultCacheBlockedByUDT();
+            view_context->setQueryResultCacheBlockedByUDT();
+        }
+    }
     Settings view_settings = view_context->getSettingsCopy();
 
     /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
@@ -625,19 +638,29 @@ void StorageView::alter(
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
+    new_metadata.prepareUDTAlterPublication();
 
     DatabaseCatalog::instance()
         .getDatabase(table_id.database_name)
         ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    auto & instance = DefinerDependencies::instance();
-    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeDependencies(table_id);
+    try
+    {
+        auto & instance = DefinerDependencies::instance();
+        if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
+            instance.removeDependencies(table_id);
 
-    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addDependency(*new_metadata.definer, table_id);
+        if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
+            instance.addDependency(*new_metadata.definer, table_id);
 
-    setInMemoryMetadata(new_metadata);
+        setInMemoryMetadata(new_metadata);
+    }
+    catch (...)
+    {
+        if (const auto & pending = new_metadata.getPendingUDTColumnAlter(); pending && pending->getCompletedPublication())
+            std::terminate();
+        throw;
+    }
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
@@ -768,11 +791,21 @@ Used for implementing views (for more information, see the `CREATE VIEW query`).
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    if (const auto & references = storage_snapshot->metadata->getBoundUDTReferences())
+    {
+        view_context->setUDTStoredExpressionTypeReferences(references);
+        if (references->getSemanticCapabilities() != 0)
+        {
+            context->setQueryResultCacheBlockedByUDT();
+            view_context->setQueryResultCacheBlockedByUDT();
+        }
+    }
     Settings view_settings = view_context->getSettingsCopy();
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
+    view_context->setIsViewInnerQuery(true);
     return view_context;
 }
 

@@ -142,6 +142,7 @@ public:
         {
             const auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(context, false);
             auto inner_storage_snapshot = inner_storage->getStorageSnapshot(metadata_snapshot, context);
+            inner_storage_snapshot->assertUDTReadContinuationAllowed();
             inner_storage->read(
                     plan,
                     column_names,

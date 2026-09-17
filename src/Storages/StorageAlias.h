@@ -121,14 +121,7 @@ public:
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
 
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
-    {
-        auto target = tryGetTargetTable();
-        if (!target)
-            return std::make_shared<StorageInMemoryMetadata>();
-
-        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-    }
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -301,6 +294,14 @@ public:
 
     /// Rename alias, not the target table
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+
+private:
+    void observeTargetResolution(
+        const ContextPtr & query_context,
+        const StorageID & source_alias_id,
+        const StoragePtr & target,
+        const StorageID & target_id_at_observation,
+        const StorageMetadataPtr & metadata) const;
 
 protected:
     String target_database;

@@ -1,6 +1,8 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
+
 #include <Common/MemoryTracker.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
@@ -1317,7 +1319,15 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     const auto & current = path.current();
 
     auto parent_select_context = select_contexts.at(path.parent(2));
-    auto select_context = metadata_snapshots.at(current)->getSQLSecurityOverriddenContext(parent_select_context);
+    const auto & current_metadata = metadata_snapshots.at(current);
+    auto select_context = current_metadata->getSQLSecurityOverriddenContext(parent_select_context);
+    if (const auto & references = current_metadata->getBoundUDTReferences())
+    {
+        select_context->setUDTStoredExpressionTypeReferences(references);
+        parent_select_context->setQueryResultCacheBlockedByUDT();
+        select_context->setQueryResultCacheBlockedByUDT();
+    }
+    select_context->setIsViewInnerQuery(true);
     select_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
@@ -1829,6 +1839,9 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
     const bool has_dependent_materialized_views = !dependent_views.at(view_id).empty();
+
+    UDT::assertAuthorityStorageNewOperationAllowed(
+        *inner_storage, metadata_snapshots.at(inner_table_id), UDT::AuthorityQuarantineOperationKind::Write);
 
     if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
     {

@@ -68,7 +68,9 @@ namespace DB
 namespace UDT
 {
 class BoundObjectTypeReferences;
-class QueryResultCacheStorageDependencyCollector
+class QueryResultCacheStorageDependencyCollector;
+class SelectedOutputTypeBindingCollector;
+using TableFunctionStorageObserver = std::function<void(const ASTPtr &, const StoragePtr &, const String &)>;
 }
 
 class ASTSelectQuery;
@@ -316,6 +318,11 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace UDT
 {
+using AliasResolutionObserver = std::function<void(
+    const StorageID & source_alias_id,
+    const StoragePtr & target,
+    const StorageID & target_id_at_observation,
+    const StorageMetadataPtr & metadata)>;
 }
 
 struct StorageSnapshot;

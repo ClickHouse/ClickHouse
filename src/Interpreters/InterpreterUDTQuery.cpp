@@ -31,6 +31,7 @@
 #include <Parsers/ASTShowCreateTypeQuery.h>
 #include <Parsers/ASTShowTypesQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>

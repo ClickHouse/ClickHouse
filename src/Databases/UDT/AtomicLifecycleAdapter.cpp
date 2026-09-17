@@ -11,6 +11,7 @@
 #include <Databases/UDT/PhysicalizationApplyCoordinator.h>
 #include <Databases/UDT/PhysicalizationTokenStore.h>
 #include <Databases/UDT/ResourceLimitAdapters.h>
+#include <Databases/UDT/StoredObjectUDTPublicationPackage.h>
 
 #include <DataTypes/BuiltInDataTypeFamilyClassifier.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -25,6 +26,8 @@
 #include <Core/Field.h>
 
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/UDT/StoredObjectTypeBindingAdmission.h>
+#include <Interpreters/UDT/StoredObjectTypeBindingPreparation.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -1332,6 +1335,63 @@ private:
     std::map<SchemaObjectID, size_t> image_by_object;
     mutable std::vector<PreparedMetadata> prepared_metadata;
     std::function<void()> cancellation_checkpoint;
+};
+
+StoredObjectPhysicalizationAdapterRegistry makeAtomicStoredObjectAdapterRegistry(
+    const IPhysicalizationObjectProvider & object_provider, const IPhysicalizationRewriteAdapter & rewrite_adapter)
+{
+    const auto table_source_modes = storedObjectSourceModeMask(StoredObjectSourceMode::ExplicitColumns)
+        | storedObjectSourceModeMask(StoredObjectSourceMode::AsSourceTable)
+        | storedObjectSourceModeMask(StoredObjectSourceMode::CloneAsSourceTable)
+        | storedObjectSourceModeMask(StoredObjectSourceMode::AsSelect) | storedObjectSourceModeMask(StoredObjectSourceMode::EmptyAsSelect)
+        | storedObjectSourceModeMask(StoredObjectSourceMode::AsTableFunction)
+        | storedObjectSourceModeMask(StoredObjectSourceMode::SchemaInference)
+        | storedObjectSourceModeMask(StoredObjectSourceMode::AttachMetadata);
+    const auto view_source_modes = storedObjectSourceModeMask(StoredObjectSourceMode::AsSelect)
+        | storedObjectSourceModeMask(StoredObjectSourceMode::EmptyAsSelect)
+        | storedObjectSourceModeMask(StoredObjectSourceMode::AttachMetadata);
+    const std::array registrations{
+        StoredObjectPhysicalizationAdapterRegistration{
+            .object_kind = StoredObjectKind::Table,
+            .schema_object_kind = SchemaObjectKind::Table,
+            .source_modes = table_source_modes,
+            .occurrence_sites = storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::TableColumnDeclaration),
+            .object_provider = &object_provider,
+            .rewrite_adapter = &rewrite_adapter,
+        },
+        StoredObjectPhysicalizationAdapterRegistration{
+            .object_kind = StoredObjectKind::View,
+            .schema_object_kind = SchemaObjectKind::View,
+            .source_modes = view_source_modes,
+            .occurrence_sites = storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::ViewOutputDeclaration)
+                | storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::ViewStoredCast)
+                | storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::TableFunctionSchemaString)
+                | storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::FormatSchemaString),
+            .object_provider = &object_provider,
+            .rewrite_adapter = &rewrite_adapter,
+        },
+        StoredObjectPhysicalizationAdapterRegistration{
+            .object_kind = StoredObjectKind::MaterializedView,
+            .schema_object_kind = SchemaObjectKind::View,
+            .source_modes = view_source_modes,
+            .occurrence_sites = storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::MaterializedViewOutputDeclaration)
+                | storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::MaterializedViewStoredCast)
+                | storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::TableFunctionSchemaString)
+                | storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::FormatSchemaString),
+            .object_provider = &object_provider,
+            .rewrite_adapter = &rewrite_adapter,
+        },
+        StoredObjectPhysicalizationAdapterRegistration{
+            .object_kind = StoredObjectKind::Dictionary,
+            .schema_object_kind = SchemaObjectKind::Dictionary,
+            .source_modes = storedObjectSourceModeMask(StoredObjectSourceMode::ObjectDefinition)
+                | storedObjectSourceModeMask(StoredObjectSourceMode::AttachMetadata),
+            .occurrence_sites = storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::DictionaryAttribute),
+            .object_provider = &object_provider,
+            .rewrite_adapter = &rewrite_adapter,
+        },
+    };
+    return StoredObjectPhysicalizationAdapterRegistry::create(registrations);
 }
 }
 
@@ -1358,6 +1418,129 @@ void AtomicLifecycleAdapter::configureEffectiveDatabaseResourceLimitsForStartup(
         physicalization_tokens->invalidateAllForRestart();
     physicalization_tokens
         = std::make_unique<PhysicalizationTokenStore>(database.getUUID(), makePhysicalizationTokenStoreLimits(effective_limits));
+}
+
+StoredObjectUDTPublicationAdmissionProof AtomicLifecycleAdapter::authorizeStoredObjectCreate(
+    const AuthorityRoot & planning_root,
+    AtomicDatabaseSchemaMutationStorage & storage,
+    StoredObjectKind object_kind,
+    const ASTCreateQuery & create,
+    const PreparedViewOutputTypeBindings & bindings,
+    bool uses_selected_output_classification) const
+{
+    if (planning_root.getDatabaseUUID() != database.getUUID()
+        || planning_root.getPersistentCapabilityMask() != dependent_object_authority_capability_mask
+        || storage.getPaths().getDatabaseUUID() != database.getUUID())
+        logicalError("stored-object CREATE adapter registry has a foreign authority or durable backend");
+    const auto inventory = planning_root.pinAuthorityInventory();
+    const auto graph = planning_root.pinSchemaObjectDependencyGraph();
+    if (!inventory || !graph)
+        logicalError("stored-object CREATE adapter registry has no pinned authority inventory or graph");
+    auto reconciliation = storage.readAndReconcileAuthorityRecords(*inventory, *graph);
+    AtomicStoredObjectPhysicalizationAdapter adapter(database, storage, std::move(reconciliation), {});
+    auto registry = makeAtomicStoredObjectAdapterRegistry(adapter, adapter);
+    return authorizePreparedViewOutputTypeBindings(object_kind, create, bindings, registry, uses_selected_output_classification);
+}
+
+StoredObjectUDTPublicationAdmissionProof AtomicLifecycleAdapter::authorizeStoredObjectCreate(
+    const AuthorityRoot & planning_root,
+    AtomicDatabaseSchemaMutationStorage & storage,
+    const ASTCreateQuery & create,
+    const PreparedDictionaryAttributeTypeBindings & bindings) const
+{
+    if (planning_root.getDatabaseUUID() != database.getUUID()
+        || planning_root.getPersistentCapabilityMask() != dependent_object_authority_capability_mask
+        || storage.getPaths().getDatabaseUUID() != database.getUUID())
+        logicalError("stored-object CREATE adapter registry has a foreign authority or durable backend");
+    const auto inventory = planning_root.pinAuthorityInventory();
+    const auto graph = planning_root.pinSchemaObjectDependencyGraph();
+    if (!inventory || !graph)
+        logicalError("stored-object CREATE adapter registry has no pinned authority inventory or graph");
+    auto reconciliation = storage.readAndReconcileAuthorityRecords(*inventory, *graph);
+    AtomicStoredObjectPhysicalizationAdapter adapter(database, storage, std::move(reconciliation), {});
+    auto registry = makeAtomicStoredObjectAdapterRegistry(adapter, adapter);
+    return authorizePreparedDictionaryAttributeTypeBindings(create, bindings, registry);
+}
+
+void AtomicLifecycleAdapter::authorizeTableSourceSidecarCopy(
+    const AuthorityRoot & planning_root,
+    AtomicDatabaseSchemaMutationStorage & storage,
+    StoredObjectSourceMode source_mode,
+    const PersistedTypeReferences & source_references,
+    const BoundObjectTypeReferences & bound_source_references) const
+{
+    if (source_mode != StoredObjectSourceMode::AsSourceTable && source_mode != StoredObjectSourceMode::CloneAsSourceTable)
+        logicalError("native Table source-sidecar admission received an unauthorized source mode");
+    if (planning_root.getDatabaseUUID() != database.getUUID()
+        || planning_root.getPersistentCapabilityMask() != dependent_object_authority_capability_mask
+        || storage.getPaths().getDatabaseUUID() != database.getUUID())
+        logicalError("native Table source-sidecar admission has a foreign authority or durable backend");
+    const auto inventory = planning_root.pinAuthorityInventory();
+    const auto graph = planning_root.pinSchemaObjectDependencyGraph();
+    if (!inventory || !graph)
+        logicalError("native Table source-sidecar admission has no pinned authority inventory or graph");
+
+    auto reconciliation = storage.readAndReconcileAuthorityRecords(*inventory, *graph);
+    AtomicStoredObjectPhysicalizationAdapter adapter(database, storage, std::move(reconciliation), {});
+    auto registry = makeAtomicStoredObjectAdapterRegistry(adapter, adapter);
+    const auto admission = admitStoredObjectSourceSidecar(
+        StoredObjectKind::Table, source_mode, database.getUUID(), source_references, bound_source_references, registry);
+    if (!admission.isAccepted() || !admission.hasLogicalReferences()
+        || admission.getExactDescriptorCount() != source_references.descriptors.size())
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Native Table source-sidecar admission was rejected ({})",
+            getStoredObjectAdmissionRejectionName(admission.getRejection()));
+    }
+}
+
+void AtomicLifecycleAdapter::authorizeTableSelectedOutputs(
+    const AuthorityRoot & planning_root,
+    AtomicDatabaseSchemaMutationStorage & storage,
+    StoredObjectSourceMode source_mode,
+    UInt64 classified_output_count,
+    const PersistedTypeReferences & references) const
+{
+    if ((source_mode != StoredObjectSourceMode::AsSelect && source_mode != StoredObjectSourceMode::EmptyAsSelect)
+        || !classified_output_count || references.object.kind != SchemaObjectKind::Table
+        || references.object.database_uuid != database.getUUID() || references.descriptors.empty())
+        logicalError("selected Table output admission received an invalid classification or sidecar");
+    if (planning_root.getDatabaseUUID() != database.getUUID()
+        || planning_root.getPersistentCapabilityMask() != dependent_object_authority_capability_mask
+        || storage.getPaths().getDatabaseUUID() != database.getUUID())
+        logicalError("selected Table output admission has a foreign authority or durable backend");
+    const auto inventory = planning_root.pinAuthorityInventory();
+    const auto graph = planning_root.pinSchemaObjectDependencyGraph();
+    if (!inventory || !graph)
+        logicalError("selected Table output admission has no pinned authority inventory or graph");
+
+    auto reconciliation = storage.readAndReconcileAuthorityRecords(*inventory, *graph);
+    AtomicStoredObjectPhysicalizationAdapter adapter(database, storage, std::move(reconciliation), {});
+    auto registry = makeAtomicStoredObjectAdapterRegistry(adapter, adapter);
+    std::vector<StoredObjectSelectedOutput> outputs;
+    outputs.reserve(classified_output_count);
+    for (UInt64 index = 0; index < classified_output_count; ++index)
+        outputs.push_back(StoredObjectSelectedOutput::physical());
+    std::vector<StoredObjectExactOccurrence> exact_occurrences;
+    exact_occurrences.reserve(references.descriptors.size());
+    for (const auto & descriptor : references.descriptors)
+    {
+        exact_occurrences.push_back({
+            .site = StoredObjectOccurrenceSite::TableColumnDeclaration,
+            .descriptor = descriptor,
+        });
+    }
+    const auto admission = admitStoredObjectSelectedOutputs(
+        StoredObjectKind::Table, source_mode, database.getUUID(), outputs, exact_occurrences, true, registry);
+    if (!admission.isAccepted() || !admission.hasLogicalReferences()
+        || admission.getExactDescriptorCount() != references.descriptors.size())
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Selected Table output admission was rejected ({})",
+            getStoredObjectAdmissionRejectionName(admission.getRejection()));
+    }
 }
 
 const TypeAuthorityCapabilities & AtomicLifecycleAdapter::getCapabilities() const noexcept

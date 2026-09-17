@@ -22,6 +22,10 @@ SHOW CREATE VIEW test_1602.v;
 
 SHOW CREATE VIEW test_1602.vv;
 
+DETACH VIEW test_1602.v SYNC;
+SHOW CREATE VIEW test_1602.v FORMAT Null;
+SELECT 'detached view metadata is readable';
+
 SHOW CREATE VIEW test_1602.not_exist_view; -- { serverError CANNOT_GET_CREATE_TABLE_QUERY }
 
 SHOW CREATE VIEW test_1602.tbl; -- { serverError BAD_ARGUMENTS }

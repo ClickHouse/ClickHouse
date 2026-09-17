@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_user_defined_types>1</allow_experimental_user_defined_types>
+        </default>
+    </profiles>
+</clickhouse>

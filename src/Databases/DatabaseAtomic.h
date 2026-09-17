@@ -53,8 +53,10 @@ enum class AuthorityQuarantineOperationKind : UInt8;
 class IAuthorityAdapter;
 class ILifecycleAdapter;
 struct PreparedTableColumnTypeBindings;
+class PreparedStoredObjectTypeBindingHandoff;
 struct PersistedTypeReferences;
 struct SchemaObjectID;
+enum class StoredObjectSourceMode : UInt8;
 struct TypeAuthorityCapabilities;
 } // namespace UDT
 
@@ -226,6 +228,14 @@ public:
     /// mapped-table inventory.
     void assertUDTTableAllowsOrdinaryMetadataMutation(const StoragePtr & table, ContextPtr context, std::string_view operation) const;
     void assertUDTTableUUIDAllowsOrdinaryMetadataMutation(UUID table_uuid, std::string_view table_name, std::string_view operation) const;
+    /// Rejects an independent mutation of the generated physical inner table
+    /// while a durable mapped MaterializedView still owns it. Interpreters use
+    /// this before shutdown, dependency removal, or distributed dispatch; the
+    /// database callback repeats the check under its final mutation lock.
+    void assertUDTPhysicalInnerTableOperationAllowed(const StoragePtr & table, std::string_view operation) const;
+    /// Name-only variant for ATTACH/dispatch boundaries where the generated
+    /// child is not live yet but the mapped owner identity is durable.
+    void assertUDTPhysicalInnerTableNameOperationAllowed(std::string_view table_name, std::string_view operation) const;
     void assertUDTDatabaseAllowsDetach(std::string_view operation) const;
 
     /// The caller must hold the affected table ALTER lock (all table ALTER
@@ -253,6 +263,14 @@ public:
     /// ordinary table-name DDL guard.
     [[nodiscard]] TableCreateGuard acquireUDTTableCreateGuard();
 
+    /// Requires an exact same-authority logical source-sidecar admission while
+    /// the retained CREATE guard still pins the publication root.
+    void authorizeUDTTableSourceSidecarCopy(
+        const TableCreateGuard & guard,
+        UDT::StoredObjectSourceMode source_mode,
+        const UDT::PersistedTypeReferences & source_references,
+        const UDT::BoundObjectTypeReferences & bound_source_references) const;
+
     /// Production mapped-table CREATE boundary for fresh local Atomic Memory
     /// and non-replicated, non-shared MergeTree-family tables. It starts and
     /// binds the physical storage before publication, durably installs metadata,
@@ -266,6 +284,15 @@ public:
         const StoragePtr & table,
         UDT::PreparedTableColumnTypeBindings table_bindings,
         UDT::StoredObjectSourceMode selected_output_source_mode);
+
+    /// Database-owned publication boundary for an exact physicalized
+    /// View/MaterializedView/Dictionary binding package.
+    void createStoredObjectWithUDTBindings(
+        TableCreateGuard guard,
+        ContextPtr query_context,
+        const ASTPtr & physical_create_query,
+        const StoragePtr & object_storage,
+        UDT::PreparedStoredObjectTypeBindingHandoff bindings);
 
     bool empty() const override;
     bool emptyForDrop() const override;
@@ -360,6 +387,11 @@ protected:
         TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     bool isReservedMetadataDirectory(const String & directory_name) const override;
+
+    StoredObjectMetadataLoadDecision
+    decideStoredObjectMetadataLoadBeforeParsing(std::string_view canonical_file_object_name) const override;
+    StoredObjectMetadataLoadDecision
+    decideStoredObjectMetadataLoadAfterParsing(std::string_view canonical_file_object_name, const ASTCreateQuery & query) const override;
     bool forceEagerTableLoadAtStartup(const ASTCreateQuery & query) const override;
     void validateTableMetadataForLoading(const ASTCreateQuery & query, bool permanently_detached) const override;
     void validateTableMetadataRewriteBeforeLoading(const ASTCreateQuery & query) const override;
@@ -395,7 +427,19 @@ protected:
 
     bool hasDatabaseOwnedTableExpectationForCrossDatabaseMove(UUID table_uuid) const;
     bool hasDatabaseOwnedUDTTableBinding(const StoragePtr & table, ContextPtr local_context) const;
+    void assertNotLiveMappedMaterializedViewInnerTable(const StoragePtr & table, std::string_view operation) const
+        TSA_REQUIRES(udt_schema_mutation_mutex);
+    void assertNotLiveMappedMaterializedViewInnerTable(std::string_view table_name, std::string_view operation) const
+        TSA_REQUIRES(udt_schema_mutation_mutex);
     void reclaimRetiredUDTRootsNoThrow() noexcept;
+    UDT::CompletedTableColumnTypeAlterPublication alterUDTStoredObject(
+        ContextPtr context,
+        const StorageID & table_id,
+        const StoragePtr & table,
+        const StorageInMemoryMetadata & metadata,
+        bool validate_new_create_query,
+        bool trusted_boundary_rollback = false,
+        const StorageInMemoryMetadata * expected_current_metadata = nullptr) TSA_REQUIRES(udt_schema_mutation_mutex);
     void dropUDTTable(ContextPtr context, const String & table_name, const StoragePtr & table, bool sync)
         TSA_REQUIRES(udt_schema_mutation_mutex);
     void dropTableImplWithoutUDTGuard(ContextPtr context, const String & table_name, bool sync);

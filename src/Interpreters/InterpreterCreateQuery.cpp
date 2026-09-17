@@ -61,8 +61,12 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageLoop.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageMergeTreeIndex.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageView.h>
@@ -70,6 +74,7 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UDT/SelectedOutputTypeBindings.h>
 
@@ -86,12 +91,15 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Interpreters/UDT/StoredObjectTypeBindingPreparation.h>
+#include <Interpreters/UDT/StoredObjectTypeStringSlots.h>
+#include <Interpreters/UDT/StoredObjectTypeSupport.h>
 #include <Interpreters/UDT/UDTExecutionBoundary.h>
 #include <Interpreters/UDTScalarAliasColumnBinder.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/replaceLegacyToTime.h>
 
 #include <Access/Common/AccessRightsElement.h>
 
@@ -191,6 +199,7 @@ extern const char atomic_populate_fail_before_subscription[];
 extern const char atomic_populate_pause_before_subscription[];
 extern const char atomic_populate_pause_after_view_publication[];
 extern const char atomic_populate_pause_before_source_guard[];
+extern const char udt_inferred_schema_pause_after_legacy_analysis[];
 }
 
 namespace ErrorCodes
@@ -873,7 +882,761 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 
 
 namespace
-{;
+{
+
+[[noreturn]] void rejectStoredObjectUDTCreate(UDT::StoredObjectAdmissionRejection rejection)
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "User-defined types are not supported in this stored CREATE context ({})",
+        UDT::getStoredObjectAdmissionRejectionName(rejection));
+}
+
+UDT::StoredObjectCreatePreparationDecision classifyStoredObjectUDTCreate(
+    const ASTCreateQuery & create, const UDT::StoredObjectCreateQueryClassification & classification, bool udt_admission_enabled)
+{
+    auto decision = UDT::classifyStoredObjectCreatePreparation(create, classification, udt_admission_enabled);
+    if (decision.isUnsupported())
+        rejectStoredObjectUDTCreate(decision.rejection);
+    return decision;
+}
+
+/// CREATE ... AS SELECT and inferred VIEW schemas retain only the physical
+/// sample block. Until those objects have their own durable UDT sidecar, every
+/// locally resolvable source that can contribute that sample must therefore be
+/// proven physical-only before inference. This walk is deliberately based on
+/// catalog storages and DatabaseAtomic's UUID-owned authority state: rebuilding
+/// identity from an already-lowered IDataType would silently lose provenance.
+class UDTTableFunctionSourceHandoff final
+{
+public:
+    void record(const ASTPtr & invocation, const StoragePtr & storage, const String & current_database)
+    {
+        if (!invocation || !storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot retain an incomplete inferred-schema table-function source");
+
+        std::lock_guard lock(mutex);
+        auto & entries = storages[makeKey(invocation, current_database)];
+        if (std::find(entries.begin(), entries.end(), storage) != entries.end())
+            return;
+        if (entry_count >= maximum_entries)
+        {
+            throw Exception(
+                ErrorCodes::TOO_MANY_TABLES,
+                "Cannot retain more than {} table-function sources while inferring a physical-only CREATE schema",
+                maximum_entries);
+        }
+        entries.push_back(storage);
+        ++entry_count;
+    }
+
+    std::vector<StoragePtr> snapshot(const ASTPtr & invocation, const String & current_database) const
+    {
+        if (!invocation)
+            return {};
+        std::lock_guard lock(mutex);
+        const auto it = storages.find(makeKey(invocation, current_database));
+        return it == storages.end() ? std::vector<StoragePtr>{} : it->second;
+    }
+
+private:
+    static constexpr size_t maximum_entries = 4096;
+
+    static String makeKey(const ASTPtr & invocation, const String & current_database)
+    {
+        return toString(current_database.size()) + ':' + current_database
+            + toString(invocation->getTreeHash(/*ignore_aliases=*/ true));
+    }
+
+    mutable std::mutex mutex;
+    std::unordered_map<String, std::vector<StoragePtr>> storages;
+    size_t entry_count = 0;
+};
+
+class UDTAliasResolutionHandoff final
+{
+public:
+    struct Observation
+    {
+        StoragePtr target;
+        StorageID target_id_at_observation;
+        StorageMetadataPtr metadata;
+    };
+
+    void record(
+        const StorageID & source_alias_id,
+        const StoragePtr & target,
+        const StorageID & target_id_at_observation,
+        const StorageMetadataPtr & metadata)
+    {
+        if (!target)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot retain an incomplete inferred-schema Alias resolution");
+
+        std::lock_guard lock(mutex);
+        auto & entries = observations[makeKey(source_alias_id)];
+        const auto duplicate = std::find_if(
+            entries.begin(),
+            entries.end(),
+            [&](const auto & entry)
+            {
+                return entry.target == target && entry.metadata == metadata
+                    && entry.target_id_at_observation.getDatabaseName() == target_id_at_observation.getDatabaseName()
+                    && entry.target_id_at_observation.getTableName() == target_id_at_observation.getTableName();
+            });
+        if (duplicate != entries.end())
+            return;
+        if (entry_count >= maximum_entries)
+        {
+            throw Exception(
+                ErrorCodes::TOO_MANY_TABLES,
+                "Cannot retain more than {} Alias resolutions while inferring a physical-only CREATE schema",
+                maximum_entries);
+        }
+        entries.push_back({target, target_id_at_observation, metadata});
+        ++entry_count;
+    }
+
+    std::vector<Observation> snapshot(const StorageID & source_alias_id) const
+    {
+        std::lock_guard lock(mutex);
+        const auto it = observations.find(makeKey(source_alias_id));
+        return it == observations.end() ? std::vector<Observation>{} : it->second;
+    }
+
+    static String makeKey(const StorageID & source_alias_id)
+    {
+        const auto & database = source_alias_id.getDatabaseName();
+        return toString(database.size()) + ':' + database + source_alias_id.getTableName();
+    }
+
+private:
+    static constexpr size_t maximum_entries = 4096;
+
+    mutable std::mutex mutex;
+    std::unordered_map<String, std::vector<Observation>> observations;
+    size_t entry_count = 0;
+};
+
+class UDTPhysicalSchemaSourceGuard final
+{
+public:
+    explicit UDTPhysicalSchemaSourceGuard(
+        std::shared_ptr<UDTTableFunctionSourceHandoff> table_function_handoff_ = {},
+        std::shared_ptr<UDTAliasResolutionHandoff> alias_resolution_handoff_ = {})
+        : table_function_handoff(std::move(table_function_handoff_))
+        , alias_resolution_handoff(std::move(alias_resolution_handoff_))
+    {
+    }
+
+    /// Native AS/CLONE copies this exact immutable metadata snapshot. Most
+    /// storages own that schema, but Alias exposes its current target's
+    /// metadata instead, so retain the snapshot's provenance and follow only
+    /// that dynamic Alias edge before accepting a physical-only copy.
+    void assertNativePhysicalSchemaSource(
+        const StoragePtr & storage, const StorageMetadataPtr & copied_metadata, const ContextPtr & source_context)
+    {
+        resetTraversal();
+        inspectNativeStorage(storage, source_context);
+        assertCapturedMetadataIsPhysicalOnly(storage, copied_metadata);
+    }
+
+    /// Resolve every dynamic Alias edge only after authorizing that exact
+    /// target, retain the resolved storages for the duration of the copy, and
+    /// return the immutable metadata snapshot that the native copy may use.
+    StorageMetadataPtr captureNativePhysicalSchemaSource(const StoragePtr & storage, const ContextPtr & source_context)
+    {
+        resetTraversal();
+        return captureNativeStorageMetadata(storage, source_context);
+    }
+
+    /// ExpressionAnalyzer does not retain a resolved query tree. Run this
+    /// only after its ordinary sample analysis (and therefore its access
+    /// checks), on a clone whose CTE table references are expanded. The WITH
+    /// definitions themselves are skipped below, so unused CTEs are not
+    /// mistaken for source storages.
+    void assertAuthorizedASTSourceClosure(const ASTPtr & query, const ContextPtr & source_context)
+    {
+        resetTraversal();
+        if (!query)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot inspect an empty inferred-schema query");
+
+        ASTPtr normalized = query->clone();
+        ApplyWithSubqueryVisitor::visit(normalized);
+        inspectAuthorizedNormalizedAST(normalized, source_context);
+    }
+
+    void assertResolvedSourceClosure(const QueryTreeNodePtr & query_tree, const ContextPtr & source_context)
+    {
+        resetTraversal();
+        if (!query_tree)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot inspect an empty resolved inferred-schema query");
+
+        std::unordered_set<const IQueryTreeNode *> visited;
+        std::vector<QueryTreeNodePtr> pending{query_tree};
+        while (!pending.empty())
+        {
+            auto node = std::move(pending.back());
+            pending.pop_back();
+            if (!node || !visited.emplace(node.get()).second)
+                continue;
+            if (visited.size() > maximum_query_tree_nodes)
+            {
+                throw Exception(
+                    ErrorCodes::TOO_MANY_TABLES,
+                    "Cannot inspect more than {} resolved query-tree nodes while inferring a physical-only CREATE schema",
+                    maximum_query_tree_nodes);
+            }
+
+            if (const auto * table = node->as<TableNode>())
+            {
+                inspectStorage(table->getStorage(), source_context);
+                const auto & snapshot = table->getStorageSnapshot();
+                assertCapturedMetadataIsPhysicalOnly(table->getStorage(), snapshot ? snapshot->metadata : StorageMetadataPtr{});
+            }
+            else if (const auto * table_function = node->as<TableFunctionNode>())
+            {
+                if (!table_function->isResolved() || !table_function->getStorage())
+                {
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot infer a physical-only CREATE schema because a local table-function source was not resolved exhaustively");
+                }
+                inspectStorage(table_function->getStorage(), source_context);
+                const auto & snapshot = table_function->getStorageSnapshot();
+                assertCapturedMetadataIsPhysicalOnly(
+                    table_function->getStorage(), snapshot ? snapshot->metadata : StorageMetadataPtr{});
+            }
+
+            appendResolvedQueryTreeChildren(node, pending);
+        }
+    }
+
+    /// Selected-output binding can preserve provenance from a storage that
+    /// owns its snapshot. Alias owns no schema, so never let its target's
+    /// binding masquerade as Alias-owned provenance even when logical output
+    /// collection is enabled.
+    void assertResolvedDynamicAliasClosure(const QueryTreeNodePtr & query_tree, const ContextPtr & source_context)
+    {
+        resetTraversal();
+        if (!query_tree)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot inspect an empty resolved inferred-schema query");
+
+        std::unordered_set<const IQueryTreeNode *> visited;
+        std::vector<QueryTreeNodePtr> pending{query_tree};
+        while (!pending.empty())
+        {
+            auto node = std::move(pending.back());
+            pending.pop_back();
+            if (!node || !visited.emplace(node.get()).second)
+                continue;
+            if (visited.size() > maximum_query_tree_nodes)
+            {
+                throw Exception(
+                    ErrorCodes::TOO_MANY_TABLES,
+                    "Cannot inspect more than {} resolved query-tree nodes while inferring a physical-only CREATE schema",
+                    maximum_query_tree_nodes);
+            }
+
+            if (const auto * table = node->as<TableNode>(); table && table->getStorage()->as<StorageAlias>())
+            {
+                inspectStorage(table->getStorage(), source_context);
+                const auto & snapshot = table->getStorageSnapshot();
+                assertCapturedMetadataIsPhysicalOnly(table->getStorage(), snapshot ? snapshot->metadata : StorageMetadataPtr{});
+            }
+
+            appendResolvedQueryTreeChildren(node, pending);
+        }
+    }
+
+private:
+    static constexpr size_t maximum_storage_edges = 4096;
+    static constexpr size_t maximum_ast_nodes = 65'536;
+    static constexpr size_t maximum_query_tree_nodes = 65'536;
+
+    static void appendResolvedQueryTreeChildren(
+        const QueryTreeNodePtr & node, std::vector<QueryTreeNodePtr> & pending)
+    {
+        const auto * table_function = node->as<TableFunctionNode>();
+        for (const auto & child : node->getChildren())
+        {
+            if (!child)
+                continue;
+            if (!table_function || child != table_function->getArgumentsNode())
+            {
+                pending.push_back(child);
+                continue;
+            }
+
+            /// QueryAnalyzer deliberately leaves remote-owned or otherwise
+            /// opaque table-function arguments unresolved. Its ordinary query
+            /// tree traversals omit exactly those argument edges; follow the
+            /// same source closure here while keeping every resolved edge.
+            const auto & unresolved_indexes = table_function->getUnresolvedArgumentIndexes();
+            const auto & arguments = table_function->getArguments().getNodes();
+            for (size_t index = 0; index < arguments.size(); ++index)
+            {
+                if (std::find(unresolved_indexes.begin(), unresolved_indexes.end(), index) == unresolved_indexes.end())
+                    pending.push_back(arguments[index]);
+            }
+        }
+    }
+
+    void resetTraversal()
+    {
+        visited_storages.clear();
+        consumed_alias_observation_sources.clear();
+        inspected_storage_edges = 0;
+        inspected_ast_nodes = 0;
+    }
+
+    void inspectAuthorizedNormalizedAST(const ASTPtr & query, const ContextPtr & source_context)
+    {
+        /// Raw AST addresses are valid only while this query owner is alive.
+        /// A nested transient view owns a different temporary clone, so do not
+        /// retain its addresses after this traversal returns: an allocator may
+        /// reuse them for a later clone and make an unvisited subtree appear
+        /// visited. Keep only the aggregate bound across nested traversals.
+        std::unordered_set<const IAST *> visited;
+        std::vector<const IAST *> pending{query.get()};
+        while (!pending.empty())
+        {
+            const IAST * node = pending.back();
+            pending.pop_back();
+            if (!node || !visited.emplace(node).second)
+                continue;
+            if (++inspected_ast_nodes > maximum_ast_nodes)
+            {
+                throw Exception(
+                    ErrorCodes::TOO_MANY_TABLES,
+                    "Cannot inspect more than {} normalized AST nodes while inferring a physical-only CREATE schema",
+                    maximum_ast_nodes);
+            }
+
+            if (const auto * table_expression = node->as<ASTTableExpression>())
+            {
+                if (table_expression->database_and_table_name)
+                {
+                    const auto table_id = source_context->resolveStorageID(table_expression->database_and_table_name);
+                    /// A query-context sample-cache hit can skip this call's
+                    /// planner access phase. Require table-wide SELECT before
+                    /// any fresh catalog/storage inspection so a narrower
+                    /// grant fails without revealing mapped authority state.
+                    source_context->checkAccess(AccessType::SELECT, table_id.getDatabaseName(), table_id.getTableName());
+                    inspectStorage(DatabaseCatalog::instance().getTable(table_id, source_context), source_context);
+                    inspectObservedAliasResolutions(table_id, source_context);
+                }
+                else if (table_expression->table_function)
+                    inspectAuthorizedTableFunction(table_expression->table_function, source_context);
+            }
+
+            const auto * select = node->as<ASTSelectQuery>();
+            for (const auto & child : node->children)
+            {
+                /// ApplyWithSubqueryVisitor cloned every used CTE at its use
+                /// site. Traversing the WITH dictionary itself would include
+                /// unused definitions and would no longer be the resolved
+                /// source closure.
+                if (child && (!select || child != select->with()))
+                    pending.push_back(child.get());
+            }
+        }
+    }
+
+    bool inspectCatalogParameterizedView(const ASTPtr & table_function_ast, const ContextPtr & source_context)
+    {
+        const auto * function = table_function_ast ? table_function_ast->as<ASTFunction>() : nullptr;
+        if (!function)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A table-function source has a malformed AST");
+
+        /// The analyzer gives registered table functions precedence over a
+        /// same-named parameterized view. ExpressionAnalyzer has the opposite
+        /// legacy precedence, so only the analyzer path skips this lookup.
+        if (source_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+            && TableFunctionFactory::instance().isTableFunctionName(function->name))
+            return false;
+
+        String database_name = source_context->getCurrentDatabase();
+        String table_name = function->name;
+        if (function->isCompoundName())
+        {
+            std::vector<String> name_parts;
+            splitInto<'.'>(name_parts, function->name);
+            if (name_parts.size() != 2)
+                return false;
+            database_name = std::move(name_parts[0]);
+            table_name = std::move(name_parts[1]);
+        }
+
+        auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, source_context);
+        const auto * view = storage ? storage->as<StorageView>() : nullptr;
+        if (view && view->isParameterizedView())
+        {
+            source_context->checkAccess(AccessType::SELECT, database_name, table_name);
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot infer a physical-only CREATE schema because the exact parameterized view invocation was not retained");
+        }
+        return false;
+    }
+
+    void inspectAuthorizedTableFunction(const ASTPtr & table_function_ast, const ContextPtr & source_context)
+    {
+        if (table_function_handoff)
+        {
+            auto observed_storages = table_function_handoff->snapshot(
+                table_function_ast, source_context->getCurrentDatabase());
+            if (!observed_storages.empty())
+            {
+                const auto * function = table_function_ast->as<ASTFunction>();
+                if (!function)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "A table-function source has a malformed AST");
+                String expected_database = source_context->getCurrentDatabase();
+                String expected_table = function->name;
+                if (function->isCompoundName())
+                {
+                    std::vector<String> name_parts;
+                    splitInto<'.'>(name_parts, function->name);
+                    if (name_parts.size() == 2)
+                    {
+                        expected_database = std::move(name_parts[0]);
+                        expected_table = std::move(name_parts[1]);
+                    }
+                }
+
+                bool inspected_observation = false;
+                for (const auto & observed : observed_storages)
+                {
+                    if (const auto * observed_view = observed ? observed->as<StorageView>() : nullptr;
+                        observed_view && observed_view->isParameterizedView())
+                    {
+                        const auto & observed_id = observed->getStorageID();
+                        if (observed_id.getDatabaseName() != expected_database
+                            || observed_id.getTableName() != expected_table)
+                        {
+                            throw Exception(
+                                ErrorCodes::NOT_IMPLEMENTED,
+                                "Cannot infer a physical-only CREATE schema because a parameterized view invocation changed identity");
+                        }
+                        source_context->checkAccess(
+                            AccessType::SELECT, observed_id.getDatabaseName(), observed_id.getTableName());
+                    }
+                    inspectStorage(observed, source_context);
+                    inspected_observation = true;
+                }
+                if (inspected_observation)
+                    return;
+            }
+        }
+
+        if (inspectCatalogParameterizedView(table_function_ast, source_context))
+            return;
+
+        const auto query_context = source_context->hasQueryContext() ? source_context->getQueryContext() : source_context;
+        auto storage = query_context->tryGetCachedASTTableFunctionResult(table_function_ast);
+        if (!storage)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot infer a physical-only CREATE schema because ExpressionAnalyzer did not retain a resolved table-function source");
+        }
+        inspectStorage(storage, source_context);
+    }
+
+    void inspectStorage(const StoragePtr & storage, const ContextPtr & source_context)
+    {
+        countStorageEdge();
+        inspectStorageAfterCount(storage, source_context);
+    }
+
+    void inspectObservedAliasResolutions(const StorageID & source_alias_id, const ContextPtr & source_context)
+    {
+        if (!alias_resolution_handoff)
+            return;
+
+        const auto source_key = UDTAliasResolutionHandoff::makeKey(source_alias_id);
+        if (!consumed_alias_observation_sources.emplace(source_key).second)
+            return;
+
+        for (const auto & observation : alias_resolution_handoff->snapshot(source_alias_id))
+        {
+            const auto & target_id = observation.target_id_at_observation;
+            if (target_id.getDatabaseName().empty() || target_id.getTableName().empty())
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot infer a physical-only CREATE schema because an observed Alias target has no stable catalog identity");
+            }
+
+            /// The callback only retained opaque identity. Preserve ordinary
+            /// access ordering before inspecting either the target's current
+            /// authority or the exact metadata consumed during analysis.
+            source_context->checkAccess(AccessType::SELECT, target_id.getDatabaseName(), target_id.getTableName());
+            const auto current_target_id = observation.target->getStorageID();
+            if (current_target_id.getDatabaseName().empty() || current_target_id.getTableName().empty())
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot infer a physical-only CREATE schema because an observed Alias target lost its catalog identity");
+            }
+            if (current_target_id.getDatabaseName() != target_id.getDatabaseName()
+                || current_target_id.getTableName() != target_id.getTableName())
+            {
+                source_context->checkAccess(
+                    AccessType::SELECT, current_target_id.getDatabaseName(), current_target_id.getTableName());
+            }
+            inspectStorage(observation.target, source_context);
+            assertCapturedMetadataIsPhysicalOnly(observation.target, observation.metadata);
+
+            if (observation.target->as<StorageAlias>())
+                inspectObservedAliasResolutions(target_id, source_context);
+        }
+    }
+
+    void countStorageEdge()
+    {
+        if (++inspected_storage_edges > maximum_storage_edges)
+        {
+            throw Exception(
+                ErrorCodes::TOO_MANY_TABLES,
+                "Cannot inspect more than {} local source-storage edges while inferring a physical-only CREATE schema",
+                maximum_storage_edges);
+        }
+    }
+
+    void inspectNativeStorage(const StoragePtr & storage, const ContextPtr & source_context)
+    {
+        countStorageEdge();
+        if (!storage)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Cannot infer a physical-only CREATE schema because a local source storage is unavailable");
+        }
+        if (!visited_storages.emplace(storage).second)
+            return;
+
+        assertDirectStorageIsPhysicalOnly(storage, source_context);
+        if (const auto * alias = storage->as<StorageAlias>())
+        {
+            inspectNativeStorage(
+                alias->getTargetTable(StorageAlias::TargetAccess{source_context, AccessType::SHOW_COLUMNS}), source_context);
+        }
+    }
+
+    StorageMetadataPtr captureNativeStorageMetadata(const StoragePtr & storage, const ContextPtr & source_context)
+    {
+        countStorageEdge();
+        if (!storage)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Cannot infer a physical-only CREATE schema because a local source storage is unavailable");
+        }
+        if (!visited_storages.emplace(storage).second)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot infer or copy a physical-only CREATE schema through a cyclic Alias source");
+        }
+
+        assertDirectStorageIsPhysicalOnly(storage, source_context);
+        if (const auto * alias = storage->as<StorageAlias>())
+        {
+            return captureNativeStorageMetadata(
+                alias->getTargetTable(StorageAlias::TargetAccess{source_context, AccessType::SHOW_COLUMNS}), source_context);
+        }
+
+        auto metadata_handle = storage->getInMemoryMetadataPtr(source_context, false);
+        StorageMetadataPtr metadata = metadata_handle;
+        assertCapturedMetadataIsPhysicalOnly(storage, metadata);
+        return metadata;
+    }
+
+    static void assertCapturedMetadataIsPhysicalOnly(const StoragePtr & storage, const StorageMetadataPtr & metadata)
+    {
+        if (!storage || !metadata)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inferred-schema source has no immutable metadata snapshot");
+        metadata->validateBoundUDTReferences();
+        if (metadata->getBoundUDTReferences())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot infer or copy a physical-only CREATE schema from mapped table metadata exposed by {}",
+                storage->getStorageID().getNameForLogs());
+        }
+    }
+
+    void assertDirectStorageIsPhysicalOnly(const StoragePtr & storage, const ContextPtr & source_context)
+    {
+        if (!storage)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Cannot infer a physical-only CREATE schema because a local source storage is unavailable");
+        }
+
+        const auto & source_id = storage->getStorageID();
+        if (!source_id.getDatabaseName().empty())
+        {
+            auto source_database = DatabaseCatalog::instance().tryGetDatabase(source_id.getDatabaseName());
+            if (auto * atomic_database = source_database ? typeid_cast<DatabaseAtomic *>(source_database.get()) : nullptr)
+                atomic_database->assertUDTTableAllowsOrdinaryMetadataMutation(
+                    storage, source_context, "infer or copy a physical-only CREATE schema from");
+        }
+    }
+
+    void inspectStorageAfterCount(const StoragePtr & storage, const ContextPtr & source_context)
+    {
+        if (!storage)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Cannot infer a physical-only CREATE schema because a local source storage is unavailable");
+        }
+        /// Retain every visited storage until the traversal ends. A catalog
+        /// DETACH/replace may otherwise destroy a child after this call and
+        /// let a later storage reuse the same raw address, which would make an
+        /// uninspected source look visited.
+        if (!visited_storages.emplace(storage).second)
+            return;
+
+        if (const auto * view = storage->as<StorageView>())
+        {
+            const auto & view_id = storage->getStorageID();
+            auto catalog_view = view_id.getDatabaseName().empty()
+                ? StoragePtr{}
+                : DatabaseCatalog::instance().tryGetTable(view_id, source_context);
+            if (catalog_view.get() == storage.get())
+            {
+                /// A catalog View exposes its own fixed columns and carries any
+                /// durable binding on that outer storage. A table function can
+                /// also return a transient StorageView; that object's sample
+                /// still comes from its inner query and must be inspected.
+                if (view->isParameterizedView())
+                {
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot infer a physical-only CREATE schema because the exact parameterized view invocation was not retained");
+                }
+                assertDirectStorageIsPhysicalOnly(storage, source_context);
+                return;
+            }
+
+            /// A parameterized view invocation and a view table function both
+            /// produce a transient StorageView whose physical sample block was
+            /// inferred from the exact inner query and has no durable binding.
+            /// Inspect that exact substituted query under the view's effective
+            /// SQL-security context before accepting its inferred schema.
+            auto metadata = storage->IStorage::getInMemoryMetadataPtr(source_context, true);
+            if (!metadata || !metadata->getSelectQuery().inner_query)
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot infer a physical-only CREATE schema because a parameterized view query is unavailable");
+            }
+            ASTPtr normalized = metadata->getSelectQuery().inner_query->clone();
+            ApplyWithSubqueryVisitor::visit(normalized);
+            inspectAuthorizedNormalizedAST(normalized, metadata->getSQLSecurityOverriddenContext(source_context));
+            return;
+        }
+
+        assertDirectStorageIsPhysicalOnly(storage, source_context);
+
+        if (storage->as<StorageMaterializedView>())
+        {
+            /// MaterializedView likewise exposes its own persisted outer
+            /// columns; its target contributes data, not another schema.
+            return;
+        }
+
+        if (const auto * alias = storage->as<StorageAlias>())
+        {
+            /// Alias has no independent schema: its metadata is obtained from
+            /// the target on every access. Follow exactly that schema edge,
+            /// but require the same conservative table-wide SELECT before
+            /// inspecting the target's UDT authority state.
+            inspectStorage(
+                alias->getTargetTable(StorageAlias::TargetAccess{source_context, AccessType::SELECT}), source_context);
+            inspectObservedAliasResolutions(storage->getStorageID(), source_context);
+            return;
+        }
+
+        if (const auto * loop = storage->as<StorageLoop>())
+        {
+            /// TableFunctionLoop resolves and authorizes this exact source
+            /// before constructing the wrapper. Its schema and rows are both
+            /// forwarded by the inner storage, so retain and inspect that edge.
+            inspectStorage(loop->getInnerStorage(), source_context);
+            return;
+        }
+
+        if (const auto * merge_tree_index = storage->as<StorageMergeTreeIndex>())
+        {
+            /// The ordinary read path checks only the source columns selected
+            /// from the index. Schema inference has already consumed broader
+            /// source metadata, so require conservative table-wide SELECT
+            /// before inspecting its UDT authority state.
+            auto source = merge_tree_index->getSourceTable();
+            if (!source)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot infer a physical-only CREATE schema because a MergeTree index source is unavailable");
+            source_context->checkAccess(AccessType::SELECT, source->getStorageID());
+            inspectStorage(source, source_context);
+            return;
+        }
+
+        if (const auto * projection = storage->as<StorageFromMergeTreeProjection>())
+        {
+            /// StorageFromMergeTreeProjection performs the same table-wide
+            /// access check as its first read operation. Preserve that order
+            /// before consulting the parent's logical authority.
+            auto source = projection->getParentStorage();
+            if (!source)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot infer a physical-only CREATE schema because a MergeTree projection source is unavailable");
+            source_context->checkAccess(AccessType::SELECT, source->getStorageID());
+            inspectStorage(source, source_context);
+            return;
+        }
+
+        if (const auto * merge = storage->as<StorageMerge>())
+        {
+            const auto access = source_context->getAccess();
+            merge->forEachChildTableForSchemaInspection(
+                source_context,
+                [&](const String & child_database, const String & child_table, const StoragePtr & child)
+                {
+                    /// Count every regexp match, including an access-hidden one,
+                    /// so a huge Merge namespace cannot evade the global bound.
+                    countStorageEdge();
+                    if (!child)
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Cannot infer a physical-only CREATE schema because a Merge child storage is unavailable");
+
+                    if (!access->isGranted(AccessType::SHOW_TABLES, child_database, child_table))
+                    {
+                        /// StorageMerge's ordinary read path omits these tables,
+                        /// so they cannot contribute to this query's schema/data.
+                        return;
+                    }
+
+                    /// Child provenance must never be inspected before the access
+                    /// which the ordinary Merge read path performs. Table-wide
+                    /// SELECT is deliberately conservative here: a query with
+                    /// narrower column grants fails before exposing mapped state.
+                    access->checkAccess(AccessType::SELECT, child_database, child_table);
+                    inspectStorageAfterCount(child, source_context);
+                });
+            return;
+        }
+    }
+
+    std::unordered_set<StoragePtr> visited_storages;
+    std::unordered_set<String> consumed_alias_observation_sources;
+    size_t inspected_storage_edges = 0;
+    size_t inspected_ast_nodes = 0;
+    std::shared_ptr<UDTTableFunctionSourceHandoff> table_function_handoff;
+    std::shared_ptr<UDTAliasResolutionHandoff> alias_resolution_handoff;
+};
 
 }
 
@@ -1354,7 +2117,8 @@ void InterpreterCreateQuery::validateTableStructure(
     }
 }
 
-void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
+void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(
+    const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
     /// It's possible to circumvent these checks by ALTERing the view or target table after creation;
@@ -1367,8 +2131,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         StoragePtr to_table;
         try
         {
-            to_table = DatabaseCatalog::instance().getTable(
-                create.getTargetTableID(ViewTarget::To), getContext());
+            to_table = DatabaseCatalog::instance().getTable(create.getTargetTableID(ViewTarget::To), getContext());
         }
         catch (...)
         {
@@ -1392,13 +2155,19 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     if (create.refresh_strategy && !create.refresh_strategy->append)
     {
         if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} "
+                "has engine {}",
+                create.getDatabase(),
+                database->getEngineName());
 
         std::string message;
         if (!supportsAtomicRename(&message))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})",
+                message);
     }
 
     SharedHeader input_block;
@@ -1418,9 +2187,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 if (create.refresh_strategy)
                     context->setCurrentDatabaseUnchecked(create.getDatabase());
 
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                    context,
-                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                    create.select->clone(), context, SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
             }
             else
             {
@@ -1440,9 +2208,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 if (is_refreshable_mv)
                     options = options.createParameterizedView();
 
-                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    select_context,
-                    options).getSampleBlock();
+                input_block = InterpreterSelectWithUnionQuery(create.select->clone(), select_context, options).getSampleBlock();
             }
         }
         catch (Exception & e)
@@ -1474,19 +2240,21 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
             }
             else if (create.refresh_strategy || !getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
             {
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "SELECT query outputs column with name '{}', which is not found in the target table. Use 'AS' to assign alias that matches a column name", input_column.name);
+                throw Exception(
+                    ErrorCodes::THERE_IS_NO_COLUMN,
+                    "SELECT query outputs column with name '{}', which is not found in the target table. Use 'AS' to assign alias that "
+                    "matches a column name",
+                    input_column.name);
             }
         }
 
         if (input_columns.empty())
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "None of the columns produced by the SELECT query are present in the target table. Use 'AS' to assign aliases that match column names");
+            throw Exception(
+                ErrorCodes::THERE_IS_NO_COLUMN,
+                "None of the columns produced by the SELECT query are present in the target table. Use 'AS' to assign aliases that match "
+                "column names");
 
-        ActionsDAG::makeConvertingActions(
-            input_columns,
-            output_columns,
-            ActionsDAG::MatchColumnsMode::Position,
-            getContext()
-        );
+        ActionsDAG::makeConvertingActions(input_columns, output_columns, ActionsDAG::MatchColumnsMode::Position, getContext());
     }
 }
 
@@ -1981,6 +2749,29 @@ void validateInitialUDTTableSourceCopySurface(
     throw Exception(exception_code, "{}", error.what());
 }
 
+[[noreturn]] void rethrowStoredObjectTypeBindingPreparationError(const UDT::StoredObjectTypeBindingPreparationError & error)
+{
+    using Code = UDT::StoredObjectTypeBindingPreparationError::Code;
+    const int exception_code = [&]
+    {
+        switch (error.code)
+        {
+            case Code::InvalidDeclaration:
+            case Code::InvalidObject: return ErrorCodes::BAD_ARGUMENTS;
+            case Code::CrossDatabaseReference: return ErrorCodes::BAD_ARGUMENTS;
+            case Code::SourceSidecarMismatch: return ErrorCodes::ABORTED;
+            case Code::LimitExceeded: return ErrorCodes::BAD_ARGUMENTS;
+            case Code::NormalizedSchemaMismatch: return ErrorCodes::NOT_IMPLEMENTED;
+            case Code::InvalidDecision:
+            case Code::QueryChanged:
+            case Code::MissingLogicalBinding:
+            case Code::InvalidState: return ErrorCodes::LOGICAL_ERROR;
+        }
+        return ErrorCodes::LOGICAL_ERROR;
+    }();
+    throw Exception(exception_code, "{}", error.what());
+}
+
 [[noreturn]] void rethrowSelectedTableTypeBindingError(const UDT::TableColumnTypeBindingError & error)
 {
     using Code = UDT::TableColumnTypeBindingError::Code;
@@ -2348,6 +3139,394 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Table-function schema UDT physicalization left a persistent logical reference candidate");
         }
+    }
+
+    if (stored_object_preparation.route == UDT::StoredObjectCreatePreparationRoute::TableExplicitColumns)
+    {
+        if (!UDT::hasReferencesInCreateTableColumns(create))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table UDT routing lost its exact column declaration evidence");
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_user_defined_types])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "User-defined type table columns are disabled; enable allow_experimental_user_defined_types to use them");
+        }
+
+        validateInitialUDTTableCreateSurface(create, mode, need_ddl_guard);
+        setEngine(create);
+        const String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : String{};
+        const bool is_local_merge_tree
+            = engine_name.ends_with("MergeTree") && !engine_name.starts_with("Replicated") && !engine_name.starts_with("Shared");
+        if (engine_name != "Memory" && !is_local_merge_tree)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "User-defined type table columns support only Memory and non-replicated MergeTree-family engines");
+        }
+        getContext()->checkAccess(AccessType::TABLE_ENGINE, engine_name);
+
+        auto udt_database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+        auto * atomic_database = typeid_cast<DatabaseAtomic *>(udt_database.get());
+        if (!atomic_database)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "User-defined type table columns require an Atomic database");
+        }
+        if (udt_database->shouldReplicateQuery(getContext(), query_ptr))
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Replicated database admission is not supported for user-defined type table columns");
+        }
+        atomic_database->waitDatabaseStarted();
+        if (!atomic_database->hasActiveUDTAuthority())
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown user-defined type in CREATE TABLE column declaration");
+
+        if (!ddl_guard)
+            ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), udt_database.get());
+        if (udt_database->isTableExist(create.getTable(), getContext()))
+        {
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exists",
+                backQuoteIfNeed(create.getDatabase()),
+                backQuoteIfNeed(create.getTable()));
+        }
+        udt_database->checkMetadataFilenameAvailability(create.getTable());
+        udt_database->checkTableNameLength(create.getTable());
+        assertOrSetUUID(create, udt_database);
+
+        try
+        {
+            prepared_udt_columns
+                = UDT::prepareScalarAliasColumns(create, create.getDatabase(), getContext(), atomic_database->getUDTAuthorityAdapter());
+            if (!prepared_udt_columns)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "User-defined type table routing lost its activated column reference");
+            prepared_udt_columns->applyPhysicalTypeASTs();
+        }
+        catch (const UDT::ScalarAliasColumnBinderError & error)
+        {
+            rethrowUDTScalarAliasColumnBinderError(error);
+        }
+
+        /// Activation is a durable metadata mutation. It must happen only
+        /// after the complete stable-UUID-deduplicated USAGE check and
+        /// specialization above have succeeded. The subsequent admission
+        /// planner revalidates every prepared descriptor against the exact
+        /// authority root retained by this guard, closing a concurrent
+        /// type-DDL race without performing a second access check.
+        atomic_database->ensureUDTDependentObjectCapabilities();
+        auto database_guard = atomic_database->acquireUDTTableCreateGuard();
+
+        udt_state.emplace();
+        udt_state->database = std::move(udt_database);
+        udt_state->atomic_database = atomic_database;
+        udt_state->database_guard.emplace(std::move(database_guard));
+    }
+    else if (collect_selected_outputs)
+    {
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Inferred user-defined type outputs require the analyzer");
+        if (create.isParameterizedView())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parameterized views do not support stored user-defined type output bindings");
+
+        constexpr auto schema_string_sites = UDT::storedObjectOccurrenceSiteMask(UDT::StoredObjectOccurrenceSite::TableFunctionSchemaString)
+            | UDT::storedObjectOccurrenceSiteMask(UDT::StoredObjectOccurrenceSite::FormatSchemaString);
+        const bool needs_physicalized_view_analysis = selected_output_route
+            && (stored_object_classification.object_kind == UDT::StoredObjectKind::View
+                || stored_object_classification.object_kind == UDT::StoredObjectKind::MaterializedView)
+            && (stored_object_classification.qualified_type_reference_candidate_sites & schema_string_sites) != 0;
+        if (needs_physicalized_view_analysis)
+        {
+            if (mode != LoadingStrictnessLevel::CREATE || !need_ddl_guard || create.attach || create.isTemporary() || create.if_not_exists
+                || create.replace_view || create.replace_table || create.create_or_replace || create.has_attach_from_path
+                || create.attach_short_syntax || create.attach_as_replicated.has_value() || !create.cluster.empty()
+                || stored_object_classification.has_explicit_destination_columns
+                || (stored_object_classification.object_kind == UDT::StoredObjectKind::MaterializedView && create.refresh_strategy))
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Inferred View schema-string UDT bindings support only a fresh local non-refreshable CREATE");
+            }
+
+            auto target_database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+            auto * atomic_database = typeid_cast<DatabaseAtomic *>(target_database.get());
+            if (!atomic_database)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Inferred View schema-string UDT bindings require an Atomic database");
+            if (target_database->shouldReplicateQuery(getContext(), query_ptr))
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Replicated database admission is not supported for inferred View schema-string UDT bindings");
+            }
+            atomic_database->waitDatabaseStarted();
+            if (!atomic_database->hasActiveUDTAuthority())
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "The inferred View schema-string UDT authority is unavailable");
+
+            try
+            {
+                prepared_view_schema_strings.emplace(
+                    UDT::prepareStoredObjectSelectedOutputSchemaStringBindings(
+                        create,
+                        stored_object_classification,
+                        stored_object_classification.object_kind,
+                        target_database->getUUID(),
+                        create.getDatabase(),
+                        getContext(),
+                        atomic_database->getUDTAuthorityAdapter()));
+            }
+            catch (const UDT::StoredObjectTypeBindingPreparationError & error)
+            {
+                rethrowStoredObjectTypeBindingPreparationError(error);
+            }
+        }
+        selected_output_collector = std::make_shared<UDT::SelectedOutputTypeBindingCollector>(needs_physicalized_view_analysis);
+    }
+    else if (
+        stored_object_classification.object_kind == UDT::StoredObjectKind::Table
+        && (stored_object_classification.source_mode == UDT::StoredObjectSourceMode::AsSourceTable
+            || stored_object_classification.source_mode == UDT::StoredObjectSourceMode::CloneAsSourceTable
+            || (stored_object_classification.source_mode == UDT::StoredObjectSourceMode::DialectLike && !create.as_table.empty()))
+        && !stored_object_classification.has_explicit_destination_columns)
+    {
+        const String source_database_name = getContext()->resolveDatabase(create.as_database);
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, source_database_name, create.as_table);
+        auto source_storage = DatabaseCatalog::instance().getTable({source_database_name, create.as_table}, getContext());
+        auto source_structure_lock = source_storage->lockForShare(
+            getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+        auto source_metadata_handle = source_storage->IStorage::getInMemoryMetadataPtr(nullptr, true);
+        StorageMetadataPtr source_metadata = source_metadata_handle;
+        if (!source_metadata)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Native source table has no immutable metadata snapshot");
+        source_metadata->validateBoundUDTReferences();
+        auto source_bound_references = source_metadata->getBoundUDTReferences();
+        if (source_bound_references)
+        {
+            /// A distributed or replicated DDL worker no longer has the
+            /// initiator's indivisible source-authority proof. Re-resolving a
+            /// logical source here could therefore turn a physical native copy
+            /// into a logical sidecar copy after dispatch.
+            if (getContext()->isDDLOrOnClusterInternal())
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "A logical native Table source-sidecar copy is not supported during distributed or replicated DDL execution");
+            }
+            if (stored_object_classification.source_mode == UDT::StoredObjectSourceMode::DialectLike)
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "A foreign-dialect derived schema cannot copy a logical user-defined type source without an exact adapter");
+            }
+            if (!getContext()->getSettingsRef()[Setting::allow_experimental_user_defined_types])
+            {
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED, "A logical native Table source requires allow_experimental_user_defined_types");
+            }
+            validateInitialUDTTableSourceCopySurface(create, stored_object_classification, mode, need_ddl_guard);
+
+            auto target_database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+            auto * atomic_database = typeid_cast<DatabaseAtomic *>(target_database.get());
+            auto source_database = DatabaseCatalog::instance().getDatabase(source_database_name);
+            const auto source_id = source_storage->getStorageID();
+            const auto & source_object = source_bound_references->getObject();
+            if (!atomic_database || source_database.get() != target_database.get() || source_object.kind != UDT::SchemaObjectKind::Table
+                || source_object.database_uuid != target_database->getUUID() || source_object.object_uuid != source_id.uuid
+                || source_id.database_name != source_database_name || source_storage->isView() || source_storage->isDictionary())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "A logical native Table source can be copied only inside its owning Atomic user-defined type authority");
+            }
+            if (target_database->shouldReplicateQuery(getContext(), query_ptr))
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Replicated database admission is not supported for a logical native Table source-sidecar copy");
+            }
+
+            /// Do not wait for a name DDL guard while retaining the source
+            /// structure lock: RENAME/DROP can hold that name and wait for the
+            /// same structure lock. Reacquire an exact source snapshot only
+            /// after both source and target names are held in canonical order.
+            source_structure_lock.reset();
+            DDLGuardPtr source_name_guard;
+            const UniqueTableName source_name{source_database_name, create.as_table};
+            const UniqueTableName target_name{create.getDatabase(), create.getTable()};
+            if (!(source_name < target_name) && !(target_name < source_name))
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Source and target Table names are identical");
+            const auto lock_source_name = [&]
+            {
+                source_name_guard
+                    = DatabaseCatalog::instance().getDDLGuard(source_name.database_name, source_name.table_name, source_database.get());
+            };
+            const auto lock_target_name = [&]
+            {
+                if (ddl_guard)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Native source-sidecar copy already owns an unexpected target DDL guard");
+                ddl_guard
+                    = DatabaseCatalog::instance().getDDLGuard(target_name.database_name, target_name.table_name, target_database.get());
+            };
+            if (source_name < target_name)
+            {
+                lock_source_name();
+                lock_target_name();
+            }
+            else
+            {
+                lock_target_name();
+                lock_source_name();
+            }
+
+            auto current_source_storage = DatabaseCatalog::instance().getTable({source_database_name, create.as_table}, getContext());
+            if (current_source_storage.get() != source_storage.get())
+                throw Exception(ErrorCodes::ABORTED, "Native logical source identity changed before admission");
+            source_structure_lock = current_source_storage->lockForShare(
+                getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+            auto current_source_metadata_handle = current_source_storage->IStorage::getInMemoryMetadataPtr(nullptr, true);
+            StorageMetadataPtr current_source_metadata = current_source_metadata_handle;
+            if (current_source_metadata != source_metadata || current_source_metadata->getBoundUDTReferences() != source_bound_references)
+                throw Exception(ErrorCodes::ABORTED, "Native logical source metadata changed before admission");
+            source_storage = std::move(current_source_storage);
+            source_metadata = std::move(current_source_metadata);
+
+            setEngine(create);
+            const String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : String{};
+            const bool is_local_merge_tree
+                = engine_name.ends_with("MergeTree") && !engine_name.starts_with("Replicated") && !engine_name.starts_with("Shared");
+            if (engine_name != "Memory" && !is_local_merge_tree)
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "A logical native Table source-sidecar copy supports only Memory and non-replicated MergeTree-family targets");
+            }
+            if (create.is_clone_as && !is_local_merge_tree)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "CLONE AS with a logical source requires a local MergeTree-family target");
+            getContext()->checkAccess(AccessType::TABLE_ENGINE, engine_name);
+
+            atomic_database->waitDatabaseStarted();
+            if (!atomic_database->hasActiveUDTAuthority())
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "The logical native Table source authority is unavailable");
+            if (target_database->isTableExist(create.getTable(), getContext()))
+            {
+                throw Exception(
+                    ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exists",
+                    backQuoteIfNeed(create.getDatabase()),
+                    backQuoteIfNeed(create.getTable()));
+            }
+            target_database->checkMetadataFilenameAvailability(create.getTable());
+            target_database->checkTableNameLength(create.getTable());
+            assertOrSetUUID(create, target_database);
+
+            UDT::PersistedTypeReferences source_references;
+            try
+            {
+                source_references = UDT::reconstructPersistedTableSourceReferences(*source_bound_references);
+            }
+            catch (const UDT::StoredObjectTypeBindingPreparationError & error)
+            {
+                rethrowStoredObjectTypeBindingPreparationError(error);
+            }
+
+            atomic_database->ensureUDTDependentObjectCapabilities();
+            auto database_guard = atomic_database->acquireUDTTableCreateGuard();
+            atomic_database->authorizeUDTTableSourceSidecarCopy(
+                database_guard, stored_object_classification.source_mode, source_references, *source_bound_references);
+
+            prepared_native_udt_source.emplace(
+                UDTNativeTableSourceState{
+                    .storage = std::move(source_storage),
+                    .name_guard = std::move(source_name_guard),
+                    .structure_lock = std::move(source_structure_lock),
+                    .metadata = std::move(source_metadata),
+                    .bound_references = source_bound_references,
+                    .persisted_references = std::move(source_references),
+                });
+            udt_state.emplace();
+            udt_state->database = std::move(target_database);
+            udt_state->atomic_database = atomic_database;
+            udt_state->database_guard.emplace(std::move(database_guard));
+        }
+    }
+    else if (
+        stored_object_preparation.route == UDT::StoredObjectCreatePreparationRoute::PrepareViewExplicitOutputs
+        || stored_object_preparation.route == UDT::StoredObjectCreatePreparationRoute::PrepareMaterializedViewExplicitOutputs
+        || stored_object_preparation.route == UDT::StoredObjectCreatePreparationRoute::PrepareDictionaryAttributes)
+    {
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_user_defined_types])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Stored user-defined type declarations are disabled; enable allow_experimental_user_defined_types to use them");
+        }
+        if (mode != LoadingStrictnessLevel::CREATE || !need_ddl_guard)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Stored user-defined type declaration preparation supports only a fresh local CREATE");
+        }
+
+        auto udt_database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+        auto * atomic_database = typeid_cast<DatabaseAtomic *>(udt_database.get());
+        if (!atomic_database)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Stored user-defined type declarations require an Atomic database");
+        if (udt_database->shouldReplicateQuery(getContext(), query_ptr))
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Replicated database admission is not supported for stored user-defined type declarations");
+        }
+        atomic_database->waitDatabaseStarted();
+        if (!atomic_database->hasActiveUDTAuthority())
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown user-defined type in stored object declaration");
+
+        if (!ddl_guard)
+            ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), udt_database.get());
+        if (udt_database->isTableExist(create.getTable(), getContext()))
+        {
+            throw Exception(
+                create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Stored object {}.{} already exists",
+                backQuoteIfNeed(create.getDatabase()),
+                backQuoteIfNeed(create.getTable()));
+        }
+        udt_database->checkMetadataFilenameAvailability(create.getTable());
+        udt_database->checkTableNameLength(create.getTable());
+        assertOrSetUUID(create, udt_database);
+
+        try
+        {
+            const auto schema_kind = UDT::tryGetSchemaObjectKind(stored_object_classification.object_kind);
+            if (!schema_kind)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Stored object preparation route has no durable schema kind");
+            prepared_stored_object_bindings.emplace(
+                UDT::prepareStoredObjectExactDeclarationBindings(
+                    create,
+                    stored_object_classification,
+                    stored_object_preparation,
+                    UDT::SchemaObjectID{
+                        .kind = *schema_kind,
+                        .database_uuid = udt_database->getUUID(),
+                        .object_uuid = create.uuid,
+                    },
+                    1,
+                    create.getDatabase(),
+                    getContext(),
+                    atomic_database->getUDTAuthorityAdapter()));
+            prepared_stored_object_bindings->applyPhysicalTypeASTs();
+        }
+        catch (const UDT::ScalarAliasColumnBinderError & error)
+        {
+            rethrowUDTScalarAliasColumnBinderError(error);
+        }
+        catch (const UDT::StoredObjectTypeBindingPreparationError & error)
+        {
+            rethrowStoredObjectTypeBindingPreparationError(error);
+        }
+
+        atomic_database->ensureUDTDependentObjectCapabilities();
+        auto database_guard = atomic_database->acquireUDTTableCreateGuard();
+        udt_state.emplace();
+        udt_state->database = std::move(udt_database);
+        udt_state->atomic_database = atomic_database;
+        udt_state->database_guard.emplace(std::move(database_guard));
     }
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
@@ -3878,11 +5057,13 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
     /// to the legacy non-atomic population, the pre-existing behavior of `POPULATE` under this override.
     if (getContext()->getZooKeeperMetadataTransaction())
     {
-        LOG_INFO(getLogger("InterpreterCreateQuery"),
+        LOG_INFO(
+            getLogger("InterpreterCreateQuery"),
             "Populating materialized view {}.{} non-atomically because it is created by an entry of a "
             "replicated database DDL log, where a failed atomic population could not be rolled back. "
             "Rows inserted into the source during the population may be missed or duplicated.",
-            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+            backQuoteIfNeed(create.getDatabase()),
+            backQuoteIfNeed(create.getTable()));
         return false;
     }
 
@@ -3992,7 +5173,8 @@ constexpr std::array<std::string_view, 4> settings_incompatible_with_pinned_snap
 
 }
 
-std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard)
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(
+    const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard)
 {
     try
     {
@@ -4059,13 +5241,15 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
                 fmt::format(
                     "Cannot drop materialized view {}.{} while rolling back its failed atomic population; "
                     "the view exists but may not be subscribed to its source table",
-                    backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable())));
+                    backQuoteIfNeed(create.getDatabase()),
+                    backQuoteIfNeed(create.getTable())));
         }
         throw;
     }
 }
 
-std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard)
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImpl(
+    const ASTCreateQuery & create, DDLGuardPtr & ddl_guard, DDLGuardPtr & source_ddl_guard)
 {
     auto source = getValidatedAtomicPopulateSource(create);
     if (!source)
@@ -4073,7 +5257,8 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
 
     auto context = getContext();
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto ref_dependencies
+        = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
     auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
     auto source_uuid = source->getStorageID().uuid;
 
@@ -4120,10 +5305,8 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
         /// Models a failure of the cut before the view is subscribed to the source (the realistic cause is
         /// a `lockExclusively` timeout right above, which a test cannot trigger deterministically). The
         /// rollback in `fillMaterializedViewAtomically` must drop the just-created view.
-        fiu_do_on(FailPoints::atomic_populate_fail_before_subscription,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED,
-                "Failpoint atomic_populate_fail_before_subscription is triggered");
+        fiu_do_on(FailPoints::atomic_populate_fail_before_subscription, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint atomic_populate_fail_before_subscription is triggered");
         });
 
         DatabaseCatalog::instance().addDependencies(
@@ -4284,6 +5467,8 @@ BlockIO InterpreterCreateQuery::execute()
         udt_stored_object_ddl_select_boundary_handoff.reset();
         udt_stored_object_ddl_select_boundary_consumed = true;
     }
+
+    getContext()->setRejectStoredUDTSyntaxInSQLUDFBodies();
     FunctionNameNormalizer::visit(query_ptr.get());
     if (!UserDefinedSQLFunctionFactory::instance().empty())
     {
@@ -4331,6 +5516,43 @@ BlockIO InterpreterCreateQuery::execute()
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Stored user-defined type bindings and schema physicalization do not support CREATE ON CLUSTER");
         }
+    }
+
+    if (!create.cluster.empty() && !stored_object_classification.has_explicit_destination_columns
+        && ((getContext()->getSettingsRef()[Setting::allow_experimental_user_defined_types]
+             && (stored_object_classification.source_mode == UDT::StoredObjectSourceMode::AsSelect
+                 || stored_object_classification.source_mode == UDT::StoredObjectSourceMode::EmptyAsSelect))
+            || (stored_object_classification.source_mode == UDT::StoredObjectSourceMode::DialectLike && create.select))
+        && (stored_object_classification.object_kind == UDT::StoredObjectKind::Table
+            || stored_object_classification.object_kind == UDT::StoredObjectKind::View
+            || stored_object_classification.object_kind == UDT::StoredObjectKind::MaterializedView))
+    {
+        /// Selected-output provenance is analyzer-local and cannot be carried
+        /// indivisibly through the distributed DDL log. Do not perform a
+        /// second AST/catalog prepass here: the local analyzer collector is
+        /// the sole authority for the fast-negative and exact-role result.
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Analyzer-selected CREATE AS SELECT output provenance does not support CREATE ON CLUSTER");
+    }
+
+    /// Native AS/CLONE has no positive syntax in the target AST. Before a
+    /// distributed DDL log can erase the source's database-owned provenance,
+    /// inspect it only after SHOW COLUMNS authorization and reject an exact
+    /// logical source. Worker-side local execution repeats the same fail-closed
+    /// inspection after a concurrent source change following this initiator snapshot.
+    if (!create.cluster.empty() && stored_object_classification.object_kind == UDT::StoredObjectKind::Table
+        && (stored_object_classification.source_mode == UDT::StoredObjectSourceMode::AsSourceTable
+            || stored_object_classification.source_mode == UDT::StoredObjectSourceMode::CloneAsSourceTable
+            || (stored_object_classification.source_mode == UDT::StoredObjectSourceMode::DialectLike && !create.as_table.empty()))
+        && !stored_object_classification.has_explicit_destination_columns)
+    {
+        const String source_database_name = getContext()->resolveDatabase(create.as_database);
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, source_database_name, create.as_table);
+        auto source_storage = DatabaseCatalog::instance().getTable({source_database_name, create.as_table}, getContext());
+        [[maybe_unused]] auto source_structure_lock = source_storage->lockForShare(
+            getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+        UDTPhysicalSchemaSourceGuard source_guard;
+        source_guard.captureNativePhysicalSchemaSource(source_storage, getContext());
     }
 
     bool is_create_database = create.database && !create.table;

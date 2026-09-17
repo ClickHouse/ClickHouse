@@ -101,6 +101,13 @@ public:
     /// `View`, `ObjectStorageCluster`, etc.) at the top level.
     bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
 
+    /// Enumerates the exact local read storages matched by this Merge under
+    /// the caller's query context. The callback owns its work bound and may
+    /// throw to stop traversal; no child schema is copied or inferred here.
+    void forEachChildTableForSchemaInspection(
+        const ContextPtr & query_context,
+        const std::function<void(const String &, const String &, const StoragePtr &)> & callback) const;
+
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
         const String & source_database_name_or_regexp,

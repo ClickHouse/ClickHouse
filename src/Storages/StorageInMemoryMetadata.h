@@ -147,6 +147,15 @@ public:
         std::shared_ptr<const UDT::BoundObjectTypeReferences> bound_references_,
         const UDT::SidecarExpectationRecord & expectation_);
 
+    /// Retains an exact View/Dictionary declaration binding while separately
+    /// anchoring the storage engine's runtime column schema. The caller must
+    /// already have validated and bound the object-kind-specific persisted
+    /// physical schema through BoundObjectTypeReferences.
+    void setColumnsAndBoundStoredObjectUDTReferences(
+        ColumnsDescription columns_,
+        std::shared_ptr<const UDT::BoundObjectTypeReferences> bound_references_,
+        const UDT::SidecarExpectationRecord & expectation_);
+
     /// Adds the exact successful integrity-verification proof to an already
     /// prepared mapped metadata image. All validation and allocation happen
     /// before the caller publishes the enclosing Storage metadata snapshot.

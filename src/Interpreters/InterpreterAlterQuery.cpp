@@ -27,6 +27,8 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/UDT/StoredObjectTypeBindingPreparation.h>
+#include <Interpreters/UDT/StoredObjectTypeSupport.h>
 #include <Interpreters/UDT/UDTExecutionBoundary.h>
 #include <Interpreters/UDTScalarAliasColumnBinder.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -46,6 +48,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
@@ -325,6 +328,230 @@ PreparedUDTAlterColumns prepareUDTAlterColumns(
         rethrowUDTAlterBinderError(error);
     }
     return result;
+}
+
+[[noreturn]] void rethrowStoredObjectAlterBindingError(const UDT::StoredObjectTypeBindingPreparationError & error)
+{
+    using Code = UDT::StoredObjectTypeBindingPreparationError::Code;
+    const int exception_code = [&]
+    {
+        switch (error.code)
+        {
+            case Code::InvalidDeclaration:
+            case Code::InvalidObject:
+            case Code::CrossDatabaseReference:
+            case Code::LimitExceeded: return ErrorCodes::BAD_ARGUMENTS;
+            case Code::SourceSidecarMismatch:
+            case Code::QueryChanged:
+            case Code::NormalizedSchemaMismatch: return ErrorCodes::ABORTED;
+            case Code::InvalidDecision:
+            case Code::MissingLogicalBinding:
+            case Code::InvalidState: return ErrorCodes::LOGICAL_ERROR;
+        }
+        return ErrorCodes::LOGICAL_ERROR;
+    }();
+    throw Exception(exception_code, "{}", error.what());
+}
+
+void prepareMappedStoredObjectModifyQuery(
+    AlterCommands & commands,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata,
+    const ContextPtr & context,
+    bool require_boundary_handoff_target)
+{
+    if (!storage || !metadata || !context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped stored-object ALTER preparation has an incomplete input");
+    metadata->validateBoundUDTReferences();
+    const auto & bound = metadata->getBoundUDTReferences();
+    if (!bound || bound->getObject().kind != UDT::SchemaObjectKind::View)
+    {
+        if (require_boundary_handoff_target)
+        {
+            throw Exception(
+                ErrorCodes::ABORTED, "The mapped MaterializedView authorized by the DDL boundary changed before MODIFY QUERY preparation");
+        }
+        return;
+    }
+
+    AlterCommand * modify_query = nullptr;
+    for (auto & command : commands)
+    {
+        if (command.ignore || command.type != AlterCommand::MODIFY_QUERY)
+            continue;
+        if (modify_query)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mapped MaterializedView ALTER supports one MODIFY QUERY command at a time");
+        modify_query = &command;
+    }
+    if (!modify_query)
+    {
+        if (require_boundary_handoff_target)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped MaterializedView boundary handoff lost its MODIFY QUERY command");
+        return;
+    }
+
+    const auto * materialized_view = storage->as<StorageMaterializedView>();
+    if (!materialized_view || storage->getName() != "MaterializedView" || materialized_view->isRefreshable() || !modify_query->select)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mapped MODIFY QUERY is supported only for a non-refreshable MaterializedView");
+    }
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Mapped MaterializedView MODIFY QUERY requires the experimental analyzer for exact selected-output provenance");
+    }
+    const auto & before_expectation = metadata->getBoundUDTExpectation();
+    if (!before_expectation || before_expectation->object != bound->getObject()
+        || before_expectation->object_schema_revision != bound->getObjectSchemaRevision()
+        || before_expectation->object_schema_revision == std::numeric_limits<UInt64>::max())
+    {
+        throw Exception(ErrorCodes::ABORTED, "Mapped MaterializedView metadata has no exact successor revision");
+    }
+
+    const auto table_id = storage->getStorageID();
+    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    auto * atomic = typeid_cast<DatabaseAtomic *>(database.get());
+    if (!atomic || typeid_cast<DatabaseReplicated *>(database.get()) || !atomic->hasActiveUDTAuthority()
+        || table_id.uuid == UUIDHelpers::Nil || bound->getObject().database_uuid != atomic->getUUID()
+        || bound->getObject().object_uuid != table_id.uuid)
+    {
+        throw Exception(ErrorCodes::ABORTED, "Mapped MaterializedView identity or Atomic authority changed before MODIFY QUERY");
+    }
+
+    auto collector = std::make_shared<UDT::SelectedOutputTypeBindingCollector>();
+    auto analysis_context = Context::createCopy(context);
+    analysis_context->setCurrentDatabase(table_id.database_name);
+    analysis_context->setUDTSelectedOutputTypeBindingCollector(collector);
+    auto select_options = SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess();
+    auto analyzed_header = InterpreterSelectQueryAnalyzer::getSampleBlock(modify_query->select->clone(), analysis_context, select_options);
+    auto collection = collector->take();
+    if (!collection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped MaterializedView analyzer did not publish selected-output provenance");
+
+    const auto physical_outputs = analyzed_header->getNamesAndTypesList();
+    if (materialized_view->hasInnerTable())
+    {
+        const auto inner_table = materialized_view->getTargetTable();
+        const auto inner_metadata = inner_table ? inner_table->getInMemoryMetadataPtr(context, false) : nullptr;
+        if (!inner_table || !inner_metadata || inner_metadata->getColumns().getAllPhysical() != physical_outputs)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Mapped inner-table MaterializedView MODIFY QUERY requires an output schema exactly equal to its physical inner table");
+        }
+    }
+    UDT::SelectedOutputTypeBindings selected_outputs;
+    if (collection->kind == UDT::SelectedOutputTypeBindingCollectionKind::NoLogicalSourceFastPath)
+    {
+        selected_outputs.reserve(physical_outputs.size());
+        for (const auto & output : physical_outputs)
+        {
+            selected_outputs.push_back({
+                .output_name = output.name,
+                .physical_type = output.type,
+                .explicit_logical_tree = {},
+                .explicit_type_child_prefix = {},
+                .prebound_references = {},
+                .prebound_runtime_owner_key = {},
+                .prebound_type_child_prefix = {},
+            });
+        }
+    }
+    else if (collection->kind == UDT::SelectedOutputTypeBindingCollectionKind::CompleteBindings)
+    {
+        selected_outputs = std::move(collection->bindings);
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped MaterializedView analyzer published an unknown provenance result");
+
+    if (selected_outputs.size() != physical_outputs.size())
+        throw Exception(ErrorCodes::ABORTED, "Mapped MaterializedView selected-output count changed during analysis");
+    auto physical = physical_outputs.begin();
+    for (const auto & selected : selected_outputs)
+    {
+        if (physical == physical_outputs.end() || !physical->type || !selected.isValid() || selected.output_name != physical->name
+            || !selected.physical_type->equals(*physical->type) || selected.physical_type->getName() != physical->type->getName())
+        {
+            throw Exception(ErrorCodes::ABORTED, "Mapped MaterializedView selected-output proof differs from its physical header");
+        }
+        ++physical;
+    }
+
+    try
+    {
+        auto handoff = UDT::prepareStoredObjectSelectedOutputAlterBindings(
+            modify_query->select,
+            UDT::StoredObjectKind::MaterializedView,
+            bound->getObject(),
+            before_expectation->object_schema_revision + 1,
+            table_id.database_name,
+            context,
+            atomic->getUDTAuthorityAdapter(),
+            selected_outputs);
+        if (handoff.getObjectKind() != UDT::StoredObjectKind::MaterializedView
+            || handoff.getSourceMode() != UDT::StoredObjectSourceMode::AsSelect || handoff.getObject() != bound->getObject()
+            || !handoff.usesSelectedOutputClassification())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped MaterializedView ALTER handoff changed its closed preparation route");
+        }
+        handoff.applyPhysicalTypeASTs();
+        auto prepared = std::move(handoff).releaseViewBindings();
+        const bool mapped = static_cast<bool>(prepared.persisted_references);
+        if (prepared.physical_outputs != physical_outputs || mapped != static_cast<bool>(prepared.bound_physical_schema)
+            || mapped != static_cast<bool>(prepared.sidecar_expectation) || mapped != !prepared.dependency_edges.empty())
+        {
+            throw Exception(ErrorCodes::ABORTED, "Mapped MaterializedView MODIFY QUERY produced an incomplete exact binding package");
+        }
+        if (mapped
+            && (prepared.persisted_references->object != bound->getObject()
+                || prepared.persisted_references->object_schema_revision != before_expectation->object_schema_revision + 1
+                || prepared.persisted_references->physical_schema_fingerprint != prepared.physical_schema_fingerprint
+                || prepared.bound_physical_schema->physical_schema_fingerprint != prepared.physical_schema_fingerprint
+                || prepared.sidecar_expectation->physical_schema_fingerprint != prepared.physical_schema_fingerprint))
+        {
+            throw Exception(ErrorCodes::ABORTED, "Mapped MaterializedView MODIFY QUERY sidecar identity changed during preparation");
+        }
+        if (mapped && !context->getSettingsRef()[Setting::allow_experimental_user_defined_types])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Mapped MaterializedView MODIFY QUERY cannot retain logical user-defined type outputs while "
+                "allow_experimental_user_defined_types is disabled");
+        }
+
+        if (prepared.persisted_references)
+        {
+            std::vector<UDT::AccessTarget> access_targets;
+            access_targets.reserve(prepared.persisted_references->descriptors.size());
+            for (const auto & descriptor : prepared.persisted_references->descriptors)
+            {
+                const auto & identity = descriptor.getDefinitionIdentity();
+                if (identity.database_uuid != bound->getObject().database_uuid || identity.type_uuid == UUIDHelpers::Nil
+                    || !identity.revision)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped MaterializedView binding contains an invalid descriptor identity");
+                }
+                access_targets.push_back({
+                    .database_uuid = identity.database_uuid,
+                    .type_uuid = identity.type_uuid,
+                });
+            }
+            UDT::checkUsageAccess(context, access_targets);
+        }
+
+        modify_query->udt_stored_object_rebind_prepared = true;
+        modify_query->udt_stored_object_physical_outputs = std::move(prepared.physical_outputs);
+        modify_query->udt_stored_object_references = std::move(prepared.persisted_references);
+    }
+    catch (const UDT::StoredObjectTypeBindingPreparationError & error)
+    {
+        rethrowStoredObjectAlterBindingError(error);
+    }
+    catch (const UDT::ScalarAliasColumnBinderError & error)
+    {
+        rethrowUDTAlterBinderError(error);
+    }
 }
 
 bool hasUDTAlterColumns(const ASTAlterQuery & alter)

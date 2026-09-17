@@ -376,6 +376,58 @@ def test_physical_introspection_fast_path_closes_initial_mapping_gap(
         q(f"DROP DATABASE IF EXISTS {database} SYNC")
 
 
+def test_schema_inferred_table_function_create_is_fail_closed(started_cluster):
+    suffix = uuid.uuid4().hex[:8]
+    database = f"udt_table_function_guard_{suffix}"
+
+    try:
+        q(f"CREATE DATABASE {database} ENGINE = Atomic")
+        q(f"CREATE TYPE {database}.UserId AS UInt64")
+        q(f"CREATE TABLE {database}.events (id {database}.UserId) ENGINE = Memory")
+
+        # Direct AS-table-function schema inference has no generic resolved
+        # source closure. In particular, merge() could otherwise copy the
+        # physical schema of a mapped table into an untracked permanent wrapper.
+        inferred_error = error(
+            f"CREATE TABLE {database}.inferred_escape "
+            f"AS merge('{database}', '^events$')"
+        )
+        assert "invalid logical provenance source" in inferred_error.lower()
+        assert "stored create context" in inferred_error.lower()
+        assert q(f"EXISTS TABLE {database}.inferred_escape").strip() == "0"
+
+        # The explicit-schema screening boundary must recognize every quoted
+        # identifier and whitespace form accepted by the SQL lexer.  In
+        # particular, curly quotes and Unicode whitespace must not hide a
+        # qualified UDT inside a table-function string.
+        unicode_schema_error = error(
+            f"CREATE TABLE {database}.unicode_schema_escape "
+            f"AS values('id “{database}”\u2009.\u2009“UserId”', 42)"
+        )
+        assert "incomplete type-string classification" in unicode_schema_error.lower()
+        assert q(f"EXISTS TABLE {database}.unicode_schema_escape").strip() == "0"
+        assert q(f"SHOW CREATE TYPE {database}.UserId").strip().endswith("AS UInt64")
+
+        # An explicit physical schema closes that inference gap. The wrapper
+        # remains usable while carrying no copied UDT provenance of its own.
+        q(f"INSERT INTO {database}.events VALUES (42)")
+        q(
+            f"CREATE TABLE {database}.explicit_physical (id UInt64) "
+            f"AS merge('{database}', '^events$')"
+        )
+        assert q(f"SELECT sum(id) FROM {database}.explicit_physical").strip() == "42"
+        assert q(
+            "SELECT count() FROM system.columns "
+            f"WHERE database = '{database}' AND table = 'explicit_physical' "
+            "AND (udt_declared_type != '' OR notEmpty(udt_references))"
+        ).strip() == "0"
+
+        # A table function whose schema is intrinsic remains ordinary built-in
+        # behavior even in the UDT-enabled session.
+        q(f"CREATE TABLE {database}.static_table_function AS numbers(1)")
+        assert q(f"SELECT count() FROM {database}.static_table_function").strip() == "1"
+    finally:
+        q(f"DROP DATABASE IF EXISTS {database} SYNC")
 
 
 def test_physicalization_apply_waits_for_prepared_alter(started_cluster):

@@ -9,7 +9,8 @@ namespace DB
 {
 
 namespace UDT
-{;
+{
+class UDTStoredObjectDDLSelectBoundaryHandoff;
 }
 
 class AccessRightsElements;

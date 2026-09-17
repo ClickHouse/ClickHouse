@@ -1,4 +1,6 @@
 drop view if exists slow_view1;
+drop function if exists udf_02953_unrelated;
+create function udf_02953_unrelated as x -> x + 1;
 
 create view slow_view1 as
 with c1 as (select 1 as a),
@@ -42,3 +44,6 @@ with c1 as (select 1 as a),
     c39 as (select a from c38),
     c40 as (select a from c39)
 select a from c21;
+
+drop view slow_view1;
+drop function udf_02953_unrelated;
