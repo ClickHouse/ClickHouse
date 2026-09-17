@@ -680,6 +680,8 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
         rest_auth_header,
         /* oauth_server_uri= */ "",
         /* oauth_server_use_request_body= */ false,
+        /// Unity namespaces are single-level schemas. Only matters for namespace listing, which this catalog never does.
+        /* flat_namespaces= */ true,
         getContext());
 
     std::lock_guard lock(token_mutex);
