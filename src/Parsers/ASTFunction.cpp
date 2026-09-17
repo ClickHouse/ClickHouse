@@ -18,6 +18,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -178,17 +181,26 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
     w.writeAlias(*this);
 }
 
+/// The node types whose `formatImpl` prints a bare query. `as` matches the exact type, and
+/// `ASTSelectIntersectExceptQuery` derives from `ASTSelectQuery`, so each one is listed.
+static bool isBareSelectQuery(const IAST * node)
+{
+    return node
+        && (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSelectIntersectExceptQuery>()
+            || node->as<ASTProjectionSelectQuery>());
+}
+
 /// Whether a bare select query appears among a function's own argument or parameter elements.
 /// Nested expression lists are followed because an expression list legitimately holds select queries
 /// (`ASTSelectWithUnionQuery::list_of_selects`) and so cannot reject them in its own `readJSON`;
-/// any other node type is reached by its own `readJSON` and gated there.
+/// a select query under any other node type is that node's own boundary.
 static bool containsBareSelectQuery(const IAST * node)
 {
     const auto * list = node ? node->as<ASTExpressionList>() : nullptr;
     if (!list)
         return false;
     for (const auto & child : list->children)
-        if (child->as<ASTSelectWithUnionQuery>() || containsBareSelectQuery(child.get()))
+        if (isBareSelectQuery(child.get()) || containsBareSelectQuery(child.get()))
             return true;
     return false;
 }
@@ -280,8 +292,9 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
-    /// The parser produces a bare `SelectWithUnionQuery` function argument only inside the table
-    /// functions `view` and `viewIfPermitted` (`ViewLayer` is their only producer): `view(SELECT ...)`
+    /// The parser produces a bare select query function argument only inside the table functions
+    /// `view` and `viewIfPermitted` (`ViewLayer` is their only producer), and only ever as a
+    /// `SelectWithUnionQuery`, which is all `ParserSelectWithUnionQuery` builds: `view(SELECT ...)`
     /// has exactly one argument, the select, and `viewIfPermitted(SELECT ... ELSE table_function(...))`
     /// has exactly (select, function), because after `ELSE` only a function call is accepted; neither
     /// form has parameters, a window or a NULLS action. In an expression context both names parse as
@@ -304,9 +317,10 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
             && !isWindowFunction() && getNullsAction() == NullsAction::EMPTY;
         if (!is_table_function_shape)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "A select query argument is only allowed in the table function 'view' (exactly one argument, the "
-                "select query) or 'viewIfPermitted' (exactly two arguments, the select query followed by a "
-                "function), without parameters, a window or a NULLS action, during AST JSON deserialization");
+                "A select query argument is only allowed in the table function 'view' (exactly one argument, a "
+                "`SelectWithUnionQuery`) or 'viewIfPermitted' (exactly two arguments, a `SelectWithUnionQuery` "
+                "followed by a function), without parameters, a window or a NULLS action, during AST JSON "
+                "deserialization");
 
         /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
         /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and

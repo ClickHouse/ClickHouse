@@ -123,7 +123,11 @@ SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_functi
 -- text that does not parse back. One row per rejected carrier: another function name, an extra
 -- argument, a select in `parameters`, a select under a nested expression list, then the same
 -- parameters / window / NULLS action carriers under the name `view` itself. The `position()` row
--- anchors the `replace()` rows, which would be vacuous if that serialization changed.
+-- anchors the `replace()` rows, which would be vacuous if that serialization changed. The last four
+-- rows carry the other select query node types the JSON format can build, none of which the
+-- exact-type checks of the two accepted shapes match: `SelectQuery` and `SelectIntersectExceptQuery`
+-- under an ordinary name, `SelectQuery` under `view` itself (whose accepted shape stays a
+-- `SelectWithUnionQuery`), and `ProjectionSelectQuery`.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"Function","name":"any","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Function","name":"foo","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}},{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
@@ -133,3 +137,7 @@ SELECT position(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"type":"Funct
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","parameters"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","is_window_function":true,"window_name":"w","arguments"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","nulls_action":"RESPECT_NULLS","arguments"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"any","arguments":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"foo","arguments":{"type":"ExpressionList","children":[{"type":"SelectIntersectExceptQuery","final_operator":"INTERSECT ALL","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}},{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}}]}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"view","arguments":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"any","arguments":{"type":"ExpressionList","children":[{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
