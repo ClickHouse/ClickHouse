@@ -35,5 +35,23 @@
                 </replica>
             </shard>
         </local_shard_restricted>
+        <!-- Genuinely mixed: the first shard is this server itself, the second declares a
+             <default_database>, so it is remote and reached over the connection. A batch reaches the
+             local shard only when the sharding key sends a row there. -->
+        <mixed_local_remote_dist>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <default_database>remote_shard</default_database>
+                </replica>
+            </shard>
+        </mixed_local_remote_dist>
     </remote_servers>
 </clickhouse>

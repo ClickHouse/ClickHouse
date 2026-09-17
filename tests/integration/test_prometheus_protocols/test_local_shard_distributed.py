@@ -61,6 +61,17 @@ RESTRICTED_CALLERS = [
 COLUMN_INSERT_USER = "prom_column_insert"
 SAMPLE_COLUMNS = "metric_name, tags, samples"
 
+# May write the mixed wrapper and nothing else: `metrics.ts_mixed`, the table the local shard of that
+# wrapper resolves on the caller's context, is deliberately left ungranted.
+MIXED_INSERT_USER = "prom_mixed_insert"
+# May write `default.prom_swap`, whose local shard resolves `metrics.ts_swap` on its context: a
+# wrong-engine table it is not granted, and so must not be told about.
+SWAP_DENIED_USER = "prom_swap_denied"
+MIXED_SHARDS = ("metrics.ts_mixed", "remote_shard.ts_mixed")
+# cityHash64(host) % 2 over two shards of equal weight, shard 0 being the local one.
+LOCAL_HOST = "h3"
+REMOTE_HOST = "h1"
+
 # What the shard probe says about that table, in the words no denied caller may see.
 SHARD_LOCAL_LEAK = ["shard-local", "not TimeSeries", "UNEXPECTED_TABLE_ENGINE"]
 
@@ -127,15 +138,61 @@ def start_cluster():
             node.query(
                 f"GRANT INSERT({SAMPLE_COLUMNS}) ON {table} TO {COLUMN_INSERT_USER}"
             )
+
+        # One shard of this wrapper is this server, the other is reached over the connection, so
+        # the sharding key decides whether a request touches the local shard at all.
+        node.query("CREATE DATABASE remote_shard")
+        node.query("CREATE TABLE metrics.ts_mixed ENGINE=TimeSeries")
+        node.query("CREATE TABLE remote_shard.ts_mixed ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE metrics.prom_mixed AS metrics.ts_mixed "
+            "ENGINE = Distributed(mixed_local_remote_dist, '', ts_mixed, cityHash64(tags['host']))"
+        )
+        node.query(
+            f"CREATE USER {MIXED_INSERT_USER} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
+        )
+        node.query(f"GRANT INSERT ON metrics.prom_mixed TO {MIXED_INSERT_USER}")
+
+        node.query(
+            f"CREATE USER {SWAP_DENIED_USER} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
+        )
+        node.query(f"GRANT INSERT ON default.prom_swap TO {SWAP_DENIED_USER}")
         yield cluster
     finally:
         cluster.shutdown()
 
 
-def one_sample(metric_name):
+def one_sample(metric_name, host="h0"):
     return convert_time_series_to_protobuf(
-        [({"__name__": metric_name, "host": "h0"}, {START_TIME: 1.0})]
+        [({"__name__": metric_name, "host": host}, {START_TIME: 1.0})]
     )
+
+
+def mixed_write(metric_name, hosts, user):
+    """A remote write of one sample per host over the mixed wrapper, as a caller of this name."""
+    return get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        f"/mixed/write?user={user}&password=",
+        convert_time_series_to_protobuf(
+            [
+                ({"__name__": metric_name, "host": host}, {START_TIME: 1.0})
+                for host in hosts
+            ]
+        ),
+    )
+
+
+def mixed_counts(metric_name):
+    """How many series of this metric each shard of the mixed wrapper holds, local shard first."""
+    return [
+        int(
+            node.query(
+                f"SELECT count() FROM timeSeriesTags({table}) WHERE metric_name = '{metric_name}'"
+            )
+        )
+        for table in MIXED_SHARDS
+    ]
 
 
 def test_remote_write_checks_the_table_the_sink_writes():
@@ -209,6 +266,98 @@ def test_the_local_shard_preflight_asks_for_the_grant_the_sink_asks_for():
         )
         == 0
     )
+
+
+def test_the_mixed_wrapper_sends_each_host_to_the_shard_the_tests_expect():
+    """The premise the tests below rest on: one of these hosts is routed to the local shard and the
+    other to the remote one, so a request naming only one of them touches only one shard.
+    """
+    response = mixed_write("routing_metric", [LOCAL_HOST, REMOTE_HOST], "prom_metrics")
+    assert response.status_code == 204, response.text
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM timeSeriesTags(metrics.ts_mixed) WHERE metric_name = 'routing_metric'",
+        "1",
+    )
+    assert mixed_counts("routing_metric") == [1, 1]
+
+
+def test_remote_write_is_accepted_when_no_row_routes_to_the_denied_local_shard():
+    """The sink skips a shard whose split is empty, so it never asks for this caller's INSERT on
+    `metrics.ts_mixed`: a request whose every row routes to the remote shard is a write it can make.
+    """
+    ungranted = node.query(
+        "CHECK GRANT INSERT ON metrics.ts_mixed", user=MIXED_INSERT_USER
+    )
+    assert ungranted.strip() == "0", ungranted
+
+    response = mixed_write("remote_only_metric", [REMOTE_HOST], MIXED_INSERT_USER)
+    assert response.status_code == 204, response.text
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM timeSeriesTags(remote_shard.ts_mixed) "
+        "WHERE metric_name = 'remote_only_metric'",
+        "1",
+    )
+    assert mixed_counts("remote_only_metric") == [0, 1]
+
+    # And a plain INSERT of the same row through the same wrapper, which is the write the remote
+    # write models: the two surfaces accept and refuse the same requests from the same caller.
+    values = f"('remote_only_sql', map('host', '{REMOTE_HOST}'), [(toDateTime64({START_TIME}, 3), 1)])"
+    node.query(
+        f"INSERT INTO metrics.prom_mixed ({SAMPLE_COLUMNS}) VALUES {values}",
+        user=MIXED_INSERT_USER,
+        settings={"distributed_foreground_insert": 1},
+    )
+    assert mixed_counts("remote_only_sql") == [0, 1]
+
+
+def test_remote_write_is_still_refused_when_a_row_routes_to_the_local_shard():
+    """The same caller, one row further round the hash: this one is delivered in-process on its own
+    context, so the insert asks for the grant it has not got and the write is refused with nothing written.
+    """
+    response = mixed_write("local_routed_metric", [LOCAL_HOST], MIXED_INSERT_USER)
+    assert response.status_code == 403, response.text
+    assert "Not enough privileges" in response.text, response.text
+    assert "metrics.ts_mixed" in response.text, response.text
+    assert mixed_counts("local_routed_metric") == [0, 0]
+
+
+def test_a_batch_that_straddles_the_shards_is_refused_by_the_shard_it_may_not_write():
+    """A batch carrying both hosts is refused once the local delivery asks for its grant: accepting
+    the half it may write would be a silent partial write under a 204.
+    """
+    response = mixed_write(
+        "straddling_metric", [LOCAL_HOST, REMOTE_HOST], MIXED_INSERT_USER
+    )
+    assert response.status_code == 403, response.text
+    assert "metrics.ts_mixed" in response.text, response.text
+    # The refusal is what this pins; what the other shard's inserter had buffered by then is the
+    # sink's own business, and it finishes no insert once a job has thrown.
+    assert mixed_counts("straddling_metric")[0] == 0
+
+
+def test_a_denied_caller_is_not_told_what_the_local_shard_holds():
+    """The probe reads the shard-local table on the caller's context, so a caller without the grant
+    the sink's own insert asks for is skipped there, exactly as a remote replica that denies it is.
+    """
+    # The premise: a caller holding every grant is told what the probe found on that table.
+    allowed = get_response_to_remote_write(
+        node.ip_address, 9093, f"/swap/write{CALLER}", one_sample("swap_leak_metric")
+    )
+    assert "UNEXPECTED_TABLE_ENGINE" in allowed.text, allowed.text
+
+    denied = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        f"/swap/write?user={SWAP_DENIED_USER}&password=",
+        one_sample("swap_leak_metric"),
+    )
+    assert denied.status_code == 403, denied.text
+    assert "Not enough privileges" in denied.text, denied.text
+    assert "metrics.ts_swap" in denied.text, denied.text
+    for fragment in SHARD_LOCAL_LEAK:
+        assert fragment not in denied.text, denied.text
 
 
 def query_as(endpoint, user, settings=None):

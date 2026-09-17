@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/RowPolicyDefs.h>
+#include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Client/ConnectionPool.h>
 #include <Columns/ColumnBLOB.h>
@@ -173,6 +174,11 @@ namespace
         /// the request has not got, because the sink sends the column the wrapper declares and no other.
         const auto * samples_column = TimeSeriesColumnNames::getOuterSamples(outerSamplesVersion(storage, *metadata));
         const auto time_series_type = metadata->columns.get(samples_column).type->getName();
+        /// The sink sends the wrapper's whole sample block, so its INSERT on a shard-local table asks for every
+        /// column the wrapper declares, not only those this request fills (StorageDistributed::write).
+        const auto columns_to_send = context->getSettingsRef()[Setting::insert_allow_materialized_columns]
+            ? metadata->getSampleBlock().getNames()
+            : metadata->getSampleBlockNonMaterialized().getNames();
 
         /// An undeclared database is each replica's own default, as it is for the read and the write themselves.
         const String qualified_name = remote_id.database_name.empty()
@@ -243,10 +249,18 @@ namespace
                 /// prefer_localhost_replica on, the read parallel replicas off), so its table is resolved here, as they will.
                 if (address.is_local)
                 {
+                    const auto local_id = context->tryResolveStorageID(remote_id);
+                    /// As for a remote replica that denies the probe: a caller without the grant the sink's own
+                    /// insert asks for here is told nothing about this table, and left to that insert's check.
+                    if (for_write && local_id
+                        && !context->getAccess()->isGranted(
+                            AccessType::INSERT, local_id.database_name, local_id.table_name, columns_to_send))
+                        continue;
+
                     String engine;
                     String ts_type;
                     String unavailable;
-                    if (const auto table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(remote_id), context))
+                    if (const auto table = DatabaseCatalog::instance().tryGetTable(local_id, context))
                     {
                         engine = table->getName();
                         const auto local_metadata = table->getInMemoryMetadataPtr(context, false);
@@ -406,24 +420,9 @@ void checkPrometheusQueryDistributedWrite(const IStorage & storage, const Contex
             "samples are routed by the table's sharding key alone",
             storage.getStorageID().getNameForLogs());
 
-    /// The write pins prefer_localhost_replica on, so a shard that is this server itself is written in-process on the
-    /// caller's context: the sink's own INSERT grant on that table, with the columns it sends, is asked for before the probe.
+    /// A shard that is this server itself is written in-process on the caller's context, and the sink skips a shard
+    /// whose split is empty, so its own insert asks for the INSERT grant there exactly when this batch needs it.
     const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
-    if (cluster->getLocalShardCount())
-    {
-        /// A name that resolves to nothing is left to the probe, which refuses the write as having no target here.
-        if (const auto local_id = context->tryResolveStorageID(target->remote_time_series_storage_id))
-        {
-            /// The sink sends the wrapper's whole sample block, so its INSERT on the shard-local table asks for
-            /// every column the wrapper declares, not only those this request fills (StorageDistributed::write).
-            const auto metadata = storage.getInMemoryMetadataPtr(context, false);
-            const auto columns_to_send = settings[Setting::insert_allow_materialized_columns]
-                ? metadata->getSampleBlock().getNames()
-                : metadata->getSampleBlockNonMaterialized().getNames();
-            context->checkAccess(AccessType::INSERT, local_id, columns_to_send);
-        }
-    }
-
     checkShardTargets(storage, *target, context, cluster, /* for_write = */ true);
 }
 

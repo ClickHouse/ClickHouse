@@ -35,6 +35,15 @@
                     <table>metrics.prom_restricted</table>
                 </handler>
             </restricted_write>
+            <!-- One local shard and one remote one, so the sharding key decides which shards a
+                 request reaches, and an under-privileged caller may still miss the local one. -->
+            <mixed_write>
+                <url>/mixed/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>metrics.prom_mixed</table>
+                </handler>
+            </mixed_write>
             <restricted_api>
                 <url_prefix>/restricted_api</url_prefix>
                 <handler>
