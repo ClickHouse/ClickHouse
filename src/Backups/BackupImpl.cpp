@@ -58,6 +58,7 @@ namespace FailPoints
     extern const char backup_fail_lock_file_removal[];
     extern const char backup_fail_lock_file_write_after_commit[];
     extern const char backup_pause_before_lock_file_creation[];
+    extern const char backup_pause_after_lock_file_creation[];
 }
 
 namespace ErrorCodes
@@ -304,6 +305,7 @@ void BackupImpl::open()
                     });
                     checkLockFile(true);
                 }
+                FailPointInjection::pauseFailPoint(FailPoints::backup_pause_after_lock_file_creation);
             }
 
             if (use_archive)
@@ -975,19 +977,20 @@ void BackupImpl::createLockFile()
         bool lock_contents_match = false;
         /// The write may have committed the lock, and no check below is guaranteed to observe it: each
         /// issues its own request and can fail on its own. So the lock is this `open`'s to take back
-        /// unless it continues an earlier attempt; `removeLockFile` re-reads it and has the final say.
+        /// unless it continues an earlier attempt; `removeLockFile` re-reads it and has the final say,
+        /// and removes the lock only while it still holds this attempt's contents.
         ///
-        /// That final say rests on the lock contents, and they identify this attempt's write only on a
-        /// backend that creates the lock exclusively. Without conditional-create semantics the write ran
-        /// in rewrite mode, so a lock holding this attempt's contents may be one it wrote over the lock
-        /// of the backup that got to the destination first. Removing it on the way out would unfence
-        /// that backup while it is still writing, and a third attempt could then take the destination.
-        /// A lock whose ownership cannot be proven stays: the destination is left fenced, which is the
-        /// safe answer, and the same one `own_write_committed` gives below for continuing.
+        /// That holds on a backend without conditional-create semantics too, where the write ran in
+        /// rewrite mode and may have replaced the lock of the backup that got to the destination first.
+        /// Keeping the lock would not protect that backup: its own lock is gone the moment it was written
+        /// over, so its next `checkLockFile` fails whether the lock still holds this attempt's contents or
+        /// nothing at all. A lock left in place would then fence a destination nobody owns any more,
+        /// against every later attempt, until somebody removes it by hand. So the failed attempt takes
+        /// back the lock that carries its contents, and the destination is free again for the next one.
 #if CLICKHOUSE_CLOUD
         if (!params.resume || !params.resume->continuing_existing_progress)
 #endif
-            created_own_lock_file = writer->supportsAtomicCreateIfNotExists();
+            created_own_lock_file = true;
         try
         {
             lock_contents_match = writer->fileContentsEqual(lock_file_name, lock_file_contents, actual_file_contents);
@@ -1003,8 +1006,8 @@ void BackupImpl::createLockFile()
         /// lock in rewrite mode, so a second backup can clobber the lock of the backup that got to the
         /// destination first and then read back its own contents here. Treating that as ownership would let
         /// the second attempt take a destination that is taken, and both would then write to it. On such
-        /// backends the destination stays reported as taken, which is the safe answer, and the lock stays
-        /// too (`created_own_lock_file` is false there): its removal would need the same proof.
+        /// backends the destination stays reported as taken, which is the safe answer; the lock itself goes
+        /// back with the failed attempt (see `created_own_lock_file` above), so nothing stays fenced.
         const bool own_write_committed = lock_contents_match && writer->supportsAtomicCreateIfNotExists();
 #if CLICKHOUSE_CLOUD
         /// A resumable attempt whose own contents are already there falls through, so a later failure lands

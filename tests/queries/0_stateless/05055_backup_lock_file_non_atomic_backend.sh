@@ -6,9 +6,10 @@
 # could not have replaced somebody else's lock. `Disk(...)` writes the lock in rewrite mode, so a second
 # backup can overwrite the lock of the backup that got to the destination first and then read its own
 # contents back. On such a backend the destination must keep being reported as taken, instead of being
-# taken over by the attempt that clobbered the lock -- and the lock must stay in place too: removing it
-# on the way out would unfence the backup it may have been written over (see
-# `05153_backup_lock_file_cleanup_keeps_foreign_fence` for the contended case).
+# taken over by the attempt that clobbered the lock. The failed attempt still takes back the lock that
+# carries its contents on the way out: a lock left behind would fence the destination against every later
+# backup, while the backup it may have been written over has already lost its lock and cannot continue
+# either (see `05227_backup_lock_file_overwritten_owner_no_orphan` for the contended case).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -31,14 +32,9 @@ ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO $backup S
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT backup_fail_lock_file_write_after_commit"
 
-# The same missing proof means the lock is not this attempt's to remove either: it stays, and the
-# destination keeps being reported as taken by the next backup that tries it.
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO $backup SETTINGS id='${backup_id}_again'" 2>&1 | grep -o "BACKUP_ALREADY_EXISTS" | head -n1
-
-# Nothing else is affected: a backup to another destination on the same disk goes through.
-other_backup="Disk('backups', '${backup_id}_other')"
-${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO $other_backup SETTINGS id='${backup_id}_other'" | grep -o "BACKUP_CREATED"
-${CLICKHOUSE_CLIENT} --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.t AS ${CLICKHOUSE_DATABASE}.t_restored FROM $other_backup" | grep -o "RESTORED"
+# The failed attempt does not leave its lock behind: the next backup to the same destination goes through.
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t TO $backup SETTINGS id='${backup_id}_again'" | grep -o "BACKUP_CREATED"
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE ${CLICKHOUSE_DATABASE}.t AS ${CLICKHOUSE_DATABASE}.t_restored FROM $backup" | grep -o "RESTORED"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x) FROM ${CLICKHOUSE_DATABASE}.t_restored"
 
 ${CLICKHOUSE_CLIENT} -m --query "
