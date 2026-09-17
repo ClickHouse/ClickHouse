@@ -49,3 +49,56 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT length(a), arraySum(x -> length(x), a) FROM file('$FILE', Parquet)
 "
+
+# A `JSON` value cannot be measured without serializing it: `ColumnObject::byteSizeAt` counts the
+# values but not the keys or the punctuation written back out, so these rows look small to the
+# column and are ~100 KB each once serialized. The converter has to bound the batch itself, and the
+# result still has to round-trip.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT concat('{', arrayStringConcat(arrayMap(i -> concat(char(34), repeat('k', 2000), toString(i), char(34), ':', toString(number)), range(50)), ','), '}')::JSON AS o
+    FROM numbers(1024)
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), sum(length(toString(o))), uniqExact(cityHash64(toString(o))) FROM file('$FILE', Parquet)
+"
+
+# The same `JSON` carried inside an `Array`, which reaches the writer with repetition levels. The
+# batch still has to be bounded by the converter, but it can only be cut where a record ends.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT [concat('{', arrayStringConcat(arrayMap(i -> concat(char(34), repeat('k', 2000), toString(i), char(34), ':', toString(number)), range(50)), ','), '}')::JSON] AS a
+    FROM numbers(1024)
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), sum(length(toString(a[1]))), uniqExact(cityHash64(toString(a[1]))) FROM file('$FILE', Parquet)
+"
+
+# A record of several `JSON` values that crosses the budget before it ends. The converter stops
+# inside the first row, which cannot be cut, so that row alone is converted again without the
+# budget - not the rest of the batch behind it.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT arrayMap(j -> concat('{', arrayStringConcat(arrayMap(i -> concat(char(34), repeat('k', 700), toString(i), char(34), ':', toString(j)), range(1000)), ','), '}')::JSON, range(100)) AS a
+    FROM numbers(3)
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), length(a), sum(length(toString(a[1]))) FROM file('$FILE', Parquet) GROUP BY length(a)
+"
+
+# `FixedString` written as `BYTE_ARRAY` rather than `FIXED_LEN_BYTE_ARRAY`: that encoding prefixes
+# every value with its 4-byte length, so the batch is budgeted against what it writes, not just the
+# payload.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --allow_suspicious_fixed_string_types 1 --query "
+    SELECT toFixedString(concat(toString(number), repeat('z', 70000)), 70008) AS s
+    FROM numbers(1024)
+    SETTINGS output_format_parquet_fixed_string_as_fixed_byte_array = 0
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), sum(length(s)), uniqExact(cityHash64(s)) FROM file('$FILE', Parquet)
+"
