@@ -5,6 +5,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/HashJoin/SharedFixedHashTableFilter.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
@@ -710,7 +711,23 @@ void PartitionedHashJoin::runPostBuildPhase()
 
     clause.releaseBuildScratch();
 
+    clause.tryConvertToFixedHashMap();
     finishBuildPhase(all_values_unique);
+
+    /// With the table settled and its key count published: the exact runtime filter of a fixed table
+    /// (8- or 16-bit keys, or a range map the conversion built) replaces the planner's Bloom filter.
+    std::visit(
+        [&](const auto & shape_maps)
+        {
+            publishSharedFixedHashTableFilters(
+                *table_join,
+                hash_join->right_table_keys,
+                hash_join->data->type,
+                hash_join->data->key_range,
+                hash_join->data->keys_to_join.load(std::memory_order_relaxed),
+                shape_maps);
+        },
+        clause.tableMaps().maps);
 
     LOG_TRACE(
         log,

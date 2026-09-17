@@ -270,20 +270,10 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
             releaseProbeScratch(std::move(scratch), lane);
     });
 
-    /// As in `createKeyGetter`: the ASOF getter excludes the inequality column.
-    auto key_getter = [&]
-    {
-        if constexpr (join_features.is_asof_join)
-        {
-            ColumnRawPtrs equi_columns(join_keys.key_columns.begin(), join_keys.key_columns.end() - 1);
-            Sizes equi_sizes(join_keys.key_sizes.begin(), join_keys.key_sizes.end() - 1);
-            return KeyGetter(equi_columns, equi_sizes, nullptr);
-        }
-        else
-        {
-            return KeyGetter(join_keys.key_columns, join_keys.key_sizes, nullptr);
-        }
-    }();
+    /// The ASOF getter excludes the inequality column; a range getter reads the key range the post-build
+    /// conversion settled.
+    auto key_getter
+        = createKeyGetter<KeyGetter, join_features.is_asof_join>(join_keys.key_columns, join_keys.key_sizes, hash_join->data->key_range);
 
     /// A mixed ON condition is decided per candidate pair, over the right rows themselves, so the
     /// probe cannot record matches by cell word. The standard filter path runs over the shared
@@ -892,7 +882,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
         processed_rows = joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*tables.TYPE, added_columns, scattered_block, lane); \
         break; \
     }
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default:
                 throw Exception(

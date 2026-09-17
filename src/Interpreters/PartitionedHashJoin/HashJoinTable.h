@@ -24,9 +24,8 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 
-/// What a partitioned build can produce: the single-level subset of `HashJoin::Type`. Two-level maps
-/// are what partitioning replaces, and the `range*` conversions are post-build optimizations this
-/// path does not run.
+/// What a partitioned build can produce: `HashJoin::Type` without the `range*` types, which no build
+/// creates directly.
 #define APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M) \
     M(key8) \
     M(key16) \
@@ -41,6 +40,24 @@ extern const int LOGICAL_ERROR;
     M(hashed) \
     M(low_cardinality_key_string) \
     M(low_cardinality_key_fixed_string)
+
+/// The fixed maps `tryConvertToFixedHashMap` turns a built `key32` / `key64` table into when its keys
+/// span a dense range.
+#define APPLY_FOR_PARTITIONED_JOIN_RANGE_VARIANTS(M) \
+    M(range8_key32) \
+    M(range16_key32) \
+    M(range17_key32) \
+    M(range18_key32) \
+    M(range8_key64) \
+    M(range16_key64) \
+    M(range17_key64) \
+    M(range18_key64)
+
+/// Every table a built join may hold - every `HashJoin::Type` - which is what the probe, the non-joined
+/// scan and the accounting dispatch over.
+#define APPLY_FOR_PARTITIONED_JOIN_TABLES(M) \
+    APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M) \
+    APPLY_FOR_PARTITIONED_JOIN_RANGE_VARIANTS(M)
 
 /// Turns a map hash into the bits `HashJoinTable` addresses by. The home cell is the top `size_degree`
 /// bits of this word and a row's partition the top `partition_bits`. Every key's home cell therefore
@@ -518,7 +535,7 @@ public:
     /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define M(NAME) \
     std::shared_ptr<typename HashJoinTableDetail::TableFor<typename decltype(StandardMaps::NAME)::element_type>::Type> NAME;
-    APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+    APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
 
 private:
@@ -589,7 +606,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? maxFillOf(*NAME) : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -647,7 +664,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? NAME->size() : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -659,7 +676,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -671,7 +688,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -683,7 +700,7 @@ public:
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return NAME ? reservedBufferBytesOf(*NAME) : 0;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return 0;
         }
@@ -710,7 +727,7 @@ using HashJoinTableMapsAsof = HashJoinTableMapsTemplate<AsofRowRefs>;
                 typename decltype(HashJoinTableMapsAsof::NAME)::element_type::cell_type, \
                 typename decltype(HashJoin::MapsAsof::NAME)::element_type::cell_type>, \
         "HashJoinTable cells must be identical to the standard join map cells");
-APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
 
 /// The `HashJoinTable` counterpart of a standard maps type, for the `MapGetter` and `JoinFeatures` templates
@@ -786,7 +803,7 @@ struct HashJoinTableMaps
         {
 #define M(NAME) \
     case HashJoin::Type::NAME: return !is_hash_join_table<typename decltype(HashJoinTableMapsAll::NAME)::element_type>;
-            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
             default: return false;
         }

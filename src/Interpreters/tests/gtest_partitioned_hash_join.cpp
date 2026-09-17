@@ -161,6 +161,9 @@ std::shared_ptr<TableJoin> makeTableJoin(const Block & left_header, const Block 
         settings.set("partitioned_hash_join_max_fanout_per_pass", *options.max_fanout_per_pass);
     if (!options.cap_partitions_by_l1_descriptors)
         settings.set("partitioned_hash_join_cap_partitions_by_l1_descriptors", false);
+    /// These tests read the shared table's geometry after the build; the dense sequential keys they
+    /// build would otherwise be converted to a range map.
+    settings.set("enable_join_fixed_hash_table_conversion", false);
     auto table_join = std::make_shared<TableJoin>(settings, JoinAnalyzeMode::None, /*tmp_volume=*/nullptr, /*tmp_data=*/nullptr);
     table_join->setKind(options.kind);
     table_join->getTableJoin().strictness = options.strictness;

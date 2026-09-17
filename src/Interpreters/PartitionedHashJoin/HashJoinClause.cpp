@@ -738,6 +738,38 @@ void emplaceSizedBuildArena(std::deque<Arena> & arenas, size_t predicted_bytes)
     arenas.emplace_back(predicted_bytes, /*growth_factor_=*/2, predicted_bytes);
 }
 
+/// The key range of a built `key32` / `key64` table, or nothing when its keys span more than `max_range`
+/// values. The keys are compared as the build column's type, signed or unsigned. The shared table's
+/// cells are walked by position; the zero key lives in the zero-value cell.
+template <bool is_signed, size_t max_range, typename Table>
+std::optional<HashJoin::RightTableData::KeyRange> denseKeyRange(const Table & table)
+{
+    using Key = typename Table::key_type;
+    using Ordered = std::conditional_t<is_signed, std::make_signed_t<Key>, Key>;
+    std::optional<Ordered> min_key;
+    std::optional<Ordered> max_key;
+    /// The width in the keys' stored, unsigned arithmetic: a span of signed keys wraps into the right value.
+    auto width = [&] { return static_cast<size_t>(static_cast<Key>(*max_key) - static_cast<Key>(*min_key)); };
+    auto visit = [&](Key key)
+    {
+        const auto ordered = static_cast<Ordered>(key);
+        min_key = min_key ? std::min(*min_key, ordered) : ordered;
+        max_key = max_key ? std::max(*max_key, ordered) : ordered;
+        return width() < max_range;
+    };
+    if (table.hasZero() && !visit(Key{}))
+        return std::nullopt;
+    for (size_t pos = 0, cells = table.cellCount(); pos < cells; ++pos)
+    {
+        const auto * cell = table.cellAt(pos);
+        if (!table.isEmptyCell(cell) && !visit(cell->getKey()))
+            return std::nullopt;
+    }
+    if (!min_key)
+        return std::nullopt;
+    return HashJoin::RightTableData::KeyRange{.min_key = static_cast<UInt64>(static_cast<Key>(*min_key)), .size = width() + 1};
+}
+
 /// Runs `f(table)` on the shared table of the active map type. The direct-index maps (`key8`, `key16`)
 /// have no shared table and are skipped.
 template <typename F>
@@ -915,6 +947,7 @@ HashJoinClause::HashJoinClause(
     , max_fanout_per_pass(table_join.partitionedHashJoinMaxFanoutPerPass())
     , cap_partitions_by_l1_descriptors(table_join.partitionedHashJoinCapPartitionsByL1Descriptors())
     , parallel_hash_join_threshold(table_join.parallelHashJoinThreshold())
+    , fixed_hash_table_conversion_enabled(table_join.enableJoinFixedHashTableConversion())
     , log(std::move(log_))
 {
     /// A ceiling above 2^15 would let a 16-bit plan wrap the drop bucket onto partition 0 and insert
@@ -1494,6 +1527,105 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
         build_blocks.size(),
         static_cast<size_t>(hll_estimate),
         estimate_is_exact ? "from the statistics cache" : "estimated by the sketch");
+}
+
+void HashJoinClause::tryConvertToFixedHashMap()
+{
+    /// `HashJoin`'s conversion, on the shared table. Its conditions: the setting, a 32- or 64-bit integer
+    /// key, not ASOF (its per-key sorted vectors are not copied), at most 2^18 keys in a range at most 2^18
+    /// wide, and above 2^16 cells at least a quarter full. The fixed map then takes at most about twice
+    /// the memory of the table it replaces. Row refs point at stored blocks, not at cells, so the mapped
+    /// values are copied by value; the duplicate runs stay in the build arenas, which outlive the table.
+    constexpr size_t max_range = 1uz << 18;
+    constexpr size_t max_range_sparsity_factor = 4;
+
+    const HashJoin::Type type = hash_join.data->type;
+    if (!fixed_hash_table_conversion_enabled || (type != HashJoin::Type::key32 && type != HashJoin::Type::key64)
+        || hash_join.getStrictness() == JoinStrictness::Asof || stats.distinct_keys == 0 || stats.distinct_keys > max_range)
+        return;
+
+    const bool is_signed = !hash_join.right_table_keys.getByPosition(0).type->isValueRepresentedByUnsignedInteger();
+    const size_t keys = stats.distinct_keys;
+    std::optional<HashJoin::RightTableData::KeyRange> converted;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            auto convert = [&](auto & source, auto & range8, auto & range16, auto & range17, auto & range18, auto types)
+            {
+                using Source = typename std::decay_t<decltype(source)>::element_type;
+                using Key = typename Source::key_type;
+                if constexpr (std::is_copy_assignable_v<typename Source::mapped_type>)
+                {
+                    const auto range = is_signed ? denseKeyRange<true, max_range>(*source) : denseKeyRange<false, max_range>(*source);
+                    if (!range)
+                        return;
+
+                    auto build = [&](auto & dest, HashJoin::Type new_type)
+                    {
+                        using RangeMap = typename std::decay_t<decltype(dest)>::element_type;
+                        auto range_map = std::make_shared<RangeMap>();
+                        const Key min_key = static_cast<Key>(range->min_key);
+                        auto insert = [&](const auto * cell)
+                        {
+                            typename RangeMap::LookupResult res;
+                            bool inserted = false;
+                            range_map->emplace(static_cast<Key>(cell->getKey() - min_key), res, inserted);
+                            res->getMapped() = cell->getMapped();
+                        };
+                        if (source->hasZero())
+                            insert(source->zeroValue());
+                        for (size_t pos = 0, cells = source->cellCount(); pos < cells; ++pos)
+                            if (const auto * cell = source->cellAt(pos); !source->isEmptyCell(cell))
+                                insert(cell);
+                        dest = std::move(range_map);
+                        source.reset();
+                        hash_join.data->type = new_type;
+                        hash_join.data->key_range = *range;
+                        converted = range;
+                    };
+
+                    if (range->size <= (1uz << 8))
+                        build(range8, types[0]);
+                    else if (range->size <= (1uz << 16))
+                        build(range16, types[1]);
+                    else if (range->size <= (1uz << 17))
+                    {
+                        if ((1uz << 17) <= keys * max_range_sparsity_factor)
+                            build(range17, types[2]);
+                    }
+                    else if ((1uz << 18) <= keys * max_range_sparsity_factor)
+                        build(range18, types[3]);
+                }
+            };
+
+            using enum HashJoin::Type;
+            if (type == key32)
+                convert(
+                    shape_maps.key32,
+                    shape_maps.range8_key32,
+                    shape_maps.range16_key32,
+                    shape_maps.range17_key32,
+                    shape_maps.range18_key32,
+                    std::array{range8_key32, range16_key32, range17_key32, range18_key32});
+            else
+                convert(
+                    shape_maps.key64,
+                    shape_maps.range8_key64,
+                    shape_maps.range16_key64,
+                    shape_maps.range17_key64,
+                    shape_maps.range18_key64,
+                    std::array{range8_key64, range16_key64, range17_key64, range18_key64});
+        },
+        table_maps->maps);
+
+    if (!converted)
+        return;
+
+    /// The probe's prefetch gates and the used flags are sized from the table that exists now.
+    const HashJoin::Type new_type = hash_join.data->type;
+    ht_total_bytes = table_maps->getBufferSizeInBytes(new_type);
+    stats.table_cells = table_maps->getBufferSizeInCells(new_type);
+    LOG_DEBUG(log, "Converted join hash map to fixed hash map (range: {}, keys: {}, type: {})", converted->size, keys, new_type);
 }
 
 void HashJoinClause::createHashJoinTable()

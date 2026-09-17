@@ -180,6 +180,11 @@ public:
     /// Builds the table from the fill blocks after the barrier. Returns whether every inserted key was
     /// unique, which drives the RightAny promotion.
     bool postBuild(size_t rows);
+    /// `HashJoin`'s post-build conversion: a built `key32` / `key64` table whose keys span a dense range
+    /// of at most 2^18 values becomes a `range*` fixed map indexed by `key - min_key`. The probe reads
+    /// that map without hashing. Releases the shared table; the row refs it held are copied. Run after
+    /// the build finished and before the join sizes its used flags.
+    void tryConvertToFixedHashMap();
     /// Create the table, insert one block, then finish scratch and publish. A single fill thread
     /// runs the middle step per block. `reserve` is the cell count of the table created. `rows` is
     /// the row count so far, which sizes the arenas. `grow_at_max_fill_` lets walks double the table
@@ -400,6 +405,8 @@ private:
     /// `parallel_hash_join_threshold`: from this many build rows on, the insert phase gets at least one
     /// partition per worker, as `parallel_hash` gets one table per slot.
     size_t parallel_hash_join_threshold;
+    /// `enable_join_fixed_hash_table_conversion`.
+    const bool fixed_hash_table_conversion_enabled;
     std::optional<size_t> l1_cache_bytes_for_tests;
     std::optional<size_t> forced_bits_for_tests;
     double hll_estimate = 0;

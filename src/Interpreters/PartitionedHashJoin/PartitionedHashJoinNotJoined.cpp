@@ -72,7 +72,7 @@ public:
                         {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: return fillFromTable<with_row_store, with_columns>(columns_right, *shape.TYPE);
-                            APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+                            APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
                             default:
                                 throw Exception(
@@ -234,7 +234,7 @@ private:
         }
         else if (stream_idx == 0)
         {
-            /// The direct-index maps are at most 65536 cells; one stream walks them whole.
+            /// The direct-index maps are at most 2^18 cells; one stream walks them whole.
             using Iterator = typename Table::const_iterator;
             if (!fixed_position.has_value())
                 fixed_position = std::make_any<Iterator>(table.begin());
