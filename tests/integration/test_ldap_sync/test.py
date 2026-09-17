@@ -1952,10 +1952,15 @@ def test_startup_validation_of_a_second_ldap_directory():
         with_second_ldap_directory("ldap_lazy", after=True),
         second_ldap_directory_refused("ldap", "ldap_lazy"),
     )
-    # Two synchronised directories, with the same search even: the first synchronised one is named first.
+    # Two synchronised directories, with the same search even: the first synchronised one is named first,
+    # whether the second one is declared before or after it.
     assert_startup_fails_with(
         with_second_ldap_directory("ldap_first", sync_section()),
         second_ldap_directory_refused("ldap_first", "ldap"),
+    )
+    assert_startup_fails_with(
+        with_second_ldap_directory("ldap_second", sync_section(), after=True),
+        second_ldap_directory_refused("ldap", "ldap_second"),
     )
 
 

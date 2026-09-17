@@ -34,6 +34,7 @@ test, so each instance's LDAP cache state is controlled by exactly one test.
 """
 
 import logging
+import os
 
 import pytest
 
@@ -706,6 +707,42 @@ def test_execute_as_hands_a_refused_cached_entry_over_to_a_later_storage(
         )
     finally:
         shard1_node.query("DROP USER IF EXISTS ghost", user="admin", password="qwerty")
+
+
+def test_direct_bind_login_without_role_mapping_needs_no_lookup_identity(
+    started_cluster,
+):
+    """`ldap.xml` defines `lookup_bind_dn` and no `role_mapping`: a password login binds as the user
+    and has no role search to run, so the lookup identity is not involved and breaking it must not
+    fail such logins (it fails `EXECUTE AS`, which needs it, see the wrong-lookup-password test).
+    `SYSTEM RELOAD CONFIG` also drops the verification cache, so the logins below reach the server.
+    """
+    config_path = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)), "configs", "ldap.xml"
+    )
+    with open(config_path) as f:
+        original_config = f.read()
+    broken_config = original_config.replace(
+        "<lookup_password>clickhouse</lookup_password>",
+        "<lookup_password>wrong</lookup_password>",
+    )
+    assert broken_config != original_config
+    try:
+        node.replace_config("/etc/clickhouse-server/config.d/ldap.xml", broken_config)
+        node.query("SYSTEM RELOAD CONFIG", user="admin", password="qwerty")
+        assert (
+            node.query(
+                "SELECT currentUser()", user="janedoe", password="qwerty"
+            ).strip()
+            == "janedoe"
+        )
+        error = node.query_and_get_error(
+            "SELECT currentUser()", user="janedoe", password="wrong"
+        )
+        assert "Authentication failed" in error, error
+    finally:
+        node.replace_config("/etc/clickhouse-server/config.d/ldap.xml", original_config)
+        node.query("SYSTEM RELOAD CONFIG", user="admin", password="qwerty")
 
 
 def test_execute_as_already_materialized_ldap_user_when_ldap_first(started_cluster):
