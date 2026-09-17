@@ -255,6 +255,8 @@ std::vector<std::pair<String, String>> readPairArray(const Field & firsts_field,
 /// One dumped table, with enough dependency information to order it for replay.
 struct TableInfo
 {
+    /// Its stored CREATE could not be parsed, so it was not scanned for named collections.
+    bool create_unscannable = false;
     String database;
     String name;
     String create_query;
@@ -270,6 +272,8 @@ struct TableInfo
 /// final dependency list per table is assembled.
 struct RawTableRow
 {
+    /// Its stored CREATE could not be parsed, so it was not scanned for named collections.
+    bool create_unscannable = false;
     String database;
     String name;
     String engine;
@@ -1220,7 +1224,7 @@ void collectNamedCollections(const IAST & node, const ClusterLocality & clusters
 
 /// Parses a stored CREATE and collects every named collection it names. Refuses on a parse failure:
 /// a carrier missed here leaves the dump silently unreplayable.
-std::vector<String> namedCollectionsOfCreate(const String & create_query, const String & object, const ClusterLocality & clusters)
+std::vector<String> namedCollectionsOfCreate(const String & create_query, const ClusterLocality & clusters, bool & unscannable)
 {
     ASTPtr create_ast;
     try
@@ -1228,11 +1232,12 @@ std::vector<String> namedCollectionsOfCreate(const String & create_query, const 
         ParserCreateQuery create_parser;
         create_ast = parseQuery(create_parser, create_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
-    catch (const Exception & e)
+    catch (const Exception &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot parse the stored CREATE for {} to resolve its named collections for --dump-schema: {}",
-            object, e.message());
+        /// The dump emits this CREATE verbatim either way, so a text this parser cannot read costs a
+        /// warning about that object, not the whole dump.
+        unscannable = true;
+        return {};
     }
 
     std::vector<String> collections;
@@ -1370,8 +1375,8 @@ std::vector<TableInfo> resolveTables(
     /// a table function - so the whole statement is scanned rather than just a view's SELECT.
     for (auto & row : rows)
         if (!row.create_query.empty())
-            row.named_collections = namedCollectionsOfCreate(
-                row.create_query, backQuoteIfNeed(row.database) + "." + backQuoteIfNeed(row.name), clusters);
+            row.named_collections
+                = namedCollectionsOfCreate(row.create_query, clusters, row.create_unscannable);
 
     for (auto & row : rows)
     {
@@ -1503,6 +1508,7 @@ std::vector<TableInfo> resolveTables(
         table.dependencies = std::move(row.loading_dependencies);
         table.unresolved_references = std::move(row.unresolved_references);
         table.named_collections = std::move(row.named_collections);
+        table.create_unscannable = row.create_unscannable;
         /// A dependency on an omitted helper table is remapped onto the owning object - which is what
         /// creates the helper on replay - so the edge survives instead of dangling on a skipped row.
         for (auto & dependency : table.dependencies)
@@ -1629,8 +1635,11 @@ std::vector<TableInfo> fetchTables(
 
     /// A database engine carries a collection the same way a table engine does.
     for (const auto & [db, create_query] : database_queries)
-        if (auto collections = namedCollectionsOfCreate(create_query, backQuoteIfNeed(db), clusters); !collections.empty())
+    {
+        bool unscannable = false;
+        if (auto collections = namedCollectionsOfCreate(create_query, clusters, unscannable); !collections.empty())
             database_named_collections.emplace(db, std::move(collections));
+    }
 
     return resolveTables(fetchRawRows(connection, timeouts, client_info, databases, context->getSettingsRef()), clusters, undumped_databases, undumped_tables_by_db);
 }
@@ -1705,6 +1714,11 @@ void reportDependenciesOutsideDumpSet(
         err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " depends on named collection "
             << backQuoteIfNeed(collection) << ", which lives on the server rather than in a database and will not be "
             << "created by this dump; its values can include credentials, so the dump does not carry them.\n";
+
+    for (const auto & table : tables)
+        if (table.create_unscannable)
+            err << "Warning: the stored CREATE of " << backQuoteIfNeed(table.database) << "." << backQuoteIfNeed(table.name)
+                << " could not be parsed here, so it was not checked for named collections; it is dumped as it is stored.\n";
 
     for (const auto & [database, collection] : database_collections)
         err << "Warning: database " << backQuoteIfNeed(database) << " depends on named collection "
