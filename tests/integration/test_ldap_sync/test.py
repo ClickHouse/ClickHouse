@@ -1627,6 +1627,89 @@ def test_roles_are_not_created_ahead_of_a_storage_reloaded_after_the_directory(
         admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
 
 
+LOCAL_DIRECTORY_BEFORE = (
+    "        <local_directory>\n"
+    "            <name>local_directory_before</name>\n"
+    "            <path>/var/lib/clickhouse/access_before/</path>\n"
+    "        </local_directory>\n"
+)
+
+
+def role_grant_ids(node, user_name, role_name):
+    return admin(
+        node,
+        f"SELECT granted_role_id FROM system.role_grants WHERE user_name = '{user_name}' AND granted_role_name = '{role_name}'",
+    )
+
+
+def test_synced_users_hold_the_role_the_name_resolves_to(janedoe_in_role_a):
+    """A role of a granted name published by another storage after the run created its copy must not
+    split the role: the users of the directory hold exactly the role the name resolves to, the first
+    storage in `user_directories` order. `local_directory_after` (after the directory) and
+    `local_directory_before` (before `local_directory`, where the roles are created) each get a role
+    file written by hand: the copy in the later storage is shadowed and changes nothing, the copy in
+    the earlier storage takes over `johndoe`'s grant, and the run warns about the duplicate.
+    """
+    id_after = "22222222-2222-2222-2222-222222222222"
+    id_before = "33333333-3333-3333-3333-333333333333"
+    try:
+        config = directories_bad_config(
+            after_ldap=LOCAL_DIRECTORY_AFTER,
+            create_roles="true",
+            roles_storage="local_directory",
+        )
+        anchor = "        <local_directory>\n"
+        assert config.count(anchor) == 2
+        config = config.replace(anchor, LOCAL_DIRECTORY_BEFORE + anchor, 1)
+        restart_node_bad_with(config, server_config=read_config("ldap_server.xml"))
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        created_id = admin(
+            node_bad, "SELECT id FROM system.roles WHERE name = 'role_b'"
+        ).strip()
+        assert role_grant_ids(node_bad, "johndoe", "role_b") == f"{created_id}\n"
+
+        node_bad.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo 'ATTACH ROLE role_b;' > /var/lib/clickhouse/access_after/{id_after}.sql",
+            ],
+            user="root",
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert role_grant_ids(node_bad, "johndoe", "role_b") == f"{created_id}\n"
+        assert node_bad.contains_in_log(
+            "Role 'role_b' exists in storages .local_directory., .local_directory_after.;"
+            " the name resolves to the copy in .local_directory., which the users of LDAP directory .ldap. hold"
+        )
+
+        node_bad.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo 'ATTACH ROLE role_b;' > /var/lib/clickhouse/access_before/{id_before}.sql",
+            ],
+            user="root",
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert role_grant_ids(node_bad, "johndoe", "role_b") == f"{id_before}\n"
+        assert node_bad.contains_in_log(
+            "Role 'role_b' exists in storages .local_directory_before., .local_directory., .local_directory_after.;"
+            " the name resolves to the copy in .local_directory_before."
+        )
+    finally:
+        node_bad.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /var/lib/clickhouse/access_after /var/lib/clickhouse/access_before",
+            ],
+            user="root",
+        )
+        restore_node_bad()
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
 def with_second_ldap_directory(name, sync=None, after=False):
     """`directories_bad.xml` with a second `ldap` directory named `name`, backed by the same server and
     declared right before (with `after`, right after) the synchronised one. `sync` is the content of its
