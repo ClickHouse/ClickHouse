@@ -275,7 +275,9 @@ The query cache on disk works independently of the in-memory query cache and can
 settings `enable_reads_from_query_cache_on_disk` and `enable_writes_to_query_cache_on_disk` (both `true`
 by default). If reads are enabled for both caches, the lookup is attempted first from memory and only on a miss from disk. If writes
 are enabled for both caches, the result is stored in both. Entries on disk are compressed with the codec specified by setting
-`query_cache_on_disk_codec` (`ZSTD(3)` by default). All
+`query_cache_on_disk_codec` (`ZSTD(3)` by default). The server settings `max_entry_size_in_bytes` and `max_entry_size_in_rows` of the
+query cache limit the entries of both backends; each backend measures an entry the way it stores it, so on disk the byte limit applies to
+the serialized, compressed entry. All
 other query cache settings (e.g. `query_cache_ttl`, `query_cache_min_query_duration`) apply to the query cache on disk in the same way as
 to the in-memory query cache, with the two exceptions below.
 

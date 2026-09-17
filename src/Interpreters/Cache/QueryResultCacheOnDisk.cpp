@@ -21,6 +21,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/formatReadable.h>
 #include <Common/transformEndianness.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -323,7 +324,7 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
     }
 }
 
-void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry) const
+void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry, size_t max_entry_size_in_bytes) const
 {
     const FileCacheKey cache_key = makeFileCacheKey(key, key.is_shared);
     const auto & origin = FileCache::getCommonOrigin();
@@ -352,6 +353,11 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
     {
         WriteBufferFromOwnString out;
 
+        /// The serialization stops early once the bytes already written exceed the limit. `out.count()` only sees the compression
+        /// frames flushed so far, so it is a lower bound of the final size: an entry rejected here would have been rejected by the
+        /// exact check on the serialized size below as well, the remaining chunks are just not serialized in vain.
+        auto exceeds_limit = [&]() { return max_entry_size_in_bytes != 0 && out.count() > max_entry_size_in_bytes; };
+
         out.write(ENTRY_MAGIC, sizeof(ENTRY_MAGIC));
         writeBinaryLittleEndian(ENTRY_FORMAT_VERSION, out);
         writeBinaryLittleEndian(static_cast<UInt32>(DBMS_TCP_PROTOCOL_VERSION), out);
@@ -375,20 +381,35 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
             writeVarUInt(entry.chunks.size(), compressed_out);
             writer.write(*key.header);
             for (const auto & chunk : entry.chunks)
+            {
+                if (exceeds_limit())
+                    break;
                 writeChunk(chunk, *key.header, writer, compressed_out);
+            }
 
-            writeBinaryLittleEndian(static_cast<UInt8>(entry.totals.has_value()), compressed_out);
-            if (entry.totals)
-                writeChunk(*entry.totals, *key.header, writer, compressed_out);
-            writeBinaryLittleEndian(static_cast<UInt8>(entry.extremes.has_value()), compressed_out);
-            if (entry.extremes)
-                writeChunk(*entry.extremes, *key.header, writer, compressed_out);
+            if (!exceeds_limit())
+            {
+                writeBinaryLittleEndian(static_cast<UInt8>(entry.totals.has_value()), compressed_out);
+                if (entry.totals)
+                    writeChunk(*entry.totals, *key.header, writer, compressed_out);
+                writeBinaryLittleEndian(static_cast<UInt8>(entry.extremes.has_value()), compressed_out);
+                if (entry.extremes)
+                    writeChunk(*entry.extremes, *key.header, writer, compressed_out);
+            }
 
             compressed_out.finalize();
         }
 
         out.finalize();
         data = std::move(out.str());
+
+        if (max_entry_size_in_bytes != 0 && data.size() > max_entry_size_in_bytes)
+        {
+            LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the serialized query result is too big, query result size: {} (maximum size: {}), query: {}",
+                formatReadableSizeWithBinarySuffix(data.size(), 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), doubleQuoteString(key.query_string));
+            return;
+        }
+
         unalignedStoreLittleEndian<UInt64>(data.data() + TOTAL_SIZE_OFFSET_IN_FIXED_HEADER, data.size());
 
         SipHash hash;

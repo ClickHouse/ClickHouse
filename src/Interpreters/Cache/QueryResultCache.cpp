@@ -795,23 +795,22 @@ void QueryResultCacheWriter::finalizeWrite()
 
     if (!skip_disk_insert)
     {
-        /// The maximum entry size applies to both backends, so it must be checked before writing on disk. The in-memory backend
-        /// checks it again further below, after the columnar compression which may bring an entry back under the limit.
+        /// The maximum entry size applies to both backends. Each backend measures the entry the way it is going to store it: the
+        /// in-memory backend checks the weight of the (possibly compressed) columns further below, the on-disk backend checks the
+        /// size of the serialized entry inside `write`, because the in-memory weight says little about the bytes on disk (the
+        /// per-column allocations differ from the `Native` framing plus the compression, in both directions). Only the row limit is
+        /// the same for both backends, so it is checked here upfront.
         /// A limit of 0 means no limit here: `clickhouse-local` disables the in-memory query result cache that way (it calls
         /// `setQueryResultCache(0, 0, 0, 0)`), but the query result cache on disk is usable there.
-        const size_t entry_size_in_bytes = QueryResultCache::EntryWeight()(*query_result);
         const size_t entry_size_in_rows = count_rows_in_chunks(*query_result);
-        const bool is_too_big = (max_entry_size_in_bytes != 0 && entry_size_in_bytes > max_entry_size_in_bytes)
-            || (max_entry_size_in_rows != 0 && entry_size_in_rows > max_entry_size_in_rows);
-
-        if (is_too_big)
+        if (max_entry_size_in_rows != 0 && entry_size_in_rows > max_entry_size_in_rows)
         {
-            LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the query result is too big, query result size: {} (maximum size: {}), query result size in rows: {} (maximum size: {}), query: {}",
-                    formatReadableSizeWithBinarySuffix(entry_size_in_bytes, 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
+            LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the query result is too big, query result size in rows: {} (maximum size: {}), query: {}",
+                    entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
         }
         else
         {
-            on_disk_cache->write(key, *query_result); /// best-effort, logs instead of throwing
+            on_disk_cache->write(key, *query_result, max_entry_size_in_bytes); /// best-effort, logs instead of throwing
         }
     }
 

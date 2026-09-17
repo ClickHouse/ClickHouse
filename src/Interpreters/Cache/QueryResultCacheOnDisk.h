@@ -45,7 +45,10 @@ public:
 
     /// Store the query result. Best-effort: an entry which cannot be written (no space, a concurrent writer, a fresh entry already
     /// exists) is skipped and the reason is logged, no exception is thrown.
-    void write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry) const;
+    /// `max_entry_size_in_bytes` (server setting `query_cache.max_entry_size_in_bytes`, 0 = unlimited) is enforced against the size
+    /// of the serialized entry, i.e. exactly the bytes which end up in the filesystem cache, including the header, the access metadata
+    /// and the compression framing. The in-memory weight of the result is not a good proxy for it in either direction.
+    void write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry, size_t max_entry_size_in_bytes) const;
 
 private:
     /// The fixed-size prefix of a serialized entry. Small enough to be probed cheaply, sufficient to decide whether the entry is
