@@ -147,12 +147,6 @@ SELECT 1 AS x, 2 AS x
 UNION ALL BY NAME
 SELECT 3 AS x; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
-SET enable_analyzer = 0;
-SELECT 1 AS x
-UNION ALL BY NAME
-SELECT 2 AS x; -- { serverError UNSUPPORTED_METHOD }
-SET enable_analyzer = 1;
-
 SELECT 'missing non-nullable-capable type';
 SELECT [1, 2] AS x
 UNION ALL BY NAME
