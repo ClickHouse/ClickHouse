@@ -178,7 +178,7 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
 {
     delta_transaction->validateSchema(getHeader());
 
-    /// Each partition value is cast to the Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or truncated (plain) instead of being committed verbatim, then serialized to text.
+    /// Each partition value is cast to the Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or truncated (plain) instead of being committed verbatim.
     const auto & write_schema = delta_transaction->getWriteSchema();
     partition_value_actions.reserve(partition_columns.size());
     partition_column_nullable.reserve(partition_columns.size());
