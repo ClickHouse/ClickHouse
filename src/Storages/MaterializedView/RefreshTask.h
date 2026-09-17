@@ -100,7 +100,8 @@ public:
         /// Used for exponential backoff on errors.
         Int64 attempt_number = 0;
 
-        /// Unused. Serialized for compatibility.
+        /// Not used by this version. Replicas running older versions read it as the shared
+        /// RANDOMIZE FOR offset, so it has to keep carrying a random value.
         Int64 randomness_obsolete = 0;
 
         /// Whether any replica is executing a refresh right now.

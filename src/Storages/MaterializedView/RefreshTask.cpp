@@ -184,6 +184,9 @@ RefreshTask::RefreshTask(
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
 
+    /// The first znode write has to carry a random offset for replicas running older versions.
+    coordination.root_znode.randomness_obsolete = drawRandomness();
+
     if (empty)
     {
         /// To skip initial refresh, set the initial scheduling-related state as if this view was just refreshed.

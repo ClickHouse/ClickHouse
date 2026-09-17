@@ -947,3 +947,52 @@ def test_randomize_for_is_redrawn_on_every_replica(module_setup_tables):
         assert len(seen) > 1, f"{name} drew offset {sorted(seen)} in every timeslot, so its offset is frozen rather than redrawn"
 
     _drop_randomize_objects()
+
+
+def _znode_randomness(n, view):
+    """The RANDOMIZE FOR offset as a replica running an older version reads it, out of Keeper."""
+    uuid = n.query(f"SELECT uuid FROM system.tables WHERE name = '{view}'").strip()
+    # Children of the view's path are its coordination znodes, one per shard, and the query fails
+    # rather than returning nothing if the path is wrong.
+    drawn = n.query_with_retry(
+        "SELECT extract(value, 'randomness: (-?[0-9]+)') FROM system.zookeeper "
+        f"WHERE path = '/clickhouse/tables/{uuid}'",
+        check_callback=lambda r: r.strip() != "",
+        retry_count=20,
+        sleep_time=0.5,
+    ).split()
+    assert len(drawn) == 1, f"expected one coordination znode carrying a randomness field, got {drawn}"
+    return drawn[0]
+
+
+def test_randomize_for_offset_in_znode_stays_compatible(module_setup_tables):
+    """The coordination znode keeps carrying a random offset, which this version does not read.
+
+    A replica running a version from before per-replica randomization applies the serialized
+    `randomness` field as the shared offset, so a zero there would schedule it at the exact
+    timeslot with no spread at all. That version drew the field when the view was created and
+    again after every successful refresh, so both still have to happen.
+    """
+    _drop_randomize_objects()
+
+    node.query(
+        "CREATE MATERIALIZED VIEW randomize_rmv ON CLUSTER default "
+        "REFRESH EVERY 1 YEAR RANDOMIZE FOR 30 DAY "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
+    )
+
+    drawn = _znode_randomness(node, "randomize_rmv")
+    assert drawn != "0", "the coordination znode carries no random offset, so a replica running an older version would schedule its refresh at the exact timeslot"
+
+    node.query("SYSTEM REFRESH VIEW randomize_rmv")
+    node.query_with_retry(
+        "SELECT last_success_time IS NOT NULL FROM system.view_refreshes WHERE view = 'randomize_rmv'",
+        check_callback=lambda r: r.strip() == "1",
+        retry_count=600,
+        sleep_time=0.3,
+    )
+
+    redrawn = _znode_randomness(node, "randomize_rmv")
+    assert redrawn != drawn, f"the coordination znode still carries offset {drawn} after a refresh, so a replica running an older version would keep reusing it"
+
+    _drop_randomize_objects()
