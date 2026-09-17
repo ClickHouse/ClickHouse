@@ -316,8 +316,8 @@ The `max_joined_block_size_bytes` combined with this setting is helpful to avoid
 )", 0) \
     DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
-This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
-When disabled, non-joined rows are processed by a single thread.
+This can speed up the non-joined phase of hash joins with large right tables.
+This setting only controls unmatched-row emission. Setting it to 0 runs that phase on one thread; it does not restore the serial right-table order of the old `hash` algorithm. Use `ORDER BY` when the query needs a stable order.
 )", 0) \
     DECLARE(MaxThreads, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT` query.
@@ -3856,7 +3856,7 @@ See also:
 - [Join table engine](/reference/engines/table-engines/special/join)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash,ie_join", R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,hash,ie_join", R"(
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
@@ -3884,11 +3884,11 @@ Possible values:
 
  When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
+ Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`.
+
 - parallel_hash
 
- A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
-
- When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ Obsolete alias of `hash`. Still accepted for compatibility. Listing it does not control how parallel the join is. Set `parallel_hash_join_threshold = 0` to prefer the parallel layout when `max_threads > 1`.
 
 - partitioned_hash
 
@@ -3915,7 +3915,7 @@ Possible values:
 
 - auto
 
- When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
+ When set to `auto`, `hash` join is tried first. A memory-limit fallback exists only when `MergeJoin` or `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Then ClickHouse spills through `GraceHashJoin` if `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` are enabled, otherwise it drains onto `partial_merge`. Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no switch.
 
 - full_sorting_merge
 
@@ -6094,11 +6094,19 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
     DECLARE(Int64, iceberg_expire_default_max_ref_age_ms, std::numeric_limits<Int64>::max(), R"(
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 10_MiB, R"(
-Threshold for compaction data files in iceberg.
+    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
+Data files smaller than this are selected for compaction.
+
+The default is `0.75` of the documented default of the Iceberg table property `write.target-file-size-bytes`
+(512 MiB), which is how the `rewrite_data_files` procedure derives its `min-file-size-bytes` option,
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
-Threshold for compaction data files in iceberg.
+    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
+Data files larger than this are selected for compaction.
+
+The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
+(512 MiB), which is how the `rewrite_data_files` procedure derives its `max-file-size-bytes` option,
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", 0) \
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Threshold for compaction data files in iceberg.
@@ -8675,9 +8683,10 @@ When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=val
 Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
 )", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
-The former is used when we know that the right table size is below the threshold.
-`partitioned_hash` also uses this threshold. When the right table is estimated to have fewer rows, one thread builds the hash table. When it has at least this many rows, the build uses at least one partition per thread.
+When a hash join is used, this threshold decides whether the join may run in parallel.
+If an estimate of the right table size is available and it is below the threshold, the join uses a simpler single-threaded layout.
+At or above the threshold, and also when there is no row-count estimate, the join can use multiple threads (when `max_threads` > 1).
+`partitioned_hash` uses the same threshold: when the right table is estimated to have fewer rows, one thread builds the hash table; at or above it, the build uses at least one partition per thread.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
@@ -8700,14 +8709,26 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
     DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
-    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
+    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 512_MiB, R"(
 Max bytes of iceberg parquet data file on insert operation.
+
+The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
+see https://iceberg.apache.org/docs/1.5.2/configuration/. Note that ClickHouse compares the limit against the
+uncompressed size of the data written into the file so far, while the Iceberg property targets the size of the
+resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file independently of its size.
 )", 0) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum so that compaction merges eligible files into as few output files as possible. Keeping this above the size compaction can actually produce would make every output file stay below `iceberg_data_file_size_lower_threshold_compaction` and be re-selected forever.
+Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
+`iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
+Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
 )", 0) \
-    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Max bytes of an iceberg parquet data file produced by compaction. Defaults to the maximum so that compaction merges eligible files into as few output files as possible.
+    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
+Max bytes of an iceberg parquet data file produced by compaction.
+
+The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
+see https://iceberg.apache.org/docs/1.5.2/configuration/. Keep it above
+`iceberg_data_file_size_lower_threshold_compaction`, otherwise every output file stays below the lower threshold
+and is selected for compaction again.
 )", 0) \
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
@@ -8872,10 +8893,10 @@ Max backoff in milliseconds for parts update when using `select_sequential_consi
 Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, a hash join spills through `GraceHashJoin` when the right-side data exceeds this many bytes. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness) and a temporary data path is configured. Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
-The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
+The ratio of available memory that is allowed for `JOIN`. Once reached, a hash join spills through `GraceHashJoin` for the right-side data. That happens only when `GraceHashJoin` can run the join (one equality disjunct, supported kind and strictness). Multi-disjunct `ON` conditions (`OR`) stay on `hash` and can hit the memory limit with no spill.
 
 For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
 
@@ -8894,6 +8915,13 @@ Use hash tables that store the join keys alone, without a reference to a right r
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_json_lazy_type_hints, false, R"(
+Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
+
+With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` that only adds or changes
+type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
+materialized during inserts and background merges instead of rewriting the historical data.
+)", BETA, allow_experimental_json_lazy_type_hints) \
     DECLARE(Bool, enable_hash_join_row_store, true, R"(
 Enable transforming the payload of a hash join into a row-major layout.
 )", 0) \
@@ -9025,9 +9053,6 @@ The maximum number of rows in the right table to determine whether to rerange th
     DECLARE_WITH_ALIAS(Bool, allow_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
 )", EXPERIMENTAL, allow_experimental_join_right_table_sorting) \
-    DECLARE_WITH_ALIAS(Bool, enable_json_lazy_type_hints, false, R"(
-Enable lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
-)", EXPERIMENTAL, allow_experimental_json_lazy_type_hints) \
     DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
 If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
 Set to false to force the old full-mutation behavior.
@@ -9195,10 +9220,13 @@ Allow to clean up old data files during Iceberg compaction.
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 30, R"(
+    DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
 Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
 If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
 Requires allow_experimental_iceberg_compaction to be enabled.
+
+The default mirrors the documented default of the Iceberg table property `commit.manifest.min-count-to-merge` (100),
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_iceberg_remove_orphan_files, false, R"(
 Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
@@ -9221,7 +9249,6 @@ Make distributed query plan.
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
-- `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
 )", PRIVATE_PREVIEW) \

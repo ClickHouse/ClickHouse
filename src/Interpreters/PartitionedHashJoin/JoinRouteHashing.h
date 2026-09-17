@@ -9,17 +9,17 @@ namespace DB
 
 struct DenseHyperLogLog;
 
-/** The build fill's per-row routing, from the same hash the shared table buckets by.
+/** The build fill's per-row routing, from the same hash `HashJoinTable` buckets by.
   *
   * For every row, the map hash of the build's `HashJoin::Type` is computed through that type's key
-  * getter, so the fill and the table agree byte for byte on what the key is. `sharedJoinPlacement`
+  * getter, so the fill and the table agree byte for byte on what the key is. `hashJoinTablePlacement`
   * turns the hash into the table's placement word, and the word's top 16 bits are saved as the row's
   * route. A plan of `bits` partitions sends the row to partition `route >> (16 - bits)`. The table
   * places the key at the top `size_degree` bits of the same word, so for any `size_degree >= bits`
   * that partition's cell range contains the key's home cell. The probe never routes: it hashes and
   * walks the one table.
   *
-  * The sketch is fed the top 32 bits of the multiplicatively mixed hash (`sharedJoinMix`) for every
+  * The sketch is fed the top 32 bits of the multiplicatively mixed hash (`hashJoinTableMix`) for every
   * insertable row. `skip` (1 = skip) is the merged null map and ON mask. Skipped rows still get a
   * route, because the scatter's bucket derivation reads every row; the skip byte, not the route,
   * sends them to the drop bucket.

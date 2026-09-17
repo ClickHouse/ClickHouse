@@ -8,7 +8,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
 #include <Interpreters/PartitionedHashJoin/DuplicateSpans.h>
-#include <Interpreters/PartitionedHashJoin/SharedJoinTable.h>
+#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
 #include <Common/Arena.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
@@ -43,7 +43,7 @@ class TableJoin;
   * The phases:
   *
   * - Fill accumulates right-side blocks per lane untouched. Per row it computes the map hash, saves
-  *   the top 16 bits of its placement word (`sharedJoinPlacement`) as the row's route, and feeds a
+  *   the top 16 bits of its placement word (`hashJoinTablePlacement`) as the row's route, and feeds a
   *   per-lane sketch (a HyperLogLog) with a mix of the hash. Nothing is inserted.
   * - The build barrier merges the sketches, sizes the table at the standard 50% max fill, and picks
   *   the partition count: the smallest power of two whose range fits private L2, at least one range per
@@ -420,7 +420,7 @@ private:
     static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     void measureGenericKeyBytes();
-    void createSharedTable();
+    void createHashJoinTable();
     /// The partition floor's memory guard: the scatter transient it introduces has to fit the spill
     /// budget next to what is resident already (the post-build gate's ungrouped peak).
     bool partitionFloorFitsMemory(size_t floor_bits, size_t floor_degree) const;
@@ -452,7 +452,7 @@ private:
     size_t residentBytes() const;
     void grow(UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
     template <typename Table>
-    void growSharedTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
+    void growHashJoinTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
     void maybeGrowForLoadFactor(UInt64 projected, size_t extra_reserved = 0);
     /// Finishes one pass's scratch into spans. Returns the scratch's logical occupancy just before
     /// the finish (0 when the scratch was empty), so callers can fold a per-worker high water.
@@ -496,7 +496,7 @@ private:
     JoinResultPtr probeImpl(Block block, size_t lane);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType>
-    void sharedJoinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
+    void joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 
     /// Per-probe-stream scratch, pooled on the join and reused across blocks: the find pass's results.
     /// `found_word` is the matched cell's mapped value by value (see `amac_mapped_fits_word`; 0 is a
@@ -601,7 +601,7 @@ private:
 
     /// The one table. `build_arenas` hold the string keys and the duplicate spans the cells point at,
     /// so they must outlive it: one arena per build worker plus one for the drain.
-    std::unique_ptr<SharedJoinMaps> shared_maps;
+    std::unique_ptr<HashJoinTableMaps> table_maps;
     std::deque<Arena> build_arenas;
     size_t ht_total_bytes = 0; /// the table's buffer bytes (drives the prefetch heuristics)
 

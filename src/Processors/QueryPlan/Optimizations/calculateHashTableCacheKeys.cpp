@@ -188,11 +188,10 @@ void calculateHashTableCacheKeys(
 
         if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
         {
-            /// `HashTablesStatistics` is only consumed for the joins that also publish it - see
-            /// `allowHashTableSizeStatistics` - so the calculation makes no sense for the others.
+            /// `HashTablesStatistics` only feeds the hash join family, so the key is not worth computing elsewhere.
             const auto & join_expression = join_step->getJoinOperator().expression;
             bool single_disjunct = join_expression.size() > 1 || (join_expression.size() == 1 && !join_expression.front().isFunction(JoinConditionOperator::Or));
-            const bool calculate = allowHashTableSizeStatistics(
+            const bool calculate = allowHashJoinCacheKeys(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,
                 typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),

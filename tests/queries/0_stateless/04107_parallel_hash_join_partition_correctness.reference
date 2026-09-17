@@ -13,7 +13,7 @@
 --- ASOF LEFT nullable timestamp ---
 0
 0
---- parallel_hash exact rows: INNER ---
+--- exact rows: INNER ---
 1	l1	1	r1
 2	l2	2	r2
 3	l3	3	r3
@@ -30,7 +30,7 @@
 17	l17	17	r17
 18	l18	18	r18
 19	l19	19	r19
---- parallel_hash exact rows: RIGHT (right-only rows have NULL/empty left) ---
+--- exact rows: RIGHT (right-only rows have NULL/empty left) ---
 1	l1	1	r1
 2	l2	2	r2
 3	l3	3	r3
@@ -56,7 +56,7 @@
 \N	\N	\N	r15
 \N	\N	\N	r20
 \N	\N	\N	r5
---- parallel_hash exact rows: ASOF (rows where r.ts was NULL must NOT appear) ---
+--- exact rows: ASOF (rows where r.ts was NULL must NOT appear) ---
 0	2025-01-01 00:00:00	\N	
 0	2025-01-01 00:04:00	2025-01-01 00:04:00	ar8
 0	2025-01-01 00:08:00	2025-01-01 00:08:00	ar16

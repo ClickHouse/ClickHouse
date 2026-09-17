@@ -2,7 +2,7 @@
 
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/SharedJoinTable.h>
+#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
 #include <Common/Arena.h>
 
 #include <algorithm>
@@ -30,9 +30,9 @@ void computeRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key_size
     {
         auto && key_holder = key_getter.getKeyHolder(row, pool);
         const size_t hash_value = hash(keyHolderGetKey(key_holder));
-        routes[row] = static_cast<UInt16>(sharedJoinPlacement(hash_value) >> 48);
+        routes[row] = static_cast<UInt16>(hashJoinTablePlacement(hash_value) >> 48);
         if (!skip || !skip[row])
-            hll.add(static_cast<UInt32>(sharedJoinMix(hash_value) >> 32));
+            hll.add(static_cast<UInt32>(hashJoinTableMix(hash_value) >> 32));
     }
 }
 
@@ -56,8 +56,9 @@ void computeFixedRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key
 template <HashJoin::Type type, typename Table>
 void computeRoutesForTable(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)
 {
-    using KeyGetter = typename KeyGetterForType<type, Table>::Type;
-    if constexpr (is_shared_join_table<Table>)
+    /// The routing only reads keys, so the getter needs no `JoinUsedFlags` offset.
+    using KeyGetter = typename KeyGetterForType<type, Table, /*use_offset=*/false>::Type;
+    if constexpr (is_hash_join_table<Table>)
         computeRoutesImpl<KeyGetter, typename Table::hash_type>(key_columns, key_sizes, rows, skip, routes, hll);
     else
         computeFixedRoutesImpl<KeyGetter>(key_columns, key_sizes, rows, skip, routes, hll);
@@ -82,7 +83,7 @@ void computeJoinRoutesForFill(
     {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
-        computeRoutesForTable<HashJoin::Type::TYPE, typename decltype(SharedMapsAll::TYPE)::element_type>( \
+        computeRoutesForTable<HashJoin::Type::TYPE, typename decltype(HashJoinTableMapsAll::TYPE)::element_type>( \
             key_columns, key_sizes, rows, skip, routes, hll); \
         return;
         APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)

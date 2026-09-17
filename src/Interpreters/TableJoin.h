@@ -173,7 +173,7 @@ private:
     const bool join_runtime_filter_from_fixed_hash_table = false;
     const size_t partitioned_hash_join_max_fanout_per_pass = 8192;
     const bool partitioned_hash_join_cap_partitions_by_l1_descriptors = true;
-    const size_t parallel_hash_join_threshold = 100'000;
+    const UInt64 parallel_hash_join_threshold = 100'000;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -311,12 +311,22 @@ public:
 
     static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val);
 
+    static bool isHashFamilyEnabled(const std::vector<JoinAlgorithm> & join_algorithms)
+    {
+        return isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH);
+    }
+
+    bool isHashFamilyEnabled() const
+    {
+        return isHashFamilyEnabled(join_algorithms);
+    }
+
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
         return isEnabledAlgorithm(join_algorithms, val);
     }
 
-    bool allowParallelHashJoin() const;
     void swapSides();
 
     bool joinUseNulls() const { return join_use_nulls; }
@@ -342,6 +352,7 @@ public:
     size_t defaultMaxBytes() const { return default_max_bytes; }
     bool joinedBlockAllowSplitSingleRow() const { return joined_block_split_single_row; }
     bool allowParallelNonJoinedRowsProcessing() const { return parallel_non_joined_rows_processing; }
+    UInt64 parallelHashJoinThreshold() const { return parallel_hash_join_threshold; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -358,7 +369,6 @@ public:
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     size_t partitionedHashJoinMaxFanoutPerPass() const { return partitioned_hash_join_max_fanout_per_pass; }
     bool partitionedHashJoinCapPartitionsByL1Descriptors() const { return partitioned_hash_join_cap_partitions_by_l1_descriptors; }
-    size_t parallelHashJoinThreshold() const { return parallel_hash_join_threshold; }
     void setRowStoreEnabled(bool value) { enable_row_store = value; }
     bool isRowStoreEnabled() const { return enable_row_store; }
 
@@ -507,18 +517,14 @@ public:
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
-bool allowParallelHashJoin(
+/// Both `hash` and `parallel_hash` name the same join, so either one enables the cache keys.
+bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
     bool is_special_storage,
     bool one_disjunct);
 
-/// Whether the join will be served by an implementation that publishes and consumes `HashJoinEntry`
-/// hash-table statistics. Both `parallel_hash` and `partitioned_hash` do, so both must get a cache
-/// key computed for them; see `calculateHashTableCacheKeys`.
-bool allowHashTableSizeStatistics(
-    const std::vector<JoinAlgorithm> & join_algorithms,
-    JoinKind kind,
-    bool is_special_storage,
-    bool one_disjunct);
+/// Unlike `allowHashJoinCacheKeys` this ignores the algorithm list and special storages: whether
+/// the layout is usable is a correctness question, not a user choice.
+bool preferParallelHashLayout(JoinKind kind, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold);
 }

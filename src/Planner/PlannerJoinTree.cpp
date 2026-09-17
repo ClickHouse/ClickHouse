@@ -95,7 +95,6 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>

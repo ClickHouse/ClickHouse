@@ -233,7 +233,6 @@ MutableColumnPtr makeLowCardinalityStrings(size_t n, size_t dict_size)
 
 }
 
-/// Every fixed-width fast-path type, with batched sources, counts and dispatch.
 TEST(ColumnsScatter, FixedWidthVectorTypes)
 {
     checkFixedTypeEquivalence(*ColumnUInt8::create());
@@ -311,7 +310,6 @@ TEST(ColumnsScatter, SwwcManyLinesPerShard)
     checkEquivalence(sources, pids, 256);
 }
 
-/// Transparent wrappers over fixed-width nested columns.
 TEST(ColumnsScatter, ConstMixedWithFull)
 {
     auto full = fillFixedRandom(ColumnUInt64::create(), 300);
@@ -389,7 +387,7 @@ TEST(ColumnsScatter, ConstBitExactNotOrderingEqual)
         const auto & data = assert_cast<const ColumnFloat64 &>(*shard).getData();
         for (Float64 value : data)
         {
-            UInt64 bits;
+            UInt64 bits = 0;
             memcpy(&bits, &value, sizeof(bits));
             negative_bits += (bits == 0x8000000000000000ULL);
         }
@@ -762,9 +760,9 @@ TEST(ColumnsScatter, MisalignedCursorSeedingSwwc)
     for (size_t i = 0; i < n; ++i)
     {
         const size_t p = pids[i];
-        UInt64 expected;
+        UInt64 expected = 0;
         memcpy(&expected, data + i * width, width);
-        UInt64 actual;
+        UInt64 actual = 0;
         memcpy(&actual, destination.data() + (prefix[p] + cursor_rows[p]) * width, width);
         ASSERT_EQ(expected, actual) << "row " << i;
         ++cursor_rows[p];
@@ -796,7 +794,6 @@ TEST(ColumnsScatter, DispatchTableComplete)
         ASSERT_EQ(ScatterKernelId::Map, ColumnsScatter::plannedKernel(*map_column));
     }
     ASSERT_EQ(ScatterKernelId::LowCardinality, ColumnsScatter::plannedKernel(*makeLowCardinalityStrings(1, 1)));
-    /// Types without a dedicated kernel take the fallback.
     for (const char * type_name : {"Variant(UInt64, String)", "Dynamic", "AggregateFunction(count)", "JSON"})
     {
         auto column = DataTypeFactory::instance().get(type_name)->createColumn();
@@ -932,7 +929,7 @@ TEST(ColumnsScatter, DynamicFallbackEquivalence)
     {
         column_a->insert(i % 3 == 0 ? Field("text_" + std::to_string(i)) : Field(static_cast<UInt64>(i)));
         if (i < 120)
-            column_b->insert(i % 2 == 0 ? Field(static_cast<Int64>(-static_cast<Int64>(i))) : Field("b_" + std::to_string(i)));
+            column_b->insert(i % 2 == 0 ? Field(-static_cast<Int64>(i)) : Field("b_" + std::to_string(i)));
     }
     std::vector<const IColumn *> sources{column_a.get(), column_b.get()};
     std::vector<std::vector<UInt16>> pids{makePids(200, 4), makePids(120, 4)};
@@ -1151,14 +1148,14 @@ TEST(ColumnsScatter, ChunkKernelsComposeLikeTheJoin)
     for (size_t i = 0; i < n; ++i)
     {
         const size_t p = pids[i];
-        UInt64 expected_key;
+        UInt64 expected_key = 0;
         memcpy(&expected_key, keys_raw + i * 8, 8);
-        UInt64 actual_key;
+        UInt64 actual_key = 0;
         memcpy(&actual_key, key_shards[p]->getRawData().data() + cursor[p] * 8, 8);
         ASSERT_EQ(expected_key, actual_key) << "row " << i;
-        UInt32 expected_payload;
+        UInt32 expected_payload = 0;
         memcpy(&expected_payload, payload_raw + i * 4, 4);
-        UInt32 actual_payload;
+        UInt32 actual_payload = 0;
         memcpy(&actual_payload, payload_shards[p]->getRawData().data() + cursor[p] * 4, 4);
         ASSERT_EQ(expected_payload, actual_payload) << "row " << i;
         ++cursor[p];

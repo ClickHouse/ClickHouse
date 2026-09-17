@@ -174,7 +174,7 @@ ClickHouse は複数の [JOIN アルゴリズム](https://clickhouse.com/blog/cl
 
 * **(2)** テーブルの[物理的な行順序](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns)が JOIN キーのソート順と一致している場合は、状況によります。この場合、**full sorting merge join** はソートフェーズを[省略](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order)できるため、メモリ使用量を大幅に削減でき、さらにデータサイズや JOIN キー値の分布によっては、一部のハッシュ結合アルゴリズムよりも高速に実行できることがあります。
 
-* **(3)** 右側テーブルが、**parallel hash join** の[追加のメモリ使用量オーバーヘッド](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary)を考慮してもメモリに収まる場合は、このアルゴリズム、または hash join のほうが高速なことがあります。これは、データサイズ、データ型、および JOIN キーのキーカラムの値分布に依存します。
+* **(3)** 右側テーブルがメモリに収まる場合は、hash join を使用します（`hash` と `parallel_hash` はエイリアスであり、どちらを選んでも並列度は変わりません）。これは通常、データサイズ、データ型、および JOIN キーカラムの値分布に応じて、メモリ内で最も高速な選択肢です。
 
 * **(4)** 右側テーブルがメモリに収まらない場合も、やはり状況によります。ClickHouse には、メモリ容量に縛られない JOIN アルゴリズムが 3 つあります。これら 3 つはいずれも中間データを一時的にディスクに spill します。**Full sorting merge join** と **partial merge join** では、事前にデータをソートする必要があります。一方、**Grace Hash Join** はデータからハッシュテーブルを構築します。データ量、データ型、および JOIN キーのキーカラムの値分布によっては、データをソートするよりもハッシュテーブルを構築するほうが速い場合があります。逆も同様です。
 

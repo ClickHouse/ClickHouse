@@ -20,7 +20,7 @@
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
 #include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
-#include <Interpreters/PartitionedHashJoin/SharedJoinTable.h>
+#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -46,7 +46,7 @@ UInt64 keyOf(size_t i)
 }
 
 /// The table type the `UInt64` keys use, for its geometry helpers and its degree arithmetic.
-using Key64Table = typename decltype(SharedMapsAll::key64)::element_type;
+using Key64Table = typename decltype(HashJoinTableMapsAll::key64)::element_type;
 
 /// One joined output row: `(k, probe_id, rk, build_id)`. The sorted multiset of these over a whole
 /// probe is an exact identity, so a dropped, duplicated or cross-wired row changes it. A build row
@@ -807,7 +807,7 @@ TEST(PartitionedHashJoin, RoutesMatchTablePlacement)
             const std::string value = i % 7 == 0 ? "" : fmt::format("key-{}-{}", i, std::string(i % 19, 'x'));
             string_key->insertData(value.data(), value.size());
         }
-        using StringTable = typename decltype(SharedMapsAll::key_string)::element_type;
+        using StringTable = typename decltype(HashJoinTableMapsAll::key_string)::element_type;
         const ColumnRawPtrs key_columns{string_key.get()};
         const Sizes key_sizes{0};
         PaddedPODArray<UInt16> routes(rows);

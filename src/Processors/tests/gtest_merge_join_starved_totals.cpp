@@ -63,7 +63,7 @@ std::vector<std::pair<UInt64, UInt64>> runFullJoinWithStarvedTotals(
     auto right_source = keySource("rk", right_keys);
     auto totals_source = std::make_shared<NullSource>(right_header);
     auto filling = std::make_shared<FillingRightJoinSideTransform>(
-        right_header, join, std::make_shared<FinishCounter>(1));
+        right_header, join, std::make_shared<FinishCounter>(1), /*build_worker_id_=*/0);
     auto * totals_port = filling->addTotalsPort();
     connect(right_source->getPort(), filling->getInputs().front());
     connect(totals_source->getPort(), *totals_port);

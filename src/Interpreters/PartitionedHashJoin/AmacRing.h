@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <Interpreters/PartitionedHashJoin/SharedJoinTable.h>
+#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
 #include <base/defines.h>
 #include <Common/ColumnsHashing.h>
 
@@ -16,7 +16,7 @@ namespace DB
   * the data-dependent misses of several rows overlap instead of serializing.
   *
   * Two pieces: a policy owns the per-row state as parallel arrays and the seed/step bodies over the
-  * shared table's cells; `amacRun` drives them. The ring has no cancellation point. The table grows
+  * `HashJoinTable` cells; `amacRun` drives them. The ring has no cancellation point. The table grows
   * only on wrapping inserts (the single-partition build and the overflow drain) or between waves, and
   * neither uses the ring, so no ring is ever in flight across a resize. A build ring's in-flight rows
   * all belong to the partition its worker holds, and besides claiming, appending or advancing, a visit
@@ -59,8 +59,8 @@ enum class AmacStepResult : UInt8
 /// (`key8`/`key16`) has no collision chain to pipeline.
 template <typename T>
 inline constexpr bool is_low_cardinality_join_key_getter = false;
-template <typename BaseMethod, typename Mapped>
-inline constexpr bool is_low_cardinality_join_key_getter<LowCardinalityKeyGetterForJoin<BaseMethod, Mapped>> = true;
+template <typename BaseMethod, typename Mapped, bool use_offset>
+inline constexpr bool is_low_cardinality_join_key_getter<LowCardinalityKeyGetterForJoin<BaseMethod, Mapped, use_offset>> = true;
 
 template <typename T>
 inline constexpr bool is_hashed_join_key_getter = false;
@@ -69,7 +69,7 @@ inline constexpr bool is_hashed_join_key_getter<ColumnsHashing::HashMethodHashed
 
 template <typename KeyGetter, typename Map>
 constexpr bool amac_join_supported
-    = is_shared_join_table<std::remove_const_t<Map>> && !is_low_cardinality_join_key_getter<KeyGetter> && !is_hashed_join_key_getter<KeyGetter>;
+    = is_hash_join_table<std::remove_const_t<Map>> && !is_low_cardinality_join_key_getter<KeyGetter> && !is_hashed_join_key_getter<KeyGetter>;
 
 /** The ring driver. A policy supplies `Ring<ring_size>` - the per-row state, value-initialized to
   * all-inactive, with `isActive` / `deactivate` - plus `start(ring, s, row)` (seed the slot and

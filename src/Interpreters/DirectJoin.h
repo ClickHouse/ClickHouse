@@ -38,7 +38,7 @@ public:
     /// Each left row's key is looked up once and the row is emitted in input order.
     bool preservesLeftBlockOrder() const override { return true; }
 
-    bool addBlockToJoin(const Block &, bool) override;
+    bool addBlockToJoin(const Block &, size_t, size_t, bool) override;
     void checkTypesOfKeys(const Block &) const override;
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).

@@ -89,7 +89,7 @@ public:
                                     type);
                         }
                     },
-                    parent.shared_maps->maps);
+                    parent.table_maps->maps);
 
                 fillNullsFromBlocks<with_row_store_, with_columns_>(columns_right, rows_added);
             });
@@ -211,7 +211,7 @@ private:
         Collected collected;
         collected.reserve<with_row_store_, with_columns_>(max_block_size);
 
-        if constexpr (is_shared_join_table<Table>)
+        if constexpr (is_hash_join_table<Table>)
         {
             const size_t cells = table.cellCount();
             const size_t end = (stream_idx + 1) * cells / num_streams;

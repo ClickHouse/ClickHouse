@@ -115,7 +115,7 @@ PartitionedHashJoin::PartitionedHashJoin(
     , match_stats_collecting_params(stats_collecting_params_.match)
     , log(getLogger("PartitionedHashJoin"))
 {
-    if (!SharedJoinMaps::isSupportedType(hash_join->data->type))
+    if (!HashJoinTableMaps::isSupportedType(hash_join->data->type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "PartitionedHashJoin was created for an unsupported map type {}; the plan-time gate must reject this shape",
@@ -299,7 +299,7 @@ bool PartitionedHashJoin::addBlockToJoinImpl(const Block & source_block, bool ch
         storeBlockInRowStore(fill);
         /// The table is sized from the planner's estimate before the first block; a low estimate
         /// only costs doublings during the inserts.
-        if (!shared_maps)
+        if (!table_maps)
             beginSinglePartitionInsert(reserveFor(*build_rows_hint, static_cast<double>(*build_rows_hint)));
         insertSingleLaneBlock(fill);
 
@@ -439,11 +439,11 @@ void PartitionedHashJoin::decidePartitionPlan()
     /// original row order, and that sorting dominates the build, so partitioning the equi-key table
     /// would pay a scattered insert order for nothing. The fixed-size maps have no ranges to split.
     bits = 0;
-    if (!SharedJoinMaps::isFixedSizeType(type) && hash_join->getStrictness() != JoinStrictness::Asof)
+    if (!HashJoinTableMaps::isFixedSizeType(type) && hash_join->getStrictness() != JoinStrictness::Asof)
     {
         /// The fewest bits whose range - `2^(size_degree - bits)` cells - fits the private L2 budget, so
         /// an owner's inserts stay cache-resident while it streams its chunk.
-        const size_t cell_bytes = SharedJoinMaps::cellBytes(maps_variant_index, type);
+        const size_t cell_bytes = HashJoinTableMaps::cellBytes(maps_variant_index, type);
         const size_t l2_bytes = std::max<size_t>(getL2CacheSize(), 1 << 20);
         const auto budget_bytes = static_cast<size_t>(0.8 * static_cast<double>(l2_bytes));
         size_t range_bits = 0;
@@ -527,7 +527,7 @@ void PartitionedHashJoin::onBuildPhaseFinish()
         /// Everything was inserted as it arrived. A build that never saw a block still needs its table,
         /// because the used flags and the probe are sized from it. The exact distinct count stands in
         /// for the sketch estimate the memory gate reads.
-        if (!shared_maps)
+        if (!table_maps)
             beginSinglePartitionInsert(reserveFor(1, 1.0));
         hll_estimate = static_cast<double>(claimedTotal());
         ProfileEvents::increment(ProfileEvents::PartitionedHashJoinPartitions, partitions);
@@ -609,10 +609,10 @@ size_t PartitionedHashJoin::getTotalRowCount() const
     if (delegate_mode)
         return hash_join->getTotalRowCount();
 
-    if (!build_phase_finished || !shared_maps)
+    if (!build_phase_finished || !table_maps)
         return accumulated_rows.load(std::memory_order_relaxed);
 
-    return shared_maps->getTotalRowCount(hash_join->data->type);
+    return table_maps->getTotalRowCount(hash_join->data->type);
 }
 
 size_t PartitionedHashJoin::getTotalByteCount() const
@@ -621,8 +621,8 @@ size_t PartitionedHashJoin::getTotalByteCount() const
         return hash_join->getTotalByteCount();
 
     size_t res = accumulated_bytes.load(std::memory_order_relaxed) + storedData().nullmaps_allocated_size;
-    if (shared_maps)
-        res += shared_maps->getBufferSizeInBytes(hash_join->data->type);
+    if (table_maps)
+        res += table_maps->getBufferSizeInBytes(hash_join->data->type);
     for (const auto & arena : build_arenas)
         res += arena.allocatedBytes();
     return res;
@@ -668,8 +668,8 @@ size_t PartitionedHashJoin::predictedResidentBytes(bool at_barrier) const
         /// peak ahead is the resident set plus two more table buffers. At the barrier every row is in,
         /// and only a table past its maximum fill still has that doubling ahead of it.
         const HashJoin::Type type = hash_join->data->type;
-        const size_t table_bytes = shared_maps ? shared_maps->getBufferSizeInBytes(type) : 0;
-        if (at_barrier && (!shared_maps || claimedTotal() <= shared_maps->maxFill(type)))
+        const size_t table_bytes = table_maps ? table_maps->getBufferSizeInBytes(type) : 0;
+        if (at_barrier && (!table_maps || claimedTotal() <= table_maps->maxFill(type)))
             return getTotalByteCount();
         return getTotalByteCount() + 2 * table_bytes;
     }
@@ -842,7 +842,7 @@ void PartitionedHashJoin::beginStoredBlockDrain()
     build_blocks.shrink_to_fit();
     post_build_ctx.reset();
     post_build_pool.reset();
-    shared_maps.reset();
+    table_maps.reset();
     build_arenas.clear();
 }
 

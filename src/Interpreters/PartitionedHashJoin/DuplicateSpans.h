@@ -2,12 +2,18 @@
 
 #include <Interpreters/RowRefs.h>
 #include <Common/Arena.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 
 #include <limits>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /** Per-pass scratch for the duplicate rows of a `PartitionedHashJoin` build. A pass is the stretch of
   * inserts between two `SpanWriter::finish` calls: one owner's partition, one drain run, or one block
@@ -130,12 +136,7 @@ public:
         st.spanning_keys += scratch.spanning_keys;
 
         for (const auto bucket : scratch.keys)
-            openKey(mapped_at(bucket), arena, st);
-        if (!scratch.zero_items.empty())
-        {
-            chassert(zero_mapped);
-            openKey(*zero_mapped, arena, st);
-        }
+            openKey(mapped_at(bucket));
 
         const size_t n = scratch.item.size();
         for (size_t i = 0; i < n; ++i)
@@ -144,13 +145,20 @@ public:
                 __builtin_prefetch(&mapped_at(scratch.bucket[i + 16]), 1, 3);
             placeItem(mapped_at(scratch.bucket[i]), scratch.item[i]);
         }
-        for (const auto it : scratch.zero_items)
-            placeItem(*zero_mapped, it);
 
         for (const auto bucket : scratch.keys)
             closeKey(mapped_at(bucket));
+
+        /// The zero key has no bucket, so its items go through the cell the caller names.
         if (!scratch.zero_items.empty())
+        {
+            if (!zero_mapped)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows of the zero key were appended, but no cell was given for them");
+            openKey(*zero_mapped);
+            for (const auto it : scratch.zero_items)
+                placeItem(*zero_mapped, it);
             closeKey(*zero_mapped);
+        }
 
         scratch.clear();
     }
@@ -159,7 +167,7 @@ private:
     Arena & arena;
     Stats st;
 
-    static void openKey(RowRefList & mapped, Arena & arena, Stats & st)
+    void openKey(RowRefList & mapped)
     {
         chassert(mapped.isCount());
         const UInt64 n_items = mapped.countItems();

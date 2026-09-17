@@ -3053,11 +3053,53 @@ Nombre de connexions HTTP du serveur réutilisées
 
 Le nombre de défauts de page majeurs dans les threads d&#39;exécution des requêtes. Des valeurs élevées indiquent soit que vous avez oublié de désactiver le swap sur votre serveur, soit l&#39;éviction de pages mémoire du binaire ClickHouse en cas de très forte pression mémoire, soit l&#39;utilisation réussie de la méthode de lecture « mmap » pour les données des tables.
 
+<div id="hashjoinbuildinsertmicroseconds">
+  ### HashJoinBuildInsertMicroseconds
+</div>
+
+HashJoin build-side sub-phase: time spent inserting scattered rows into the shared hash map, including slot-lock waits. A subset of HashJoinBuildMicroseconds.
+
+<div id="hashjoinbuildlockwaitmicroseconds">
+  ### HashJoinBuildLockWaitMicroseconds
+</div>
+
+HashJoin build-side: time spent yielding in insertIntoSlots while waiting for a slot mutex. A subset of HashJoinBuildInsertMicroseconds.
+
+<div id="hashjoinbuildmicroseconds">
+  ### HashJoinBuildMicroseconds
+</div>
+
+Time spent in the HashJoin build phase (adding right-side blocks plus onBuildPhaseFinish), summed over all build threads.
+
+<div id="hashjoinbuildscattermicroseconds">
+  ### HashJoinBuildScatterMicroseconds
+</div>
+
+HashJoin build-side sub-phase: time spent in scatterBlockBySlot routing right-side rows into per-slot selectors. A subset of HashJoinBuildMicroseconds. Zero when the join uses a single slot.
+
 <div id="hashjoinpreallocatedelementsinhashtables">
   ### HashJoinPreallocatedElementsInHashTables
 </div>
 
 Nombre d’éléments préalloués dans les tables de hachage utilisées pour le hash join.
+
+<div id="hashjoinprobegathermicroseconds">
+  ### HashJoinProbeGatherMicroseconds
+</div>
+
+HashJoin probe-side sub-phase: gathering right-side column values in lazy_output.buildOutput. Does not include left-column replication. A subset of HashJoinProbeMicroseconds.
+
+<div id="hashjoinprobelookupmicroseconds">
+  ### HashJoinProbeLookupMicroseconds
+</div>
+
+HashJoin probe-side sub-phase: hash-map lookup (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.
+
+<div id="hashjoinprobemicroseconds">
+  ### HashJoinProbeMicroseconds
+</div>
+
+Time spent joining probe-side blocks in HashJoin (lookup plus draining HashJoinResult), summed over all probe threads.
 
 <div id="hedgedrequestschangereplica">
   ### HedgedRequestsChangeReplica

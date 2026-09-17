@@ -79,7 +79,7 @@ struct SharedAmacFindPolicy
     static constexpr bool copy_into_frame = true; /// results live in the arrays; no state survives the run
     static constexpr bool mapped_by_value = amac_mapped_fits_word<typename TableNonConst::mapped_type>;
 
-    static_assert(is_shared_join_table<TableNonConst>);
+    static_assert(is_hash_join_table<TableNonConst>);
     static constexpr HashTableNoState no_state{};
 
     /// The key exactly as the table compares it: fixed keys by value, string keys as a view into the
@@ -253,7 +253,7 @@ struct SharedAmacFindPolicy
   * table (or the fixed map) holding identical cells.
   */
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType>
-void PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
+void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
     /// The joins that keep used flags per row take the delegated standard path instead.
@@ -318,7 +318,7 @@ void PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColumns
     constexpr bool amac_supported = amac_join_supported<KeyGetter, MapNonConst>;
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
     /// Fixed-width keys on the shared table take the flat loop rather than the getter's `findKey`.
-    constexpr bool flat_lookup_supported = can_prefetch && is_shared_join_table<MapNonConst>;
+    constexpr bool flat_lookup_supported = can_prefetch && is_hash_join_table<MapNonConst>;
     bool use_amac = false;
     if constexpr (amac_supported)
         use_amac = amac_enabled && added_columns.enable_prefetch && ht_total_bytes > getMinBytesForPrefetchInJoin() && rows >= amac_min_rows;
@@ -585,7 +585,7 @@ void PartitionedHashJoin::sharedJoinRightColumns(const Map & table, AddedColumns
             /// `table.place` with the shift held in a register.
             const size_t place_shift = 64 - table.sizeDegree();
             auto place = [place_shift](size_t hash_value) __attribute__((always_inline))
-            { return static_cast<size_t>(sharedJoinPlacement(hash_value) >> place_shift); };
+            { return static_cast<size_t>(hashJoinTablePlacement(hash_value) >> place_shift); };
             /// The gate guarantees the zero-check and key-compare read no table state.
             const HashTableNoState no_state{};
             /// A private copy keeps the key getter's column pointer in a register.
@@ -816,7 +816,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     join.materializeColumnsFromLeftBlock(block);
     ScatteredBlock scattered_block{std::move(block)};
 
-    if (!shared_maps && scattered_block.rows() > 0)
+    if (!table_maps && scattered_block.rows() > 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: probe started before the build phase finished");
 
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
@@ -857,21 +857,21 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     else
         added_columns.reserve(join_features.need_replication);
 
-    using SharedTables = typename SharedMapsFor<MapsShape>::Type;
+    using HashJoinTables = typename HashJoinTableMapsFor<MapsShape>::Type;
 
     if (scattered_block.rows() > 0)
     {
         /// Lookups and match bookkeeping only. No column value is gathered yet - that is deferred to
         /// the lazy `HashJoinResult::next`, whose events are shared with the other hash-join algorithms.
         ProfileEventTimeIncrement<Microseconds> lookup_watch(ProfileEvents::PartitionedHashJoinProbeLookupMicroseconds);
-        const auto & tables = std::get<SharedTables>(shared_maps->maps);
+        const auto & tables = std::get<HashJoinTables>(table_maps->maps);
         switch (join.data->type)
         {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
-        using Map = const typename decltype(SharedTables::TYPE)::element_type; \
+        using Map = const typename decltype(HashJoinTables::TYPE)::element_type; \
         using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Map>::Type; \
-        sharedJoinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*tables.TYPE, added_columns, scattered_block, lane); \
+        joinRightColumns<KIND, STRICTNESS, MapsShape, KeyGetter, Map>(*tables.TYPE, added_columns, scattered_block, lane); \
         break; \
     }
             APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)

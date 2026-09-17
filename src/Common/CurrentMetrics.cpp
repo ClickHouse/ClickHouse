@@ -162,9 +162,9 @@
     M(DestroyAggregatesThreads, "Number of threads in the thread pool for destroy aggregate states.") \
     M(DestroyAggregatesThreadsActive, "Number of threads in the thread pool for destroy aggregate states running a task.") \
     M(DestroyAggregatesThreadsScheduled, "Number of queued or active jobs in the thread pool for destroy aggregate states.") \
-    M(ConcurrentHashJoinPoolThreads, "Number of threads in the thread pool for concurrent hash join.") \
-    M(ConcurrentHashJoinPoolThreadsActive, "Number of threads in the thread pool for concurrent hash join running a task.") \
-    M(ConcurrentHashJoinPoolThreadsScheduled, "Number of queued or active jobs in the thread pool for concurrent hash join.") \
+    M(HashJoinDestroyThreads, "Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas.") \
+    M(HashJoinDestroyThreadsActive, "Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas running a task.") \
+    M(HashJoinDestroyThreadsScheduled, "Number of queued or active jobs in the thread pool for destroying a large HashJoin's stored blocks and arenas.") \
     M(PartitionedHashJoinPoolThreads, "Number of threads in the thread pool of `partitioned_hash` joins (hash-table inserts after the build, and the drain into `GraceHashJoin` on spill).") \
     M(PartitionedHashJoinPoolThreadsActive, "Number of threads in the thread pool of `partitioned_hash` joins (hash-table inserts after the build, and the drain into `GraceHashJoin` on spill) running a task.") \
     M(PartitionedHashJoinPoolThreadsScheduled, "Number of queued or active jobs in the thread pool of `partitioned_hash` joins (hash-table inserts after the build, and the drain into `GraceHashJoin` on spill).") \

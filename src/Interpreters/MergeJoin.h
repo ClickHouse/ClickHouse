@@ -40,7 +40,7 @@ public:
     /// preserve the left stream's original order. See issues #109216 and #110662.
     bool preservesLeftBlockOrder() const override { return false; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
     using IJoin::joinBlock;
@@ -54,7 +54,10 @@ public:
     size_t getTotalRowCount() const override { return right_blocks.row_count; }
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
     /// Has to be called only after `runPostBuildPhase`
-    bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
+    bool alwaysReturnsEmptySet() const override
+    {
+        return (is_right || is_inner || (is_left && is_semi_join)) && min_max_right_blocks.empty();
+    }
 
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 

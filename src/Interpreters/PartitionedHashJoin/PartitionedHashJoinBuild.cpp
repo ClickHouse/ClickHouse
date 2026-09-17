@@ -684,7 +684,7 @@ void emplaceSizedBuildArena(std::deque<Arena> & arenas, size_t predicted_bytes)
 /// Runs `f(table)` on the shared table of the active map type. The direct-index maps (`key8`, `key16`)
 /// have no shared table and are skipped.
 template <typename F>
-void forSharedTable(SharedJoinMaps & maps, HashJoin::Type type, F && f)
+void forHashJoinTable(HashJoinTableMaps & maps, HashJoin::Type type, F && f)
 {
     std::visit(
         [&](auto & shape_maps)
@@ -693,7 +693,7 @@ void forSharedTable(SharedJoinMaps & maps, HashJoin::Type type, F && f)
             {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
-        if constexpr (is_shared_join_table<typename decltype(shape_maps.TYPE)::element_type>) \
+        if constexpr (is_hash_join_table<typename decltype(shape_maps.TYPE)::element_type>) \
             f(*shape_maps.TYPE); \
         break;
                 APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
@@ -876,7 +876,7 @@ void PartitionedHashJoin::insertPartitionSection(
         using Table = typename decltype(shape_maps.TYPE)::element_type; \
         using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table>::Type; \
         Table & table = *shape_maps.TYPE; \
-        if constexpr (is_shared_join_table<Table>) \
+        if constexpr (is_hash_join_table<Table>) \
         { \
             InsertTarget<Table> target{ \
                 .table = table, \
@@ -941,7 +941,7 @@ void PartitionedHashJoin::insertPartitionSection(
                         hash_join->data->type);
             }
         },
-        shared_maps->maps);
+        table_maps->maps);
 }
 
 size_t PartitionedHashJoin::finishPassScratch(PassScratch & scratch, SpanWriter & writer)
@@ -961,7 +961,7 @@ size_t PartitionedHashJoin::finishPassScratch(PassScratch & scratch, SpanWriter 
         Table & table = *shape_maps.TYPE; \
         if constexpr (std::is_same_v<typename Table::mapped_type, RowRefList>) \
         { \
-            if constexpr (is_shared_join_table<Table>) \
+            if constexpr (is_hash_join_table<Table>) \
             { \
                 RowRefList * zero = scratch.zero_items.empty() ? nullptr : &table.zeroValue()->getMapped(); \
                 writer.finish(scratch, [&](UInt32 bucket) -> RowRefList & { return table.cells()[bucket].getMapped(); }, zero); \
@@ -986,7 +986,7 @@ size_t PartitionedHashJoin::finishPassScratch(PassScratch & scratch, SpanWriter 
                         hash_join->data->type);
             }
         },
-        shared_maps->maps);
+        table_maps->maps);
     return used;
 }
 
@@ -1054,7 +1054,7 @@ void placeMapped(Mapped & dest, Mapped && src)
 }
 
 template <typename Table>
-void PartitionedHashJoin::growSharedTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved)
+void PartitionedHashJoin::growHashJoinTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved)
 {
     using Cell = typename Table::cell_type;
     using Key = typename Table::key_type;
@@ -1212,18 +1212,18 @@ void PartitionedHashJoin::growSharedTable(Table & table, UInt64 occupied, UInt64
 
 void PartitionedHashJoin::grow(UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved)
 {
-    if (!shared_maps || !post_build_ctx)
+    if (!table_maps || !post_build_ctx)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: grow called without a table");
 
-    forSharedTable(
-        *shared_maps, hash_join->data->type, [&](auto & table) { growSharedTable(table, occupied, projected, reason, extra_reserved); });
+    forHashJoinTable(
+        *table_maps, hash_join->data->type, [&](auto & table) { growHashJoinTable(table, occupied, projected, reason, extra_reserved); });
 }
 
 void PartitionedHashJoin::maybeGrowForLoadFactor(UInt64 projected, size_t extra_reserved)
 {
     const UInt64 occupied = claimedBufferCells();
-    forSharedTable(
-        *shared_maps,
+    forHashJoinTable(
+        *table_maps,
         hash_join->data->type,
         [&](auto & table)
         {
@@ -1323,7 +1323,7 @@ void PartitionedHashJoin::reinitUsedFlags()
     /// `getBufferSizeInCells() + 1` the standard join sizes. `reinit` only grows, and does nothing for
     /// shapes without right-side flags. It has to run after the leaf join's barrier, which sized the
     /// flags to its own empty map.
-    const size_t flags = shared_maps->getBufferSizeInCells(hash_join->data->type) + 1;
+    const size_t flags = table_maps->getBufferSizeInCells(hash_join->data->type) + 1;
     joinDispatch(
         hash_join->getKind(),
         hash_join->getStrictness(),
@@ -1335,19 +1335,19 @@ void PartitionedHashJoin::reinitUsedFlags()
         });
 }
 
-void PartitionedHashJoin::createSharedTable()
+void PartitionedHashJoin::createHashJoinTable()
 {
     const HashJoin::Type type = hash_join->data->type;
     /// From the degree, not the reserve: the partition floor may have widened the table past what the
     /// reserve alone asks for, and the exactness check compares against what was actually created.
-    ht_total_bytes = SharedJoinMaps::bufferBytesForDegree(maps_variant_index, type, size_degree);
+    ht_total_bytes = HashJoinTableMaps::bufferBytesForDegree(maps_variant_index, type, size_degree);
 
-    shared_maps = std::make_unique<SharedJoinMaps>(maps_variant_index);
-    shared_maps->create(type, size_degree, bits);
+    table_maps = std::make_unique<HashJoinTableMaps>(maps_variant_index);
+    table_maps->create(type, size_degree, bits);
 
     stats.table_size_degree = size_degree;
-    stats.table_cells = shared_maps->getBufferSizeInCells(type);
-    stats.predictions_exact = shared_maps->getReservedBufferBytes(type) == ht_total_bytes;
+    stats.table_cells = table_maps->getBufferSizeInCells(type);
+    stats.predictions_exact = table_maps->getReservedBufferBytes(type) == ht_total_bytes;
     decideAmacEngagement();
 }
 
@@ -1360,7 +1360,7 @@ bool PartitionedHashJoin::partitionFloorFitsMemory(size_t floor_bits, size_t flo
 
     const HashJoin::Type type = hash_join->data->type;
     const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
-    const size_t tables = SharedJoinMaps::bufferBytesForDegree(maps_variant_index, type, floor_degree);
+    const size_t tables = HashJoinTableMaps::bufferBytesForDegree(maps_variant_index, type, floor_degree);
 
     /// The ungrouped scatter chunk as `chunkBytesForBlockRange` will size it: the scattered key width,
     /// one locator per row, the variable-length key bytes and the duplicate scratch.
@@ -1375,7 +1375,7 @@ bool PartitionedHashJoin::partitionFloorFitsMemory(size_t floor_bits, size_t flo
     /// off range by range.
     const size_t distinct = distinctEstimate();
     const size_t tables_and_spans = predictedTableAndArenaBytes(rows, distinct, /*grouped=*/false);
-    const size_t predicted_tables = SharedJoinMaps::predictedBufferBytes(maps_variant_index, type, reserveFor(rows, static_cast<double>(distinct)));
+    const size_t predicted_tables = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, type, reserveFor(rows, static_cast<double>(distinct)));
     const size_t spans = tables_and_spans > predicted_tables ? tables_and_spans - predicted_tables : 0;
     const size_t floor_bytes = storedData().allocated_size + storedData().nullmaps_allocated_size + routeBytes() + spans + generic_key_bytes_est;
     const size_t floor_partitions = 1uz << floor_bits;
@@ -1385,7 +1385,7 @@ bool PartitionedHashJoin::partitionFloorFitsMemory(size_t floor_bits, size_t flo
 
 size_t PartitionedHashJoin::sizeDegreeFor(size_t reserve) const
 {
-    const size_t degree = SharedJoinMaps::sizeDegree(maps_variant_index, hash_join->data->type, reserve);
+    const size_t degree = HashJoinTableMaps::sizeDegree(maps_variant_index, hash_join->data->type, reserve);
     if (degree > 32)
         throw Exception(
             ErrorCodes::LIMIT_EXCEEDED,
@@ -1500,7 +1500,7 @@ void PartitionedHashJoin::beginSinglePartitionInsert(size_t reserve)
     ctx.claimed_per_partition.assign(1, 0);
     ctx.range_committed.assign(1, 0);
 
-    createSharedTable();
+    createHashJoinTable();
     measureGenericKeyBytes();
     const size_t insertable_rows = accumulated_rows.load(std::memory_order_relaxed);
     chassert(build_arenas.empty());
@@ -1509,7 +1509,7 @@ void PartitionedHashJoin::beginSinglePartitionInsert(size_t reserve)
     ctx.worker_state[0].writer.emplace(build_arenas[0]);
     ctx.drain_writer.emplace(build_arenas[1]);
 
-    forSharedTable(*shared_maps, hash_join->data->type, [](auto & table) { table.commitAll(); });
+    forHashJoinTable(*table_maps, hash_join->data->type, [](auto & table) { table.commitAll(); });
     ctx.range_committed[0] = 1;
 }
 
@@ -1560,7 +1560,7 @@ void PartitionedHashJoin::publishTableSize(const PostBuildContext & ctx)
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using Table = typename decltype(shape_maps.TYPE)::element_type; \
-        if constexpr (is_shared_join_table<Table>) \
+        if constexpr (is_hash_join_table<Table>) \
         { \
             if (!shape_maps.TYPE->fullyCommitted()) \
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: the shared hash table is published with uncommitted ranges"); \
@@ -1579,7 +1579,7 @@ void PartitionedHashJoin::publishTableSize(const PostBuildContext & ctx)
                     break;
             }
         },
-        shared_maps->maps);
+        table_maps->maps);
     stats.distinct_keys = distinct;
     stats.claimed_per_partition = ctx.claimed_per_partition;
 }
@@ -1627,7 +1627,7 @@ size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t dist
 {
     const size_t distinct_keys = std::max(distinct, 1uz);
     const size_t reserve = reserveFor(rows, static_cast<double>(distinct_keys));
-    size_t bytes = SharedJoinMaps::predictedBufferBytes(maps_variant_index, hash_join->data->type, reserve);
+    size_t bytes = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, hash_join->data->type, reserve);
 
     /// `maps_variant_index == 1` is `MapsAll` (`RowRefList`). Unique keys stay inline in the cell
     /// word; only this shape keeps duplicate spans in the arena, at 8 bytes per row of a duplicated
@@ -1672,7 +1672,7 @@ size_t PartitionedHashJoin::predictedArenaBytes(size_t insertable_rows, bool gro
     /// first range is scattered, because a consumed range has dropped its key columns.
     const size_t distinct = distinctEstimate();
     const size_t tables_and_spans = predictedTableAndArenaBytes(insertable_rows, distinct, grouped, grouped ? groups_est : 1uz);
-    const size_t tables = SharedJoinMaps::predictedBufferBytes(maps_variant_index, hash_join->data->type, reserveFor(insertable_rows, static_cast<double>(distinct)));
+    const size_t tables = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, hash_join->data->type, reserveFor(insertable_rows, static_cast<double>(distinct)));
     chassert(tables_and_spans >= tables);
     return tables_and_spans - tables + generic_key_bytes;
 }
@@ -1878,7 +1878,7 @@ void PartitionedHashJoin::preparePostBuildContext()
         [&](UInt32 a, UInt32 b) { return total_bucket_rows[a] > total_bucket_rows[b]; });
 
     /// Nothing is committed here; the owner that claims a partition commits its range.
-    createSharedTable();
+    createHashJoinTable();
 
     measureGenericKeyBytes();
     const size_t arena_pred = predictedArenaBytes(insertableRows(), post_build_plan == PostBuildPlan::Grouped);
@@ -2119,7 +2119,7 @@ bool PartitionedHashJoin::postBuildPartitioned()
             /// as if those bytes were free.
             resident_at_plan = residentBytes();
             size_t used = resident_at_plan;
-            const size_t committed = shared_maps->getBufferSizeInBytes(hash_join->data->type);
+            const size_t committed = table_maps->getBufferSizeInBytes(hash_join->data->type);
             if (ht_total_bytes > committed)
                 used += ht_total_bytes - committed;
             size_t arena_actual = 0;
@@ -2183,7 +2183,7 @@ bool PartitionedHashJoin::postBuildPartitioned()
 
 void PartitionedHashJoin::commitRange(size_t partition)
 {
-    forSharedTable(*shared_maps, hash_join->data->type, [&](auto & table) { table.commitRange(partition); });
+    forHashJoinTable(*table_maps, hash_join->data->type, [&](auto & table) { table.commitRange(partition); });
     post_build_ctx->range_committed[partition] = 1;
 }
 
@@ -2198,7 +2198,7 @@ UInt64 PartitionedHashJoin::claimedBufferCells() const
 bool PartitionedHashJoin::tableHasZero() const
 {
     bool has_zero = false;
-    forSharedTable(*shared_maps, hash_join->data->type, [&](const auto & table) { has_zero = table.hasZero(); });
+    forHashJoinTable(*table_maps, hash_join->data->type, [&](const auto & table) { has_zero = table.hasZero(); });
     return has_zero;
 }
 
@@ -2220,8 +2220,8 @@ void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx)
         if (overflow.rows() == 0)
             continue;
         drained += overflow.rows();
-        forSharedTable(
-            *shared_maps,
+        forHashJoinTable(
+            *table_maps,
             type,
             [&](auto & table)
             {
@@ -2795,7 +2795,7 @@ PartitionedHashJoin::~PartitionedHashJoin()
 
     post_build_ctx.reset();
     post_build_pool.reset();
-    shared_maps.reset();
+    table_maps.reset();
     build_arenas.clear();
     hash_join.reset();
     probe_scratch_pool.clear();

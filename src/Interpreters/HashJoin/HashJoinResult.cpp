@@ -7,8 +7,8 @@
 
 namespace ProfileEvents
 {
-extern const Event HashJoinResultFilterLeftMicroseconds;
-extern const Event HashJoinResultBuildOutputMicroseconds;
+extern const Event HashJoinProbeMicroseconds;
+extern const Event HashJoinProbeGatherMicroseconds;
 }
 
 namespace DB
@@ -277,18 +277,22 @@ Block HashJoinResult::generateBlock(
         columns = std::move(state->columns);
     }
 
-    if (properties.is_join_get)
     {
-        lazy_output.buildJoinGetOutput(
-            state->rows_to_reserve, columns,
-            off_data + state->row_ref_begin, off_data + state->row_ref_end);
-    }
-    else
-    {
-        rows_added = lazy_output.buildOutput(
-            state->rows_to_reserve, state->block, state->offsets, columns,
-            off_data + state->row_ref_begin, off_data + state->row_ref_end,
-            state->state_row_offset, state->state_row_limit, state->state_bytes_limit);
+        ProfileEventTimeIncrement<Microseconds> gather_watch(ProfileEvents::HashJoinProbeGatherMicroseconds);
+
+        if (properties.is_join_get)
+        {
+            lazy_output.buildJoinGetOutput(
+                state->rows_to_reserve, columns,
+                off_data + state->row_ref_begin, off_data + state->row_ref_end);
+        }
+        else
+        {
+            rows_added = lazy_output.buildOutput(
+                state->rows_to_reserve, state->block, state->offsets, columns,
+                off_data + state->row_ref_begin, off_data + state->row_ref_end,
+                state->state_row_offset, state->state_row_limit, state->state_bytes_limit);
+        }
     }
 
     IColumn::Offsets offsets;
@@ -415,11 +419,12 @@ void HashJoinResult::setNextBlock(ScatteredBlock && block)
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
+    ProfileEventTimeIncrement<Microseconds> probe_watch(ProfileEvents::HashJoinProbeMicroseconds);
+
     ScatteredBlock * next_block_ptr = next_scattered_block ? &next_scattered_block.value() : nullptr;
     if (current_row_state)
     {
         bool is_last = current_row_state->is_last;
-        ProfileEventTimeIncrement<Microseconds> build_output_watch(ProfileEvents::HashJoinResultBuildOutputMicroseconds);
         auto block = generateBlock(current_row_state, lazy_output, properties);
         return {std::move(block), next_block_ptr, is_last && !current_row_state.has_value()};
     }
@@ -453,15 +458,12 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     {
         /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
         /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
-        {
-            ProfileEventTimeIncrement<Microseconds> filter_left_watch(ProfileEvents::HashJoinResultFilterLeftMicroseconds);
-            if (properties.need_filter)
-                scattered_block->filter(std::span<UInt64>{matched_rows});
-            if (properties.enable_lazy_columns_indexing)
-                scattered_block->filterBySelectorLazily();
-            else
-                scattered_block->filterBySelector();
-        }
+        if (properties.need_filter)
+            scattered_block->filter(std::span<UInt64>{matched_rows});
+        if (properties.enable_lazy_columns_indexing)
+            scattered_block->filterBySelectorLazily();
+        else
+            scattered_block->filterBySelector();
 
         current_row_state.emplace(GenerateCurrentRowState{
             .block = std::move(*scattered_block).getSourceBlock(),
@@ -477,7 +479,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             .state_bytes_limit = limit_bytes_per_key,
         });
 
-        ProfileEventTimeIncrement<Microseconds> build_output_watch(ProfileEvents::HashJoinResultBuildOutputMicroseconds);
         auto block = generateBlock(current_row_state, lazy_output, properties);
         scattered_block.reset();
         return {std::move(block), next_block_ptr, !current_row_state.has_value()};
@@ -576,7 +577,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             /// Copy data from the original columns to preserve columns size in the block.
             rhs_columns.reserve(columns.size());
             for (auto & column : columns)
-                rhs_columns.push_back(column->cut(prev_offset, num_rhs_rows)->assumeMutable());
+                rhs_columns.push_back(IColumn::mutate(column->cut(prev_offset, num_rhs_rows)));
 
             if (is_last)
                 columns.clear();
@@ -586,15 +587,12 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
 
     /// Note: need_filter flag cannot be replaced with !added_columns.need_filter.empty()
     /// This is because e.g. for ALL LEFT JOIN filter is used to replace non-matched right keys to defaults.
-    {
-        ProfileEventTimeIncrement<Microseconds> filter_left_watch(ProfileEvents::HashJoinResultFilterLeftMicroseconds);
-        if (properties.need_filter)
-            current_scattered_block.filter(partial_matched_rows);
-        if (properties.enable_lazy_columns_indexing)
-            current_scattered_block.filterBySelectorLazily();
-        else
-            current_scattered_block.filterBySelector();
-    }
+    if (properties.need_filter)
+        current_scattered_block.filter(partial_matched_rows);
+    if (properties.enable_lazy_columns_indexing)
+        current_scattered_block.filterBySelectorLazily();
+    else
+        current_scattered_block.filterBySelector();
 
     current_row_state.emplace(GenerateCurrentRowState{
         .block = std::move(current_scattered_block).getSourceBlock(),
@@ -610,7 +608,6 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         .state_bytes_limit = limit_bytes_per_key,
     });
 
-    ProfileEventTimeIncrement<Microseconds> build_output_watch(ProfileEvents::HashJoinResultBuildOutputMicroseconds);
     auto block = generateBlock(current_row_state, lazy_output, properties);
     if (is_last)
         scattered_block.reset();
