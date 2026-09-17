@@ -1,7 +1,7 @@
 -- regular MV: each INSERT into the source is one Delta version
 versions: 2
 10	0	9
--- regular MV without the writes setting: the source INSERT fails as a whole, nothing committed
+-- regular MV with the writes setting off: the source INSERT fails as a whole, nothing committed
 SUPPORT_IS_DISABLED
 versions: 2
 10
@@ -11,11 +11,11 @@ versions: 2
 SUPPORT_IS_DISABLED
 versions: 2
 10
--- refreshable MV APPEND TO delta without the setting: the refresh fails and nothing is committed
+-- refreshable MV APPEND TO delta with the setting off in its definition: the refresh fails, nothing committed
 SUPPORT_IS_DISABLED
 1	1
 versions: 2
--- refreshable MV APPEND TO delta with the setting in its definition: one version per refresh
+-- refreshable MV APPEND TO delta with the setting on in its definition: one version per refresh
 versions: 4
 20
 Scheduled	

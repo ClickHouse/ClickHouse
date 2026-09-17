@@ -37,8 +37,8 @@ $CLICKHOUSE_CLIENT --allow_delta_lake_writes=1 --query "INSERT INTO src SELECT n
 versions
 $CLICKHOUSE_CLIENT --query "SELECT count(), min(id), max(id) FROM dl"
 
-echo "-- regular MV without the writes setting: the source INSERT fails as a whole, nothing committed"
-$CLICKHOUSE_CLIENT --query "INSERT INTO src VALUES (100, 'x')" 2>&1 | grep -o "SUPPORT_IS_DISABLED" | head -1
+echo "-- regular MV with the writes setting off: the source INSERT fails as a whole, nothing committed"
+$CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --query "INSERT INTO src VALUES (100, 'x')" 2>&1 | grep -o "SUPPORT_IS_DISABLED" | head -1
 versions
 $CLICKHOUSE_CLIENT --query "SELECT count() AS src_rows FROM src; SELECT count() AS delta_rows FROM dl"
 
@@ -48,21 +48,21 @@ $CLICKHOUSE_CLIENT --query "
     DROP TABLE mv;
     CREATE MATERIALIZED VIEW mv TO dl AS SELECT id, s FROM src SETTINGS allow_delta_lake_writes = 1;
 "
-$CLICKHOUSE_CLIENT --query "INSERT INTO src VALUES (100, 'x')" 2>&1 | grep -o "SUPPORT_IS_DISABLED" | head -1
+$CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --query "INSERT INTO src VALUES (100, 'x')" 2>&1 | grep -o "SUPPORT_IS_DISABLED" | head -1
 versions
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM dl"
 
-echo "-- refreshable MV APPEND TO delta without the setting: the refresh fails and nothing is committed"
+echo "-- refreshable MV APPEND TO delta with the setting off in its definition: the refresh fails, nothing committed"
 $CLICKHOUSE_CLIENT --query "
     CREATE MATERIALIZED VIEW rmv_nosetting REFRESH EVERY 100 YEAR SETTINGS refresh_retries = 0 APPEND TO dl
-    AS SELECT id + 1000 AS id, s FROM src;
+    AS SELECT id + 1000 AS id, s FROM src SETTINGS allow_delta_lake_writes = 0;
     SYSTEM REFRESH VIEW rmv_nosetting;
     SYSTEM WAIT VIEW rmv_nosetting;
 " 2>&1 | grep -o "SUPPORT_IS_DISABLED" | head -1
 $CLICKHOUSE_CLIENT --query "SELECT last_success_time IS NULL, exception LIKE '%SUPPORT_IS_DISABLED%' FROM system.view_refreshes WHERE database = currentDatabase() AND view = 'rmv_nosetting'"
 versions
 
-echo "-- refreshable MV APPEND TO delta with the setting in its definition: one version per refresh"
+echo "-- refreshable MV APPEND TO delta with the setting on in its definition: one version per refresh"
 $CLICKHOUSE_CLIENT --query "
     CREATE MATERIALIZED VIEW rmv REFRESH EVERY 100 YEAR SETTINGS refresh_retries = 0 APPEND TO dl
     AS SELECT id + 1000 AS id, s FROM src SETTINGS allow_delta_lake_writes = 1;

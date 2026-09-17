@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Beta; enabled in tests so that every INSERT into a DeltaLake table exercises the writer. -->
+            <allow_delta_lake_writes>1</allow_delta_lake_writes>
+        </default>
+    </profiles>
+</clickhouse>

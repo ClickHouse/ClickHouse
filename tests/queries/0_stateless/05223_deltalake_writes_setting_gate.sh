@@ -3,8 +3,8 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# The `allow_delta_lake_writes` gate on an existing table: rejected INSERTs write nothing; the alias,
-# SET and a SETTINGS clause enable writes; read-only and kernel-disabled sessions are rejected.
+# The `allow_delta_lake_writes` gate on an existing table: compiled default off, rejected INSERTs write
+# nothing; the alias, SET and a SETTINGS clause enable writes; read-only and kernel-disabled sessions are rejected.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,13 +25,16 @@ state() {
     echo "versions: $(find "${TABLE}/_delta_log" -name '*.json' | wc -l | tr -d ' '), data files: $(find "${TABLE}" -name '*.parquet' | wc -l | tr -d ' ')"
 }
 
-echo "-- default settings: INSERT into the table function is rejected and names the setting"
-${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION deltaLakeLocal('${TABLE}') VALUES (1)" 2>&1 \
+echo "-- the compiled-in default is off (test profiles turn it on, so the cases below set it explicitly)"
+${CLICKHOUSE_LOCAL} --query "SELECT name, default, tier FROM system.settings WHERE name = 'allow_delta_lake_writes'"
+
+echo "-- setting off: INSERT into the table function is rejected and names the setting"
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=0 --query "INSERT INTO FUNCTION deltaLakeLocal('${TABLE}') VALUES (1)" 2>&1 \
     | grep -o "allow_delta_lake_writes\|SUPPORT_IS_DISABLED" | sort -u
 state
 
-echo "-- default settings: INSERT through an engine table is rejected the same way"
-${CLICKHOUSE_LOCAL} --query "
+echo "-- setting off: INSERT through an engine table is rejected the same way"
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=0 --query "
     CREATE TABLE t (id Int32) ENGINE = DeltaLakeLocal('${TABLE}');
     INSERT INTO t VALUES (1);
 " 2>&1 | grep -o "SUPPORT_IS_DISABLED"
@@ -53,7 +56,7 @@ ${CLICKHOUSE_LOCAL} --query "
 state
 
 echo "-- a SETTINGS clause on the INSERT statement enables writes for that statement only"
-${CLICKHOUSE_LOCAL} --query "
+${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=0 --query "
     INSERT INTO FUNCTION deltaLakeLocal('${TABLE}') SETTINGS allow_delta_lake_writes = 1 VALUES (3);
     SELECT count() FROM deltaLakeLocal('${TABLE}');
 "
