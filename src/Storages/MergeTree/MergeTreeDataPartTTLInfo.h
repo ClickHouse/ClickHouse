@@ -64,6 +64,16 @@ struct MergeTreeDataPartTTLInfos
     /// Has any TTLs which are not calculated on completely expired parts.
     bool hasAnyNonFinishedTTLs() const;
 
+    /// Has any row TTL (table, `WHERE` or `GROUP BY`) which is not calculated on a completely expired part.
+    bool hasAnyNonFinishedRowTTLs() const;
+
+    /// Has any column TTL which is not calculated on a completely expired part. A column TTL can only
+    /// be honoured by rewriting the part, never by dropping it, so it is tracked separately.
+    bool hasAnyNonFinishedColumnTTLs() const;
+
+    /// The earliest time at which a column TTL becomes due. Zero if there is no unfinished column TTL.
+    time_t getMinimalNonFinishedColumnTTL() const;
+
     /// Recomputes `part_min_ttl` / `part_max_ttl` from the current maps. `updatePartMinMaxTTL` only
     /// accumulates, so a caller that replaces a map after the bounds were taken needs this to drop
     /// what the replaced entries had contributed.

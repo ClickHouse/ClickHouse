@@ -367,6 +367,8 @@ public:
         MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
         /// Number of buckets that should be used for Object shared data serialization.
         size_t object_shared_data_buckets = 1;
+        /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
+        size_t object_shared_data_target_chunk_rows = 8192;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -440,6 +442,8 @@ public:
 
         /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
         size_t object_shared_data_buckets = 1;
+        /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
+        size_t object_shared_data_target_chunk_rows = 8192;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -464,6 +468,10 @@ public:
         /// Callback to get current mark of the specific stream.
         /// Used only in MergeTree for Object shared data serialization.
         StreamMarkGetter stream_mark_getter;
+
+        /// Minimum compressed block size. Some serializations use it to decide when to start a new
+        /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
+        size_t min_compress_block_size = 0;
 
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
@@ -537,6 +545,12 @@ public:
         /// If true, call release_stream on all streams used in the prefixes deserialization
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
+
+        /// Set for a column that its caller discards after reading it only partially and refills
+        /// with defaults - the MergeTree readers, see `IMergeTreeReader::fillMissingColumns`. Only
+        /// such a column may be read with its sizes stream present while its elements stream is
+        /// missing: a `Nested` column added by `ALTER`, read from parts written before it.
+        bool partially_read_columns_are_refilled = false;
 
         /// Returns true if all marks for the given substream have at most
         /// `max_transitions` distinct consecutive positions.
@@ -704,8 +718,13 @@ public:
     static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 
-    static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false, size_t initial_array_level = 0);
-    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false, size_t initial_array_level = 0);
+    static String getSubcolumnNameForStream(const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, size_t initial_array_level = 0);
+    /// Rejects a stale `(path, true)` call, which would otherwise silently bind `true` to `prefix_len`.
+    static String getSubcolumnNameForStream(const SubstreamPath & path, bool) = delete;
+
+    /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache.
+    static String getSubstreamsCacheKeyForStream(const SubstreamPath & path);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
