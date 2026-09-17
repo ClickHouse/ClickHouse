@@ -20,6 +20,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <IO/SnappyBasicReadBuffer.h>
 #include <IO/SnappyBasicWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
@@ -139,9 +140,11 @@ public:
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
+        QueryScope query_scope;
         SCOPE_EXIT({
-            request_credentials.reset();
             context.reset();
+            query_scope = QueryScope{};
+            request_credentials.reset();
             session.reset();
             params.reset();
         });
@@ -154,7 +157,7 @@ protected:
             params = std::make_unique<HTMLForm>(default_settings, request);
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
-        if (!authenticateUserAndMakeContext(request, response))
+        if (!authenticateUserAndMakeContext(request, response, query_scope))
             return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
                     /// and `request_credentials` must be preserved until the next request or until any exception.
 
@@ -165,20 +168,19 @@ protected:
         parent().http_response_buffer_size = buffer_size;
 
         /// Initialize query scope.
-        QueryScope query_scope;
-        if (context)
-            query_scope = QueryScope::create(context);
+        query_scope.attachToQueryContext(context);
 
         handlingRequestWithContext(request, response);
     }
 
-    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
+    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope)
     {
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
 
         if (!authenticateUser(request, response))
             return false;
 
+        query_scope = QueryScope::createForQueryContext();
         makeContext(request);
         return true;
     }
@@ -832,6 +834,8 @@ WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HT
     if (write_buffer_from_response)
         return *write_buffer_from_response;
 
+    /// The response buffer is finalized and destroyed after the request query scope.
+    MemoryTrackerSwitcher response_memory_scope(&total_memory_tracker);
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
         response, http_method == HTTPRequest::HTTP_HEAD, write_event, http_response_buffer_size);
 

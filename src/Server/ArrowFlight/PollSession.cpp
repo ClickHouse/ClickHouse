@@ -3,6 +3,7 @@
 #if USE_ARROWFLIGHT
 
 #include <Common/ThreadStatus.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Common/logger_useful.h>
@@ -63,7 +64,14 @@ PollSession::PollSession(
     }
 }
 
-PollSession::~PollSession() = default;
+PollSession::~PollSession()
+{
+    /// Polling and cancellation can release the context on a different request or worker thread.
+    MemoryTrackerSwitcher query_memory_scope(&thread_group->memory_tracker);
+    executor.reset();
+    block_io = {};
+    query_context.reset();
+}
 
 ContextPtr PollSession::queryContext() { return query_context; }
 

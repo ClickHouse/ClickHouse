@@ -1,0 +1,402 @@
+import contextlib
+import io
+import struct
+import time
+import uuid
+
+import grpc
+import psycopg
+import psycopg2
+import pymysql
+import pytest
+import requests
+import snappy
+from pyarrow import flight
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
+from test_arrowflight_interface.flight_sql_client import (
+    CancelStatus,
+    CommandStatementQuery,
+    FlightSQLClient,
+    flight_descriptor,
+)
+from test_default_session_user.grpc_protocol_pb2 import clickhouse_grpc_pb2 as grpc_pb2
+from test_prometheus_protocols.prometheus_test_utils import (
+    convert_time_series_to_protobuf,
+    convert_read_request_to_protobuf,
+)
+
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance("node", main_configs=["configs/protocols.xml"])
+PORTS = {
+    "mysql": 9004,
+    "postgres": 9005,
+    "grpc": 9100,
+    "flight": 8888,
+    "prometheus": 9093,
+}
+PAYLOAD_SIZE = 8 * 1024 * 1024
+SELECT = "SELECT 1 SETTINGS log_comment = ''"
+ENDPOINTS = [
+    "native",
+    "http",
+    "mysql",
+    "mysql_prepared",
+    "postgres_simple",
+    "postgres_extended",
+    "postgres_execute",
+    "postgres_copy_from",
+    "postgres_copy_to",
+    "grpc_unary_unary",
+    "grpc_stream_unary",
+    "grpc_unary_stream",
+    "grpc_stream_stream",
+    "flight_info",
+    "flight_schema",
+    "flight_get",
+    "flight_put",
+    "flight_poll",
+    "flight_cancel",
+    "flight_prepare",
+    "flight_metadata",
+    "prometheus_query",
+    "prometheus_read",
+    "prometheus_write",
+]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def started_cluster():
+    try:
+        cluster.start()
+        if node.is_built_with_sanitizer():
+            pytest.skip(
+                "Requires ClickHouse allocation interceptors, which sanitizer builds replace"
+            )
+        node.query("CREATE TABLE context_memory_sink (n UInt64) ENGINE = Null")
+        node.query(
+            "CREATE TABLE context_memory_prometheus ENGINE = TimeSeries",
+            settings={"allow_experimental_time_series_table": 1},
+        )
+        node.query(
+            "CREATE SETTINGS PROFILE context_memory_payload SETTINGS "
+            "log_queries = 0, enable_time_series_aggregate_functions = 1, log_comment = '"
+            + "x" * PAYLOAD_SIZE
+            + "'",
+            settings={"max_query_size": 2 * PAYLOAD_SIZE, "log_queries": 0},
+        )
+        yield
+    finally:
+        cluster.shutdown()
+
+
+@contextlib.contextmanager
+def payload_user(limit, batching_limit):
+    user = "context_memory_" + uuid.uuid4().hex
+    node.query(
+        f"CREATE USER {user} SETTINGS PROFILE context_memory_payload, "
+        f"{limit} = {PAYLOAD_SIZE // 2}, max_untracked_memory = {batching_limit}"
+    )
+    node.query(f"GRANT SELECT, INSERT, CREATE TEMPORARY TABLE ON *.* TO {user}")
+    try:
+        yield user
+    finally:
+        node.query(f"DROP USER {user}")
+
+
+# Every adapter consumes the response, so errors in streamed execution are observed too.
+def run_endpoint(endpoint, user):
+    if endpoint == "native":
+        assert node.query(SELECT, user=user) == "1\n"
+    elif endpoint == "http":
+        assert node.http_query(SELECT, user=user) == "1\n"
+    elif endpoint in ("mysql", "mysql_prepared"):
+        with pymysql.connect(
+            host=node.ip_address,
+            port=PORTS["mysql"],
+            user=user,
+            database="default",
+            read_timeout=30,
+            write_timeout=30,
+        ) as connection:
+            if endpoint == "mysql_prepared":
+                connection._execute_command(
+                    0x16,
+                    "INSERT INTO context_memory_sink SETTINGS log_comment = '' VALUES (1)",
+                )
+                packet = connection._read_packet()
+                packet.read_uint8()
+                statement_id = packet.read_uint32()
+                try:
+                    connection._execute_command(
+                        0x17, struct.pack("<IBI", statement_id, 0, 1)
+                    )
+                    assert connection._read_packet().is_ok_packet()
+                finally:
+                    connection._execute_command(0x19, struct.pack("<I", statement_id))
+            else:
+                with connection.cursor() as cursor:
+                    cursor.execute(SELECT)
+                    assert cursor.fetchone() == (1,)
+    elif endpoint.startswith("postgres_"):
+        if endpoint == "postgres_extended":
+            with psycopg.connect(
+                host=node.ip_address,
+                port=PORTS["postgres"],
+                user=user,
+                dbname="default",
+                autocommit=True,
+                connect_timeout=10,
+            ) as connection:
+                assert connection.execute(SELECT, prepare=True).fetchone() == (1,)
+        else:
+            with contextlib.closing(
+                psycopg2.connect(
+                    host=node.ip_address,
+                    port=PORTS["postgres"],
+                    user=user,
+                    dbname="default",
+                    connect_timeout=10,
+                )
+            ) as connection:
+                connection.autocommit = True
+                with connection.cursor() as cursor:
+                    if endpoint == "postgres_copy_from":
+                        cursor.copy_expert(
+                            "COPY context_memory_sink FROM STDIN", io.StringIO("1\n")
+                        )
+                    elif endpoint == "postgres_copy_to":
+                        cursor.copy_expert(
+                            "COPY context_memory_sink TO STDOUT", io.StringIO()
+                        )
+                    else:
+                        if endpoint == "postgres_execute":
+                            cursor.execute(
+                                "PREPARE context_memory_statement AS " + SELECT
+                            )
+                            cursor.execute("EXECUTE context_memory_statement")
+                        else:
+                            cursor.execute(SELECT)
+                        assert cursor.fetchone() == (1,)
+    elif endpoint.startswith("grpc_"):
+        kind = endpoint.removeprefix("grpc_")
+        method = {
+            "unary_unary": "ExecuteQuery",
+            "stream_unary": "ExecuteQueryWithStreamInput",
+            "unary_stream": "ExecuteQueryWithStreamOutput",
+            "stream_stream": "ExecuteQueryWithStreamIO",
+        }[kind]
+        with grpc.insecure_channel(f"{node.ip_address}:{PORTS['grpc']}") as channel:
+            call = getattr(channel, kind)(
+                "/clickhouse.grpc.ClickHouse/" + method,
+                request_serializer=grpc_pb2.QueryInfo.SerializeToString,
+                response_deserializer=grpc_pb2.Result.FromString,
+            )
+            query = grpc_pb2.QueryInfo(
+                query=SELECT, user_name=user, output_format="TabSeparated"
+            )
+            result = call(
+                iter([query]) if kind.startswith("stream") else query, timeout=30
+            )
+            results = list(result) if kind.endswith("stream") else [result]
+            for result in results:
+                if result.HasField("exception"):
+                    raise RuntimeError(result.exception.display_text)
+            assert b"".join(result.output for result in results) == b"1\n"
+    elif endpoint.startswith("flight_"):
+        client = FlightSQLClient(
+            node.ip_address,
+            PORTS["flight"],
+            insecure=True,
+            username=user,
+        )
+        try:
+            client._flight_call_options = lambda: flight.FlightCallOptions(
+                headers=client.headers,
+                timeout=30,
+            )
+            if endpoint == "flight_schema":
+                assert len(client.get_schema(SELECT).schema) == 1
+            elif endpoint == "flight_get":
+                assert client.do_get(flight.Ticket(SELECT)).read_all().num_rows == 1
+            elif endpoint == "flight_put":
+                client.execute_update(
+                    "INSERT INTO context_memory_sink SETTINGS log_comment = '' VALUES (1)"
+                )
+            elif endpoint == "flight_prepare":
+                statement = client.prepare(SELECT)
+                try:
+                    assert statement.dataset_schema is not None
+                finally:
+                    statement.close()
+            elif endpoint in ("flight_poll", "flight_cancel"):
+                poll = client.poll_flight_info(
+                    flight_descriptor(CommandStatementQuery(query=SELECT))
+                )
+                if endpoint == "flight_cancel":
+                    result = client.cancel_flight_info(poll.info_bytes)
+                    assert result.status == CancelStatus.Value(
+                        "CANCEL_STATUS_CANCELLED"
+                    )
+                    return
+                deadline = time.monotonic() + 30
+                while poll.flight_descriptor is not None:
+                    assert time.monotonic() < deadline, "Flight polling did not finish"
+                    poll = client.poll_flight_info(poll.flight_descriptor)
+                assert (
+                    sum(
+                        client.do_get(e.ticket).read_all().num_rows
+                        for e in poll.info.endpoints
+                    )
+                    == 1
+                )
+            else:
+                info = (
+                    client.get_db_schemas()
+                    if endpoint == "flight_metadata"
+                    else client.execute(SELECT)
+                )
+                rows = sum(
+                    client.do_get(e.ticket).read_all().num_rows for e in info.endpoints
+                )
+                assert rows >= 1
+        finally:
+            client.client.close()
+    elif endpoint.startswith("prometheus_"):
+        kind = endpoint.removeprefix("prometheus_")
+        url = f"http://{node.ip_address}:{PORTS['prometheus']}"
+        kwargs = {"auth": (user, ""), "timeout": 30, "params": {"log_comment": ""}}
+        if kind == "query":
+            kwargs["params"]["query"] = "1"
+            response = requests.post(url + "/api/v1/query", **kwargs)
+        else:
+            if kind == "write":
+                message = convert_time_series_to_protobuf(
+                    [({"__name__": "context_memory"}, {1: 1})]
+                )
+            else:
+                message = convert_read_request_to_protobuf("context_memory", 0, 2)
+            response = requests.post(
+                url + "/" + kind,
+                data=snappy.compress(message.SerializeToString()),
+                headers={
+                    "Content-Encoding": "snappy",
+                    "Content-Type": "application/x-protobuf",
+                },
+                **kwargs,
+            )
+        if response.status_code not in (200, 204):
+            raise RuntimeError(response.text)
+    else:
+        raise ValueError(endpoint)
+
+
+@pytest.mark.parametrize("endpoint", ENDPOINTS)
+@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
+@pytest.mark.parametrize(
+    "limit,level",
+    [("max_memory_usage", "Query"), ("max_memory_usage_for_user", "User")],
+)
+def test_endpoint_setup_limit_and_recovery(endpoint, batching_limit, limit, level):
+    # The large setting is inherited from the session before the query clears it.
+    # The logical value is small, but its copied capacity still belongs to this query.
+    with payload_user(limit, batching_limit) as user:
+        with pytest.raises(
+            Exception, match=f"{level} memory limit exceeded during query setup"
+        ):
+            run_endpoint(endpoint, user)
+        node.query(f"ALTER USER {user} SETTINGS {limit} = 0")
+        run_endpoint(endpoint, user)
+
+
+@pytest.mark.parametrize("endpoint", ENDPOINTS)
+@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
+def test_endpoint_releases_context_memory(endpoint, batching_limit):
+    with payload_user("max_memory_usage", batching_limit) as user:
+        node.query(f"ALTER USER {user} SETTINGS max_memory_usage = 0")
+        sentinel_id = str(uuid.uuid4())
+        sentinel = node.get_query_request(
+            "SELECT repeat('ssssssssssssssssssssssssssssssss', 524288), sleep(600) "
+            "SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 10000000000 "
+            "FORMAT Null",
+            user=user,
+            query_id=sentinel_id,
+            settings={"max_untracked_memory": 0, "log_queries": 0},
+        )
+        try:
+            assert_eq_with_retry(
+                node,
+                f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'",
+                "1",
+            )
+            for _ in range(2):
+                run_endpoint(endpoint, user)
+            balance_query = (
+                "SELECT memory_usage - (SELECT memory_usage FROM system.processes "
+                f"WHERE query_id = '{sentinel_id}') FROM system.user_processes WHERE user = '{user}'"
+            )
+            before = int(node.query(balance_query))
+            for _ in range(8):
+                run_endpoint(endpoint, user)
+            # Keep a live query and a positive balance: neither a last-query reset nor
+            # saturation at zero may hide a context freed under the wrong tracker.
+            assert (
+                int(
+                    node.query(
+                        f"SELECT memory_usage FROM system.processes WHERE query_id = '{sentinel_id}'"
+                    )
+                )
+                >= 16 * 1024 * 1024
+            )
+            assert_eq_with_retry(
+                node, f"SELECT abs(({balance_query}) - ({before})) < 65536", "1"
+            )
+        finally:
+            node.query(f"KILL QUERY WHERE query_id = '{sentinel_id}' SYNC")
+            sentinel.get_answer_and_error()
+
+
+def test_postgres_multistatement_contexts():
+    with payload_user("max_memory_usage", 0) as user:
+        node.query(f"ALTER USER {user} SETTINGS max_memory_usage = 0")
+        with contextlib.closing(
+            psycopg2.connect(
+                host=node.ip_address,
+                port=PORTS["postgres"],
+                user=user,
+                dbname="default",
+                connect_timeout=10,
+            )
+        ) as connection:
+            connection.autocommit = True
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SET max_block_size = 123; SELECT getSetting('max_block_size')"
+                )
+                assert cursor.fetchone() == (123,)
+                cursor.execute("SELECT 1; SELECT 2")
+                assert cursor.fetchone() == (2,)
+
+
+def test_flight_session_options_preserve_session_memory():
+    client = FlightSQLClient(
+        node.ip_address,
+        PORTS["flight"],
+        insecure=True,
+        username="default",
+        metadata={"x-clickhouse-session-id": str(uuid.uuid4())},
+    )
+    try:
+        assert not client.set_session_options(
+            {"log_comment": "x" * (256 * 1024)}
+        ).errors
+        assert not client.set_session_options({"max_block_size": 123}).errors
+        options = client.get_session_options().session_options
+        assert options["max_block_size"].string_value == "123"
+        assert len(options["log_comment"].string_value) == 256 * 1024
+        assert not client.set_session_options(
+            {"log_comment": None, "max_block_size": None}
+        ).errors
+    finally:
+        client.client.close()
