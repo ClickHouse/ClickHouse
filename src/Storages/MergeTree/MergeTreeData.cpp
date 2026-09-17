@@ -14124,20 +14124,17 @@ SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) co
     const auto merge_tree_settings = getSettings();
     auto settings = merge_tree_settings->enumerateSettings();
 
-    /// A `MergeTree` table starts from the server's settings, which `Context` builds by applying the
-    /// `compatibility` setting and then the config section. Only the context knows which names each
-    /// step assigned - see `Context::MergeTreeSettingsProvenance` for why it cannot be recovered here.
-    const auto provenance = query_context->getMergeTreeSettingsProvenance(supportsReplication());
-
+    /// A `MergeTree` table starts from the server's settings, which are built by applying the `compatibility`
+    /// setting and then the `<merge_tree>` config section; the table's copy remembers which of the two assigned
+    /// each setting, since afterwards neither the changed bit nor the value can say.
     for (auto & setting : settings)
     {
         if (setting.origin != SettingOrigin::Other)
             continue;
 
-        /// Config before compatibility, because the config section is applied second and wins.
-        if (provenance.set_in_config.contains(setting.name))
+        if (merge_tree_settings->isChangedInConfig(setting.name))
             setting.origin = SettingOrigin::Config;
-        else if (provenance.set_by_compatibility.contains(setting.name))
+        else if (merge_tree_settings->isChangedByCompatibility(setting.name))
             setting.origin = SettingOrigin::Compatibility;
     }
 
