@@ -78,6 +78,10 @@ SELECT count() FROM (SELECT * FROM fileCluster('test_cluster_two_shards_localhos
 -- carve-out has to survive that path too.
 SELECT count() FROM (SELECT * FROM file(currentDatabase() || '_05218_format_only', auto, 'a Nullable(Int64)'))
 SETTINGS schema_inference_mode = 'union';
+-- The extension-less fixture is the only one whose format is detected from the bytes, which is a
+-- second cache writer. Nothing it publishes may carry an empty name either.
+SELECT count() FROM system.schema_inference_cache
+WHERE storage = 'File' AND source LIKE '%_05218_format_only%' AND schema IS NOT NULL;
 
 -- A read that is supposed to be warm has to actually consume the cached structure: otherwise the
 -- repeated reads above silently become repeated cold reads and keep matching.
