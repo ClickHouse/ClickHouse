@@ -1248,7 +1248,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.max_threads,
                 params.join_any_take_last_row,
                 stats_collecting_params,
-                /*max_bytes_before_external_join_=*/0,
                 params.rhs_size_estimation);
 
         if (spill_to_disk)

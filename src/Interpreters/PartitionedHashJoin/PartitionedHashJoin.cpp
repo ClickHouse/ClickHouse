@@ -86,14 +86,11 @@ PartitionedHashJoin::PartitionedHashJoin(
     size_t num_threads_,
     bool any_take_last_row_,
     const HashJoinStatsCollectingParams & stats_collecting_params_,
-    size_t max_bytes_before_external_join_,
     std::optional<size_t> build_rows_hint_)
     : table_join(std::move(table_join_))
     , right_sample_block(std::move(right_sample_block_))
     , any_take_last_row(any_take_last_row_)
     , num_threads(std::max<size_t>(1, num_threads_))
-    , max_bytes_before_external_join(max_bytes_before_external_join_)
-    , grow_budget(max_bytes_before_external_join_)
     , hash_join(
           std::make_unique<HashJoin>(
               table_join,
@@ -482,15 +479,9 @@ void PartitionedHashJoin::decidePartitionPlan()
                 floor_bits = std::min(floor_bits, *descriptor_cap_bits);
             /// Every range keeps at least 2^10 cells, so the table widens for the floor where the
             /// estimate alone sized it smaller (2^12 cells over 1024 keys become 2^13 for 8 workers).
-            /// The scatter the floor introduces holds a locator and the keys of every row at once; a
-            /// memory budget that cannot absorb that keeps the serial insert instead.
             constexpr size_t min_range_bits = 10;
-            const size_t floor_degree = std::max(size_degree, floor_bits + min_range_bits);
-            if (partitionFloorFitsMemory(floor_bits, floor_degree))
-            {
-                bits = floor_bits;
-                size_degree = floor_degree;
-            }
+            bits = floor_bits;
+            size_degree = std::max(size_degree, floor_bits + min_range_bits);
         }
 
         if (forced_bits_for_tests)
@@ -720,7 +711,6 @@ PartitionedHashJoin::clone(const std::shared_ptr<TableJoin> & table_join_, Share
         num_threads,
         any_take_last_row,
         HashJoinStatsCollectingParams{.build = stats_collecting_params, .match = match_stats_collecting_params},
-        max_bytes_before_external_join,
         build_rows_hint);
 }
 
