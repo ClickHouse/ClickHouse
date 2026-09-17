@@ -3,11 +3,13 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
 #include <algorithm>
+#include <string_view>
 
 namespace DB
 {
@@ -40,6 +42,18 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     /// Validate the concrete node type here so malformed `clickhouse_json` is rejected
     /// with a `BAD_ARGUMENTS` parse error instead of reaching a logical exception later,
     /// and so it cannot build an AST that the SQL parser could never produce.
+
+    /// `ParserQueryWithOutput` reads these with `ParserStringLiteral`, `ParserNumber`, and
+    /// `ParserIdentifier`, none of which accepts an alias. Execution reads only the literal
+    /// value or the identifier name, so an alias would format into SQL the parser can never
+    /// produce while being silently ignored when the query runs.
+    auto reject_alias = [](const ASTPtr & node, std::string_view field)
+    {
+        if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(node.get());
+            with_alias && !with_alias->tryGetAlias().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Output '{}' cannot carry an alias during AST JSON deserialization", field);
+    };
+
     out_file = r.readChildOfType<ASTLiteral>("out_file");
     if (out_file)
     {
@@ -47,6 +61,7 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         if (out_file->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Output 'out_file' must be a string literal during AST JSON deserialization");
+        reject_alias(out_file, "out_file");
         children.push_back(out_file);
     }
 
@@ -57,6 +72,7 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         if (compression->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Output 'compression' must be a string literal during AST JSON deserialization");
+        reject_alias(compression, "compression");
         children.push_back(compression);
     }
 
@@ -68,13 +84,18 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         if (type != Field::Types::UInt64 && type != Field::Types::Int64 && type != Field::Types::Float64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Output 'compression_level' must be a numeric literal during AST JSON deserialization");
+        reject_alias(compression_level, "compression_level");
         children.push_back(compression_level);
     }
 
     /// `format_ast` is parsed by `ParserIdentifier`.
     format_ast = r.readChildOfType<ASTIdentifier>("format_ast");
     if (format_ast)
+    {
+        reject_alias(format_ast, "format_ast");
+        setIdentifierSpecial(format_ast);
         children.push_back(format_ast);
+    }
 
     /// `settings_ast` is parsed by `ParserSetQuery`.
     settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");

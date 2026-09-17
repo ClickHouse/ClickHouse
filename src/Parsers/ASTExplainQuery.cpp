@@ -121,13 +121,32 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
                     "EXPLAIN CURRENT TRANSACTION cannot carry 'query', 'table_function', or 'table_override' during AST JSON deserialization");
             break;
         default:
-            if (!getExplainedQuery())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "{} requires an explained query during AST JSON deserialization", toString(kind));
+        {
+            const auto & explained = getExplainedQuery();
+            if (!explained || explained->getQueryKind() == QueryKind::None)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires an explained query during AST JSON deserialization", toString(kind));
+
+            /// `ASTSetQuery` also represents embedded settings clauses, which are not statements.
+            if (const auto * set_query = explained->as<ASTSetQuery>();
+                set_query && (!set_query->is_standalone || (set_query->changes.empty() && set_query->default_settings.empty() && set_query->query_parameters.empty())))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires a non-empty standalone SET query during AST JSON deserialization", toString(kind));
+
+            /// `ParserExplainQuery` hands `EXPLAIN AST` to the full `ParserQuery`. `EXPLAIN QUERY TREE` accepts
+            /// only `SELECT`. Every other kind accepts `SELECT`, `CREATE TABLE`, `INSERT` and `SYSTEM`. a wider
+            /// child would format into SQL the parser can never produce.
+            if (kind != ExplainKind::ParsedAST)
+            {
+                const auto query_kind = explained->getQueryKind();
+                const bool allowed = query_kind == QueryKind::Select || (kind != ExplainKind::QueryTree && (query_kind == QueryKind::Create || query_kind == QueryKind::Insert || query_kind == QueryKind::System));
+                if (!allowed)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot explain this statement during AST JSON deserialization: only SELECT{} is accepted", toString(kind), kind == ExplainKind::QueryTree ? "" : ", CREATE TABLE, INSERT and SYSTEM");
+            }
+
             if (getTableFunction() || getTableOverride())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "'table_function' and 'table_override' are only valid for EXPLAIN TABLE OVERRIDE during AST JSON deserialization");
             break;
+        }
     }
 
     readOutputOptionsJSON(r);

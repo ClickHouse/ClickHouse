@@ -28,6 +28,8 @@ ASTSelectQuery & getSingleSelectQuery(const ASTPtr & query, ASTExplainTextAction
 {
     /// parsed SELECT sources normally use an ASTSelectWithUnionQuery wrapper
     /// programmatically deserialized ASTs may contain ASTSelectQuery directly.
+    /// as<> us ab exact-type cast. `ASTSelectIntersectExceptQuery`, whose children are set-operation operands rather than clauses, is refused here and in
+    /// the single-branch below.
     if (auto * select_query = query->as<ASTSelectQuery>())
         return *select_query;
 
