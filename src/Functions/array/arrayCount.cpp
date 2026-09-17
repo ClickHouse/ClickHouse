@@ -22,7 +22,7 @@ namespace Setting
 /** arrayCount(x1,...,xn -> expression, array1,...,arrayn) - for how many elements of the array the expression is true.
   * An overload of the form f(array) is available, which works in the same way as f(x -> x, array).
   */
-/// `legacy_constness`: before version 26.9, a predicate folding to a constant false produced a constant
+/// `legacy_constness`: before version 26.10, a predicate folding to a constant false produced a constant
 /// result column, while every other predicate produced a full one. The compatibility setting restores
 /// that as well, so that the legacy mode reproduces the old contract of `arrayCount` completely.
 template <typename ResultType, bool legacy_constness>
@@ -101,7 +101,7 @@ struct ArrayCountImpl
 struct NameArrayCount { static constexpr auto name = "arrayCount"; };
 
 /// Chooses the implementation by the `array_count_legacy_uint32_result` compatibility setting:
-/// `UInt64` (exact for arrays of any size) by default, `UInt32` with the pre-26.9 result constness otherwise.
+/// `UInt64` (exact for arrays of any size) by default, `UInt32` with the pre-26.10 result constness otherwise.
 struct ArrayCountFunctionChooser
 {
     static constexpr auto name = NameArrayCount::name;
@@ -123,7 +123,7 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
 `arrayCount` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
 
 :::note Use setting `array_count_legacy_uint32_result` to return `UInt32`
-Version 26.9 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
+Version 26.10 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
 To retain the previous behavior, set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.
 
 During a rolling upgrade of a cluster, a distributed query initiated by a not-yet-upgraded server does not forward this setting, so type-sensitive expressions evaluated locally on already-upgraded shards (for example, `byteSize(arrayCount(...))`) observe `UInt64` there. To keep such queries fully unchanged until the whole cluster is upgraded, set `array_count_legacy_uint32_result = 1` on the upgraded servers for the users under which shard-side queries execute, and remove it after the upgrade is complete. Which user that is depends on the cluster configuration: with an interserver `secret` configured, the shard runs the query as the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.

@@ -1,4 +1,4 @@
--- `arrayCount` returns `UInt64` by default, and `UInt32` (the type it returned before version 26.9)
+-- `arrayCount` returns `UInt64` by default, and `UInt32` (the type it returned before version 26.10)
 -- under the `array_count_legacy_uint32_result` compatibility setting.
 
 SELECT arrayCount(x -> (x % 2), [1, 2, 3]) AS count, toTypeName(count);
@@ -12,14 +12,14 @@ SELECT arrayCount(x -> 1, [1, 2, 3]) AS count, toTypeName(count) SETTINGS array_
 SELECT arrayCount(x -> 0, [1, 2, 3]) AS count, toTypeName(count);
 SELECT arrayCount(x -> 0, [1, 2, 3]) AS count, toTypeName(count) SETTINGS array_count_legacy_uint32_result = 1;
 
--- Before version 26.9, a predicate folding to a constant false produced a constant result column even for a
+-- Before version 26.10, a predicate folding to a constant false produced a constant result column even for a
 -- non-constant array (unlike every other predicate); the compatibility setting restores that as well.
 SELECT isConstant(arrayCount(x -> 0, materialize([1, 2, 3]))), isConstant(arrayCount(x -> 1, materialize([1, 2, 3])));
 SELECT isConstant(arrayCount(x -> 0, materialize([1, 2, 3]))), isConstant(arrayCount(x -> 1, materialize([1, 2, 3]))) SETTINGS array_count_legacy_uint32_result = 1;
-SELECT isConstant(arrayCount(x -> 0, materialize([1, 2, 3]))), isConstant(arrayCount(x -> 1, materialize([1, 2, 3]))) SETTINGS compatibility = '26.8';
+SELECT isConstant(arrayCount(x -> 0, materialize([1, 2, 3]))), isConstant(arrayCount(x -> 1, materialize([1, 2, 3]))) SETTINGS compatibility = '26.9';
 
 -- The `compatibility` setting restores the legacy type.
-SELECT arrayCount(x -> (x % 2), materialize([1, 2, 3])) AS count, toTypeName(count) SETTINGS compatibility = '26.8';
+SELECT arrayCount(x -> (x % 2), materialize([1, 2, 3])) AS count, toTypeName(count) SETTINGS compatibility = '26.9';
 
 -- The rewrite of `length(arrayFilter(...))` requires the types to match, so it does not fire in legacy mode.
 SELECT length(arrayFilter(x -> (x % 2), [1, 2, 3])) AS count, toTypeName(count)

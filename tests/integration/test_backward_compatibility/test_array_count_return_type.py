@@ -7,10 +7,10 @@ from helpers.cluster import (
 
 cluster = ClickHouseCluster(__file__)
 new_node = cluster.add_instance("new_node", with_zookeeper=False)
-# The old node is pinned to a release before the `26.9` `arrayCount`
+# The old node is pinned to a release before the `26.10` `arrayCount`
 # result-type change rather than to `CLICKHOUSE_CI_MIN_TESTED_VERSION`: this
-# test guards the type-change boundary, so it must keep running a pre-`26.9`
-# coordinator even after the CI minimum tested version moves past `26.9`.
+# test guards the type-change boundary, so it must keep running a pre-`26.10`
+# coordinator even after the CI minimum tested version moves past `26.10`.
 old_node = cluster.add_instance(
     "old_node",
     with_zookeeper=False,
@@ -31,8 +31,8 @@ def start_cluster():
         cluster.shutdown()
 
 
-# Since 26.9 `arrayCount` returns `UInt64` (`UInt32` before). A new coordinator
-# with `array_count_legacy_uint32_result = 1` (or `compatibility` <= '26.8')
+# Since 26.10 `arrayCount` returns `UInt64` (`UInt32` before). A new coordinator
+# with `array_count_legacy_uint32_result = 1` (or `compatibility` <= '26.9')
 # must be able to query a mix of old and new servers without a type mismatch:
 # the coordinator builds a `UInt32` header, new servers compute `UInt32`
 # because the setting is forwarded to them, and old servers compute `UInt32`
@@ -61,13 +61,13 @@ def test_array_count_mixed_version_remote(start_cluster):
         new_node.query(query, settings={"array_count_legacy_uint32_result": 1})
         == "6\tUInt32\n"
     )
-    # `26.8` is the last version before the `arrayCount` result-type change,
+    # `26.9` is the last version before the `arrayCount` result-type change,
     # i.e. the settings-changes-history boundary this test guards. It is
     # intentionally a literal rather than `CLICKHOUSE_CI_MIN_TESTED_VERSION`:
     # the check must keep exercising the legacy path even after the CI minimum
-    # tested version moves past `26.8`.
+    # tested version moves past `26.9`.
     assert (
-        new_node.query(query, settings={"compatibility": "26.8"})
+        new_node.query(query, settings={"compatibility": "26.9"})
         == "6\tUInt32\n"
     )
 
@@ -104,12 +104,12 @@ def test_array_count_mixed_version_remote(start_cluster):
     )
 
     # The documented `compatibility` path must cover the shard-local wrapper as
-    # well: `compatibility = '26.8'` flips `array_count_legacy_uint32_result` on
+    # well: `compatibility = '26.9'` flips `array_count_legacy_uint32_result` on
     # the coordinator through the settings-changes history, and the resulting
     # legacy behavior reaches the new shard too, so `byteSize` observes `UInt32`
     # on both shards instead of being narrowed only in the initiator's header.
     assert (
-        new_node.query(wrapped_query, settings={"compatibility": "26.8"})
+        new_node.query(wrapped_query, settings={"compatibility": "26.9"})
         == "4\n4\n"
     )
 

@@ -315,6 +315,13 @@ def create_parser():
         default=False,
         help="Consult the model but print intended actions instead of posting to GitHub",
     )
+    review_parser.add_argument(
+        "--fail-for-draft-pr",
+        dest="fail_for_draft_pr",
+        action="store_true",
+        default=False,
+        help="Fail the job without running the review when the PR is a draft",
+    )
     return parser
 
 
