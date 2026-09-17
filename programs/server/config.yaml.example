@@ -409,7 +409,7 @@ ldap_servers: ''
 #     bind_dn: 'EXAMPLE\{user_name}'
 #     user_dn_detection:
 #         base_dn: CN=Users,DC=example,DC=com
-#         search_filter: '(&amp;(objectClass=user)(sAMAccountName={user_name}))'
+#         search_filter: '(&(objectClass=user)(sAMAccountName={user_name}))'
 #     enable_tls: no
 
 # Example (Active Directory with search-and-bind: a service account locates the user by sAMAccountName and performs
@@ -492,7 +492,8 @@ user_directories:
 #   # The resulting filter will be constructed by replacing all '{user_name}', '{bind_dn}', '{user_dn}', and
 #   # '{base_dn}' substrings of the template with the actual user name, bind DN, user DN, and base DN during
 #   # each LDAP search.
-#   # Note, that the special characters must be escaped properly in XML.
+#   # Unlike in XML, '&' and the other filter characters are written as they are; quote the value when
+#   # it contains characters that are special to YAML.
 #   # attribute - attribute name whose values will be returned by the LDAP search. 'cn', by default.
 #   # The special value 'dn' returns the DN of each found entry.
 #   # prefix - prefix, that will be expected to be in front of each string in the original list of strings returned by
@@ -558,7 +559,7 @@ user_directories:
 #   #     role_mapping:
 #   #         base_dn: 'ou=groups,dc=example,dc=com'
 #   #         scope: subtree
-#   #         search_filter: '(&amp;(objectClass=groupOfNames)(member={bind_dn}))'
+#   #         search_filter: '(&(objectClass=groupOfNames)(member={bind_dn}))'
 #   #         attribute: cn
 #   #         prefix: clickhouse_
 #   # Example (typical Active Directory with role mapping that relies on the detected user DN):
@@ -568,7 +569,7 @@ user_directories:
 #   #         base_dn: 'CN=Users,DC=example,DC=com'
 #   #         attribute: CN
 #   #         scope: subtree
-#   #         search_filter: '(&amp;(objectClass=group)(member={user_dn}))'
+#   #         search_filter: '(&(objectClass=group)(member={user_dn}))'
 #   #         prefix: clickhouse_
 #   # Example (typical Active Directory: roles from the user's own 'memberOf' attribute, relies on the detected user DN):
 #   # ldap:
