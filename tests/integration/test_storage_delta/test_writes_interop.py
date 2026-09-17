@@ -340,6 +340,16 @@ def test_partition_types_spark_readback_and_pruning(started_cluster):
     assert ids("p_str = '日本語'") == {4}
     assert ids("p_str IS NULL") == {5}
 
+    # Pruning, not just filtering: the plan for a single-partition predicate reads one file.
+    def files_read(where):
+        return len(spark.sql(f"SELECT id FROM {table} WHERE {where}").inputFiles())
+
+    assert files_read("1 = 1") == 5
+    assert files_read("p_str = 'a b'") == 1
+    assert files_read("p_dec = 12345678.99") == 1
+    assert files_read("p_ts = TIMESTAMP '1970-01-01 00:00:00'") == 1
+    assert files_read("p_int = 7") == 3
+
     got = spark_rows(
         spark,
         location,
@@ -802,20 +812,29 @@ def test_failed_write_does_not_leak_credentials(started_cluster):
     create_empty_delta_table(started_cluster, "s3", path, schema)
     bad_secret = "WrongSecretKeyThatMustNeverAppearInLogs"
     url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{path}/"
+    failed_id, ok_id = f"{path}_failed", f"{path}_ok"
 
-    error = node.query_and_get_error(f"INSERT INTO TABLE FUNCTION deltaLake('{url}', 'minio', '{bad_secret}') VALUES (1)")
+    _, error = node.query_and_get_answer_with_error(
+        f"INSERT INTO TABLE FUNCTION deltaLake('{url}', 'minio', '{bad_secret}') VALUES (1)",
+        query_id=failed_id,
+    )
     assert error != ""
     # The client echoes the query text after "(query:"; the server-side message must not contain it.
     assert bad_secret not in error.split("(query:")[0], error
     assert log_versions(started_cluster, "s3", path) == [0]
     assert list_delta_data_files(started_cluster, "s3", path) == []
 
-    # A successful write through the table function must also be masked in query_log. The
-    # secrets are checked in Python: a query text containing them would itself be a leak.
-    node.query(f"INSERT INTO TABLE FUNCTION {delta_table_function(started_cluster, 's3', path)} VALUES (2)")
+    node.query(
+        f"INSERT INTO TABLE FUNCTION {delta_table_function(started_cluster, 's3', path)} VALUES (2)",
+        query_id=ok_id,
+    )
     node.query("SYSTEM FLUSH LOGS")
-    logged = node.query(f"SELECT query, exception FROM system.query_log WHERE query LIKE '%{path}%' AND query_kind = 'Insert' FORMAT TSVRaw")
+    # Everything either query logged, correlated by query_id (compared in Python: a query text
+    # containing the secrets would itself be a leak).
+    logged = node.query(f"SELECT query, exception FROM system.query_log WHERE query_id IN ('{failed_id}', '{ok_id}') FORMAT TSVRaw")
+    assert logged.count("INSERT") >= 2, logged
     assert bad_secret not in logged and minio_secret_key not in logged, logged
     assert "[HIDDEN]" in logged, logged
-    text_log = node.query(f"SELECT message FROM system.text_log WHERE message LIKE '%{path}%' FORMAT TSVRaw")
+    text_log = node.query(f"SELECT message FROM system.text_log WHERE query_id IN ('{failed_id}', '{ok_id}') FORMAT TSVRaw")
+    assert text_log != ""
     assert bad_secret not in text_log and minio_secret_key not in text_log
