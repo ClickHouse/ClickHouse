@@ -17,19 +17,18 @@
   * - delay during resizes is amortized, since the small hash tables will be resized separately;
   * - in theory, resizes are cache-local in a larger range of sizes.
   *
-  * With `bits_for_bucket = 0` there is a single bucket: routing folds to a constant and lookups and
-  * inserts compile down to what the single-level table does, so one map type can serve both a caller
-  * that fills it from one thread and one that fills it from many.
+  * With `bits_for_bucket = 0` there is a single bucket: routing folds to a constant.
+  * Lookups and inserts compile down to what the single-level table does.
+  * One map type can then serve both a serial fill and a fill from many threads.
   *
-  * `BucketHash` selects the bucket when the hash a cell is placed by is a poor bucket selector. A
-  * `FixedHashMap` places by the key itself, and routing on the high bits of a dense key range would
-  * put every key into one bucket; see `PartitionedFixedHashMap`.
+  * `BucketHash` selects the bucket when the hash a cell is placed by is a poor bucket selector.
+  * A `FixedHashMap` places by the key itself.
+  * Routing on the high bits of a dense key range would put every key into one bucket.
+  * See `PartitionedFixedHashMap`.
   *
-  * Buckets share no state, so threads may fill different buckets at the same time when every bucket
-  * is written under its own lock. `offsetInternal` numbers the cells of all buckets as one range and
-  * needs the prefix sums of the bucket capacities for that. A caller computes them with
-  * `computeBucketPrefix` once the table stops growing, and again after it grows; the lookup path
-  * itself does not check.
+  * Buckets share no state.
+  * Threads may fill different buckets at the same time when every bucket is written under its own lock.
+  * Call `computeBucketPrefix` before reading `offsetInternal`.
   */
 
 template <size_t initial_size_degree = 8>
@@ -177,11 +176,12 @@ private:
         mutable std::vector<size_t> bucket_cells_prefix;
     };
 
-    /// One flat table that every bucket maps into. The buckets only partition the keys, which lets
-    /// a caller fill the table from several threads under one lock per bucket: distinct keys are
-    /// distinct cells, and the table counts its size with an atomic. The min/max bounds of the flat
-    /// table are the one thing those writers would race on, so they are switched off while there is
-    /// more than one bucket, until `restoreMinMaxOptimization` derives them again after the fill.
+    /// One flat table that every bucket maps into. The buckets only partition the keys.
+    /// A caller can fill from several threads under one lock per bucket.
+    /// Distinct keys are distinct cells, and the table counts its size with an atomic.
+    /// The min/max bounds of the flat table are the one thing those writers would race on.
+    /// They stay off while there is more than one bucket.
+    /// `restoreMinMaxOptimization` derives them again after the fill.
     class FixedRangeStorage
     {
     public:
@@ -290,9 +290,8 @@ public:
             return BucketHash{}(key);
     }
 
-    /// Index of the sub-table that holds `key`. A single bucket needs no routing, and fixed-range
-    /// storage maps every bucket to the same table, so both fold to zero without computing the
-    /// routing hash. The bucket a key routes to is `getBucketFromHash(bucketRoutingHash(...))`.
+    /// Index of the sub-table that holds `key`.
+    /// Fixed-range storage is one table for every bucket, so it folds to zero like a single bucket.
     template <typename K>
     static size_t ALWAYS_INLINE bucketFor(const K & key, size_t hash_value)
     {
@@ -501,9 +500,10 @@ public:
         keyHolderDiscardKey(key_holder);
     }
 
-    /// The two methods below answer from the cell hash alone. With a `BucketHash` the hash does not
-    /// identify the bucket, and with fixed-range storage there is no hashed placement to prefetch, so
-    /// they fall back to doing nothing and to "not known to be empty".
+    /// The two methods below answer from the cell hash alone.
+    /// With a `BucketHash` the hash does not identify the bucket.
+    /// With fixed-range storage there is no hashed placement to prefetch.
+    /// They then do nothing, and `isEmptyCell` answers "not known to be empty".
     void ALWAYS_INLINE prefetchByHash(size_t key_hash) const
     {
         if constexpr (!isFixedRangeStorage() && std::is_void_v<BucketHash>)
@@ -617,28 +617,30 @@ public:
     size_t getBufferSizeInBytes() const { return impls.getBufferSizeInBytes(); }
     size_t getBufferSizeInCells() const { return impls.getBufferSizeInCells(); }
 
-    /// Walk the mapped values of every bucket. Defined here so that a two-level table over set
-    /// buckets - which have no mapped values, so this visits nothing - also satisfies generic code
-    /// that iterates mapped values.
+    /// Walk the mapped values of every bucket.
+    /// Defined here so a two-level table over set buckets also satisfies generic mapped-value walks.
+    /// Set buckets have no mapped values, so this visits nothing.
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)
     {
         impls.forEachMapped(func);
     }
 
-    /// Compute what `offsetInternal` numbers cells by. Call it once the table stops growing, and
-    /// again after it grows: an offset read before that is stale, and the lookup path does not check.
+    /// Prefix sums that `offsetInternal` uses to number cells across all buckets.
+    /// Call this once the table stops growing, and again after it grows.
+    /// An offset read before that is stale. The lookup path does not check.
     void computeBucketPrefix() const { impls.computeBucketPrefix(); }
 
     void restoreMinMaxOptimization() { impls.restoreMinMaxOptimization(); }
     bool canUseMinMaxOptimization() const { return impls.canUseMinMaxOptimization(); }
 
-    /// Number of the cell over all buckets: 0 for the zero cell, otherwise the position in the
-    /// concatenated bucket buffers plus one, so it fits an array of `getBufferSizeInCells() + 1`.
+    /// Number of the cell over all buckets.
+    /// 0 for the zero cell, otherwise the position in the concatenated bucket buffers plus one.
+    /// That fits an array of `getBufferSizeInCells() + 1`.
     /// `computeBucketPrefix` must have run since the last insert; a single bucket needs none.
     size_t offsetInternal(ConstLookupResult ptr) const { return impls.offsetInternal(ptr, bucketOf(ptr)); }
 
-    /// Same, for a caller that iterates and already knows the bucket of `ptr`.
+    /// Cell number when the caller already knows the bucket of `ptr`.
     size_t ALWAYS_INLINE offsetInternalAtBucket(ConstLookupResult ptr, size_t iteration_bucket) const
     {
         return impls.offsetInternal(ptr, iteration_bucket);

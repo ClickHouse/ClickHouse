@@ -12,8 +12,8 @@ struct IsFixedRangeTable<FixedHashMap<Key, Mapped, Cell, FixedHashTableStoredSiz
 };
 
 /// A `FixedHashMap` whose keys are partitioned into buckets for a caller that fills it from several
-/// threads. The buckets share the one flat table; they only decide which lock a key is inserted
-/// under, so the cells, their offsets and iteration are those of the plain `FixedHashMap`. Keys are
+/// threads. The buckets share the one flat table. They only decide which lock a key is inserted
+/// under. The cells, their offsets and iteration are those of the plain `FixedHashMap`. Keys are
 /// routed by the cache line of their cell, not by the key's high bits, so a dense key range spreads
 /// over the buckets. With `bits_for_bucket = 0` it is the plain map with no routing at all.
 template <typename Key, typename Mapped, size_t size_bits = sizeof(Key) * 8, Int32 bits_for_bucket = DEFAULT_BITS_FOR_BUCKET>
