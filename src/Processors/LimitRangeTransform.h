@@ -65,14 +65,13 @@ private:
         /// Returns the boundary columns and shared intermediates in the output header's order.
         Columns evaluate(const Columns & columns, size_t num_rows) const;
 
-        const Block & getOutputHeader() const { return output_header; }
+        const Block & getOutputHeader() const;
         ColumnPtr getStartColumn(const Columns & columns) const { return start_position ? columns[*start_position] : nullptr; }
         ColumnPtr getEndColumn(const Columns & columns) const { return end_position ? columns[*end_position] : nullptr; }
 
     private:
         ExpressionActionsPtr actions;
         Block input_header;
-        Block output_header;
         /// Positions of the required columns in the source chunk.
         std::vector<size_t> required_column_positions;
         /// Mapping from action inputs to positions in the reduced input header.
@@ -91,7 +90,7 @@ private:
     /// Stops emitting rows. If always_read_till_end, keeps draining input to preserve row counts.
     void setDone();
 
-    /// Evaluates both boundaries together for `ALL` or when `UNTIL` cannot skip pre-start chunks.
+    /// Evaluates both boundaries for `ALL`, or through the starting chunk when `UNTIL` cannot skip chunks.
     std::optional<BoundaryEvaluation> combined_evaluation;
     /// Evaluates `AFTER` while waiting for the single range to start.
     std::optional<BoundaryEvaluation> start_only_evaluation;

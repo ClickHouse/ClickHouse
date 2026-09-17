@@ -96,12 +96,18 @@ LimitRangeTransform::BoundaryEvaluation::BoundaryEvaluation(
     }
 
     action_input_positions = actions->getInputPositions(input_header);
-    /// Derive the result layout from empty columns, including shared intermediates for a later stage.
-    output_header = actions->getActionsDAG().updateHeader(input_header);
+    const auto & output_header = getOutputHeader();
     if (start_column_name)
         start_position = output_header.getPositionByName(*start_column_name);
     if (end_column_name)
         end_position = output_header.getPositionByName(*end_column_name);
+}
+
+const Block & LimitRangeTransform::BoundaryEvaluation::getOutputHeader() const
+{
+    /// Every input is consumed, so the sample header gives the result layout, including shared
+    /// intermediates for a later stage, without executing stateful functions during setup.
+    return actions->getSampleBlock();
 }
 
 Columns LimitRangeTransform::BoundaryEvaluation::evaluate(const Columns & columns, size_t num_rows) const
@@ -116,6 +122,7 @@ Columns LimitRangeTransform::BoundaryEvaluation::evaluate(const Columns & column
     auto result = actions->executeOnColumns(std::move(inputs), input_header, action_input_positions, rows);
     /// Boundary expressions cannot contain `arrayJoin`, so evaluation preserves the chunk's row count.
     chassert(rows == num_rows);
+    chassert(result.size() == getOutputHeader().columns());
     return result;
 }
 
@@ -151,14 +158,15 @@ LimitRangeTransform::LimitRangeTransform(
         ActionsDAG end_conditions = conditions.clone();
         end_conditions.removeUnusedActions(Names{*end_column_name});
         /// Skipping chunks changes the values of stateful and query-scope non-deterministic functions,
-        /// including those inside lambdas. Keep both boundaries together to preserve their evaluation.
-        if (start_column_name && end_conditions.hasNonDeterministicOrStatefulFunctions())
+        /// including those inside lambdas. Evaluate both boundaries together until the range starts.
+        const bool evaluate_end_before_start = start_column_name && end_conditions.hasNonDeterministicOrStatefulFunctions();
+        /// `clone` retains the function objects, so the end-only stage continues their state after the start.
+        end_only_evaluation.emplace(header, std::move(end_conditions), std::nullopt, end_column_name, actions_settings);
+        if (evaluate_end_before_start)
         {
             combined_evaluation.emplace(header, conditions.clone(), start_column_name, end_column_name, actions_settings);
             return;
         }
-
-        end_only_evaluation.emplace(header, std::move(end_conditions), std::nullopt, end_column_name, actions_settings);
     }
 
     if (start_column_name && end_column_name)
@@ -299,7 +307,7 @@ void LimitRangeTransform::transform(Chunk & chunk)
 
     ColumnPtr start_col;
     ColumnPtr end_col;
-    if (combined_evaluation)
+    if (combined_evaluation && (start_all || !started))
     {
         auto boundaries = combined_evaluation->evaluate(chunk.getColumns(), num_rows);
         start_col = combined_evaluation->getStartColumn(boundaries);
