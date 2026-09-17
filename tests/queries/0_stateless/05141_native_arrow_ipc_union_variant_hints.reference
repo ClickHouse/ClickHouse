@@ -1,0 +1,170 @@
+--- the union the ClickHouse Arrow writer emits for Variant(IPv6, String) reads back as itself ---
+v	Variant(FixedString(16), String)					
+::1	Variant(IPv6, String)
+text	Variant(IPv6, String)
+--- for Variant(IntervalDay, String), which it stores as a signed int64 ---
+v	Variant(Int64, String)					
+3	Variant(IntervalDay, String)
+text	Variant(IntervalDay, String)
+--- and for Variant(Date, String) under output_format_arrow_date_as_uint16 ---
+v	Variant(String, UInt16)					
+2022-01-08	Variant(Date, String)
+text	Variant(Date, String)
+--- union<bool, int8> as Variant(Bool, UInt8) ---
+true	Variant(Bool, UInt8)
+7	Variant(Bool, UInt8)
+false	Variant(Bool, UInt8)
+248	Variant(Bool, UInt8)
+--- union<bool, utf8> as Variant(UInt8, String): Bool and UInt8 differ only by name ---
+1	Variant(String, UInt8)
+x	Variant(String, UInt8)
+0	Variant(String, UInt8)
+y	Variant(String, UInt8)
+--- union<fixed_size_binary(16), utf8> as Variant(Int128, String) ---
+20011376718272490338853433276725592320	Variant(Int128, String)
+x	Variant(Int128, String)
+1329227995784915872903807060280344576	Variant(Int128, String)
+y	Variant(Int128, String)
+--- Arrow: union<dictionary<fixed_size_binary(16)>, utf8> as Variant(IPv6, String) ---
+1:203:405:607:809:a0b:c0d:e0f	Variant(IPv6, String)
+x	Variant(IPv6, String)
+::1	Variant(IPv6, String)
+y	Variant(IPv6, String)
+--- ArrowStream: union<dictionary<fixed_size_binary(16)>, utf8> as Variant(IPv6, String) ---
+1:203:405:607:809:a0b:c0d:e0f	Variant(IPv6, String)
+x	Variant(IPv6, String)
+::1	Variant(IPv6, String)
+y	Variant(IPv6, String)
+--- a binary branch holding text falls back to text parsing ---
+::1	Variant(IPv6, UInt32)
+7	Variant(IPv6, UInt32)
+::ffff:1.2.3.4	Variant(IPv6, UInt32)
+8	Variant(IPv6, UInt32)
+--- a retained slot no row selects must not reach the Enum8 repair ---
+a	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+\N	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+b	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+\N	Variant(Enum8(\'a\' = 1, \'b\' = 2))
+--- nor decide the width of the values that are selected ---
+::1	Variant(IPv6, UInt32)
+::1	Variant(IPv6, UInt32)
+::2	Variant(IPv6, UInt32)
+42	Variant(IPv6, UInt32)
+--- a branch with a single candidate claims its own alternative, which disambiguates its sibling ---
+7	Variant(DateTime, UInt64)
+2022-01-08 00:00:00	Variant(DateTime, UInt64)
+8	Variant(DateTime, UInt64)
+2022-01-09 00:00:00	Variant(DateTime, UInt64)
+--- an explicitly zoned DateTime alternative is a relabel, so the branch takes it ---
+7	Variant(DateTime(\'UTC\'), UInt64)
+2022-01-08 00:00:00	Variant(DateTime(\'UTC\'), UInt64)
+8	Variant(DateTime(\'UTC\'), UInt64)
+2022-01-09 00:00:00	Variant(DateTime(\'UTC\'), UInt64)
+--- a DateTime64 alternative is what the flat date64 column reaches, so the branch takes it ---
+7	Variant(DateTime64(3, \'UTC\'), UInt64)
+2022-01-08 00:00:00.000	Variant(DateTime64(3, \'UTC\'), UInt64)
+8	Variant(DateTime64(3, \'UTC\'), UInt64)
+2022-01-09 00:00:00.000	Variant(DateTime64(3, \'UTC\'), UInt64)
+--- a uint32 branch takes IPv4, the encoding the writer uses for it ---
+0.0.0.7	Variant(IPv4, String)
+x	Variant(IPv4, String)
+0.0.0.8	Variant(IPv4, String)
+y	Variant(IPv4, String)
+--- and DateTime, its other writer encoding ---
+1970-01-01 00:00:07	Variant(DateTime, String)
+x	Variant(DateTime, String)
+1970-01-01 00:00:08	Variant(DateTime, String)
+y	Variant(DateTime, String)
+--- and DateTime64, which the flat uint32 column reaches at any scale ---
+1970-01-01 00:00:07.000	Variant(DateTime64(3, \'UTC\'), String)
+x	Variant(DateTime64(3, \'UTC\'), String)
+1970-01-01 00:00:08.000	Variant(DateTime64(3, \'UTC\'), String)
+y	Variant(DateTime64(3, \'UTC\'), String)
+--- the same seconds the flat column path returns for that request ---
+1970-01-01 00:00:07.000	DateTime64(3, \'UTC\')
+1970-01-01 00:00:08.000	DateTime64(3, \'UTC\')
+1970-01-01 00:00:07.000	DateTime64(3, \'UTC\')
+1970-01-01 00:00:08.000	DateTime64(3, \'UTC\')
+--- and a duration branch claims the alternative its int64 sibling could otherwise take ---
+7	Variant(Int128, IntervalSecond)
+5	Variant(Int128, IntervalSecond)
+8	Variant(Int128, IntervalSecond)
+6	Variant(Int128, IntervalSecond)
+--- claiming it is not converting into it: an excluded branch keeps its own values ---
+7	Variant(Date32, UInt64)
+2022-01-08	Variant(Date32, UInt64)
+8	Variant(Date32, UInt64)
+2022-01-09	Variant(Date32, UInt64)
+--- which are the values the flat column path returns for the same days ---
+2022-01-08	Date32
+2022-01-09	Date32
+2022-01-08	Date32
+2022-01-09	Date32
+--- the Arrow child order need not be the sorted Variant order ---
+x	Variant(String, UInt32)
+1	Variant(String, UInt32)
+y	Variant(String, UInt32)
+2	Variant(String, UInt32)
+--- a sparse union ---
+true	Variant(Bool, UInt8)
+7	Variant(Bool, UInt8)
+true	Variant(Bool, UInt8)
+248	Variant(Bool, UInt8)
+--- a union under a struct and under a list ---
+(true)	Tuple(\n    v Variant(Bool, UInt8))
+(7)	Tuple(\n    v Variant(Bool, UInt8))
+(false)	Tuple(\n    v Variant(Bool, UInt8))
+(248)	Tuple(\n    v Variant(Bool, UInt8))
+[true,7]	Array(Variant(Bool, UInt8))
+[false]	Array(Variant(Bool, UInt8))
+[248]	Array(Variant(Bool, UInt8))
+[]	Array(Variant(Bool, UInt8))
+--- a date32 branch is excluded by design, so this stays rejected ---
+Cannot convert type Variant(Date32, String) to Variant(Int32, String).
+--- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---
+Cannot convert type Variant(DateTime64(3, 'UTC'), String) to Variant(DateTime, String).
+--- a uint32 branch offered a wider integer beside DateTime64 takes neither ---
+Cannot convert type Variant(String, UInt32) to Variant(DateTime64(3, 'UTC'), Int64, String).
+--- two branches may never end up on one alternative ---
+Cannot convert type Variant(Bool, UInt8) to Variant(String, UInt8).
+--- an int8 branch is never re-declared as Bool, so this stays rejected ---
+Cannot convert type Variant(Int8, String) to Variant(Bool, String).
+--- a composite branch is never re-declared, so a name-differing field stays rejected ---
+Cannot convert type Variant(String, Tuple(a Nullable(Int32))) to Variant(String, Tuple(b Int32)).
+--- an ambiguous branch gets no alternative, so this stays rejected ---
+Cannot convert type Variant(FixedString(16), String) to Variant(IPv6, Int128).
+--- an unassigned branch the request does not name abandons the repair, keeping the message ---
+Cannot convert type Variant(Bool, Date32) to Variant(String, UInt8).
+--- and where every branch is assigned, a value that cannot convert is reported as itself ---
+(CANNOT_PARSE_IPV6)
+--- schema inference has no requested type, so it is unaffected ---
+bool_int8	Variant(Bool, Int8)					
+bool_utf8	Variant(Bool, String)					
+int8_utf8	Variant(Int8, String)					
+fsb_utf8	Variant(FixedString(16), String)					
+dict_fsb_utf8	Variant(FixedString(16), String)					
+text_binary_int32	Variant(Int32, String)					
+unparseable_binary_int32	Variant(Int32, String)					
+date32_utf8	Variant(Date32, String)					
+uint32_date64	Variant(DateTime, UInt32)					
+uint32_utf8	Variant(String, UInt32)					
+uint32_flat	Nullable(UInt32)					
+ts_utf8	Variant(DateTime64(3, \'UTC\'), String)					
+int64_duration	Variant(Int64, IntervalSecond)					
+uint32_date32	Variant(Date32, UInt32)					
+date32_flat	Nullable(Date32)					
+bool_uint8	Variant(Bool, UInt8)					
+bool_date32	Variant(Bool, Date32)					
+retained	Variant(Int8)					
+aliased_retained	Variant(Int32, String)					
+struct_utf8	Variant(String, Tuple(\n    a Nullable(Int32)))					
+binary_fsb	Variant(FixedString(16), String)					
+utf8_int32	Variant(Int32, String)					
+sparse	Variant(Bool, Int8)					
+nested	Tuple(\n    v Variant(Bool, Int8))					
+listed	Array(Variant(Bool, Int8))					
+--- and a request that merely extends the decoded Variant leaves every branch as decoded ---
+true	Variant(Bool, Int8, String)
+7	Variant(Bool, Int8, String)
+false	Variant(Bool, Int8, String)
+-8	Variant(Bool, Int8, String)
