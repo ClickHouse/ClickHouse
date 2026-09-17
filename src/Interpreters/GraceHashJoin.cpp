@@ -364,6 +364,11 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
+    /// Another thread already latched the stop below, so the bucket must stay exactly as it was then:
+    /// a repartition here would move half of it into buckets `getDelayedBlocks` is about to drop.
+    if (stop_after_current_bucket)
+        return false;
+
     addBlockToJoinImpl(materializeBlock(block));
 
     /// In legacy mode these limits make us spill instead (see `hasMemoryOverflow`), so don't fail on them.
@@ -895,8 +900,10 @@ Block GraceHashJoin::prepareRightBlock(const Block & block)
 
 bool GraceHashJoin::canForceRepartition() const
 {
-    /// A forced split must not fail the query, so skip it once the bucket count is at the limit.
-    return hash_join && hash_join->getTotalRowCount() > 1 && getNumBuckets() * 2 <= max_num_buckets;
+    /// A forced split must not fail the query, so skip it once the bucket count is at the limit. Nor
+    /// after `join_overflow_mode = 'break'` latched: the halves it would flush are about to be dropped.
+    return hash_join && !stop_after_current_bucket && hash_join->getTotalRowCount() > 1
+        && getNumBuckets() * 2 <= max_num_buckets;
 }
 
 /// Split the bucket held in memory: `rehashBuckets` doubles the bucket count, so about half of its rows
