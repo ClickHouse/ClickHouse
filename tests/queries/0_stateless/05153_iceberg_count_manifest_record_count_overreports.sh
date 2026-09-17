@@ -193,8 +193,11 @@ create_table()
 
 # count() with the metadata-only optimization enabled and disabled (pinned: the test runner
 # randomizes the setting), the row count the manifest files describe, whether the optimization
-# was applied. The Iceberg metadata caches are disabled because the metadata files are patched
-# behind the server's back, and they are immutable per the specification.
+# was applied, and whether `DROP TABLE ... IF EMPTY` refuses the table: it must, since every
+# table holds three rows, and in particular when the metadata-only count is unavailable, because
+# an unknown row count is not an empty table. The Iceberg metadata caches are disabled because
+# the metadata files are patched behind the server's back, and they are immutable per the
+# specification.
 report()
 {
     ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --use_iceberg_metadata_files_cache=0 --query "
@@ -207,11 +210,13 @@ report()
              WHERE explain LIKE '%Optimized trivial count%') AS optimization_applied
         FORMAT TSV;
     "
+    ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --use_iceberg_metadata_files_cache=0 \
+        --query "DROP TABLE IF EMPTY $1 SETTINGS ignore_drop_queries_probability = 0" 2>&1 | grep -o 'TABLE_NOT_EMPTY'
 }
 
 ROOT="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}"
 
-echo '-- trivial_count scan_count manifest_rows optimization_applied'
+echo '-- trivial_count scan_count manifest_rows optimization_applied, then the DROP TABLE IF EMPTY refusal'
 
 echo '-- consistent metadata: the metadata-only count is used'
 create_table t_consistent "${ROOT}_consistent"
