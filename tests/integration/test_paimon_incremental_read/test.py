@@ -117,7 +117,7 @@ def _create_clickhouse_table_for_paimon_incremental_read(
             keeper_path=keeper_path,
             refresh_interval_sec=refresh_interval_sec,
         ),
-        settings={"allow_experimental_paimon_storage_engine": 1},
+        settings={"enable_paimon_storage_engine": 1},
     )
 
 

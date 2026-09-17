@@ -126,7 +126,7 @@ def test_paimon_metadata_files_cache(started_cluster):
     node.query(
         create_query,
         settings={
-            "allow_experimental_paimon_storage_engine": 1,
+            "enable_paimon_storage_engine": 1,
             "use_paimon_metadata_files_cache": 0,
         },
     )
@@ -150,7 +150,7 @@ def test_paimon_metadata_files_cache(started_cluster):
     node.query(
         create_query,
         settings={
-            "allow_experimental_paimon_storage_engine": 1,
+            "enable_paimon_storage_engine": 1,
             "use_paimon_metadata_files_cache": 1,
         },
     )
