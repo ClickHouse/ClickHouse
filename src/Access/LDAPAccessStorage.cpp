@@ -286,35 +286,18 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
         const auto & new_role_name = role->getName();
         if (it != granted_role_names.end()) // Renamed a granted role.
         {
-            const auto & old_role_name = it->second;
+            const auto old_role_name = it->second;
             if (new_role_name != old_role_name)
             {
-                // Revoke the old role first, then grant the new role.
+                /// Revoke the old name first; the new name is granted like a role that appeared under it, so that a
+                /// rename into a name another storage already defines does not split the role either.
                 applyRoleChangeNoLock(false /* revoke */, id, old_role_name);
-                applyRoleChangeNoLock(true /* grant */, id, new_role_name);
+                grantRoleByNameNoLock(id, new_role_name);
             }
         }
         else // Added a role.
         {
-            /// A second role of a name that is granted already: another storage published it (a replicated storage
-            /// refreshed from ZooKeeper, a file loaded by a disk storage), or the synchronisation created its copy
-            /// before that one appeared. The users must hold exactly the role the name resolves to, the first one in
-            /// `user_directories` order (`AccessControl::find`), which is the one `GRANT ... TO role_name` reaches;
-            /// granting the second id as well would split the role between the users who have the old id and those
-            /// who get the new one.
-            const auto granted_it = granted_role_ids.find(new_role_name);
-            if (granted_it != granted_role_ids.end() && granted_it->second != id)
-            {
-                const auto resolved = access_control.find<Role>(new_role_name);
-                if (!resolved || *resolved == granted_it->second)
-                    return; /// The new copy is shadowed by the granted one; nothing changes for the users.
-
-                applyRoleChangeNoLock(false /* revoke */, granted_it->second, new_role_name);
-                applyRoleChangeNoLock(true /* grant */, *resolved, new_role_name);
-                return;
-            }
-
-            applyRoleChangeNoLock(true /* grant */, id, new_role_name);
+            grantRoleByNameNoLock(id, new_role_name);
         }
     }
     else // Removed a role.
@@ -330,6 +313,29 @@ void LDAPAccessStorage::processRoleChange(const UUID & id, const AccessEntityPtr
                 applyRoleChangeNoLock(true /* grant */, *resolved, old_role_name);
         }
     }
+}
+
+
+void LDAPAccessStorage::grantRoleByNameNoLock(const UUID & id, const String & role_name)
+{
+    /// The users of this directory must hold exactly the role the name resolves to, the first one in
+    /// `user_directories` order (`AccessControl::find`), which is the one `GRANT ... TO role_name` reaches. A second
+    /// role of the name may appear in another storage (a replicated storage refreshed from ZooKeeper, a file loaded
+    /// by a disk storage), or the synchronisation may have created its copy before that one appeared; granting every
+    /// copy would split the role between the users who have one id and those who get the other.
+    const auto resolved = access_control.find<Role>(role_name);
+    const auto granted_it = granted_role_ids.find(role_name);
+    if (granted_it != granted_role_ids.end() && granted_it->second != id)
+    {
+        if (!resolved || *resolved == granted_it->second)
+            return; /// The copy that appeared is shadowed by the granted one; nothing changes for the users.
+
+        applyRoleChangeNoLock(false /* revoke */, granted_it->second, role_name);
+        applyRoleChangeNoLock(true /* grant */, *resolved, role_name);
+        return;
+    }
+
+    applyRoleChangeNoLock(true /* grant */, resolved.value_or(id), role_name);
 }
 
 
@@ -1559,10 +1565,15 @@ LDAPAccessStorage::SyncApplyResult LDAPAccessStorage::applySyncPlanNoLock(const 
     }
     result.added = diff.to_add.size();
 
-    /// From now on every planned user belongs to the synchronisation, including the ones that had logged in lazily.
+    /// From now on every planned user belongs to the synchronisation, including the ones that had logged in lazily
+    /// or were materialised by the interserver path: the directory has just confirmed each of them, so `EXECUTE AS`
+    /// resolves them from the snapshot like every synchronised user, without a lookup.
     synced_user_names.clear();
     for (const auto & [name, _] : plan.users)
+    {
         synced_user_names.insert(name);
+        unverified_user_names.erase(name);
+    }
 
     /// Roles the mappings name but nobody created: `assignRolesNoLock` warned per user, this is the per-run view.
     for (const auto & [role_name, _] : users_per_roles)

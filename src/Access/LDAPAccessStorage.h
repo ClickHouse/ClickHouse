@@ -114,6 +114,7 @@ private: // IAccessStorage implementations.
     void processRoleChange(const UUID & id, const AccessEntityPtr & entity);
 
     void applyRoleChangeNoLock(bool grant, const UUID & role_id, const String & role_name);
+    void grantRoleByNameNoLock(const UUID & id, const String & role_name);
     void assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const;
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;
     /// Forgets everything `assignRolesNoLock` recorded about a user that is being removed from `memory_storage`.
