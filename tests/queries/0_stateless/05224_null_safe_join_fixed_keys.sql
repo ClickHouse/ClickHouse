@@ -43,9 +43,12 @@ SELECT count(), sum(l.id + r.id) FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r
 SELECT count(), sum(l.id + r.id) FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r.a AND l.b <=> r.b SETTINGS join_algorithm = 'full_sorting_merge';
 SELECT count(), sum(l.id + r.id) FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r.a AND l.b <=> r.b SETTINGS join_algorithm = 'partial_merge';
 
-SELECT 'Nullable(Nothing) keeps the tuple';
+SELECT 'compound and Nothing keys keep the tuple';
 SELECT * FROM (SELECT NULL AS x) l JOIN (SELECT NULL AS x) r ON l.x <=> r.x;
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT * FROM (SELECT NULL AS x) l JOIN (SELECT NULL AS x) r ON l.x <=> r.x) WHERE explain LIKE '%Join conditions%';
+WITH t AS (SELECT if(number % 3 = 0, NULL, tuple(if(number % 5, NULL, number))) AS k FROM numbers(4)) SELECT count(), countIf(isNull(l.k) AND isNull(r.k)) FROM t l JOIN t r ON l.k <=> r.k;
+WITH t AS (SELECT if(number = 0, NULL, tuple(NULL)) AS k FROM numbers(2)) SELECT count() FROM t l JOIN t r ON l.k <=> r.k;
+SELECT trim(explain) FROM (EXPLAIN actions = 1 WITH t AS (SELECT if(number % 3 = 0, NULL, tuple(if(number % 5, NULL, number))) AS k FROM numbers(4)) SELECT count() FROM t l JOIN t r ON l.k <=> r.k) WHERE explain LIKE '%Join conditions%';
 
 DROP TABLE t_ns_left;
 DROP TABLE t_ns_right;
