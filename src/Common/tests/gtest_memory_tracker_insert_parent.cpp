@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -20,6 +21,28 @@ struct AccountingLedger
     MemoryTracker user{&global, VariableContext::User, false};
     MemoryTracker query{&global, VariableContext::Process, false};
 };
+
+TEST(MemoryTrackerInsertParent, QuerySetupLimitDoesNotRecheckExistingAncestors)
+{
+    AccountingLedger ledger;
+    ledger.query.adjustWithUntrackedMemory(100);
+    ledger.global.setHardLimit(1);
+    ledger.query.setHardLimit(100);
+    EXPECT_NO_THROW(ledger.query.checkQueryLimit());
+
+    ledger.query.setHardLimit(99);
+    EXPECT_THROW(ledger.query.checkQueryLimit(), DB::Exception);
+    EXPECT_EQ(ledger.query.get(), 100);
+    EXPECT_EQ(ledger.global.get(), 100);
+    {
+        LockMemoryExceptionInThread blocker(VariableContext::Process);
+        EXPECT_NO_THROW(ledger.query.checkQueryLimit());
+    }
+    ledger.query.setHardLimit(0);
+    EXPECT_NO_THROW(ledger.query.checkQueryLimit());
+    ledger.query.adjustWithUntrackedMemory(-100);
+    EXPECT_EQ(ledger.global.get(), 0);
+}
 
 TEST(MemoryTrackerInsertParent, CreditsOnlyNewAncestorAndBalancesSubsequentFrees)
 {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <base/types.h>
 
 #include <functional>
 #include <memory>
@@ -32,6 +33,8 @@ public:
     /// Declare this scope before the query context, so failed setup frees it before restoring the tracker.
     /// Setup uses unbatched accounting; attachment applies the final query's batching settings.
     static QueryScope createForQueryContext();
+    /// Recovery users can retain their configured batching allowance while receiving a query.
+    static QueryScope createForQueryContext(Int64 untracked_memory_limit);
     void attachToQueryContext(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
     static QueryScope createForFlushAsyncInsert(ContextMutablePtr query_context, ThreadGroupPtr parent);
 

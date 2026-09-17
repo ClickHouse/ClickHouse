@@ -68,12 +68,17 @@ QueryScope & QueryScope::operator=(QueryScope && other) noexcept
 
 QueryScope QueryScope::createForQueryContext()
 {
+    return createForQueryContext(0);
+}
+
+QueryScope QueryScope::createForQueryContext(Int64 untracked_memory_limit)
+{
     if (CurrentThread::getGroup() || CurrentThread::get().memory_tracker.getParent() != &total_memory_tracker)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot start query context setup inside another query accounting scope");
 
     QueryScope scope;
     scope.setup_group = std::make_shared<ThreadGroup>();
-    scope.setup_memory_scope = std::make_unique<MemoryTrackerSwitcher>(&scope.setup_group->memory_tracker, 0);
+    scope.setup_memory_scope = std::make_unique<MemoryTrackerSwitcher>(&scope.setup_group->memory_tracker, untracked_memory_limit);
     return scope;
 }
 

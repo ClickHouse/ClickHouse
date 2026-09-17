@@ -808,6 +808,23 @@ bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
     return ((max_size == 0 || size <= max_size) && size >= min_size);
 }
 
+void MemoryTracker::checkQueryLimit() const
+{
+    chassert(level == VariableContext::Process);
+    const Int64 size = get();
+    const Int64 limit = getHardLimit();
+    if (!limit || size <= limit || !memoryTrackerCanThrow(level, false))
+        return;
+
+    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+    ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+    throw DB::Exception(
+        DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+        "Query memory limit exceeded during query setup: would use {}, maximum: {}",
+        formatReadableSizeWithBinarySuffix(size),
+        formatReadableSizeWithBinarySuffix(limit));
+}
+
 std::optional<MemoryTracker::ParentLimitExceeded> MemoryTracker::tryInsertParent(MemoryTracker * new_parent) noexcept
 {
     auto * old_parent = getParent();

@@ -253,7 +253,7 @@ private:
 
     struct Container
     {
-        InsertQuery key;
+        std::shared_ptr<const InsertQuery> key;
         InsertDataPtr data;
     };
 

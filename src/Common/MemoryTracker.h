@@ -188,6 +188,10 @@ public:
     /// Returns rejection data without changing the parent, current usage, or peak on failure.
     [[nodiscard]] std::optional<ParentLimitExceeded> tryInsertParent(MemoryTracker * new_parent) noexcept;
 
+    /// Check retained query setup bytes against this query's limit, without rechecking
+    /// ancestors that have already accounted for those bytes.
+    void checkQueryLimit() const;
+
     Int64 get() const
     {
         return amount.load(std::memory_order_relaxed);

@@ -61,14 +61,40 @@ def test_inherited_context_memory_is_recorded_before_protocol_override(batching_
     node.http_query("SELECT 1", params={"session_id": session_id, "close_session": 1})
 
 
+@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
+def test_retained_context_respects_query_limit(batching_limit):
+    session_id = str(uuid.uuid4())
+    retained_size = 8 * 1024 * 1024
+    node.http_query(
+        None,
+        data="SET log_comment = '" + "x" * retained_size + "'",
+        params={"session_id": session_id, "max_query_size": 2 * retained_size},
+    )
+    try:
+        error = node.http_query_and_get_error(
+            "SELECT 1",
+            params={
+                "session_id": session_id,
+                "log_comment": "",
+                "max_memory_usage": 4 * 1024 * 1024,
+                "max_untracked_memory": batching_limit,
+            },
+        )
+        assert "Query memory limit exceeded during query setup" in error
+        assert node.http_query("SELECT 1", params={"session_id": session_id}) == "1\n"
+    finally:
+        node.http_query("SELECT 1", params={"session_id": session_id, "close_session": 1})
+
+
 @pytest.mark.parametrize("pause_rejection", [False, True])
 def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
     user = "context_memory_" + uuid.uuid4().hex
     node.query(f"CREATE USER {user}")
     node.query(f"GRANT SELECT ON *.* TO {user}")
     session_id = str(uuid.uuid4())
-    retained_size = 8 * 1024 * 1024
-    user_limit = 4 * 1024 * 1024
+    # Leave room for the sentinel and ordinary HTTP setup on coverage builds.
+    user_limit = 16 * 1024 * 1024
+    retained_size = 2 * user_limit
     node.http_query(
         None,
         data="SET log_comment = '" + "x" * retained_size + "'",
@@ -98,6 +124,9 @@ def test_rejected_admission_does_not_accumulate_user_memory(pause_rejection):
         assert_eq_with_retry(
             node, f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'", "1"
         )
+        assert node.http_query(
+            "SELECT 1", user=user, params={"max_memory_usage_for_user": user_limit}
+        ) == "1\n"
         before = int(node.query(
             f"SELECT memory_usage FROM system.user_processes WHERE user = '{user}'"
         ))

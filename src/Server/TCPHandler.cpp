@@ -109,6 +109,7 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool low_cardinality_allow_in_native_format;
+    extern const SettingsUInt64 max_untracked_memory;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
@@ -1303,9 +1304,22 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state, 
             processObsoleteIgnoredPartUUIDs();
 
         case Protocol::Client::Query:
-            query_scope = QueryScope::createForQueryContext();
+        {
+            Int64 setup_untracked_memory_limit = 0;
+            if (!is_interserver_mode)
+            {
+                const auto exempt_users = server.context()->getUsersToIgnoreEarlyMemoryLimitCheck();
+                if (exempt_users && exempt_users->contains(session->getClientInfo().current_user))
+                {
+                    /// Recovery queries must be receivable under memory pressure. Preserve their
+                    /// configured allowance before parsing query text and per-query settings.
+                    setup_untracked_memory_limit = session->sessionContext()->getSettingsRef()[Setting::max_untracked_memory];
+                }
+            }
+            query_scope = QueryScope::createForQueryContext(setup_untracked_memory_limit);
             processQuery(state);
             return true;
+        }
 
         default:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));

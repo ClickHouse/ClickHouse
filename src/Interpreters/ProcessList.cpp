@@ -1,5 +1,4 @@
 #include <Interpreters/ProcessList.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FailPoint.h>
@@ -188,10 +187,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
     /// Resolve the final query limit before admission. Flush and diagnostic checks may
     /// allocate, reclaim caches, or take other locks, so perform them before taking `mutex`.
-    if (auto thread_group = CurrentThread::getGroup())
-        thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
+    const auto setup_thread_group = CurrentThread::getGroup();
+    if (setup_thread_group)
+        setup_thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
     CurrentThread::flushUntrackedMemory();
-    CurrentMemoryTracker::check();
+    /// Existing ancestors already accounted for setup bytes. Rechecking the global limit
+    /// here would defeat `users_to_ignore_early_memory_limit_check` for recovery queries.
+    if (setup_thread_group)
+        setup_thread_group->memory_tracker.checkQueryLimit();
 
     {
         LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
