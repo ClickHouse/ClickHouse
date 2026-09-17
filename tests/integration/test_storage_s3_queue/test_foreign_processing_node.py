@@ -63,7 +63,7 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
     processor info), and its disappearance by removing that node.
 
     The cached observation of the foreign `processing` node is trusted for
-    `s3queue_foreign_processing_node_cache_ttl_seconds` (so that the table does not probe keeper
+    `s3queue_processing_state_cache_ttl_seconds` (so that the table does not probe keeper
     for the file on every polling pass), therefore the file is picked up within that timeout
     after the node disappears, not immediately.
     """
@@ -89,7 +89,7 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
             "s3queue_loading_retries": 100,
             # Do not trust the observation of the foreign `processing` node for long,
             # so that the file is retried quickly after the node disappears.
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+            "s3queue_processing_state_cache_ttl_seconds": 5,
         },
     )
 
@@ -106,7 +106,7 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
         assert (
             node.query(
                 f"SELECT value FROM system.s3_queue_settings "
-                f"WHERE table = '{table_name}' AND name = 'foreign_processing_node_cache_ttl_seconds'"
+                f"WHERE table = '{table_name}' AND name = 'processing_state_cache_ttl_seconds'"
             ).strip()
             == "5"
         )
@@ -166,7 +166,7 @@ def test_file_is_retried_in_ordered_mode(started_cluster):
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+            "s3queue_processing_state_cache_ttl_seconds": 5,
         },
     )
 
@@ -230,7 +230,7 @@ def test_later_files_do_not_advance_past_foreign_held_file_in_ordered_mode(start
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+            "s3queue_processing_state_cache_ttl_seconds": 5,
         },
     )
 
@@ -299,7 +299,7 @@ def test_cached_state_updated_when_foreign_processor_commits(started_cluster):
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
             # Always check keeper, so that the terminal node is discovered promptly.
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+            "s3queue_processing_state_cache_ttl_seconds": 0,
         },
     )
 
@@ -394,192 +394,8 @@ def test_cached_state_updated_when_foreign_processor_commits(started_cluster):
         )
 
 
-def test_foreign_processing_node_cache_ttl_is_per_table(started_cluster):
-    """`foreign_processing_node_cache_ttl_seconds` must be honored per table.
-
-    `ObjectStorageQueueMetadataFactory` shares one `ObjectStorageQueueMetadata` between all
-    tables with the same `keeper_path`, so a setting kept in that shared object would be
-    silently fixed by the table which was created first. This setting belongs to the table:
-    both introspection and the actual retry window must use the value from its own DDL.
-    """
-    node = started_cluster.instances["instance"]
-
-    suffix = generate_random_string()
-    first_table_name = f"test_foreign_ttl_first_{suffix}"
-    second_table_name = f"test_foreign_ttl_second_{suffix}"
-    dst_table_name = f"test_foreign_ttl_dst_{suffix}"
-    keeper_path = f"/clickhouse/test_foreign_ttl_{suffix}"
-    files_path = f"test_foreign_ttl_{suffix}_data"
-
-    files_to_generate = 3
-    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
-
-    # The first table trusts an observation of a foreign `processing` node for an hour.
-    create_table(
-        started_cluster,
-        node,
-        first_table_name,
-        "unordered",
-        files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 1,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 3600,
-        },
-    )
-
-    # The second table shares the keeper path, but always checks keeper.
-    create_table(
-        started_cluster,
-        node,
-        second_table_name,
-        "unordered",
-        files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-            "s3queue_processing_threads_num": 1,
-            "s3queue_loading_retries": 100,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
-        },
-    )
-
-    conflict_file = f"{files_path}/test_1.csv"
-    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
-    zk = started_cluster.get_kazoo_client("zoo1")
-    zk.ensure_path(f"{keeper_path}/processing")
-    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
-
-    try:
-        # Each table reports the value from its own DDL, not the value of the first table.
-        def get_setting(table):
-            return node.query(
-                f"SELECT value FROM system.s3_queue_settings "
-                f"WHERE table = '{table}' AND name = 'foreign_processing_node_cache_ttl_seconds'"
-            ).strip()
-
-        assert get_setting(first_table_name) == "3600"
-        assert get_setting(second_table_name) == "0"
-
-        # Only the second table streams, so it is its own TTL which is in effect.
-        create_mv(node, second_table_name, dst_table_name)
-
-        def get_count():
-            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
-
-        run_with_retry(lambda x: x == files_to_generate - 1, get_count)
-
-        # With the TTL of the first table (an hour) the file would not be retried in time.
-        zk.delete(f"{keeper_path}/processing/{conflict_node}")
-        run_with_retry(lambda x: x == files_to_generate, get_count, retries=60)
-    finally:
-        node.query(
-            f"""
-        DROP TABLE IF EXISTS {dst_table_name};
-        DROP TABLE IF EXISTS {second_table_name};
-        DROP TABLE IF EXISTS {first_table_name};
-        """
-        )
-
-
-def test_foreign_processing_node_cache_deadline_is_not_refreshed_by_another_table(started_cluster):
-    """A second table must not extend the first table's foreign-node cache deadline."""
-    node = started_cluster.instances["instance"]
-
-    suffix = generate_random_string()
-    first_table_name = f"test_foreign_deadline_first_{suffix}"
-    second_table_name = f"test_foreign_deadline_second_{suffix}"
-    first_dst_table_name = f"{first_table_name}_dst"
-    second_dst_table_name = f"{second_table_name}_dst"
-    keeper_path = f"/clickhouse/test_foreign_deadline_{suffix}"
-    files_path = f"test_foreign_deadline_{suffix}_data"
-
-    ttl_sec = 30
-
-    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
-    common_settings = {
-        "keeper_path": keeper_path,
-        "s3queue_processing_threads_num": 1,
-        "s3queue_loading_retries": 100,
-        # Keep both tables polling at a steady one-second pace, so that the moment of the
-        # last keeper probe of each of them is known within a second.
-        "s3queue_polling_min_timeout_ms": 1000,
-        "s3queue_polling_max_timeout_ms": 1000,
-        "s3queue_polling_backoff_ms": 0,
-    }
-    create_table(
-        started_cluster,
-        node,
-        first_table_name,
-        "unordered",
-        files_path,
-        additional_settings={
-            **common_settings,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": ttl_sec,
-        },
-    )
-    create_table(
-        started_cluster,
-        node,
-        second_table_name,
-        "unordered",
-        files_path,
-        additional_settings={
-            **common_settings,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
-        },
-    )
-
-    conflict_file = f"{files_path}/test_0.csv"
-    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
-    zk = started_cluster.get_kazoo_client("zoo1")
-    zk.ensure_path(f"{keeper_path}/processing")
-    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
-
-    def get_first_count():
-        return int(node.query(f"SELECT count() FROM {first_dst_table_name}").strip())
-
-    try:
-        # The first table observes the foreign node, then stops polling: its own
-        # observation stays as old as the moment of this observation.
-        create_mv(node, first_table_name, first_dst_table_name)
-        run_with_retry(
-            lambda status: status == "Processing",
-            lambda: node.query(
-                f"SELECT status FROM system.s3queue_metadata_cache WHERE file_path LIKE '%{conflict_file}'"
-            ).strip(),
-        )
-        observed_at = time.time()
-        node.query(f"SYSTEM PAUSE {first_table_name}")
-
-        # The zero-TTL table probes the same foreign node once a second, until it is
-        # paused shortly before the first table's own observation expires.
-        create_mv(node, second_table_name, second_dst_table_name)
-        time.sleep(max(0, observed_at + ttl_sec - 5 - time.time()))
-        node.query(f"SYSTEM PAUSE {second_table_name}")
-
-        # Now the first table's own observation is expired, while the last probe of the
-        # second table is recent: before the fix, that probe kept the shared deadline
-        # alive and the first table would not retry the file for another 25 seconds.
-        time.sleep(max(0, observed_at + ttl_sec + 2 - time.time()))
-        zk.delete(f"{keeper_path}/processing/{conflict_node}")
-        node.query(f"SYSTEM START {first_table_name}")
-
-        run_with_retry(lambda count: count == 1, get_first_count, retries=12)
-    finally:
-        node.query(
-            f"""
-        SYSTEM START {first_table_name};
-        SYSTEM START {second_table_name};
-        DROP TABLE IF EXISTS {second_dst_table_name};
-        DROP TABLE IF EXISTS {first_dst_table_name};
-        DROP TABLE IF EXISTS {second_table_name};
-        DROP TABLE IF EXISTS {first_table_name};
-        """
-        )
-
-
 def test_foreign_processing_node_cache_ttl_is_alterable(started_cluster):
-    """`foreign_processing_node_cache_ttl_seconds` must be changeable on a live table.
+    """`processing_state_cache_ttl_seconds` must be changeable on a live table.
 
     Shortening the TTL with `ALTER TABLE ... MODIFY SETTING` is how an operator gets a
     stuck file retried immediately. The running streaming task reads the value through
@@ -607,7 +423,7 @@ def test_foreign_processing_node_cache_ttl_is_alterable(started_cluster):
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
             # Without the ALTER below the file would not be retried for an hour.
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 3600,
+            "s3queue_processing_state_cache_ttl_seconds": 3600,
         },
     )
 
@@ -637,7 +453,7 @@ def test_foreign_processing_node_cache_ttl_is_alterable(started_cluster):
         zk.delete(f"{keeper_path}/processing/{conflict_node}")
 
         node.query(
-            f"ALTER TABLE {table_name} MODIFY SETTING s3queue_foreign_processing_node_cache_ttl_seconds = 0"
+            f"ALTER TABLE {table_name} MODIFY SETTING s3queue_processing_state_cache_ttl_seconds = 0"
         )
 
         # The new value is reported and, more importantly, in effect: the file is
@@ -645,7 +461,7 @@ def test_foreign_processing_node_cache_ttl_is_alterable(started_cluster):
         assert (
             node.query(
                 f"SELECT value FROM system.s3_queue_settings "
-                f"WHERE table = '{table_name}' AND name = 'foreign_processing_node_cache_ttl_seconds'"
+                f"WHERE table = '{table_name}' AND name = 'processing_state_cache_ttl_seconds'"
             ).strip()
             == "0"
         )
@@ -660,7 +476,7 @@ def test_foreign_processing_node_cache_ttl_is_alterable(started_cluster):
 
 
 def test_ttl_bounds_retry_latency_on_idle_queue(started_cluster):
-    """`foreign_processing_node_cache_ttl_seconds` bounds the retry latency on an idle queue.
+    """`processing_state_cache_ttl_seconds` bounds the retry latency on an idle queue.
 
     With a single foreign-held file every streaming cycle processes zero rows, so the
     polling backoff grows far beyond the TTL. The streaming task must wake up no later
@@ -687,7 +503,7 @@ def test_ttl_bounds_retry_latency_on_idle_queue(started_cluster):
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+            "s3queue_processing_state_cache_ttl_seconds": 5,
             # The backoff after an empty cycle far exceeds the TTL: without the
             # recheck-based wake-up the retry would take more than two minutes.
             "s3queue_polling_min_timeout_ms": 1000,
@@ -785,7 +601,7 @@ def test_failed_node_appearing_during_set_processing_in_ordered_mode(started_clu
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 3,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+            "s3queue_processing_state_cache_ttl_seconds": 0,
         },
     )
 
@@ -873,7 +689,7 @@ def test_terminal_failure_replaces_cached_retriable_local_failure(started_cluste
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
             # Always check keeper, so that the terminal node is discovered promptly.
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+            "s3queue_processing_state_cache_ttl_seconds": 0,
         },
     )
 
@@ -965,7 +781,7 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
             "s3queue_processing_threads_num": 1,
             "s3queue_buckets": buckets,
             "s3queue_loading_retries": 100,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 1,
+            "s3queue_processing_state_cache_ttl_seconds": 1,
         },
     )
 
@@ -1075,7 +891,7 @@ def test_later_files_wait_for_unresolved_set_processing_with_multiple_threads(st
             "s3queue_processing_threads_num": 2,
             "s3queue_buckets": 1,
             "s3queue_loading_retries": 100,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+            "s3queue_processing_state_cache_ttl_seconds": 5,
         },
     )
 
@@ -1149,7 +965,7 @@ def test_paused_streaming_does_not_busy_loop_on_overdue_recheck(started_cluster)
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 3,
+            "s3queue_processing_state_cache_ttl_seconds": 3,
             "s3queue_polling_min_timeout_ms": 1000,
             "s3queue_polling_backoff_ms": 1000,
             "s3queue_polling_max_timeout_ms": 5000,
@@ -1249,7 +1065,7 @@ def test_files_dropped_by_the_replay_cap_are_not_skipped_in_ordered_mode(started
             "s3queue_polling_min_timeout_ms": 1000,
             "s3queue_polling_max_timeout_ms": 1000,
             "s3queue_polling_backoff_ms": 0,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 1,
+            "s3queue_processing_state_cache_ttl_seconds": 1,
         },
     )
 

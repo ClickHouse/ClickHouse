@@ -22,36 +22,19 @@ template <typename Metadata = ObjectStorageQueueUnorderedFileMetadata>
 std::shared_ptr<Metadata> makeFileMetadata(
     FileStatusPtr file_status, std::atomic<size_t> & metadata_ref_count)
 {
-    if constexpr (requires { typename Metadata::ForeignProcessingObservers; })
-    {
-        /// Keep the registry shared by the metadata objects in this test. A contender
-        /// must observe the same foreign node as the processor which first saw it.
-        static const auto foreign_processing_observers = std::make_shared<typename Metadata::ForeignProcessingObservers>(100);
+    /// Zero: a `Processing` state observed in keeper is never trusted, keeper is always asked.
+    static const std::atomic<size_t> processing_state_cache_ttl_seconds{0};
 
-        return std::make_shared<Metadata>(
-            "/clickhouse/test_foreign_processing",
-            "data/file.csv",
-            file_status,
-            /* max_loading_retries */ 3,
-            metadata_ref_count,
-            /* use_persistent_processing_nodes */ false,
-            "default",
-            getLogger("gtest_file_status_foreign_processing"),
-            /* foreign_processing_node_cache_ttl_sec */ 0,
-            foreign_processing_observers);
-    }
-    else
-    {
-        return std::make_shared<Metadata>(
-            "/clickhouse/test_foreign_processing",
-            "data/file.csv",
-            file_status,
-            /* max_loading_retries */ 3,
-            metadata_ref_count,
-            /* use_persistent_processing_nodes */ false,
-            "default",
-            getLogger("gtest_file_status_foreign_processing"));
-    }
+    return std::make_shared<Metadata>(
+        "/clickhouse/test_foreign_processing",
+        "data/file.csv",
+        file_status,
+        /* max_loading_retries */ 3,
+        metadata_ref_count,
+        /* use_persistent_processing_nodes */ false,
+        processing_state_cache_ttl_seconds,
+        "default",
+        getLogger("gtest_file_status_foreign_processing"));
 }
 
 /// Mirrors what `trySetProcessing` / `prepareSetProcessingRequests` do before probing
@@ -67,37 +50,11 @@ void snapshotTerminalStateGeneration(Metadata & metadata)
 
 }
 
-/// Observing the `processing` node of another processor after a local failure must not keep
-/// the per-attempt data of that failure, otherwise introspection reports a `Processing`
-/// file with a stale exception. The number of retries must be preserved.
-TEST(ObjectStorageQueueFileStatus, ForeignProcessingResetsDataOfPreviousLocalAttempt)
-{
-    auto file_status = std::make_shared<FileStatus>("data/file.csv");
-    std::atomic<size_t> metadata_ref_count{0};
-    auto metadata = makeFileMetadata(file_status, metadata_ref_count);
-
-    file_status->onProcessing();
-    file_status->processed_rows = 10;
-    file_status->retries = 2;
-    file_status->onFailed("Cannot read the file");
-
-    ASSERT_EQ(file_status->state.load(), FileStatus::State::Failed);
-    ASSERT_NE(file_status->processing_end_time.load(), 0);
-
-    snapshotTerminalStateGeneration(*metadata);
-    metadata->afterSetProcessing(/* success */ false, FileStatus::State::Processing);
-
-    ASSERT_EQ(file_status->state.load(), FileStatus::State::Processing);
-    ASSERT_EQ(file_status->processed_rows.load(), 0UL);
-    ASSERT_EQ(file_status->processing_end_time.load(), 0);
-    ASSERT_EQ(file_status->getException(), "");
-    ASSERT_EQ(file_status->retries.load(), 2UL);
-}
-
 /// A same-server contender which loses the race to a concurrent local processor
-/// (the `FileStatus` is shared between tables and threads) must not relabel
-/// the locally owned `Processing` state as "processing by another processor",
-/// which is observable as the data of the ongoing local attempt being dropped.
+/// (the `FileStatus` is shared between tables and threads) must not relabel the locally
+/// owned `Processing` state as observed in keeper: the owner updates the record itself,
+/// and a false marker would make the other tables of this server treat the file as held
+/// by another server (recheck it after the TTL, and block its ordering domain).
 TEST(ObjectStorageQueueFileStatus, LocalProcessingStateIsPreservedOnSameServerContention)
 {
     auto file_status = std::make_shared<FileStatus>("data/file.csv");
@@ -115,321 +72,72 @@ TEST(ObjectStorageQueueFileStatus, LocalProcessingStateIsPreservedOnSameServerCo
 
     ASSERT_EQ(file_status->state.load(), FileStatus::State::Processing);
     ASSERT_EQ(file_status->processed_rows.load(), 7UL);
+    ASSERT_EQ(file_status->processing_observed_in_keeper_time.load(), 0);
 }
 
-/// Taking the file over locally must clear the "processing by another processor" hint,
-/// otherwise a later local contender would consider the state foreign and drop the data
-/// of the ongoing local attempt.
-template <typename Metadata = ObjectStorageQueueUnorderedFileMetadata>
-void expectForeignProcessingHintIsClearedByLocalProcessing()
-{
-    if constexpr (requires(typename Metadata::FileStatus & status) { status.isProcessingByAnotherProcessor(); })
-    {
-        /// The dependent alias keeps this branch uninstantiated at the merge base.
-        using FS = typename Metadata::FileStatus;
-
-        auto file_status = std::make_shared<FS>("data/file.csv");
-        std::atomic<size_t> metadata_ref_count{0};
-        auto metadata = makeFileMetadata<Metadata>(file_status, metadata_ref_count);
-
-        snapshotTerminalStateGeneration(*metadata);
-        metadata->afterSetProcessing(/* success */ false, FS::State::Processing);
-        ASSERT_EQ(file_status->state.load(), FS::State::Processing);
-
-        /// This processor took the file over: the state is ours again.
-        file_status->onProcessing();
-        file_status->processed_rows = 5;
-        ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
-
-        auto contender = makeFileMetadata<Metadata>(file_status, metadata_ref_count);
-        snapshotTerminalStateGeneration(*contender);
-        contender->afterSetProcessing(/* success */ false, FS::State::Processing);
-
-        ASSERT_EQ(file_status->state.load(), FS::State::Processing);
-        ASSERT_EQ(file_status->processed_rows.load(), 5UL);
-    }
-    else
-        FAIL() << "FileStatus does not distinguish local and foreign processing states";
-}
-
+/// Taking the file over locally must clear the "observed in keeper" marker, otherwise a
+/// later local contender would consider the state foreign and mark it as such again.
 TEST(ObjectStorageQueueFileStatus, ForeignProcessingHintIsClearedByLocalProcessing)
 {
-    expectForeignProcessingHintIsClearedByLocalProcessing();
+    auto file_status = std::make_shared<FileStatus>("data/file.csv");
+    std::atomic<size_t> metadata_ref_count{0};
+    auto metadata = makeFileMetadata(file_status, metadata_ref_count);
+
+    snapshotTerminalStateGeneration(*metadata);
+    metadata->afterSetProcessing(/* success */ false, FileStatus::State::Processing);
+    ASSERT_EQ(file_status->state.load(), FileStatus::State::Processing);
+    ASSERT_NE(file_status->processing_observed_in_keeper_time.load(), 0);
+
+    /// This processor took the file over: the state is ours again.
+    file_status->onProcessing();
+    file_status->processed_rows = 5;
+    ASSERT_EQ(file_status->processing_observed_in_keeper_time.load(), 0);
+
+    auto contender = makeFileMetadata(file_status, metadata_ref_count);
+    snapshotTerminalStateGeneration(*contender);
+    contender->afterSetProcessing(/* success */ false, FileStatus::State::Processing);
+
+    ASSERT_EQ(file_status->state.load(), FileStatus::State::Processing);
+    ASSERT_EQ(file_status->processed_rows.load(), 5UL);
+    ASSERT_EQ(file_status->processing_observed_in_keeper_time.load(), 0);
 }
 
-/// A foreign `processing` observation belongs to the table which made it. A table
-/// which has not observed the node itself must probe keeper instead of inheriting
-/// another table's cache deadline.
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectForeignProcessingCacheDeadlineIsPerTable()
+namespace
 {
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        /// The dependent aliases keep this branch uninstantiated at the merge base.
-        using FS = typename Meta::FileStatus;
-        using Observers = typename Meta::ForeignProcessingObservers;
 
+/// Only a `Processing` state observed in keeper is trusted for the cache TTL, and a zero
+/// TTL trusts nothing. A locally owned `Processing` state is never "trusted" in this
+/// sense: its owner updates it, so there is nothing to recheck.
+template <typename FS>
+void expectOnlyAnObservedProcessingStateIsTrustedForTheTTL()
+{
+    if constexpr (requires(const FS & fs) { fs.isProcessingObservedInKeeperTrusted(size_t{}); })
+    {
         auto file_status = std::make_shared<FS>("data/file.csv");
-        Observers first_observers(1);
-        Observers second_observers(1);
-
-        file_status->onProcessingByAnotherProcessor(first_observers, file_status->terminalStateGeneration());
-
-        ASSERT_FALSE(file_status->shouldRetryProcessing(first_observers, 3600));
-        ASSERT_TRUE(file_status->shouldRetryProcessing(second_observers, 3600));
-        ASSERT_NE(file_status->processingByAnotherProcessorSince(first_observers), 0);
-        ASSERT_EQ(file_status->processingByAnotherProcessorSince(second_observers), 0);
-    }
-    else
-        FAIL() << "FileStatus does not keep foreign processing observations per table";
-}
-
-TEST(ObjectStorageQueueFileStatus, ForeignProcessingCacheDeadlineIsPerTable)
-{
-    expectForeignProcessingCacheDeadlineIsPerTable();
-}
-
-/// An observation describes one foreign hold of a path. If the file stops being processed
-/// by another processor and is held again later, a table which observed only the earlier
-/// hold must check keeper instead of reusing its old deadline: the new owner may have
-/// released the file already.
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectStaleObservationIsNotReusedForALaterForeignHold()
-{
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        using FS = typename Meta::FileStatus;
-        using Observers = typename Meta::ForeignProcessingObservers;
-
-        auto file_status = std::make_shared<FS>("data/file.csv");
-        Observers first_table_observers(10);
-        Observers second_table_observers(10);
-
-        /// The first table observes a foreign hold of the file.
-        file_status->onProcessingByAnotherProcessor(first_table_observers, file_status->terminalStateGeneration());
-        ASSERT_FALSE(file_status->shouldRetryProcessing(first_table_observers, 3600));
-
-        /// The hold is over: the file was released and reset.
-        (*file_status).reset();
-        ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
-
-        /// The second table is the first to observe a new foreign hold of the same path.
-        file_status->onProcessingByAnotherProcessor(second_table_observers, file_status->terminalStateGeneration());
-
-        ASSERT_EQ(file_status->processingByAnotherProcessorSince(first_table_observers), 0);
-        ASSERT_TRUE(file_status->shouldRetryProcessing(first_table_observers, 3600));
-        ASSERT_FALSE(file_status->shouldRetryProcessing(second_table_observers, 3600));
-    }
-    else
-        FAIL() << "FileStatus does not invalidate observations of a previous foreign hold";
-}
-
-TEST(ObjectStorageQueueFileStatus, StaleObservationIsNotReusedForALaterForeignHold)
-{
-    expectStaleObservationIsNotReusedForALaterForeignHold();
-}
-
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectForeignProcessingObserversEvictOnlyTheLeastRecentlyUsedPath()
-{
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        typename Meta::ForeignProcessingObservers observers(2);
-
-        observers.set("data/first.csv", /* generation */ 1, 1);
-        observers.set("data/second.csv", /* generation */ 1, 2);
-        ASSERT_EQ(observers.get("data/first.csv", 1), 1);
-
-        observers.set("data/third.csv", /* generation */ 1, 3);
-        ASSERT_EQ(observers.get("data/first.csv", 1), 1);
-        ASSERT_EQ(observers.get("data/second.csv", 1), 0);
-        ASSERT_EQ(observers.get("data/third.csv", 1), 3);
-    }
-    else
-        FAIL() << "There is no registry of foreign processing observations";
-}
-
-TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversEvictOnlyTheLeastRecentlyUsedPath)
-{
-    expectForeignProcessingObserversEvictOnlyTheLeastRecentlyUsedPath();
-}
-
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectForeignProcessingObserversFollowChangedCapacity()
-{
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        typename Meta::ForeignProcessingObservers observers(1);
-
-        observers.set("data/first.csv", /* generation */ 1, 1);
-        observers.setMaxEntries(2);
-        observers.set("data/second.csv", /* generation */ 1, 2);
-        ASSERT_EQ(observers.get("data/first.csv", 1), 1);
-        ASSERT_EQ(observers.get("data/second.csv", 1), 2);
-
-        observers.setMaxEntries(1);
-        ASSERT_EQ(observers.get("data/first.csv", 1), 0);
-        ASSERT_EQ(observers.get("data/second.csv", 1), 2);
-    }
-    else
-        FAIL() << "There is no registry of foreign processing observations";
-}
-
-TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversFollowChangedCapacity)
-{
-    expectForeignProcessingObserversFollowChangedCapacity();
-}
-
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectForeignProcessingObserversAllowUnlimitedEntries()
-{
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        typename Meta::ForeignProcessingObservers observers(0);
-
-        observers.set("data/first.csv", /* generation */ 1, 1);
-        observers.set("data/second.csv", /* generation */ 1, 2);
-        observers.setMaxEntries(0);
-        observers.set("data/third.csv", /* generation */ 1, 3);
-
-        ASSERT_EQ(observers.get("data/first.csv", 1), 1);
-        ASSERT_EQ(observers.get("data/second.csv", 1), 2);
-        ASSERT_EQ(observers.get("data/third.csv", 1), 3);
-    }
-    else
-        FAIL() << "There is no registry of foreign processing observations";
-}
-
-TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversAllowUnlimitedEntries)
-{
-    expectForeignProcessingObserversAllowUnlimitedEntries();
-}
-
-/// The registry must stay under the same memory contract as the metadata cache: the byte
-/// limit bounds it even when the number of entries is unlimited.
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectForeignProcessingObserversAreBoundedByBytes()
-{
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        static constexpr size_t observations_count = 100;
-        const auto path_of = [](size_t i) { return "data/" + std::to_string(1000 + i) + ".csv"; };
-
-        typename Meta::ForeignProcessingObservers observers(/* max_entries */ 0, /* max_bytes */ 0);
-        for (size_t i = 0; i < observations_count; ++i)
-            observers.set(path_of(i), /* generation */ 1, static_cast<time_t>(i + 1));
-
-        const size_t size_of_all = observers.sizeInBytes();
-        ASSERT_GT(size_of_all, 0);
-
-        /// Lowering the limit evicts the least recently used entries immediately.
-        observers.setMaxSizeInBytes(size_of_all / 2);
-        ASSERT_LE(observers.sizeInBytes(), size_of_all / 2);
-        ASSERT_GT(observers.count(), 0);
-        ASSERT_LT(observers.count(), observations_count);
-        ASSERT_EQ(observers.get(path_of(0), 1), 0);
-        ASSERT_GT(observers.get(path_of(observations_count - 1), 1), 0);
-
-        /// The limit keeps holding while new observations arrive.
-        for (size_t i = 0; i < observations_count; ++i)
-            observers.set(path_of(observations_count + i), /* generation */ 1, static_cast<time_t>(i + 1));
-
-        ASSERT_LE(observers.sizeInBytes(), size_of_all / 2);
-        ASSERT_GT(observers.count(), 0);
-    }
-    else
-        FAIL() << "There is no registry of foreign processing observations";
-}
-
-TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversAreBoundedByBytes)
-{
-    expectForeignProcessingObserversAreBoundedByBytes();
-}
-
-/// Evicting the entries is not enough: an `std::unordered_map` keeps its peak bucket array,
-/// so the registry of a long-lived table would stay at its high-water mark even after the
-/// limits were lowered. The memory must be given back.
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectForeignProcessingObserversReclaimTheBucketArray()
-{
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        static constexpr size_t observations_count = 10000;
-
-        typename Meta::ForeignProcessingObservers observers(/* max_entries */ 0, /* max_bytes */ 0);
-        for (size_t i = 0; i < observations_count; ++i)
-            observers.set("data/" + std::to_string(1000 + i) + ".csv", /* generation */ 1, static_cast<time_t>(i + 1));
-
-        const size_t size_of_all = observers.sizeInBytes();
-        observers.setMaxEntries(1);
-        ASSERT_EQ(observers.count(), 1);
-        /// The remaining entry is one of ten thousand, so nothing close to the peak may be left.
-        ASSERT_LT(observers.sizeInBytes(), size_of_all / 100);
-    }
-    else
-        FAIL() << "There is no registry of foreign processing observations";
-}
-
-TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversReclaimTheBucketArray)
-{
-    expectForeignProcessingObserversReclaimTheBucketArray();
-}
-
-/// An observation of a path made for an earlier foreign hold must not be returned for a
-/// later one, even when the entry is still in the registry.
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectForeignProcessingObserversAreScopedToTheGeneration()
-{
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        typename Meta::ForeignProcessingObservers observers(10);
-
-        observers.set("data/first.csv", /* generation */ 1, 100);
-        ASSERT_EQ(observers.get("data/first.csv", 1), 100);
-        ASSERT_EQ(observers.get("data/first.csv", 2), 0);
-
-        observers.set("data/first.csv", /* generation */ 2, 200);
-        ASSERT_EQ(observers.get("data/first.csv", 2), 200);
-        ASSERT_EQ(observers.get("data/first.csv", 1), 0);
-    }
-    else
-        FAIL() << "There is no registry of foreign processing observations";
-}
-
-TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversAreScopedToTheGeneration)
-{
-    expectForeignProcessingObserversAreScopedToTheGeneration();
-}
-
-/// The pre-Keeper state gate must keep a locally owned `Processing` state terminal.
-/// A foreign state without an observation for the asking table, on the other hand,
-/// must be retried so that the table can check whether the foreign node was released.
-template <typename Meta = ObjectStorageQueueIFileMetadata>
-void expectOnlyForeignProcessingIsRetryable()
-{
-    if constexpr (requires { typename Meta::ForeignProcessingObservers; })
-    {
-        /// The dependent aliases keep this branch uninstantiated at the merge base.
-        using FS = typename Meta::FileStatus;
-        using Observers = typename Meta::ForeignProcessingObservers;
-
-        auto file_status = std::make_shared<FS>("data/file.csv");
-        Observers observing_observers(1);
-        Observers other_observers(1);
 
         file_status->onProcessing();
-        ASSERT_FALSE(file_status->shouldRetryProcessing(observing_observers, time_t{}));
+        ASSERT_FALSE(file_status->isProcessingObservedInKeeper());
+        ASSERT_FALSE(file_status->isProcessingObservedInKeeperTrusted(3600));
 
-        file_status->onProcessingByAnotherProcessor(observing_observers, file_status->terminalStateGeneration());
-        ASSERT_TRUE(file_status->shouldRetryProcessing(other_observers, 3600));
+        file_status->onStateObservedInKeeper(FS::State::Processing);
+        ASSERT_TRUE(file_status->isProcessingObservedInKeeper());
+        ASSERT_TRUE(file_status->isProcessingObservedInKeeperTrusted(3600));
+        ASSERT_FALSE(file_status->isProcessingObservedInKeeperTrusted(0));
+
+        /// A terminal state committed elsewhere ends the observation.
+        file_status->onStateObservedInKeeper(FS::State::Processed);
+        ASSERT_FALSE(file_status->isProcessingObservedInKeeper());
+        ASSERT_FALSE(file_status->isProcessingObservedInKeeperTrusted(3600));
     }
     else
-        FAIL() << "FileStatus does not distinguish local and foreign processing states";
+        FAIL() << "FileStatus cannot tell whether an observed `Processing` state is still trusted";
 }
 
-TEST(ObjectStorageQueueFileStatus, OnlyForeignProcessingIsRetryable)
+}
+
+TEST(ObjectStorageQueueFileStatus, OnlyAnObservedProcessingStateIsTrustedForTheTTL)
 {
-    expectOnlyForeignProcessingIsRetryable();
+    expectOnlyAnObservedProcessingStateIsTrustedForTheTTL<FileStatus>();
 }
 
 namespace
@@ -441,7 +149,7 @@ namespace
 template <typename FS>
 void expectForeignTerminalStateReplacesDataOfPreviousLocalAttempt()
 {
-    if constexpr (requires(FS fs) { fs.onTerminalStateByAnotherProcessor(FS::State::Processed, std::string{}, size_t{}); })
+    if constexpr (requires(FS fs) { fs.onTerminalStateObservedInKeeper(FS::State::Processed, std::string{}, size_t{}); })
     {
         auto file_status = std::make_shared<FS>("data/file.csv");
 
@@ -451,19 +159,19 @@ void expectForeignTerminalStateReplacesDataOfPreviousLocalAttempt()
         file_status->onFailed("Cannot read the file");
 
         /// Another processor has committed the file as processed.
-        file_status->onTerminalStateByAnotherProcessor(FS::State::Processed, "", /* retries_ */ 0);
+        file_status->onTerminalStateObservedInKeeper(FS::State::Processed, "", /* retries_ */ 0);
 
         ASSERT_EQ(file_status->state.load(), FS::State::Processed);
         ASSERT_EQ(file_status->processed_rows.load(), 0UL);
         ASSERT_EQ(file_status->processing_start_time.load(), 0);
         ASSERT_EQ(file_status->processing_end_time.load(), 0);
         ASSERT_EQ(file_status->getException(), "");
-        ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
+        ASSERT_FALSE(file_status->isProcessingObservedInKeeper());
 
         /// Another processor has failed the file: its exception and retries are reported.
         file_status->onProcessing();
         file_status->processed_rows = 5;
-        file_status->onTerminalStateByAnotherProcessor(FS::State::Failed, "Cannot parse the file", /* retries_ */ 3);
+        file_status->onTerminalStateObservedInKeeper(FS::State::Failed, "Cannot parse the file", /* retries_ */ 3);
 
         ASSERT_EQ(file_status->state.load(), FS::State::Failed);
         ASSERT_EQ(file_status->processed_rows.load(), 0UL);
@@ -499,7 +207,7 @@ void expectSetProcessingTerminalDiscoveryRefreshesWholeRecord()
             file_status->onFailed("Cannot read the file");
             snapshotTerminalStateGeneration(*metadata);
             metadata->afterSetProcessing(/* success */ false, FS::State::Processing);
-            ASSERT_TRUE(file_status->isProcessingByAnotherProcessor());
+            ASSERT_TRUE(file_status->isProcessingObservedInKeeper());
 
             snapshotTerminalStateGeneration(*metadata);
             metadata->afterSetProcessing(
@@ -673,7 +381,7 @@ void expectTerminalStateIsNotClobberedByALoserOfSetProcessing()
         loser->afterSetProcessing(/* success */ false, FS::State::Processing);
 
         ASSERT_EQ(file_status->state.load(), FS::State::Processed);
-        ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
+        ASSERT_FALSE(file_status->isProcessingObservedInKeeper());
 
         /// A foreign hold observed after that terminal state is a later fact, and is recorded.
         auto contender = makeFileMetadata(file_status, metadata_ref_count);
@@ -681,7 +389,7 @@ void expectTerminalStateIsNotClobberedByALoserOfSetProcessing()
         contender->afterSetProcessing(/* success */ false, FS::State::Processing);
 
         ASSERT_EQ(file_status->state.load(), FS::State::Processing);
-        ASSERT_TRUE(file_status->isProcessingByAnotherProcessor());
+        ASSERT_TRUE(file_status->isProcessingObservedInKeeper());
     }
     else
         FAIL() << "A loser of the set-processing race can clobber a terminal cached state";

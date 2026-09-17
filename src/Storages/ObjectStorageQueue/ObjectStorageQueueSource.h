@@ -21,6 +21,32 @@ namespace DB
 class IStreamingStorage;
 struct ObjectMetadata;
 
+/// Whether the `after_processing` step of the table acts on the generation of every object it
+/// ingested. An Azure `MOVE` copies and deletes exactly the generation that was read, an Azure
+/// `DELETE` deletes exactly that generation, and the copy of an S3 `MOVE` is pinned to it as well,
+/// so all of them have to know that generation - the `ETag` of the object - for every file before
+/// the file is committed as processed. Otherwise an object overwritten after it was read would be
+/// moved or deleted by path, and the newer generation would be gone without ever having been
+/// ingested. The read of such a file is pinned to that generation independently of
+/// `s3_validate_etag_on_read`: were it not, a read that served a newer generation `B` would still be
+/// recorded as an ingestion of the listed generation `A`, the post-processing pinned to `A` would
+/// refuse the object, and `B` would be ingested a second time on the next pass. An S3 `DELETE`
+/// is pinned as well (`If-Match` on the `DeleteObject`, the `ETag` element of a `DeleteObjects`),
+/// so it needs the ingested generation for the same reason.
+bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing);
+
+/// Makes `object_info` carry the generation (`etag`) that the read of the object is then pinned
+/// to (see `StorageObjectStorageSource::createReadBuffer`), so that the generation the read
+/// verified and the generation the post-processing acts on are one and the same. It is the
+/// generation the listing reported: a `HEAD` made after the object was listed and claimed could
+/// name a generation that replaced the listed one, and moving or deleting that one while the path
+/// is marked processed would skip the listed generation forever. The read is pinned through
+/// `RelativePathWithMetadata::require_read_pinned_to_generation`, so it does not depend on
+/// `s3_validate_etag_on_read`, which only governs plain reads. Returns whether the generation is
+/// known: it is not when the listing reports no `ETag`, and a table whose post-processing needs it
+/// must then refuse the file rather than read it.
+bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info);
+
 class ObjectStorageQueueSource final : public ISource, WithContext
 {
 public:
@@ -58,9 +84,7 @@ public:
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
-            std::atomic<bool> & shutdown_called_,
-            const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec_,
-            std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers_);
+            std::atomic<bool> & shutdown_called_);
 
         bool isFinished();
 
@@ -88,7 +112,7 @@ public:
         /// The earliest time at which a file skipped because of a fresh foreign `processing`
         /// observation becomes due for a recheck; `std::nullopt` if there are no such files.
         /// The streaming task schedules the next cycle no later than this time, so that
-        /// `foreign_processing_node_cache_ttl_seconds` bounds the retry latency even when
+        /// `processing_state_cache_ttl_seconds` bounds the retry latency even when
         /// the queue is otherwise idle and the polling backoff is large.
         std::optional<time_t> earliestForeignProcessingRecheckTime();
 
@@ -107,11 +131,6 @@ public:
         const StorageID storage_id;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
-        /// A per-table setting: `metadata` is shared by the tables with the same `keeper_path`.
-        /// A reference to the storage member (like `shutdown_called`): the setting is changeable
-        /// by `ALTER TABLE ... MODIFY SETTING`, and a new value applies from the next use.
-        const std::atomic<time_t> & foreign_processing_node_cache_ttl_sec;
-        const std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -126,7 +145,7 @@ public:
 
         /// Files skipped because a foreign `processing` node observation was fresh.
         /// They are rechecked at the next batch boundary after the observation expires
-        /// (`foreign_processing_node_cache_ttl_seconds`), so the recheck does not wait
+        /// (`processing_state_cache_ttl_seconds`), so the recheck does not wait
         /// for the current listing pass to end. Entries left when the listing is
         /// exhausted are dropped: the observation timestamps live in the shared file
         /// status cache, so the next listing pass re-queues them with the original deadlines.
@@ -317,7 +336,8 @@ public:
         UInt64 commit_id,
         time_t commit_time,
         time_t transaction_start_time_,
-        const std::string & exception_message = {});
+        const std::string & exception_message = {},
+        const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths = {});
 
 private:
     Chunk generateImpl();
@@ -383,6 +403,12 @@ private:
         /// The object's own last-modified time, if object storage reported one.
         /// Used to update the "newest object committed" pipeline-lag watermark.
         time_t last_modified = 0;
+        /// The generation of the object the reader was opened on: the size and the `ETag` of its
+        /// listing entry. The `after_processing` step is pinned to exactly this generation, so an
+        /// object overwritten after it was ingested is neither moved nor deleted as if the newer
+        /// generation had been ingested.
+        uint64_t bytes_size = StoredObject::UnknownSize;
+        String etag;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
