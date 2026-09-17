@@ -8,16 +8,12 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
-#include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadPool.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
-#include <cmath>
 #include <mutex>
 #include <shared_mutex>
 
