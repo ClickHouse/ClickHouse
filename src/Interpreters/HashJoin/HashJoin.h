@@ -93,9 +93,9 @@ struct BuildResult
     size_t new_keys = 0;
 };
 
-/// A join whose result never contains a value taken from a right row - see `MapGetter` - does not
-/// need the mapped part of a cell at all: the table only has to answer whether a key is present.
-/// Such a join instantiates the maps with `VoidMapped`, and every alias below then selects the set
+/// A join whose result never contains a value taken from a right row (see `MapGetter`)
+/// does not need the mapped part of a cell. The table only has to answer whether a key is present.
+/// Such a join instantiates the maps with `VoidMapped`. Every alias below then selects the set
 /// counterpart of the same partitioned table, so a cell holds the key alone.
 template <typename Mapped>
 constexpr bool is_join_set_mapped = std::is_same_v<Mapped, VoidMapped>;
@@ -708,7 +708,7 @@ public:
         Initialized,
     };
 
-    /// Owned by exactly one build thread, which is why these lists need no mutex; the maps are
+    /// Owned by exactly one build thread, so these lists need no mutex. The maps are
     /// shared and go through `bucket_locks`.
     struct WorkerStoredData
     {
@@ -779,9 +779,9 @@ public:
 
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
-        /// Additional data - strings for string keys and continuation elements of single-linked
-        /// lists of references to rows. One per slot, because `Arena` is unsynchronized; splitting
-        /// is sound because neither allocation kind needs contiguity or rollback.
+        /// Strings for string keys, and continuation nodes of single-linked lists of row refs.
+        /// One arena per slot, because `Arena` is unsynchronized. Splitting is sound because
+        /// neither allocation kind needs contiguity or rollback.
         std::vector<std::unique_ptr<Arena>> pools;
 
         Arena & poolForBucket(size_t bucket) { return *pools[slotForBucket(bucket, num_slots)]; }
@@ -805,7 +805,7 @@ public:
         std::atomic<size_t> bucket_bytes = 0;
 
         /// Exact `allocated_size + nullmaps_allocated_size + bucket_bytes`. The three parts are
-        /// independent atomics, so a concurrent sum can miss one worker's update and under-count
+        /// independent atomics. A concurrent sum can miss one worker's update and under-count
         /// `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
 

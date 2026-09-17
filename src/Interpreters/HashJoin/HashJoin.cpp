@@ -612,10 +612,10 @@ HashJoin::HashJoin(
         }
     }
 
-    /// Building the buckets is many small allocations. Each one is charged to the thread, and the
-    /// thread only passes the total up to the query once it crosses `max_untracked_memory`, so a
-    /// 256-bucket layout can leave a megabyte uncharged. Flush that and let the query's limit
-    /// apply, rather than reporting a join the query cannot afford as built.
+    /// Building the buckets is many small allocations. Each one is charged to the thread.
+    /// The thread only passes the total to the query once it crosses `max_untracked_memory`.
+    /// A 256-bucket layout can leave a megabyte uncharged. Flush it so the query's limit
+    /// applies, rather than reporting a join the query cannot afford as built.
     CurrentThread::flushUntrackedMemory();
     CurrentMemoryTracker::check();
 }
@@ -773,8 +773,8 @@ bool HashJoin::preferUseMapsAll() const
         || table_join->getMixedJoinExpression() != nullptr;
 }
 
-/// A set map answers whether a key is present and nothing else, so it fits exactly those joins whose
-/// result can never contain a value taken from a right row.
+/// A set map answers whether a key is present and nothing else.
+/// It fits joins whose result can never contain a value taken from a right row.
 bool HashJoin::canUseSetMaps() const
 {
     if (!table_join->enableJoinKeyOnlyHashTables())
@@ -2777,9 +2777,8 @@ bool HashJoin::canConvertToFixedHashMap() const
         && data->maps.size() == 1 && strictness != JoinStrictness::Asof;
 }
 
-/// The build leaves two things unsettled that probing reads: the cell prefix sums, and the min/max
-/// bounds a direct-addressed map keeps off while concurrent inserts could race. Call after the
-/// last insert.
+/// The build leaves two things unset that probing reads: cell prefix sums, and the min/max
+/// bounds a direct-addressed map keeps off while concurrent inserts could race. Call after the last insert.
 void HashJoin::freezeMapsForProbing()
 {
     const auto maps_kind = getMapsKind();

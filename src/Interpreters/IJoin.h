@@ -161,8 +161,8 @@ public:
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
 
-    /// For callers that must not block, `IProcessor::prepare` above all. Returns nullopt when the
-    /// answer would need a wait, and the caller then skips whatever the answer was gating.
+    /// For callers that must not block, especially `IProcessor::prepare`. Returns nullopt when
+    /// the answer would need a wait. The caller then skips whatever the answer was gating.
     virtual std::optional<bool> tryAlwaysReturnsEmptySet() const { return alwaysReturnsEmptySet(); }
 
     /// StorageJoin/Dictionary is already filled. No need to call addBlockToJoin.
