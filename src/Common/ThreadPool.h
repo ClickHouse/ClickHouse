@@ -90,9 +90,11 @@ public:
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
 
-        /// A job reserved through `scheduleThreadOrThrow` is handed to its newly created worker
-        /// directly. It must not compete with already queued work, otherwise the caller can still
-        /// observe a seemingly running thread whose function has not started.
+        /// A job reserved through `scheduleThreadOrThrow` is handed to its worker directly: either to
+        /// a newly created worker at `start`, or to an idle worker popped from the idle stack (set by
+        /// the scheduler under the pool mutex before waking that worker). It must not compete with
+        /// already queued work, otherwise the caller can still observe a seemingly running thread
+        /// whose function has not started.
         std::unique_ptr<JobWithPriority> initial_job;
 
         /// Per-thread condition variable for LIFO idle scheduling.

@@ -566,15 +566,25 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         /// job would break the contract of `scheduleThreadOrThrow` in the same way: the caller gets a
         /// thread whose function has not started. So if we neither started a fresh worker nor have an
         /// idle one to hand the job to right away, refuse to schedule it.
-        if (job_occupies_thread && !adding_new_thread && threads.size() <= scheduled_jobs)
+        ///
+        /// The idle worker is taken from the idle stack here, under `mutex`, and the job is installed
+        /// into that particular worker (see `initial_job`) instead of the shared queue: a job in the
+        /// queue competes with the jobs scheduled concurrently by other threads, and a higher-priority
+        /// ordinary job could take the woken worker while the long-lived job stays queued.
+        ThreadFromThreadPool * idle_thread_for_job = nullptr;
+        if (job_occupies_thread && !adding_new_thread)
         {
-            new_thread.reset();
-            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
-                return on_error(fmt::format(
-                    "all {} threads of the global thread pool are busy and no new thread can be started, "
-                    "consider increasing the `max_thread_pool_size` setting", max_threads));
-            else
-                return on_error(fmt::format("all {} threads of the pool are busy and no new thread can be started", max_threads));
+            idle_thread_for_job = popNewestIdleThreadNoLock();
+            if (!idle_thread_for_job)
+            {
+                new_thread.reset();
+                if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+                    return on_error(fmt::format(
+                        "all {} threads of the global thread pool are busy and no new thread can be started, "
+                        "consider increasing the `max_thread_pool_size` setting", max_threads));
+                else
+                    return on_error(fmt::format("all {} threads of the pool are busy and no new thread can be started", max_threads));
+            }
         }
 
         if (adding_new_thread)
@@ -596,7 +606,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
 
         try
         {
-            if (job_occupies_thread && adding_new_thread)
+            if (job_occupies_thread)
             {
                 auto initial_job = std::make_unique<JobWithPriority>(
                     std::move(job),
@@ -610,7 +620,17 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
                     std::move(thread_job_slot));
 
                 ++scheduled_jobs;
-                (*thread_slot)->start(thread_slot, std::move(initial_job));
+                if (adding_new_thread)
+                {
+                    (*thread_slot)->start(thread_slot, std::move(initial_job));
+                }
+                else
+                {
+                    /// The worker was popped from the idle stack above and nobody else can hand it a
+                    /// job now; it picks `initial_job` up as soon as it wakes.
+                    idle_thread_for_job->initial_job = std::move(initial_job);
+                    wakeIdleThreadNoLock(idle_thread_for_job);
+                }
             }
             else
             {
@@ -636,7 +656,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
             if (adding_new_thread)
                 threads.pop_front();
 
+            /// The idle worker taken for the long-lived job has not been woken yet; give it back.
+            if (idle_thread_for_job)
+                pushIdleThreadNoLock(idle_thread_for_job);
+
             return on_error("cannot start the job or thread");
+        }
+
+        /// The long-lived job has already been handed to its worker directly.
+        if (job_occupies_thread)
+        {
+            ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
+            return static_cast<ReturnType>(true);
         }
 
         /// Select the most recently idle thread (LIFO order) and wake only that one
@@ -1132,15 +1163,10 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     parent_pool.wakeUpAllIdleThreadsNoLock(); /// `finished` was set, wake up other threads so they can finish themselves.
             }
 
-            if (initial_job)
-            {
-                job_data.emplace(std::move(*initial_job));
-                initial_job.reset();
-                ProfileEvents::increment(
-                    std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
-                    job_data->elapsedMicroseconds());
-            }
-            else
+            /// A job handed to this worker directly (see `scheduleThreadOrThrow`): either given at
+            /// `start`, or installed by the scheduler while this worker was sitting in the idle stack.
+            /// Such a job is taken before anything from the shared queue.
+            if (!initial_job)
             {
             /// LIFO idle thread scheduling: link this thread into the intrusive
             /// idle stack and wait on its own per-thread CV until selected. The
@@ -1165,6 +1191,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// wait. When the worker wakes via the LIFO path the notifier has
             /// already popped it and `removeIdleThreadNoLock` is a no-op.
             while (parent_pool.jobs.empty()
+                && !initial_job
                 && !parent_pool.finished
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
@@ -1173,6 +1200,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 cv.wait(lock, [this]
                 {
                     return idle_wakeup_flag
+                        || initial_job
                         || !parent_pool.jobs.empty()
                         || parent_pool.finished
                         || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
@@ -1180,7 +1208,18 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
                 parent_pool.removeIdleThreadNoLock(this);
             }
+            }
 
+            if (initial_job)
+            {
+                job_data.emplace(std::move(*initial_job));
+                initial_job.reset();
+                ProfileEvents::increment(
+                    std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
+                    job_data->elapsedMicroseconds());
+            }
+            else
+            {
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 // We enter here if:
