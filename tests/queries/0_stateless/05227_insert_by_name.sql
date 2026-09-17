@@ -17,6 +17,13 @@ CREATE TABLE insert_by_name_src_05227
 )
 ENGINE = Memory;
 
+CREATE TABLE insert_by_name_input_dst_05227
+(
+    a String,
+    b UInt64
+)
+ENGINE = Memory;
+
 INSERT INTO insert_by_name_src_05227 VALUES ('hello', 42), ('world', 7);
 
 INSERT INTO insert_by_name_dst_05227 BY NAME
@@ -63,6 +70,28 @@ SELECT b, a FROM input() FORMAT TSV
 hello	100
 SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
 
+INSERT INTO insert_by_name_input_dst_05227 BY NAME
+SELECT b FROM input()
+WHERE b % 2 = 0
+FORMAT TSV
+2
+SELECT a, b FROM insert_by_name_input_dst_05227 FORMAT TSVRaw;
+
+TRUNCATE TABLE insert_by_name_input_dst_05227;
+INSERT INTO insert_by_name_input_dst_05227 (b)
+SELECT b FROM input()
+WHERE b % 2 = 0
+FORMAT TSV
+2
+SELECT a, b FROM insert_by_name_input_dst_05227 FORMAT TSVRaw;
+
+SET allow_experimental_analyzer = 0;
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT b, a FROM insert_by_name_src_05227;
+SELECT a, b, c, d FROM insert_by_name_dst_05227 ORDER BY a FORMAT TSVRaw;
+SET allow_experimental_analyzer = 1;
+
 SELECT JSONExtractBool(
     parseQueryToJSON('INSERT INTO insert_by_name_dst_05227 BY NAME SELECT 1 AS a'),
     'by_name')
@@ -78,4 +107,5 @@ INSERT INTO insert_by_name_dst_05227 (a) BY NAME SELECT 1; -- { clientError SYNT
 INSERT INTO insert_by_name_dst_05227 BY NAME VALUES (1, 'x'); -- { clientError SYNTAX_ERROR }
 
 DROP TABLE insert_by_name_src_05227;
+DROP TABLE insert_by_name_input_dst_05227;
 DROP TABLE insert_by_name_dst_05227;

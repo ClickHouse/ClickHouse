@@ -120,6 +120,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
@@ -404,6 +405,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
     pipeline.dropTotalsAndExtremes();
+
+    if (was_by_name && pipeline.getHeader().getNames() != query_sample_block.getNames())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The SELECT result columns changed while analyzing the INSERT query");
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
     if (context->getSettingsRef()[Setting::insert_null_as_default])
@@ -1272,7 +1276,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
-    const bool was_by_name = query.by_name;
+    was_by_name = query.by_name;
     setInsertContextValues(context, query, table);
     resolveInsertByNameColumns(query);
     if (was_by_name)
@@ -1425,7 +1429,11 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
         insert_columns = std::move(names);
     }
 
-    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
+    context_->setInsertionTable(
+        insert_query.table_id,
+        insert_columns,
+        std::make_shared<ColumnsDescription>(metadata_snapshot->columns),
+        insert_query.by_name);
 }
 
 void InterpreterInsertQuery::resolveInsertByNameColumns(ASTInsertQuery & query)
