@@ -1680,8 +1680,9 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_
     }
 
     /// Fuzz the refresh mode. `AppendIncremental` is the last of the three, so dropping it leaves
-    /// `Replace` and `AppendFull`; it is refused outright where the caller cannot introduce it.
-    if (fuzz_rand() % 10 == 0)
+    /// `Replace` and `AppendFull`. Where the caller cannot introduce it, one that is already there is
+    /// kept rather than rewritten: only transitions into it are suppressed.
+    if (fuzz_rand() % 10 == 0 && (allow_incremental || strategy.mode != RefreshMode::AppendIncremental))
         strategy.mode = static_cast<RefreshMode>(fuzz_rand() % (allow_incremental ? 3 : 2));
 
     /// Toggle schedule kind between EVERY and AFTER
