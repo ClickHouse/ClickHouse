@@ -140,7 +140,8 @@ PartitionedHashJoin::PartitionedHashJoin(
     , delegate_mode(hash_join->needUsedFlagsForPerRightTableRow(table_join))
     , join_table_mode(join_table_mode_)
     , build_rows_hint(build_rows_hint_)
-    , single_fill_thread(!delegate_mode && build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())
+    , single_fill_thread(
+          !delegate_mode && (num_threads == 1 || (build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())))
     , stats_collecting_params(stats_collecting_params_.build)
     , match_stats_collecting_params(stats_collecting_params_.match)
     , log(getLogger("PartitionedHashJoin"))
@@ -433,13 +434,16 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         accumulated_rows.fetch_add(rows, std::memory_order_relaxed);
         accumulated_bytes.fetch_add(fill.stored.allocatedBytes(), std::memory_order_relaxed);
         storeBlockInRowStore(fill);
-        /// The table is sized from the planner's estimate before the first block; a low estimate
-        /// only costs doublings during the inserts.
+        /// The table is sized from the planner's estimate before the first block; a low or missing
+        /// estimate only costs doublings during the inserts, as `hash`'s table pays them.
         if (!clause.hasTable())
+        {
+            const size_t estimated_rows = build_rows_hint.value_or(1);
             clause.beginSinglePartitionInsert(
-                clause.reserveFor(*build_rows_hint, static_cast<double>(*build_rows_hint)),
+                clause.reserveFor(estimated_rows, static_cast<double>(estimated_rows)),
                 accumulated_rows.load(std::memory_order_relaxed),
                 /*grow_at_max_fill_=*/true);
+        }
         clause.insertSingleLaneBlock(fill);
 
         if (!check_limits)

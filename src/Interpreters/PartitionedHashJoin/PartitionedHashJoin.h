@@ -76,9 +76,11 @@ class PartitionedHashJoin : public IJoin
 {
 public:
     /// `build_rows_hint_` is the planner's right-side row estimate, when it has one. Below
-    /// `parallel_hash_join_threshold` the join builds on one fill thread. The pipeline keeps the
-    /// `hash` shape. The table is sized from the hint and grows like `hash`'s. Every block is
-    /// inserted as it arrives, so nothing is left for the barrier.
+    /// `parallel_hash_join_threshold`, and whenever the query has one thread, the join builds on one
+    /// fill thread. The pipeline keeps the `hash` shape. The table is sized from the hint, or starts
+    /// small without one, and grows like `hash`'s. Every block is inserted as it arrives, so nothing
+    /// is left for the barrier. One thread would pay the histogram and scatter passes of the
+    /// partitioned build and gain nothing from them.
     PartitionedHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
@@ -219,7 +221,12 @@ public:
     void setReserveOverrideForTests(size_t reserve) { clause.setReserveOverrideForTests(reserve); }
     void setAmacEnabledForTests(bool value) { clause.setAmacEnabledForTests(value); }
     void setL1CacheSizeForTests(size_t bytes) { clause.setL1CacheSizeForTests(bytes); }
-    void setPartitionBitsForTests(size_t value) { clause.setPartitionBitsForTests(value); }
+    /// A forced partition plan is a partitioned build, which a one-thread join would otherwise skip.
+    void setPartitionBitsForTests(size_t value)
+    {
+        clause.setPartitionBitsForTests(value);
+        single_fill_thread = false;
+    }
     void setGrowBudgetForTests(size_t bytes) { clause.setGrowBudgetForTests(bytes); }
     void setGrowBudgetForDrainForTests(size_t bytes) { clause.setGrowBudgetForDrainForTests(bytes); }
     size_t predictedArenaBytesForTests(bool grouped) const { return clause.predictedArenaBytesForTests(grouped); }
@@ -384,8 +391,8 @@ private:
     mutable std::atomic<size_t> distinct_estimate_at_rows{0};
 
     std::optional<size_t> build_rows_hint;
-    /// An estimated build below `parallel_hash_join_threshold` runs on one fill thread, which inserts
-    /// into the table as the blocks arrive.
+    /// An estimated build below `parallel_hash_join_threshold`, and every build of a one-thread query, runs
+    /// on one fill thread, which inserts into the table as the blocks arrive.
     bool single_fill_thread = false;
     /// The distinct-key count a previous run of this query left in the hash table statistics cache,
     /// read once when the table is sized (`readDistinctKeysFromStatisticsCache`); the clause then sizes
