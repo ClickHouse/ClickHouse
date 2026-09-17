@@ -43,6 +43,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <base/EnumReflection.h>
 #include <Poco/Net/IPAddress.h>
@@ -226,7 +227,10 @@ std::vector<String> fetchStringColumn(
         if (block.empty())
             return;
 
-        const ColumnString & column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
+        /// A constant-folded result (`SELECT toString(tcpPort())`) arrives as a `ColumnConst` over
+        /// `LocalConnection`: only the native protocol materializes it on the way to the client.
+        ColumnPtr full_column = block.getByPosition(0).column->convertToFullColumnIfConst();
+        const ColumnString & column = typeid_cast<const ColumnString &>(*full_column);
         for (size_t i = 0; i < column.size(); ++i)
             result.emplace_back(column[i].safeGet<String>());
     }, base_settings);
@@ -1069,17 +1073,25 @@ std::vector<TableInfo> resolveTables(
                 /// `buildTargets` builds the optional kinds only when the CREATE declares them.
                 if (kind == ViewTarget::RecentSamples && !target_info.mentioned_kinds.contains(kind))
                     continue;
-                inner_owner[{row.database, getTimeSeriesInnerTableName(kind, owner_id)}] = {{row.database, row.name}, uuid_named};
+                inner_owner[{row.database, getTimeSeriesInnerTableName(kind, owner_id, TimeSeriesVersion::LATEST)}]
+                    = {{row.database, row.name}, uuid_named};
             }
-            /// The legacy `data` helper is implicit only when the modern `samples` helper is absent.
-            const String legacy_samples_name = getTimeSeriesInnerTableName("data", owner_id);
-            const String modern_samples_name = getTimeSeriesInnerTableName(ViewTarget::Samples, owner_id);
-            const bool modern_samples_exists = std::any_of(rows.begin(), rows.end(), [&](const auto & other)
+            auto table_exists = [&](const String & name)
             {
-                return other.database == row.database && other.name == modern_samples_name;
-            });
-            if (!target_info.explicit_kinds.contains(ViewTarget::Samples) && !modern_samples_exists)
-                inner_owner[{row.database, legacy_samples_name}] = {{row.database, row.name}, uuid_named};
+                return std::any_of(rows.begin(), rows.end(), [&](const auto & other)
+                {
+                    return other.database == row.database && other.name == name;
+                });
+            };
+            /// An older table names a helper differently. Each legacy name is implicit only while the
+            /// modern one is absent, so a user table carrying it stays in the dump.
+            for (auto [kind, legacy_name] : {std::pair{ViewTarget::Samples, "data"}, std::pair{ViewTarget::MetricFamilies, "metrics"}})
+            {
+                const String modern_name = getTimeSeriesInnerTableName(kind, owner_id, TimeSeriesVersion::LATEST);
+                if (!target_info.explicit_kinds.contains(kind) && !table_exists(modern_name))
+                    inner_owner[{row.database, getTimeSeriesInnerTableName(legacy_name, owner_id)}]
+                        = {{row.database, row.name}, uuid_named};
+            }
         }
     }
     for (const auto & row : rows)
