@@ -14,9 +14,7 @@ extern const int LOGICAL_ERROR;
   * `prefer_use_maps_all` is set when the barrier promoted ALL to RightAny on a unique-key build:
   * the ALL-built `RowRefList` maps are probed with RightAny semantics and skip replication. It is
   * also set for a mixed ON condition, whose residual filter has to see every right row of a key
-  * before it can decide: those joins run on `RowRefList` maps whatever their strictness. RIGHT and
-  * FULL joins with such a condition need per-row flags and take the delegated path, so they never
-  * reach this dispatch.
+  * before it can decide: those joins run on `RowRefList` maps whatever their strictness.
   *
   * Bodies live in `PartitionedHashJoinProbeImpl.h`, instantiated per kind so no one translation
   * unit compiles them all.

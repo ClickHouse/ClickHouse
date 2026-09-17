@@ -47,6 +47,11 @@ class TableJoin;
   * Post-build scatters keys and row locators. Workers insert. One thread drains overflow that
   * wrapped past a range end.
   *
+  * A join with several disjuncts (`ON a OR b`) holds one clause per disjunct over the one store, as
+  * `HashJoin` holds one map per disjunct: the fill routes every row to every clause, the tables are built
+  * one after another at the barrier, and the probe walks the clauses in order, emitting a right row once
+  * however many keys reach it (`KnownRowsHolder`).
+  *
   * The table doubles in place when a wrapping insert would take the last empty cell. It also
   * doubles between waves when the projected fill would exceed 50%. Duplicates of a key are
   * stored inline, as an exact span, or as a newest-first chain of spans (`SpanWriter`).
@@ -59,9 +64,10 @@ class TableJoin;
   * used flags and the probe. Used flags are `cells + 1` entries (offset 0 is the zero-value cell).
   * That is the layout `JoinUsedFlags` and the non-joined scan expect.
   *
-  * Several ON disjuncts, or a mixed non-equi ON condition on a RIGHT or FULL join, need used flags
-  * per right-table row, not per cell. Those joins run a standard `HashJoin` behind this interface
-  * (`delegate_mode`) instead of a partitioned build.
+  * A right row reachable through several keys (several disjuncts, or a mixed non-equi ON condition
+  * on a RIGHT or FULL join) needs used flags per right-table row, not per cell. Those joins keep
+  * the flags per row (`used_flags_per_row`), attached to the stored blocks, and their non-joined
+  * scan walks the stored blocks instead of the table, as `HashJoin` does.
   *
   * The Join table engine (`StorageJoin`) runs this join in a third mode, `join_table_mode`: one
   * single-partition table, created empty with the join and filled one block at a time under the
@@ -166,9 +172,8 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     /// The fill is per-lane plus a short mutexed append, so right-side streams may fill
-    /// concurrently. The delegated path inserts into one `HashJoin`, which is not thread-safe, and
-    /// a build estimated small keeps the narrow pipeline on purpose.
-    bool supportParallelJoin() const override { return !delegate_mode && !single_fill_thread; }
+    /// concurrently. A build estimated small keeps the narrow pipeline on purpose.
+    bool supportParallelJoin() const override { return !single_fill_thread; }
     /// Probe blocks are joined whole, never scattered across slots, and the result caps its own blocks.
     bool emitsSizedOutputBlocks() const override { return true; }
 
@@ -196,8 +201,8 @@ public:
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// The table's cells are independent, so the non-joined scan splits them into `num_streams`
-    /// contiguous position ranges. Stream 0 also emits the zero-value cell and the null-key rows. The
-    /// delegated path stays single-stream, because `HashJoin` does not advertise the parallel regime.
+    /// contiguous position ranges. Stream 0 also emits the zero-value cell and the null-key rows. With
+    /// per-row flags the streams split the stored blocks instead.
     bool supportParallelNonJoinedBlocksProcessing() const override;
 
     IBlocksStreamPtr getNonJoinedBlocks(
@@ -271,8 +276,8 @@ public:
     }
 
     /// The post-build memory verdict, taken once at the barrier from numbers that already exist. A
-    /// delegated build always fits: its table is built. A single fill thread's resident set is compared
-    /// with the budget. A partitioned build asks the clause (`HashJoinClause::planPostBuild`).
+    /// single fill thread's resident set is compared with the budget. A partitioned build asks every
+    /// clause (`HashJoinClause::planPostBuild`) and takes the worst answer.
     using PostBuildPlan = HashJoinClause::PostBuildPlan;
     PostBuildPlan planPostBuild();
 
@@ -408,12 +413,10 @@ private:
     const size_t max_bytes_before_external_join;
 
     /// Owns everything the emit machinery needs: block preparation, the saved block sample, the
-    /// shared row store, the used flags, the output samples. Its own map stays empty and the shared
-    /// table replaces it - except on the delegated path, where it runs the join whole.
+    /// shared row store, the used flags, the output samples. Its own maps stay empty and the clauses'
+    /// tables replace them.
     std::unique_ptr<HashJoin> hash_join;
 
-    /// Set for the shapes that need per-row used flags; see the class comment.
-    const bool delegate_mode;
     /// The Join table engine's mode; see the class comment.
     const bool join_table_mode;
     /// The used flags are keyed per right-table row instead of per cell: several ON clauses, or a mixed

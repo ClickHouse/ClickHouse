@@ -32,8 +32,8 @@ class TableJoin;
   * and the counters of one build.
   *
   * Uses the join's `HashJoin` helper (map type, key sizes, stored blocks) and the join's fill
-  * blocks. The join owns the store, fill lanes, used flags and the probe. One instance per join
-  * today. Several disjuncts are meant to share the store with one clause each.
+  * blocks. The join owns the store, fill lanes, used flags and the probe. One instance per ON
+  * clause: a join with several disjuncts holds one per clause over the same store.
   */
 class HashJoinClause
 {
@@ -209,7 +209,7 @@ public:
     size_t distinctEstimate() const { return std::max<size_t>(static_cast<size_t>(std::llround(hll_estimate)), 1); }
 
     /// The post-build memory verdict for a partitioned build of `rows` rows, taken once at the barrier from
-    /// numbers that already exist. The join answers for the delegated and the single-fill builds itself.
+    /// numbers that already exist. The join answers for the single-fill builds itself.
     enum class PostBuildPlan
     {
         Fits, /// ungrouped scatter

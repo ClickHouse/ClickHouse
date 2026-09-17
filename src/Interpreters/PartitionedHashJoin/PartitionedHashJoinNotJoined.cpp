@@ -333,8 +333,7 @@ bool PartitionedHashJoin::supportParallelNonJoinedBlocksProcessing() const
     /// be split (`HashJoin::anyClauseHasRightKeys`).
     const bool any_clause_has_right_keys = std::ranges::any_of(
         table_join->getClauses(), [](const TableJoin::JoinOnClause & on_clause) { return !on_clause.key_names_right.empty(); });
-    return !delegate_mode && table_join->allowParallelNonJoinedRowsProcessing() && JoinCommon::hasNonJoinedBlocks(*table_join)
-        && any_clause_has_right_keys;
+    return table_join->allowParallelNonJoinedRowsProcessing() && JoinCommon::hasNonJoinedBlocks(*table_join) && any_clause_has_right_keys;
 }
 
 IBlocksStreamPtr
@@ -350,15 +349,6 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
     size_t stream_idx,
     size_t num_streams) const
 {
-    if (delegate_mode)
-    {
-        /// `supportParallelNonJoinedBlocksProcessing` keeps this path single-stream, so only the
-        /// first stream has anything to emit.
-        if (stream_idx != 0)
-            return {};
-        return hash_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
-    }
-
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 

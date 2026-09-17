@@ -255,7 +255,8 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename
 size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
-    /// The joins that keep used flags per row take the delegated standard path instead.
+    /// One clause addresses its flags per cell; the mixed ON condition of a RIGHT or FULL join, which
+    /// marks per row, takes the filter path below.
     constexpr bool flag_per_row = false;
 
     const auto & join_keys = added_columns.join_on_keys.at(0);

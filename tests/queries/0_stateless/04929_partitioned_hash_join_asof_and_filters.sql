@@ -100,8 +100,8 @@ SELECT 'multi-disjunct right (used flags kept per row)', h.1, h = pa FROM (SELEC
     (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p RIGHT JOIN t_ab AS b ON p.k64 = b.k64 OR p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa)
 SETTINGS log_comment = '04929 or right';
 
--- ASOF and multi-disjunct builds use one partition by design; the ON-filter builds partition as usual.
--- All must have inserted rows through the partitioned build.
+-- ASOF builds use one partition by design; the ON-filter and multi-disjunct builds partition as usual (a
+-- multi-disjunct build counts every clause's partitions). All must have inserted rows through the partitioned build.
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'partition plans';
@@ -110,14 +110,14 @@ SELECT
     ProfileEvents['HashJoinPartitions'],
     ProfileEvents['HashJoinInsertedRows'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND (log_comment LIKE '04929 asof %' OR log_comment LIKE '04929 or %')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '04929 asof %'
 ORDER BY log_comment;
 SELECT
     log_comment,
     ProfileEvents['HashJoinPartitions'] > 1,
     ProfileEvents['HashJoinInsertedRows'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '04929 filter %'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND (log_comment LIKE '04929 filter %' OR log_comment LIKE '04929 or %')
 ORDER BY log_comment;
 
 DROP TABLE t_ab;
