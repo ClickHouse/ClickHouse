@@ -1128,9 +1128,6 @@ void writeColumnImpl(
         return true;
     };
 
-    /// arrow accumulates the dictionary of these two physical types in a `BinaryBuilder`, which
-    /// addresses its data with 32-bit offsets and throws a capacity error past `arrow_binary_builder_limit`.
-    /// The other physical types go to a fixed-width builder of at most 16 bytes per value.
     static constexpr bool dict_uses_binary_builder
         = std::is_same_v<ParquetDType, parquet::ByteArrayType> || std::is_same_v<ParquetDType, parquet::FLBAType>;
     static constexpr size_t arrow_binary_builder_limit = 2147483646;
@@ -1146,9 +1143,6 @@ void writeColumnImpl(
         return dict_encoded_size() >= options.max_dictionary_size;
     };
 
-    /// Checked before feeding a batch to the dictionary encoder rather than after, because a batch
-    /// whose values exceed the limit on their own throws inside Put(), before is_dict_too_big() would
-    /// have reported anything.
     auto would_overflow_dict = [&](size_t batch_byte_size)
     {
         if constexpr (dict_uses_binary_builder)
@@ -1206,11 +1200,6 @@ void writeColumnImpl(
     /// of the batch it kept.
     static constexpr size_t max_batch_bytes = 64uz << 20;
 
-    /// A record is normally kept whole, because that is where a page has to start for the page
-    /// index to describe it. One that would not fit a page at all is split anyway - the page's
-    /// 32-bit size does not care that the values belong to one row - and then the index is
-    /// dropped. Sits just under that limit, leaving room for the levels, so that a record which
-    /// master writes with a valid index keeps one.
     static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
 
     auto limit_batch_by_bytes = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, auto && value_size)
@@ -1227,12 +1216,8 @@ void writeColumnImpl(
                 || batch_def_offset + i + 1 == num_values
                 || s.rep[batch_def_offset + i + 1] == 0;
 
-            /// Pages of such a chunk no longer start on record boundaries, which is what the column
-            /// index promises, so it is dropped rather than written wrong.
             if (!record_ends && bytes >= max_record_bytes)
             {
-                /// Neither index can describe a chunk whose pages start mid-record, so both are
-                /// dropped rather than written wrong.
                 s.indexes.column_index_valid = false;
                 s.indexes.offset_index_valid = false;
                 record_ends = true;
@@ -1278,7 +1263,6 @@ void writeColumnImpl(
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
 
-            /// May shrink the batch, so it has to run before anything else consumes `data_count`.
             size_t batch_byte_size = 0;
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
             {
