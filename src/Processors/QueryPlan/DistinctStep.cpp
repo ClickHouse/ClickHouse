@@ -53,7 +53,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsOverflowMode distinct_overflow_mode;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_distinct;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_distinct;
-    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_distinct;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_distinct;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
