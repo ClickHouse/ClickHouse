@@ -5,9 +5,10 @@
 
 /** What a caller that fills a table bucket by bucket relies on, whatever the table's storage.
   *
-  * The bucket of a key is `getBucketFromHash(bucketRoutingHash(key, hash(key)))`, in that order:
-  * the hash a table places its cells by is not always the one it routes by (see
-  * `PartitionedFixedHashMap`), and `offsetInternal` numbers cells across all buckets.
+  * The bucket of a key is `getBucketFromHash(bucketRoutingHash(key, hash(key)))`, in that order.
+  * The hash a table places its cells by is not always the one it routes by.
+  * See `PartitionedFixedHashMap`.
+  * `offsetInternal` numbers cells across all buckets.
   */
 template <typename Map>
 concept BucketPartitionedTable = requires(

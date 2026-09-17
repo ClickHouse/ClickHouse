@@ -465,8 +465,7 @@ public:
             }
         }
 
-        /// A two-level map numbers its cells across buckets and needs the prefix sums of the bucket
-        /// sizes for that; nothing to do for the single-level maps.
+        /// Runs `computeBucketPrefix` on two-level maps. Single-level maps need nothing.
         void computeBucketPrefix(Type which) const
         {
             switch (which)

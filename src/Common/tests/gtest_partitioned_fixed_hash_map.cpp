@@ -49,10 +49,10 @@ size_t routedBucket(typename Map::key_type key)
 }
 
 template <typename Map>
-std::vector<size_t> offsetsByIteration(Map & map)
+std::vector<size_t> offsetsByIteration(const Map & map)
 {
     std::vector<size_t> offsets;
-    for (auto it = map.begin(); it != map.end(); ++it)
+    for (typename Map::const_iterator it = map.begin(); it != map.end(); ++it)
         offsets.push_back(map.offsetInternal(it.getPtr()));
     return offsets;
 }
@@ -222,9 +222,9 @@ TEST(PartitionedFixedHashMap, RoutingIsInRangeAndStable)
 
 TEST(PartitionedFixedHashMap, ACacheLineNeverSpansTwoBuckets)
 {
-    /// 16-byte cells divide the line; the 12-byte cell below (a `bool` and an 8-byte, 4-aligned
-    /// payload) does not, so the line has to come from the cell's byte offset, not from a
-    /// cells-per-line count.
+    /// 16-byte cells divide the line. The 12-byte cell below does not.
+    /// It is a `bool` and an 8-byte, 4-aligned payload.
+    /// The line has to come from the cell's byte offset, not from a cells-per-line count.
     assertCacheLinesNeverSpanBuckets<Partitioned<UInt32, 16, 8>>(1u << 16);
 
     struct alignas(4) TwoWords
@@ -329,7 +329,7 @@ TEST(PartitionedFixedHashMap, SerializesTheFlatTableOnce)
     {
         deserialize(copy, bytes);
         ASSERT_EQ(copy.size(), source.size());
-        ASSERT_EQ(offsetsByIteration(copy), offsetsByIteration(const_cast<std::decay_t<decltype(source)> &>(source)));
+        ASSERT_EQ(offsetsByIteration(copy), offsetsByIteration(source));
         for (const auto key : keys)
         {
             const auto * to = copy.find(key);
@@ -352,8 +352,8 @@ TEST(PartitionedFixedHashMap, ConcurrentInsertsUnderOneLockPerBucket)
     using Map = Partitioned<UInt32, 18, 6>;
     ASSERT_EQ(Map::NUM_BUCKETS, 64u);
 
-    /// Distinct keys are distinct cells, so keys under different locks never touch the same cell,
-    /// while the same keys collide inside their bucket. Both must end in the same state.
+    /// Distinct keys are distinct cells, so keys under different locks never touch the same cell.
+    /// The same keys collide inside their bucket. Both must end in the same state.
     for (const bool same_keys_in_every_thread : {false, true})
     {
         Map map;
