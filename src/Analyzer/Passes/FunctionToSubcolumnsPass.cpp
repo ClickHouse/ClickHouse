@@ -649,7 +649,8 @@ void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & fun
     auto subcolumn_type = std::make_shared<DataTypeArray>(map_element_type);
 
     NameAndTypePair subcolumn{ctx.column.name + (map_element == 0 ? ".keys" : ".values"), subcolumn_type};
-    if (sourceHasColumnCaseInsensitive(ctx.column_source, subcolumn.name)
+    /// Case-sensitive check only, for the same reason as in optimizeMapFunctionToKeys.
+    if (sourceHasColumn(ctx.column_source, subcolumn.name)
         || !canOptimizeToExpectedSubcolumn(
             ctx,
             subcolumn.name,
