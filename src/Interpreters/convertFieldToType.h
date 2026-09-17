@@ -22,6 +22,7 @@ class IDataType;
   *   convertFieldToType(Field(256), Bool)                 -> Field(true)   i.e. 1
   *   convertFieldToType(Field(1),   Bool)                 -> Field(true)   i.e. 1
   *   convertFieldToType(Decimal64("33.33"), Decimal64(1)) -> Decimal64("33.3")  (truncated)
+  *   convertFieldToType(DateTime64("12:00:00.5"), DateTime)  -> DateTime("12:00:00")  (truncated)
   *
   * Conversion to a floating-point type, however, stays exact by default: a value that is not exactly
   * representable in the target type returns Null, e.g. convertFieldToType(Field(0.1), Float32) -> Null.

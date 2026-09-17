@@ -148,7 +148,8 @@ bool traverseDAGFilterSingleColumn(
         /// type, and a `Nullable(Date)` or `LowCardinality(Date)` literal would otherwise miss them and
         /// have its day number reinterpreted as a number of seconds.
         const auto value_type = removeNullable(recursiveRemoveLowCardinality(value->result_type));
-        auto converted_field = tryConvertFieldToType(value->column->getField(), *primary_key_type, value_type.get());
+        /// The lookup is exact, so the conversion is strict.
+        auto converted_field = tryConvertFieldToType(value->column->getField(), *primary_key_type, value_type.get(), {}, /*strict=*/ true);
 
         /// A literal the key type cannot represent - `Date = <a DateTime with a time of day>`, or a
         /// value out of the key type's range - is not a key filter: the condition is left to be
@@ -322,7 +323,7 @@ bool traverseDAGFilter(
                 if (value_tuple_type && i < value_tuple_type->getElements().size())
                     element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
 
-                auto converted = tryConvertFieldToType(tuple_value[i], *primary_key_types[i], element_type.get());
+                auto converted = tryConvertFieldToType(tuple_value[i], *primary_key_types[i], element_type.get(), {}, /*strict=*/ true);
                 if (converted.isNull())
                     return false;
                 converted_values.push_back(converted);
@@ -415,7 +416,7 @@ bool traverseDAGFilter(
                     if (col < set_element_types.size())
                         element_type = removeNullable(recursiveRemoveLowCardinality(set_element_types[col]));
 
-                    auto converted = tryConvertFieldToType(field, *primary_key_types[col], element_type.get());
+                    auto converted = tryConvertFieldToType(field, *primary_key_types[col], element_type.get(), {}, /*strict=*/ true);
                     if (converted.isNull())
                     {
                         all_converted = false;

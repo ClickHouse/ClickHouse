@@ -294,12 +294,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// Conversion between Date and DateTime, Time and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
-        return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+        const auto & time_zone = static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone();
+        const auto value = src.safeGet<UInt64>();
+        const auto day = time_zone.toDayNum(value);
+        /// The time of day is dropped as `CAST` does; a strict conversion is an exact bound and rejects it.
+        if (strict && static_cast<UInt64>(time_zone.fromDayNum(day)) != value)
+            return {};
+        return static_cast<UInt16>(day.toUnderType());
     }
     if (which_type.isDate32() && which_from_type.isDateTime())
     {
-        return static_cast<Int32>(
-            static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+        const auto & time_zone = static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone();
+        const auto value = src.safeGet<UInt64>();
+        const auto day = time_zone.toDayNum(value);
+        if (strict && static_cast<UInt64>(time_zone.fromDayNum(day)) != value)
+            return {};
+        return static_cast<Int32>(day.toUnderType());
     }
     if (which_type.isDateTime() && which_from_type.isDate())
     {
@@ -461,8 +471,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & from_value = src.safeGet<Decimal64>();
             const UInt32 from_scale = from_value.getScale();
 
-            /// Never truncated, whatever `strict` says: non-strict callers use the result as an exact comparison bound.
-            if (DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
+            /// The fraction is dropped as `CAST` does; a strict conversion is an exact bound and rejects it.
+            if (strict && DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
                 return {};
 
             const Int64 whole = DecimalUtils::getWholePart(from_value.getValue(), from_scale);
@@ -479,7 +489,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & from_value = src.safeGet<Decimal64>();
             const UInt32 from_scale = from_value.getScale();
 
-            if (DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
+            if (strict && DecimalUtils::getFractionalPart(from_value.getValue(), from_scale) != 0)
                 return {};
 
             const Int64 whole = DecimalUtils::getWholePart(from_value.getValue(), from_scale);

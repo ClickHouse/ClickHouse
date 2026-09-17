@@ -768,6 +768,13 @@ def test_dates_casting(started_cluster):
         )
         == "0\n"
     )
+    # A sub-second bound is not pushed down truncated.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3)"
+        )
+        == "0\n"
+    )
 
     node.query("DROP TABLE dates_table")
     dates_mongo_table.drop()

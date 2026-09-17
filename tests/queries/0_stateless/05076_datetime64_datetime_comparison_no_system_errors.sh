@@ -35,10 +35,13 @@ $CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_dt64_cmp
     WHERE A = 'x' AND Timestamp >= toDateTime('2019-01-01 00:00:00') AND Timestamp >= toDateTime('2018-01-01 00:00:00')"
 
-# A sub-second bound is rejected, not truncated: the row at 00:00:00 must not match 00:00:00.5.
+# A sub-second bound is not folded, so the row at 00:00:00 must not match 00:00:00.5.
 $CLICKHOUSE_CLIENT -q "
     SELECT count() FROM t_dt64_cmp
     WHERE A = 'x' AND Timestamp >= toDateTime64('2020-01-01 00:00:00.5', 9)"
+
+# The same constant materialized as a value is truncated like CAST.
+$CLICKHOUSE_CLIENT -q "SELECT x FROM values('x DateTime(\'UTC\')', toDateTime64('2020-01-01 00:00:00.5', 1, 'UTC'))"
 
 # The same narrowing exists for the time-of-day pair, and `enable_time_time64_type` is on by default.
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_t64_cmp"
@@ -51,6 +54,7 @@ $CLICKHOUSE_CLIENT --query_id="${time_query_id}" -q "
 $CLICKHOUSE_CLIENT -q "
     SELECT count() = 0 FROM system.errors
     WHERE name = 'TYPE_MISMATCH' AND query_id = '${time_query_id}'"
+$CLICKHOUSE_CLIENT -q "SELECT x FROM values('x Time', toTime64('12:00:00.5', 1))"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_t64_cmp"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_dt64_cmp"
