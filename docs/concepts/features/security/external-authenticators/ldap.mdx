@@ -167,7 +167,8 @@ The following rules are checked when the configuration is loaded. A violation is
 - `lookup_bind_dn` and `lookup_password` must be set together, `lookup_password` must not be empty, and `lookup_bind_dn` must not contain `{user_name}`.
 - `lookup_bind_dn` requires `user_dn_detection`, whose `base_dn` or `search_filter` must depend on the login.
 - `bind_dn` (or the deprecated `auth_dn_prefix`/`auth_dn_suffix`) is mandatory and must not be empty. With `lookup_bind_dn` it may be exactly `{user_dn}` (search and bind); `lookup_bind_dn` without `bind_dn` is rejected with `'bind_dn' is required`. A configuration with neither would perform an unauthenticated bind and accept every password; it is rejected with `Either 'bind_dn' or 'lookup_bind_dn' must be specified`.
-- If `bind_dn` contains `{user_dn}` it must be exactly `{user_dn}`. This requires `lookup_bind_dn`, and `user_dn_detection` must reference `{user_name}` in `base_dn` or `search_filter`, must not reference `{bind_dn}` or `{user_dn}` (the user DN is not known before the detection), and its `attribute` must be `dn`.
+- If `bind_dn` contains `{user_dn}` it must be exactly `{user_dn}`. This requires `lookup_bind_dn`, and `user_dn_detection` must reference `{user_name}` in `base_dn` or `search_filter` and must not reference `{bind_dn}` or `{user_dn}` (the user DN is not known before the detection).
+- With `lookup_bind_dn`, whatever `bind_dn` is, the `attribute` of `user_dn_detection` must be `dn` (the default): the value the detection returns is stored as the user DN and consumed as such by every `{user_dn}` placeholder (role mappings, the synchronization, `EXECUTE AS`); in search and bind it is also the DN that is bound.
 
 How failures are reported:
 

@@ -354,6 +354,8 @@ ldap_servers: ''
 # '{base_dn}' substrings of the template with the actual user name, bind DN, user DN and base DN during
 # the LDAP search (before the detection has run, '{user_dn}' equals the bind DN; with 'bind_dn' = '{user_dn}'
 # only '{user_name}' and '{base_dn}' may be used).
+# attribute - attribute whose value is taken as the user DN. 'dn' (the default) is the DN of the entry found; with
+# 'lookup_bind_dn' it must be 'dn', since the value is consumed as the user DN by every '{user_dn}' placeholder.
 # verification_cooldown - a period of time, in seconds, after a successful bind attempt, during which a user will be assumed
 # to be successfully authenticated for all consecutive requests without contacting the LDAP server.
 # Specify 0 (the default) to disable caching and force contacting the LDAP server for each authentication request.
