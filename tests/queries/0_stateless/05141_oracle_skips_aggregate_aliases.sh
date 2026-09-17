@@ -2,9 +2,9 @@
 # Tags: no-fasttest, no-parallel
 # no-fasttest: SET ast_fuzzer_runs / ast_fuzzer_oracle are EXPERIMENTAL-tier settings and
 #              are not allowed when `allow_feature_tier=0` (the Fast test default).
-# no-parallel: the proof event `ASTFuzzerOracleChecks` is server-global, and the assertions
-#              below require it to stay put, so no other test may run oracle checks against
-#              the same server meanwhile.
+# no-parallel: the proof events below are server-global, and the assertions require them to
+#              stay put, so no other test may run oracle checks against the same server
+#              meanwhile.
 #
 # Companion of 05140_oracle_skips_approx_top_k, which covers the `approx_top_*` family itself.
 # This file covers the part that only a lookup through `AggregateFunctionFactory` can get
@@ -31,10 +31,15 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO oracle_alias_agg SELECT number FROM numbers(200);
 "
 
-# The oracle rejects any query reading `system.*`, so reading the counter can never move it.
+# `ASTFuzzerOracleChecks` counts every oracle path, `ASTFuzzerOracleTLPAggregateChecks` only the
+# TLP Aggregate one. The probes read the former because the denylist they pin is the screen
+# shared by all nine oracles; the TLP Aggregate control at the end reads the latter.
+# The oracle rejects any query reading `system.*`, so reading a counter can never move it.
 get_counter()
 {
-    $CLICKHOUSE_CLIENT --query "SELECT toInt64(sum(value)) FROM system.events WHERE event = 'ASTFuzzerOracleChecks'"
+    local event="${1:-ASTFuzzerOracleChecks}"
+
+    $CLICKHOUSE_CLIENT --query "SELECT toInt64(sum(value)) FROM system.events WHERE event = '$event'"
 }
 
 # `send_logs_level = 'fatal'` suppresses the expected error-level log lines from random
@@ -71,6 +76,7 @@ get_counter()
 run_fuzzed_rounds()
 {
     local query="$1"
+    local event="${2:-ASTFuzzerOracleChecks}"
 
     $CLICKHOUSE_CLIENT --ignore-error --query "
         SET send_logs_level = 'fatal';
@@ -80,7 +86,7 @@ run_fuzzed_rounds()
         $query
         $query
         SELECT toInt64(sum(value)) FROM system.events
-        WHERE event = 'ASTFuzzerOracleChecks' SETTINGS ast_fuzzer_runs = 0;
+        WHERE event = '$event' SETTINGS ast_fuzzer_runs = 0;
     " 2>/dev/null | tail -n 1
 }
 
@@ -192,14 +198,15 @@ positive_control()
 {
     local label="$1"
     local aggregates="$2"
+    local event="${3:-ASTFuzzerOracleChecks}"
     local before
     local after
 
-    before=$(get_counter)
+    before=$(get_counter "$event")
     after=$before
     for _ in $(seq 1 10)
     do
-        after=$(run_fuzzed_rounds "SELECT $aggregates FROM oracle_alias_agg WHERE v > 5;")
+        after=$(run_fuzzed_rounds "SELECT $aggregates FROM oracle_alias_agg WHERE v > 5;" "$event")
         if [[ "$after" -gt "$before" ]]
         then
             break
@@ -223,5 +230,11 @@ positive_control()
 # `min_byOrNull` is the gate rejecting `argMin` and the one on `StdDev_Pop` is it rejecting
 # `stddevPop`, not the oracle declining those shapes.
 positive_control "safe aliases" "Bit_And(v), BIT_OROrNull(v), BIT_XOR(v)"
+
+# The probes assert that no oracle accepted the query; this control adds that the TLP Aggregate
+# oracle is itself live here for alias spellings, so a probe's zero delta means that oracle
+# rejected the alias rather than being out of reach. It admits a query only while no aggregate
+# carries a combinator, which is why `BIT_OROrNull` stays in the all-paths control above.
+positive_control "TLP Aggregate path" "Bit_And(v), BIT_OR(v), BIT_XOR(v)" ASTFuzzerOracleTLPAggregateChecks
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE oracle_alias_agg"
