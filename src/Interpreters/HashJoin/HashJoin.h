@@ -306,13 +306,13 @@ public:
 
     bool isFilled() const override { return from_storage_join; }
 
-    /// Only the parallel layout has the slots that make a concurrent fill safe. A serial-layout join
-    /// keeps `hash`'s single lane, so its output row order stays reproducible.
+    /// Only the parallel layout has the slots that make a concurrent fill safe.
+    /// A serial-layout join uses one slot, so its output row order stays reproducible.
     bool supportParallelJoin() const override { return use_parallel_layout && max_threads > 1; }
     size_t getMaxBuildThreads() const override { return max_threads; }
 
     bool supportParallelNonJoinedBlocksProcessing() const override;
-    /// `FilledJoinStep`, which probes a StorageJoin, has no `NonJoinedBlocksTransform` to run.
+    /// `FilledJoinStep` probes a StorageJoin and has no `NonJoinedBlocksTransform` to run.
     bool isParallelNonJoinedProcessingEnabled() const override
     {
         return !from_storage_join && supportParallelNonJoinedBlocksProcessing();
@@ -745,10 +745,9 @@ public:
 
         std::vector<WorkerStoredData> workers;
 
-        /// A resumable worker-major walk over one of `WorkerStoredData`'s lists: workers in index
-        /// order, each list in insertion order. `started` is what tells "not begun" from
-        /// "exhausted" - both leave `position` empty, and an emitter that confuses them restarts at
-        /// worker 0 and emits forever.
+        /// A resumable walk of each worker's list in insertion order, workers in index order.
+        /// `started` tells "not begun" from "exhausted"; both leave `position` empty.
+        /// An emitter that confuses them restarts at worker 0 and emits forever.
         template <typename List, List WorkerStoredData::* member>
         struct WorkerListCursor
         {
@@ -1050,7 +1049,7 @@ private:
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
-    /// Unchecked as in without `doDebugAsserts`, which cannot run while build threads append.
+    /// Unchecked as in without `doDebugAsserts`. That walk cannot run while build threads append.
     size_t getTotalByteCountUnchecked() const;
 
     void recomputeBucketBytes();
