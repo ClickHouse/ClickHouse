@@ -91,7 +91,6 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 static std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
@@ -902,25 +901,25 @@ static void preferNullableRightKey(
     }
 }
 
-/// A null-safe key `a` as two plain keys: `isNull(a)` and `CAST(if(isNull(a), d, a), T)`, with `d` the default value of
-/// the nested type `T`. NULL matches NULL through the first key, and the second one never holds a NULL, so the join
-/// skips no row for it. Fixed-width keys stay fixed-width this way, where wrapping the key into a tuple sends it down
-/// the generic serialized-key path.
+/// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
+/// of the nested type. NULL matches NULL through the first key, and the second one is not nullable, so the join skips
+/// no row for it. Fixed-width keys stay fixed-width this way, where wrapping the key into a tuple sends it down the
+/// generic serialized-key path.
 static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
 {
-    const auto value_type = removeNullable(removeLowCardinality(key.getType()));
+    const auto value_type = removeLowCardinalityAndNullable(key.getType());
     auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(std::make_shared<FunctionIsNull>(/*use_analyzer_=*/ true)));
     auto value = JoinActionRef::transform(
         {is_null, key},
         [&value_type](ActionsDAG & dag, std::vector<JoinExpressionActions::NodeRawPtr> nodes)
         {
-            const auto & default_value = dag.addColumn(
-                value_type->createColumnConst(1, value_type->getDefault()), value_type, "__null_safe_key_default_" + value_type->getName());
-            const auto & if_null = dag.addFunction(
+            const auto & default_value
+                = dag.addColumn(value_type->createColumnConstWithDefaultValue(1), value_type, "__null_safe_key_default_" + value_type->getName());
+            const auto & not_null = dag.addFunction(FunctionFactory::instance().get("assumeNotNull", nullptr), {nodes[1]}, {});
+            return &dag.addFunction(
                 createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false),
-                {nodes[0], &default_value, nodes[1]},
+                {nodes[0], &default_value, &not_null},
                 {});
-            return &dag.addCast(if_null, value_type, {}, nullptr);
         });
     return {std::move(is_null), std::move(value)};
 }
@@ -950,36 +949,38 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             /* allow_conversion_to_subtype= */ !null_safe_comparison);
         if (!null_safe_comparison)
             preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
-        if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType())
-            && !isNothing(removeNullable(removeLowCardinality(lhs.getType()))) && !planning_context.is_storage_join)
-        {
-            auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
-            auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
-            table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
-            table_join_clause.addKey(lhs_value.getColumnName(), rhs_value.getColumnName(), /*null_safe_comparison=*/ false);
-            has_join_predicates = true;
-            used_expressions.insert(used_expressions.end(), {lhs_null, lhs_value, rhs_null, rhs_value});
-            new_predicates.pop_back();
-            continue;
-        }
-
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
-            /**
-                * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
-                * we need to wrap keys with a non-nullable type.
-                * The type `tuple` can be used for this purpose,
-                * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
-                * Thus, join algorithm will match keys with values tuple(NULL).
-                * Example:
-                *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
-                * This will be semantically transformed to:
-                *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
-                */
+            /// `Nullable(Nothing)` has no value to substitute for NULL, and a null-safe key is what makes `TableJoin`
+            /// reject a `StorageJoin`, whose prebuilt table cannot be probed with a derived key.
+            if (!isNothing(removeLowCardinalityAndNullable(lhs.getType())) && !planning_context.is_storage_join)
+            {
+                auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
+                auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
+                table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
+                used_expressions.insert(used_expressions.end(), {lhs_null, rhs_null});
+                lhs = std::move(lhs_value);
+                rhs = std::move(rhs_value);
+                null_safe_comparison = false;
+            }
+            else
+            {
+                /**
+                    * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
+                    * we need to wrap keys with a non-nullable type.
+                    * The type `tuple` can be used for this purpose,
+                    * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
+                    * Thus, join algorithm will match keys with values tuple(NULL).
+                    * Example:
+                    *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
+                    * This will be semantically transformed to:
+                    *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
+                    */
 
-            JoinActionRef::AddFunction wrap_nullsafe_function(std::make_shared<FunctionTuple>());
-            lhs = JoinActionRef::transform({lhs}, wrap_nullsafe_function);
-            rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
+                JoinActionRef::AddFunction wrap_nullsafe_function(std::make_shared<FunctionTuple>());
+                lhs = JoinActionRef::transform({lhs}, wrap_nullsafe_function);
+                rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
+            }
         }
 
         has_join_predicates = true;
@@ -2594,18 +2595,7 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     auto actions_dag = expression_actions.getActionsDAG();
     actions_dag->serialize(ctx.out, ctx.registry);
 
-    join_operator.serialize(ctx.out, actions_dag.get());
-
-    /// The multiset flag changes what the join computes, so a peer that cannot read it must not get the
-    /// join at all.
-    if (ctx.step_version >= 1)
-        writeIntBinary(static_cast<UInt8>(join_operator.multiset), ctx.out);
-    else if (join_operator.multiset)
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Serializing a multiset join requires query plan serialization version >= {}; all nodes must run the same version",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MULTISET_JOIN);
-
+    join_operator.serialize(ctx.out, actions_dag.get(), ctx.step_version);
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
     /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
@@ -2669,15 +2659,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto right_header = ctx.input_headers.back();
     JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
-    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
-
-    if (ctx.step_version >= 1)
-    {
-        UInt8 multiset = 0;
-        readIntBinary(multiset, ctx.in);
-        join_operator.multiset = multiset != 0;
-    }
-
+    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions, ctx.step_version);
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);

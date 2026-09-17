@@ -187,7 +187,6 @@ namespace Setting
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsBool optimize_rewrite_intersect_except_to_join;
-    extern const SettingsJoinAlgorithm join_algorithm;
 }
 
 namespace ServerSetting
@@ -2402,9 +2401,12 @@ static std::unique_ptr<JoinStepLogical> tryBuildIntersectExceptAllAsJoin(
         return nullptr;
 
     /// Only the hash joins count the right rows of a key, see `JoinOperator::multiset`.
-    const auto & join_algorithms = settings[Setting::join_algorithm].value;
-    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
-        && !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
+    JoinSettings join_settings(settings, query_context->getJoinAnalyzeMode());
+    const auto enabled_algorithms = std::exchange(join_settings.join_algorithms, {});
+    for (const auto algorithm : {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH})
+        if (TableJoin::isEnabledAlgorithm(enabled_algorithms, algorithm))
+            join_settings.join_algorithms.push_back(algorithm);
+    if (join_settings.join_algorithms.empty())
         return nullptr;
 
     chassert(query_plans.size() == 2);
@@ -2423,10 +2425,9 @@ static std::unique_ptr<JoinStepLogical> tryBuildIntersectExceptAllAsJoin(
         if (hasDynamicType(column.type) || !left_names.insert(column.name).second)
             return nullptr;
         right_names.push_back("__intersect_except_right_" + toString(i));
-    }
-    for (const auto & name : right_names)
-        if (left_names.contains(name))
+        if (left_header->has(right_names.back()))
             return nullptr;
+    }
 
     ActionsDAG rename_dag(right_header->getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs renamed_outputs;
@@ -2459,14 +2460,6 @@ static std::unique_ptr<JoinStepLogical> tryBuildIntersectExceptAllAsJoin(
         JoinKind::Left, is_intersect ? JoinStrictness::Semi : JoinStrictness::Anti, JoinLocality::Unspecified, std::move(predicates));
     join_operator.multiset = true;
 
-    JoinSettings join_settings(settings, query_context->getJoinAnalyzeMode());
-    std::erase_if(
-        join_settings.join_algorithms,
-        [](JoinAlgorithm algorithm) { return algorithm != JoinAlgorithm::HASH && algorithm != JoinAlgorithm::PARALLEL_HASH; });
-    /// `default` stands for `direct,hash`.
-    if (join_settings.join_algorithms.empty())
-        join_settings.join_algorithms = {JoinAlgorithm::HASH};
-
     auto join_step = std::make_unique<JoinStepLogical>(
         left_header,
         renamed_right_header,
@@ -2479,8 +2472,6 @@ static std::unique_ptr<JoinStepLogical> tryBuildIntersectExceptAllAsJoin(
         join_step->setStepDescription("INTERSECT ALL");
     else
         join_step->setStepDescription("EXCEPT ALL");
-    /// The counted side is the right one, so the join order is not up to the optimizer.
-    join_step->setOptimized();
     return join_step;
 }
 

@@ -342,20 +342,10 @@ HashJoin::HashJoin(
         strictness,
         right_sample_block.dumpStructure());
 
-    if (table_join->isMultiset())
-    {
-        /// The planner builds a multiset join for `INTERSECT ALL` and `EXCEPT ALL` only, as a LEFT SEMI or
-        /// LEFT ANTI join on the keys alone; the count maps run nothing else.
-        if (kind != JoinKind::Left || (strictness != JoinStrictness::Semi && strictness != JoinStrictness::Anti)
-            || preferUseMapsAll() || table_join->getMixedJoinExpression() || table_join->isSpecialStorage()
-            || sample_block_with_columns_to_add.columns() != 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "A multiset join must be a LEFT SEMI or LEFT ANTI join on keys alone, got {} {} with {} right columns",
-                kind,
-                strictness,
-                sample_block_with_columns_to_add.columns());
-    }
+    /// The count maps store keys alone like the set maps do, so a multiset join has to be a shape that runs on them.
+    if (table_join->isMultiset() && !neverReadsRightRow())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "A multiset join must be a LEFT SEMI or LEFT ANTI join that reads no right row, got {} {}", kind, strictness);
 
     use_set_maps = canUseSetMaps();
     if (use_set_maps)
@@ -583,9 +573,11 @@ bool HashJoin::preferUseMapsAll() const
 /// result can never contain a value taken from a right row.
 bool HashJoin::canUseSetMaps() const
 {
-    if (!table_join->enableJoinKeyOnlyHashTables())
-        return false;
+    return table_join->enableJoinKeyOnlyHashTables() && neverReadsRightRow();
+}
 
+bool HashJoin::neverReadsRightRow() const
+{
     /// A mixed join expression is evaluated against the right rows themselves.
     if (preferUseMapsAll() || table_join->getMixedJoinExpression())
         return false;
@@ -1428,35 +1420,8 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
         maps_kind,
         [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
-            if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAll *>>)
-            {
-                res = HashJoinMethods<kind_, strictness_, MapsAll>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsOne *>>)
-            {
-                res = HashJoinMethods<kind_, strictness_, MapsOne>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsAsof *>>)
-            {
-                res = HashJoinMethods<kind_, strictness_, MapsAsof>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsSet *>>)
-            {
-                res = HashJoinMethods<kind_, strictness_, MapsSet>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsCount *>>)
-            {
-                res = HashJoinMethods<kind_, strictness_, MapsCount>::joinBlockImpl(
-                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
-            }
+            using Maps = std::remove_cvref_t<std::remove_pointer_t<typename std::decay_t<decltype(maps_vector_)>::value_type>>;
+            res = HashJoinMethods<kind_, strictness_, Maps>::joinBlockImpl(*this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
         });
 
     if (!joined)
@@ -2722,7 +2687,7 @@ void HashJoin::publishSharedRuntimeFilters()
             [&](auto & map)
             {
                 using MapType = std::decay_t<decltype(map)>;
-                if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll> || std::is_same_v<MapType, MapsSet> || std::is_same_v<MapType, MapsCount>)
+                if constexpr (!std::is_same_v<MapType, MapsAsof>)
                 {
                     auto dispatch = [&]<typename BuildKey>(
                         auto & range_ptr,
@@ -2877,7 +2842,7 @@ void HashJoin::tryConvertToFixedHashMap()
         [&](auto & map)
         {
             using MapType = std::decay_t<decltype(map)>;
-            if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll> || std::is_same_v<MapType, MapsSet> || std::is_same_v<MapType, MapsCount>)
+            if constexpr (!std::is_same_v<MapType, MapsAsof>)
             {
                 bool is_signed = !right_table_keys.getByPosition(0).type->isValueRepresentedByUnsignedInteger();
                 if (data->type == Type::key32)

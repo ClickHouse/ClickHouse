@@ -506,8 +506,13 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
     }
 }
 
-/// A set map records that a key is present and nothing else: LEFT ANTI emits a row only when the key
-/// is missing, and LEFT SEMI has no right-side value to emit, so a match only marks the left row.
+/// A key-only map holds no right row to emit, so a match only decides whether the left row is emitted. A set map
+/// records that the key is present: LEFT SEMI emits the row, LEFT ANTI does not. A count map records how many
+/// right rows of the key are still untaken, and a match takes one: LEFT SEMI emits the left row only when it got
+/// one, LEFT ANTI only when there was none left to get. The probe threads share the count map, so the count is
+/// taken atomically; it may go negative, which is as good as zero, and saves the compare-and-swap loop a clamp
+/// would need. A count that is already used up is read without the read-modify-write, which is what most probe
+/// rows of a key with many more left than right rows would otherwise fight over.
 template <
     JoinKind KIND,
     JoinStrictness STRICTNESS,
@@ -517,40 +522,7 @@ template <
     typename Map,
     typename KeyGetter,
     typename AddedColumns>
-requires SetJoinMaps<MapsTemplate>
-void processMatch(
-    const typename KeyGetter::FindResult &,
-    [[maybe_unused]] AddedColumns & added_columns,
-    JoinStuff::JoinUsedFlags &,
-    [[maybe_unused]] size_t i,
-    size_t,
-    IColumn::Offset &,
-    KnownRowsHolder<flag_per_row> &,
-    bool)
-{
-    constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
-    static_assert(
-        join_features.left && (join_features.is_semi_join || join_features.is_anti_join),
-        "A set map is only chosen for LEFT SEMI and LEFT ANTI");
-
-    if constexpr (join_features.is_semi_join)
-        setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-}
-
-/// A count map records how many right rows of the key are still untaken. A match takes one of them: LEFT
-/// SEMI emits the left row only when it got one, LEFT ANTI only when there was none left to get. The
-/// probe threads share the map, so the count is taken atomically; it may go negative, which is as good as
-/// zero, and saves the compare-and-swap loop a clamp would need.
-template <
-    JoinKind KIND,
-    JoinStrictness STRICTNESS,
-    bool need_filter,
-    bool flag_per_row,
-    typename MapsTemplate,
-    typename Map,
-    typename KeyGetter,
-    typename AddedColumns>
-requires CountJoinMaps<MapsTemplate>
+requires KeyOnlyJoinMaps<MapsTemplate>
 void processMatch(
     const typename KeyGetter::FindResult & find_result,
     AddedColumns & added_columns,
@@ -564,9 +536,15 @@ void processMatch(
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
     static_assert(
         join_features.left && (join_features.is_semi_join || join_features.is_anti_join),
-        "A count map is only chosen for LEFT SEMI and LEFT ANTI");
+        "A key-only map is only chosen for LEFT SEMI and LEFT ANTI");
 
-    const bool taken = std::atomic_ref<Int64>(find_result.getMapped().remaining).fetch_sub(1, std::memory_order_relaxed) > 0;
+    bool taken = true;
+    if constexpr (CountJoinMaps<MapsTemplate>)
+    {
+        std::atomic_ref<Int64> remaining(find_result.getMapped().remaining);
+        taken = remaining.load(std::memory_order_relaxed) > 0 && remaining.fetch_sub(1, std::memory_order_relaxed) > 0;
+    }
+
     if constexpr (join_features.is_semi_join)
     {
         if (taken)

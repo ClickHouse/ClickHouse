@@ -58,8 +58,9 @@ struct JoinOperator
         , expression(std::move(expression_))
     {}
 
-    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
-    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
+    /// `step_version` is the serialization version of the `Join` plan step; version 1 added the multiset flag.
+    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_, UInt64 step_version) const;
+    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 step_version);
 
     String dump() const;
 };

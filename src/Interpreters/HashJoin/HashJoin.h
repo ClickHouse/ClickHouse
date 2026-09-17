@@ -744,6 +744,8 @@ private:
 
     bool preferUseMapsAll() const;
 
+    /// Whether the result never contains a value taken from a right row, so that the maps may store keys alone.
+    bool neverReadsRightRow() const;
     bool canUseSetMaps() const;
 
 public:

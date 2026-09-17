@@ -45,11 +45,7 @@ struct Inserter
     /// count is a plain increment here; only the probe phase touches it atomically.
     static ALWAYS_INLINE void insertCount(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool)
     {
-        auto emplace_result = key_getter.emplaceKey(map, i, pool);
-        if (emplace_result.isInserted())
-            emplace_result.getMapped().remaining = 1;
-        else
-            ++emplace_result.getMapped().remaining;
+        ++key_getter.emplaceKey(map, i, pool).getMapped().remaining;
     }
 
     static ALWAYS_INLINE bool
