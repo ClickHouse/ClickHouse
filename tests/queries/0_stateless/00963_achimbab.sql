@@ -1,4 +1,4 @@
--- Tags: no-parallel, long
+-- Tags: long
 
 SET output_format_write_statistics = 0;
 

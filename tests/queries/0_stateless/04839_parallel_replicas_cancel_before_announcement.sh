@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest
-# no-parallel: the failpoint is server-wide and would stall the announcements of any
+# Tag no-parallel: the failpoint is server-wide and would stall the announcements of any
 # concurrently running parallel-replicas query.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

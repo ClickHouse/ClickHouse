@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel:filesystem-cache
 # - no-fasttest: uses a filesystem cache disk
+# Tag no-parallel: the large prefetch-buffer workload must not contend with
+# tests that assert or clear process-wide filesystem-cache state.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/83577 (a continuation of 04546).
 # `prefetch_buffer_size` feeds `ReadSettings::remote_fs_settings.large_buffer_size`, which is only

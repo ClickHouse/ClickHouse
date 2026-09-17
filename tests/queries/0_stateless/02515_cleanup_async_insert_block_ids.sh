@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-parallel, long, no-fasttest, no-replicated-database
+# Tag no-parallel: Background deduplication cleanup checks can time out under parallel suite load.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

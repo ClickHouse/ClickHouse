@@ -1,5 +1,5 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: drops the (instance-wide) query condition cache
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-parallel-replicas: the query condition cache is populated per replica, so the poisoning is
 --                       deterministic only on a single replica
 
@@ -25,7 +25,7 @@ SET mutations_sync = 0;
 SYSTEM STOP MERGES t_qcc_on_fly_delete;
 ALTER TABLE t_qcc_on_fly_delete DELETE WHERE id % 3 = 0;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 -- apply_mutations_on_fly = 1 first (writes the would-be poisoned entry): 20 rows match id % 5 = 0,
 -- of which 7 (ids 0,15,30,45,60,75,90) are deleted on fly -> 13.
@@ -47,7 +47,7 @@ SET mutations_sync = 0;
 SYSTEM STOP MERGES t_qcc_on_fly_update;
 ALTER TABLE t_qcc_on_fly_update UPDATE v = 0 WHERE id >= 50;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 -- apply_mutations_on_fly = 1 first: the update sets v = 0 for ids >= 50, so no row has v >= 50 -> 0.
 SELECT count() FROM t_qcc_on_fly_update PREWHERE v >= 50 SETTINGS apply_mutations_on_fly = 1;
@@ -69,7 +69,7 @@ SET mutations_sync = 0;
 SYSTEM STOP MERGES t_qcc_on_fly_where;
 ALTER TABLE t_qcc_on_fly_where UPDATE v = 0 WHERE id >= 50;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 -- apply_mutations_on_fly = 1 first: v = 0 for ids >= 50, so no row has v >= 50 -> 0.
 SELECT count() FROM t_qcc_on_fly_where WHERE v >= 50 SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
@@ -97,7 +97,7 @@ SYSTEM STOP MERGES t_qcc_patch;
 -- would see no patch and never exercise the info->patch_parts guard.
 ALTER TABLE t_qcc_patch UPDATE v = 0 WHERE id >= 50 SETTINGS alter_update_mode = 'lightweight_force', enable_lightweight_update = 1, mutations_sync = 1;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 -- apply_patch_parts = 1 first: the patch sets v = 0 for ids >= 50, so no row has v >= 50 -> 0.
 SELECT count() FROM t_qcc_patch PREWHERE v >= 50 SETTINGS apply_patch_parts = 1;

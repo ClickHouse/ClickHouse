@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
 # no-fasttest: needs the s3_cache storage policy.
-# no-parallel: uses a server-wide failpoint that affects all cache writes.
+# Tag no-parallel: uses a server-wide failpoint that affects all cache writes.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

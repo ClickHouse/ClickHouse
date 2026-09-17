@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- - no-parallel - due to usage of fail points
+-- Tag no-parallel: due to usage of fail points
 
 -- Regression test for the statistics-based min/max/count short-circuit under parallel replicas
 -- (the `_statistics_min_max_projection` counterpart of

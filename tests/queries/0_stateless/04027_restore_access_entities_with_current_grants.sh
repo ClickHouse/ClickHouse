@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-
-# Disabled parallel since RESTORE can only restore either all users or no users
-# (it can't restore only users added by the current test run),
-# so a RESTORE from a parallel test run could recreate our users before we expect that.
+# Tag no-parallel: `BACKUP TABLE system.users` snapshots every user on the server and
+# `RESTORE ALL` recreates them all (it cannot restore only the users added by this test run),
+# changing the UUIDs of users created by concurrent tests and breaking their in-flight
+# sessions; a RESTORE from a parallel run of this test could likewise recreate our users
+# before we expect that.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

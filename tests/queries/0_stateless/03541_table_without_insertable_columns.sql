@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-ordinary-database
--- Tag no-parallel: static UUID
+-- Tags: no-ordinary-database
 -- Tag no-ordinary-database: requires UUID
 
 CREATE TABLE no_physical (a Int EPHEMERAL) Engine=Memory; -- { serverError EMPTY_LIST_OF_COLUMNS_PASSED }

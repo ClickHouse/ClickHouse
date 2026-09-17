@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: use-xray, no-parallel
-# no-parallel: avoid other tests trying to add the same instrumentation to the same symbol
+# Tags: use-xray, no-parallel:xray
+# Tag no-parallel: all `use-xray` tests share process-global XRay instrumentation state.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

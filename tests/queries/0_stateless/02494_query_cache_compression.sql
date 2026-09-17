@@ -1,7 +1,7 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
 
-SYSTEM CLEAR QUERY CACHE;
+SET query_cache_tag = '02494_query_cache_compression';
+
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_compression';
 DROP TABLE IF EXISTS t;
 
 -- Create test table with lot's of rows
@@ -19,7 +19,7 @@ SELECT '-- read from cache';
 SELECT * FROM t ORDER BY c
 SETTINGS use_query_cache = true;
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_compression';
 
 -- Run query which, store *uncompressed* result in query cache
 SELECT '-- insert with disabled compression';
@@ -32,4 +32,4 @@ SELECT * FROM t ORDER BY c
 SETTINGS use_query_cache = true;
 
 DROP TABLE t;
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_compression';

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
+# Tag no-parallel: Creates fixed server-wide handler and user names.
 # ^ Handlers are a global, server-wide namespace and this test also creates a server-wide user, so it
 #   uses fixed names; running several copies concurrently would race on those names.
 

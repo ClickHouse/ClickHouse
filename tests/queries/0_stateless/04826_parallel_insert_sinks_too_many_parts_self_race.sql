@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- - no-parallel - due to usage of fail points
+-- Tag no-parallel: due to usage of fail points
 
 -- A plain INSERT fans out to `max_insert_threads` parallel sinks. The "too many parts" check must
 -- not count the parts committed by the insert's own sibling sinks: an insert that brings the table

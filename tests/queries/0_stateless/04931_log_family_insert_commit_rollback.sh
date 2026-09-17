@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
 # no-fasttest: needs failpoints, which are only available in a full build.
-# no-parallel: fails due to failpoint intersection. The failpoints are server wide, so a
+# Tag no-parallel: fails due to failpoint intersection. The failpoints are server wide, so a
 # concurrent copy that has one enabled makes this copy's own setup inserts fail.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

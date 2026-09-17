@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database, no-async-insert, no-parallel
+# Tag no-parallel: uses a process-global failpoint
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

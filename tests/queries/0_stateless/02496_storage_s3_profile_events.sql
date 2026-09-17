@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-random-settings
+-- Tags: no-fasttest, no-random-settings
 
 DROP TABLE IF EXISTS t_s3_events_02496;
 

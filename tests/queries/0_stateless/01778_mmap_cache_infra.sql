@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel:misc-caches
+-- Tag no-parallel: serializes tests that mutate or assert the shared `misc-caches` resource
+-- (this test issues `SYSTEM CLEAR MMAP CACHE`, which is process-wide)
 -- We check the existence of queries and metrics and don't check the results (a smoke test).
 
 SYSTEM CLEAR MMAP CACHE;

@@ -1,4 +1,5 @@
 -- Tags: distributed, no-parallel, no-flaky-check
+-- Tag no-parallel: Drops and recreates the shared `shard_0` and `shard_1` databases.
 
 -- Deterministic regression test for the wrong-results variant of
 -- https://github.com/ClickHouse/ClickHouse/issues/106403 (see also PR #107913).

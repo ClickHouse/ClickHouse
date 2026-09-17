@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 set mutations_sync = 2;
 

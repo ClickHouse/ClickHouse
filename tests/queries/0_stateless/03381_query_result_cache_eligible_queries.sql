@@ -1,9 +1,9 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
+
+SET query_cache_tag = '03381_query_result_cache_eligible_queries';
 
 SET enable_analyzer = 1;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_eligible_queries';
 DROP TABLE IF EXISTS eligible_test;
 DROP TABLE IF EXISTS eligible_test2;
 
@@ -13,57 +13,57 @@ SET query_cache_system_table_handling = 'save';
 
 -- check that SELECT statements create entries in the query cache ...
 SELECT 1 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_eligible_queries';
 
 -- ... and all other statements also should not create entries:
 
 -- CREATE
 CREATE TABLE eligible_test (a String) ENGINE=MergeTree ORDER BY a; --  SETTINGS use_query_cache = true; -- SETTINGS rejected as unknown
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- ALTER
 ALTER TABLE eligible_test ADD COLUMN b String SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- INSERT
 INSERT INTO eligible_test VALUES('a', 'b'); -- SETTINGS use_query_cache = true; -- SETTINGS rejected as unknown
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 INSERT INTO eligible_test SELECT * FROM eligible_test SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- SHOW
 SHOW TABLES SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- CHECK
 CHECK TABLE eligible_test FORMAT Null SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- DESCRIBE
 DESCRIBE TABLE eligible_test SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- EXISTS
 EXISTS TABLE eligible_test SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- KILL
 KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- OPTIMIZE
 OPTIMIZE TABLE eligible_test FINAL SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- TRUNCATE
 TRUNCATE TABLE eligible_test SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- RENAME
 RENAME TABLE eligible_test TO eligible_test2 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM system.query_cache;
+SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_eligible_queries';
 DROP TABLE eligible_test2;

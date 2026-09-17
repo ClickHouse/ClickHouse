@@ -1,4 +1,4 @@
--- Tags: distributed, no-parallel
+-- Tags: distributed
 
 CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};

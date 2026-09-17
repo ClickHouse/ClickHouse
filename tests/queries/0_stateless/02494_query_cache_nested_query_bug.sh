@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
-# Tag no-parallel: Messes with internal cache
+# Tags: no-fasttest
 #     no-fasttest: Produces wrong results in fasttest, unclear why, didn't reproduce locally.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_cache_tag $CLICKHOUSE_TEST_UNIQUE_NAME"
 
-# Start with empty query cache (QC).
-${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+# Start with an empty query cache (QC). The clear is scoped by `TAG` to this test's entries:
+# an unscoped `SYSTEM CLEAR QUERY CACHE` is server-wide and would drop the entries of every
+# other test running at the same time, and this test's own assertions only ever count entries
+# carrying its tag, so the scoped form is equivalent here.
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE TAG '$CLICKHOUSE_TEST_UNIQUE_NAME'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS tab"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE tab (a UInt64) ENGINE=MergeTree() ORDER BY a"
@@ -22,4 +25,4 @@ SETTINGS_ANALYZER="SETTINGS use_query_cache=1, max_threads=1, enable_analyzer=1,
 ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS_ANALYZER" 2>&1 | grep "Aggregated. " | wc -l
 ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=trace --query "SELECT count(a) / (SELECT sum(a) FROM tab) FROM tab $SETTINGS_ANALYZER" 2>&1 | grep "Aggregated. " | wc -l
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE TAG '$CLICKHOUSE_TEST_UNIQUE_NAME'"

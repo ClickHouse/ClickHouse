@@ -1,5 +1,8 @@
--- Tags: no-parallel, no-ordinary-database, no-replicated-database
--- Tag no-parallel: static UUID
+-- Tags: no-ordinary-database, no-replicated-database, no-parallel
+-- Tag no-parallel: `ATTACH`/`CREATE TABLE ... UUID '...'` parses the UUID clause as a plain string
+--  literal (ParserStringLiteral, before query-parameter substitution), so a fixed UUID literal is
+--  the only option here; a concurrent copy of this same test (e.g. a flaky-check rerun) would
+--  collide on that UUID.
 -- Tag no-ordinary-database: requires UUID
 -- Tag no-replicated-database: executes with ON CLUSTER anyway
 

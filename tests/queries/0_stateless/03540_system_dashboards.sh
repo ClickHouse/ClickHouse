@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-flaky-check
+# Tags: no-flaky-check
 # - no-parallel - can be quite intense
 # - no-flaky-check - too slow under ASan
 

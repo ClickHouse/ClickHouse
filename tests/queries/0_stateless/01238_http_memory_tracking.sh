@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest
+# Tags: no-replicated-database, no-fasttest
 # Tag no-fasttest: max_memory_usage_for_user can interfere another queries running concurrently
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

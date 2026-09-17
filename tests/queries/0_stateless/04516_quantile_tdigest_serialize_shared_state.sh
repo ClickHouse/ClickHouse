@@ -6,7 +6,7 @@
 # iterations of this loop, so a short loop is enough for a reliable failure. The fixed serialize()
 # is const and never touches the shared centroids buffer. Tagged `long` for the flaky check's 180s
 # soft ceiling (the query is heavy on slow sanitizer builds); the tag does not raise the runner's
-# 600s hard --timeout.
+# 300s hard `--timeout`.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +15,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # A single tdigest state (const, one row) broadcast across many rows and grouped by, so the
 # Aggregator serializes the SAME shared state pointer from several threads concurrently.
 # optimize_group_by_constant_keys is pinned: with it off the state is serialized once per row
-# instead of once per block, an order of magnitude slower, which hit the 600s hard timeout under
+# instead of once per block, an order of magnitude slower, which hit the 300s hard timeout under
 # coverage. Threads still serialize the same shared state, so the race stays covered.
 query="SELECT count()
 FROM

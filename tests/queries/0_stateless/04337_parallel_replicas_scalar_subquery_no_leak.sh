@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-parallel-replicas
+# Tags: no-parallel-replicas
 # Tag no-parallel -- queries system.text_log
 # Tag no-parallel-replicas -- the test manages parallel replicas settings itself
 

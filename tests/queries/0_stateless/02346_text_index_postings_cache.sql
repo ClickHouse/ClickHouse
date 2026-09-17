@@ -1,5 +1,8 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: looks at server-wide metrics
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: asserts an exact hit/miss sequence over the process-wide text index postings
+-- cache; a concurrent text-index test evicts this test's entries via shared-cache LRU pressure
+-- (which a per-table cache clear cannot prevent), so it must run
+-- fully sequentially
 
 --- These tests verify the caching of a deserialized text index posting lists in the consecutive executions.
 

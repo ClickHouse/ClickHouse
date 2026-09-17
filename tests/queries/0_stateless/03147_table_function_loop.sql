@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 SELECT * FROM loop(numbers(3)) LIMIT 10;
 SELECT * FROM loop (numbers(3)) LIMIT 10 settings max_block_size = 1;

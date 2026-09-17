@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags:no-parallel,shard
+# Tags: shard
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,39 +15,27 @@ INSERT INTO distributed SELECT number FROM numbers(10);
 SYSTEM FLUSH DISTRIBUTED distributed;
 "
 echo "Local situation"
-# before SELECT * FROM local
-query_countI=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'InitialQuery'")
-query_countQ=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'Query'")
 
-# Execute SELECT * FROM local
-$CLICKHOUSE_CLIENT -q "SELECT * FROM local" > /dev/null
+# Count this query's own lineage in query_log (itself plus any dispatched shard sub-queries)
+# via initial_query_id, instead of the process-wide 'InitialQuery'/'Query' system.events
+# counters, which any concurrent query anywhere on the server would perturb.
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_local"
+$CLICKHOUSE_CLIENT --query_id "$query_id" -q "SELECT * FROM local" > /dev/null
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-# Counts after SELECT * FROM local
-After_query_countI=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'InitialQuery'")
-After_query_countQ=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'Query'")
-
-# Calculate the differences
-Initial_query_diff=$(($After_query_countI-$query_countI-2))
-query_diff=$(($After_query_countQ-$query_countQ-2))
+Initial_query_diff=$($CLICKHOUSE_CLIENT -q "SELECT countIf(is_initial_query) FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database IN (currentDatabase(), 'default')")
+query_diff=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database IN (currentDatabase(), 'default')")
 
 echo "Initial Query Difference: $Initial_query_diff"
 echo "Query Difference: $query_diff"
 echo "Distributed situation"
 
-# before SELECT * FROM distributed
-query_countI=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'InitialQuery'")
-query_countQ=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'Query'")
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_distributed"
+$CLICKHOUSE_CLIENT --query_id "$query_id" -q "SELECT * FROM distributed SETTINGS prefer_localhost_replica = 0" > /dev/null
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-# Execute SELECT * FROM distributed
-$CLICKHOUSE_CLIENT -q "SELECT * FROM distributed SETTINGS prefer_localhost_replica = 0" > /dev/null
-
-# Counts after SELECT * FROM distributed
-After_query_countI=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'InitialQuery'")
-After_query_countQ=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'Query'")
-
-# Calculate the differences
-Initial_query_diff=$(($After_query_countI-$query_countI-2))
-query_diff=$(($After_query_countQ-$query_countQ-2))
+Initial_query_diff=$($CLICKHOUSE_CLIENT -q "SELECT countIf(is_initial_query) FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database IN (currentDatabase(), 'default')")
+query_diff=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database IN (currentDatabase(), 'default')")
 
 echo "Initial Query Difference: $Initial_query_diff"
 echo "Query Difference: $query_diff"

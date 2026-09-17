@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: no-parallel-replicas
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_row_policy_or;

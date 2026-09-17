@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database
 # no-fasttest: relies on a failpoint (libfiu).
-# no-parallel: the failpoint parks the single global background drop thread, which would stall
+# Tag no-parallel: the failpoint parks the single global background drop thread, which would stall
 #   the drop queue of any concurrently running test.
 # no-ordinary-database: a plain CREATE ... AS SELECT is only routed through the temporary-table
 #   publish path (the code under test) on an Atomic database.

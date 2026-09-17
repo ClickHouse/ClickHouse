@@ -1,4 +1,5 @@
--- Tags: use-xray
+-- Tags: use-xray, no-parallel:xray
+-- Tag no-parallel: all `use-xray` tests share process-global XRay instrumentation state.
 
 SET allow_introspection_functions=1;
 

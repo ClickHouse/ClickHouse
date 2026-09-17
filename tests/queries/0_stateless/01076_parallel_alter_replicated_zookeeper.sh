@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel, no-fasttest
+# Tags: replica, no-fasttest, no-parallel
+# Tag no-parallel: concurrent suite load makes the five-replica mutation stress exceed the TSan test timeout.
 
 # This test checks mutations concurrent execution with concurrent inserts.
 # There was a bug in mutations finalization, when mutation finishes not after all

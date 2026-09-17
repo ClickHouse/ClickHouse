@@ -1,6 +1,5 @@
 -- Tags: no-parallel
--- no-parallel: SYSTEM CLEAR MARK CACHE is used.
-
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 DROP TABLE IF EXISTS t_prewarm_add_column;
 
 CREATE TABLE t_prewarm_add_column (a UInt64)

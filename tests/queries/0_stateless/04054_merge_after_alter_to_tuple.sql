@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-random-merge-tree-settings
+-- Tag no-parallel: uses a process-global failpoint
 
 -- Regression test: merging parts after ALTER MODIFY COLUMN changed a column
 -- from a non-Tuple type to a Tuple type used to crash with SIGSEGV because

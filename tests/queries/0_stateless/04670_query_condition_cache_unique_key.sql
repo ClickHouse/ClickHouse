@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-parallel-replicas, no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage, no-async-insert
--- no-parallel: drops the (instance-wide) query condition cache
+-- Tag no-parallel: drops the (instance-wide) query condition cache
 -- no-parallel-replicas: the cache is populated per replica, so the mark counts below are
 --                       deterministic only on a single replica
 -- no-fasttest: a UNIQUE KEY insert writes the dense-index SST, which needs RocksDB

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 DROP DICTIONARY IF EXISTS system.dict1;
 

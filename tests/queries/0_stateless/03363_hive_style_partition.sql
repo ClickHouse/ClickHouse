@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-random-settings
+-- Tags: no-fasttest, no-random-settings
 
 SET allow_suspicious_low_cardinality_types=1;
 

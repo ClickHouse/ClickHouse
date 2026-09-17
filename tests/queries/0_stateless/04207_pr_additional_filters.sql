@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: uses a process-global failpoint
 -- ^ failpoint
 
 SET explain_query_plan_default = 'legacy';

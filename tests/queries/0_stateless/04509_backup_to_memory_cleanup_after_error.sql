@@ -1,5 +1,5 @@
 -- Tags: no-parallel
--- no-parallel: enables a global failpoint
+-- Tag no-parallel: enables a global failpoint
 
 -- Regression test: a BACKUP ... TO Memory(...) that fails before finalization (before the `.backup`
 -- metadata file is written) must still clean up after itself. The cleanup used to throw

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Test: exercises `User::setName` reserved-name check for the JWT_AUTHENTICAION_MARKER prefix.
 -- Covers: src/Access/User.cpp:36-37 - name_.starts_with(EncodedUserInfo::JWT_AUTHENTICAION_MARKER)
 -- The marker " JWT AUTHENTICATION " (Core/Protocol.h:67) is sent by clickhouse-client as the
