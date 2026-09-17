@@ -75,7 +75,7 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void initialize(const Block & sample_block) override;
     JoinResultPtr joinBlock(Block block) override;
@@ -130,8 +130,8 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
-    void switchToGraceHashJoin();
-    void tryConvertSlots();
+    void switchToGraceHashJoin(size_t worker_id);
+    void tryConvertSlots(size_t worker_id);
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
