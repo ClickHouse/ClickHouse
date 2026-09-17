@@ -42,7 +42,7 @@ using ResponseCallback = std::function<void(const Coordination::ZooKeeperRespons
 ///    benchmarked it against a maybe simpler inheritance-based implementation.)
 ///  * KeeperStorage base class that manages everything else: sessions, watches, set of ephemeral
 ///    nodes, ACLs, digest, deltas.
-class KeeperStorage
+class KeeperStorage : public std::enable_shared_from_this<KeeperStorage>
 {
 public:
     static String generateDigest(const String & userdata);
@@ -271,7 +271,10 @@ public:
     bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
 
     /// If initialize_system_nodes is false, container starts with no nodes at all, not even "/".
-    static std::unique_ptr<KeeperStorage> create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
+    static std::shared_ptr<KeeperStorage> create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
+
+    /// Issue a MVCC lock-free read view of committed nodes. The view keeps this storage alive.
+    std::unique_ptr<KeeperNodesReadView> issueReadView();
 
     virtual ~KeeperStorage();
 

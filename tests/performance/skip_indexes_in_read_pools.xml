@@ -1,0 +1,53 @@
+<test>
+    <settings>
+        <use_skip_indexes>1</use_skip_indexes>
+        <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+        <!-- Many small read tasks make the per-task cost of ranges pruned by the skip
+             index visible: with use_indexes_refiner_in_read_pools such ranges are dropped
+             at task-cut time and never become read tasks. -->
+        <merge_tree_min_rows_for_concurrent_read>4096</merge_tree_min_rows_for_concurrent_read>
+        <merge_tree_min_read_task_size>1</merge_tree_min_read_task_size>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>pools</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_skip_index_pools
+        (
+            id UInt64,
+            category UInt64,
+            v1 UInt64,
+            v2 UInt64,
+            v3 UInt64,
+            INDEX category_idx category TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 256
+    </create_query>
+
+    <!-- A single needle cluster: the skip index prunes all marks except a couple hundred,
+         so almost every read task is fully dropped by the ranges refiner. -->
+    <fill_query>
+        INSERT INTO t_skip_index_pools
+        SELECT
+            number,
+            if(number BETWEEN 45000000 AND 45050000, 9999, number % 64),
+            number, number * 2, number * 3
+        FROM numbers(90000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE t_skip_index_pools FINAL</fill_query>
+
+    <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_skip_index_pools WHERE category = 9999 SETTINGS use_indexes_refiner_in_read_pools = {pools}</query>
+    <query>SELECT sum(v1), sum(v2), sum(v3) FROM t_skip_index_pools WHERE category = 9999 SETTINGS use_indexes_refiner_in_read_pools = {pools}, allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_skip_index_pools</drop_query>
+</test>

@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -144,7 +145,7 @@ public:
 
             try
             {
-                if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
+                if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path_string))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
@@ -191,9 +192,18 @@ Also see the [`file`](/reference/functions/table-functions/file) table function.
         {
             "Insert files into a table",
             R"(
-INSERT INTO table SELECT file('a.txt'), file('b.txt');
+INSERT INTO FUNCTION file('a.txt', 'RawBLOB') SELECT 'Hello' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file('b.txt', 'RawBLOB') SELECT 'World!' SETTINGS engine_file_truncate_on_insert = 1;
+
+CREATE TABLE data (a String, b String) ENGINE = Memory;
+INSERT INTO data SELECT file('a.txt'), file('b.txt');
+
+SELECT * FROM data;
             )",
             R"(
+┌─a─────┬─b──────┐
+│ Hello │ World! │
+└───────┴────────┘
             )"
         }
     };

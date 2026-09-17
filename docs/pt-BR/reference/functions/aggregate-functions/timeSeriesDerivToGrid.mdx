@@ -15,8 +15,10 @@ Introduzido em: v25.6.0
 
 Função de agregação que recebe dados de séries temporais como pares de timestamps e valores e calcula a [derivada no estilo do PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) a partir desses dados em uma grade temporal regular definida pelo timestamp inicial, timestamp final e passo. Para cada ponto da grade, as amostras para calcular `deriv` são consideradas dentro da janela de tempo especificada.
 
+Se várias amostras tiverem o mesmo timestamp, apenas uma delas será usada: a amostra com o maior valor. Um valor NaN perde para qualquer outro valor; portanto, um valor NaN só será usado se todas as amostras nesse timestamp forem NaN.
+
 <Note>
-  Esta função é experimental; habilite-a definindo `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Esta função é experimental; habilite-a definindo `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
 
 **Sintaxe**
@@ -27,7 +29,10 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **Parâmetros**
 
-* `start_timestamp` — Especifica o início da grade. - `end_timestamp` — Especifica o fim da grade. - `grid_step` — Especifica o passo da grade em segundos. - `staleness` — Especifica a &quot;staleness&quot; máxima, em segundos, das amostras consideradas. A janela de staleness é um intervalo aberto à esquerda e fechado à direita.
+* `start_timestamp` — Especifica o início da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contenha um número ou um texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `end_timestamp` — Especifica o fim da grade. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contenha um número ou um texto de data e hora. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `grid_step` — Especifica o passo da grade em segundos. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contenha um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
+* `staleness` — Especifica a &quot;staleness&quot; máxima, em segundos, das amostras consideradas. A janela de staleness é um intervalo aberto à esquerda e fechado à direita. Com um argumento de timestamp `DateTime64`, também pode ser um número fracionário ou uma string que contenha um número ou uma duração como &#39;15s&#39; ou &#39;1m&#39;. [`UInt32`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal) ou [`String`](/pt-BR/reference/data-types/string)
 
 **Argumentos**
 
@@ -64,7 +69,7 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                              │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                               │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -84,7 +89,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
 
 ```response title=Response
 ┌─timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.1,0.11,0.15,NULL,NULL,0.15]                                                │
+│ [NULL,NULL,0,0.1,0.11,0.1,NULL,NULL,0.15]                                                 │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

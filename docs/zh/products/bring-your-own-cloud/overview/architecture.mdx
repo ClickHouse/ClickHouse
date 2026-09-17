@@ -19,12 +19,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * **ClickHouse Cloud 组织：** ClickHouse Cloud 中的顶层实体，用于管理用户、计费以及非 BYOC 的 ClickHouse 服务。组织中的用户既可以访问标准 Cloud 服务，也可以访问 BYOC 服务。
 * **ClickHouse BYOC 组织：** 一个专门用于管理 BYOC 部署的独立组织。它与 Cloud 组织共享用户，但会关联到一个或多个部署了 BYOC 基础设施的云账户。
-* **云账户 / 项目：** 客户自有的 AWS 账户或 GCP 项目，BYOC 基础设施就在其中预配。每个账户或项目都可以在一个或多个区域中承载 BYOC 部署。为实现隔离，建议每个 BYOC 部署使用独立的账户或项目。
-* **BYOC 基础设施：** 部署在云账户某个特定区域内的一组云资源，包括 VPC、Kubernetes 集群 (EKS/GKE) 、存储桶、IAM 角色以及相关支持服务。单个云账户可以在不同区域中包含多个 BYOC 基础设施。
+* **云账户 / 项目 / 订阅：** 客户自有的 AWS 账户、GCP 项目或 Azure 订阅，BYOC 基础设施就在其中预配。每个账户、项目或订阅都可以在一个或多个区域中承载 BYOC 部署。为实现隔离，建议每个 BYOC 部署使用独立的账户、项目或订阅。
+* **BYOC 基础设施：** 部署在云账户某个特定区域内的一组云资源，包括 VPC/VNet、Kubernetes 集群 (EKS/GKE/AKS) 、对象存储桶、IAM 角色/服务账号/服务主体以及相关配套服务。单个云账户可以在不同区域中包含多个 BYOC 基础设施。
 * **ClickHouse 服务：** 在某个 BYOC 基础设施内运行的单个 ClickHouse 集群。同一个 BYOC 基础设施内可以运行多个服务。
 
 <Note>
-  只有未通过[云服务提供商市场](/zh/products/cloud/reference/billing/marketplace/overview)完成开通的客户，才能在同一组织下混合使用 AWS 账户和 GCP 项目。
+  只有未通过[云服务提供商市场](/zh/products/cloud/reference/billing/marketplace/overview)完成开通的客户，才能在同一组织下混合使用 AWS 账户、GCP 项目和 Azure 订阅。
 </Note>
 
 <div id="glossary">
@@ -54,7 +54,7 @@ ClickHouse Cloud 将在您的账户中部署的主要云资源包括：
 * **VPC:** 专用于您的 ClickHouse 部署的虚拟私有云。它既可以由 ClickHouse 管理，也可以由您 (客户) 管理，并且通常会与您的应用 VPC 建立对等连接。
 * **IAM roles and policies:** Kubernetes、ClickHouse 服务和监控栈所需的 IAM 角色和策略。这些可以由 ClickHouse 预配，也可以由客户提供。
 * **Storage buckets:** 用于存储数据分区片段、备份，以及 (可选的) 长期指标和日志归档。
-* **Kubernetes cluster:** 根据您的云提供商不同，它可以是 Amazon EKS、Google GKE 或 Azure AKS，并承载架构图中显示的 ClickHouse 服务器及配套服务。
+* **Kubernetes cluster:** 根据您的云提供商不同，它可以是 Amazon EKS、Google GKE 或 Azure AKS。它承载架构图中显示的 ClickHouse 服务器及配套服务。
 
 默认情况下，ClickHouse Cloud 会预配一个新的专用 VPC，并设置所需的 IAM 角色，以确保 Kubernetes 服务安全运行。对于有更高级网络或安全需求的组织，也可以选择自行管理 VPC 和 IAM 角色。这样可以更灵活地自定义网络配置，并更精细地控制权限。不过，选择自行管理这些资源也会增加您的运维责任。
 
@@ -83,12 +83,12 @@ BYOC 部署模型需要具备两个关键组成部分，以确保运行可靠、
 ClickHouse Cloud 需要跨账户 IAM 权限，以便在您的云账户中预配和管理资源。这使 ClickHouse 能够：
 
 * **预配基础设施**：创建并配置 VPC、子网、安全组及其他网络组件
-* **管理 Kubernetes 集群**：部署并维护 EKS/GKE 集群、节点组和集群组件
+* **管理 Kubernetes 集群**：部署并维护 EKS/GKE/AKS 集群、节点组和集群组件
 * **创建存储资源**：预配 S3 存储桶或等效的对象存储，用于存放数据和备份
 * **管理 IAM 角色**：为 Kubernetes 服务账号及配套服务创建并配置 IAM 角色
 * **运行配套服务**：部署并管理监控栈、入口控制器及其他基础设施组件
 
-这些权限通过您在初始引导流程中创建的跨账户 IAM 角色 (AWS) 或服务账号 (GCP) 授予。该角色遵循最小权限原则，权限范围仅限于 BYOC 操作所必需的内容。
+这些权限通过您在初始引导流程中创建的跨账户 IAM 角色 (AWS)、服务账号 (GCP) 或多租户服务主体 (Azure) 授予。该角色遵循最小权限原则，权限范围仅限于 BYOC 操作所必需的内容。
 
 有关所需具体权限的详细信息，请参阅 [BYOC Privilege Reference](/zh/products/bring-your-own-cloud/reference/privilege)。
 

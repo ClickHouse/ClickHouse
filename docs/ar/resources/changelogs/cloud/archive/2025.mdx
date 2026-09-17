@@ -90,7 +90,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * **ClickHouse Connector for AWS Glue**
   يمكنك الآن استخدام [ClickHouse Connector for AWS Glue](/ar/integrations/connectors/data-ingestion/AWS/glue) الرسمي، والمتاح عبر [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s). ويستفيد من محرك AWS Glue بدون خوادم والمعتمد على Apache
   Spark لتنفيذ عمليات استخراج البيانات وتحويلها وتحميلها ضمن تكامل البيانات بين ClickHouse ومصادر البيانات الأخرى. ابدأ
-  باتباع [منشور المدوّنة](http://clickhouse.com/blog/clickhouse-connector-aws-glue) الخاص بالإعلان لمعرفة كيفية إنشاء الجداول وكتابة البيانات وقراءتها بين ClickHouse وSpark.
+  باتباع [منشور المدوّنة](https://clickhouse.com/blog/clickhouse-connector-aws-glue) الخاص بالإعلان لمعرفة كيفية إنشاء الجداول وكتابة البيانات وقراءتها بين ClickHouse وSpark.
 * **تغيير في الحد الأدنى لعدد النسخ المتماثلة في خدمة**
   يمكن الآن [تقليص الخدمات التي جرى توسيعها](/ar/products/cloud/features/autoscaling/overview) لاستخدام نسخة متماثلة واحدة (في السابق كان الحد الأدنى نسختين متماثلتين). ملاحظة: الخدمات أحادية النسخة المتماثلة أقل توافراً، ولا يُنصح باستخدامها في بيئات الإنتاج.
 * سيبدأ ClickHouse Cloud في إرسال إشعارات متعلقة بتوسيع نطاق الخدمة وترقيات إصدار الخدمة، بشكل افتراضي لأدوار المسؤولين. ويمكنهم تعديل تفضيلات الإشعارات الخاصة بهم في إعدادات الإشعارات.
@@ -238,18 +238,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ضبطها لكل pipe على حدة. وبالنسبة إلى **Postgres CDC ClickPipes**، تغطي التنبيهات أيضًا
   عتبة replication slot (يمكن ضبطها من علامة التبويب **Settings**) وأنواعًا محددة من
   الأخطاء، بالإضافة إلى خطوات ذاتية الخدمة لحل حالات التعطل.
-* أصبحت **MySQL CDC private preview** متاحة الآن. يتيح ذلك للعملاء نسخ قواعد بيانات MySQL
+* أصبحت **MySQL CDC المعاينة الخاصة** متاحة الآن. يتيح ذلك للعملاء نسخ قواعد بيانات MySQL
   إلى ClickHouse Cloud ببضع نقرات فقط، ما يوفّر تحليلات سريعة
   ويلغي الحاجة إلى أدوات ETL خارجية. ويدعم الموصل كلاً من النسخ المتماثل المستمر
   وعمليات الترحيل لمرة واحدة، سواء كان MySQL يعمل على السحابة (RDS،
   Aurora وCloud SQL وAzure وما إلى ذلك) أو في بيئة محلية. يمكنك التسجيل في
-  private preview من خلال [اتباع هذا الرابط](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
+  المعاينة الخاصة من خلال [اتباع هذا الرابط](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
 * تم طرح **AWS PrivateLink لـ ClickPipes**. يمكنك استخدام AWS PrivateLink
   لإنشاء اتصال آمن بين شبكات VPC وخدمات AWS وأنظمتك المحلية
   وClickHouse Cloud. ويمكن تنفيذ ذلك دون تعريض حركة المرور إلى
   الإنترنت العام أثناء نقل البيانات من مصادر مثل Postgres وMySQL و
   MSK على AWS. كما يدعم أيضًا الوصول عبر المناطق من خلال نقاط نهاية خدمة VPC.
-  وأصبح إعداد اتصال PrivateLink الآن [ذاتي الخدمة بالكامل](/ar/integrations/clickpipes/aws-privatelink)
+  وأصبح إعداد اتصال PrivateLink الآن [ذاتي الخدمة بالكامل](/ar/integrations/clickpipes/networking/aws-privatelink)
   عبر ClickPipes.
 
 <div id="april-4-2025">

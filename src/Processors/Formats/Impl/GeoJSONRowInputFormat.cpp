@@ -1178,6 +1178,7 @@ The geometry-typed column may be the `Geometry` variant or a specific geo type; 
 | ClickHouse type   | GeoJSON `"type"`            |
 |-------------------|----------------------------|
 | `Point`           | `Point`                    |
+| `MultiPoint`      | `MultiPoint`               |
 | `LineString`      | `LineString`               |
 | `MultiLineString` | `MultiLineString`          |
 | `Polygon`         | `Polygon`                  |

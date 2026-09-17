@@ -23,14 +23,23 @@ namespace DB
   * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
   * so more column-native fast paths can be added without changing results.
   *
-  * Scope of the equivalence: it holds for the value/numeric coercions this is used for today
-  * (all current callers convert to numeric types). It does NOT yet hold when the *source* type's
-  * `Field` tag is not recoverable from `IColumn::get` AND `to` depends on that tag: the notable case
-  * is `Bool`, whose column is a plain `ColumnUInt8`, so the delegation path reconstructs a `UInt64`
-  * `Field` and `Bool -> String` yields `'1'`/`'0'` instead of `convertFieldToType`'s `'true'`/`'false'`
-  * (same for nested `Array(Bool)` / `Tuple(Bool)`). Converting such sources to a numeric `to` is
-  * unaffected (value-preserving). This gap disappears as the `convertFieldToType` delegation is
-  * replaced by column-native paths; until then, do not rely on it for `Bool`-to-textual conversions.
+  * The equivalence holds for scalar `Bool` and for `Bool` nested under the structural carriers
+  * `Array`/`Tuple`/`Map` (and under `Nullable`/`LowCardinality`), including tag-sensitive conversions
+  * such as `Bool -> String`: `IColumn::get` does not round-trip the `Bool` `Field` tag (a `DataTypeBool`
+  * column is a plain `ColumnUInt8`, so `get` yields `UInt64`), so the delegation path re-tags `Bool`
+  * values before calling `convertFieldToType`. The differential test pins these cases.
+  *
+  * A `Variant`/`Dynamic` source is faithful too. `IColumn::get` returns the active alternative's value
+  * without recording which alternative it came from, while the conversion is keyed on the source type, so
+  * the alternative's type is read back from the column and used in place of the carrier's. An ambiguous
+  * variant such as `Variant(Bool, UInt8)` is included, because the discriminator still distinguishes the
+  * alternatives where the `Field` no longer can. This is the one thing the legacy `Field` path
+  * (`convertFieldToType` on `(*column)[0]`) cannot do, the column being gone by then, so moving a caller
+  * onto this helper corrects such conversions rather than preserving them.
+  *
+  * Known limitation: a conversion whose `from` is itself a composite over the carrier - e.g.
+  * `Array(Dynamic)` to `Array(String)` - is NOT faithful, because `convertFieldToType` converts the
+  * elements of a composite with no element type at hand, so a per-element alternative is never reached.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,

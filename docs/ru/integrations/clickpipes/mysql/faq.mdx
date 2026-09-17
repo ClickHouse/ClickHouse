@@ -16,6 +16,14 @@ integration:
 
 Да, MySQL ClickPipe поддерживает MariaDB 10.0 и выше. Его конфигурация очень похожа на конфигурацию MySQL, при этом по умолчанию используется GTID-репликация.
 
+<div id="mariadb-partial-row-event-unsupported">
+  ### Почему мой пайп завершился сбоем из-за неподдерживаемого события частичных строк MariaDB?
+</div>
+
+MariaDB 12.3 и более поздние версии могут записывать в binlog [события частичных строк](https://mariadb.com/docs/server/server-management/server-monitoring-logs/binary-log/row-binlog-events#partial_rows_log_event), которые мы пока не поддерживаем.
+
+Чтобы восстановить работу, выполните повторную синхронизацию пайпа. Чтобы снизить вероятность повторного возникновения этой проблемы, можно также увеличить значение параметра `binlog_row_event_fragment_threshold` на источнике, чтобы фрагментировалось меньше изменений строк. Значение должно быть меньше `max_allowed_packet`, поскольку одно нефрагментированное событие binlog размером больше `max_allowed_packet` вместо этого приведёт к сбою потока репликации (см. [Почему мой пайп завершается сбоем из-за ошибки binlog max&#95;allowed&#95;packet?](#binlog-event-exceeded-max-allowed-packet)).
+
 <div id="mariadb-compressed-column-unsupported">
   ### Почему мой пайп завершился ошибкой из-за неподдерживаемого столбца COMPRESSED в MariaDB?
 </div>
@@ -74,6 +82,47 @@ Increase max_allowed_packet on source
   ```
   Также задайте его в конфигурации сервера (например, в `my.cnf` или в DB Parameter Group), чтобы значение сохранялось после перезапуска.
 * **Если одна строка больше 1G:** выполните повторную синхронизацию пайпа.
+
+<div id="binlog-partial-json-unsupported">
+  ### Почему мой пайп завершается с ошибкой частичного JSON binlog?
+</div>
+
+Если пайп завершается ошибкой, подобной следующей:
+
+```text
+Received a partial JSON update event while processing <database>.<table>; binlog_row_value_options must be disabled (set to '')
+```
+
+это означает, что на исходном сервере MySQL для [`binlog_row_value_options`](https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_binlog_row_value_options) задано значение `PARTIAL_JSON`. При включении этой опции MySQL записывает обновления в столбцах `JSON` как частичные изменения (только изменённые пути), а не как полный документ. ClickPipes не может применить такие частичные изменения, поэтому CDC не может продолжить работу.
+
+Чтобы устранить проблему:
+
+* **Отключите `PARTIAL_JSON` на источнике.** Сбросьте значение до пустого:
+  ```sql
+  SET GLOBAL binlog_row_value_options = '';
+  ```
+  Также удалите эту настройку из конфигурации сервера (например, `my.cnf` или DB Parameter Group), чтобы она не восстанавливалась после перезапуска.
+* **Выполните повторную синхронизацию пайпа**, чтобы репликация возобновилась с чистого смещения.
+
+<div id="secure-transport-required">
+  ### Почему мой пайп завершается с ошибкой require_secure_transport?
+</div>
+
+Если ваш пайп завершается с ошибкой, похожей на:
+
+```text
+MySQL execute error: handleAuthResult: ERROR 3159 (HY000): Connections using insecure transport
+are prohibited while --require_secure_transport=ON.
+```
+
+это означает, что на исходном сервере включен [`require_secure_transport`](https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_require_secure_transport) — он отклоняет любые незашифрованные подключения, — тогда как в ClickPipe TLS отключен. В RDS for MySQL это задается в [группе параметров БД](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.require-ssl.html) экземпляра. В Aurora MySQL это настройка [группы параметров кластера БД](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Security.html#AuroraMySQL.Security.SSL.RequireSSL), которая вообще недоступна в группах параметров экземпляров. Ни одна из этих настроек не требует перезагрузки для вступления в силу. В Aurora MySQL 8.4 по умолчанию задано значение `ON`, тогда как в версиях 2 и 3 по умолчанию используется `OFF`. Поэтому пайп, который ранее успешно выполнял репликацию, может начать завершаться с ошибкой после изменения параметра или обновления версии, даже если настройки пайпа не менялись.
+
+Чтобы устранить проблему:
+
+* **Снова включите TLS в пайпе.** В разделе **Settings** пайпа откройте настройки подключения и выключите переключатель **Disable TLS**. Если при сохранении появится ошибка сертификата, см. [Почему при подключении к MySQL возникает ошибка проверки TLS-сертификата?](#tls-certificate-validation-error), чтобы узнать, как указать TLS-хост, загрузить корневой CA или пропустить проверку сертификата.
+* **Или отключите `require_secure_transport` в источнике** — в группе параметров БД для RDS или в группе параметров кластера БД для Aurora — если в вашей среде допустимы незашифрованные подключения.
+
+После успешного подключения репликация возобновится с места остановки. Если пайп завершался с ошибкой дольше периода хранения binlog (см. [Как управляется репликация?](#how-is-replication-managed)), потребуется выполнить его повторную синхронизацию.
 
 <div id="tls-certificate-validation-error">
   ### Почему при подключении к MySQL возникает ошибка проверки TLS-сертификата?
