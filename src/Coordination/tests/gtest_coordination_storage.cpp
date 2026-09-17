@@ -1609,7 +1609,7 @@ TEST_P(CoordinationTest, TestEmptyACLListWithNonzeroId)
         int64_t new_zxid = ++zxid;
         auto request = std::make_shared<ZooKeeperGetRequest>();
         request->path = path;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         auto responses = storage.processRequest(request, 1, new_zxid);
         ASSERT_EQ(responses.size(), 1u);
         ASSERT_EQ(responses[0].response->error, expected) << "path " << path;
