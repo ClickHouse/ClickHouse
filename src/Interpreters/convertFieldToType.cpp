@@ -538,8 +538,24 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
         {
             const auto scale = static_cast<const DataTypeTime64 &>(type).getScale();
-            const auto decimal_value
-                = DecimalUtils::decimalFromComponents<Time64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
+
+            /// Same two failure modes as the `DateTime64` branch above: a `UInt64` carrier above `Int64` maximum
+            /// must not be wrapped around into a negative tick count, and a value that overflows when scaled up
+            /// to the column precision is not representable at all, so both return Null ("cannot convert").
+            Int64 whole = 0;
+            if (src.getType() == Field::Types::UInt64)
+            {
+                if (!accurate::convertNumeric<UInt64, Int64, true>(src.safeGet<UInt64>(), whole))
+                    return {};
+            }
+            else
+                whole = applyVisitor(FieldVisitorConvertToNumber<Int64>(), src);
+
+            Time64 decimal_value;
+            if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<Time64>(
+                    whole, 0, DecimalUtils::scaleMultiplier<Time64::NativeType>(scale), decimal_value))
+                return {};
+
             return Field(DecimalField<Time64>(decimal_value, scale));
         }
 

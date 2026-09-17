@@ -482,3 +482,25 @@ TEST(ConvertFieldToTypeStrictness, OutOfRangeDateTime64Integers)
     EXPECT_TRUE(convertFieldToType(Field(UInt64(9223372036854775808ULL)), *seconds_type).isNull());
     EXPECT_TRUE(convertFieldToType(Field(UInt64(18446744073709551615ULL)), *seconds_type).isNull());
 }
+
+TEST(ConvertFieldToTypeStrictness, OutOfRangeTime64Integers)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+
+    const auto seconds_type = type_factory.get("Time64(0)");
+    const auto nanoseconds_type = type_factory.get("Time64(9)");
+
+    /// Scaling the seconds up to nanoseconds overflows the `Int64` tick storage.
+    EXPECT_EQ(
+        convertFieldToType(Field(Int64(1)), *nanoseconds_type),
+        Field(DecimalField<Time64>(Time64(1000000000), 9)));
+    EXPECT_TRUE(convertFieldToType(Field(Int64(9223372036854)), *nanoseconds_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(9223372036854)), *nanoseconds_type).isNull());
+
+    /// A `UInt64` bound above `Int64` maximum must not be wrapped around into a negative tick count.
+    EXPECT_EQ(
+        convertFieldToType(Field(UInt64(9223372036854775807ULL)), *seconds_type),
+        Field(DecimalField<Time64>(Time64(9223372036854775807LL), 0)));
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(9223372036854775808ULL)), *seconds_type).isNull());
+    EXPECT_TRUE(convertFieldToType(Field(UInt64(18446744073709551615ULL)), *seconds_type).isNull());
+}
