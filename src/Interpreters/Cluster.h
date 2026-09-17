@@ -183,9 +183,9 @@ public:
         /// Returns shard{shard_index}_replica{replica_index}
         String toFullString() const;
 
-        /// Parses the name of an async INSERT queue directory back into a shard index and a
-        /// replica index (replica_index == 0 means all the replicas of the shard). Returns nullopt
-        /// if the name is not one this server writes, see toFullString().
+        /// Parses a queue directory name into a shard index and a replica index
+        /// (replica_index == 0 means all the replicas of the shard), nullopt if it is not a name
+        /// that is written, see toFullString()
         static std::optional<Address> tryParseFullString(std::string_view full_string);
 
         /// Returns resolved address if it does resolve.

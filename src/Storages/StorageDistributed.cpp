@@ -38,6 +38,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/setThreadName.h>
 
@@ -1726,37 +1727,75 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
+/// Prefix of a subdirectory renamed by renameUnrecognizedDirectoryQueue()
+static constexpr std::string_view unrecognized_directory_queue_prefix = "unrecognized_";
+
+/// A queue directory is named after its destinations, comma separated
+static bool isDirectoryQueueName(const std::string & name)
+{
+    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+        if (!Cluster::Address::tryParseFullString(boost::copy_range<std::string>(*it)))
+            return false;
+    return true;
+}
+
+void StorageDistributed::renameUnrecognizedDirectoryQueue(const std::filesystem::path & dir_path) const
+{
+    /// The name is not one `DistributedSink` writes, so it names no destination and the files in
+    /// it can never be sent. Renaming keeps it from being taken for a directory queue on every
+    /// start; the files are left for the administrator to inspect or remove.
+    const auto parent_path = dir_path.parent_path();
+    const auto new_name = fmt::format(
+        "{}{}", unrecognized_directory_queue_prefix, sipHash128String(dir_path.filename().string()));
+    std::filesystem::rename(dir_path, parent_path / new_name);
+    LOG_ERROR(log, "Renamed an unrecognized subdirectory of {} to {}, the files in it will not be sent. "
+                   "A subdirectory used for async INSERT is named 'shardN_replicaM' or 'shardN_all_replicas'",
+                   parent_path.string(), new_name);
+}
+
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
     fs::create_directories(path);
 
-    std::filesystem::directory_iterator begin(path);
-    std::filesystem::directory_iterator end;
-    for (auto it = begin; it != end; ++it)
+    /// Taken before anything below removes or renames an entry of `path`, which would let the
+    /// iterator skip or repeat the entries around it.
+    std::vector<std::filesystem::path> dir_paths;
+    for (std::filesystem::directory_iterator it(path), end; it != end; ++it)
+        if (std::filesystem::is_directory(it->path()))
+            dir_paths.push_back(it->path());
+
+    for (const auto & dir_path : dir_paths)
     {
-        const auto & dir_path = it->path();
-        if (std::filesystem::is_directory(dir_path))
+        /// Created by DistributedSink
+        const auto tmp_path = dir_path / "tmp";
+        if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
+            std::filesystem::remove(tmp_path);
+
+        const auto broken_path = dir_path / "broken";
+        if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
+            std::filesystem::remove(broken_path);
+
+        const auto dir_name = dir_path.filename().string();
+
+        if (std::filesystem::is_empty(dir_path))
         {
-            /// Created by DistributedSink
-            const auto & tmp_path = dir_path / "tmp";
-            if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
-                std::filesystem::remove(tmp_path);
-
-            const auto & broken_path = dir_path / "broken";
-            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
-                std::filesystem::remove(broken_path);
-
-            if (std::filesystem::is_empty(dir_path))
-            {
-                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedSink on demand.
-                std::filesystem::remove(dir_path);
-            }
-            else
-            {
-                getDirectoryQueue(disk, dir_path.filename().string());
-            }
+            LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
+            /// Will be created by DistributedSink on demand.
+            std::filesystem::remove(dir_path);
+        }
+        else if (dir_name.starts_with(unrecognized_directory_queue_prefix))
+        {
+            /// Renamed by an earlier start, left for the administrator.
+            LOG_WARNING(log, "{} holds files of an async INSERT that cannot be sent", dir_path.string());
+        }
+        else if (!isDirectoryQueueName(dir_name))
+        {
+            renameUnrecognizedDirectoryQueue(dir_path);
+        }
+        else
+        {
+            getDirectoryQueue(disk, dir_name);
         }
     }
 }
@@ -1808,15 +1847,12 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
         const std::string & dirname = boost::copy_range<std::string>(*it);
         auto address = Cluster::Address::tryParseFullString(dirname);
 
-        /// An unrecognized name is reported and skipped rather than thrown on, otherwise a single
-        /// stray directory would keep the table from attaching at all. This is also where a
-        /// directory written by a server old enough to have used
-        /// use_compact_format_in_distributed_parts_names=0 ends up: its files are not sent.
+        /// Unreachable: initializeDirectoryQueuesForDisk() renames a name it does not recognize
+        /// instead of starting a queue for it, and DistributedSink generates the name it passes.
+        /// Skipped rather than thrown on so a stray name cannot keep the table from attaching.
         if (!address)
         {
-            LOG_ERROR(log, "Unrecognized directory '{}' in the async INSERT queue of {}, its files will not be sent. "
-                           "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
-                           dirname, getStorageID().getNameForLogs());
+            LOG_ERROR(log, "Unrecognized entry in the name of a directory queue of {}", getStorageID().getNameForLogs());
             continue;
         }
 

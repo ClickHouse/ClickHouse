@@ -164,9 +164,9 @@ def test_remove_replica(started_cluster):
 
 def test_invalid_shard_directory_format(started_cluster):
     """
-    Test that ClickHouse doesn't crash when it encounters
-    a malformed directory name like 'shard1_all_replicas_bkp'
-    during distributed table initialization.
+    A subdirectory whose name is not one the sink writes names no destination, so its files can
+    never be sent. It is renamed to 'unrecognized_<hash>' instead of being taken for a directory
+    queue, so it is not reported and a single stray subdirectory cannot break the attach.
     """
     node.query("drop table if exists test.dist_invalid sync")
     node.query("drop table if exists test.local_invalid sync")
@@ -185,20 +185,13 @@ def test_invalid_shard_directory_format(started_cluster):
         "WHERE database='test' AND name='dist_invalid'"
     ).strip()
 
-    # Create a malformed directory that would cause the bug
-    malformed_dir = f"{data_path}/shard1_all_replicas_bkp"
-    node.exec_in_container(["mkdir", "-p", malformed_dir])
-
-    # Create a dummy file so the directory isn't considered empty
-    node.exec_in_container(["touch", f"{malformed_dir}/dummy.txt"])
-
     invalid_formats = [
+        "shard1_all_replicas_bkp",
         "shard1_all_replicas_backup",
         "shard1_all_replicas_old",
         "shard2_all_replicas_tmp",
-        # A directory left by a server that wrote the non-compact format (removed in 26.9). It has
-        # to be skipped like any other unrecognized name: the queue cannot be sent, but a single
-        # such directory must not keep the table from attaching.
+        # As a server older than 26.9 would have named it with
+        # use_compact_format_in_distributed_parts_names=0.
         "default:hunter2@127%2E0%2E0%2E1:9000",
     ]
     for invalid_dir in invalid_formats:
@@ -211,24 +204,30 @@ def test_invalid_shard_directory_format(started_cluster):
     node.query("detach table test.dist_invalid")
     node.query("attach table test.dist_invalid")
 
+    # The queue of the one well-formed directory is still there, so the assertions below are not
+    # vacuous.
+    assert (
+        node.query(
+            "SELECT count() FROM system.distribution_queue "
+            "WHERE database = 'test' AND table = 'dist_invalid'"
+        ).strip()
+        == "1"
+    )
+
+    listing = node.exec_in_container(["ls", "-1", data_path]).split()
+
+    # Every unrecognized name is renamed and nothing is deleted.
+    renamed = [name for name in listing if name.startswith("unrecognized_")]
+    assert len(renamed) == len(invalid_formats), listing
+    assert sorted(listing) == sorted(renamed + ["shard1_all_replicas"]), listing
+    for name in renamed:
+        assert node.exec_in_container(["ls", "-1", f"{data_path}/{name}"]).split() == [
+            "dummy.txt"
+        ]
+
+    # The old name is gone from the disk, from the reported path and from the log.
     node.query("SYSTEM FLUSH LOGS system.text_log")
-
-    error_logs = node.query(
-        """
-        SELECT count()
-        FROM system.text_log
-        WHERE level = 'Error'
-          AND message LIKE '%Unrecognized directory%'
-          AND message LIKE '%shard1_all_replicas_backup%'
-        """
-    ).strip()
-
-    # We should have at least one error log for each malformed directory
-    # But we don't strictly require this in case logging is disabled
-    # The important thing is that the server didn't crash
-    print(f"Found {error_logs} error log entries for invalid directories")
-
-    # The password of the legacy directory above must not reach the reported path either.
+    assert "hunter2" not in node.exec_in_container(["ls", "-1R", data_path])
     assert (
         node.query(
             "SELECT count() FROM system.distribution_queue "
@@ -236,6 +235,19 @@ def test_invalid_shard_directory_format(started_cluster):
         ).strip()
         == "0"
     )
+    assert (
+        node.query(
+            "SELECT count() FROM system.text_log WHERE position(message, 'hunter2') > 0"
+        ).strip()
+        == "0"
+    )
+
+    # A second start leaves the renamed directories alone.
+    node.query("detach table test.dist_invalid")
+    node.query("attach table test.dist_invalid")
+    assert sorted(node.exec_in_container(["ls", "-1", data_path]).split()) == sorted(
+        listing
+    ), node.exec_in_container(["ls", "-1", data_path])
 
     # Clean up
     node.query("drop table test.dist_invalid sync")
