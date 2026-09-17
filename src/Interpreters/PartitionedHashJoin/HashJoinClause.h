@@ -105,23 +105,45 @@ public:
         /// Duplicate storage written by the owner waves and by the drain.
         SpanWriter::Stats owner_duplicates;
         SpanWriter::Stats drain_duplicates;
+        /// Contiguous build-block ranges the post-build scatter was split into. 1 means the whole
+        /// build was scattered at once.
+        size_t scatter_groups = 1;
+        struct BlockRange
+        {
+            size_t begin = 0;
+            size_t end = 0;
+            /// The chunk this range was sized with (`chunkBytesForBlockRange`). Zero when the plan did
+            /// not size ranges against a budget.
+            size_t chunk_bytes = 0;
+            /// `chunkBytesForBlockRange(begin, begin + 1)` at sizing time: the one block by which a range
+            /// may overshoot the headroom, since a range is never empty.
+            size_t one_block_chunk_bytes = 0;
+            /// `residentBytes` when the range was sized, before the predicted arena and the uncommitted
+            /// table were added. `resident_bytes + chunk_bytes` must stay within the budget plus one block.
+            size_t resident_bytes = 0;
+        };
+        std::vector<BlockRange> scatter_group_ranges;
         /// Per-partition claimed buffer cells at publication, excluding the zero cell.
         std::vector<UInt64> claimed_per_partition;
         /// Peak logical occupancy of any one pass scratch (`PassScratch::usedBytes`).
         size_t scratch_used_high_water = 0;
-        /// Table growth. Zero until a grow runs.
+        /// Table growth. Zero until a grow runs; `load_factor_grow_skipped` counts the load-factor grows
+        /// refused under the budget.
         UInt64 table_resizes = 0;
+        UInt64 load_factor_grow_skipped = 0;
         /// Stored blocks whose fixed-width payload went into a row store; counted by the join.
         UInt64 row_store_blocks = 0;
     };
 
     /// `hash_join_` is the schema helper; `build_blocks_` is the join's fill list; freed route bytes
-    /// go back into `accumulated_bytes_`.
+    /// go back into `accumulated_bytes_`. `max_bytes_before_external_join_` is the memory budget of the
+    /// post-build gate and the grow budget; zero disables both.
     HashJoinClause(
         HashJoin & hash_join_,
         const TableJoin & table_join,
         bool any_take_last_row_,
         size_t num_threads_,
+        size_t max_bytes_before_external_join_,
         std::vector<FillBlock> & build_blocks_,
         std::atomic<size_t> & accumulated_bytes_,
         LoggerPtr log_);
@@ -138,6 +160,16 @@ public:
     double hllEstimate() const { return hll_estimate; }
     /// The barrier's sketch estimate, floored at one so an empty build never sizes a zero-byte table.
     size_t distinctEstimate() const { return std::max<size_t>(static_cast<size_t>(std::llround(hll_estimate)), 1); }
+
+    /// The post-build memory verdict for a partitioned build of `rows` rows, taken once at the barrier from
+    /// numbers that already exist. The join answers for the delegated and the single-fill builds itself.
+    enum class PostBuildPlan
+    {
+        Fits, /// ungrouped scatter
+        Grouped, /// in-memory scatter over block ranges
+        MustSpill, /// even the resident data does not fit the budget
+    };
+    PostBuildPlan planPostBuild(size_t rows);
 
     /// Builds the table from the fill blocks after the barrier. Returns whether every inserted key was
     /// unique, which drives the RightAny promotion.
@@ -158,6 +190,14 @@ public:
     /// saturation clamp above `2^31` estimated words.
     size_t reserveFor(size_t rows, double distinct_estimate) const;
     UInt64 claimedTotal() const;
+    /// Bytes the table and the duplicate storage will need for `rows` build rows holding `distinct`
+    /// distinct keys. The post-build gate evaluates this with exact counts; the fill (the join's
+    /// `predictedResidentBytes`) evaluates it with the running sketch estimate. `groups_est` is 1 for the
+    /// ungrouped call and for the fill-phase gate; the grouped call receives the value `planPostBuild`
+    /// computed from the ungrouped floor.
+    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est = 1) const;
+    /// The pool of the post-build waves; the join's drain into another join runs on one too.
+    static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     bool hasTable() const { return table_maps != nullptr; }
     const HashJoinTableMaps & tableMaps() const { return *table_maps; }
@@ -172,9 +212,21 @@ public:
     bool amacEnabled() const { return amac_enabled; }
     BuildStats buildStats() const;
 
-    /// Shrinks the reserve safety factor so the table is undersized. Growth then restores the fill.
+    /// Shrinks the reserve safety factor so the table is undersized. Growth then restores the fill, or
+    /// the grow at the last free cell throws `LOGICAL_ERROR` when the budget cannot pay for the doubling.
     void setReserveSafetyFactorForTests(double factor) { reserve_safety = factor; }
     void setReserveOverrideForTests(size_t reserve) { reserve_override_for_tests = reserve; }
+    void setGrowBudgetForTests(size_t bytes) { grow_budget = bytes; }
+    /// The grow budget from the overflow drain on; a test uses it to lift the budget for the drain only.
+    void setGrowBudgetForDrainForTests(size_t bytes) { grow_budget_for_drain_for_tests = bytes; }
+    size_t predictedArenaBytesForTests(bool grouped) const;
+    size_t predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const;
+
+    /// Projection at a block-range boundary: the sketch estimate while the exact count is inside its
+    /// safety band; once the count has passed the band, the larger of the count and its linear
+    /// extrapolation.
+    static UInt64
+    boundaryProjection(UInt64 claimed_total, UInt64 rows_inserted, UInt64 insertable, double hll_estimate, double reserve_safety);
     /// Pins both phases onto the sequential loops, so tests can cross-check the ring against them.
     void setAmacEnabledForTests(bool value) { amac_enabled = value; }
     /// The L1 partition cap binds only past a few hundred partitions, a build too large for a unit test.
@@ -204,15 +256,18 @@ private:
     bool postBuildSinglePartition(size_t rows);
     void preparePostBuildContext();
     void runGroupStages(size_t block_begin, size_t block_end);
+    size_t chunkBytesForBlockRange(size_t b0, size_t b1) const;
 
-    /// Bytes the table and the duplicate storage will need for `rows` build rows holding `distinct`
-    /// distinct keys, evaluated with the barrier's sketch estimate.
-    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct) const;
-    size_t predictedArenaBytes(size_t insertable_rows) const;
+    size_t predictedArenaBytes(size_t insertable_rows, bool grouped) const;
+    size_t duplicateScratchBytesForRows(size_t rows_in_range, bool first_group) const;
+    /// The scratch a block range needs at once: `workers` live partitions plus the drain's.
+    size_t duplicateScratchBytesForRange(size_t rows_in_range, bool first_group) const;
     /// The buffer degree for `reserve` cells; throws past 2^32 cells.
     size_t sizeDegreeFor(size_t reserve) const;
     /// Rows the partitioned inserts will see: the sum of the exact per-partition counts.
     UInt64 insertableRows() const;
+    /// Bytes still held by the saved routes.
+    size_t routeBytes() const;
 
     /// How the key columns are scattered. Fixed-width keys go by their raw bytes. Anything else
     /// (`String`, `LowCardinality`, ...) goes through `ColumnsScatter`, with an 8-byte hash word per
@@ -227,10 +282,12 @@ private:
     KeyLayout keyLayout() const;
     /// Total bytes of the prepared key columns over every build block, while the blocks still hold them.
     size_t keyColumnBytes() const;
-    static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     void measureGenericKeyBytes();
     void createHashJoinTable();
+    /// The partition floor's memory guard: the scatter transient it introduces for `rows` rows has to fit
+    /// the memory budget next to what is resident already (the post-build gate's ungrouped peak).
+    bool partitionFloorFitsMemory(size_t floor_bits, size_t floor_degree, size_t rows) const;
     void reduceWorkerHistogram();
     void resetWorkerHistogram(PostBuildContext & ctx);
     void histogramWorker(PostBuildContext & ctx, size_t worker) const;
@@ -249,17 +306,20 @@ private:
     UInt64 claimedBufferCells() const;
     void drainOverflow(PostBuildContext & ctx);
     /// Why the table doubles: the walk is about to take the last free cell (this grow cannot be
-    /// refused), or the projected fill exceeds the load factor. The load-factor grow is skipped
-    /// only at the 2^32-cell cap.
+    /// refused), or the projected fill exceeds the load factor. The load-factor grow is skipped at the
+    /// 2^32-cell cap and under a tight budget.
     enum class GrowReason : UInt8
     {
         LastFreeCell,
         LoadFactor,
     };
-    void grow(UInt64 occupied, UInt64 projected, GrowReason reason);
+    /// Read only between block ranges and at a grow: the join's byte count plus the overflow buffers and
+    /// the pass scratch of the post-build context.
+    size_t residentBytes() const;
+    void grow(UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
     template <typename Table>
-    void growHashJoinTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason);
-    void maybeGrowForLoadFactor(UInt64 projected);
+    void growHashJoinTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
+    void maybeGrowForLoadFactor(UInt64 projected, size_t extra_reserved = 0);
     /// Finishes one pass's scratch into spans. Returns the scratch's logical occupancy just before
     /// the finish (0 when the scratch was empty), so callers can fold a per-worker high water.
     size_t finishPassScratch(PassScratch & scratch, SpanWriter & writer);
@@ -295,6 +355,11 @@ private:
     HashJoin & hash_join;
     const bool any_take_last_row;
     const size_t num_threads;
+    /// Zero disables the gate; post-build is the ungrouped scatter.
+    const size_t max_bytes_before_external_join;
+    /// Same as the constructor budget unless a test lifts or tightens it to force or refuse a grow.
+    size_t grow_budget = 0;
+    std::optional<size_t> grow_budget_for_drain_for_tests;
     /// The join's concatenated fill blocks (one list for every clause), read by the post-build stages
     /// and released block by block as they are consumed.
     std::vector<FillBlock> & build_blocks;
@@ -323,6 +388,9 @@ private:
     double reserve_safety = 1.2;
     /// The table's buffer degree, fixed at the barrier: `2^size_degree` cells, `2^bits` ranges.
     size_t size_degree = 0;
+    /// The build's row count when the table was sized (`decidePartitionPlan`, or the single-partition
+    /// table's creation); the memory predictions read it.
+    size_t total_rows = 0;
     /// Set for the fill-time single-partition insert: the walks double the table at max fill, since no
     /// barrier plan sizes it afterwards.
     bool grow_at_max_fill = false;
@@ -340,11 +408,15 @@ private:
     std::unique_ptr<PostBuildContext, PostBuildContextDeleter> post_build_ctx;
     /// Exact per-partition insertable row counts from the full-build histogram.
     std::vector<UInt64> total_bucket_rows;
-    /// Prepared key-column bytes across the whole build, measured once before the arenas are sized.
-    /// Zero unless the keys are variable-length, which is when they are copied into the arena.
+    /// Prepared key-column bytes across the whole build, measured once at the gate. Zero unless
+    /// the keys are variable-length, which is when they are copied into the arena.
     size_t generic_key_bytes = 0;
+    PostBuildPlan post_build_plan = PostBuildPlan::Fits;
+    /// Number of block ranges the budget implies, from the ungrouped floor. 1 until `planPostBuild`
+    /// computes it, and 1 on the fill-phase and ungrouped paths.
+    size_t groups_est = 1;
     /// Set by `preparePostBuildContext` when the histogram already covers the whole build at the
-    /// pass-1 width, so the scatter does not scan the routes twice.
+    /// pass-1 width, so the ungrouped path does not scan the routes twice.
     bool histogram_covers_full_build = false;
 
     /// `amac_enabled` is the switch; `amac_build_engaged` the decision taken before the owner inserts.

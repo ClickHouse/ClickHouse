@@ -220,6 +220,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     }
 
     /// Skip when the join already caps blocks at `max_joined_block_size_*`. Squashing would only copy.
+    /// A wrapper that may still switch algorithms during the build cannot answer yet, so the transform
+    /// asks it again on its first chunk.
     if (join->supportParallelJoin() && !join->emitsSizedOutputBlocks() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
         /// Do not squash past `max_joined_block_size_rows` / `max_joined_block_size_bytes`.
@@ -240,7 +242,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
         joined_pipeline->addSimpleTransform(
             [&, squash_rows, squash_bytes](const SharedHeader & header)
-            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, squash_rows, squash_bytes)); });
+            { return tag_tail(std::make_shared<JoinOutputSquashingTransform>(header, squash_rows, squash_bytes, join)); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();

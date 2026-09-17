@@ -197,7 +197,9 @@ public:
     virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
 
     /// True when joined blocks already respect `max_joined_block_size_*`. `JoinStep` then skips the
-    /// squashing that would only copy those blocks after a parallel join.
+    /// squashing that would only copy those blocks after a parallel join. Otherwise the squashing
+    /// transform asks again on its first chunk: by then a wrapper that switches algorithms during the
+    /// build has settled. The answer must not change after `onBuildPhaseFinish`.
     virtual bool emitsSizedOutputBlocks() const { return false; }
 
     /// Get non-joined blocks for a specific stream partition

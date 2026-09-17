@@ -8,5 +8,10 @@ left all, max_threads 16	416000	1
 inner all, zipf	300000	1
 right all, zipf	300000	1
 inner all, zipf build probed by a zipf sample	1761104	1
+inner all, grouped scatter with a hot key	1500000	1
+right all, grouped scatter with a hot key, non-joined build rows	1500000	1
+full all, grouped scatter with a hot key, non-joined rows on both sides	1600000	1
+inner all, grouped scatter with a hot zero key	1499996	1
+grouped hot key: at least one build split its scatter and stayed in memory	1
 saturated build: every row inserted, duplicate storage used	1	1
 zipf build: every row inserted, duplicate storage used	1	1

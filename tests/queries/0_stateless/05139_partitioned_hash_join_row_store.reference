@@ -35,12 +35,17 @@ full all	160000	1
 60000	1060000	0	\N	0	\N	0	0	00000000000000000000000000000000	\N	0		\N	0000000000000000000000000000000000000000000000000000000000000000	
 full all with the row store off	160000	1
 left any: ANY joins build no row store	120000	1
--- the row store was built (blocks > 0) where the shape admits it
-05139 full all	1	1
-05139 full all no store	0	1
-05139 inner all	1	1
-05139 inner all no store	0	1
-05139 inner all sorted	1	1
-05139 left any	0	1
-05139 right all no store	0	1
-05139 right all nullable	1	1
+spill switch: the build blocks handed to grace are rebuilt from the row store	100000	1
+-- spill switch below parallel_hash_join_threshold: the kept build blocks go to grace as they are
+spill below threshold	150000	1
+-- the row store was built (blocks > 0) where the shape admits it, and the spill queries switched to grace
+05139 full all	1	1	0
+05139 full all no store	0	1	0
+05139 inner all	1	1	0
+05139 inner all no store	0	1	0
+05139 inner all sorted	1	1	0
+05139 left any	0	1	0
+05139 right all no store	0	1	0
+05139 right all nullable	1	1	0
+05139 spill	0	0	1
+05139 spill below threshold	1	1	1
