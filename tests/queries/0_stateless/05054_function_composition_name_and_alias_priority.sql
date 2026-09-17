@@ -1,6 +1,9 @@
 -- Tags: no-parallel
 -- ^ creates a user defined function, which is global.
 
+-- The composition and the placeholders are resolved only in the analyzer.
+SET enable_analyzer = 1;
+
 -- The `f | g` operator does not reserve the name it parses into: `__compose` is a legal
 -- identifier, and only the operator syntax makes a node a composition.
 DROP FUNCTION IF EXISTS __compose;

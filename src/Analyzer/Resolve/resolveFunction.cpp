@@ -1414,6 +1414,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         parameters.push_back(constant_node->getValue());
     }
 
+    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
+      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
+      * argument is a composition. A composition being resolved by itself denotes a function,
+      * not a value, so explain the operator instead of resolving further. Only a node the parser
+      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
+      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
+      * function name is looked up in the scope, so that a lambda bound in the query under the
+      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
+      * and cannot change the meaning of the operator syntax.
+      */
+    if (isFunctionComposition(*function_node_ptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The function composition `f | g` can be used only where a function is expected: "
+            "as an argument of a higher-order function such as arrayMap. "
+            "For bitwise OR, use the function bitOr. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
     if (!function_node_ptr->isWindowFunction())
@@ -1421,20 +1438,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
-
-    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
-      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
-      * argument is a composition. A composition being resolved by itself denotes a function,
-      * not a value, so explain the operator instead of resolving further. Only a node the parser
-      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
-      * function named `__compose` (or `compose`) resolves as usual.
-      */
-    if (isFunctionComposition(*function_node_ptr) && !lambda_expression_untyped)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The function composition `f | g` can be used only where a function is expected: "
-            "as an argument of a higher-order function such as arrayMap. "
-            "For bitwise OR, use the function bitOr. In scope {}",
-            scope.scope_node->formatASTForErrorMessage());
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a

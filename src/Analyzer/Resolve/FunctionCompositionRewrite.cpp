@@ -169,7 +169,9 @@ struct BoundNames
 /// The names of the columns a subquery in a join tree exposes to the query that selects from
 /// it. They are bound names at that query level, even though the expressions behind them live
 /// in another scope. Only names that are evident lexically are collected: an explicit alias, or
-/// the column name of a bare identifier projection.
+/// the column name of a bare identifier projection. A `UNION` exposes the column names of its
+/// first query only (`UnionNode::computeProjectionColumns`), so a name that a later query
+/// aliases is not visible to the query that selects from the union and must not be collected.
 void collectProjectionNames(const QueryTreeNodePtr & node, BoundNames & bound_names)
 {
     if (const auto * query_node = node->as<QueryNode>())
@@ -184,8 +186,9 @@ void collectProjectionNames(const QueryTreeNodePtr & node, BoundNames & bound_na
     }
     else if (const auto * union_node = node->as<UnionNode>())
     {
-        for (const auto & union_query_node : union_node->getQueries().getNodes())
-            collectProjectionNames(union_query_node, bound_names);
+        const auto & union_query_nodes = union_node->getQueries().getNodes();
+        if (!union_query_nodes.empty())
+            collectProjectionNames(union_query_nodes.front(), bound_names);
     }
 }
 
