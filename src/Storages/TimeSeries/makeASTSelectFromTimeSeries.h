@@ -12,7 +12,7 @@ class StorageTimeSeries;
 struct SelectQueryInfo;
 
 /// Builds an internal `SELECT` query that produces the requested outer columns of a TimeSeries table
-/// by reading from its target tables "tags", "samples", "metrics". Only the target tables required by
+/// by reading from its target tables "tags", "samples", "metric families". Only the target tables required by
 /// `requested_columns` are read; when none of them requires another table (e.g. for `SELECT count()`
 /// the planner requests just the smallest column, `metric_name`), the "tags" table is read, so the
 /// count equals the number of series.
