@@ -26,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -95,31 +94,8 @@ bool authenticateUserByHTTP(
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
+    bool has_http_credentials = request.hasCredentials() && request.get("Authorization") != "never";
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
-
-    /// Whether the request carries an `Authorization` header that should be treated as
-    /// credentials. The sentinel value `never` (which `play.html` sets on the requests it can
-    /// add headers to) disables it.
-    bool has_authorization_header = request.hasCredentials() && request.get("Authorization") != "never";
-
-    /// Credentials passed in the URL query parameters take precedence over the HTTP
-    /// `Authorization` header: when both are present, the header is ignored instead of
-    /// rejecting the request for mixing authentication methods.
-    ///
-    /// This is needed because once a browser has remembered HTTP Basic credentials for an
-    /// origin, it attaches the `Authorization` header to every subsequent request to that
-    /// origin automatically - including requests that the application has no way to add or
-    /// remove headers from, such as a form submission or a download navigation. The Web UI
-    /// (`play.html`) authenticates by putting the user name and password into the URL query
-    /// parameters, so without this precedence such a request would carry both the remembered
-    /// header and the parameters and be rejected. (The special value `Authorization: never`
-    /// also suppresses the header, but it can only be set from a scripted request such as
-    /// `fetch` or `XHR`, not from a plain navigation.)
-    ///
-    /// This precedence applies only to the default authentication path. When the handler has
-    /// its own configured credentials, an `Authorization` header is still rejected as a mix of
-    /// authentication methods, regardless of the query parameters (see below).
-    bool has_http_credentials = has_authorization_header && !has_credentials_in_query_params;
 
     std::string spnego_challenge;
 #if USE_SSL
@@ -184,10 +160,10 @@ bool authenticateUserByHTTP(
     else if (has_http_credentials)
     {
         /// It is prohibited to mix different authorization schemes.
-        /// (Authentication via query parameters takes precedence over the `Authorization`
-        /// header and is handled above by excluding it from `has_http_credentials`.)
         if (has_config_credentials)
             throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
+        if (has_credentials_in_query_params)
+            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication via parameters");
 
         std::string scheme;
         std::string auth_info;
@@ -214,13 +190,6 @@ bool authenticateUserByHTTP(
     }
     else
     {
-        /// Authentication via the URL query parameters (or, if absent, the 'default' user).
-        /// The query parameters take precedence over the `Authorization` header (which was
-        /// excluded from `has_http_credentials` above), but mixing the header with credentials
-        /// configured for the handler is still rejected, as for every other method.
-        if (has_config_credentials && has_authorization_header)
-            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
-
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
@@ -305,19 +274,10 @@ bool authenticateUserByHTTP(
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    const auto & client_info = session.getClientInfo();
-    auto forwarded_address = client_info.getLastForwardedFor();
-    const bool use_forwarded_address = global_context->getConfigRef().getBool("auth_use_forwarded_address", false);
+    auto forwarded_address = session.getClientInfo().getLastForwardedFor();
     try
     {
-        /// If `auth_use_forwarded_address` is enabled, consider a non-empty invalid header an error
-        /// instead of silently authenticating with the proxy's address.
-        if (use_forwarded_address && !client_info.forwarded_for.empty() && !forwarded_address)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Invalid address in `X-Forwarded-For` HTTP header: expected an IP literal with an optional numeric port");
-
-        if (forwarded_address && use_forwarded_address)
+        if (forwarded_address && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
             session.authenticate(*current_credentials, *forwarded_address, request.clientAddress());
         else
             session.authenticate(*current_credentials, request.clientAddress());

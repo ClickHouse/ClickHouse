@@ -23,15 +23,6 @@ class Block;
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table);
 
-/** Replace every `ALIAS` column node with its defining expression, so the expression is evaluated on the shard/replica
-  * that reads the real table instead of the column being resolved there as if it were physical.
-  *
-  * Must be applied to any query tree that is about to be shipped, before `buildQueryTreeForShard`: that function rebuilds
-  * a shipped table expression from column names and types only, which drops an `ALIAS` column's resolved expression and
-  * leaves the remote side asking storage for a column it does not have (`NO_SUCH_COLUMN_IN_TABLE`).
-  */
-void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify);
-
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
 
 /** When a Distributed/parallel-replicas query is executed up to `WithMergeableState`, the shard's query tree has its

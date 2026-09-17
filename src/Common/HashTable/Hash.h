@@ -4,7 +4,6 @@
 #include <base/StringViewHash.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <base/PackedStringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -558,12 +557,3 @@ struct IntHash32
 
 template <>
 struct DefaultHash<std::string_view> : public StringViewHash {};
-
-template <>
-struct DefaultHash<PackedStringRef>
-{
-    size_t operator() (PackedStringRef key) const
-    {
-        return key.getHash();
-    }
-};

@@ -6,14 +6,14 @@ echo "Merging LLVM coverage files..."
 
 # Debug: List available llvm tools
 echo "Available LLVM tools:"
-command -v llvm-profdata-22 || echo "llvm-profdata-22: not found"
-command -v llvm-cov-22 || echo "llvm-cov-22: not found"
+command -v llvm-profdata-21 || echo "llvm-profdata-21: not found"
+command -v llvm-cov-21 || echo "llvm-cov-21: not found"
 command -v llvm-profdata || echo "llvm-profdata: not found"
 command -v llvm-cov || echo "llvm-cov: not found"
 
 # Auto-detect available LLVM tools
 if [ -z "$LLVM_PROFDATA" ]; then
-  for ver in 22 21 20 19 18 17 16 ""; do
+  for ver in 21 20 19 18 17 16 ""; do
     if command -v "llvm-profdata${ver:+-$ver}" &> /dev/null; then
       LLVM_PROFDATA="llvm-profdata${ver:+-$ver}"
       break
@@ -22,7 +22,7 @@ if [ -z "$LLVM_PROFDATA" ]; then
 fi
 
 if [ -z "$LLVM_COV" ]; then
-  for ver in 22 21 20 19 18 17 16 ""; do
+  for ver in 21 20 19 18 17 16 ""; do
     if command -v "llvm-cov${ver:+-$ver}" &> /dev/null; then
       LLVM_COV="llvm-cov${ver:+-$ver}"
       break
@@ -143,13 +143,12 @@ genhtml "llvm_coverage.info" \
     --hierarchical \
     --css-file $WORKSPACE_PATH/ci/jobs/scripts/css.css \
     --prefix $WORKSPACE_PATH \
-    --ignore-errors inconsistent,inconsistent \
+    --ignore-errors inconsistent \
     --ignore-errors category \
     --ignore-errors corrupt \
     --ignore-errors unsupported \
     --ignore-errors source \
     --ignore-errors branch \
-    --ignore-errors range,range \
-    --ignore-errors count,count \
+    --ignore-errors range \
     --filter missing \
     --quiet 

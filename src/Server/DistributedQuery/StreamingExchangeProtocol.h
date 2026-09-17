@@ -15,11 +15,9 @@ class WriteBuffer;
 
 namespace StreamingExchangeProtocol
 {
-    /// Wire-format version, exchanged in SourceHello/SinkHello and required to match
-    /// exactly on both ends. Bumped on any change to packet layouts. Version 3 carries a
-    /// `jwt_token` in `SourceHelloBody` for authenticating the connecting source (empty
-    /// when authentication is not used).
-    static constexpr UInt64 PROTOCOL_VERSION = 3;
+    /// Wire-format version. Bumped on any change to packet layouts.
+    /// Negotiated in SourceHello/SinkHello; mismatches reject the connection.
+    static constexpr UInt64 PROTOCOL_VERSION = 2;
 
     /// Sanity cap for the body of a Hello packet.
     static constexpr UInt64 MAX_HELLO_BODY_BYTES = 64 * 1024;
@@ -54,16 +52,15 @@ namespace StreamingExchangeProtocol
         UInt64 bytes_size;  /// Size of the packet body (does not include this header)
     };
 
-    /// Wire format of the SourceHello body. The version is read first and must match this
-    /// node's `PROTOCOL_VERSION`; the rest of the body is parsed only after that check, so a
-    /// mismatched peer never has its (possibly differently-laid-out) body parsed further.
+    /// Wire format of the SourceHello body. Parsing is split in two phases because
+    /// only the version field is guaranteed to live at a fixed offset across protocol
+    /// versions: peers on a different version may use a different layout for the rest,
+    /// so the version must be read and validated first.
     struct SourceHelloBody
     {
         UInt64 source_version = 0;
         String query_id;
         String stream_name;
-        /// Bearer JWT for authenticating the source; empty when the source has no token.
-        String jwt_token;
 
         static UInt64 readVersion(ReadBuffer & in);
         void readAfterVersion(ReadBuffer & in);

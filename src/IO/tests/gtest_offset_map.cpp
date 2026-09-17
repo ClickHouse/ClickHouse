@@ -14,10 +14,11 @@ TEST(OffsetMap, SingleObject)
     EXPECT_EQ(map.totalSize(), 1000u);
     EXPECT_FALSE(map.hasUnknownSize());
 
-    const auto * o = map.findObjectAt(100);
+    size_t file_offset = 12345;
+    const auto * o = map.findObjectAt(100, &file_offset);
     ASSERT_NE(o, nullptr);
-    EXPECT_EQ(o->object.remote_path, "obj_a");
-    EXPECT_EQ(o->file_offset, 0u);
+    EXPECT_EQ(o->remote_path, "obj_a");
+    EXPECT_EQ(file_offset, 0u);
 
     EXPECT_NE(map.findObjectAt(999), nullptr);
     EXPECT_EQ(map.findObjectAt(1000), nullptr);  // at end
@@ -35,20 +36,21 @@ TEST(OffsetMap, MultipleObjects)
     map.build(objects);
     EXPECT_EQ(map.totalSize(), 1000u);
 
-    const auto * a = map.findObjectAt(0);
+    size_t file_offset = 0;
+    const auto * a = map.findObjectAt(0, &file_offset);
     ASSERT_NE(a, nullptr);
-    EXPECT_EQ(a->object.remote_path, "blob_0");
-    EXPECT_EQ(a->file_offset, 0u);
+    EXPECT_EQ(a->remote_path, "blob_0");
+    EXPECT_EQ(file_offset, 0u);
 
-    const auto * b = map.findObjectAt(300);
+    const auto * b = map.findObjectAt(300, &file_offset);
     ASSERT_NE(b, nullptr);
-    EXPECT_EQ(b->object.remote_path, "blob_1");
-    EXPECT_EQ(b->file_offset, 300u);
+    EXPECT_EQ(b->remote_path, "blob_1");
+    EXPECT_EQ(file_offset, 300u);
 
-    const auto * c = map.findObjectAt(800);
+    const auto * c = map.findObjectAt(800, &file_offset);
     ASSERT_NE(c, nullptr);
-    EXPECT_EQ(c->object.remote_path, "blob_2");
-    EXPECT_EQ(c->file_offset, 800u);
+    EXPECT_EQ(c->remote_path, "blob_2");
+    EXPECT_EQ(file_offset, 800u);
 
     EXPECT_NE(map.findObjectAt(999), nullptr);
     EXPECT_EQ(map.findObjectAt(1000), nullptr);
@@ -63,10 +65,11 @@ TEST(OffsetMap, ObjectBoundary)
     OffsetMap map;
     map.build(objects);
 
-    const auto * o = map.findObjectAt(100);  // first byte of the second object
+    size_t file_offset = 0;
+    const auto * o = map.findObjectAt(100, &file_offset);  // first byte of the second object
     ASSERT_NE(o, nullptr);
-    EXPECT_EQ(o->object.remote_path, "b");
-    EXPECT_EQ(o->file_offset, 100u);
+    EXPECT_EQ(o->remote_path, "b");
+    EXPECT_EQ(file_offset, 100u);
 
     EXPECT_EQ(map.findObjectAt(200), nullptr);
 }
@@ -84,5 +87,5 @@ TEST(OffsetMap, UnknownSize)
     /// Any offset below the sentinel resolves to the single object.
     const auto * o = map.findObjectAt(1'000'000);
     ASSERT_NE(o, nullptr);
-    EXPECT_EQ(o->object.remote_path, "obj");
+    EXPECT_EQ(o->remote_path, "obj");
 }

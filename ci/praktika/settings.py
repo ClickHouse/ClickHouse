@@ -62,37 +62,16 @@ class _Settings:
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
-    ######################################
-    #      Host metrics (CPU/RAM)        #
-    ######################################
-    # Sample whole-VM CPU and RAM usage in the background while a job runs and
-    # store a decimated timeline in Result.ext["metrics"] (rendered in json.html).
-    HOST_METRICS_ENABLED: bool = True
-    # Reporting/window interval: one aggregated point (avg + peak) is emitted and
-    # written per window, so the timeline stays ~1 point / this-many-seconds
-    # regardless of the fine cadence.
-    HOST_METRICS_SAMPLE_INTERVAL_SEC: float = 5.0
-    # Fine sampling cadence: /proc is read this often within each reporting window
-    # so short bursts are captured as the window's peak instead of being averaged
-    # away. Must be <= the reporting interval.
-    HOST_METRICS_FINE_INTERVAL_SEC: float = 1.0
-    # Upper bound on points kept per series after min/max decimation, so the
-    # payload injected into the Result stays small regardless of job duration.
-    HOST_METRICS_MAX_POINTS: int = 400
-    HOST_METRICS_FILE: str = f"{TEMP_DIR}/host_metrics.jsonl"
-    # Filesystem whose used% is tracked as the "disk" series. Defaults to the
-    # working directory, i.e. the disk the job actually writes to.
-    HOST_METRICS_DISK_PATH: str = "."
-    # Jobs are labelled over/under-utilized only when they ran at least this
-    # long OR ran on a host with more than HOST_METRICS_MIN_LABEL_MEM_GB of RAM;
-    # short jobs on small runners are too noisy and not worth right-sizing.
-    HOST_METRICS_MIN_LABEL_DURATION_SEC: int = 1800
-    HOST_METRICS_MIN_LABEL_MEM_GB: int = 15
-
+    USE_CUSTOM_GH_AUTH: bool = False
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
     SECRET_GH_APP_INSTALLATION_ID: str = ""
     SECRET_GH_APP_REGION: str = ""
+    # When set, GHAuth mints the GitHub token by invoking this AWS Lambda
+    # instead of reading the App PEM/id/installation secrets directly. The
+    # lambda returns a scoped installation token whose permissions are
+    # fixed by the lambda itself (see tests/ci/mint_token_*_lambda in
+    # clickhouse-private). Takes precedence over SECRET_GH_APP_* when set.
     GH_AUTH_LAMBDA_NAME: str = ""
     GH_AUTH_LAMBDA_REGION: str = ""
 
@@ -128,8 +107,6 @@ class _Settings:
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
-    DOCKER_LAYER_COMPRESSION: str = "zstd"
-    DOCKER_LAYER_COMPRESSION_LEVEL: int = 3
 
     ######################################
     #        CI DB Settings              #
@@ -193,8 +170,6 @@ _USER_DEFINED_SETTINGS = [
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
-    "DOCKER_LAYER_COMPRESSION",
-    "DOCKER_LAYER_COMPRESSION_LEVEL",
     "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
     "SECRET_CI_DB_URL",
     "SECRET_CI_DB_USER",
@@ -204,6 +179,7 @@ _USER_DEFINED_SETTINGS = [
     "KEEPER_STRESS_METRICS_DB_NAME",
     "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
+    "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_INSTALLATION_ID",
@@ -220,14 +196,6 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
-    "HOST_METRICS_ENABLED",
-    "HOST_METRICS_SAMPLE_INTERVAL_SEC",
-    "HOST_METRICS_FINE_INTERVAL_SEC",
-    "HOST_METRICS_MAX_POINTS",
-    "HOST_METRICS_FILE",
-    "HOST_METRICS_DISK_PATH",
-    "HOST_METRICS_MIN_LABEL_DURATION_SEC",
-    "HOST_METRICS_MIN_LABEL_MEM_GB",
 ]
 
 
@@ -243,7 +211,9 @@ def _get_settings() -> _Settings:
 
     for py_file in sorted_files:
         module_name = py_file.name.removeprefix(".py")
-        spec = importlib.util.spec_from_file_location(module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}")
+        spec = importlib.util.spec_from_file_location(
+            module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}"
+        )
         assert spec
         foo = importlib.util.module_from_spec(spec)
         assert spec.loader

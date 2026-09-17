@@ -10,7 +10,6 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/SortNode.h>
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -78,139 +77,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Return a clone of the defining expression of an inlineable `ALIAS` column node, or nullptr otherwise.
-/// A JOIN / CROSS_JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
-/// which is not an alias body. The expression is cloned so each occurrence gets its own copy: that lets
-/// one occurrence be aliased (a projection output) without mutating another (a reference in ORDER BY).
-QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node)
-{
-    const auto * column_node = node->as<ColumnNode>();
-    if (!column_node || !column_node->hasExpression())
-        return nullptr;
-
-    const auto & column_source = column_node->getColumnSourceOrNull();
-    if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                       || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
-                       || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-        return nullptr;
-
-    return column_node->getExpression()->clone();
-}
-
-void inlineAliasColumnsImpl(QueryTreeNodePtr & node);
-void inlineAliasColumnsInExpression(QueryTreeNodePtr & node);
-
-/// A `JOIN USING` key is a `ColumnNode` whose expression is a `ListNode` recording how the key resolves on
-/// each side, and a side's entry can itself be an `ALIAS` column. Such an entry keeps the key's name as an
-/// alias when inlined, because the shipped SQL renders the entry rather than the key: `USING (x AS a)` is
-/// what lets a remote server resolve a key that exists only as an `ALIAS` column of the initiator's table.
-/// The alias also tells `rejectUnshippableJoinUsingKeys` which keys no remote server can resolve, and it
-/// reads the entry expecting exactly this shape.
-void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
-{
-    auto * using_list = join_expression->as<ListNode>();
-    if (!using_list)
-        return;
-
-    for (auto & using_node : using_list->getNodes())
-    {
-        auto * using_column = using_node->as<ColumnNode>();
-        if (!using_column || !using_column->hasExpression())
-            continue;
-
-        auto * key_sides = using_column->getExpression()->as<ListNode>();
-        if (!key_sides)
-            continue;
-
-        for (auto & side : key_sides->getNodes())
-        {
-            const auto * side_column = side->as<ColumnNode>();
-            auto expression = getInlineableAliasColumnExpression(side);
-            if (!expression)
-                continue;
-
-            const String key_name = side_column->getColumnName();
-            inlineAliasColumnsInExpression(expression);
-            expression->setAlias(key_name);
-            side = expression;
-        }
-    }
-}
-
-/// Inline `ALIAS` columns inside an expression subtree without assigning any alias. Nested subqueries are
-/// handed back to `inlineAliasColumnsImpl` so their own projection columns keep their names.
-void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
-{
-    if (node->as<QueryNode>() || node->as<UnionNode>())
-    {
-        inlineAliasColumnsImpl(node);
-        return;
-    }
-
-    /// An `ALIAS` column may be defined over another one, so keep unwrapping.
-    while (auto expression = getInlineableAliasColumnExpression(node))
-        node = expression;
-
-    auto * join_node = node->as<JoinNode>();
-    const bool using_join = join_node && join_node->isUsingJoinExpression();
-
-    for (auto & child : node->getChildren())
-    {
-        if (!child)
-            continue;
-
-        if (using_join && child == join_node->getJoinExpression())
-            inlineJoinUsingKeys(child);
-        else
-            inlineAliasColumnsInExpression(child);
-    }
-}
-
-/// Inline `ALIAS` columns into their defining expressions, so the expression is evaluated on the
-/// shard/replica reading the real table instead of the column being resolved there as if it were physical.
-///
-/// The defining expression keeps the column's logical name as an alias only when the `ALIAS` column is a
-/// top-level projection item, so the mergeable-state output column keeps its name. Inside expression
-/// clauses (`WHERE`/`GROUP BY`/`ORDER BY`/`HAVING`/`JOIN ON`) no alias is set; otherwise two same-named
-/// `ALIAS` columns from different `JOIN` sources land in one scope with different bodies and the remote
-/// side throws `MULTIPLE_EXPRESSIONS_FOR_ALIAS` (https://github.com/ClickHouse/ClickHouse/issues/107990).
-void inlineAliasColumnsImpl(QueryTreeNodePtr & node)
-{
-    if (auto * union_node = node->as<UnionNode>())
-    {
-        for (auto & query : union_node->getQueries().getNodes())
-            inlineAliasColumnsImpl(query);
-        return;
-    }
-
-    auto * query_node = node->as<QueryNode>();
-    if (!query_node)
-    {
-        inlineAliasColumnsInExpression(node);
-        return;
-    }
-
-    for (auto & projection_item : query_node->getProjection().getNodes())
-    {
-        const auto * column_node = projection_item->as<ColumnNode>();
-        if (auto expression = getInlineableAliasColumnExpression(projection_item))
-        {
-            const String output_alias = column_node->getColumnName();
-            inlineAliasColumnsInExpression(expression);
-            expression->setAlias(output_alias);
-            projection_item = expression;
-        }
-        else
-        {
-            inlineAliasColumnsInExpression(projection_item);
-        }
-    }
-
-    for (auto & child : query_node->getChildren())
-        if (child && child != query_node->getProjectionNode())
-            inlineAliasColumnsInExpression(child);
-}
-
 /// Visitor that collect column source to columns mapping from query and all subqueries
 class CollectColumnSourceToColumnsVisitor : public InDepthQueryTreeVisitor<CollectColumnSourceToColumnsVisitor>
 {
@@ -219,7 +85,6 @@ public:
     {
         NameSet column_names;
         NamesAndTypes columns;
-        TableExpressionNodePtr source;
 
         void addColumn(NameAndTypePair column)
         {
@@ -251,7 +116,6 @@ public:
         {
             auto [insert_it, _] = column_source_to_columns.emplace(column_source, Columns());
             it = insert_it;
-            it->second.source = column_source;
         }
 
         it->second.addColumn(column_node->getColumn());
@@ -289,7 +153,7 @@ public:
         size_t subquery_depth = 0;
     };
 
-    const IQueryTreeNode::ReplacementMap & getReplacementMap() const
+    const std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> & getReplacementMap() const
     {
         return replacement_map;
     }
@@ -306,7 +170,7 @@ public:
             return false;
 
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getLocality() == JoinLocality::Global && join_node->getRightTableExpressionNode() == child)
+        if (join_node && join_node->getLocality() == JoinLocality::Global && join_node->getRightTableExpression() == child)
             return false;
 
         return true;
@@ -380,7 +244,7 @@ private:
             auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), getContext());
             if (auto table_expression_modifiers = table_node_typed.getTableExpressionModifiers())
                 replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-            replacement_map.emplace(&table_node_typed, std::move(replacement_table_expression));
+            replacement_map.emplace(table_node.get(), std::move(replacement_table_expression));
         }
         else if ((distributed_product_mode == DistributedProductMode::GLOBAL || getSettings()[Setting::prefer_global_in_and_join]) &&
             !in_function_or_join_stack.empty())
@@ -414,7 +278,7 @@ private:
     }
 
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
-    IQueryTreeNode::ReplacementMap replacement_map;
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
@@ -465,21 +329,6 @@ public:
             if (query_node->hasLimitByLimit() && query_node->getLimitByLimit() == child)
                 return false;
             if (query_node->hasLimitByOffset() && query_node->getLimitByOffset() == child)
-                return false;
-        }
-
-        if (auto * sort_node = parent->as<SortNode>())
-        {
-            /// Do not replace WITH FILL FROM/TO/STEP/STALENESS constants. The planner reads them
-            /// directly via `as<ConstantNode &>()` in extractWithFillValue (PlannerSorting.cpp),
-            /// so a `__getScalar` FunctionNode there would cause a bad cast during planning.
-            if (sort_node->hasFillFrom() && sort_node->getFillFrom() == child)
-                return false;
-            if (sort_node->hasFillTo() && sort_node->getFillTo() == child)
-                return false;
-            if (sort_node->hasFillStep() && sort_node->getFillStep() == child)
-                return false;
-            if (sort_node->hasFillStaleness() && sort_node->getFillStaleness() == child)
                 return false;
         }
 
@@ -644,7 +493,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     /// only writes the materialized rows into `external_table` and applies
     /// `network_transfer_limits` after `materializeBlock`, raising
     /// `SET_SIZE_LIMIT_EXCEEDED` with the `"IN/JOIN external table"` reason on
-    /// `THROW` and stopping the input on `BREAK`. This keeps the analyzer
+    /// `THROW` and stopping the input on `BREAK`. This keeps the new analyzer
     /// behaviour in lockstep with the old analyzer.
     const auto & subquery_settings = mutable_context->getSettingsRef();
     SizeLimits network_transfer_limits(
@@ -677,12 +526,12 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 }
 
 QueryTreeNodePtr getSubqueryFromTableExpression(
-    const TableExpressionNodePtr & join_table_expression,
+    const QueryTreeNodePtr & join_table_expression,
     const std::unordered_map<QueryTreeNodePtr, CollectColumnSourceToColumnsVisitor::Columns> & column_source_to_columns,
     const ContextPtr & context)
 {
     auto join_table_expression_node_type = join_table_expression->getNodeType();
-    TableExpressionNodePtr subquery_node;
+    QueryTreeNodePtr subquery_node;
 
     if (join_table_expression_node_type == QueryTreeNodeType::QUERY || join_table_expression_node_type == QueryTreeNodeType::UNION)
     {
@@ -716,7 +565,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
                 {
                     if (seen_column_names.insert(col.name).second)
                     {
-                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, columns_it->second.source));
+                        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(col, current));
                         projection_columns.push_back(col);
                     }
                 }
@@ -740,7 +589,7 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
         auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
         query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
         query_node->resolveProjectionColumns(std::move(projection_columns));
-        query_node->getJoinTreeNode() = join_table_expression;
+        query_node->getJoinTree() = join_table_expression;
         query_node->setIsSubquery(true);
 
         subquery_node = query_node;
@@ -799,8 +648,8 @@ bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
         }
         else if (const auto * join_node = current->as<JoinNode>())
         {
-            nodes_to_process.push_back(join_node->getLeftTableExpressionNode());
-            nodes_to_process.push_back(join_node->getRightTableExpressionNode());
+            nodes_to_process.push_back(join_node->getLeftTableExpression());
+            nodes_to_process.push_back(join_node->getRightTableExpression());
         }
         else if (const auto * cross_join_node = current->as<CrossJoinNode>())
         {
@@ -809,7 +658,7 @@ bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
         }
         else if (const auto * array_join_node = current->as<ArrayJoinNode>())
         {
-            nodes_to_process.push_back(array_join_node->getTableExpressionNode());
+            nodes_to_process.push_back(array_join_node->getTableExpression());
         }
     }
     return false;
@@ -850,7 +699,7 @@ void checkJoin(const JoinNode & join_node, const QueryNode & enclosing_query)
             continue;
 
         /// A shadowed column resolves on the shard and may join differently than the initiator's alias; accepted.
-        if (leftTableHasColumn(join_node.getLeftTableExpressionNode(), name))
+        if (leftTableHasColumn(join_node.getLeftTableExpression(), name))
             continue;
 
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -881,11 +730,6 @@ void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
 
 }
 
-void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
-{
-    inlineAliasColumnsImpl(query_tree_to_modify);
-}
-
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
@@ -907,15 +751,15 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     {
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
         {
-            TableExpressionNodePtr join_table_expression;
+            QueryTreeNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
             if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
             {
-                join_table_expression = join_node->getRightTableExpressionNodeTyped();
+                join_table_expression = join_node->getRightTableExpression();
             }
             else if (join_kind == JoinKind::Right)
             {
-                join_table_expression = join_node->getLeftTableExpressionNodeTyped();
+                join_table_expression = join_node->getLeftTableExpression();
             }
             else
             {
@@ -945,8 +789,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 const auto * descendant = descendants_to_map.back();
                 descendants_to_map.pop_back();
 
-                if (const auto * ptr = descendant->asTableExpression())
-                    replacement_map.emplace(ptr, temporary_table_expression_node);
+                replacement_map.emplace(descendant, temporary_table_expression_node);
 
                 for (const auto & child : descendant->getChildren())
                     if (child)
@@ -964,14 +807,14 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
-            TableExpressionNodePtr replacement_table_expression;
+            QueryTreeNodePtr replacement_table_expression;
             auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
             if (!temporary_table_expression_node)
             {
                 auto subquery_to_execute = in_function_subquery_node;
                 if (subquery_to_execute->as<TableNode>())
                     subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(
-                        static_pointer_cast<TableNode>(subquery_to_execute),
+                        subquery_to_execute,
                         planner_context->getQueryContext());
 
                 // If DISTINCT optimization is enabled, add DISTINCT before executing the subquery
@@ -986,10 +829,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
             else
             {
-                replacement_table_expression = static_pointer_cast<ITableExpressionNode>(temporary_table_expression_node->clone());
+                replacement_table_expression = temporary_table_expression_node->clone();
             }
 
-            replacement_map.emplace(in_function_subquery_node->asTableExpression(), replacement_table_expression);
+            replacement_map.emplace(in_function_subquery_node.get(), replacement_table_expression);
         }
         else
         {
@@ -1071,7 +914,7 @@ public:
         if (auto * join_node = node->as<JoinNode>())
         {
             bool prefer_local_join = getContext()->getSettingsRef()[Setting::parallel_replicas_prefer_local_join];
-            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpressionNode());
+            bool should_use_global_join = !prefer_local_join || !allStoragesAreMergeTree(join_node->getRightTableExpression());
             if (should_use_global_join)
                 join_node->setLocality(JoinLocality::Global);
         }
@@ -1080,7 +923,7 @@ public:
     static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getRightTableExpressionNode() == child)
+        if (join_node && join_node->getRightTableExpression() == child)
             return false;
 
         return true;
@@ -1096,13 +939,40 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 namespace
 {
 
+/// Replace ALIAS column nodes with their defining expression. The action name computed afterwards then matches the name
+/// the shard's ActionsDAG assigns (the shard works on the inlined query tree).
+class InlineAliasColumnsForNamingVisitor : public InDepthQueryTreeVisitor<InlineAliasColumnsForNamingVisitor>
+{
+    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return nullptr;
+
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
+
+        auto column_expression = column_node->getExpression();
+        column_expression->setAlias(column_node->getColumnName());
+        return column_expression;
+    }
+
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto column_expression = getColumnNodeAliasExpression(node))
+            node = column_expression;
+    }
+};
+
 String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
 {
-    /// The action name computed afterwards then matches the name the shard's ActionsDAG assigns
-    /// (the shard works on the inlined query tree). Action names come from the column identifier or the
-    /// expression rather than the SQL alias, so inlining without aliasing is what this needs.
     auto node_clone = node->clone();
-    inlineAliasColumnsInExpression(node_clone);
+    InlineAliasColumnsForNamingVisitor visitor;
+    visitor.visit(node_clone);
 
     /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
     /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
@@ -1145,12 +1015,7 @@ public:
 
     static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
     {
-        /// Table/table-function argument lists are not expression scopes whose names need translating, and they may
-        /// contain unresolved identifiers (e.g. the `key = value` named-collection overrides of `s3`/`oss`/`url`) that
-        /// `calculateActionNodeName` cannot name. Skip them, like the nested QUERY/UNION scopes above.
-        auto child_type = child->getNodeType();
-        return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION
-            && child_type != QueryTreeNodeType::TABLE_FUNCTION && child_type != QueryTreeNodeType::TABLE;
+        return child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION;
     }
 
 private:

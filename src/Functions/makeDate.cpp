@@ -257,8 +257,8 @@ struct Date32Traits
     static constexpr auto YYYYMMDDName = "YYYYMMDDToDate32";
     using ReturnDataType = DataTypeDate32;
 
-    static constexpr auto MIN_YEAR = 0;
-    static constexpr auto MAX_YEAR = 9999;
+    static constexpr auto MIN_YEAR = 1900;
+    static constexpr auto MAX_YEAR = 2299;
     static constexpr std::array MAX_DATE = {MAX_YEAR, 12, 31};
 };
 
@@ -289,14 +289,12 @@ protected:
 
     static Int64 minDateTime(const DateLUTImpl & lut)
     {
-        /// DateLUTImpl::makeDateTime no longer clamps out-of-range years (DateTime64 supports the extended range),
-        /// so pin the clamp sentinels to explicit in-range dates to keep makeDateTime / makeDateTime64 behaviour.
-        return lut.makeDateTime(DATE_LUT_MIN_YEAR, 1, 1, 0, 0, 0);
+        return lut.makeDateTime(DATE_LUT_MIN_YEAR - 1, 1, 1, 0, 0, 0);
     }
 
     static Int64 maxDateTime(const DateLUTImpl & lut)
     {
-        return lut.makeDateTime(DATE_LUT_MAX_YEAR, 12, 31, 23, 59, 59);
+        return lut.makeDateTime(DATE_LUT_MAX_YEAR + 1, 1, 1, 23, 59, 59);
     }
 
     std::string extractTimezone(const ColumnWithTypeAndName & timezone_argument) const

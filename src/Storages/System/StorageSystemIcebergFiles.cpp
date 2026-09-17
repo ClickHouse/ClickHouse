@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemIcebergFiles.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnArray.h>
@@ -227,7 +226,7 @@ protected:
 
             try
             {
-                auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_table->getExternalMetadata(context_copy));
+                auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table->getExternalMetadata(context_copy));
                 if (!iceberg_metadata)
                     return false;
 
@@ -351,7 +350,7 @@ private:
     {
         StoragePtr storage;
         TableLockHolder lock;
-        IcebergMetadata * iceberg_metadata = nullptr;   // non-owning; kept alive via `storage`
+        std::shared_ptr<IcebergMetadata> iceberg_metadata;   /// Owning: a concurrent update() may replace the storage's metadata mid-scan.
         Iceberg::IcebergDataSnapshotPtr data_snapshot;
         Iceberg::TableStateSnapshot table_state;
         String database_name;
@@ -485,6 +484,3 @@ void StorageSystemIcebergFiles::readImpl(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemIcebergFiles) }

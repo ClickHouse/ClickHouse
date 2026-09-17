@@ -1,11 +1,9 @@
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/misc.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -129,11 +127,8 @@ namespace
         if (new_qualified_name == qualified_name)
             return;
 
-        /// `database_and_table_name` is registered as a child, so appending the renamed identifier
-        /// would leave the pre-rename one behind next to it. `replace` swaps both slots at once.
-        expr.replace(
-            expr.database_and_table_name,
-            make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table));
+        expr.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+        expr.children.push_back(expr.database_and_table_name);
     }
 
     /// ASTDictionary keeps a dictionary definition, for example
@@ -282,7 +277,10 @@ namespace
 
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
     {
-        if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
+        if (function.name == "joinGet" ||
+            function.name == "dictHas" ||
+            function.name == "dictIsIn" ||
+            function.name.starts_with("dictGet"))
         {
             replaceTableNameInArgument(function, data, 0);
         }
