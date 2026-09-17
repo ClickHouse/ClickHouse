@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 DROP TABLE IF EXISTS t_read_nothing;
 DROP TABLE IF EXISTS t_read_nothing_full;
 DROP TABLE IF EXISTS t_read_nothing_types;
