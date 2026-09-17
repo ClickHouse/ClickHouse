@@ -29,7 +29,7 @@ FROM
     SELECT 1 AS a
 );
 
-SELECT 'projection pruning: a';
+SELECT 'outer projection: a';
 SELECT a
 FROM
 (
@@ -38,7 +38,7 @@ FROM
     SELECT 3 AS b, 4 AS a
 );
 
-SELECT 'projection pruning: b';
+SELECT 'outer projection: b';
 SELECT b
 FROM
 (
@@ -85,6 +85,33 @@ FROM
     SELECT 1 AS x, 10 AS y
     UNION ALL BY NAME
     SELECT 1 AS x
+);
+
+SELECT 'missing LowCardinality Nullable';
+SELECT x, y, toTypeName(x), toTypeName(y)
+FROM
+(
+    SELECT toLowCardinality(CAST('hello', 'Nullable(String)')) AS x
+    UNION ALL BY NAME
+    SELECT 1 AS y
+);
+
+SELECT 'missing Variant';
+SELECT x, y, toTypeName(x), toTypeName(y)
+FROM
+(
+    SELECT CAST('hello', 'Variant(String, UInt64)') AS x
+    UNION ALL BY NAME
+    SELECT 1 AS y
+);
+
+SELECT 'missing Dynamic';
+SELECT x, y, toTypeName(x), toTypeName(y)
+FROM
+(
+    SELECT CAST('hello', 'Dynamic') AS x
+    UNION ALL BY NAME
+    SELECT 1 AS y
 );
 
 SELECT 'AST JSON roundtrip';

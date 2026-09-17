@@ -8,10 +8,10 @@ first-seen order with multiple operands
 duplicate rows are preserved
 1
 1
-projection pruning: a
+outer projection: a
 1
 4
-projection pruning: b
+outer projection: b
 2
 3
 derived table aliases
@@ -28,6 +28,15 @@ position then name
 missing nullable value
 1	10
 1	\N
+missing LowCardinality Nullable
+hello	\N	Nullable(String)	Nullable(UInt8)
+\N	1	Nullable(String)	Nullable(UInt8)
+missing Variant
+hello	\N	Variant(String, UInt64)	Nullable(UInt8)
+\N	1	Variant(String, UInt64)	Nullable(UInt8)
+missing Dynamic
+hello	\N	Dynamic	Nullable(UInt8)
+\N	1	Dynamic	Nullable(UInt8)
 AST JSON roundtrip
 SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a
 duplicate output names

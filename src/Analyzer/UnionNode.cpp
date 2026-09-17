@@ -199,7 +199,7 @@ NamesAndTypes UnionNode::computeProjectionColumns(bool apply_projection_aliases)
         {
             for (const auto & type : column_types[column_index])
             {
-                if (!type->isNullable() && !type->canBeInsideNullable())
+                if (!canContainNull(*type) && !type->canBeInsideNullable())
                     throw Exception(ErrorCodes::TYPE_MISMATCH,
                         "Column '{}' is absent in one UNION ALL BY NAME operand, but type '{}' cannot represent NULL",
                         result_names[column_index], type->getName());
