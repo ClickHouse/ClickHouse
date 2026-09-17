@@ -585,7 +585,16 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// `force_optimize_skip_unused_shards` enforcement still throws
     /// `UNABLE_TO_SKIP_UNUSED_SHARDS` for `WITH CLUSTER` queries.
     if (has_with_cluster())
+    {
+        /// With zero shards left (an empty cluster, or `optimize_skip_unused_shards`
+        /// pruned every shard away) `read` builds no remote plan and the planner
+        /// substitutes an empty source with the raw storage header. The initiator
+        /// must then run the whole `GROUP BY` pipeline itself, so keep the regular
+        /// `FetchColumns` answer for this case instead of advertising mergeable states.
+        if (nodes == 0)
+            return QueryProcessingStage::FetchColumns;
         return std::min(to_stage, QueryProcessingStage::WithMergeableState);
+    }
 
     if (settings[Setting::distributed_group_by_no_merge])
     {
