@@ -3271,6 +3271,8 @@ Stream order (the order rows are read) defines “first” match; use `ORDER BY`
 
 `UNTIL` matches before a range starts have no effect. If both conditions match the starting row, the range is empty. If no `UNTIL` match occurs at or after the start, the range continues to its row count `n` or the end of the stream. With `AFTER ... ALL`, later `AFTER` matches can open new ranges after an earlier range ends.
 
+With `AFTER` and without `ALL`, the range step evaluates `AFTER` until it finds a chunk containing a start match. It then evaluates `UNTIL` in that chunk and subsequent chunks while the range remains open. Expressions are evaluated over whole chunks, so `UNTIL` can still be evaluated for rows before the start within the starting chunk.
+
 **Examples:**
 
 First 3 rows starting from the first row where `number >= 3`:
