@@ -27,6 +27,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int NOT_IMPLEMENTED;
+extern const int CORRUPTED_DATA;
 }
 
 namespace MergeTreeSetting
@@ -263,14 +264,16 @@ std::optional<VersionInfo> VersionMetadataOnDisk::readMetadataUnlocked()
         return std::nullopt;
 
 
-    size_t small_file_size = 4096;
+    size_t small_file_size = VersionInfo::MAX_METADATA_SIZE;
     auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
     /// Avoid cannot allocated thread error. No need in threadpool read method here.
     read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     auto buf = data_part_storage.readFile(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size);
 
-    String content;
-    readStringUntilEOF(content, *buf);
+    String content = VersionInfo::readMetadataString(*buf);
+    if (content.size() > VersionInfo::MAX_METADATA_SIZE)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Version metadata file {} exceeds {} bytes",
+            TXN_VERSION_METADATA_FILE_NAME, VersionInfo::MAX_METADATA_SIZE);
     LOG_DEBUG(log, "Object {}, read content:\n{}", getObjectName(), content);
 
     VersionInfo info;

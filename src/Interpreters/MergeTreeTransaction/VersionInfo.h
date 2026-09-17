@@ -22,6 +22,14 @@ struct VersionInfo
     /// Initial value for storing_version indicating that the metadata has not been persisted to storage yet.
     static constexpr Int32 UNSTORED_VERSION = -1;
 
+    /// Hard upper bound on a serialized txn_version.txt. Real metadata is a few dozen bytes; a larger
+    /// file is corrupt. Used to cap reads without trusting a possibly-corrupt on-disk file size.
+    static constexpr size_t MAX_METADATA_SIZE = 4096;
+
+    /// Reads at most MAX_METADATA_SIZE + 1 bytes from `buf`. A returned length of MAX_METADATA_SIZE + 1
+    /// proves (from bytes actually read) that the content exceeds the cap.
+    static String readMetadataString(ReadBuffer & buf);
+
     /// Checks if the object is visible to a transaction with `snapshot_version` and `current_tid`.
     /// Returns true if visible (created before snapshot and not removed, or being created by current transaction).
     /// Returns false if not visible (removed before snapshot, created after snapshot, or being removed by current transaction).

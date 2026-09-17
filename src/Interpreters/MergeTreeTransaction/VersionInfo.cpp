@@ -41,6 +41,20 @@ void VersionInfo::fromString(const String & content, bool one_line)
     }
 }
 
+String VersionInfo::readMetadataString(ReadBuffer & buf)
+{
+    String content;
+    /// Read one byte past the cap so a returned length of MAX_METADATA_SIZE + 1 unambiguously means
+    /// "content is larger than the cap", regardless of what the on-disk file size claims.
+    while (content.size() <= MAX_METADATA_SIZE && !buf.eof())
+    {
+        char c = 0;
+        readChar(c, buf);
+        content.push_back(c);
+    }
+    return content;
+}
+
 void VersionInfo::readFromBuffer(ReadBuffer & buf, bool one_line)
 {
     if (one_line)
@@ -127,6 +141,10 @@ void VersionInfo::readFromMultiLineBuffer(ReadBuffer & buf)
 
     assertString(String("\n") + REMOVAL_CSN_STR, buf);
     readText(current_removal_csn, buf);
+
+    /// The current format ends here; trailing bytes indicate a truncated/overwritten/garbage file.
+    /// (The legacy pre-`storing_version` format returns early above and is intentionally exempt.)
+    assertEOF(buf);
 
     storing_version = current_storing_version;
     creation_tid = current_creation_tid;
