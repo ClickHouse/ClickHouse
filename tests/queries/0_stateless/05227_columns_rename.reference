@@ -28,6 +28,8 @@ a	b	metric_cpu	metric_mem	x	b	metric_cpu	metric_mem
 1	2	3	4	1	2	3	4
 x	b	metric_cpu	metric_mem	a	b	metric_cpu	metric_mem	a	y	metric_cpu	metric_mem
 1	2	3	4	1	2	3	4	1	2	3	4
+new name	b	metric_cpu	metric_mem
+1	2	3	4
 user_id
 0
 y	x	b	metric_cpu	metric_mem
