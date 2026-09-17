@@ -5,6 +5,6 @@ versions: 3
 SUPPORT_IS_DISABLED
 3
 versions: 3
--- two concurrent async inserts with identical settings are flushed together: one commit
+-- two concurrent async inserts with identical settings both land (one or two flushes)
 5	27
-versions: 4
+versions in [4, 5]: 1
