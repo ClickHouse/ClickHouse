@@ -85,10 +85,11 @@ SELECT timeSeriesMinToGrid(100, 120, 2, 51)(timestamp, value)
 
 DROP TABLE ts_two_stacks;
 
--- Two-stacks selected via the AVERAGE-density path, not the hard cap: step=1, window=15 -> buckets_per_window=15
--- (below BPW_TO_FORCE_TWO_STACKS=20), but a sample in every bucket makes the average populated buckets per window
--- (~15) >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS=10, so the regression functions pick two-stacks through the
--- average condition. The full density (populated / bucket_count = 1.0 >= BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.35)
+-- Two-stacks selected via the AVERAGE-density path, not the hard cap: step=1, window=10 -> buckets_per_window=10
+-- (below every BPW_TO_FORCE_TWO_STACKS: 12 for the regression functions, 18 for the extremum functions), but a
+-- sample in every bucket makes the average populated buckets per window (10) reach
+-- AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS (4 for both), so these functions pick two-stacks through the average
+-- condition. The full density (populated / bucket_count = 1.0 >= BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.35)
 -- also drives the range-scan bucket iteration. Quadratic values make the per-window slope vary, so a faulty moment
 -- merge would diverge from the fresh recompute.
 DROP TABLE IF EXISTS ts_dense;
@@ -97,13 +98,13 @@ INSERT INTO ts_dense SELECT 186 + number, number * number FROM numbers(35);  -- 
 
 -- Eviction on the average-path two-stacks must still match a fresh single-grid-point aggregate over the same window.
 SELECT 'dense average-path two-stack values match a fresh single-grid-point aggregate (all 1):';
-SELECT abs(timeSeriesDerivToGrid(200, 220, 1, 15)(timestamp, value)[21]
-         - timeSeriesDerivToGrid(220, 220, 1, 15)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
-SELECT abs(timeSeriesPredictLinearToGrid(200, 220, 1, 15, 10)(timestamp, value)[21]
-         - timeSeriesPredictLinearToGrid(220, 220, 1, 15, 10)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
-SELECT timeSeriesMaxToGrid(200, 220, 1, 15)(timestamp, value)[21]
-     = timeSeriesMaxToGrid(220, 220, 1, 15)(timestamp, value)[1] FROM ts_dense;
-SELECT timeSeriesMinToGrid(200, 220, 1, 15)(timestamp, value)[21]
-     = timeSeriesMinToGrid(220, 220, 1, 15)(timestamp, value)[1] FROM ts_dense;
+SELECT abs(timeSeriesDerivToGrid(200, 220, 1, 10)(timestamp, value)[21]
+         - timeSeriesDerivToGrid(220, 220, 1, 10)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
+SELECT abs(timeSeriesPredictLinearToGrid(200, 220, 1, 10, 10)(timestamp, value)[21]
+         - timeSeriesPredictLinearToGrid(220, 220, 1, 10, 10)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
+SELECT timeSeriesMaxToGrid(200, 220, 1, 10)(timestamp, value)[21]
+     = timeSeriesMaxToGrid(220, 220, 1, 10)(timestamp, value)[1] FROM ts_dense;
+SELECT timeSeriesMinToGrid(200, 220, 1, 10)(timestamp, value)[21]
+     = timeSeriesMinToGrid(220, 220, 1, 10)(timestamp, value)[1] FROM ts_dense;
 
 DROP TABLE ts_dense;
