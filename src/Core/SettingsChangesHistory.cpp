@@ -41,6 +41,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.10",
+        {
+            {"allow_experimental_part_aggregation_cache", false, false, "New setting to enable experimental per-part aggregation cache for GROUP BY."},
+            {"enable_reads_from_part_aggregation_cache", true, true, "New setting."},
+            {"enable_writes_to_part_aggregation_cache", true, true, "New setting."},
+        });
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
@@ -121,9 +127,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_manifest_min_count_to_compact", 30, 100, "Aligned with the documented default of the Iceberg table property `commit.manifest.min-count-to-merge` (100), see https://iceberg.apache.org/docs/1.5.2/configuration/."},
             {"parallel_replicas_allow_merge_tables", false, false, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
-            {"allow_experimental_part_aggregation_cache", false, false, "New setting to enable experimental per-part aggregation cache for GROUP BY."},
-            {"enable_reads_from_part_aggregation_cache", true, true, "New setting."},
-            {"enable_writes_to_part_aggregation_cache", true, true, "New setting."},
             {"statistics_max_set_size_for_exact_selectivity_estimation", 10000, 10000, "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."},
             {"type_json_skip_null_typed_paths", false, false, "New setting to treat NULL values in typed JSON paths as absent"},
             {"use_iceberg_manifest_list_partition_pruning", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."},
