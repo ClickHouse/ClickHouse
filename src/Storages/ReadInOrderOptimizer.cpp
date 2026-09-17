@@ -33,7 +33,8 @@ namespace
 
 /// Finds expression like x = 'y' or f(x) = 'y',
 /// where `x` is identifier, 'y' is literal and `f` is injective functions.
-ASTPtr getFixedPoint(const ASTPtr & ast, const NamesAndTypesList & source_columns, const ContextPtr & context)
+ASTPtr getFixedPoint(
+    const ASTPtr & ast, const NamesAndTypesList & source_columns, const NameSet & array_join_result_names, const ContextPtr & context)
 {
     const auto * func = ast->as<ASTFunction>();
     if (!func || func->name != "equals")
@@ -66,7 +67,7 @@ ASTPtr getFixedPoint(const ASTPtr & ast, const NamesAndTypesList & source_column
         /// Injectivity can depend on the arguments - `toString` of a date-time in a time zone with
         /// a UTC offset transition is not injective - so resolve what the AST alone decides and
         /// peel nothing when an argument stays unresolved.
-        auto argument_columns = tryGetASTFunctionArgumentColumns(*arg_func, source_columns);
+        auto argument_columns = tryGetASTFunctionArgumentColumns(*arg_func, source_columns, array_join_result_names);
         if (!argument_columns || !func_resolver->isInjective(*argument_columns))
             return nullptr;
 
@@ -100,6 +101,8 @@ NameSet getFixedSortingColumns(
 
     NameSet fixed_points;
     NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
+    /// An `ARRAY JOIN` result may shadow a source column of the same name; see `tryGetASTFunctionArgumentColumns`.
+    NameSet array_join_result_names = getArrayJoinResultNames(query);
 
     /// If we met expression like 'column = x', where 'x' is literal,
     /// in clause of size 1 in CNF, then we can guarantee
@@ -108,7 +111,7 @@ NameSet getFixedSortingColumns(
     {
         if (group.size() == 1 && !group.begin()->negative)
         {
-            auto fixed_point = getFixedPoint(group.begin()->ast, source_columns, context);
+            auto fixed_point = getFixedPoint(group.begin()->ast, source_columns, array_join_result_names, context);
             if (fixed_point)
             {
                 auto column_name = fixed_point->getColumnName();

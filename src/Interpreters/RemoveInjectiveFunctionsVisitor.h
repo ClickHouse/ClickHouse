@@ -16,10 +16,12 @@ class RemoveInjectiveFunctionsMatcher
 public:
     struct Data : public WithContext
     {
-        Data(ContextPtr context_, const NamesAndTypesList & source_columns_)
-            : WithContext(context_), source_columns(source_columns_) {}
+        Data(ContextPtr context_, const NamesAndTypesList & source_columns_, NameSet array_join_result_names_)
+            : WithContext(context_), source_columns(source_columns_), array_join_result_names(std::move(array_join_result_names_)) {}
 
         const NamesAndTypesList & source_columns;
+        /// See `getArrayJoinResultNames`.
+        NameSet array_join_result_names;
     };
 
     static void visit(ASTPtr & ast, const Data & data);

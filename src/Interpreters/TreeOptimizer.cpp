@@ -106,6 +106,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NamesAndTypesList & so
     if (!select_query->groupBy())
         return;
 
+    /// An `ARRAY JOIN` result may shadow a source column of the same name; see `tryGetASTFunctionArgumentColumns`.
+    const NameSet array_join_result_names = getArrayJoinResultNames(*select_query);
+
     /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
     /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
     /// row. In such a row the key is output as its column default. Rewriting f(g) -> g makes the
@@ -186,7 +189,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NamesAndTypesList & so
 
                 /// The claim can depend on the arguments, so resolve as many of them as the AST
                 /// allows. An argument that stays unresolved leaves the function unclaimed.
-                auto argument_columns = tryGetASTFunctionArgumentColumns(*function, source_columns);
+                auto argument_columns = tryGetASTFunctionArgumentColumns(*function, source_columns, array_join_result_names);
                 if (!argument_columns || !function_builder->isInjective(*argument_columns))
                 {
                     ++i;
@@ -561,7 +564,7 @@ void optimizeMultiIfToIf(ASTPtr & query)
 
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const NamesAndTypesList & source_columns, ContextPtr context)
 {
-    RemoveInjectiveFunctionsVisitor::Data data(context, source_columns);
+    RemoveInjectiveFunctionsVisitor::Data data(context, source_columns, getArrayJoinResultNames(query->as<ASTSelectQuery &>()));
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
