@@ -19,6 +19,10 @@ at the same time - reconstructed from the paired log lines - never exceeds one.
 The second test covers the case where the leader may *not* be asked to back off, because the
 restarted node has a tail that the leader does not have and can only learn where the two logs
 match from a request that carries entries.
+
+The third takes the back-off away entirely, so that the leader keeps re-sending for the whole
+replay and threads reach the wait continuously. That is the only way to exercise the bound
+itself: when the back-off works, a second thread never gets there.
 """
 
 import logging
@@ -55,6 +59,13 @@ WAIT_STOPPED = "ProcessReq callback: stopped waiting for preprocessing"
 ADMISSION_DECLINED = "ProcessReq callback: another thread is already waiting"
 ENTRIES_REFUSED = "Logs not preprocessed, ProcessReq callback with"
 NO_REPLAY_NEEDED = "No log preprocessing needed"
+
+NODE2_CONFIG = "/etc/clickhouse-server/config.d/enable_keeper2.xml"
+PAUSE_ANCHOR = "<raft_limits_response_limit>2</raft_limits_response_limit>"
+PAUSE_DISABLED = (
+    "<nuraft_test_disable_append_entries_pause>1"
+    "</nuraft_test_disable_append_entries_pause>"
+)
 
 LOG_LINE = re.compile(r"^\S+ (\S+) \[ (\d+) \]")
 TAIL_CORRECTION = re.compile(
@@ -94,6 +105,18 @@ def grep_log(node, pattern):
         ["bash", "-c", f"grep -E -- '{pattern}' {SERVER_LOG}; true"]
     )
     return [line for line in output.splitlines() if line]
+
+
+def count_in_log(node, pattern):
+    """Number of lines matching `pattern` since the node was last started.
+
+    Counted in the container rather than returned, because the run that disables the pause
+    produces tens of thousands of these.
+    """
+    output = node.exec_in_container(
+        ["bash", "-c", f"grep -E -c -- '{pattern}' {SERVER_LOG} || true"]
+    )
+    return int(output.strip() or 0)
 
 
 def waiting_thread_events(node):
@@ -346,3 +369,110 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
     finally:
         zk.stop()
         zk.close()
+
+
+def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
+    """The bound of one waiting thread has to hold when the leader is not backing off.
+
+    In the ordinary case the negative batch size hint stops the leader before a second request
+    carrying entries can arrive, so no thread ever finds another one already waiting - which is
+    what the first test asserts, and which leaves the refusal itself unexercised.
+    `nuraft_test_disable_append_entries_pause` takes the hint away, so the leader re-sends every
+    batch as fast as it is refused and threads of the Raft event loop reach the wait
+    continuously. That is the shape a regression of the hint would produce, measured at ~11000
+    requests per second while this fix was being written. One thread may wait; every other has
+    to be turned away and its request handled like any other that arrives before the replay is
+    over, which is what keeps the pool from draining.
+    """
+    keeper_utils.wait_nodes(cluster, ALL_NODES)
+
+    # 1) A tail for node2 to replay, as in the first test.
+    zk = get_fake_zk(keeper_utils.get_leader(cluster, ALL_NODES))
+    try:
+        zk.create("/unpaused")
+        for transaction in range(TRANSACTIONS):
+            request = zk.transaction()
+            for i in range(CREATES_PER_TRANSACTION):
+                request.create(f"/unpaused/n{transaction:05d}_{i:05d}", b"")
+            request.commit()
+    finally:
+        zk.stop()
+        zk.close()
+
+    last_znode = f"/unpaused/n{TRANSACTIONS - 1:05d}_{CREATES_PER_TRANSACTION - 1:05d}"
+    zk = get_fake_zk(node2)
+    try:
+        for _ in range(120):
+            if zk.exists(last_znode) is not None:
+                break
+            time.sleep(0.5)
+        else:
+            raise Exception("node2 did not receive the whole tail")
+    finally:
+        zk.stop()
+        zk.close()
+
+    node2.stop_clickhouse(kill=True)
+
+    try:
+        # 2) Take the hint away from node2 only, and leave the leader entries to re-send.
+        node2.replace_in_config(
+            NODE2_CONFIG, PAUSE_ANCHOR, PAUSE_ANCHOR + PAUSE_DISABLED
+        )
+
+        zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
+        try:
+            for i in range(10):
+                zk.create(f"/ahead_of_unpaused_{i}", b"")
+        finally:
+            zk.stop()
+            zk.close()
+
+        node2.start_clickhouse(start_wait_sec=240)
+        keeper_utils.wait_until_connected(cluster, node2, timeout=240)
+
+        assert not grep_log(node2, NO_REPLAY_NEEDED), (
+            "node2 restarted with nothing to replay, so this test checks nothing"
+        )
+
+        # The refusal has to have happened, or the leader backed off for some other reason and
+        # this is the first test with extra steps.
+        declined = count_in_log(node2, ADMISSION_DECLINED)
+        refused = count_in_log(node2, ENTRIES_REFUSED)
+        logging.info(
+            "node2 refused the entries of %s append_entries requests and turned away %s "
+            "threads at the wait",
+            refused,
+            declined,
+        )
+        assert declined, (
+            "no thread was turned away at the wait, so the leader stopped sending entries even "
+            "with the pause disabled and the bound was never put under pressure"
+        )
+
+        # And the bound held under that pressure, which is the whole point of this test.
+        events = waiting_thread_events(node2)
+        waiting = 0
+        for timestamp, thread, delta in events:
+            waiting += delta
+            assert waiting <= 1, (
+                f"{waiting} threads of the Raft event loop were waiting for log preprocessing "
+                f"at {timestamp}, when thread {thread} started waiting"
+            )
+        assert waiting == 0, (
+            "a thread of the Raft event loop is still waiting for log preprocessing"
+        )
+
+        # A thread that is turned away still has to let the commit index advance, since that is
+        # what lets the replay finish at all, and node2 still has to catch up with the rest.
+        zk = get_fake_zk(node2)
+        try:
+            for i in range(10):
+                assert zk.exists(f"/ahead_of_unpaused_{i}") is not None
+        finally:
+            zk.stop()
+            zk.close()
+    finally:
+        node2.replace_in_config(
+            NODE2_CONFIG, PAUSE_ANCHOR + PAUSE_DISABLED, PAUSE_ANCHOR
+        )

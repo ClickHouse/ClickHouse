@@ -97,6 +97,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
     extern const CoordinationSettingsBool nuraft_test_mode;
+    extern const CoordinationSettingsBool nuraft_test_disable_append_entries_pause;
     extern const CoordinationSettingsBool nuraft_use_bg_thread_for_snapshot_io;
     extern const CoordinationSettingsBool nuraft_streaming_mode;
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
@@ -756,9 +757,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// leader's still needs requests carrying entries to learn where the two logs match, and
     /// `get_target_committed_log_idx` can be rolled back, so this has to be read at the moment
     /// the answer is used rather than remembered from the last request that arrived.
-    state_machine->setAppendEntriesPauseCondition([this]
+    const bool never_pause = coordination_settings[CoordinationSetting::nuraft_test_disable_append_entries_pause];
+    state_machine->setAppendEntriesPauseCondition([this, never_pause]
     {
-        return !keeper_context->localLogsPreprocessed()
+        return !never_pause
+            && !keeper_context->localLogsPreprocessed()
             && raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk;
     });
 
