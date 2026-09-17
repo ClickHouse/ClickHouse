@@ -45,3 +45,17 @@ low cardinality	[1,2]
 low cardinality, no index	[1,2]
 nullable infix	[1]
 nullable infix, no index	[1]
+Straddling literal occurrence
+straddling then contained	[3]
+straddling then contained, no index	[3]
+05218_straddle	5	1
+Empty mandatory literal
+no mandatory literal	[1,2,3,4,5]
+no mandatory literal, no index	[1,2,3,4,5]
+no mandatory literal with a prefix	[1,2,3,4,5,6,7]
+no mandatory literal with a prefix, no index	[1,2,3,4,5,6,7]
+prefix alone	[6,7]
+prefix alone, no index	[6,7]
+05218_no_literal	3	1
+05218_no_literal_mixed	3	1
+05218_no_literal_prefix	1	1

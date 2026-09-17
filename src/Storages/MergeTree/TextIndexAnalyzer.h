@@ -15,6 +15,7 @@ class TextIndexAnalyzer
 {
 public:
     /// Half-open range of dictionary token keys. An empty `end` reaches the end of the dictionary.
+    /// Equal bounds are the single key `begin`, not an empty range.
     struct TokenKeyRange
     {
         String begin;

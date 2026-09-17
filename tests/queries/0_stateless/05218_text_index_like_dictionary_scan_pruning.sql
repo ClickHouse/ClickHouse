@@ -196,3 +196,88 @@ SELECT 'nullable infix', groupArray(id) FROM tab_nullable WHERE message LIKE '%t
 SELECT 'nullable infix, no index', groupArray(id) FROM tab_nullable WHERE message LIKE '%toaa0%' SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_nullable;
+
+SELECT 'Straddling literal occurrence';
+
+DROP TABLE IF EXISTS tab_straddle;
+
+-- The first dictionary block holds 'aabb', 'ccdd', 'xxbbcc', 'yybb' as the bytes 'aabbccddxxbbccyybb', so
+-- the needle 'bbcc' occurs there twice: at offset 2 it straddles 'aabb' and 'ccdd', at offset 10 it ends
+-- exactly at the end of 'xxbbcc'. Only the latter lies inside one token, so only 'xxbbcc' may match.
+CREATE TABLE tab_straddle
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 4) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 4;
+
+INSERT INTO tab_straddle VALUES (1, 'aabb'), (2, 'ccdd'), (3, 'xxbbcc'), (4, 'yybb');
+-- Further rows, all sorting after the tokens above, so that a granule is pruned and the first block's layout stays.
+INSERT INTO tab_straddle SELECT 100 + number, concat('zz', toString(number)) FROM numbers(16);
+OPTIMIZE TABLE tab_straddle FINAL;
+
+SELECT 'straddling then contained', groupArray(id) FROM tab_straddle WHERE message LIKE '%bbcc%' SETTINGS log_comment = '05218_straddle';
+SELECT 'straddling then contained, no index', groupArray(id) FROM tab_straddle WHERE message LIKE '%bbcc%' SETTINGS use_skip_indexes = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    log_comment,
+    ProfileEvents['TextIndexReadDictionaryBlocks'] AS dictionary_blocks_read,
+    read_rows < (SELECT count() FROM tab_straddle) AS granules_pruned
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND log_comment = '05218_straddle';
+
+DROP TABLE tab_straddle;
+
+SELECT 'Empty mandatory literal';
+
+DROP TABLE IF EXISTS tab_no_literal;
+
+-- Every literal run of 'a%b%c%d' is one byte, below the three the regexp analysis needs, so the compiled
+-- pattern has no mandatory literal and can match a token anywhere in the dictionary; the array tokenizer
+-- admits it by counting the four non-wildcard characters. Block first tokens: 'a1b1c1d', 'a5b5c5d', 'tocc0'.
+CREATE TABLE tab_no_literal
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 4) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 4;
+
+INSERT INTO tab_no_literal VALUES
+    (1, 'a1b1c1d'), (2, 'a2b2c2d'), (3, 'a3b3c3d'), (4, 'a4b4c4d'),
+    (5, 'a5b5c5d'), (6, 'toaa0'), (7, 'toaa1'), (8, 'tobb0'),
+    (9, 'tocc0'), (10, 'todd0'), (11, 'toee0'), (12, 'toff0');
+OPTIMIZE TABLE tab_no_literal FINAL;
+
+SELECT 'no mandatory literal', groupArray(id) FROM tab_no_literal WHERE message LIKE 'a%b%c%d' SETTINGS log_comment = '05218_no_literal';
+SELECT 'no mandatory literal, no index', groupArray(id) FROM tab_no_literal WHERE message LIKE 'a%b%c%d' SETTINGS use_skip_indexes = 0;
+
+SELECT 'no mandatory literal with a prefix', groupArray(id) FROM tab_no_literal WHERE message LIKE 'a%b%c%d' OR message LIKE 'toaa%' SETTINGS log_comment = '05218_no_literal_mixed';
+SELECT 'no mandatory literal with a prefix, no index', groupArray(id) FROM tab_no_literal WHERE message LIKE 'a%b%c%d' OR message LIKE 'toaa%' SETTINGS use_skip_indexes = 0;
+
+-- That same prefix on its own is narrowed to one block, so the full count above is the all-or-nothing decline.
+SELECT 'prefix alone', groupArray(id) FROM tab_no_literal WHERE message LIKE 'toaa%' SETTINGS log_comment = '05218_no_literal_prefix';
+SELECT 'prefix alone, no index', groupArray(id) FROM tab_no_literal WHERE message LIKE 'toaa%' SETTINGS use_skip_indexes = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    log_comment,
+    ProfileEvents['TextIndexReadDictionaryBlocks'] AS dictionary_blocks_read,
+    read_rows < (SELECT count() FROM tab_no_literal) AS granules_pruned
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND log_comment IN ('05218_no_literal', '05218_no_literal_mixed', '05218_no_literal_prefix')
+ORDER BY log_comment;
+
+DROP TABLE tab_no_literal;
