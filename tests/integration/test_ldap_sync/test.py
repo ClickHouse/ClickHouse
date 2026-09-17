@@ -1811,6 +1811,42 @@ def test_interserver_authentication_refuses_a_name_outside_the_snapshot(
         restore_node_bad()
 
 
+def test_synced_direct_bind_login_needs_no_lookup_identity(janedoe_in_role_a):
+    """In a synchronised directory a login verifies the password only. With a `bind_dn` template
+    next to `lookup_bind_dn` (direct bind) the lookup identity serves the detection and the role
+    searches, which such a login does not run, so a lookup password broken after a successful run
+    must not lock the synchronised users out. `SYSTEM RELOAD CONFIG` also drops the verification
+    cache, so the logins below reach the server."""
+    try:
+        server_config = read_config("ldap_server.xml").replace(
+            "<bind_dn>{user_dn}</bind_dn>",
+            f"<bind_dn>cn={{user_name}},{USERS_CONTAINER}</bind_dn>",
+        )
+        assert "{user_dn}</bind_dn>" not in server_config
+        restart_node_bad_with(
+            directories_bad_config(
+                create_roles="true", roles_storage="local_directory"
+            ),
+            server_config=server_config,
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert login(node_bad, "janedoe") == TSV([["janedoe"]])
+
+        broken_config = server_config.replace(
+            f"<lookup_password>{LDAP_SERVICE_PASSWORD}</lookup_password>",
+            "<lookup_password>wrong</lookup_password>",
+        )
+        assert broken_config != server_config
+        node_bad.replace_config(f"{CONFIG_D}/ldap_server_bad_lookup.xml", broken_config)
+        admin(node_bad, "SYSTEM RELOAD CONFIG")
+        assert login(node_bad, "janedoe") == TSV([["janedoe"]])
+        assert login(node_bad, "johndoe", "qwertz") == TSV([["johndoe"]])
+        login_error(node_bad, "janedoe", "wrong")
+    finally:
+        restore_node_bad()
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
 def test_renamed_role_follows_name_resolution(janedoe_in_role_a):
     """A granted role renamed into a name that resolves to a copy in an earlier storage must not be
     granted under the new name as well. `role_a` resolves to a hand-written copy in
