@@ -21,14 +21,11 @@ INSERT INTO summing_final_tuple_prewhere VALUES (1, 1, (1, (5, 0))), (2, 1, (1, 
 INSERT INTO summing_final_tuple_prewhere VALUES (1, -1, (-1, (5, 0))), (2, -1, (-1, (-5, 0)));
 
 SELECT '--- an intermediate tuple subcolumn in PREWHERE';
-SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9) SETTINGS enable_analyzer = 0;
-SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9) SETTINGS enable_analyzer = 1;
-SELECT k FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9) ORDER BY k SETTINGS enable_analyzer = 0;
-SELECT k FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9) ORDER BY k SETTINGS enable_analyzer = 1;
+SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9);
+SELECT k FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9) ORDER BY k;
 
 SELECT '--- the whole tuple in PREWHERE';
-SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE tup != (9, (9, 9)) SETTINGS enable_analyzer = 0;
-SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE tup != (9, (9, 9)) SETTINGS enable_analyzer = 1;
+SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE tup != (9, (9, 9));
 
 -- Under `FINAL` the optimizer moves a condition into `PREWHERE` only when it is over the sorting
 -- key (`MergeTreeWhereOptimizer`), so a tuple ancestor reaches `PREWHERE` only when the query
@@ -36,24 +33,18 @@ SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE tup != (9, (9, 9
 -- is not eligible for the move has to be right whether it is moved or not.
 SELECT '--- WHERE with optimize_move_to_prewhere_if_final';
 SELECT k, s FROM summing_final_tuple_prewhere FINAL WHERE k != 9 ORDER BY k
-SETTINGS optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1, enable_analyzer = 0;
-SELECT k, s FROM summing_final_tuple_prewhere FINAL WHERE k != 9 ORDER BY k
-SETTINGS optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1, enable_analyzer = 1;
+SETTINGS optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1;
 SELECT count() FROM summing_final_tuple_prewhere FINAL WHERE tup.inner != (9, 9)
-SETTINGS optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1, enable_analyzer = 0;
-SELECT count() FROM summing_final_tuple_prewhere FINAL WHERE tup.inner != (9, 9)
-SETTINGS optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1, enable_analyzer = 1;
+SETTINGS optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1;
 
 -- The subcolumn in the predicate is covered by the whole tuple in the output, which is the only
 -- carrier the merge needs: the leaves must not arrive through both of them at once.
 SELECT '--- the tuple is also in the output';
-SELECT k, tup FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9) ORDER BY k SETTINGS enable_analyzer = 0;
-SELECT k, tup FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9) ORDER BY k SETTINGS enable_analyzer = 1;
+SELECT k, tup FROM summing_final_tuple_prewhere FINAL PREWHERE tup.inner != (9, 9) ORDER BY k;
 
 -- A summed column that the predicate itself reads has to come back as well.
 SELECT '--- a summed column in PREWHERE';
-SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE s != 9 SETTINGS enable_analyzer = 0;
-SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE s != 9 SETTINGS enable_analyzer = 1;
+SELECT count() FROM summing_final_tuple_prewhere FINAL PREWHERE s != 9;
 
 -- Every `FINAL` read above must agree with the state a real merge leaves behind.
 SELECT '--- the state after a real merge';

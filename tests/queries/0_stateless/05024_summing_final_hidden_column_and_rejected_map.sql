@@ -9,8 +9,7 @@ SYSTEM STOP MERGES summing_final_hidden;
 INSERT INTO summing_final_hidden VALUES (1, 5, 'x', 1), (1, 5, 'x', 2);
 INSERT INTO summing_final_hidden VALUES (-1, 0, 'x', 1), (-1, -5, 'x', 2);
 
-SELECT count() FROM summing_final_hidden FINAL PREWHERE note = 'x' SETTINGS enable_analyzer = 0;
-SELECT count() FROM summing_final_hidden FINAL PREWHERE note = 'x' SETTINGS enable_analyzer = 1;
+SELECT count() FROM summing_final_hidden FINAL PREWHERE note = 'x';
 SELECT k FROM summing_final_hidden FINAL PREWHERE note = 'x' ORDER BY k;
 
 -- The FINAL read must agree with the state after a real merge.

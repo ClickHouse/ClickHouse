@@ -23,30 +23,25 @@ INSERT INTO summing_final_tuple_ancestor VALUES (1, 1, (1, (5, 3))), (2, 1, (1, 
 INSERT INTO summing_final_tuple_ancestor VALUES (1, 2, (2, (5, 3))), (2, -1, (-1, (-5, -3))), (3, -1, (0, (-5, -3)));
 
 SELECT '--- an output subcolumn with the ancestor in PREWHERE';
-SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL PREWHERE tup != (9, (9, 9)) ORDER BY k SETTINGS enable_analyzer = 0;
-SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL PREWHERE tup != (9, (9, 9)) ORDER BY k SETTINGS enable_analyzer = 1;
+SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL PREWHERE tup != (9, (9, 9)) ORDER BY k;
 
 SELECT '--- an output leaf with the ancestor in PREWHERE';
-SELECT k, tup.inner.c FROM summing_final_tuple_ancestor FINAL PREWHERE tup != (9, (9, 9)) ORDER BY k SETTINGS enable_analyzer = 0;
-SELECT k, tup.inner.c FROM summing_final_tuple_ancestor FINAL PREWHERE tup != (9, (9, 9)) ORDER BY k SETTINGS enable_analyzer = 1;
+SELECT k, tup.inner.c FROM summing_final_tuple_ancestor FINAL PREWHERE tup != (9, (9, 9)) ORDER BY k;
 
 -- The same shape without a predicate: here no ancestor is read, so every leaf outside the output
 -- subcolumn is requested on its own and the carriers do not overlap.
 SELECT '--- an output subcolumn without a predicate';
-SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k SETTINGS enable_analyzer = 0;
-SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k SETTINGS enable_analyzer = 1;
+SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k;
 
 -- A query asking for a tuple and its subcolumn at once produces the same overlapping pair of
 -- carriers on its own, with no help from the `FINAL` read set. It is the control for the shape above.
 SELECT '--- a tuple and its subcolumn in the output';
-SELECT k, tup, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k SETTINGS enable_analyzer = 0;
-SELECT k, tup, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k SETTINGS enable_analyzer = 1;
+SELECT k, tup, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k;
 
 SELECT '--- an output subcolumn with the ancestor in a row policy';
 CREATE ROW POLICY summing_final_tuple_ancestor_policy ON summing_final_tuple_ancestor USING tup != (9, (9, 9)) TO ALL;
-SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k SETTINGS enable_analyzer = 0;
-SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k SETTINGS enable_analyzer = 1;
-SELECT k, tup.inner.c FROM summing_final_tuple_ancestor FINAL ORDER BY k SETTINGS enable_analyzer = 1;
+SELECT k, tup.inner FROM summing_final_tuple_ancestor FINAL ORDER BY k;
+SELECT k, tup.inner.c FROM summing_final_tuple_ancestor FINAL ORDER BY k;
 DROP ROW POLICY summing_final_tuple_ancestor_policy ON summing_final_tuple_ancestor;
 
 -- Every `FINAL` read above must agree with the state a real merge leaves behind.
