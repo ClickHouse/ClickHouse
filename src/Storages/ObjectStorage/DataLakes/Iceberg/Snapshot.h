@@ -4,6 +4,7 @@
 #if USE_AVRO
 
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Poco/JSON/Array.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
@@ -23,6 +24,9 @@ struct IcebergDataSnapshot
     /// metadata-only count, see `IcebergMetadata::totalRows`.
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
+    /// Opaque incremental refreshable-MV cursor from the snapshot summary (`clickhouse.refresh-cursor`), as stored.
+    std::optional<String> refresh_cursor;
+    Poco::JSON::Array::Ptr partition_specs;
 };
 
 using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
