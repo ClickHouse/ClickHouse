@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupIO_Default.h>
+#include <Common/Logger.h>
 #include <Disks/DiskType.h>
 
 #include <filesystem>
@@ -20,7 +21,7 @@ public:
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, std::optional<size_t> expected_file_size) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
 
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;

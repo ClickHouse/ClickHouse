@@ -1,26 +1,25 @@
 #include <optional>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
-#include <Common/FailPoint.h>
 
 #if USE_AWS_S3
 
+namespace ErrorCodes
+{
+    extern const int S3_ERROR;
+}
+
+
 namespace ProfileEvents
 {
+    extern const Event S3GetObject;
     extern const Event S3GetObjectTagging;
     extern const Event S3HeadObject;
+    extern const Event DiskS3GetObject;
     extern const Event DiskS3GetObjectTagging;
     extern const Event DiskS3HeadObject;
 }
 
-
-namespace DB
-{
-namespace FailPoints
-{
-    extern const char s3_head_omit_etag[];
-}
-}
 
 namespace DB::S3
 {
@@ -85,8 +84,6 @@ namespace
         object_info.is_size_known = result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
-        /// An S3-compatible endpoint that reports no `ETag` in the response to a `HeadObject`.
-        fiu_do_on(FailPoints::s3_head_omit_etag, { object_info.etag.clear(); });
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
@@ -111,7 +108,7 @@ bool isAuthenticationError(Aws::S3::S3Errors error)
         || error == Aws::S3::S3Errors::INVALID_SIGNATURE;
 }
 
-static String getAuthenticationErrorHint(Aws::S3::S3Errors error)
+String getAuthenticationErrorHint(Aws::S3::S3Errors error)
 {
     if (isAuthenticationError(error))
         return " Please check your AWS credentials and permissions.";

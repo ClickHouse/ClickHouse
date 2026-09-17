@@ -11,30 +11,12 @@ import traceback
 import clickhouse_connect
 import numpy as np
 
-from ci.jobs.clickbench import install_introspection
-from ci.jobs.scripts.clickhouse_service import ClickHouseService
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.utils import Utils
+from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp"
-
-
-def install_vector_search(config_dir, var_lib_dir):
-    config_d = f"{config_dir}/config.d"
-    os.makedirs(config_d, exist_ok=True)
-    # Large values are set, ClickHouse will auto downsize
-    c1 = """<clickhouse>
-    <max_server_memory_usage_to_ram_ratio>0.95</max_server_memory_usage_to_ram_ratio>
-    <cache_size_to_ram_max_ratio>0.95</cache_size_to_ram_max_ratio>
-    <vector_similarity_index_cache_size>214748364800</vector_similarity_index_cache_size>
-    <max_build_vector_similarity_index_thread_pool_size>48</max_build_vector_similarity_index_thread_pool_size>
-    <vector_similarity_index_cache_size_ratio>0.99</vector_similarity_index_cache_size_ratio>
-</clickhouse>
-"""
-    with open(f"{config_d}/vector_search.xml", "w") as config_file:
-        config_file.write(c1)
-    return True
-
+temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 TABLE = "table"
 S3_URLS = "s3urls"
@@ -44,15 +26,12 @@ VECTOR_COLUMN = "vector_column"
 DISTANCE_METRIC = "distance_metric"
 DIMENSION = "dimension"
 SOURCE_SELECT_LIST = "source_select_list"
-SOURCE_FORMAT = "source_format"
-SOURCE_STRUCTURE = "source_structure"
 FETCH_COLUMNS_LIST = "fetch_columns_list"
 MERGE_TREE_SETTINGS = "merge_tree_settings"
 OTHER_SETTINGS = "other_settings"
 
 LIMIT_N = "limit"
 TRUTH_SET_FILES = "truth_set_files"
-TRUTH_SET_QUERY_SOURCE = "truth_set_query_source"
 QUANTIZATION = "quantization"
 HNSW_M = "hnsw_M"
 HNSW_EF_CONSTRUCTION = "hnsw_ef_construction"
@@ -63,37 +42,6 @@ TRUTH_SET_COUNT = "truth_set_count"
 RECALL_K = "recall_k"
 NEW_TRUTH_SET_FILE = "new_truth_set_file"
 CONCURRENCY_TEST = "concurrency_test"
-USE_RAW_BYTES_FOR_QUERY_VECTOR = "use_raw_bytes_for_query_vector"
-
-SEARCH_METHOD = "search_method"
-SESSION_SETTINGS = "session_settings"
-QBIT_COLUMN = "qbit_column"
-QBIT_PRECISIONS = "qbit_precisions"
-QBIT_STRIDE = "qbit_stride"
-QBIT_USED_DIMS = "qbit_used_dims"
-FETCH_MULTIPLIERS = "fetch_multipliers"
-
-TRUTH_SET_QUERY_SOURCE_ID = "id"
-TRUTH_SET_QUERY_SOURCE_VECTOR = "vector"
-
-# How the ANN query finds its candidates
-SEARCH_METHOD_INDEX = "vector_similarity_index"
-SEARCH_METHOD_QUANTIZED_CODEC = "quantized_codec"
-SEARCH_METHOD_QBIT = "qbit"
-
-# Seed of the rotation shared by the stored QBit(Int8) codes and the query vector
-QBIT_ROTATION_SEED = 0
-
-def rotate_for_qbit(expression, dimension):
-    rotated = f"randomHadamardTransform(L2Normalize(CAST({expression} AS Array(Float32))), {QBIT_ROTATION_SEED})"
-    return f"arrayMap(x -> x * sqrt({dimension}), {rotated})"
-
-
-def quantize_for_qbit(expression, dimension, stride=None):
-    codes = f"quantizeBFloat16ToInt8(CAST({rotate_for_qbit(expression, dimension)} AS Array(BFloat16)))"
-    qbit_type = f"QBit(Int8, {dimension})" if stride is None else f"QBit(Int8, {dimension}, {stride})"
-    return f"CAST({codes} AS {qbit_type})"
-
 
 dataset_hackernews_openai = {
     TABLE: "hackernews_openai",
@@ -108,31 +56,13 @@ dataset_hackernews_openai = {
         url           String,
         title         String,
         text          String,
-        vector        Array(BFloat16)  CODEC(NONE)
+        vector        Array(Float32)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
     DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 1536,
     SOURCE_SELECT_LIST: None,
-}
-
-dataset_cohere_wiki_20m = {
-    TABLE: "cohere_wiki_20m",
-    S3_URLS: [
-        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m.npy",
-    ],
-    SCHEMA: """
-        id            UInt32,
-        vector        Array(BFloat16)  CODEC(NONE)
-     """,
-    ID_COLUMN: "id",
-    VECTOR_COLUMN: "vector",
-    DISTANCE_METRIC: "cosineDistance",
-    DIMENSION: 1024,
-    SOURCE_SELECT_LIST: "toUInt32(rowNumberInAllBlocks()) AS id, vector",
-    SOURCE_FORMAT: "Npy",
-    SOURCE_STRUCTURE: "vector Array(Float32)",
 }
 
 # The full 100M vectors - will take hours to run
@@ -168,89 +98,11 @@ dataset_laion_5b_mini_for_quick_test = {
     ],
     SCHEMA: """
         id Int32,
-        vector Array(BFloat16)  CODEC(NONE)
+        vector Array(Float32)
      """,
     ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
     SOURCE_SELECT_LIST: "id, vector",  # Columns to select from the source Parquet file
-    DISTANCE_METRIC: "cosineDistance",
-    DIMENSION: 768,
-}
-
-# 10 million LAION vectors, searched using the rabitq quantized codes instead of a vector similarity index
-dataset_laion_5b_10m_quantized_rabitq = {
-    TABLE: "laion_10m_rabitq",
-    S3_URLS: [
-        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
-    ],
-    SCHEMA: """
-        id Int32,
-        vector Array(BFloat16) CODEC(Quantized('rabitq', 768))
-     """,
-    ID_COLUMN: "id",
-    VECTOR_COLUMN: "vector",
-    SOURCE_SELECT_LIST: "id, vector",
-    DISTANCE_METRIC: "cosineDistance",
-    DIMENSION: 768,
-}
-
-# Same LAION 10m, with the 2 bits per coordinate Turboquant codes
-dataset_laion_5b_10m_quantized_turboquant = {
-    TABLE: "laion_10m_turboquant",
-    S3_URLS: [
-        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
-    ],
-    SCHEMA: """
-        id Int32,
-        vector Array(BFloat16) CODEC(Quantized('turboquant', 768))
-     """,
-    ID_COLUMN: "id",
-    VECTOR_COLUMN: "vector",
-    SOURCE_SELECT_LIST: "id, vector",
-    DISTANCE_METRIC: "cosineDistance",
-    DIMENSION: 768,
-}
-
-# 10 million LAION vectors, searched using a QBit(Int8) column type
-dataset_laion_5b_10m_qbit_int8 = {
-    TABLE: "laion_10m_qbit",
-    S3_URLS: [
-        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
-    ],
-    SCHEMA: """
-        id Int32,
-        vector Array(BFloat16) CODEC(NONE),
-        vector_qbit QBit(Int8, 768)
-     """,
-    ID_COLUMN: "id",
-    VECTOR_COLUMN: "vector",  # full precision, used for the truth set
-    QBIT_COLUMN: "vector_qbit",
-    SOURCE_SELECT_LIST: "id, vector, "
-    + quantize_for_qbit("CAST(vector AS Array(BFloat16))", 768)
-    + " AS vector_qbit",
-    DISTANCE_METRIC: "cosineDistance",
-    DIMENSION: 768,
-}
-
-# Same QBit(Int8) codes, but split into 4 stride groups of 192 dimensions, each stored in its own stream, so a
-# search over only the leading 192 dimensions reads a quarter of the planes (Matryoshka-style prefix search)
-dataset_laion_5b_10m_qbit_int8_strided = {
-    TABLE: "laion_10m_qbit_strided",
-    S3_URLS: [
-        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet"
-    ],
-    SCHEMA: """
-        id Int32,
-        vector Array(BFloat16) CODEC(NONE),
-        vector_qbit QBit(Int8, 768, 192)
-     """,
-    ID_COLUMN: "id",
-    VECTOR_COLUMN: "vector",  # full precision, used for the truth set
-    QBIT_COLUMN: "vector_qbit",
-    QBIT_STRIDE: 192,
-    SOURCE_SELECT_LIST: "id, vector, "
-    + quantize_for_qbit("CAST(vector AS Array(BFloat16))", 768, 192)
-    + " AS vector_qbit",
     DISTANCE_METRIC: "cosineDistance",
     DIMENSION: 768,
 }
@@ -267,12 +119,10 @@ test_params_laion_5b_full_run = {
     HNSW_EF_CONSTRUCTION: 512,
     HNSW_EF_SEARCH: None,  # Default in CH is 256, use higher value for maybe 'b1' indexes
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,  # Set a value for 'b1' indexes
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_laion_5b_quick_test = {
@@ -285,7 +135,6 @@ test_params_laion_5b_quick_test = {
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     TRUTH_SET_COUNT: 1000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
@@ -293,7 +142,6 @@ test_params_laion_5b_quick_test = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_laion_5b_1m = {
@@ -304,105 +152,13 @@ test_params_laion_5b_1m = {
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: True,  # Will take some time!
-    TRUTH_SET_COUNT: 1000,  # Quick test! 10000 or 1000 is a good value
+    TRUTH_SET_COUNT: 10000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_1m_10k",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
-}
-
-test_params_laion_5b_10m_quantized_rabitq = {
-    LIMIT_N: 10000000,  # enough granules to avoid a full rescore re-read
-    TRUTH_SET_FILES: None,
-    QUANTIZATION: None,
-    HNSW_M: None,
-    HNSW_EF_CONSTRUCTION: None,
-    HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
-    GENERATE_TRUTH_SET: True,
-    TRUTH_SET_COUNT: 100,
-    RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_10m_100_rabitq",
-    MERGE_TREE_SETTINGS: None,
-    OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: False,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
-    SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
-    SESSION_SETTINGS: "enable_quantized_codec = 1",
-    FETCH_MULTIPLIERS: [1, 5, 10],
-}
-
-test_params_laion_5b_10m_quantized_turboquant = {
-    LIMIT_N: 10000000,  # see rabitq params
-    TRUTH_SET_FILES: None,
-    QUANTIZATION: None,
-    HNSW_M: None,
-    HNSW_EF_CONSTRUCTION: None,
-    HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
-    GENERATE_TRUTH_SET: True,
-    TRUTH_SET_COUNT: 100,
-    RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_10m_100_turboquant",
-    MERGE_TREE_SETTINGS: None,
-    OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: False,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
-    SEARCH_METHOD: SEARCH_METHOD_QUANTIZED_CODEC,
-    SESSION_SETTINGS: "enable_quantized_codec = 1",
-    FETCH_MULTIPLIERS: [1, 5, 10],
-}
-
-test_params_laion_5b_10m_qbit_int8 = {
-    LIMIT_N: 10000000,  # match the codec runs
-    TRUTH_SET_FILES: None,
-    QUANTIZATION: None,
-    HNSW_M: None,
-    HNSW_EF_CONSTRUCTION: None,
-    HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
-    GENERATE_TRUTH_SET: True,
-    TRUTH_SET_COUNT: 100,
-    RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_10m_100_qbit",
-    MERGE_TREE_SETTINGS: None,
-    OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: False,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
-    SEARCH_METHOD: SEARCH_METHOD_QBIT,
-    SESSION_SETTINGS: None,
-    QBIT_PRECISIONS: [1, 8],
-}
-
-test_params_laion_5b_10m_qbit_int8_strided = {
-    LIMIT_N: 10000000,  # match the other runs
-    TRUTH_SET_FILES: None,
-    QUANTIZATION: None,
-    HNSW_M: None,
-    HNSW_EF_CONSTRUCTION: None,
-    HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
-    GENERATE_TRUTH_SET: True,
-    TRUTH_SET_COUNT: 100,
-    RECALL_K: 100,
-    NEW_TRUTH_SET_FILE: "laion_10m_100_qbit_strided",
-    MERGE_TREE_SETTINGS: None,
-    OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: False,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
-    SEARCH_METHOD: SEARCH_METHOD_QBIT,
-    SESSION_SETTINGS: None,
-    QBIT_PRECISIONS: [1, 8],
-    # Read one of the four stride groups; recall is still measured against the full 768-dimension truth set
-    QBIT_USED_DIMS: 192,
 }
 
 test_params_hackernews_10m = {
@@ -415,7 +171,6 @@ test_params_hackernews_10m = {
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
     TRUTH_SET_COUNT: 1000,
@@ -423,49 +178,7 @@ test_params_hackernews_10m = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
-
-test_params_cohere_wiki_20m = {
-    LIMIT_N: None,
-    TRUTH_SET_FILES: [
-        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
-    ],
-    QUANTIZATION: "bf16",
-    HNSW_M: 64,
-    HNSW_EF_CONSTRUCTION: 256,
-    HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
-    GENERATE_TRUTH_SET: False,
-    NEW_TRUTH_SET_FILE: None,
-    TRUTH_SET_COUNT: 25000,
-    RECALL_K: 10,
-    # Let's have more than 1 part for this dataset (7 - 9 parts)
-    MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
-    OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
-    CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: True, # only set if query vector is numpy.Array(Float32)
-}
-
-
-# One entry per (test, search variant), rendered as a table at the end of the job
-SUMMARY_ROWS = []
-
-
-class phase_timer:
-
-    def __init__(self, store, key):
-        self._store = store
-        self._key = key
-
-    def __enter__(self):
-        self._start = time.time()
-        return self
-
-    def __exit__(self, *unused):
-        self._store[self._key] = time.time() - self._start
-        return False
 
 
 def get_new_connection():
@@ -501,106 +214,36 @@ class RunTest:
         self._query_count = int(test_params[TRUTH_SET_COUNT])
         self._k = int(test_params[RECALL_K])
 
-        self._search_method = test_params.get(SEARCH_METHOD, SEARCH_METHOD_INDEX)
-
-        self._rows_inserted = 0
-        self._timings = {}
-        self._variant_results = []
-
-        self._truth_set = []
+        self._truth_set = {}
         self._result_set = {}
-        self._query_source_warning_logged = False
-        self._vector_serialization_warning_logged = False
-
-        self.apply_session_settings(chclient)
-
-    def apply_session_settings(self, chclient):
-        session_settings = self._test_params.get(SESSION_SETTINGS)
-        if session_settings is not None:
-            chclient.query(f"SET {session_settings}")
-
-    def uses_vector_index(self):
-        return self._search_method == SEARCH_METHOD_INDEX
-
-    # One (label, parameter) pair per configuration we want recall and latency for
-    def search_variants(self):
-        if self._search_method == SEARCH_METHOD_QUANTIZED_CODEC:
-            return [
-                (f"codes, mult {m}", m) for m in self._test_params[FETCH_MULTIPLIERS]
-            ]
-        if self._search_method == SEARCH_METHOD_QBIT:
-            used_dims = self._test_params.get(QBIT_USED_DIMS)
-            dims_label = "" if used_dims is None else f", {used_dims}/{self._dimension} dims"
-            return [
-                (f"QBit {p}bit{dims_label}", p)
-                for p in self._test_params[QBIT_PRECISIONS]
-            ]
-        return [("vector similarity index", None)]
-
-    def ann_search_query(self, query_source, variant):
-        if self._search_method == SEARCH_METHOD_QBIT:
-            qbit_column = self._dataset[QBIT_COLUMN]
-            reference = rotate_for_qbit(query_source, self._dimension)
-            used_dims = self._test_params.get(QBIT_USED_DIMS)
-            dims_argument = "" if used_dims is None else f", {used_dims}"
-            distance = f"{self._distance_metric}TransposedQuantized({qbit_column}, {reference}, {variant}{dims_argument})"
-            return f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {distance} AS distance LIMIT {self._k}"
-
-        query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k}"
-        if self._search_method == SEARCH_METHOD_QUANTIZED_CODEC:
-            query += f" SETTINGS vector_search_use_quantized_codes = 1, vector_search_index_fetch_multiplier = {variant}"
-        return query
 
     def load_data(self):
         logger(f"Begin loading data into {self._table}")
 
         create_table = f"CREATE TABLE {self._table} ( {self._dataset[SCHEMA]} ) ENGINE = MergeTree ORDER BY {self._id_column}"
-        if self._test_params[MERGE_TREE_SETTINGS] is not None:
-            create_table += f" SETTINGS {self._test_params[MERGE_TREE_SETTINGS]}"
         self._chclient.query(create_table)
 
         for url in self._dataset[S3_URLS]:
             logger(f"Loading rows from location : {url}")
             select_list = "*"
 
-            # Exact columns to read from the source file?
-            configured_select_list = self._dataset.get(SOURCE_SELECT_LIST)
-            if configured_select_list is not None:
-                select_list = configured_select_list
+            # Exact columns to read from the source files?
+            if self._dataset[SOURCE_SELECT_LIST] is not None:
+                select_list = self._dataset[SOURCE_SELECT_LIST]
 
-            source = f"s3('{url}', NOSIGN)"
-            source_format = self._dataset.get(SOURCE_FORMAT)
-            if source_format is not None:
-                source = f"s3('{url}', NOSIGN, '{source_format}'"
-                source_structure = self._dataset.get(SOURCE_STRUCTURE)
-                if source_structure is not None:
-                    source = source + f", '{source_structure}'"
-                source = source + ")"
-
-            insert = f"INSERT INTO {self._table} SELECT {select_list} FROM {source}"
+            insert = f"INSERT INTO {self._table} SELECT {select_list} FROM s3('{url}')"
 
             if self._test_params[LIMIT_N] is not None:
                 insert = (
                     insert
                     + f" ORDER BY {self._id_column} LIMIT {self._test_params[LIMIT_N]}"
                 )
-
-            if self._test_params[OTHER_SETTINGS] is not None:
-                insert += f" SETTINGS {self._test_params[OTHER_SETTINGS]}"
-
             self._chclient.query(insert)
 
             result = self._chclient.query(f"SELECT count() FROM {self._table}")
             rows = result.result_rows[0][0]
             self._rows_inserted = rows
             logger(f"Loaded total {rows} rows")
-
-        result = self._chclient.query(
-            f"SELECT sum(bytes_on_disk), formatReadableSize(sum(bytes_on_disk)) FROM system.parts WHERE table = '{self._table}' AND active"
-        )
-        self._table_bytes = result.result_rows[0][0] or 0
-        self._table_size = result.result_rows[0][1]
-        logger(f"Table {self._table} occupies {self._table_size}")
 
     def optimize_table(self):
         logger("Optimizing table...")
@@ -613,11 +256,6 @@ class RunTest:
                 break
             logger("Waiting for existing merges to complete...")
             time.sleep(5)
-
-        if self._test_params[MERGE_TREE_SETTINGS] is not None:
-            if "max_bytes_to_merge_at_max_space_in_pool" in self._test_params[MERGE_TREE_SETTINGS]:
-                logger("Skipping OPTIMIZE TABLE")
-                return
 
         try:
             self._chclient.query(
@@ -636,10 +274,6 @@ class RunTest:
             logger("Waiting for optimize table to complete...")
             time.sleep(5)
 
-    # Runs ALTER TABLE ... ADD INDEX and then MATERIALIZE INDEX
-    def build_index(self):
-        logger("Adding vector similarity index")
-
         result = self._chclient.query(
             f"SELECT name, formatReadableSize(bytes) FROM system.parts WHERE table = '{self._table}' AND active=1"
         )
@@ -647,6 +281,9 @@ class RunTest:
         for row in result.result_rows:
             logger(f"{row[0]}\t\t{row[1]} bytes")
 
+    # Runs ALTER TABLE ... ADD INDEX and then MATERIALIZE INDEX
+    def build_index(self):
+        logger("Adding vector similarity index")
         quantization = self._test_params[QUANTIZATION]
         hnsw_M = self._test_params[HNSW_M]
         hnsw_ef_C = self._test_params[HNSW_EF_CONSTRUCTION]
@@ -680,8 +317,7 @@ class RunTest:
     def generate_truth_set(self):
         i = 0
         runtime = 0
-        truth_set = []
-        used_query_ids = set()
+        truth_set = {}
 
         # Get the MAX id value
         result = self._chclient.query(
@@ -691,7 +327,7 @@ class RunTest:
 
         while i < self._query_count:
             query_vector_id = random.randint(1, max_id)
-            if query_vector_id in used_query_ids:  # already used
+            if query_vector_id in truth_set:  # already used
                 continue
             subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {query_vector_id})"
 
@@ -713,159 +349,11 @@ class RunTest:
             if distances[int(self._k / 2)] == 0.0:
                 continue
 
-            truth_set.append(
-                self._make_truth_record(
-                    query_id=query_vector_id,
-                    query_vector=None,
-                    neighbours=neighbours,
-                    distances=distances,
-                    runtime_ms=(q_end - q_start),
-                )
-            )
-            used_query_ids.add(query_vector_id)
+            truth_set[query_vector_id] = (neighbours, distances, (q_end - q_start))
             i = i + 1
 
         self._truth_set = truth_set
         logger(f"Runtime for KNN : {runtime / 1000} seconds")
-
-    def _make_truth_record(
-        self, query_id, query_vector, neighbours, distances, runtime_ms
-    ):
-        normalized_query_vector = None
-        if query_vector is not None:
-            normalized_query_vector = np.asarray(query_vector, dtype=np.float32)
-
-        return {
-            "query_id": query_id,
-            "query_vector": normalized_query_vector,
-            "neighbours": np.asarray(neighbours),
-            "distances": np.asarray(distances),
-            "runtime_ms": runtime_ms,
-        }
-
-    def _vector_literal(self, query_vector):
-        values = ",".join(repr(float(value)) for value in query_vector.tolist())
-        return f"CAST([{values}], 'Array(Float32)')"
-
-    def _get_truth_set_query_source(self):
-        return self._test_params.get(
-            TRUTH_SET_QUERY_SOURCE, TRUTH_SET_QUERY_SOURCE_ID
-        )
-
-    def _validate_truth_set_arrays(self, query_values, neighbours, distances):
-        if len(query_values) != len(neighbours) or len(query_values) != len(distances):
-            raise ValueError("Truth set arrays must have the same number of rows")
-
-    def _load_truth_records_from_arrays(self, query_values, neighbours, distances):
-        self._validate_truth_set_arrays(query_values, neighbours, distances)
-
-        truth_set_query_source = self._get_truth_set_query_source()
-        truth_set = []
-        for i in range(len(query_values)):
-            if truth_set_query_source == TRUTH_SET_QUERY_SOURCE_ID:
-                truth_set.append(
-                    self._make_truth_record(
-                        query_id=int(query_values[i]),
-                        query_vector=None,
-                        neighbours=neighbours[i],
-                        distances=distances[i],
-                        runtime_ms=0,
-                    )
-                )
-            elif truth_set_query_source == TRUTH_SET_QUERY_SOURCE_VECTOR:
-                truth_set.append(
-                    self._make_truth_record(
-                        query_id=None,
-                        query_vector=query_values[i],
-                        neighbours=neighbours[i],
-                        distances=distances[i],
-                        runtime_ms=0,
-                    )
-                )
-            else:
-                raise ValueError(
-                    f"Unknown truth set query source: {truth_set_query_source}"
-                )
-
-        return truth_set
-
-    def _materialize_query_vector_if_needed(self, truth_record):
-        if truth_record["query_vector"] is not None:
-            return truth_record["query_vector"]
-
-        if truth_record["query_id"] is None:
-            raise ValueError("Truth record must contain either `query_id` or `query_vector`")
-
-        result = self._chclient.query(
-            f"SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {truth_record['query_id']}"
-        )
-        if not result.result_rows:
-            raise ValueError(
-                f"Failed to materialize query vector for id {truth_record['query_id']}"
-            )
-
-        truth_record["query_vector"] = np.asarray(
-            result.result_rows[0][0], dtype=np.float32
-        )
-        return truth_record["query_vector"]
-
-    def _render_query_source_sql(self, truth_record):
-        if truth_record["query_vector"] is not None:
-            if (
-                truth_record["query_id"] is not None
-                and not self._query_source_warning_logged
-            ):
-                logger(
-                    "Warning: truth record contains both `query_id` and `query_vector`, using `query_vector`"
-                )
-                self._query_source_warning_logged = True
-            return self._vector_literal(truth_record["query_vector"])
-
-        if truth_record["query_id"] is None:
-            raise ValueError("Truth record must contain either `query_id` or `query_vector`")
-
-        return f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {int(truth_record['query_id'])})"
-
-    def _save_truth_records(self, name):
-        if self._truth_set is None:
-            return
-
-        q_array = []
-        n_array = []
-        d_array = []
-
-        serialize_query_vectors = any(
-            truth_record["query_vector"] is not None for truth_record in self._truth_set
-        )
-        if serialize_query_vectors and any(
-            truth_record["query_vector"] is None for truth_record in self._truth_set
-        ):
-            if not self._vector_serialization_warning_logged:
-                logger(
-                    "Warning: truth set contains mixed query sources, serializing `_vectors.npy` as raw query vectors"
-                )
-                self._vector_serialization_warning_logged = True
-
-        for truth_record in self._truth_set:
-            if serialize_query_vectors:
-                q_array.append(self._materialize_query_vector_if_needed(truth_record))
-            else:
-                if truth_record["query_id"] is None:
-                    raise ValueError(
-                        "Cannot serialize truth set as query ids without `query_id`"
-                    )
-                q_array.append(truth_record["query_id"])
-
-            n_array.append(truth_record["neighbours"])
-            d_array.append(truth_record["distances"])
-
-        query_values = np.array(q_array)
-        neighbours = np.array(n_array)
-        distances = np.array(d_array)
-
-        np.save(name + "_vectors", query_values)
-        np.save(name + "_neighbours", neighbours)
-        np.save(name + "_distances", distances)
 
     # Load the truth set from a file (instead of generating at runtime)
     def load_truth_set(self, path):
@@ -893,38 +381,40 @@ class RunTest:
         neighbours = np.load(name + "_neighbours.npy")
         distances = np.load(name + "_distances.npy")
 
-        truth_set_query_source = self._get_truth_set_query_source()
-        if truth_set_query_source == TRUTH_SET_QUERY_SOURCE_ID:
-            if query_vectors.ndim != 1:
-                raise ValueError(
-                    "Truth set configured for query ids but `_vectors.npy` is not 1-D"
-                )
-        elif truth_set_query_source == TRUTH_SET_QUERY_SOURCE_VECTOR:
-            if query_vectors.ndim != 2:
-                raise ValueError(
-                    "Truth set configured for query vectors but `_vectors.npy` is not 2-D"
-                )
-        else:
-            raise ValueError(
-                f"Unknown truth set query source: {truth_set_query_source}"
-            )
+        truth_set = {}
+        for i in range(len(query_vectors)):
+            truth_set[query_vectors[i]] = (neighbours[i], distances[i], 0)
 
-        truth_set = self._load_truth_records_from_arrays(
-            query_vectors, neighbours, distances
-        )
         logger(f"Loaded truth set containing {len(query_vectors)} vectors")
         return truth_set
 
     # Save the current truth set into files in npy format
     def save_truth_set(self, name):
         logger(f"Saving truth set locally {name} ...")
-        self._save_truth_records(name)
+        if self._truth_set is None:
+            return
+
+        q_array = []
+        n_array = []
+        d_array = []
+
+        for vector_id, result in self._truth_set.items():
+            q_array.append(vector_id)
+            n_array.append(result[0])
+            d_array.append(result[1])
+
+        query_vectors = np.array(q_array)
+        neighbours = np.array(n_array)
+        distances = np.array(d_array)
+
+        np.save(name + "_vectors", query_vectors)
+        np.save(name + "_neighbours", neighbours)
+        np.save(name + "_distances", distances)
 
     # Run ANN on the query vectors in the truth set
-    def run_search_for_truth_set(self, variant=None, use_chclient=None):
+    def run_search_for_truth_set(self, use_chclient=None):
         runtime = 0
-        read_bytes = 0
-        result_set = []
+        result_set = {}
         if use_chclient is not None:
             chclient = use_chclient
         else:
@@ -934,41 +424,24 @@ class RunTest:
 
         # First execute a query to load the vector index, could take few minutes
         # We loop because API could timeout and raise exception.(even with higher receive_timeout)
-        warmup_query_source = f"(SELECT {self._vector_column} FROM {self._table} ORDER BY {self._id_column} LIMIT 1)"
-
         while True:
             try:
-                result = chclient.query(
-                    self.ann_search_query(warmup_query_source, variant)
-                )
-                logger("Vector indexes have loaded!")
+                subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = 100)"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k}"
+                result = chclient.query(ann_search_query)
+                logger(f"Vector indexes have loaded!")
                 break
-            except Exception:
-                logger("Waiting for indexes to load...")
+            except Exception as e:
+                logger(f"Waiting for indexes to load...")
                 time.sleep(30)
 
-        for truth_record in self._truth_set:
-            # Use reinterpret technique to demonstrate CPU savings, ref : https://github.com/ClickHouse/ClickHouse/pull/105504
-            if self._test_params.get(USE_RAW_BYTES_FOR_QUERY_VECTOR):
-                query_vector = truth_record["query_vector"]
-                if query_vector is None:
-                    raise ValueError(
-                        "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
-                    )
-                params = {"$search_vector_binary$": query_vector.tobytes()}
-                query_source = "reinterpret($search_vector_binary$, 'Array(Float32)')"
-                ann_search_query = self.ann_search_query(query_source, variant)
-                q_start = current_time_ms()
-                result = chclient.query(ann_search_query, parameters=params)
-            else:
-                query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = self.ann_search_query(query_source, variant)
-                q_start = current_time_ms()
-                result = chclient.query(ann_search_query)
-
+        for vector_id, result in self._truth_set.items():
+            subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {vector_id})"
+            q_start = current_time_ms()
+            ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 1, max_parallel_replicas = 1"
+            result = chclient.query(ann_search_query)
             q_end = current_time_ms()
             runtime = runtime + (q_end - q_start)
-            read_bytes = read_bytes + int((result.summary or {}).get("read_bytes", 0))
 
             neighbours = []
             distances = []
@@ -978,59 +451,30 @@ class RunTest:
                 neighbours.append(neighbour_id)
                 distances.append(distance)
 
-            result_set.append(
-                self._make_truth_record(
-                    query_id=None,
-                    query_vector=None,
-                    neighbours=neighbours,
-                    distances=distances,
-                    runtime_ms=(q_end - q_start),
-                )
-            )
+            result_set[vector_id] = (neighbours, distances, (q_end - q_start))
 
         # self._result_set = result_set
         logger(f"Runtime for ANN : {runtime / 1000} seconds")
-        self._last_search_ms = runtime / len(result_set) if result_set else 0.0
-        self._last_read_mib = read_bytes / len(result_set) / 1048576 if result_set else 0.0
-        if result_set:
-            logger(f"Average latency per query : {self._last_search_ms} ms")
-            logger(f"Average bytes read per query : {self._last_read_mib} MiB")
         return result_set
-
-    # Recall and latency for every search variant of the current truth set
-    def run_search_variants_and_calculate_recall(self):
-        for label, variant in self.search_variants():
-            logger(f"Running ANN search : {label}")
-            result_set = self.run_search_for_truth_set(variant)
-            recall = self.calculate_recall(result_set)
-            self._variant_results.append(
-                (label, recall, self._last_search_ms, self._last_read_mib)
-            )
 
     def run_search_and_calculate_recall_mt(self, thread_number):
         chclient = get_new_connection()
-        self.apply_session_settings(chclient)
-        result_set = self.run_search_for_truth_set(use_chclient=chclient)
+        result_set = self.run_search_for_truth_set(chclient)
         self.calculate_recall(result_set)
 
     # Calculate the recall using the original truth set and passed in result_set
     def calculate_recall(self, result_set):
         logger("Calculating recall...")
-        if len(self._truth_set) != len(result_set):
-            raise ValueError("Truth set and ANN result set must have the same length")
-
         recall = 0.0
-        for truth_record, search_record in zip(self._truth_set, result_set):
-            truth_neighbours = set(truth_record["neighbours"].tolist())
-            search_neighbours = set(search_record["neighbours"].tolist())
+        for vector_id, result in self._truth_set.items():
+            search_result = result_set[vector_id]
 
             # Recall = How many of the neighbours in the truth set(KNN) do we have in the result set(ANN)?
-            intersection = list(truth_neighbours & search_neighbours)
+            intersection = list(set(result[0]) & set(search_result[0]))
             recall = recall + (len(intersection) / self._k)
 
         # Average
-        if self._truth_set:
-            recall = recall / len(self._truth_set)
+        recall = recall / self._query_count
         logger(f"Recall is {recall}")
         return recall
 
@@ -1050,128 +494,25 @@ class RunTest:
         for t in threads:
             t.join()
 
-    def drop_table(self):
-        logger(f"Dropping table {self._table} ...")
-        self._chclient.query(
-            f"DROP TABLE IF EXISTS {self._table} SYNC SETTINGS max_table_size_to_drop = 0"
-        )
-
-
-def record_summary(test_name, dataset, test_runner, ok):
-    timings = test_runner._timings if test_runner else {}
-    variants = (test_runner._variant_results if test_runner else None) or [
-        ("(no search ran)", None, None, None)
-    ]
-    for label, recall, latency_ms, read_mib in variants:
-        SUMMARY_ROWS.append(
-            {
-                "test": test_name,
-                "table": test_runner._table if test_runner else dataset[TABLE],
-                "rows": test_runner._rows_inserted if test_runner else 0,
-                "size": getattr(test_runner, "_table_size", "-") if test_runner else "-",
-                "load": timings.get("load"),
-                "merge": timings.get("merge"),
-                "index": timings.get("index"),
-                "truth_set": timings.get("truth_set"),
-                "variant": label,
-                "recall": recall,
-                "latency_ms": latency_ms,
-                "read_mib": read_mib,
-                "ok": ok,
-            }
-        )
-
-
-def print_summary():
-    """Two narrow tables: the log viewer wraps anything much wider than 100 columns."""
-    if not SUMMARY_ROWS:
-        logger("Summary: no runs were recorded")
-        return
-
-    def table(title, columns, rows):
-        header = "  ".join(
-            name.ljust(width) if left else name.rjust(width)
-            for name, _, width, left in columns
-        )
-        logger(title)
-        print(header)
-        print("-" * len(header))
-        for row in rows:
-            cells = []
-            for _, key, width, left in columns:
-                value = row[key]
-                if key == "ok":
-                    text = "ok" if value else "FAIL"
-                elif value is None:
-                    text = "-"
-                elif key == "recall":
-                    text = f"{value:.4f}"
-                elif isinstance(value, float):
-                    text = f"{value:.1f}"
-                else:
-                    text = str(value)
-                cells.append(text.ljust(width) if left else text.rjust(width))
-            print("  ".join(cells).rstrip())
-        print()
-
-    datasets = []
-    for row in SUMMARY_ROWS:
-        if not datasets or datasets[-1]["table"] != row["table"]:
-            datasets.append(row)
-
-    table(
-        "Summary - datasets:",
-        [
-            ("Table", "table", 22, True),
-            ("Rows", "rows", 9, False),
-            ("Size", "size", 10, False),
-            ("Load s", "load", 7, False),
-            ("Merge s", "merge", 7, False),
-            ("Index s", "index", 7, False),
-            ("Truth s", "truth_set", 7, False),
-            ("Status", "ok", 6, True),
-        ],
-        datasets,
-    )
-    table(
-        "Summary - searches:",
-        [
-            ("Table", "table", 22, True),
-            ("Search variant", "variant", 24, True),
-            ("Recall", "recall", 6, False),
-            ("ms/query", "latency_ms", 8, False),
-            ("MiB/query", "read_mib", 9, False),
-        ],
-        SUMMARY_ROWS,
-    )
-
 
 def run_single_test(test_name, dataset, test_params):
-    chclient = None
-    test_runner = None
-    result = True
     try:
         chclient = get_new_connection()
         test_runner = RunTest(chclient, dataset, test_params)
 
-        timings = test_runner._timings
-        with phase_timer(timings, "load"):
-            test_runner.load_data()
-        with phase_timer(timings, "merge"):
-            test_runner.optimize_table()
+        test_runner.load_data()
+        test_runner.optimize_table()
 
         # Run KNN queries first before building the index.
         if test_runner._test_params[GENERATE_TRUTH_SET]:
-            with phase_timer(timings, "truth_set"):
-                test_runner.generate_truth_set()
+            test_runner.generate_truth_set()
             test_runner.save_truth_set(test_runner._test_params[NEW_TRUTH_SET_FILE])
 
-        if test_runner.uses_vector_index():
-            with phase_timer(timings, "index"):
-                test_runner.build_index()
+        test_runner.build_index()
 
         if test_runner._test_params[GENERATE_TRUTH_SET]:
-            test_runner.run_search_variants_and_calculate_recall()
+            result_set = test_runner.run_search_for_truth_set()
+            test_runner.calculate_recall(result_set)
 
         # Run ANN search using pre-generated truth sets and calculate recall
         if test_runner._test_params[TRUTH_SET_FILES] and len(
@@ -1180,43 +521,72 @@ def run_single_test(test_name, dataset, test_params):
             for tf in test_runner._test_params[TRUTH_SET_FILES]:
                 generated_truth_set = test_runner.load_truth_set(tf)
                 test_runner._truth_set = generated_truth_set
-                test_runner.run_search_variants_and_calculate_recall()
+                result_set = test_runner.run_search_for_truth_set()
+                test_runner.calculate_recall(result_set)
 
         # Run concurrency test on the current truth set
         if test_runner._test_params[CONCURRENCY_TEST]:
             test_runner.concurrency_test()
-    except Exception:
+    except Exception as e:
         print(traceback.format_exc(), file=sys.stdout)
-        result = False
-    finally:
-        record_summary(test_name, dataset, test_runner, result)
-        if test_runner is not None:
-            try:
-                test_runner.drop_table()
-            except Exception:
-                print(traceback.format_exc(), file=sys.stdout)
+        return False
 
-    return result
+    return True
 
 
-def install_clickhouse():
+def install_and_start_clickhouse():
+    res = True
     results = []
+    ch = ClickHouseProc()
+    info = Info()
 
     if Utils.is_arm():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
     elif Utils.is_amd():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
     else:
-        assert False, "Unknown processor architecture"
+        assert False, f"Unknown processor architecture"
 
-    results.append(Result.from_commands_run(
-        name="Download ClickHouse",
-        command=[
+    if True:
+        step_name = "Download ClickHouse"
+        logger(step_name)
+        commands = [
             f"wget -nv -P {temp_dir} {latest_ch_master_url}",
             f"chmod +x {temp_dir}/clickhouse",
             f"{temp_dir}/clickhouse --version",
-        ],
-    ))
+        ]
+        results.append(Result.from_commands_run(name=step_name, command=commands))
+        res = results[-1].is_ok()
+
+    if res:
+        step_name = "Install ClickHouse"
+        print(step_name)
+
+        def install():
+            # implement required ch configuration
+            return (
+                ch.install_clickbench_config() and ch.install_vector_search_config()
+            )  # reuses config used for clickbench job, it's more or less default ch configuration
+
+        results.append(Result.from_commands_run(name=step_name, command=[install]))
+        res = results[-1].is_ok()
+
+    if res:
+        step_name = "Start ClickHouse"
+        print(step_name)
+
+        def start():
+            return ch.start_light()
+
+        results.append(
+            Result.from_commands_run(
+                name=step_name,
+                command=[
+                    start,  # command could be python callable or bash command as a string
+                ],
+            )
+        )
+
     return results
 
 
@@ -1228,76 +598,27 @@ TESTS_TO_RUN = [
         test_params_laion_5b_1m,
     ),
     (
-        "Test using the laion dataset with the rabitq quantized codec",
-        dataset_laion_5b_10m_quantized_rabitq,
-        test_params_laion_5b_10m_quantized_rabitq,
-    ),
-    (
-        "Test using the laion dataset with the turboquant quantized codec",
-        dataset_laion_5b_10m_quantized_turboquant,
-        test_params_laion_5b_10m_quantized_turboquant,
-    ),
-    (
-        "Test using the laion dataset with a QBit(Int8) column",
-        dataset_laion_5b_10m_qbit_int8,
-        test_params_laion_5b_10m_qbit_int8,
-    ),
-    (
-        "Test using the laion dataset with a strided QBit(Int8) column",
-        dataset_laion_5b_10m_qbit_int8_strided,
-        test_params_laion_5b_10m_qbit_int8_strided,
-    ),
-    (
         "Test using the hackernews dataset",
         dataset_hackernews_openai,
         test_params_hackernews_10m,
-    ),
-    (
-        "Test using the cohere wiki dataset",
-        dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m,
     ),
 ]
 
 
 def main():
-    logger("CPU:\n" + os.popen("lscpu | grep -Ei 'model name|vendor|cpu family|^model:|stepping|^cpu.s.:|bogomips|cache|numa node.s.|implementer|^architecture|variant|^cpu part|revision'").read())
-    logger("MEM: " + os.popen("grep -E 'MemTotal|Hugepagesize' /proc/meminfo | tr -s ' ' | paste -sd'; '").read().strip())
-    logger("CPUSTAT begin: " + os.popen("head -1 /proc/stat").read().strip())
+    test_results = []
 
-    test_results = install_clickhouse()
+    test_results = install_and_start_clickhouse()
 
-    if not test_results[-1].is_ok():
-        Result.create_from(
-            results=test_results, files=[], info="Check index build time & recall"
-        ).complete_job()
+    if test_results is None or not test_results[-1].is_ok():
         return
 
-    try:
-        with ClickHouseService(
-            results=test_results,
-            config_hooks=[
-                ClickHouseService.install_base,
-                install_introspection,
-                install_vector_search,
-            ],
-        ):
-            for test in TESTS_TO_RUN:
-                test_results.append(
-                    Result.from_commands_run(
-                        name=test[0],
-                        command=lambda: run_single_test(test[0], test[1], test[2]),
-                    )
-                )
-    except Exception as e:
-        print(traceback.format_exc(), file=sys.stdout)
+    for test in TESTS_TO_RUN:
         test_results.append(
-            Result(name="Job error", status=Result.Status.FAIL, info=str(e))
+            Result.from_commands_run(
+                name=test[0], command=lambda: run_single_test(test[0], test[1], test[2])
+            )
         )
-
-    logger("CPUSTAT end: " + os.popen("head -1 /proc/stat").read().strip())
-
-    print_summary()
 
     Result.create_from(
         results=test_results, files=[], info="Check index build time & recall"
