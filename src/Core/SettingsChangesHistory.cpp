@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
+            {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"join_algorithm", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."},
             {"parallel_hash_join_threshold", 100'000, 100'000, "The threshold no longer chooses between the `hash` and `parallel_hash` algorithms. When a hash join is used, it decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1. The default is unchanged."},
             {"parallel_non_joined_rows_processing", true, true, "Applies to RIGHT/FULL hash joins, not specifically `parallel_hash`. The default is unchanged. Setting it to 0 does not restore serial unmatched-row order; use `ORDER BY`."},
