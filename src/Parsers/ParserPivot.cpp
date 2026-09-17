@@ -15,6 +15,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -209,10 +210,9 @@ bool parsePivotBody(IParser::Pos & pos, PivotSpec & spec, Expected & expected)
     return true;
 }
 
-bool qualifyAndCollectPivotSourceColumns(
+bool collectPivotSourceColumns(
     ASTPtr & node,
     const String & written_qualifier,
-    const String & target_qualifier,
     std::vector<String> & columns,
     std::unordered_set<String> & seen)
 {
@@ -235,21 +235,30 @@ bool qualifyAndCollectPivotSourceColumns(
         if (!function->arguments)
             return true;
         for (auto & argument : function->arguments->children)
-            if (!qualifyAndCollectPivotSourceColumns(argument, written_qualifier, target_qualifier, columns, seen))
+            if (!collectPivotSourceColumns(argument, written_qualifier, columns, seen))
                 return false;
         return true;
     }
 
-    if (node->as<ASTIdentifier>())
+    if (const auto * identifier = node->as<ASTIdentifier>())
     {
-        String name = qualifyPivotIdentifier(node, written_qualifier, target_qualifier);
+        if (identifier->compound()
+            && (identifier->name_parts.size() != 2
+                || written_qualifier.empty()
+                || identifier->name_parts.front() != written_qualifier))
+            throw Exception(
+                ErrorCodes::SYNTAX_ERROR,
+                "PIVOT currently supports simple source columns or columns qualified by the source name or alias; unsupported identifier {}",
+                identifier->name());
+
+        String name = identifier->shortName();
         if (seen.emplace(name).second)
             columns.push_back(std::move(name));
         return true;
     }
 
     for (auto & child : node->children)
-        if (!qualifyAndCollectPivotSourceColumns(child, written_qualifier, target_qualifier, columns, seen))
+        if (!collectPivotSourceColumns(child, written_qualifier, columns, seen))
             return false;
 
     return true;
@@ -378,7 +387,7 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
 
         std::vector<String> referenced_columns;
         std::unordered_set<String> referenced_seen;
-        if (!qualifyAndCollectPivotSourceColumns(aggregate, written_qualifier, target_qualifier, referenced_columns, referenced_seen))
+        if (!collectPivotSourceColumns(aggregate, written_qualifier, referenced_columns, referenced_seen))
             throw Exception(ErrorCodes::SYNTAX_ERROR, "PIVOT aggregate expressions cannot contain subqueries or lambdas");
 
         for (auto & column : referenced_columns)
@@ -425,6 +434,13 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
     select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
     select->group_by_all = true;
 
+    /// Keep source columns ahead of propagated WITH aliases in the generated query. Aggregate
+    /// identifiers stay unqualified so names that are not source columns can resolve normally.
+    auto settings = make_intrusive<ASTSetQuery>();
+    settings->is_standalone = false;
+    settings->changes.emplace_back("prefer_column_name_to_alias", Field{true});
+    select->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
+
     auto list_of_selects = make_intrusive<ASTExpressionList>();
     list_of_selects->children.push_back(select);
 
@@ -434,6 +450,7 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
 
     auto result = make_intrusive<ASTTableExpression>();
     result->subquery = make_intrusive<ASTSubquery>(std::move(select_with_union));
+    result->children.push_back(result->subquery);
     if (!result_alias.empty())
         result->subquery->setAlias(result_alias);
 

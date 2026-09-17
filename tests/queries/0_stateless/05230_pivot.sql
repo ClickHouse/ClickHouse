@@ -57,11 +57,23 @@ SELECT *
 FROM numbers(2) n(x)
 PIVOT (count() FOR n.x IN (0 AS zero, 1 AS one));
 
--- PIVOT source columns are qualified internally, so a same-named outer alias cannot hijack the measure.
+-- Source columns take precedence over same-named outer aliases in aggregate expressions.
 WITH 999 AS v
 SELECT *
 FROM values('k String, v UInt64', ('a', 2))
 PIVOT (sum(v) FOR k IN ('a' AS a));
+
+-- Query-scoped aliases that are not source columns remain usable in aggregate expressions.
+WITH 2 AS scale
+SELECT *
+FROM values('k String, v UInt64', ('a', 3))
+PIVOT (sum(v * scale) FOR k IN ('a' AS a));
+
+-- Query parameters inside the generated source remain visible to AST visitors.
+SET param_pivot_n = 2;
+SELECT *
+FROM numbers({pivot_n:UInt64})
+PIVOT (count() FOR number IN (0 AS zero, 1 AS one));
 
 -- The rewritten AST must format and reparse stably.
 WITH $$SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(v) FOR k IN ('a' AS a))$$ AS q
