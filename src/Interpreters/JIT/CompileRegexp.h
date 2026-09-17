@@ -28,11 +28,15 @@ namespace DB
 /// participate is reported as `nullptr`. The caller must provide arrays of at least `num_captures`
 /// elements. The matcher never reads the capture arrays.
 ///
-/// Matching is byte-wise. For the supported subset this matches RE2 (which runs in UTF-8 mode)
-/// exactly on valid UTF-8 input: the subset only allows `.` and negated classes with `*`/`+`
-/// (maximal runs whose stop byte is ASCII, hence at a code-point boundary), and char classes are
-/// ASCII-only, so the byte- and code-point interpretations have the same match span. On invalid
-/// UTF-8 the results may differ from RE2, which is implementation-specific and acceptable.
+/// Matching is byte-wise, and for the supported subset it agrees with RE2 on any haystack, including
+/// one that is not valid UTF-8. `OptimizedRegularExpression` runs RE2 in UTF-8 mode unless the
+/// *pattern* itself does not decode as UTF-8 (see `willRE2MatchInUTF8Mode`), and in UTF-8 mode `.`,
+/// a negated class and `\D`/`\W`/`\S` match whole code points, so they match nothing at a byte that
+/// is not a code point (e.g. `0xFF`), while a byte set would. Therefore, when RE2 is in UTF-8 mode,
+/// only literal bytes and ASCII-only character classes are in the subset (comparing the UTF-8
+/// encoding is comparing the code points), and a pattern using `.`, a negated class or `\D`/`\W`/`\S`
+/// is not compiled at all. When the pattern is not valid UTF-8, RE2 runs in Latin-1 mode, which is
+/// byte-wise as well, and every construct of the parser's subset is compiled.
 using JITRegexpMatcherFunc = uint8_t (*)(
     const uint8_t * begin, const uint8_t * end, const uint8_t * search_from,
     const uint8_t ** capture_starts, const uint8_t ** capture_ends);

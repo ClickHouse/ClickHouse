@@ -1,16 +1,21 @@
 <test>
     <!-- These patterns belong to the subset that is JIT-compiled (see CompileRegexp.h). The
          default `min_count_to_compile_regular_expression` makes them compile after a few runs,
-         so the measured runs exercise the native matcher; on the baseline they use RE2. -->
+         so the measured runs exercise the native matcher; on the baseline they use RE2.
 
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://(?:www\\.)?([^/]+)/.*$'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://[^/]+/'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://[^/]+/[^?]*\\?'))</query>
+         The patterns are valid UTF-8, so RE2 runs in UTF-8 mode and only literal bytes and ASCII-only
+         character classes are compiled: `.` and negated classes such as `[^/]` are not in the subset
+         there (they would disagree with RE2 on haystacks that are not valid UTF-8), so the host and
+         path are spelled out as explicit ASCII classes. -->
 
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https?://([^/]+)'))</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https?://(?:www\\.)?([^/]+)/'))</query>
-    <query><![CDATA[SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '[?&]([^=]+)='))]]></query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://(?:www\\.)?([a-z0-9.-]+)/[a-zA-Z0-9_./%-]*$'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://[a-z0-9.-]+/'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(match(URL, '^https?://[a-z0-9.-]+/[a-zA-Z0-9_./%-]*\\?'))</query>
 
-    <query>SELECT count() FROM test.hits WHERE match(URL, '^https?://(?:www\\.)?([^/]+)/.*$') SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(Referer, '^https?://([^/]+)')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https?://([a-z0-9.-]+)'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '^https?://(?:www\\.)?([a-z0-9.-]+)/'))</query>
+    <query><![CDATA[SELECT count() FROM test.hits WHERE NOT ignore(extract(URL, '[?&]([a-zA-Z0-9_]+)='))]]></query>
+
+    <query>SELECT count() FROM test.hits WHERE match(URL, '^https?://(?:www\\.)?([a-z0-9.-]+)/[a-zA-Z0-9_./%-]*$') SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(extract(Referer, '^https?://([a-z0-9.-]+)')) SETTINGS max_threads = 1</query>
 </test>
