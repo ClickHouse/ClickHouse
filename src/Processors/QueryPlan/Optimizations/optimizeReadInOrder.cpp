@@ -36,6 +36,7 @@
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 
+#include <ranges>
 #include <stack>
 
 namespace DB
@@ -1790,15 +1791,20 @@ bool wouldReadInOrderBeUseful(
 /// the `LIMIT` must be counted exactly) and for the `WITH TOTALS` shapes handled by
 /// `limitAlwaysReadsTillEnd`, both of which build the `LimitStep` with `always_read_till_end`.
 /// A `SortingStep` built for such a query carries the same bit (see `addMergeSortingStep`).
+/// `stack` is the root-to-node path, its last frame is the sort itself. Only the nearest `LimitStep`
+/// above the sort is inspected: that is the `LIMIT` of the sort's own query block, the one whose
+/// bound `sorting.getLimit()` carries. A `LIMIT` further up belongs to an enclosing query block
+/// (`SELECT ... FROM (SELECT ... ORDER BY ... LIMIT 10) ... WITH TOTALS LIMIT 1`) and says nothing
+/// about whether this sort's `LIMIT 10` may stop the read early, so the walk stops at the first hit.
 static bool limitReadsTillEnd(const SortingStep & sorting, const Stack & stack)
 {
     if (sorting.alwaysReadTillEnd())
         return true;
 
-    for (const auto & frame : stack)
+    for (const auto & frame : stack | std::views::reverse)
     {
-        if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()); limit && limit->alwaysReadTillEnd())
-            return true;
+        if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()))
+            return limit->alwaysReadTillEnd();
     }
 
     return false;
