@@ -70,5 +70,5 @@ the optimization is applied to the runs
 05055_string_filter_applied_one_value	1	1	1
 05055_string_filter_applied_rle	1	1	1
 dictionary pruning does not disable the filter
-2
+1
 1

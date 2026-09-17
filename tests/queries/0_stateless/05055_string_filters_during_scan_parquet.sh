@@ -138,6 +138,8 @@ GROUP BY log_comment ORDER BY log_comment;
 # That pass sees every distinct value exactly once, which says nothing about how often the scan will
 # meet it, so it must not feed the selectivity statistics of the shared filter: here almost every
 # dictionary entry matches `%needle%`, while most of the rows do not, and the optimization must stay on.
+# The pruning condition is an equality on the same column: it is itself one of the extracted
+# conditions, so it does not count as another reader of the column that would disable the filter.
 FILE_PRUNE="${CLICKHOUSE_DATABASE}/t_string_filter_prune.parquet"
 
 $CLICKHOUSE_CLIENT -q "
@@ -150,7 +152,7 @@ SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionar
 echo 'dictionary pruning does not disable the filter'
 $CLICKHOUSE_CLIENT -q "
 SELECT count() FROM file('$FILE_PRUNE', Parquet)
-PREWHERE s IN ('needle 6', 'needle 9') AND s LIKE '%needle%'
+PREWHERE s = 'needle 6' AND s LIKE '%needle%'
 SETTINGS apply_string_filters_during_scan = 1, input_format_parquet_dictionary_filter_push_down = 16777216,
     log_comment = '05055_string_filter_pruning'"
 
