@@ -35,12 +35,13 @@ As of 2021, it contains more than 40 million records about cell towers (GSM, LTE
 
 OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, and we redistribute a snapshot of this dataset under the terms of the same license. The up-to-date version of the dataset is available to download after sign in.
 
-<Tabs>
-<Tab title="ClickHouse Cloud">
+<View title="ClickHouse Cloud">
 
-### Load the sample data {#load-the-sample-data}
+### Load the sample data {#load-the-sample-data-in-clickhouse-cloud}
 
-ClickHouse Cloud provides an easy-button for uploading this dataset from S3.  Log in to your ClickHouse Cloud organization, or create a free trial at [ClickHouse.cloud](https://clickhouse.cloud).
+Run this guide in ClickHouse Cloud without downloading the dataset. [Create a free service](https://clickhouse.cloud/signUp?loc=docs-sample-datasets-cell-towers), then open your service and select **Load data**.
+
+ClickHouse Cloud provides a guided way to load this dataset from S3.
 <ActionsMenu menu="Load Data" />
 
 Choose the **Cell Towers** dataset from the **Sample data** tab, and **Load data**:
@@ -74,8 +75,11 @@ This is the output of `DESCRIBE`.  Down further in this guide the field type cho
 └───────────────┴───────────────────────────────────────────────────────────────────────┴
 ```
 
-</Tab>
-<Tab title="Self-managed">
+</View>
+
+<View title="Open-source">
+
+### Load the sample data {#load-the-sample-data-on-an-open-source-deployment}
 
 1. Create a table:
 
@@ -106,8 +110,7 @@ ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', NOSIGN, 'CSVWithNames')
 ```
 
-</Tab>
-</Tabs>
+</View>
 
 ## Run some example queries {#examples}
 
