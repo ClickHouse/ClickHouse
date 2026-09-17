@@ -43,11 +43,13 @@ static struct InitFiu
     REGULAR(smt_blobs_list_split_file_writes_small) \
     REGULAR(smt_blobs_list_zero_byte_append) \
     REGULAR(merge_tree_sink_on_start_random_sleep) \
+    REGULAR(merge_tree_marks_load_sync_sleep) \
     REGULAR(merge_tree_sequential_source_sleep_before_read) \
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
+    REGULAR(remote_query_executor_local_packet_processing_error) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
@@ -83,8 +85,6 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
-    REGULAR(s3_copy_inject_etag_mismatch) \
-    REGULAR(s3_head_omit_etag) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
