@@ -265,3 +265,31 @@ nan	nan	2
 --     that each partition meets its three best rows first and every later row of the chunk is
 --     droppable (ascending `o` under a DESC window is the shape where nothing can be dropped).
 32 rows dropped	1
+-- 35 exact_rows_before_limit promises an exact `rows_before_limit_at_least`, and the counter is
+--     attached to the partial sort this prefilter feeds, so the pass must decline and the count
+--     must stay the whole input. The window ORDER BY ascends with the input, the shape where
+--     pruning does bite, so an admitted pass would report 9 instead of 20000.
+35 declines in exact mode	0
+35b control, exact mode off	1
+{
+	"meta":
+	[
+		{
+			"name": "one",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		[1],
+		[1],
+		[1],
+		[1],
+		[1]
+	],
+
+	"rows": 5,
+
+	"rows_before_limit_at_least": 20000
+}

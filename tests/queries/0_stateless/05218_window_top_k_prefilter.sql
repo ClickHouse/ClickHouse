@@ -208,6 +208,15 @@ WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND qu
         AND log_comment = '05218_window_top_k_prefilter_pruning' AND type = 'QueryFinish'
 );
 
+SELECT '-- 35 exact_rows_before_limit promises an exact `rows_before_limit_at_least`, and the counter is';
+SELECT '--     attached to the partial sort this prefilter feeds, so the pass must decline and the count';
+SELECT '--     must stay the whole input. The window ORDER BY ascends with the input, the shape where';
+SELECT '--     pruning does bite, so an admitted pass would report 9 instead of 20000.';
+SELECT '35 declines in exact mode', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT number % 3 AS p, rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3 LIMIT 5 SETTINGS exact_rows_before_limit = 1) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT '35b control, exact mode off', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT number % 3 AS p, rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3 LIMIT 5 SETTINGS exact_rows_before_limit = 0) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT 1 AS one FROM (SELECT number % 3 AS p, rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3 LIMIT 5
+SETTINGS exact_rows_before_limit = 1, output_format_write_statistics = 0 FORMAT JSONCompact;
+
 DROP TABLE t_wtkp_var;
 DROP TABLE t_wtkp_ip;
 DROP TABLE t_wtkp_merge;

@@ -139,6 +139,11 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     if (settings.make_distributed_plan || settings.serialize_query_plan)
         return;
 
+    /// `rows_before_limit_at_least` counts what enters the partial sort, which is where this prefilter
+    /// drops rows, so an exact count would report fewer rows than the query read.
+    if (settings.exact_rows_before_limit)
+        return;
+
     const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get());
     if (!filter_step || node.children.size() != 1)
         return;
