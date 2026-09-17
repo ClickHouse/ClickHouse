@@ -1,10 +1,8 @@
 -- rows carry the child name, not the remote table name
 t_dist	1
-t_dist
 -- a remote GROUP BY over the virtual column
 t_dist	12
--- a filter on the child name keeps all rows, both analyzers
-12
+-- a filter on the child name keeps all rows
 12
 -- the remote table name matches no child
 0

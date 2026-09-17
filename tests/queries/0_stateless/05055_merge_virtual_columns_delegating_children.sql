@@ -32,7 +32,6 @@ CREATE TABLE m_over_dist (s String) ENGINE = Merge(currentDatabase(), '^t_dist$'
 
 SELECT '-- rows carry the child name, not the remote table name';
 SELECT DISTINCT _table, _database = currentDatabase() FROM m_over_dist;
-SELECT DISTINCT _table FROM m_over_dist SETTINGS enable_analyzer = 0;
 
 SELECT '-- a remote GROUP BY over the virtual column';
 -- Only the value of the grouping key is under test here - it must be the child's name, not the
@@ -41,9 +40,8 @@ SELECT '-- a remote GROUP BY over the virtual column';
 -- distributed aggregation picks, so the counts are summed up again above the `Merge`.
 SELECT _table, sum(c) FROM (SELECT _table, count() AS c FROM m_over_dist GROUP BY _table) GROUP BY _table;
 
-SELECT '-- a filter on the child name keeps all rows, both analyzers';
+SELECT '-- a filter on the child name keeps all rows';
 SELECT count() FROM m_over_dist WHERE _table = 't_dist';
-SELECT count() FROM m_over_dist WHERE _table = 't_dist' SETTINGS enable_analyzer = 0;
 
 SELECT '-- the remote table name matches no child';
 SELECT count() FROM m_over_dist WHERE _table = 't_leaf';
@@ -73,10 +71,10 @@ SELECT count() FROM m_over_buf WHERE _table = 't_buf';
 -- own table. A `Distributed` child is not covered: correlated subqueries are rejected outright for
 -- remote tables.
 SELECT '-- a correlated subquery over the virtual column also sees the child name';
-SELECT count() FROM m_outer WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_outer._table = 'm_inner') SETTINGS enable_analyzer = 1;
-SELECT count() FROM m_outer WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_outer._table = 't_leaf') SETTINGS enable_analyzer = 1;
-SELECT count() FROM m_over_buf WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_over_buf._table = 't_buf') SETTINGS enable_analyzer = 1;
-SELECT count() FROM m_over_buf WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_over_buf._table = 't_leaf') SETTINGS enable_analyzer = 1;
+SELECT count() FROM m_outer WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_outer._table = 'm_inner');
+SELECT count() FROM m_outer WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_outer._table = 't_leaf');
+SELECT count() FROM m_over_buf WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_over_buf._table = 't_buf');
+SELECT count() FROM m_over_buf WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m_over_buf._table = 't_leaf');
 
 SELECT '-- same-structure children never share a rewritten query that carries one child name';
 CREATE TABLE t_a (x UInt8) ENGINE = MergeTree ORDER BY x;
@@ -91,8 +89,6 @@ SELECT x FROM m_same WHERE _table != 't_a' ORDER BY x;
 SELECT x FROM m_same WHERE substring(_table, 3, 1) = 'c';
 SELECT _table, x FROM m_same ORDER BY x;
 
--- An `ALIAS` column whose expression is a virtual column only resolves with the analyzer.
-SET enable_analyzer = 1;
 SELECT '-- an ALIAS column over the child own _table resolves per child';
 CREATE TABLE t_alias_a (x UInt8, child String ALIAS _table) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE t_alias_b (x UInt8, child String ALIAS _table) ENGINE = MergeTree ORDER BY x;

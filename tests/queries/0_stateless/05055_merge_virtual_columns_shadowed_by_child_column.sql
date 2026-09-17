@@ -21,19 +21,15 @@ CREATE TABLE 05045_m (x UInt8) ENGINE = Merge(currentDatabase(), '^05045_child$'
 
 SELECT '-- a read of nothing but the virtual columns still reports the child name';
 SELECT _table FROM 05045_m;
-SELECT _table FROM 05045_m SETTINGS enable_analyzer = 0;
 SELECT _database = currentDatabase() FROM 05045_m;
-SELECT _database = currentDatabase() FROM 05045_m SETTINGS enable_analyzer = 0;
 SELECT _database = currentDatabase(), _table FROM 05045_m;
 
 SELECT '-- the values agree with the child pruning';
 SELECT count() FROM 05045_m WHERE _table = '05045_child';
-SELECT count() FROM 05045_m WHERE _table = '05045_child' SETTINGS enable_analyzer = 0;
 SELECT count() FROM 05045_m WHERE _table = '7';
 
 SELECT '-- a read that also needs a real column is not affected';
 SELECT _table, x FROM 05045_m;
-SELECT _table, x FROM 05045_m SETTINGS enable_analyzer = 0;
 
 SELECT '-- the child column itself is still readable under its own name';
 SELECT `_table`, `_database`, x FROM 05045_child;
@@ -52,7 +48,6 @@ CREATE TABLE 05045_alias_child (`_table` UInt8, x UInt8, y UInt8 ALIAS `_table` 
 INSERT INTO 05045_alias_child VALUES (7, 1);
 CREATE TABLE 05045_alias_m (x UInt8, y UInt8) ENGINE = Merge(currentDatabase(), '^05045_alias_child$');
 SELECT _table, y FROM 05045_alias_m;
-SELECT _table, y FROM 05045_alias_m SETTINGS enable_analyzer = 0;
 SELECT y FROM 05045_alias_m;
 
 SELECT '-- a child whose only column is named _table leaves the stream with the constant alone';
@@ -60,7 +55,6 @@ CREATE TABLE 05045_only_child (`_table` UInt8) ENGINE = MergeTree ORDER BY `_tab
 INSERT INTO 05045_only_child VALUES (7), (8);
 CREATE TABLE 05045_only_m (x UInt8) ENGINE = Merge(currentDatabase(), '^05045_only_child$');
 SELECT _table FROM 05045_only_m;
-SELECT _table FROM 05045_only_m SETTINGS enable_analyzer = 0;
 SELECT count() FROM 05045_only_m WHERE _table = '05045_only_child';
 
 SELECT '-- a Merge table that declares _table itself reads the child column instead';
