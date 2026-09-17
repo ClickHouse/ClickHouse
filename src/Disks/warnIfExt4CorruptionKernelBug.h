@@ -35,7 +35,15 @@ public:
     /// precedence over later undetermined probes, but only for as long as it is itself kept.
     struct Recorded
     {
-        std::vector<PreformattedMessage> messages;
+        /// Each message carries whether it is a determined ext4 hit, so the flush can tell a
+        /// published hit from one that `warning_supress_regexp` dropped.
+        struct Message
+        {
+            PreformattedMessage message;
+            bool ext4 = false;
+        };
+
+        std::vector<Message> messages;
         bool ext4 = false;
     };
 
@@ -45,7 +53,8 @@ private:
 };
 
 /// Publishes whatever the probes above recorded, logging it and storing it for `system.warnings`,
-/// and returns how many messages it published. Must be called without `Context::shared->mutex`.
+/// and returns how many messages survived `warning_supress_regexp`. Must be called without
+/// `Context::shared->mutex`.
 /// The server calls it once startup is complete and `Context::updateStorageConfiguration` after
 /// every reload, so both are real server warnings; `Context::getWarnings` calls it too, to catch
 /// disks built on any other path.

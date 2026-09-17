@@ -2117,7 +2117,7 @@ void Context::setDynamicUserDefinedExecutableFunctionsPath(const String & path)
     shared->dynamic_user_defined_executable_functions_path = path;
 }
 
-void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
+bool Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
 {
     std::lock_guard lock(shared->mutex);
     auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
@@ -2125,6 +2125,7 @@ void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedM
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message.text, suppress_re);
     if (!is_supressed)
         shared->addOrUpdateWarningMessage(warning, message);
+    return !is_supressed;
 }
 
 void Context::addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const
@@ -7481,6 +7482,13 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
             shared->merge_tree_disk_selector
                 = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
             ext4_warnings.commit();
+            /// These disks are active now, so publish before a later step of this reload can throw.
+            /// Only `storage_policies_mutex` is held here, never the lock publishing takes.
+            size_t published_for_disks = flushExt4CorruptionKernelBugWarning(*this);
+            LOG_TEST(
+                shared->log,
+                "Updated the disk selector and published {} recorded ext4 corruption kernel bug warnings",
+                published_for_disks);
         }
 
         if (shared->merge_tree_storage_policy_selector)

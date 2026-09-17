@@ -875,7 +875,8 @@ public:
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
-    void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
+    /// Returns whether the message was published, i.e. `warning_supress_regexp` did not drop it.
+    bool addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;

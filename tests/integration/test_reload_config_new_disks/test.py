@@ -41,6 +41,10 @@ ADDED_DISKS_QUERY = "SELECT count() FROM system.disks WHERE name IN ('local_{suf
 # would drain the recorded warnings itself, so publication is observed here instead.
 PUBLISHED_LOG_LINE = "recorded ext4 corruption kernel bug warnings"
 
+# Logged right after the disk selector swap: the new disks are active from there on, so their
+# warnings are published before any later step of the same reload can throw.
+SWAP_PUBLISHED_LOG_LINE = "Updated the disk selector and published"
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -62,10 +66,17 @@ def count_published():
     return int(node.count_in_log(PUBLISHED_LOG_LINE))
 
 
-def wait_for_publish(published_before):
-    # The disks become visible before the reload publishes, so give the log line a moment.
+def count_published_at_swap():
+    return int(node.count_in_log(SWAP_PUBLISHED_LOG_LINE))
+
+
+def wait_for_publish(published_before, published_at_swap_before):
+    # The disks become visible before the reload publishes, so give the log lines a moment.
     for _ in range(30):
-        if count_published() > published_before:
+        if (
+            count_published() > published_before
+            and count_published_at_swap() > published_at_swap_before
+        ):
             return
         time.sleep(1)
     raise AssertionError("the reload did not publish the recorded ext4 warnings")
@@ -73,16 +84,18 @@ def wait_for_publish(published_before):
 
 def test_system_reload_config_adds_disks():
     published_before = count_published()
+    published_at_swap_before = count_published_at_swap()
     add_disks("reloaded")
     # A publish left under one of the reload's locks deadlocks here instead of returning.
     node.query("SYSTEM RELOAD CONFIG", timeout=60)
 
     assert node.query(ADDED_DISKS_QUERY.format(suffix="reloaded"), timeout=60) == "3\n"
-    wait_for_publish(published_before)
+    wait_for_publish(published_before, published_at_swap_before)
 
 
 def test_background_config_reloader_adds_disks():
     published_before = count_published()
+    published_at_swap_before = count_published_at_swap()
     add_disks("polled")
 
     assert_eq_with_retry(
@@ -93,4 +106,4 @@ def test_background_config_reloader_adds_disks():
         sleep_time=1,
         timeout=60,
     )
-    wait_for_publish(published_before)
+    wait_for_publish(published_before, published_at_swap_before)
