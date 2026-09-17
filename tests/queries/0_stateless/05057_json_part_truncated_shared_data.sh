@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# no-darwin: the names of the streams of a part are hashed there, so the test cannot find the two it truncates.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,7 +54,7 @@ function truncate_streams()
         truncate -s 0 "$@"
     else
         echo "$label is missing, the part contains:"
-        ls "$PART" 2>&1
+        ls "$PART" 2>&1 | head -10
     fi
 }
 
