@@ -1233,8 +1233,13 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
     /// plus the crossings of the rehash walks. Real builds overflow a few hundred rows; 64 per partition
     /// is a loose allowance that costs 2 MiB of budget at 1024 partitions.
     const size_t allowance = entry_bytes * (ctx.drain_claimed + ctx.rehash_listed + 64 * partitions);
-    const bool refused
-        = new_degree > 32 || (grow_budget != 0 && residentBytes() + need + allowance + extra_reserved > grow_budget);
+    /// A single fill thread's table only holds keys whose rows are already stored, so a grow is bounded by
+    /// the resident rows and refusing it saves nothing. The spilling wrapper owns the spill decision on
+    /// that path: it reads the join's `predictedResidentBytes` between blocks and at the barrier. The first
+    /// block always lands in memory, as it does in `hash`.
+    const bool over_budget = grow_budget != 0 && !grow_at_max_fill
+        && residentBytes() + need + allowance + extra_reserved > grow_budget;
+    const bool refused = new_degree > 32 || over_budget;
     if (refused)
     {
         if (reason == GrowReason::LastFreeCell)
