@@ -52,6 +52,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LDAP_ERROR;
+    extern const int WRONG_PASSWORD;
 }
 
 namespace
@@ -979,6 +980,13 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     LDAPClient::SearchResultsList external_roles;
     if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
     {
+        /// A name the synchronisation materialised is known to exist in the directory (as of the last run) and
+        /// shadows the same name in the storages that follow (`planSync` says so when it materialises it): a
+        /// failed bind is a wrong password or a disabled account, and the chain stops here, as it does for a
+        /// local user with a wrong password. Every other name keeps the lazy semantics below.
+        if (sync_params && synced_user_names.contains(user_name))
+            throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
+
         // We don't know why the authentication has just failed:
         // either there is no such user in LDAP or the password is not correct.
         // We treat this situation as if there is no such user because we don't want to block
