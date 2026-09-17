@@ -450,16 +450,31 @@ def sync_section(**overrides):
     return "".join(f"<{key}>{value}</{key}>" for key, value in values.items())
 
 
-def directories_bad_config(**sync_overrides):
-    """`directories_bad.xml` with the `<sync>` section replaced."""
+def directories_bad_config(role_mapping=None, after_ldap=None, **sync_overrides):
+    """`directories_bad.xml` with the `<sync>` section replaced; optionally the content of the
+    `<role_mapping>` section replaced by `role_mapping` and a storage `after_ldap` inserted after the
+    `ldap` directory."""
     original = read_config("directories_bad.xml")
     start = original.index("<sync>")
     end = original.index("</sync>") + len("</sync>")
-    return (
+    result = (
         original[:start]
         + f"<sync>{sync_section(**sync_overrides)}</sync>"
         + original[end:]
     )
+    if role_mapping is not None:
+        start = result.index("<role_mapping>")
+        end = result.index("</role_mapping>") + len("</role_mapping>")
+        result = (
+            result[:start]
+            + f"<role_mapping>{role_mapping}</role_mapping>"
+            + result[end:]
+        )
+    if after_ldap is not None:
+        anchor = "        </ldap>\n"
+        assert result.count(anchor) == 1
+        result = result.replace(anchor, anchor + after_ldap)
+    return result
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1517,6 +1532,99 @@ def test_stalled_page_fails_the_run_within_search_timeout(janedoe_in_role_a):
         assert event_value(node_bad, "LDAPSyncFailures") == failures_before + 1
     finally:
         restore_node_bad()
+
+
+ROLE_MAPPING_BY_BIND_DN = (
+    "<base_dn>ou=groups,dc=example,dc=org</base_dn><scope>subtree</scope>"
+    "<search_filter>(member={bind_dn})</search_filter><attribute>cn</attribute>"
+    "<groups><group>clickhouse-role_a</group><group>clickhouse-role_b</group></groups>"
+    "<prefix>clickhouse-</prefix>"
+)
+
+
+def test_bind_dn_placeholder_of_the_synchronisation_matches_a_login(janedoe_in_role_a):
+    """With a `bind_dn` template next to `lookup_bind_dn` (direct bind, searches under the service
+    account), a login substitutes `{bind_dn}` with the template's result and `{user_dn}` with the
+    detected DN. The run does the same, so a mapping over `{bind_dn}` grants what a login would: the
+    template yields `uid=janedoe,ou=users,...`, which is not janedoe's entry (`cn=janedoe,...`) but
+    is what `clickhouse-role_b` lists as a member here, and only that role is granted; substituting
+    the entry's DN would grant `role_a` instead."""
+    template_dn = f"uid=janedoe,{USERS_CONTAINER}"
+    ldap_set_member(ROLE_B_GROUP, template_dn, True)
+    try:
+        server_config = read_config("ldap_server.xml").replace(
+            "<bind_dn>{user_dn}</bind_dn>",
+            f"<bind_dn>uid={{user_name}},{USERS_CONTAINER}</bind_dn>",
+        )
+        assert "{user_dn}</bind_dn>" not in server_config
+        restart_node_bad_with(
+            directories_bad_config(
+                role_mapping=ROLE_MAPPING_BY_BIND_DN,
+                create_roles="true",
+                roles_storage="local_directory",
+            ),
+            server_config=server_config,
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(node_bad, granted_roles_query("janedoe")) == TSV([["role_b"]])
+    finally:
+        ldap_set_member(ROLE_B_GROUP, template_dn, False)
+        restore_node_bad()
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
+LOCAL_DIRECTORY_AFTER = (
+    "        <local_directory>\n"
+    "            <name>local_directory_after</name>\n"
+    "            <path>/var/lib/clickhouse/access_after/</path>\n"
+    "        </local_directory>\n"
+)
+
+
+def test_roles_are_not_created_ahead_of_a_storage_reloaded_after_the_directory(
+    janedoe_in_role_a,
+):
+    """`SYSTEM RELOAD USERS` reloads the other storages first and the synchronised directory last,
+    so that its run sees a role a later storage loads in the same command instead of creating a
+    copy, which would leave two roles of the name. `local_directory_after` is declared after the
+    directory and gets a role file written by hand, the way a restored backup or a file copied from
+    another node appears."""
+    role_id = "11111111-2222-3333-4444-555555555555"
+    try:
+        restart_node_bad_with(
+            directories_bad_config(
+                after_ldap=LOCAL_DIRECTORY_AFTER,
+                create_roles="true",
+                roles_storage="local_directory",
+            ),
+            server_config=read_config("ldap_server.xml"),
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert (
+            admin(node_bad, "SELECT storage FROM system.roles WHERE name = 'role_b'")
+            == "local_directory\n"
+        )
+
+        admin(node_bad, "DROP ROLE role_b")
+        node_bad.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo 'ATTACH ROLE role_b;' > /var/lib/clickhouse/access_after/{role_id}.sql",
+            ],
+            user="root",
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        assert admin(
+            node_bad, "SELECT id, storage FROM system.roles WHERE name = 'role_b'"
+        ) == TSV([[role_id, "local_directory_after"]])
+    finally:
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+        node_bad.exec_in_container(
+            ["bash", "-c", "rm -rf /var/lib/clickhouse/access_after"], user="root"
+        )
+        restore_node_bad()
+        admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
 
 
 def with_second_ldap_directory(name, sync=None, after=False):
