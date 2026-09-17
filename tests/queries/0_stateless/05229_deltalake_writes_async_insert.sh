@@ -39,12 +39,13 @@ $CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --async_insert=1 --wait_for_async
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM dl"
 versions
 
-echo "-- two concurrent async inserts with identical settings are flushed together: one commit"
+echo "-- two concurrent async inserts with identical settings both land (one or two flushes)"
 ASYNC="--allow_delta_lake_writes=1 --async_insert=1 --wait_for_async_insert=1 --async_insert_busy_timeout_min_ms=3000 --async_insert_busy_timeout_max_ms=3000"
 $CLICKHOUSE_CLIENT ${ASYNC} --query "INSERT INTO dl VALUES (10)" &
 $CLICKHOUSE_CLIENT ${ASYNC} --query "INSERT INTO dl VALUES (11)" &
 wait
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(id) FROM dl"
-versions
+VERSIONS=$(($(find "${TABLE}/_delta_log" -name '*.json' | wc -l | tr -d ' ') - 1))
+echo "versions in [4, 5]: $(( VERSIONS >= 4 && VERSIONS <= 5 ))"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE dl"
