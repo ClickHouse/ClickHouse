@@ -636,6 +636,7 @@ public:
     SettingFieldNonZeroUInt64 & operator=(const Field & f);
 
     void parseFromString(const String & str);
+    void readBinary(ReadBuffer & in);
 
 private:
     void checkValueNonZero() const;

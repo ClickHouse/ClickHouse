@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- With `exact_rows_before_limit` the per-shard sorts of a two-stage top-N must feed the full
 -- row count into `rows_before_limit_at_least`, but the internal per-shard cap cuts the pipeline
 -- walk that collects those counters. The optimizer must not build the two-stage top-N then.

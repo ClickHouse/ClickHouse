@@ -59,7 +59,7 @@ struct FormatSettings
 
     bool allow_special_serialization_kinds = false;
 
-    /// tolerates leading zeros during parsing integers
+    /// Infers a number, not a `String`, for an integer with leading zeros
     bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
@@ -199,6 +199,8 @@ struct FormatSettings
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
         bool output_unsupported_types_as_binary = true;
+        UInt64 output_record_batch_rows = 0;
+        UInt64 output_record_batch_bytes = 0;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
