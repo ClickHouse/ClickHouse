@@ -200,9 +200,9 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
         ASTPtr text_ast = isDecimal(value_type)
             ? makeASTFunction(
                   "toDecimalString",
-                  std::move(value_ast),
+                  value_ast,
                   make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(getDecimalScale(*value_type)))))
-            : makeASTFunction("toString", std::move(value_ast));
+            : makeASTFunction("toString", value_ast);
         partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(text_ast));
 
         partition_column_nullable.push_back(schema_column->type->isNullable());
