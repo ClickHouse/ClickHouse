@@ -140,10 +140,18 @@ def shm_region_count():
 
 
 def page_size():
-    # The server's page size, read where the server runs: footprints and caps are compared in
-    # whole pages of whatever size the kernel has, and a test that spelled 4096 would fail on a
-    # kernel with 64 KiB pages.
-    return int(node.exec_in_container(["getconf", "PAGESIZE"]).strip())
+    # The unit the server compares footprints and caps in, read where the server runs: the page
+    # size of whatever kernel this is (a test that spelled 4096 would fail on 64 KiB pages) - or
+    # the transparent huge page, where the kernel backs `shmem` with those regardless of file size
+    # (`shmem_enabled` `always`/`force`) and `st_blocks` of any region reports at least one.
+    base = int(node.exec_in_container(["getconf", "PAGESIZE"]).strip())
+    mode = node.exec_in_container(
+        ["bash", "-c", "cat /sys/kernel/mm/transparent_hugepage/shmem_enabled 2>/dev/null || true"]
+    )
+    if "[always]" in mode or "[force]" in mode:
+        huge = node.exec_in_container(["bash", "-c", "cat /sys/kernel/mm/transparent_hugepage/hpage_pmd_size"])
+        return max(base, int(huge.strip()))
+    return base
 
 
 def round_up_to_pages(size):
@@ -1958,26 +1966,62 @@ def test_shared_memory_udf_pool_command_floods_stderr_under_reaction_none(starte
     assert len(set(pids)) == 1, f"the worker was not reused: {pids}"
 
 
-def test_shared_memory_udf_pool_discard_survives_being_decided_twice(started_cluster):
+def test_shared_memory_udf_pool_command_late_stderr_under_throw_fails_the_query_that_caused_it(started_cluster):
     skip_test_msan(node)
 
-    # Same misbehaving command as above, but with `check_exit_code` off - which is what makes the
-    # decision to discard get made twice. With it on, the discarded child is reaped, and a reaped
-    # child is recognised on sight; with it off, nothing about the worker says what was decided
-    # about it. And by then the evidence is gone: reporting the discard drained the leftover stderr,
-    # and closing the child's stdin is what discarding means. A second look would find two clean
-    # pipes and return a worker whose stdin is already closed, and the query after that would fail
-    # writing its first request - so all three of these have to succeed, on a worker each.
+    # The command answers correctly and then, 2 ms later, writes a line to stderr - after the server
+    # has read the response, but while it is still parsing the 500000-row answer out of the area.
+    # Under `stderr_reaction` `throw` that line is a verdict, and it has to land on the query whose
+    # arguments caused it: the drain that follows the last read finds it, and this query fails.
+    # The worker is then discarded (a command that failed a query is not handed on), so every one
+    # of these queries fails for its own line and none for a previous query's. One block means one
+    # borrow.
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query(
+                "SELECT DISTINCT test_function_shm_chatty_stderr_pool_python(number) "
+                "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000"
+            )
+        assert "Executable generates stderr: done" in str(exc.value), str(exc.value)
+
+
+def test_shared_memory_udf_pool_command_logging_after_its_answer_keeps_its_worker(started_cluster):
+    skip_test_msan(node)
+
+    # The same command, under `stderr_reaction` `log_last`: the line it writes after answering is
+    # a log line, not a verdict. It is taken off the pipe where the worker is handed back and
+    # logged against the query that caused it, and the worker goes back to the pool - one process
+    # serves every call. Discarding it, as under `throw`, would turn `executable_pool` into a
+    # process per call for every command that logs after its rows.
     pids = [
         node.query(
-            "SELECT DISTINCT test_function_shm_chatty_stderr_no_exit_check_pool_python(number) "
+            "SELECT DISTINCT test_function_shm_chatty_stderr_log_pool_python(number) "
             "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000"
         ).strip()
         for _ in range(3)
     ]
-
     assert all(pid.isdigit() for pid in pids), pids
-    assert len(set(pids)) == len(pids), f"a worker with unread stderr was reused: {pids}"
+    assert len(set(pids)) == 1, f"a worker that only logged after answering was not reused: {pids}"
+
+
+def test_shared_memory_udf_pool_discard_survives_being_decided_twice(started_cluster):
+    skip_test_msan(node)
+
+    # Same misbehaving command under `throw`, but with `check_exit_code` off - which is what makes
+    # the decision to discard get made twice. With it on, the discarded child is reaped, and a
+    # reaped child is recognised on sight; with it off, nothing about the worker says what was
+    # decided about it. And by then the evidence is gone: reporting the discard drained the
+    # leftover stderr, and closing the child's stdin is what discarding means. A second look would
+    # find two clean pipes and return a worker whose stdin is already closed, and the query after
+    # that would fail writing its first request instead of for its own stderr line. So all three
+    # queries have to fail the same way - for the line their own command wrote.
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query(
+                "SELECT DISTINCT test_function_shm_chatty_stderr_no_exit_check_pool_python(number) "
+                "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000"
+            )
+        assert "Executable generates stderr: done" in str(exc.value), str(exc.value)
 
 
 def test_shared_memory_udf_pool_command_may_close_its_stderr(started_cluster):
@@ -2000,41 +2044,6 @@ def test_shared_memory_udf_pool_command_may_close_its_stderr(started_cluster):
     assert (
         profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before
     )
-
-
-def test_shared_memory_udf_pool_command_leaves_stderr_dirty(started_cluster):
-    skip_test_msan(node)
-
-    # The command answers correctly and then writes to stderr, after the server has already read the
-    # response. Stderr is drained together with the response, so this line reaches nobody - until the
-    # next borrow of the same worker reads it and reports it as that query's output (and fails that
-    # query outright under `stderr_reaction` `throw`). So the worker must not go back to the pool
-    # with it: each of these queries has to run on a worker of its own, which the answers - the
-    # command's pid - make visible.
-    #
-    # The row count is what holds the two ends of this apart. The command waits 2ms after answering
-    # before writing its line - long past the wake-up of the `poll` that was waiting for the
-    # response, so the line cannot be drained into the query that earned it (see the script) - and
-    # the single 500000-row block makes the server spend far longer than that parsing the answer out
-    # of the region, so the line is there by the time the worker is offered back to the pool. One
-    # block means one borrow, hence one pid per query.
-    pids = [
-        node.query(
-            "SELECT DISTINCT test_function_shm_chatty_stderr_pool_python(number) "
-            "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000"
-        ).strip()
-        for _ in range(3)
-    ]
-
-    assert all(pid.isdigit() for pid in pids), pids
-    assert len(set(pids)) == len(pids), f"a worker with unread stderr was reused: {pids}"
-
-    # And the discard is reported, with the output the command left behind: nothing else ever reads
-    # a discarded worker's pipes, so this log line is the only place that line is going to surface.
-    assert node.contains_in_log("left unread output on its stderr after answering")
-    assert node.contains_in_log("Stderr: done")
-
-    assert node.query("SELECT 1") == "1\n"
 
 
 def test_shared_memory_udf_command_died(started_cluster):

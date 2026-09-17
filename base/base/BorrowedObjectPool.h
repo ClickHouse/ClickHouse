@@ -242,6 +242,12 @@ private:
             /// Skipping this would keep an object that is still in the pool counted as borrowed,
             /// and after `max_size` such failures the pool would refuse to lend anything at all.
             --borrowed_objects_size;
+
+            /// The object is still borrowable, and the wakeup that brought this borrower here was
+            /// the one `returnObject` sent for it: if it is not passed on, a waiter behind this
+            /// one stays asleep with a borrowable object in the pool - forever in `borrowObject`,
+            /// until its timeout in `tryBorrowObject`. The same rule as a factory that fails.
+            condition_variable.notify_one();
             throw;
         }
 

@@ -521,6 +521,11 @@ public:
     /// drops what it reads, so a caller that would only read in order to drop has nothing to do.
     bool stderrIsObserved() const { return stderr_reaction != ExternalCommandStderrReaction::NONE; }
 
+    /// Whether stderr the command writes fails the query. The one reaction under which a byte of
+    /// stderr that was not attributed to the query that caused it is a wrong verdict, and not just
+    /// a log line in the wrong place.
+    bool stderrThrows() const { return stderr_reaction == ExternalCommandStderrReaction::THROW; }
+
     /// Reads stderr until the pipe is empty or `budget_milliseconds` runs out.
     ///
     /// For the moment a pooled worker is handed on under `ExternalCommandStderrReaction::NONE`.
@@ -1019,6 +1024,11 @@ public:
         returned_command.reset();
         for (auto & region : shared_memory)
             region.reset();
+
+        /// The regions the next borrow creates are fresh, zero-filled files with nobody's data in
+        /// them: there is no previous borrower to scrub them for, and a `memset` of a region that
+        /// is already zero would be a wasted write of its whole size.
+        last_borrower.reset();
     }
 
     /// A region is charged to exactly one memory tracker at a time, chosen by who can observe it:
@@ -1488,10 +1498,11 @@ namespace
                     /// would sit out the whole of it waiting for a request, hold the pool's slot
                     /// for that long, and then be signalled instead of exiting on its own. Closed
                     /// here, so that it sees EOF and exits the way it is written to; the send
-                    /// threads are joined above, so nothing is writing into it. (A non-pooled
-                    /// command had its stdin closed by the send task.)
-                    if (process_pool)
-                        command->in.close();
+                    /// threads are joined above, so nothing is writing into it. Not only for the
+                    /// pool: a non-pooled command started without input pipes (a dictionary's
+                    /// `loadAll`, an `Executable` table without input queries) had no send task to
+                    /// close its stdin either, and would sit out the same timeout. Idempotent.
+                    command->in.close();
 
                     /// Stop reading the child's stdout before this wait touches the same descriptor.
                     /// The source can be finished from above - a `LIMIT` downstream closes the
@@ -1539,12 +1550,12 @@ namespace
                             [this](std::string_view str) { timeout_command_out.consumeStderrBytes(str); }, check_exit_code);
 
                         /// A status that could not be read is not a passing status, and that holds
-                        /// however little time the command was given. A `command_termination_timeout`
-                        /// of zero is the sharpest case: it says the command gets no grace period at
-                        /// all, so one that has not exited by the time this looks is out of time by
-                        /// the configuration's own definition, and is about to be signalled. Waving
-                        /// that through with a warning would make `check_exit_code` mean "checked,
-                        /// unless the timeout is short", which is not a contract anyone can rely on.
+                        /// however little time the command was given. (A `command_termination_timeout`
+                        /// of zero is not "no time": for this wait it means no bound, as a blocking
+                        /// `wait` had - see `ShellCommand::waitDrainingOutput` - so `reaped` is then
+                        /// always true.) Waving a lingering command through with a warning would make
+                        /// `check_exit_code` mean "checked, unless the timeout is short", which is not
+                        /// a contract anyone can rely on.
                         if (!reaped && check_exit_code)
                             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                                 "The command did not exit within command_termination_timeout ({} seconds) after "
@@ -1727,10 +1738,15 @@ namespace
         /// own. Counting the buffered ones instead makes every well-behaved pooled worker look
         /// dirty, and quietly turns `executable_pool` into a process per call.
         ///
-        /// Under `stderr_reaction` `none` pending stderr is not a reason to discard - those bytes
-        /// are nobody's - but it is a reason to take them off the pipe first, or they accumulate
-        /// across borrows until the command blocks in `write` and the borrow after that waits for a
-        /// worker that will never read its request.
+        /// Pending stderr is a reason to discard only under `stderr_reaction` `throw`: there a
+        /// line the command wrote after its rows is a verdict on the query that caused it, that
+        /// query has already succeeded, and the only way not to pin the verdict on the next one is
+        /// not to hand the worker on. Under every other reaction those bytes are log lines (or
+        /// nothing), and they are taken off the pipe here and put through the reaction while this
+        /// query is still the one on the thread - the right query to attribute them to - and the
+        /// worker is kept: a command that logs a line after its rows is not a reason to pay for a
+        /// process per call. (Under `none` the drain is also what keeps the pipe from filling up
+        /// across borrows until the command blocks in `write`.)
         bool pipeWorkerIsAtACleanBoundary() noexcept
         {
             if (!command)
@@ -1741,7 +1757,7 @@ namespace
             try
             {
                 static constexpr size_t stderr_drain_budget_ms = 100;
-                if (!timeout_command_out.stderrIsObserved())
+                if (!timeout_command_out.stderrThrows())
                     timeout_command_out.drainStderrFully(stderr_drain_budget_ms);
             }
             catch (...)
@@ -2779,10 +2795,12 @@ namespace
                     what, required_is_lower_bound ? "at least " : "", required, region.size(), shared_memory_max_size);
 
             /// Double, so that repeated growth stays amortized - the input is serialized straight
-            /// into the region and asks for one byte at a time - but never past the cap, and never
-            /// less than a caller that knows its exact requirement asked for. Taking the cap
-            /// whenever doubling overshoots it would commit (and `posix_fallocate`) the whole
-            /// configured maximum for a chunk that needs a little more room.
+            /// into the region and asks for one byte at a time (`moveOverflowIntoRegion`) - but
+            /// never past the cap, and never less than a caller that knows its exact requirement
+            /// asked for. When doubling overshoots the cap the region grows to the cap at once:
+            /// that commits the whole configured maximum for a chunk that needs a little more
+            /// room, which is the price of not growing byte by byte for the rest of that chunk -
+            /// a growth is a `posix_fallocate` and a remap, and one of them beats a thousand.
             size_t new_size = std::max(required, std::min(region.size() * 2, shared_memory_max_size));
 
             /// Unless memory-limit exceptions are blocked right now. That happens when the growth is
@@ -3027,9 +3045,13 @@ namespace
             ShellCommandHolder::BorrowerIdentity borrower{context->getUserID(), context->getCurrentRoles()};
             if (command_holder->lastBorrower() && *command_holder->lastBorrower() != borrower)
             {
-                for (const auto & region : regions)
+                for (size_t i = 0; i < regions.size(); ++i)
                 {
-                    if (!region)
+                    /// A region this borrow created is a fresh, zero-filled file with nobody's
+                    /// data in it: the discarded worker's regions went with it (`resetSharedMemory`
+                    /// in `cleanup`), and zeroing a new one would be a wasted write of its size.
+                    const auto & region = regions[i];
+                    if (!region || regions_created_by_this_borrow[i])
                         continue;
 
                     memset(region->data(), 0, region->size());
@@ -3158,19 +3180,18 @@ namespace
             if (!timeout_command_out)
                 return false;
 
-            /// Nothing is done with what a `none` command writes, but it cannot be left on the pipe
-            /// either: those bytes survive into the next borrow, accumulate, and once the pipe is
-            /// full the command blocks in `write` without ever reading the next request. `none`
-            /// promises a chatty command does not block; this is where that promise is kept for a
-            /// worker that is about to be handed on. The other reactions need nothing here: for
-            /// them pending stderr already means the worker is not at a boundary, and the discard
-            /// path drains it.
+            /// Pending stderr disqualifies the worker only under `stderr_reaction` `throw` (see
+            /// the pipe-mode probe for the reasoning): under every other reaction the bytes are
+            /// taken off the pipe here and put through the reaction - logged against this query,
+            /// the one that caused them - and the worker stays at a clean boundary. Under `none`
+            /// the drain is also what keeps a chatty command from filling the pipe across borrows
+            /// until it blocks in `write` without ever reading the next request.
             /// The drain polls and reads; either can fail, and this function may not throw. A
             /// worker whose pipes could not even be probed is not one to hand on: it is treated as
             /// dirty and discarded.
             try
             {
-                if (!timeout_command_out->stderrIsObserved())
+                if (!timeout_command_out->stderrThrows())
                 {
                     static constexpr size_t stderr_drain_budget_ms = 100;
                     timeout_command_out->drainStderrFully(stderr_drain_budget_ms);

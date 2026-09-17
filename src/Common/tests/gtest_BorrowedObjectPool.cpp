@@ -323,3 +323,67 @@ TEST(BorrowedObjectPool, FailedHandoverOfAPooledObjectLeavesItBorrowable)
     ASSERT_TRUE(pool.tryBorrowObject(again, [] { return FailsToBeHandedOver(0); }, 1000));
     EXPECT_EQ(again.value, 7) << "the object that failed to be handed over was lost";
 }
+
+/// A hand-over of a pooled object that fails leaves the object in the pool - and must pass on the
+/// wakeup it consumed. Two waiters on a pool of one: the object comes back, one waiter is woken,
+/// its hand-over fails, and the object is still there, borrowable at once. Without a second wakeup
+/// the other waiter sleeps out its whole timeout in front of it.
+TEST(BorrowedObjectPool, FailedHandoverOfAPooledObjectWakesWaitingBorrower)
+{
+    BorrowedObjectPool<FailsToBeHandedOver> pool(1);
+
+    FailsToBeHandedOver object;
+    ASSERT_TRUE(pool.tryBorrowObject(object, [] { return FailsToBeHandedOver(7); }, BORROW_TIMEOUT_MS));
+
+    std::atomic<size_t> failed_borrows = 0;
+    std::atomic<size_t> successful_borrows = 0;
+    std::atomic<size_t> slowest_borrow_ms = 0;
+
+    auto borrow = [&]
+    {
+        FailsToBeHandedOver borrowed_object;
+        const auto started_at = std::chrono::steady_clock::now();
+        try
+        {
+            if (pool.tryBorrowObject(borrowed_object, [] { return FailsToBeHandedOver(0); }, BORROW_TIMEOUT_MS))
+            {
+                ++successful_borrows;
+                EXPECT_EQ(borrowed_object.value, 7);
+                pool.returnObject(std::move(borrowed_object));
+            }
+        }
+        catch (const std::runtime_error &)
+        {
+            ++failed_borrows;
+        }
+
+        const size_t elapsed_ms = static_cast<size_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started_at).count());
+        size_t previous = slowest_borrow_ms.load();
+        while (previous < elapsed_ms && !slowest_borrow_ms.compare_exchange_weak(previous, elapsed_ms))
+        {
+        }
+    };
+
+    std::thread first_waiter(borrow);
+    std::thread second_waiter(borrow);
+
+    /// Both asleep before the object comes back, so that the return's wakeup reaches exactly one
+    /// of them and the failing hand-over's own wakeup is the only thing that can reach the other.
+    /// Not an ASSERT: returning from the test here would leave the borrower threads unjoined.
+    EXPECT_TRUE(waitUntilWaitingBorrowers(pool, 2));
+
+    /// The first hand-over out of the pool fails, whichever waiter gets it; the flag is consumed
+    /// by that one attempt, so the next hand-over of the same object succeeds.
+    FailsToBeHandedOver::fail_next_handover = true;
+    pool.returnObject(std::move(object));
+
+    first_waiter.join();
+    second_waiter.join();
+
+    EXPECT_LT(slowest_borrow_ms.load(), PROMPT_BORROW_MS);
+    EXPECT_EQ(failed_borrows.load(), 1);
+    EXPECT_EQ(successful_borrows.load(), 1);
+    EXPECT_EQ(pool.allocatedObjectsSize(), 1);
+    EXPECT_EQ(pool.borrowedObjectsSize(), 0);
+}

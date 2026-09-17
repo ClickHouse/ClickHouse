@@ -458,7 +458,31 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             bytes_read = ::read(pipe_child_error.fds_rw[0], &failure, sizeof(failure));
         while (bytes_read == -1 && errno == EINTR);
 
-        if (bytes_read != 0)
+        /// A read that failed for any other reason says nothing about the child. What does is
+        /// `waitpid`: by the time `vfork` returned, the child had either `exec`ed - and is running
+        /// - or written its report and exited - and is a zombie - so a non-blocking probe answers
+        /// without the risk of blocking on a child that is alive and well, which a pool worker
+        /// would be for as long as it is not asked to exit.
+        bool child_reported_failure = bytes_read > 0;
+        if (bytes_read < 0)
+        {
+            const int read_error = errno;
+            int status = 0;
+            pid_t probed = 0;
+            do
+                probed = ::waitpid(pid, &status, WNOHANG);
+            while (probed == -1 && errno == EINTR);
+
+            if (probed == 0)
+                LOG_WARNING(getLogger(), "Cannot read the child error pipe of pid {} ({}); the child is running, so it has started", pid, errnoToString(read_error));
+            else
+                throw Exception(
+                    ErrorCodes::CANNOT_CREATE_CHILD_PROCESS,
+                    "Cannot prepare child process: it exited before exec, and its report could not be read: {}",
+                    errnoToString(read_error));
+        }
+
+        if (child_reported_failure)
         {
             /// The child is gone; reap it so that it does not linger as a zombie, then report.
             int status = 0;
@@ -763,7 +787,12 @@ void ShellCommand::readBufferedOutput(int (&drain_fds)[2], const StderrSink & st
 }
 
 void ShellCommand::drainOutputPipes(
-    int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms, bool budget_is_quiet_time, UInt64 max_total_ms) const
+    int (&drain_fds)[2],
+    const StderrSink & stderr_sink,
+    UInt64 budget_ms,
+    bool budget_is_quiet_time,
+    UInt64 max_total_ms,
+    size_t * stdout_bytes_drained) const
 {
     static constexpr UInt64 poll_step_ms = 5;
     char discard_buffer[4096];
@@ -818,6 +847,8 @@ void ShellCommand::drainOutputPipes(
                     /// reading it is the whole reason this loop exists.
                     if (i == 1 && stderr_sink)
                         stderr_sink(std::string_view(discard_buffer, static_cast<size_t>(res)));
+                    if (i == 0 && stdout_bytes_drained)
+                        *stdout_bytes_drained += static_cast<size_t>(res);
 
                     /// Bytes arrived, so the quiet time starts over: a full pipe is read whole
                     /// however long the reads take to get scheduled, and the budget is only ever
@@ -862,8 +893,30 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
     /// would otherwise spin a core here for the whole termination budget.
     int drain_fds[2] = {out.getFD(), err.getFD()};
 
+    /// A caller that does not want the exit status wants only what the child says on stderr on
+    /// its way out. Two kinds of child have to be told apart by what they do with stdout in the
+    /// meantime. One writes a stray line past the rows it was asked for and then its diagnostic to
+    /// stderr: its stdout has to stay open and be read, or that stray write dies on `SIGPIPE` with
+    /// the diagnostic still unwritten - and under `stderr_reaction` `throw` that diagnostic is the
+    /// whole point. The other never stops writing (`LIMIT` over a command that produces forever):
+    /// reading its stdout keeps it alive, and busy, for the whole termination budget, where it
+    /// used to die at once on the first write into the closed pipe. The two are told apart by
+    /// volume: a stray line or two is a few bytes, a stream is not, so stdout is read up to a
+    /// pipe's worth of bytes and closed after that - the next write then hits the closed pipe and
+    /// the child dies on `SIGPIPE`, as it did before this wait existed. With the status checked
+    /// the stdout stays open however much arrives: the child has to reach its own exit for its
+    /// status to mean anything.
+    static constexpr size_t stray_stdout_limit = 64 * 1024;
+    size_t stdout_bytes_drained = 0;
+
     while (true)
     {
+        if (!check_exit_status && drain_fds[0] >= 0 && stdout_bytes_drained > stray_stdout_limit)
+        {
+            out.close();
+            drain_fds[0] = -1;
+        }
+
         /// Reaped WITHOUT closing the pipes. Reaping is what makes the rest of what the child wrote
         /// final - its write ends are gone, so the pipes now hold exactly its last words and
         /// nothing more - but closing the descriptors here would throw those words away unread.
@@ -899,7 +952,20 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
             return true;
         }
 
-        const UInt64 remaining_ms = remainingTerminationTimeoutMs();
+        /// A configured grace period of zero is "signal at once" for the destructor, but not "the
+        /// exit status is out of time before it was ever waited for": the deadline it arms is now,
+        /// a single `WNOHANG` probe would see a child that has closed its stdout but has not yet
+        /// become a zombie as one that failed to exit, and whether that happens would be a matter
+        /// of scheduling - a query failing nondeterministically over a configuration that, before
+        /// this wait existed, waited for the exit status without a bound. So zero keeps that
+        /// meaning here: the wait for the exit status is unbounded, as a blocking `wait` was.
+        /// Only when the status is wanted, though. Without it this wait is for the child's last
+        /// words on stderr, and a child that does not exit on stdin EOF must not hang the query
+        /// (and a pool's slot) forever over a diagnostic it is never going to write: for that
+        /// child zero means what it means for the destructor - no grace, signal at once.
+        const bool unbounded
+            = check_exit_status && config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds == 0;
+        const UInt64 remaining_ms = unbounded ? poll_step_ms : remainingTerminationTimeoutMs();
         if (remaining_ms == 0)
             return false;
 
@@ -916,7 +982,7 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
             continue;
         }
 
-        drainOutputPipes(drain_fds, stderr_sink, step_ms);
+        drainOutputPipes(drain_fds, stderr_sink, step_ms, /*budget_is_quiet_time=*/ false, /*max_total_ms=*/ 0, &stdout_bytes_drained);
     }
 }
 

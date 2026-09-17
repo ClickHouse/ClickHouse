@@ -345,3 +345,27 @@ TEST(DoubleBufferedProducer, RethrowIfFailedIsNoOpOnSuccess)
 
     EXPECT_NO_THROW(producer.rethrowIfFailed());
 }
+
+/// `next` on an object that was never started has nothing to wait for - no producer thread, and a
+/// pre-start `stop` is a no-op - so it must not wait: it is a bug in the caller, reported as one.
+/// The same guards the real failure path of `start`: a thread that could not be created leaves the
+/// object unstarted, and a consumer that carries on regardless gets an error, not a hang.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+TEST(DoubleBufferedProducer, NextBeforeStartIsRejected)
+{
+    /// A logical error aborts in this build; the test therefore expects the death, not the throw.
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+        {
+            DoubleBufferedProducer producer;
+            producer.next();
+        },
+        "DoubleBufferedProducer::next called before a successful start");
+}
+#else
+TEST(DoubleBufferedProducer, NextBeforeStartIsRejected)
+{
+    DoubleBufferedProducer producer;
+    EXPECT_THROW(producer.next(), DB::Exception);
+}
+#endif

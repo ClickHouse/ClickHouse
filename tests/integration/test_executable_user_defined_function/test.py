@@ -662,6 +662,71 @@ def test_executable_function_pooled_worker_that_closed_stdout_after_answering_se
     assert node.query("SELECT test_function_pool_answer_close_stdout_wait_stdin_python(2)") == "Key 2\n"
 
 
+def test_executable_function_pooled_worker_logging_after_its_rows_is_kept(started_cluster):
+    """Under a `log*` reaction a line written after the rows is logged, and the worker is reused."""
+    skip_test_msan(node)
+
+    # The command answers with its pid and then writes a line to stderr - after the rows, so the
+    # line is on the pipe when the worker is handed back. Under `throw` that line would be a
+    # verdict on a query that has already succeeded, and the worker is discarded so that it is not
+    # pinned on the next one. Under `log_last` it is a log line: it is taken off the pipe and
+    # logged against the query that caused it, and the worker goes back to the pool - one process
+    # serves every call. Discarding it would quietly turn `executable_pool` into a process per
+    # call for every command that logs after its rows.
+    pids = set()
+    for i in range(4):
+        pids.add(node.query(f"SELECT test_function_pool_pid_then_stderr_log_python({i})").strip())
+
+    assert len(pids) == 1, f"a worker that only logged after its rows was not reused: {pids}"
+    assert node.contains_in_log("logging right after the rows")
+
+
+def test_executable_function_zero_termination_timeout_waits_for_the_exit_status(started_cluster):
+    """`command_termination_timeout = 0` does not turn the wait for the exit status into a single probe."""
+    skip_test_msan(node)
+
+    # The command answers, closes its stdout and exits 300 ms later. With `check_exit_code` the
+    # server waits for its exit status after the output ends; a zero termination timeout bounds
+    # that wait at zero and would find the command not yet exited - and fail the query - or not,
+    # depending on scheduling. Zero means "signal at once" for a command being discarded, and for
+    # the wait for an exit status it means no bound, as a blocking wait had: the query succeeds
+    # every time.
+    for i in range(3):
+        assert node.query(f"SELECT test_function_exit_after_a_moment_python({i})") == f"Key {i}\n"
+
+
+def test_executable_function_stray_stdout_does_not_hide_late_stderr_without_exit_check(started_cluster):
+    """A stray stdout write after the rows must not kill the command before its late stderr is seen."""
+    skip_test_msan(node)
+
+    # `check_exit_code = 0`, `stderr_reaction = throw`: the exit status is nobody's business, the
+    # diagnostic is. The command answers, writes a stray line to stdout 300 ms later and only then
+    # its diagnostic. A server that closed the command's stdout as soon as it had the rows would
+    # have that stray write kill the command with SIGPIPE, diagnostic unwritten, and the query
+    # would succeed; the stray line is read and discarded instead, and the diagnostic fails the
+    # query.
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_stray_stdout_then_stderr_python(1)")
+
+    assert "Executable generates stderr" in str(exc.value), str(exc.value)
+    assert "late complaint" in str(exc.value), str(exc.value)
+
+
+def test_executable_function_lingering_command_with_no_grace_and_no_exit_check_is_not_waited_for(started_cluster):
+    """`command_termination_timeout = 0` without `check_exit_code` signals a lingering command at once."""
+    skip_test_msan(node)
+
+    # The command answers, closes its stdout and never exits. With the exit code not checked the
+    # server waits only for the command's last words on stderr (the default reaction logs them),
+    # and a zero grace period means exactly that here: no wait, signal at once. Unbounded it is
+    # only for the exit status - a wait that this configuration does not ask for - so the query
+    # must not hang on a command that is never going to write anything.
+    started = time.monotonic()
+    assert node.query("SELECT test_function_lingers_ignore_no_grace_python(1)") == "Key 1\n"
+    elapsed = time.monotonic() - started
+    assert elapsed < 10, f"the query waited {elapsed:.1f}s for a command that never exits"
+
+
 def test_executable_function_query_cache(started_cluster):
     '''Test for issues #77553 and #59988: Users should be able to specify if externally-defined are non-deterministic, and the query cache should treat them correspondingly.'''
     '''Also see tests/0_stateless/test_query_cache_udf_sql.sql'''

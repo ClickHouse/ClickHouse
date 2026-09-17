@@ -440,6 +440,7 @@
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
         <check_exit_code>0</check_exit_code>
+        <stderr_reaction>throw</stderr_reaction>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>16777216</shared_memory_size>
         <command>shm_udf_chatty_stderr.py</command>
@@ -466,6 +467,21 @@
         </argument>
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
+        <stderr_reaction>throw</stderr_reaction>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>16777216</shared_memory_size>
+        <command>shm_udf_chatty_stderr.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_chatty_stderr_log_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <stderr_reaction>log_last</stderr_reaction>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>16777216</shared_memory_size>
         <command>shm_udf_chatty_stderr.py</command>

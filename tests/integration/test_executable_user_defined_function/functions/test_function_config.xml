@@ -445,6 +445,41 @@
         <stderr_reaction>throw</stderr_reaction>
         <command>input_pool_stderr_after_rows.py</command>
     </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_pid_then_stderr_log_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <stderr_reaction>log_last</stderr_reaction>
+        <command>input_pool_pid_then_stderr.py</command>
+    </function>
+    <function>
+        <type>executable</type>
+        <name>test_function_exit_after_a_moment_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_exit_after_a_moment.py</command>
+        <command_termination_timeout>0</command_termination_timeout>
+    </function>
+    <function>
+        <type>executable</type>
+        <name>test_function_stray_stdout_then_stderr_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_stray_stdout_then_stderr.py</command>
+        <check_exit_code>0</check_exit_code>
+        <stderr_reaction>throw</stderr_reaction>
+    </function>
 
     <function>
         <type>executable_pool</type>
@@ -600,6 +635,18 @@
         <format>TabSeparated</format>
         <command>input_lingers.py</command>
         <command_termination_timeout>2</command_termination_timeout>
+        <check_exit_code>0</check_exit_code>
+    </function>
+    <function>
+        <type>executable</type>
+        <name>test_function_lingers_ignore_no_grace_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_lingers.py</command>
+        <command_termination_timeout>0</command_termination_timeout>
         <check_exit_code>0</check_exit_code>
     </function>
 

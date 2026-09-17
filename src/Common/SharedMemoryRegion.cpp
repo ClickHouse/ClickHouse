@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdlib>
+#include <string>
 #include <limits>
 
 #include <fcntl.h>
@@ -113,10 +115,11 @@ void unmapNoThrow(void * data, size_t size, const char * operation) noexcept
 /// there is no separate `ftruncate` whose effect would have to be rolled back - and could not be,
 /// on a file sealed against shrinking.
 ///
-/// It is retried on `EINTR`. The server signals itself continuously (the query profiler's timers),
-/// the call is not restartable, and reserving a large region is long enough to be caught mid-way.
-/// Retrying converges: the pages already reserved stay reserved. Note that `posix_fallocate`
-/// reports its error by returning it, not through `errno`.
+/// It is retried on `EINTR`, as a matter of form more than of need: `shmem_fallocate` checks only
+/// for a *fatal* pending signal (`fatal_signal_pending`), so the query profiler's timers do not
+/// interrupt it, and a call that was interrupted unwinds the pages it had allocated (`undo`), so
+/// a retry starts over rather than closer to the end. Note that `posix_fallocate` reports its
+/// error by returning it, not through `errno`.
 ///
 /// The mount behind a `memfd` has no size limit, so the kernel does not refuse an oversized
 /// request up front: it keeps committing pages until the machine has none left. The only guard is
@@ -349,10 +352,58 @@ size_t SharedMemoryRegion::refreshFootprint()
     return footprint_size;
 }
 
+namespace
+{
+
+/// Reads a small sysfs file into `out`; false if it cannot be read.
+bool readSysfsLine(const char * path, std::string & out)
+{
+    int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+    if (fd == -1)
+        return false;
+    SCOPE_EXIT({ closeNoThrow(fd, "sysfs probe"); });
+
+    char buffer[256];
+    ssize_t bytes = 0;
+    do
+        bytes = ::read(fd, buffer, sizeof(buffer) - 1);
+    while (bytes == -1 && errno == EINTR);
+    if (bytes <= 0)
+        return false;
+
+    out.assign(buffer, static_cast<size_t>(bytes));
+    return true;
+}
+
+/// The unit a `memfd` is backed in: the page, unless the kernel backs `shmem` with transparent
+/// huge pages regardless of file size (`shmem_enabled` is `always` or `force`), in which case a
+/// file of any length holds at least one huge page and `st_blocks` says so - a 64 KiB region
+/// reports 2 MiB. Footprints and caps have to be compared in that unit, or a region would be over
+/// its own cap from the moment it is created (`within_size` and `advise` only use huge pages
+/// where they fit, and are the page as far as this is concerned). Read once.
+size_t backingUnit()
+{
+    const size_t page_size = static_cast<size_t>(::sysconf(_SC_PAGESIZE));
+
+    std::string mode;
+    if (!readSysfsLine("/sys/kernel/mm/transparent_hugepage/shmem_enabled", mode))
+        return page_size;
+    if (!mode.contains("[always]") && !mode.contains("[force]"))
+        return page_size;
+
+    std::string huge_page_size;
+    if (!readSysfsLine("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", huge_page_size))
+        return page_size;
+    const size_t huge = std::strtoull(huge_page_size.c_str(), nullptr, 10);
+    return huge > page_size ? huge : page_size;
+}
+
+}
+
 size_t SharedMemoryRegion::roundUpToPages(size_t size)
 {
-    static const size_t page_size = static_cast<size_t>(::sysconf(_SC_PAGESIZE));
-    return (size + page_size - 1) / page_size * page_size;
+    static const size_t unit = backingUnit();
+    return (size + unit - 1) / unit * unit;
 }
 
 SharedMemoryRegion::~SharedMemoryRegion()

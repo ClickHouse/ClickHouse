@@ -95,6 +95,14 @@ public:
     /// finished with no more items. Rethrows a producer exception if one occurred.
     std::optional<Item> next()
     {
+        /// Without a run there is nothing that could ever wake this wait: no producer thread to
+        /// set `ready`, `finished` or an exception, and `stop` before `start` is a no-op. A caller
+        /// that reaches the consumer side of an object it never started - or whose `start` threw
+        /// before it created the thread - would hang here forever; that is a bug on its side, and
+        /// it is told so.
+        if (!started)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DoubleBufferedProducer::next called before a successful start");
+
         std::unique_lock lock(mutex);
         /// stop_requested must be part of the predicate: stop() wakes this cv and expects the
         /// consumer to unblock even when the producer exited without setting `finished` (e.g. on a

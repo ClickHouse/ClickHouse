@@ -10,6 +10,7 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context.h>
 #include <Common/ExternalLoaderStatus.h>
+#include <Core/SettingsEnums.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunction.h>
 #include <Processors/Sources/ShellCommandSource.h>
@@ -84,6 +85,11 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
             "Reload interval in seconds. 0 means reload is disabled."},
         {"deterministic", std::make_shared<DataTypeUInt8>(),
             "Whether function returns the same result for the same arguments (boolean)."},
+        {"stderr_reaction", std::make_shared<DataTypeString>(),
+            "What is done with the command's stderr output: 'none', 'log', 'log_first', 'log_last' or 'throw'. "
+            "Empty when the function failed to load."},
+        {"check_exit_code", std::make_shared<DataTypeUInt8>(),
+            "Whether a non-zero exit code of the command fails the query (boolean)."},
         {"use_shared_memory", std::make_shared<DataTypeUInt8>(),
             "Whether the data is exchanged with the command through a shared-memory file instead of "
             "the `stdin`/`stdout` pipes (boolean)."},
@@ -186,6 +192,9 @@ void StorageSystemUserDefinedFunctions::fillData(
 
             res_columns[i++]->insert(config.is_deterministic ? 1 : 0);
 
+            res_columns[i++]->insert(SettingFieldExternalCommandStderrReactionTraits::toString(exec_config.stderr_reaction));
+            res_columns[i++]->insert(exec_config.check_exit_code ? 1 : 0);
+
             /// Reported as the loader resolved them, not as they were written: with the transport
             /// off every one of these is at its own zero, because the loader refuses a
             /// configuration that spells any of them out without `use_shared_memory`. With it on,
@@ -202,9 +211,10 @@ void StorageSystemUserDefinedFunctions::fillData(
             // Failed to load - configuration unavailable, insert defaults for all config fields
             // Config fields: type, command, format, return_type, return_name, argument_types, argument_names,
             // max_command_execution_time, command_termination_timeout, command_read_timeout, command_write_timeout,
-            // pool_size, send_chunk_header, execute_direct, lifetime, deterministic, use_shared_memory,
-            // shared_memory_size, shared_memory_max_size, shared_memory_pipeline
-            constexpr size_t config_fields_count = 20;
+            // pool_size, send_chunk_header, execute_direct, lifetime, deterministic, stderr_reaction,
+            // check_exit_code, use_shared_memory, shared_memory_size, shared_memory_max_size,
+            // shared_memory_pipeline
+            constexpr size_t config_fields_count = 22;
             for (size_t j = 0; j < config_fields_count; ++j)
                 res_columns[i++]->insertDefault();
         }

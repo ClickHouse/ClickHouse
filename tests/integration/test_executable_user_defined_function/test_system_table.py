@@ -43,6 +43,8 @@ working_udf_config = """<functions>
         <format>TabSeparated</format>
         <command>working_script.sh</command>
         <execute_direct>0</execute_direct>
+        <stderr_reaction>throw</stderr_reaction>
+        <check_exit_code>0</check_exit_code>
         <command_termination_timeout>5</command_termination_timeout>
         <command_read_timeout>2000</command_read_timeout>
         <command_write_timeout>1500</command_write_timeout>
@@ -213,6 +215,24 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
         ["test_working_udf", 0, 0, 0, 0],
     ])
 
+    # What the function does about the command's stderr and exit code is part of its contract, and
+    # it has to be readable from SQL too: one function spells out non-default values for both, the
+    # other gets the defaults (`log_last`, exit code checked).
+    result = node.query(
+        """
+        SELECT name, stderr_reaction, check_exit_code
+        FROM system.user_defined_functions
+        WHERE name IN ('test_working_udf', 'test_working_pool_udf')
+        ORDER BY name
+        FORMAT TSV
+        """
+    )
+
+    assert TSV(result) == TSV([
+        ["test_working_pool_udf", "log_last", 1],
+        ["test_working_udf", "throw", 0],
+    ])
+
 
 def test_system_user_defined_functions_failed_status(started_cluster):
     """Test querying FAILED UDFs and their error messages"""
@@ -319,6 +339,8 @@ def test_system_user_defined_functions_columns(started_cluster):
         "execute_direct",
         "lifetime",
         "deterministic",
+        "stderr_reaction",
+        "check_exit_code",
         # Shared-memory transport
         "use_shared_memory",
         "shared_memory_size",

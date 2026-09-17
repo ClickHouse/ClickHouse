@@ -78,7 +78,9 @@ public:
       * The region relies on `memfd_create` with sealing, so it is available on Linux only. Callers
       * that let a user enable the feature should call this at configuration time, so that an
       * unsupported platform is reported once, where the setting is accepted, instead of failing
-      * every call at query time. The constructor calls it as well.
+      * every call at query time. The constructor does not repeat it: a transient failure of the
+      * real creation (out of descriptors, out of memory) must report as what it is, not as the
+      * transport being unavailable.
       */
     static void checkSupported();
 
@@ -180,7 +182,9 @@ public:
 
     /// Rounds a size up to whole pages: what a file of that length actually holds. The unit in
     /// which footprints are compared with caps and with each other, so that a region of 16 bytes
-    /// is not over a cap of 16 bytes for holding the page it cannot help holding.
+    /// is not over a cap of 16 bytes for holding the page it cannot help holding. The "page" is
+    /// the unit the kernel backs a `memfd` in: the base page, or the transparent huge page where
+    /// `shmem` is backed with those regardless of size (`shmem_enabled` `always`/`force`).
     static size_t roundUpToPages(size_t size);
 
     /// What the region would cost once mapped whole, as last read: the footprint plus the fill up

@@ -249,8 +249,14 @@ private:
     /// is spent only while nothing arrives: every read pushes the deadline forward, so what is
     /// already in the pipes is read whole however long that takes, and only the wait for more is
     /// bounded - within a hard cap of `max_total_ms`, for a grandchild that keeps the pipe fed.
+    /// `stdout_bytes_drained`, if given, is increased by the number of bytes taken off `stdout`.
     void drainOutputPipes(
-        int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms, bool budget_is_quiet_time = false, UInt64 max_total_ms = 0) const;
+        int (&drain_fds)[2],
+        const StderrSink & stderr_sink,
+        UInt64 budget_ms,
+        bool budget_is_quiet_time = false,
+        UInt64 max_total_ms = 0,
+        size_t * stdout_bytes_drained = nullptr) const;
 
     void handleProcessRetcode(int retcode) const;
 
