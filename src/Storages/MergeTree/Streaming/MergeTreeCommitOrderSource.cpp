@@ -2,16 +2,15 @@
 
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/ReadRoundContext.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Parsers/IAST.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/Streaming/Utils.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/printPipeline.h>
@@ -25,7 +24,7 @@
 #include <Core/UUID.h>
 #include <Core/Block.h>
 #include <Core/Streaming/Settings.h>
-#include <Core/Streaming/StreamingVirtualColumns.h>
+#include <Core/Streaming/CursorTree.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
@@ -50,94 +49,6 @@ std::string explainPipeline(const Pipe & pipe)
     return buffer.str();
 }
 
-ContextPtr makeStreamingContext(ContextPtr context_)
-{
-    auto copy = Context::createCopy(context_);
-    copy->makeQueryContext();
-    copy->setQueryMetadataCache(nullptr);
-    return copy;
-}
-
-SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
-{
-    info.table_expression_modifiers = std::nullopt;
-
-    info.query_tree.reset();
-    info.table_expression.reset();
-    info.planner_context.reset();
-
-    info.prewhere_info.reset();
-    info.filter_actions_dag.reset();
-    info.row_level_filter.reset();
-
-    info.order_optimizer.reset();
-    info.input_order_info.reset();
-
-    info.trivial_limit = 0;
-    info.optimize_trivial_count = false;
-
-    info.has_window = false;
-    info.has_order_by = false;
-    info.need_aggregate = false;
-    info.has_aggregates = false;
-
-    return info;
-}
-
-void restoreStreamingAuxiliaryColumns(ActionsDAG & actions, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
-{
-    /// These columns are needed for cursor calculation.
-    actions.tryRestoreColumn(PartitionIdColumn::name);
-    actions.tryRestoreColumn(BlockNumberColumn::name);
-    actions.tryRestoreColumn(BlockOffsetColumn::name);
-
-    /// These columns are needed for watermark calculation.
-    if (stream_settings.watermark)
-    {
-        actions.tryRestoreColumn(stream_settings.watermark->column);
-
-        const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
-        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
-        for (const auto & source_column : source_columns)
-            actions.tryRestoreColumn(source_column);
-    }
-}
-
-PrewhereInfoPtr makeReadRoundPrewhereInfo(PrewhereInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
-{
-    if (!info)
-        return nullptr;
-
-    auto patched_info = std::make_shared<PrewhereInfo>(info->clone());
-    restoreStreamingAuxiliaryColumns(patched_info->prewhere_actions, stream_settings, storage, context);
-
-    return patched_info;
-}
-
-FilterDAGInfoPtr makeReadRoundRowLevelFilter(FilterDAGInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
-{
-    if (!info)
-        return nullptr;
-
-    auto patched_info = std::make_shared<FilterDAGInfo>(info->actions.clone(), info->column_name, info->do_remove_column);
-    restoreStreamingAuxiliaryColumns(patched_info->actions, stream_settings, storage, context);
-    for (const auto & required_column : patched_info->actions.getRequiredColumnsNames())
-        patched_info->actions.tryRestoreColumn(required_column);
-
-    return patched_info;
-}
-
-Names filterStreamingVirtualColumns(Names columns)
-{
-    if (auto it = std::find(columns.begin(), columns.end(), TimeAttributeColumn::name); it != columns.end())
-        columns.erase(it);
-
-    if (auto it = std::find(columns.begin(), columns.end(), WatermarkColumn::name); it != columns.end())
-        columns.erase(it);
-
-    return columns;
-}
-
 }
 
 MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
@@ -153,17 +64,7 @@ MergeTreeCommitOrderSource::MergeTreeCommitOrderSource(
     , header(std::move(header_))
     , subscription(std::move(subscription_))
     , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
-    , reading_context{
-          .storage = storage_,
-          .query_info = makeStreamingSelectQueryInfo(query_info_),
-          .prewhere_info = makeReadRoundPrewhereInfo(query_info_.prewhere_info, stream_settings, storage_, context_),
-          .row_level_filter = makeReadRoundRowLevelFilter(query_info_.row_level_filter, stream_settings, storage_, context_),
-          .stream_settings = stream_settings,
-          .context = makeStreamingContext(std::move(context_)),
-          .user_requested_columns = filterStreamingVirtualColumns(std::move(user_requested_columns_)),
-          .requested_num_streams = requested_num_streams_,
-          .max_block_size = max_block_size_,
-          .output_header = header}
+    , reading_context(makeReadRoundContext(storage_, query_info_, std::move(context_), std::move(user_requested_columns_), requested_num_streams_, max_block_size_, header))
     , log(getLogger(fmt::format("MergeTreeCommitOrderSource::{}", UUIDHelpers::generateV4())))
     , read_state(stream_settings)
 {
@@ -256,11 +157,23 @@ IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(cons
     // Finish after the first completed read round, or once the first enrichment shows nothing (more) to read.
     if (subscription_updated && (finished_rounds > 0 || result == Status::Async))
     {
+        surfaceFinalCursor();
         outputs.front().finish();
         return Status::Finished;
     }
 
     return result;
+}
+
+void MergeTreeCommitOrderSource::surfaceFinalCursor()
+{
+    auto cursor = reading_context.context->getStreamingCursor();
+    if (!cursor)
+        return;
+
+    auto local = mergeTreeCursorToCursorTree(read_state.getPartitionCursors());
+    std::lock_guard lock(cursor->mutex);
+    mergeCursors(cursor->tree, local);
 }
 
 bool MergeTreeCommitOrderSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated)
