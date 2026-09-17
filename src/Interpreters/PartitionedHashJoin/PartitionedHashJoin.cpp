@@ -33,6 +33,7 @@ extern const Event HashJoinPartitionOverflowRows;
 extern const Event HashJoinDuplicateRunBytes;
 extern const Event HashJoinTeardownMicroseconds;
 extern const Event HashJoinRowStoreBlocks;
+extern const Event HashJoinPreallocatedElementsInHashTables;
 }
 
 namespace DB
@@ -627,7 +628,11 @@ void PartitionedHashJoin::onBuildPhaseFinish()
         lane_by_thread.clear();
     }
 
-    clause.setDistinctEstimate(merged.estimate());
+    /// A previous run's exact count replaces the sketch estimate. The table it sizes needs no safety
+    /// margin and, when the data has not changed, no grow: the preallocation `HashJoin` made from the
+    /// same cache entry.
+    const bool exact = readDistinctKeysFromStatisticsCache();
+    clause.setDistinctEstimate(exact ? static_cast<double>(*cached_distinct_keys) : merged.estimate(), exact);
     for (auto & fill : build_blocks)
         storeBlockInRowStore(fill);
     clause.decidePartitionPlan(accumulated_rows.load(std::memory_order_relaxed));
@@ -686,11 +691,10 @@ void PartitionedHashJoin::runPostBuildPhase()
     ProfileEvents::increment(
         ProfileEvents::HashJoinDuplicateRunBytes, built.owner_duplicates.arena_bytes + built.drain_duplicates.arena_bytes);
 
-    /// The entry is for the next run of this query. Join reordering, `rhs_size_estimation` and
-    /// runtime-filter sizing read `HashJoinEntry` whatever algorithm produced it. `ht_size` is the
-    /// exact distinct count. It is never read to size this build. A grow during post-build has
-    /// already happened, and a cached count would not depend on the data. `hash_join` holds no
-    /// stats params, so nothing else writes this key for this join.
+    /// The entry is for the next run of this query. Join reordering, `rhs_size_estimation`,
+    /// runtime-filter sizing and this join's own table size (`readDistinctKeysFromStatisticsCache`)
+    /// read `HashJoinEntry` whatever algorithm produced it. `ht_size` is the exact distinct count.
+    /// `hash_join` holds no stats params, so nothing else writes this key for this join.
     if (stats_collecting_params.isCollectionAndUseEnabled() && built.distinct_keys)
         getHashTablesStatistics<HashJoinEntry>().update(
             {.ht_size = built.distinct_keys, .source_rows = hash_join->data->rows_to_join}, stats_collecting_params);
@@ -813,6 +817,20 @@ size_t PartitionedHashJoin::liveDistinctEstimate() const
     cached_distinct_estimate.store(estimate, std::memory_order_relaxed);
     distinct_estimate_at_rows.store(rows, std::memory_order_release);
     return estimate;
+}
+
+bool PartitionedHashJoin::readDistinctKeysFromStatisticsCache()
+{
+    /// The entry `runPostBuildPhase` publishes: the exact distinct count of the previous run of this
+    /// query. The cache keeps it until a run finds less than half of it, so it overstates by at most 2x.
+    /// It understates only when the data grew, and then the table grows during the build, as it did
+    /// before. Sized from it the table is the preallocation `HashJoin` made, counted in the same event.
+    const auto hint = getSizeHint(stats_collecting_params);
+    if (!hint || hint->ht_size > stats_collecting_params.max_size_to_preallocate)
+        return false;
+    cached_distinct_keys = hint->ht_size;
+    ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, hint->ht_size);
+    return true;
 }
 
 size_t PartitionedHashJoin::predictedResidentBytes(bool at_barrier) const

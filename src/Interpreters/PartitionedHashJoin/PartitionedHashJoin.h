@@ -302,6 +302,10 @@ private:
     /// The saved-block form of one stored block, for the drains that hand blocks to another join.
     Block storedBlockToBlock(StoredBlock && stored) const;
     size_t liveDistinctEstimate() const;
+    /// Reads the previous run's distinct-key count into `cached_distinct_keys` and counts it as a
+    /// preallocation. False when the cache has no entry for this join or the entry exceeds
+    /// `max_size_to_preallocate_for_joins`.
+    bool readDistinctKeysFromStatisticsCache();
     void finishBuildPhase(bool all_values_unique);
     /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
     void reinitUsedFlags();
@@ -383,9 +387,13 @@ private:
     /// An estimated build below `parallel_hash_join_threshold` runs on one fill thread, which inserts
     /// into the table as the blocks arrive.
     bool single_fill_thread = false;
-    /// Distinct-key statistics for the next run of this query (join reordering, runtime filters). Never
-    /// read to size this build: the sketch sizes the table and a grow corrects it, and a cached count
-    /// would not depend on the data.
+    /// The distinct-key count a previous run of this query left in the hash table statistics cache,
+    /// read once when the table is sized (`readDistinctKeysFromStatisticsCache`); the clause then sizes
+    /// from it as an exact estimate.
+    std::optional<size_t> cached_distinct_keys;
+    /// Distinct-key statistics. The count this build publishes serves the next run of this query: join
+    /// reordering, runtime filters, and this join's table size. The previous run's count, when the cache
+    /// has one, sizes this build's table.
     StatsCollectingParams stats_collecting_params;
     /// The matched-row statistics the planner's row store decision reads.
     StatsCollectingParams match_stats_collecting_params;

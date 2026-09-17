@@ -1479,7 +1479,7 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
     LOG_TRACE(
         log,
         "Partition plan: table of 2^{} cells, bits = {}, partitions = {}, {} scatter pass(es) (bits per pass [{}]), {} rows in {} "
-        "blocks, estimated {} distinct keys",
+        "blocks, {} distinct keys {}",
         size_degree,
         bits,
         partitions,
@@ -1487,7 +1487,8 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
         fmt::join(pass_bits, ", "),
         rows,
         build_blocks.size(),
-        static_cast<size_t>(hll_estimate));
+        static_cast<size_t>(hll_estimate),
+        estimate_is_exact ? "from the statistics cache" : "estimated by the sketch");
 }
 
 void HashJoinClause::createHashJoinTable()
@@ -1618,7 +1619,7 @@ size_t HashJoinClause::reserveFor(size_t rows, double distinct_estimate) const
     /// then takes over: at most a 2x over-reservation, only for builds already holding 64 GiB of cells.
     if (reserve_override_for_tests)
         return *reserve_override_for_tests;
-    const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * reserve_safety);
+    const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * reserveSafety());
     const size_t rows_bound = std::max<size_t>(rows, 1);
     if (scaled >= 2147483648.0)
         return rows_bound;
@@ -2302,7 +2303,7 @@ bool HashJoinClause::postBuildPartitioned()
         if (groups > 0)
         {
             const UInt64 projected
-                = boundaryProjection(claimedTotal(), ctx.insertedRows(), insertableRows(), hll_estimate, reserve_safety);
+                = boundaryProjection(claimedTotal(), ctx.insertedRows(), insertableRows(), hll_estimate, reserveSafety());
             maybeGrowForLoadFactor(projected, chunkBytesForBlockRange(b, b + 1));
         }
 

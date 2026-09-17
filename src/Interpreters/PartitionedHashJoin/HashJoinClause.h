@@ -156,7 +156,13 @@ public:
     /// The barrier's decision for `rows` build rows, from the sketch estimate set with
     /// `setDistinctEstimate`: the table degree, the partition count and the scatter passes.
     void decidePartitionPlan(size_t rows);
-    void setDistinctEstimate(double estimate) { hll_estimate = estimate; }
+    /// `exact` says the estimate is a previous run's exact distinct count from the hash table statistics
+    /// cache, so the table reserve gets no safety factor (`reserveSafety`).
+    void setDistinctEstimate(double estimate, bool exact = false)
+    {
+        hll_estimate = estimate;
+        estimate_is_exact = exact;
+    }
     double hllEstimate() const { return hll_estimate; }
     /// The barrier's sketch estimate, floored at one so an empty build never sizes a zero-byte table.
     size_t distinctEstimate() const { return std::max<size_t>(static_cast<size_t>(std::llround(hll_estimate)), 1); }
@@ -277,6 +283,8 @@ private:
     size_t duplicateScratchBytesForRange(size_t rows_in_range, bool first_group) const;
     /// The buffer degree for `reserve` cells; throws past 2^32 cells.
     size_t sizeDegreeFor(size_t reserve) const;
+    /// The safety factor a table reserve gets over its distinct estimate: none over an exact cached count.
+    double reserveSafety() const { return estimate_is_exact ? 1.0 : reserve_safety; }
     /// Rows the partitioned inserts will see: the sum of the exact per-partition counts.
     UInt64 insertableRows() const;
     /// Bytes still held by the saved routes.
@@ -395,9 +403,13 @@ private:
     std::optional<size_t> l1_cache_bytes_for_tests;
     std::optional<size_t> forced_bits_for_tests;
     double hll_estimate = 0;
+    /// Set when `hll_estimate` is a previous run's exact distinct count from the hash table statistics
+    /// cache rather than the sketch's estimate; see `setDistinctEstimate`.
+    bool estimate_is_exact = false;
     /// Reserve factor over the sketch estimate. Also the multiplicity band below which the arena
     /// prediction treats the build as unique (`predictedTableAndArenaBytes`). That second use needs
-    /// the wide margin. The ~1.15% sketch error alone would not.
+    /// the wide margin. The ~1.15% sketch error alone would not. An exact count from the cache gets no
+    /// factor (`reserveSafety`).
     double reserve_safety = 1.2;
     /// The table's buffer degree, fixed at the barrier: `2^size_degree` cells, `2^bits` ranges.
     size_t size_degree = 0;
