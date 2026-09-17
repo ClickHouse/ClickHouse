@@ -62,6 +62,29 @@ packets.append(ethernet(ipv6(6, tcp), ether_type=0x86DD))
 packets.append(ethernet(ipv6(17, udp), ether_type=0x86DD))
 
 
+def ipv6_extension_header(header_type, next_header, body):
+    """A generic IPv6 extension header (`next header`, length in 8-byte units not counting the first 8, body)."""
+    assert (2 + len(body)) % 8 == 0
+    return bytes([next_header, (2 + len(body)) // 8 - 1]) + body
+
+
+# IPv6 with an extension-header chain: Hop-by-Hop options (0) then Routing (43)
+# before TCP. `ip_protocol` must report the protocol after the chain (`TCP`),
+# not the first `next header` value of the fixed header (`HOPOPT`).
+hop_by_hop_then_routing = ipv6_extension_header(
+    0, 43, bytes.fromhex("010400000000")  # PadN option covering the 6 remaining bytes
+) + ipv6_extension_header(
+    43, 6, bytes.fromhex("020000000000")  # routing type 2, no segments left
+)
+packets.append(ethernet(ipv6(0, hop_by_hop_then_routing + tcp), ether_type=0x86DD))
+
+# A non-first IPv6 fragment (Fragment header 44, offset 185, no "more fragments")
+# of a UDP datagram: the transport header is in another fragment, so the ports
+# cannot be decoded, but the Fragment header still names the protocol (`UDP`).
+fragment = bytes([17, 0]) + struct.pack(">HI", 185 << 3, 0x12345678)
+packets.append(ethernet(ipv6(44, fragment + b"a fragment of a UDP datagram"), ether_type=0x86DD))
+
+
 def write_pcap(path, records, snaplen=65535):
     """Classic pcap; every record is a (captured bytes, original wire length) pair."""
     with path.open("wb") as file:

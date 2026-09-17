@@ -51,7 +51,6 @@ namespace ErrorCodes
 }
 
 /// One row per packet; up to this many packets per Chunk.
-static constexpr size_t max_rows_per_chunk = 65536;
 
 enum PcapColumn
 {
@@ -243,8 +242,72 @@ void writeIPv6(const Tins::IPv6Address & addr, IPv6 & out)
         buf[i++] = byte;
 }
 
-/// Name of the IANA protocol number found in the IPv4 `protocol` or IPv6 `next header` field.
-/// Numbers without a well-known name are rendered in decimal.
+/// Byte offset of `target` inside the frame that starts with `root`: the sum of the header
+/// sizes of the layers above it.
+size_t offsetOfLayer(const Tins::PDU & root, const Tins::PDU & target)
+{
+    size_t offset = 0;
+    for (const Tins::PDU * layer = &root; layer != nullptr && layer != &target; layer = layer->inner_pdu())
+        offset += layer->header_size();
+    return offset;
+}
+
+/// The IPv6 extension headers (RFC 8200 and RFC 7045). `No Next Header` (59) and `ESP` (50)
+/// end the chain, so they are not listed here.
+bool isIPv6ExtensionHeader(UInt8 header)
+{
+    switch (header)
+    {
+        case Tins::IPv6::HOP_BY_HOP:
+        case Tins::IPv6::ROUTING:
+        case Tins::IPv6::FRAGMENT:
+        case Tins::IPv6::AUTHENTICATION:
+        case Tins::IPv6::DESTINATION_OPTIONS:
+        case Tins::IPv6::MOBILITY:
+        case 139: /// Host Identity Protocol
+        case 140: /// Shim6
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// The protocol carried by an IPv6 packet: the `next header` value of the last header of its
+/// extension-header chain (Hop-by-Hop options, Routing, Fragment, ...), or the value from the
+/// fixed header when there is no chain. `libtins` strips the `next header` byte of every
+/// extension header it parses and exposes only the one from the fixed header, so the chain is
+/// walked over the raw bytes of the frame. When the snapshot length cuts the chain, the type of
+/// the last extension header that is still known is returned.
+UInt8 ipv6FinalNextHeader(const Tins::IPv6 & ipv6, const unsigned char * frame, size_t frame_size, size_t ipv6_offset)
+{
+    static constexpr size_t fixed_header_size = 40;
+
+    UInt8 next = ipv6.next_header();
+    size_t pos = ipv6_offset + fixed_header_size;
+    while (isIPv6ExtensionHeader(next))
+    {
+        /// Every extension header starts with its own `next header` byte followed by a length byte.
+        if (pos + 2 > frame_size)
+            break;
+
+        const UInt8 following = frame[pos];
+        const UInt8 length_field = frame[pos + 1];
+        size_t header_length = 0;
+        if (next == Tins::IPv6::FRAGMENT)
+            header_length = 8; /// Fixed size; the second byte is reserved.
+        else if (next == Tins::IPv6::AUTHENTICATION)
+            header_length = (static_cast<size_t>(length_field) + 2) * 4; /// In 4-byte units, minus 2.
+        else
+            header_length = (static_cast<size_t>(length_field) + 1) * 8; /// In 8-byte units, not including the first 8.
+
+        pos += header_length;
+        next = following;
+    }
+    return next;
+}
+
+/// Name of the IANA protocol number found in the IPv4 `protocol` field or after the IPv6
+/// extension-header chain. Numbers without a well-known name are rendered in decimal.
 String ipProtocolName(UInt8 protocol)
 {
     switch (protocol)
@@ -364,10 +427,15 @@ Chunk PCAPBlockInputFormat::read()
     pcap_t * handle = sniffer->get_pcap_handle();
     const int dlt = sniffer->link_type();
 
+    /// A row carries the whole packet in `raw` (and most of it again in `payload`), so the
+    /// block is bounded by the captured bytes as well as by the number of rows.
+    const size_t max_rows = format_settings.pcap.max_block_size;
+    const size_t max_bytes = format_settings.pcap.prefer_block_bytes;
+
     size_t num_rows = 0;
     size_t bytes_read = 0;
 
-    while (num_rows < max_rows_per_chunk)
+    while (num_rows < max_rows && (max_bytes == 0 || bytes_read < max_bytes))
     {
         if (is_stopped)
             break;
@@ -521,16 +589,16 @@ Chunk PCAPBlockInputFormat::read()
         auto * tcp = dynamic_cast<Tins::TCP *>(ip_inner);
         auto * udp = dynamic_cast<Tins::UDP *>(ip_inner);
 
-        /// Taken from the IP header itself (the IPv4 `protocol` field or the IPv6 `next header`
-        /// field), so it stays correct when the transport header was not captured (a truncated
-        /// snapshot) or is not decodable (a non-first IPv4 fragment).
+        /// Taken from the IP header itself (the IPv4 `protocol` field, or the `next header`
+        /// field after the IPv6 extension-header chain), so it stays correct when the transport
+        /// header was not captured (a truncated snapshot) or is not decodable (a fragment).
         if (need[COL_IP_PROTOCOL])
         {
             String name;
             if (ipv4)
                 name = ipProtocolName(ipv4->protocol());
             else if (ipv6)
-                name = ipProtocolName(ipv6->next_header());
+                name = ipProtocolName(ipv6FinalNextHeader(*ipv6, data, caplen, offsetOfLayer(*pdu, *ipv6)));
             col_ip_protocol->insertData(name.data(), name.size());
         }
 
@@ -686,7 +754,7 @@ The `PCAP` format reads network packet capture files - both the classic
 `pcap` format and the newer `pcapng` format - and produces one row per packet.
 Each packet is dissected up to the transport layer (L2-L4), so that Ethernet,
 IPv4/IPv6 and TCP/UDP header fields are available as typed columns that can be
-queried with SQL.
+queried with SQL. It is available on Linux builds.
 
 Parsing is performed with the `libtins` library, which reads the capture
 container through `libpcap`. Only reading of capture files is supported; live
@@ -736,7 +804,7 @@ The `PCAP` format produces the following columns:
 | `ip_version` | `Nullable(UInt8)` | `4` or `6`, or `NULL` for non-IP packets |
 | `src_addr` | `Nullable(IPv6)` | Source IP address; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
 | `dst_addr` | `Nullable(IPv6)` | Destination IP address |
-| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the IP packet, taken from the IPv4 `protocol` field or the IPv6 `next header` field, for example `TCP`, `UDP` or `ICMP`. It is filled even when the transport header itself was not captured or is not decodable, in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal. Empty for non-IP packets |
+| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the IP packet, taken from the IPv4 `protocol` field or from the IPv6 `next header` field after any extension headers (Hop-by-Hop options, Routing, Fragment and so on), for example `TCP`, `UDP` or `ICMP`. It is filled even when the transport header itself was not captured or is not decodable, in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal. Empty for non-IP packets |
 | `ip_ttl` | `Nullable(UInt16)` | IPv4 TTL or IPv6 hop limit |
 | `src_port` | `Nullable(UInt16)` | TCP/UDP source port |
 | `dst_port` | `Nullable(UInt16)` | TCP/UDP destination port |
@@ -886,7 +954,10 @@ you need them in the key.
 
 ## Format settings {#format-settings}
 
-The `PCAP` format currently has no format-specific settings.
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `input_format_pcap_max_block_size` | The maximum number of packets (rows) in one block. | `65409` |
+| `input_format_pcap_prefer_block_bytes` | A block is finished once the captured bytes of its packets reach this amount, even if it has fewer rows than `input_format_pcap_max_block_size`. Since `raw` and `payload` hold the packet bytes, this bounds the memory of one block for captures with large packets. `0` disables the byte limit. | `16744704` |
 )DOCS_MD"});
 }
 

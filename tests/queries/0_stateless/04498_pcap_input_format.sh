@@ -79,6 +79,34 @@ FROM file('$DATA_DIR/packets.pcap', PCAP)
 WHERE ip_version = 6
 ORDER BY number FORMAT TSV"
 
+echo "--- IPv6 extension headers: ip_protocol is the protocol after the chain ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, protocols, ip_protocol, src_port, dst_port, tcp_flags
+FROM file('$DATA_DIR/packets.pcap', PCAP)
+WHERE ip_version = 6 AND number > 7
+ORDER BY number FORMAT TSV"
+
+echo "--- protocol filters see extension-header traffic ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT ip_protocol, count(), countIf(src_port IS NULL)
+FROM file('$DATA_DIR/packets.pcap', PCAP)
+WHERE ip_protocol IN ('TCP', 'UDP')
+GROUP BY ip_protocol
+ORDER BY ip_protocol FORMAT TSV"
+
+echo "--- block size limits: rows, bytes, and both default ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP)
+SETTINGS input_format_pcap_max_block_size = 4 FORMAT TSV"
+$CLICKHOUSE_LOCAL -q "
+SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP)
+SETTINGS input_format_pcap_prefer_block_bytes = 1 FORMAT TSV"
+$CLICKHOUSE_LOCAL -q "
+SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP)
+SETTINGS input_format_pcap_prefer_block_bytes = 100 FORMAT TSV"
+$CLICKHOUSE_LOCAL -q "
+SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP) FORMAT TSV"
+
 echo "--- truncated capture (snaplen 34: original_length > capture_length) ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT number, capture_length, original_length, protocols, ip_protocol, length(raw)

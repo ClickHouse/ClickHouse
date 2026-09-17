@@ -30,13 +30,16 @@ raw	String
 5	ETHERNET_II	['ETHERNET_II','IP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	\N	\N	\N
 6	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
 7	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+8	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+9	ETHERNET_II	['ETHERNET_II','IPv6','RAW']	6	2001:db8::1	2001:db8::2	UDP	\N	\N	\N
 --- UDP ---
 2	['ETHERNET_II','IP','UDP']	UDP	68	67
 7	['ETHERNET_II','IPv6','UDP']	UDP	68	67
+9	['ETHERNET_II','IPv6','RAW']	UDP	\N	\N
 --- ICMP protocol/count ---
 ICMP	1
 --- all Ethernet/IPv4/TCP ---
-7	7	5	4
+9	9	5	5
 --- pcapng reads identically to the classic pcap ---
 1	ETHERNET_II	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
 2	ETHERNET_II	['ETHERNET_II','IP','UDP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	\N
@@ -45,6 +48,8 @@ ICMP	1
 5	ETHERNET_II	['ETHERNET_II','IP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	\N	\N	\N
 6	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
 7	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+8	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+9	ETHERNET_II	['ETHERNET_II','IPv6','RAW']	6	2001:db8::1	2001:db8::2	UDP	\N	\N	\N
 --- pcapng and pcap agree on every column ---
 1
 --- VLAN-tagged frame: eth_type unwraps the 802.1Q tag ---
@@ -54,6 +59,19 @@ ICMP	1
 --- native IPv6: addresses, next header and ports ---
 6	['ETHERNET_II','IPv6','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
 7	['ETHERNET_II','IPv6','UDP']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	68	67	\N
+8	['ETHERNET_II','IPv6','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
+9	['ETHERNET_II','IPv6','RAW']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	\N	\N	\N
+--- IPv6 extension headers: ip_protocol is the protocol after the chain ---
+8	['ETHERNET_II','IPv6','TCP','RAW']	TCP	12345	80	ACK,PSH
+9	['ETHERNET_II','IPv6','RAW']	UDP	\N	\N	\N
+--- protocol filters see extension-header traffic ---
+TCP	5	1
+UDP	3	1
+--- block size limits: rows, bytes, and both default ---
+3	9
+9	9
+5	9
+1	9
 --- truncated capture (snaplen 34: original_length > capture_length) ---
 1	34	76	['ETHERNET_II','IP']	TCP	34
 2	34	42	['ETHERNET_II','IP']	UDP	34
@@ -70,9 +88,11 @@ truncated.pcap	0	0	0
 5	\N
 6	80
 7	67
+8	80
+9	\N
 --- from a stream: standard input ---
-7	4
+9	5
 --- from a stream: compressed file ---
-7	4
+9	5
 --- schema inference via file() extension is PCAP-explicit only (count) ---
-7
+9

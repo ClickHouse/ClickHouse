@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"input_format_pcap_max_block_size", DEFAULT_BLOCK_SIZE, DEFAULT_BLOCK_SIZE, "New setting: the maximum number of packets in one block produced by the `PCAP` input format."},
+            {"input_format_pcap_prefer_block_bytes", DEFAULT_BLOCK_SIZE * 256, DEFAULT_BLOCK_SIZE * 256, "New setting: the `PCAP` input format stops filling a block once the captured bytes of its packets reach this amount."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
         });
