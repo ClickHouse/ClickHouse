@@ -34,14 +34,14 @@ INSERT INTO ts_nh_lot (metric_name, tags, histograms) VALUES
 
 -- Float series f{job='sub'}: the subquery resample must work for the float arm as well (the bug
 -- threw for every series on a histogram-enabled storage, not just histogram-carrying ones).
-INSERT INTO ts_nh_lot (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_lot (metric_name, tags, samples) VALUES
     ('f', map('job', 'sub'), [(toDateTime64(60, 3), 1.5), (toDateTime64(120, 3), 2.5)]);
 
 -- Series for the float-only filter: n{job='dup'} carries a histogram, g{job='dup'} is float-only,
 -- and f1/f2{job='multi'} are both float-only.
 INSERT INTO ts_nh_lot (metric_name, tags, histograms) VALUES
     ('n', map('job', 'dup'), [(toDateTime64(120, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.])]);
-INSERT INTO ts_nh_lot (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_lot (metric_name, tags, samples) VALUES
     ('g', map('job', 'dup'), [(toDateTime64(120, 3), 99)]),
     ('f1', map('job', 'multi'), [(toDateTime64(120, 3), 1)]),
     ('f2', map('job', 'multi'), [(toDateTime64(120, 3), 2)]);
@@ -55,7 +55,7 @@ SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_lot', 'last
 
 SELECT '-- last_over_time over a subquery, range query: every outer step resamples the inner grid,';
 SELECT '-- and the inner matrix is NOT leaked on the inner steps (the silent-corruption case before the fix)';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_lot', 'last_over_time(nh[300:60])', 120, 240, 60);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_lot', 'last_over_time(nh[300:60])', 120, 240, 60);
 
 SELECT '-- histogram_count over a native series plus a float-only series with the same labels: the float-only';
 SELECT '-- series is skipped (upstream semantics), so the `__name__` drop sees no duplicate series';
