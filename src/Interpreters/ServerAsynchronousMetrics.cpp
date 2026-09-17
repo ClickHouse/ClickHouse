@@ -9,7 +9,13 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
+#if ENABLE_DISTRIBUTED_CACHE
+#include <DistributedCache/Utils.h>
+#endif
+
 #include <Databases/IDatabase.h>
+
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -19,6 +25,7 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
+#include <Common/UDFProcessRegistry.h>
 #include <Common/setThreadName.h>
 
 
@@ -57,7 +64,7 @@ namespace HistogramMetrics
 namespace ProfileEvents
 {
     extern const Event ReaderExecutorModeledCostMicroseconds;
-    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorDeliveredBytes;
 }
 
 namespace DB
@@ -162,7 +169,12 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
+    , AsynchronousMetrics(
+        update_period_seconds,
+        protocol_server_metrics_func_,
+        update_jemalloc_epoch_,
+        update_rss_,
+        global_context_)
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
@@ -218,10 +230,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
     /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
     {
-        const UInt64 cost_us = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));
-        const UInt64 req_bytes = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed));
+        const UInt64 cost_us = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds]);
+        const UInt64 req_bytes = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorDeliveredBytes]);
         if (!first_run)
         {
             const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
@@ -232,7 +242,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             new_values["ReaderExecutorModeledCostMsPerRequestedMiB"] = { ms_per_mib,
                 "Experimental ReaderExecutor read-path efficiency: modeled cost (ms) per MiB of requested"
                 " bytes over the last update interval, instance-wide -- the ratio of the deltas of"
-                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorRequestedBytes."
+                " ProfileEvents ReaderExecutorModeledCostMicroseconds and ReaderExecutorDeliveredBytes."
                 " Lower is better: the bandwidth floor is ~20 (a clean source read), cache hits trend to 0,"
                 " over-fetch and incomplete connections push it up. 0 means no executor reads in the interval." };
         }
@@ -246,8 +256,31 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Current limit on the size of userspace page cache, in bytes." };
     }
 
+#if ENABLE_DISTRIBUTED_CACHE
+    DistributedCache::updateDistributedCacheMetrics(new_values);
+#endif
+
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };
+
+#if defined(OS_LINUX)
+    try
+    {
+        const auto udf_processes_sample = UDFProcessRegistry::instance().sample();
+        new_values["ExecutableUserDefinedFunctionMemoryResidentBytes"] = { udf_processes_sample.memory_resident_bytes,
+            "Sum of the resident set size (VmRSS) over all live processes of executable and executable_pool user-defined"
+            " functions and their descendant processes, in bytes. Idle executable_pool workers are included."
+            " Shared pages are counted once per process, so the sum is an upper bound that can exceed the unique"
+            " physical memory footprint of the UDF processes." };
+        new_values["ExecutableUserDefinedFunctionProcesses"] = { udf_processes_sample.process_count,
+            "Number of live processes spawned for executable and executable_pool user-defined functions,"
+            " including their descendant processes." };
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+#endif
 
     if (const auto stats = getHashTablesCacheStatistics())
     {
@@ -300,6 +333,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// Free and total space on every configured disk.
     {
         DisksMap disks_map = getContext()->getDisksMap();
+
+        AsynchronousMetricKeyValues disk_total;
+        AsynchronousMetricKeyValues disk_used;
+        AsynchronousMetricKeyValues disk_available;
+        AsynchronousMetricKeyValues disk_unreserved;
+#if USE_AWS_S3
+        AsynchronousMetricKeyValues disk_put_object_throttler_rps;
+        AsynchronousMetricKeyValues disk_put_object_throttler_available;
+        AsynchronousMetricKeyValues disk_get_object_throttler_rps;
+        AsynchronousMetricKeyValues disk_get_object_throttler_available;
+#endif
+        AsynchronousMetricKeyValues dead_blobs_queue_estimate;
+        AsynchronousMetricKeyValues missing_blobs_queue_estimate;
+
         for (const auto & [name, disk] : disks_map)
         {
             auto total = disk->getTotalSpace();
@@ -310,21 +357,16 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 auto available = disk->getAvailableSpace();
                 auto unreserved = disk->getUnreservedSpace();
 
-                new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                disk_total[name] = static_cast<double>(*total);
 
                 if (available)
                 {
-                    new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                        "Used bytes on the disk (virtual filesystem). Remote filesystems do not always provide this information." };
-
-                    new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                    disk_used[name] = static_cast<double>(*total - *available);
+                    disk_available[name] = static_cast<double>(*available);
                 }
 
                 if (unreserved)
-                    new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+                    disk_unreserved[name] = static_cast<double>(*unreserved);
             }
 
 #if USE_AWS_S3
@@ -332,25 +374,69 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             {
                 if (auto put_throttler = s3_client->getPutRequestThrottler())
                 {
-                    new_values[fmt::format("DiskPutObjectThrottlerRPS_{}", name)] = { put_throttler->getMaxSpeed(),
-                        "PutObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
-                    new_values[fmt::format("DiskPutObjectThrottlerAvailable_{}", name)] = { put_throttler->getAvailable(),
-                        "Number of PutObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                    disk_put_object_throttler_rps[name] = static_cast<double>(put_throttler->getMaxSpeed());
+                    disk_put_object_throttler_available[name] = static_cast<double>(put_throttler->getAvailable());
                 }
                 if (auto get_throttler = s3_client->getGetRequestThrottler())
                 {
-                    new_values[fmt::format("DiskGetObjectThrottlerRPS_{}", name)] = { get_throttler->getMaxSpeed(),
-                        "GetObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information." };
-                    new_values[fmt::format("DiskGetObjectThrottlerAvailable_{}", name)] = { get_throttler->getAvailable(),
-                        "Number of GetObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information." };
+                    disk_get_object_throttler_rps[name] = static_cast<double>(get_throttler->getMaxSpeed());
+                    disk_get_object_throttler_available[name] = static_cast<double>(get_throttler->getAvailable());
                 }
             }
 #endif
+
+            if (auto object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk))
+            {
+                dead_blobs_queue_estimate[name] = static_cast<double>(object_storage_disk->getDeadBlobsQueueEstimate());
+                missing_blobs_queue_estimate[name] = static_cast<double>(object_storage_disk->getMissingBlobsQueueEstimate());
+            }
+        }
+
+        if (!disk_total.empty())
+            new_values["DiskTotal"] = { "disk", std::move(disk_total),
+                "The total size in bytes of every disk (virtual filesystem), keyed by the disk name. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+
+        if (!disk_used.empty())
+            new_values["DiskUsed"] = { "disk", std::move(disk_used),
+                "Used bytes on every disk (virtual filesystem), keyed by the disk name. Remote filesystems do not always provide this information." };
+
+        if (!disk_available.empty())
+            new_values["DiskAvailable"] = { "disk", std::move(disk_available),
+                "Available bytes on every disk (virtual filesystem), keyed by the disk name. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+
+        if (!disk_unreserved.empty())
+            new_values["DiskUnreserved"] = { "disk", std::move(disk_unreserved),
+                "Available bytes on every disk (virtual filesystem) without the reservations for merges, fetches, and moves, keyed by the disk name. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+
+#if USE_AWS_S3
+        if (!disk_put_object_throttler_rps.empty())
+        {
+            new_values["DiskPutObjectThrottlerRPS"] = { "disk", std::move(disk_put_object_throttler_rps),
+                "PutObject Request throttling limit on every disk in requests per second (virtual filesystem), keyed by the disk name. Local filesystems may not provide this information." };
+            new_values["DiskPutObjectThrottlerAvailable"] = { "disk", std::move(disk_put_object_throttler_available),
+                "Number of PutObject requests that can be currently issued without hitting throttling limit on every disk (virtual filesystem), keyed by the disk name. Local filesystems may not provide this information." };
+        }
+
+        if (!disk_get_object_throttler_rps.empty())
+        {
+            new_values["DiskGetObjectThrottlerRPS"] = { "disk", std::move(disk_get_object_throttler_rps),
+                "GetObject Request throttling limit on every disk in requests per second (virtual filesystem), keyed by the disk name. Local filesystems may not provide this information." };
+            new_values["DiskGetObjectThrottlerAvailable"] = { "disk", std::move(disk_get_object_throttler_available),
+                "Number of GetObject requests that can be currently issued without hitting throttling limit on every disk (virtual filesystem), keyed by the disk name. Local filesystems may not provide this information." };
+        }
+#endif
+
+        if (!dead_blobs_queue_estimate.empty())
+        {
+            new_values["DeadBlobsQueueEstimate"] = { "disk", std::move(dead_blobs_queue_estimate),
+                "Estimated number of blobs enqueued for removal from the disk object storage (the blob manager dead queue), keyed by the disk name. Disks without blob replication report 0." };
+            new_values["MissingBlobsQueueEstimate"] = { "disk", std::move(missing_blobs_queue_estimate),
+                "Estimated number of blobs awaiting replication to other locations of the disk (the blob manager missing queue), keyed by the disk name. Disks without blob replication report 0." };
         }
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -536,7 +622,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        const auto user_info = getContext()->getProcessList().getUserInfo(true);
+        const auto user_info = getContext()->getProcessList().getUserInfo(false);
         size_t queries_memory_usage = 0;
         size_t queries_peak_memory_usage = 0;
         for (const auto & [user, info] : user_info)
@@ -591,7 +677,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
             continue;
@@ -911,7 +997,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                  "Update heavy metrics. "
                  "Update period {} sec. "
                  "Update heavy metrics period {} sec. "
-                 "Heavy metrics calculation elapsed: {} sec.",
+                 "Heavy metrics calculation elapsed: {:.3f} sec.",
                  update_period.count(),
                  heavy_metric_update_period.count(),
                  watch.elapsedSeconds());

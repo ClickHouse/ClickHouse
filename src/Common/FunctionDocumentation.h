@@ -2,6 +2,7 @@
 
 #include <Common/VersionNumber.h>
 #include <base/types.h>
+#include <source_location>
 #include <vector>
 
 
@@ -147,6 +148,15 @@ struct FunctionDocumentation
     Examples examples {};                         ///
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
     Category category{};                            /// E.g. Category::DatesAndTimes
+
+    /// The source file where this documentation is defined. Captured automatically at the construction site (the
+    /// function registration), so it points to the source code that documents the function; do not set it explicitly.
+    /// The path is as produced by the compiler; `system.documentation` exposes it relative to the repository root.
+    /// NOTE: this only works when the object is initialized at its construction site, i.e. with aggregate/designated
+    /// initialization (`FunctionDocumentation doc{...}`) or value-initialization (`FunctionDocumentation doc{}`).
+    /// A default-initialized object (`FunctionDocumentation doc;`, without braces) records this header instead, so
+    /// always use braces when building the documentation field by field afterwards.
+    const char * source = std::source_location::current().file_name();
 
     String syntaxAsString() const;
     String argumentsAsString() const;

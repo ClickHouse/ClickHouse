@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -12,10 +13,12 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -28,11 +31,14 @@ namespace Setting
     extern const SettingsBool use_statistics;
 }
 
+namespace
+{
+
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
-static constexpr auto threshold = 2;
+constexpr auto threshold = 2;
 
-static NameToIndexMap fillNamesPositions(const Names & names)
+NameToIndexMap fillNamesPositions(const Names & names)
 {
     NameToIndexMap names_positions;
 
@@ -45,8 +51,22 @@ static NameToIndexMap fillNamesPositions(const Names & names)
     return names_positions;
 }
 
+constexpr double default_bytes_per_string_value = 64;
+constexpr double default_bytes_per_complex_value = 128;
+
+/// Uncompressed, unlike the stored column sizes, so it over-charges - the safe direction for a
+/// column whose real cost is unknown.
+double approximateBytesPerValueForType(const IDataType & type)
+{
+    if (type.haveMaximumSizeOfValue())
+        return static_cast<double>(type.getMaximumSizeOfValueInMemory());
+    if (WhichDataType(type).isString())
+        return default_bytes_per_string_value;
+    return default_bytes_per_complex_value;
+}
+
 /// Find minimal position of any of the column in primary key.
-static Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndexMap & primary_key_positions)
+Int64 findMinPosition(const NameSet & condition_table_columns, const NameToIndexMap & primary_key_positions)
 {
     Int64 min_position = std::numeric_limits<Int64>::max() - 1;
 
@@ -60,7 +80,7 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
-static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
+NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
     GetColumnsOptions options(GetColumnsOptions::All);
     options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
@@ -83,17 +103,21 @@ static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, cons
     return table_columns;
 }
 
+}
+
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageSnapshotPtr & storage_snapshot,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
+    bool supported_columns_include_subcolumns_,
     LoggerPtr log_)
     : estimator(estimator_)
     , table_columns(getTableColumns(storage_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
+    , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
     , sorting_key_names{NameSet(
           storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
@@ -107,6 +131,9 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         if (it != column_sizes.end())
             total_size_of_queried_columns += it->second;
     }
+
+    if (estimator)
+        total_rows = estimator->getTotalRows();
 }
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
@@ -175,9 +202,24 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     std::list<const ActionsDAG::Node *> prewhere_conditions_list;
     for (const auto & condition : optimize_result->prewhere_conditions)
     {
-        const ActionsDAG::Node * condition_node = condition.node.getDAGNode();
-        if (prewhere_conditions.insert(condition_node).second)
-            prewhere_conditions_list.push_back(condition_node);
+        for (const auto & n : condition.nodes)
+        {
+            const ActionsDAG::Node * condition_node = n.getDAGNode();
+
+            /// FINAL merges by physical name, so unwrap an analyzer alias to its input column
+            /// before moving it to PREWHERE (otherwise the alias reaches the merge as a measure).
+            if (is_final)
+            {
+                const ActionsDAG::Node * unwrapped = condition_node;
+                while (unwrapped->type == ActionsDAG::ActionType::ALIAS)
+                    unwrapped = unwrapped->children.front();
+                if (unwrapped->type == ActionsDAG::ActionType::INPUT)
+                    condition_node = unwrapped;
+            }
+
+            if (prewhere_conditions.insert(condition_node).second)
+                prewhere_conditions_list.push_back(condition_node);
+        }
     }
 
     return {
@@ -311,69 +353,204 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     return false;
 }
 
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, std::set<Int64> & pk_positions) const
+static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
 {
-    auto function_node_optional = node.toFunctionNodeOrNull();
-
-    if (function_node_optional.has_value() && function_node_optional->getFunctionName() == "and")
+    auto fn = node.toFunctionNodeOrNull();
+    if (fn.has_value() && fn->getFunctionName() == "and")
     {
-        size_t arguments_size = function_node_optional->getArgumentsSize();
-
-        for (size_t i = 0; i < arguments_size; ++i)
-        {
-            auto argument = function_node_optional->getArgumentAt(i);
-            analyzeImpl(res, argument, where_optimizer_context, pk_positions);
-        }
+        for (size_t i = 0; i < fn->getArgumentsSize(); ++i)
+            collectConjuncts(fn->getArgumentAt(i), conjuncts);
     }
     else
+        conjuncts.push_back(node);
+}
+
+/// Analyze the WHERE expression and populate `res` with one `Condition` per conjunct group.
+/// Algorithm:
+///   1. Flatten the top-level AND chain into individual conjuncts with `collectConjuncts`.
+///   2. Build a temporary `ConjunctInfo` for each conjunct: collect referenced columns,
+///      check primary-index usability, and determine whether the conjunct is viable
+///      (i.e., eligible to be moved to PREWHERE).
+///   3. Group viable conjuncts by their exact `NameSet` of referenced columns so that
+///      conditions on the same column set are scored together (better selectivity estimate).
+///   4. Emit non-viable conjuncts individually as single-node `Condition` objects (viable=false).
+///   5. Emit each viable group as a single multi-node `Condition`, computing `good`,
+///      `estimated_row_count`, and `min_position_in_primary_key` for the whole group.
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, std::set<Int64> & pk_positions) const
+{
+    /// Flatten the top-level AND chain into individual conjuncts.
+    std::vector<RPNBuilderTreeNode> conjuncts;
+    collectConjuncts(node, conjuncts);
+
+    struct ConjunctInfo
     {
-        Condition cond(node);
+        RPNBuilderTreeNode node;
+        NameSet columns;
+        /// Column names resolved to their physical storage names (subcolumn suffix stripped).
+        /// Used for grouping: conditions on subcolumns of the same storage column
+        /// (e.g. `map.key_k0` and `map.key_k1`) are grouped and moved to PREWHERE together.
+        NameSet storage_columns;
         bool has_invalid_column = false;
-        /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.`
         bool may_use_primary_index = true;
-        collectColumns(node, nullptr, table_columns, cond.table_columns, has_invalid_column, may_use_primary_index);
+        bool viable = false;
+    };
 
-        cond.columns_size = getColumnsSize(cond.table_columns);
+    std::vector<ConjunctInfo> infos;
+    infos.reserve(conjuncts.size());
 
-        cond.viable =
-            !has_invalid_column
-            /// Condition depend on some column. Constant expressions are not moved.
-            && !cond.table_columns.empty()
-            && !cannotBeMoved(node, where_optimizer_context)
+    for (const auto & conjunct : conjuncts)
+    {
+        ConjunctInfo info{conjunct, {}, {}, false, true, false};
+        collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
+
+        /// Resolve each column to its physical storage name so that subcolumns
+        /// of the same column (e.g. `map.key_k0`, `map.key_k1`) share one group.
+        const auto & storage_columns_description = storage_metadata->getColumns();
+        for (const auto & col : info.columns)
+        {
+            if (auto resolved = storage_columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col))
+                info.storage_columns.insert(resolved->getNameInStorage());
+            else
+                info.storage_columns.insert(col);
+        }
+
+        /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.
+        info.viable =
+            !info.has_invalid_column
+            /// Condition depends on some column. Constant expressions are not moved.
+            && !info.columns.empty()
+            && !cannotBeMoved(conjunct, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(node))
+            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
-            && columnsSupportPrewhere(cond.table_columns)
+            && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns.
-            && cond.table_columns.size() < queried_columns.size();
+            && info.columns.size() < queried_columns.size();
 
-        if (cond.viable)
-            cond.good = isConditionGood(node, table_columns);
+        infos.push_back(std::move(info));
+    }
 
-        if (where_optimizer_context.use_statistics)
+    /// Group viable conjuncts by their required storage column set so same-column conditions
+    /// are treated as a single unit and their combined selectivity can be estimated.
+    /// Grouping by storage columns (rather than the exact column set) keeps subcolumns of the
+    /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
+    /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
+    /// Non-viable conjuncts stay as individual Conditions.
+    ///
+    /// We use a simple linear search to find groups (WHERE clauses are short).
+    struct Group
+    {
+        NameSet storage_columns;
+        std::vector<size_t> indices;
+    };
+    std::vector<Group> groups;
+
+    auto find_group_idx = [&](const NameSet & cols) -> std::optional<size_t>
+    {
+        for (size_t g = 0; g < groups.size(); ++g)
+            if (groups[g].storage_columns == cols)
+                return g;
+        return std::nullopt;
+    };
+
+    for (size_t i = 0; i < infos.size(); ++i)
+    {
+        if (!infos[i].viable)
+            continue;
+        auto g = find_group_idx(infos[i].storage_columns);
+        if (!g.has_value())
+            groups.push_back({infos[i].storage_columns, {i}});
+        else
+            groups[*g].indices.push_back(i);
+    }
+
+    /// Emit Conditions in the original AND-chain order:
+    ///   - non-viable conjuncts are emitted individually at their original position
+    ///   - viable column-set groups are emitted at the position of their first conjunct
+    std::vector<bool> emitted(infos.size(), false);
+
+    for (size_t i = 0; i < infos.size(); ++i)
+    {
+        if (emitted[i])
+            continue;
+
+        const auto & info = infos[i];
+
+        if (!info.viable)
         {
-            cond.good = cond.viable;
-            cond.estimated_row_count = static_cast<Float64>(estimator->estimateRelationProfile(storage_metadata, node).rows);
-            LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getColumnName(), cond.estimated_row_count);
+            /// Non-viable conditions cannot be moved to PREWHERE; just record them as-is.
+            Condition cond({info.node});
+            cond.table_columns = info.columns;
+            cond.columns_size = getColumnsSize(info.columns);
+            cond.viable = false;
+            cond.good = false;
+            emitted[i] = true;
+            res.emplace_back(std::move(cond));
         }
-
-        if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+        else
         {
-            /// Consider all conditions good with this setting enabled.
-            cond.good = cond.viable;
+            /// Emit the whole column-set group at the position of the first conjunct.
+            auto g_idx = find_group_idx(info.storage_columns);
+            const auto & group = groups[*g_idx];
 
-            cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
-            if (!may_use_primary_index)
+            for (size_t idx : group.indices)
+                emitted[idx] = true;
+
+            std::vector<RPNBuilderTreeNode> group_nodes;
+            NameSet group_columns;
+            bool group_may_use_primary_index = true;
+            bool group_good = false;
+
+            for (size_t idx : group.indices)
             {
-                /// Only set min_position_in_primary_key if it is possible to use primary index for current condition.
-                cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+                group_nodes.push_back(infos[idx].node);
+                group_columns.insert(infos[idx].columns.begin(), infos[idx].columns.end());
+                group_may_use_primary_index = group_may_use_primary_index && infos[idx].may_use_primary_index;
+                if (!where_optimizer_context.use_statistics && !where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+                    group_good = group_good || isConditionGood(infos[idx].node, table_columns);
             }
-            /// Find min position in PK of any column that is used in this condition.
-            pk_positions.emplace(cond.min_position_in_primary_key);
-        }
 
-        res.emplace_back(std::move(cond));
+            Condition cond(std::move(group_nodes));
+            cond.table_columns = group_columns;
+            cond.columns_size = getColumnsSize(group_columns);
+            cond.viable = true;
+            cond.good = group_good;
+
+            if (where_optimizer_context.use_statistics)
+            {
+                cond.good = true;
+                cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, cond.nodes).rows;
+                LOG_DEBUG(log, "Condition group ({}) has estimated row count {}", cond.toString(), cond.estimated_row_count);
+            }
+
+            if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+            {
+                cond.good = true;
+                cond.min_position_in_primary_key = findMinPosition(group_columns, primary_key_names_positions);
+                if (!group_may_use_primary_index)
+                    cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+                pk_positions.emplace(cond.min_position_in_primary_key);
+            }
+
+            /// Combine I/O cost with selectivity using the classic conjunctive filter ordering rule:
+            /// sort by cost / (1 - selectivity), i.e. cost per rejected row.
+            const double rejected_rows = static_cast<double>(total_rows) - static_cast<double>(cond.estimated_row_count);
+            if (total_rows == 0)
+                /// No statistics: fall back to pure I/O cost.
+                cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
+            else if (rejected_rows <= 0)
+                /// Rejects no rows, so it is useless in PREWHERE regardless of its cost: schedule it last.
+                cond.bytes_per_rejected_row = std::numeric_limits<double>::infinity();
+            else if (total_size_of_queried_columns == 0)
+                /// Nothing measured (compact parts): the type estimate is too coarse to outrank
+                /// selectivity, e.g. `Nullable(Int64)` would beat `Int64` on the null byte.
+                cond.bytes_per_rejected_row = static_cast<double>(cond.estimated_row_count);
+            else
+                cond.bytes_per_rejected_row = approximateBytesPerRow(cond.table_columns) * static_cast<double>(total_rows) / rejected_rows;
+
+            res.emplace_back(std::move(cond));
+        }
     }
 }
 
@@ -382,6 +559,34 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     const WhereOptimizerContext & where_optimizer_context) const
 {
     Conditions res;
+
+    if (!where_optimizer_context.allow_reorder_prewhere_conditions)
+    {
+        std::vector<RPNBuilderTreeNode> conjuncts;
+        collectConjuncts(node, conjuncts);
+        for (const auto & conjunct : conjuncts)
+        {
+            NameSet columns;
+            bool has_invalid_column = false;
+            bool may_use_primary_index = true;
+            collectColumns(conjunct, nullptr, table_columns, columns, has_invalid_column, may_use_primary_index);
+
+            Condition cond({conjunct});
+            cond.table_columns = columns;
+            cond.columns_size = getColumnsSize(columns);
+            cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
+            cond.viable =
+                !has_invalid_column
+                && !columns.empty()
+                && !cannotBeMoved(conjunct, where_optimizer_context)
+                && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
+                && columnsSupportPrewhere(columns)
+                && columns.size() < queried_columns.size();
+            res.emplace_back(std::move(cond));
+        }
+        return res;
+    }
+
     std::set<Int64> pk_positions;
     analyzeImpl(res, node, where_optimizer_context, pk_positions);
 
@@ -414,8 +619,16 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     if (conditions.empty())
         return {};
 
-    if (conditions.size() == 1)
-        return conditions.front().node.getASTNode()->clone();
+    std::vector<const IAST *> all_nodes;
+    for (const auto & cond : conditions)
+        for (const auto & n : cond.nodes)
+            all_nodes.push_back(n.getASTNode());
+
+    if (all_nodes.empty())
+        return {};
+
+    if (all_nodes.size() == 1)
+        return all_nodes.front()->clone();
 
     const auto function = make_intrusive<ASTFunction>();
 
@@ -423,8 +636,8 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     function->arguments = make_intrusive<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
-    for (const auto & elem : conditions)
-        function->arguments->children.push_back(elem.node.getASTNode()->clone());
+    for (const auto * ast : all_nodes)
+        function->arguments->children.push_back(ast->clone());
 
     return function;
 }
@@ -449,7 +662,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     auto move_to_prewhere_conditions = [&](Conditions::iterator cond_it)
     {
         moved_conditions_count++;
-        LOG_TEST(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
+        LOG_TEST(log, "Condition {} moved to PREWHERE", cond_it->toString());
         if (where_optimizer_context.allow_reorder_prewhere_conditions)
         {
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
@@ -462,27 +675,6 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
             while (prewhere_it != prewhere_conditions.end() && condition_positions[&(*prewhere_it)] < position)
                 ++prewhere_it;
             prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
-        }
-    };
-
-    /// Move condition and all other conditions depend on the same set of columns.
-    auto move_condition = [&](Conditions::iterator cond_it)
-    {
-        move_to_prewhere_conditions(cond_it);
-        total_size_of_moved_conditions += cond_it->columns_size;
-        total_number_of_moved_columns += cond_it->table_columns.size();
-
-        /// Move all other viable conditions that depend on the same set of columns.
-        for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
-        {
-            if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
-            {
-                move_to_prewhere_conditions(jt++);
-            }
-            else
-            {
-                ++jt;
-            }
         }
     };
 
@@ -516,7 +708,9 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
                 break;
         }
 
-        move_condition(it);
+        total_size_of_moved_conditions += it->columns_size;
+        total_number_of_moved_columns += it->table_columns.size();
+        move_to_prewhere_conditions(it);
     }
 
     /// Nothing was moved.
@@ -540,13 +734,51 @@ UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
     return size;
 }
 
+double MergeTreeWhereOptimizer::approximateBytesPerRow(const NameSet & columns) const
+{
+    double bytes_per_row = 0;
+
+    for (const auto & column : columns)
+        bytes_per_row += approximateBytesPerRowAndColumn(column);
+
+    return bytes_per_row;
+}
+
+double MergeTreeWhereOptimizer::approximateBytesPerRowAndColumn(const String & column) const
+{
+    chassert(total_rows > 0);
+
+    if (auto it = column_sizes.find(column); it != column_sizes.end() && it->second != 0)
+        return static_cast<double>(it->second) / static_cast<double>(total_rows);
+
+    const auto * virtual_column
+        = storage_metadata->virtuals.tryGetDescription(column, VirtualsKind::All, VirtualsMaterializationPlace::All);
+
+    /// `_part`, `_partition_id` and the like come from part metadata, so nothing is read for them.
+    /// A virtual column with a default expression (`__text_index_*`) may have to be computed.
+    if (virtual_column && virtual_column->isEphemeral() && !virtual_column->default_desc.expression)
+        return 0;
+
+    if (virtual_column)
+        return approximateBytesPerValueForType(*virtual_column->type);
+
+    if (auto column_in_storage = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, column))
+        return approximateBytesPerValueForType(*column_in_storage->type);
+
+    /// Not resolvable through the metadata. Charge the widest estimate rather than 0, which would
+    /// schedule it first.
+    return default_bytes_per_complex_value;
+}
+
 bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) const
 {
     if (!supported_columns.has_value())
         return true;
 
+    /// The contract lists top-level names; a subcolumn is admitted through its origin column.
+    const auto & columns_description = storage_metadata->getColumns();
     for (const auto & column : columns)
-        if (!supported_columns->contains(column))
+        if (!prewhereSupportedColumnsContain(*supported_columns, supported_columns_include_subcolumns, columns_description, column))
             return false;
 
     return true;

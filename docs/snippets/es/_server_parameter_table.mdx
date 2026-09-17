@@ -1,0 +1,10 @@
+---
+title: Tabla de parámetros del servidor
+---
+
+Para cada servidor, se especifican los siguientes parámetros:
+
+| Parámetro | Descripción                                                                                                                                                                                                                                                                                                                                             | Valor predeterminado |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `host`    | La dirección del servidor remoto. Puede usar el nombre de dominio o la dirección IPv4 o IPv6. Si especifica el dominio, el servidor realiza una consulta DNS al iniciarse y el resultado se almacena mientras el servidor esté en ejecución. Si la consulta DNS falla, el servidor no se inicia. Si cambia el registro DNS, debe reiniciar el servidor. | -                    |
+| `port`    | El puerto TCP para la comunicación de mensajería (`tcp_port` en la configuración, normalmente establecido en 9000). No debe confundirse con `http_port`.                                                                                                                                                                                                | -                    |

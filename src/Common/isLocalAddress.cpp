@@ -100,18 +100,16 @@ bool isLocalAddress(const Poco::Net::IPAddress & address)
             /// The address is located in memory in big endian form (network byte order).
             const unsigned char * digits = static_cast<const unsigned char *>(address.addr());
 
-            if (digits[0] == 127
+            /// Decide by value only (see above); don't fall through to the interface scan, so
+            /// 127.0.0.{2..255} stay non-local even when assigned to lo0 (e.g. macOS test aliases).
+            return digits[0] == 127
                 && digits[1] <= 1
                 && digits[2] <= 1
-                && digits[3] <= 1)
-            {
-                return true;
-            }
+                && digits[3] <= 1;
         }
-        else if (address.family() == Poco::Net::AddressFamily::IPv6)
-        {
-            return true;
-        }
+
+        /// ::1
+        return true;
     }
 
     static NetworkInterfaces network_interfaces;

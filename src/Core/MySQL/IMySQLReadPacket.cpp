@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace MySQLProtocol
@@ -83,8 +84,20 @@ uint64_t readLengthEncodedNumber(ReadBuffer & buffer)
 void readLengthEncodedString(String & s, ReadBuffer & buffer)
 {
     uint64_t len = readLengthEncodedNumber(buffer);
-    s.resize(len);
-    buffer.readStrict(reinterpret_cast<char *>(s.data()), len);
+    /// `len` is fully attacker-controlled (up to 2^64-1 via the 0xfe prefix). Grow the string in
+    /// bounded chunks as bytes actually arrive instead of resizing to `len` up front, so a bogus
+    /// length cannot trigger a huge pre-emptive allocation (pre-auth on the MySQL handshake path).
+    s.clear();
+    while (s.size() < len)
+    {
+        if (buffer.eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all data for a length-encoded string. Expected: {}, read: {}", len, s.size());
+        size_t chunk = std::min(static_cast<uint64_t>(buffer.available()), len - s.size());
+        size_t old_size = s.size();
+        s.resize(old_size + chunk);
+        buffer.readStrict(s.data() + old_size, chunk);
+    }
 }
 
 }

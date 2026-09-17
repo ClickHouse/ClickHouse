@@ -4,6 +4,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The CREATE/DROP QUOTA statements below run the access-entity notification batch
+# synchronously on the query thread. Under sanitizer slowdown the coalesced quota
+# recompute can exceed the 1s threshold and log a benign "Re-chose quotas" warning,
+# which server-log forwarding would leak into the captured stderr and fail the test.
+# --allow_repeated_settings lets this override the runner-injected --send_logs_level.
+CLICKHOUSE_CLIENT+=" --allow_repeated_settings --send_logs_level=fatal"
+
 $CLICKHOUSE_CLIENT --query "
 CREATE USER quoted_by_ip_${CLICKHOUSE_DATABASE};
 CREATE USER quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE};

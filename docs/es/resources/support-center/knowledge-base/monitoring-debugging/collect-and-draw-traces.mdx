@@ -1,0 +1,183 @@
+---
+date: 2025-12-30
+title: Cómo recopilar y visualizar una traza de consulta
+tags: ['Herramientas y utilidades']
+keywords: ['traza de consulta', 'OTel', 'Grafana']
+description: "Esta guía le muestra cómo recopilar y visualizar trazas de consultas con ClickHouse autogestionado, ya sea con métodos integrados o con Grafana. Esto resulta especialmente útil cuando trabaja con consultas complejas y necesita comprender los mecanismos internos de ejecución más allá de lo que ofrece EXPLAIN."
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+**Requisitos previos**:
+
+* Familiaridad con los [archivos de configuración](/es/concepts/features/configuration/server-config/configuration-files) de ClickHouse
+* Una instancia de [ClickHouse server](/es/get-started/setup/install) en ejecución
+* (Opcional) Una instancia local de [Grafana](https://grafana.com/docs/grafana/latest/fundamentals/getting-started/) en ejecución
+
+<Steps>
+  <Step title={<>Compruebe que la tabla del sistema <code>opentelemetry_span_log</code> esté habilitada</>} id="enable-system-table">
+    Si no has realizado ninguna modificación en la sección `opentelemetry_span_log` de `config.xml`, puedes omitir este paso.
+
+    Abre el archivo `config.xml` predeterminado de ClickHouse y busca la siguiente sección:
+
+    ```yaml
+    <!--
+        OpenTelemetry log contains OpenTelemetry trace spans.
+
+        NOTE: this table does not use standard schema with event_date and event_time!
+    -->
+    <opentelemetry_span_log>
+        <!--
+            The default table creation code is insufficient, this <engine> spec
+            is a workaround. There is no 'event_time' for this log, but two times,
+            start and finish. It is sorted by finish time, to avoid inserting
+            data too far away in the past (probably we can sometimes insert a span
+            that is seconds earlier than the last span in the table, due to a race
+            between several spans inserted in parallel). This gives the spans a
+            global order that we can use to e.g. retry insertion into some external
+            system.
+        -->
+        <engine>
+            engine MergeTree
+            partition by toYYYYMM(finish_date)
+            order by (finish_date, finish_time_us, trace_id)
+        </engine>
+        <database>system</database>
+        <table>opentelemetry_span_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </opentelemetry_span_log>
+    ```
+
+    Asegúrate de que no esté comentado; de lo contrario, no podrás ver `system.opentelemetry_span_log` en los pasos siguientes.
+    Esto también puede ocurrir si tu servidor de ClickHouse no está usando el archivo de configuración predeterminado.
+
+    Comprueba los logs del servidor para ver algo como esto:
+
+    ```text
+    Processing configuration file 'config.xml'.
+    There is no file 'config.xml', will use embedded config.
+    ```
+
+    <Tip>
+      En las instalaciones estándar, este archivo se encuentra en `/etc/clickhouse-server/config.xml`
+    </Tip>
+  </Step>
+
+  <Step title="Habilitar el trazado de OpenTelemetry" id="enable-otel-tracing">
+    Con su servidor de ClickHouse en ejecución, abra el cliente de ClickHouse y habilite la recopilación de trazas mediante la siguiente consulta:
+
+    ```bash
+    SET opentelemetry_trace_processors=1;
+    ```
+
+    Ahora deberías ver la tabla del sistema `opentelemetry_span_log` al ejecutar:
+
+    ```sql
+    SHOW TABLES IN system
+    ```
+
+    Próxima ejecución:
+
+    ```
+    SET opentelemetry_start_trace_probability=1;
+    ```
+
+    Esto establece la probabilidad de que ClickHouse inicie una traza para las consultas ejecutadas, donde
+    `1` significa que la traza está habilitada para todas las consultas ejecutadas.
+  </Step>
+
+  <Step title="Obtener el ID de una consulta" id="obtain-query-id">
+    Ejecute la siguiente consulta de prueba, o la consulta que le interese rastrear:
+
+    ```sql
+    SELECT pow(number, 2) FROM numbers(10E4);
+    ```
+
+    Copia el ID de la consulta:
+
+    ```sql highlight={6}
+    :) SELECT pow(number, 2) FROM numbers(10E4);
+
+    SELECT pow(number, 2)
+    FROM numbers(100000.)
+
+    Query id: a9241258-a0c4-4776-a00b-e6a1d9bec4a1
+    ```
+  </Step>
+
+  <Step title="Generar un archivo de traza" id="generate-trace-file">
+    Ejecute la siguiente consulta, sustituyendo el ID de consulta por el que obtuvo en el paso anterior:
+
+    ```sql
+    WITH 'a9241258-a0c4-4776-a00b-e6a1d9bec4a1' AS my_query_id
+    SELECT
+        concat(substring(hostName(), length(hostName()), 1), leftPad(greatest(attribute['clickhouse.thread_id'], attribute['thread_number']), 5, '0')) AS group,
+        operation_name,
+        start_time_us,
+        finish_time_us,
+        sipHash64(operation_name) AS color,
+        attribute
+    FROM system.opentelemetry_span_log
+    WHERE (trace_id IN (
+        SELECT trace_id
+        FROM system.opentelemetry_span_log
+        WHERE (attribute['clickhouse.query_id']) = my_query_id
+    )) AND (operation_name != 'query') AND (operation_name NOT LIKE 'Query%')
+    ORDER BY
+        hostName() ASC,
+        group ASC,
+        parent_span_id ASC,
+        start_time_us ASC
+    INTO OUTFILE 'trace.json'
+    FORMAT JSON
+    SETTINGS output_format_json_named_tuples_as_objects = 1
+    ```
+
+    Esto escribirá la traza en un archivo llamado `trace.json`.
+    De forma predeterminada, este archivo se crea en el directorio de trabajo actual desde el que ejecuta la herramienta clickhouse-client o clickhouse-local.
+  </Step>
+
+  <Step title="Visualizar la traza con las herramientas integradas" id="visualize-trace-using-built-in-tooling">
+    Utiliza el visualizador de trazas alojado en [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
+    Carga el archivo `trace.json` del paso anterior para visualizar la traza.
+
+    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="Ejemplo del visualizador de trazas de ClickHouse" />
+  </Step>
+
+  <Step title="Usar Grafana para visualizar trazas" id="using-grafana">
+    Recomendamos Grafana para visualizar y explorar datos de trazas con el plugin oficial de ClickHouse.
+    El plugin se ha mejorado para permitir la visualización de trazas mediante el Trace Panel.
+    Se admite tanto como visualización como componente en Explore.
+
+    Sigue los pasos descritos en [&quot;Uso de Grafana y ClickHouse para observabilidad&quot;](/es/guides/use-cases/observability/build-your-own/grafana)
+    para configurar Grafana con el plugin de ClickHouse.
+
+    Desde la pestaña Explore, puedes ejecutar la siguiente consulta, sustituyendo `trace_id` por el tuyo:
+
+    ```sql
+    SELECT
+        toString(trace_id) AS traceID,
+        toString(span_id) AS spanID,
+        if(toString(parent_span_id)='0', '', toString(parent_span_id)) AS parentSpanID,
+        'ClickHouse' AS serviceName,
+        operation_name AS operationName,
+        start_time_us/1000000 AS startTime,
+        (finish_time_us - start_time_us)/1000 AS duration,
+        arrayMap(key -> map('key', key, 'value', attribute[key]), mapKeys(attribute)) AS serviceTags
+    FROM system.opentelemetry_span_log
+    WHERE trace_id = '68a14b27-a61f-596d-3746-2b03d2530e42' ORDER BY startTime ASC
+    ```
+
+    Asegúrate de configurar `Query type` como `Traces`:
+
+    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Visualización de trazas de ClickHouse en Grafana" />
+
+    Haz clic en &quot;Run Query&quot; e inspecciona el diagrama de trazas:
+
+    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Visualización de trazas de ClickHouse en Grafana" />
+  </Step>
+</Steps>

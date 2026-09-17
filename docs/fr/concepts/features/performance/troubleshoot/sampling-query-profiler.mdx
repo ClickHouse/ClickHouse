@@ -1,0 +1,335 @@
+---
+description: "Documentation de l'outil Sampling profiler de requêtes dans ClickHouse"
+sidebarTitle: 'Profilage des requêtes'
+slug: /operations/optimizing-performance/sampling-query-profiler
+title: 'Sampling profiler de requêtes'
+doc_type: 'reference'
+---
+
+ClickHouse exécute un profiler d&#39;échantillonnage qui permet d&#39;analyser l&#39;exécution des requêtes.
+À l&#39;aide de ce profiler, vous pouvez identifier les routines du code source les plus fréquemment utilisées pendant l&#39;exécution des requêtes.
+Vous pouvez suivre le temps CPU et le temps réel écoulé, y compris le temps d&#39;inactivité.
+
+Le profiler de requêtes est automatiquement activé dans ClickHouse Cloud.
+La requête d&#39;exemple suivante trouve les traces de pile les plus fréquentes pour une requête profilée, avec les noms de fonction et les emplacements dans le code source résolus.
+
+Par défaut, le profiler symbolise les traces de pile au moment de leur collecte et stocke les résultats dans les colonnes `symbols` et `lines` de [`system.trace_log`](/fr/reference/system-tables/trace_log), de sorte que les exemples ci-dessous lisent directement ces colonnes et ne nécessitent pas de fonctions d&#39;introspection. La symbolisation est contrôlée par le paramètre `symbolize` dans la section de configuration du serveur `trace_log` (activée par défaut) et est prise en charge sur les plateformes ELF (telles que Linux) et macOS ; sur FreeBSD, les colonnes `symbols` et `lines` sont toujours vides. Les noms de fonction dans `symbols` proviennent de la table des symboles du binaire et sont disponibles par défaut. Les emplacements dans le code source dans `lines` sont fournis dans la mesure du possible : ils nécessitent des informations de débogage (sur macOS, un bundle `.dSYM` à côté du binaire) et, sur les plateformes ELF, seules les frames à l&#39;intérieur du binaire principal ClickHouse sont résolues. Les entrées correspondant aux frames qui ne peuvent pas être résolues (par exemple, dans les bibliothèques partagées) restent donc vides. Si la symbolisation est désactivée, utilisez les [fonctions d&#39;introspection](/fr/reference/functions/regular-functions/introspection) `addressToSymbol`, `demangle` et `addressToLine` pour résoudre à la place les adresses brutes de la colonne `trace`. Ces fonctions sont disponibles sur les mêmes plateformes que la symbolisation (les plateformes ELF telles que Linux et macOS) ; sur FreeBSD, elles ne sont pas compilées non plus, les adresses dans `trace` doivent donc être résolues en dehors du serveur.
+
+<Tip>
+  Remplacez la valeur `query_id` par l&#39;ID de la requête que vous souhaitez profiler.
+</Tip>
+
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    Dans ClickHouse Cloud, vous pouvez obtenir l&#39;ID de la requête en cliquant sur **&quot;...&quot;** tout à droite de la barre au-dessus du résultat de la requête (à côté du bouton bascule tableau/graphique). Cela ouvre un menu contextuel dans lequel vous pouvez cliquer sur **&quot;Copy query ID&quot;**.
+
+    Utilisez `clusterAllReplicas(default, system.trace_log)` pour interroger tous les nœuds du cluster :
+
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+    FROM clusterAllReplicas(default, system.trace_log)
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    ```
+  </Tab>
+
+  <Tab title="Autogéré">
+    ```sql
+    SELECT
+        count(),
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
+    GROUP BY trace
+    ORDER BY count() DESC
+    LIMIT 10
+    ```
+  </Tab>
+</Tabs>
+
+<div id="self-managed-query-profiler">
+  ## Utilisation du profiler de requêtes dans les déploiements autogérés
+</div>
+
+Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suivez les étapes ci-dessous :
+
+<Steps>
+  <Step title="Installer ClickHouse avec les informations de débogage" id="debug-info">
+    Installez le package `clickhouse-common-static-dbg` :
+
+    1. Suivez les instructions de l’étape [« Configurer le dépôt Debian »](/fr/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
+    2. Exécutez `sudo apt-get install clickhouse-server clickhouse-client clickhouse-common-static-dbg` pour installer les fichiers binaires compilés de ClickHouse avec les informations de débogage
+    3. Exécutez `sudo service clickhouse-server start` pour démarrer le serveur
+    4. Exécutez `clickhouse-client`. Les symboles de débogage de `clickhouse-common-static-dbg` seront automatiquement pris en compte par le serveur ; vous n’avez rien de particulier à faire pour les activer
+  </Step>
+
+  <Step title="Vérifier la configuration du serveur" id="server-config">
+    Assurez-vous que la section [`trace_log`](/fr/reference/settings/server-settings/settings/other#trace_log) de votre [fichier de configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) est configurée. Elle est activée par défaut :
+
+    ```xml
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
+    </trace_log>
+    ```
+
+    Cette section configure la table système [trace&#95;log](/fr/reference/system-tables/trace_log), qui contient les résultats du profiler.
+    L’option `symbolize` (activée par défaut) permet à ClickHouse de résoudre chaque frame de pile lors de la collecte et de stocker les noms de fonctions démanglés et les emplacements dans le code source dans les colonnes `symbols` et `lines`.
+    Les noms de fonctions dans `symbols` proviennent de la table des symboles et sont disponibles par défaut, tandis que les emplacements dans le code source dans `lines` nécessitent des informations de débogage (un bundle `.dSYM` sur macOS) et, sur les plateformes ELF, ne sont résolus que pour les frames du binaire ClickHouse principal ; les frames non résolues ont des entrées `lines` vides.
+
+    Notez que les adresses brutes de la colonne `trace` sont moins stables entre les redémarrages et les mises à niveau que les colonnes pré-symbolisées.
+    Sur les plateformes ELF, à l’exception de FreeBSD, les frames du binaire ClickHouse principal sont stockées sous forme de décalages physiques dans le fichier, de sorte qu’elles restent résolubles entre les redémarrages tant que le binaire est inchangé ; sur macOS et FreeBSD, elles sont stockées sous forme d’adresses virtuelles d’exécution qui peuvent devenir invalides après un redémarrage.
+    Les frames situées en dehors du binaire principal (par exemple, dans des bibliothèques partagées) sont toujours stockées sous forme d’adresses virtuelles d’exécution qui peuvent devenir invalides après un redémarrage, et toute adresse brute devient impossible à résoudre après une mise à niveau du binaire, car l’organisation du code change.
+    ClickHouse ne nettoie pas la table lors d’un redémarrage ; des adresses brutes obsolètes peuvent donc subsister.
+    En revanche, les colonnes `symbols` et `lines` pré-symbolisées restent valides entre les redémarrages et les mises à niveau ; privilégiez-les donc lors de l’analyse des données historiques.
+  </Step>
+
+  <Step title="Configurer les temporisateurs de profilage" id="configure-profile-timers">
+    Configurez les paramètres [`query_profiler_cpu_time_period_ns`](/fr/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/fr/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
+    Les deux paramètres peuvent être utilisés simultanément.
+
+    Ces paramètres vous permettent de configurer les temporisateurs du profiler.
+    Comme il s’agit de paramètres de session, vous pouvez définir une fréquence d’échantillonnage différente pour l’ensemble du serveur, pour des utilisateurs individuels ou des profils utilisateur, pour votre session interactive et pour chaque requête.
+
+    La fréquence d’échantillonnage par défaut est d’un échantillon par seconde, et les temporisateurs CPU et temps réel sont tous deux activés.
+    Cette fréquence permet de collecter suffisamment d’informations sur votre cluster ClickHouse sans affecter les performances du serveur.
+    Si vous devez profiler chaque requête individuellement, utilisez une fréquence d’échantillonnage plus élevée.
+  </Step>
+
+  <Step title={<>Analyser la table système <code>trace_log</code></>} id="analyze-trace-log-system-table">
+    Pour obtenir un profil pour une requête donnée, vous devez agréger les données de la table `trace_log`.
+    Vous pouvez agréger les données par fonction individuelle ou par trace de pile complète.
+
+    Lorsque la symbolisation est activée (par défaut), les noms de fonctions démanglés et les emplacements dans le code source sont déjà disponibles dans les colonnes `symbols` et `lines`, aucune configuration supplémentaire n’est donc requise. La symbolisation n’est pas prise en charge sur FreeBSD, où ces colonnes sont toujours vides. Les entrées `lines` peuvent être vides pour les cadres de pile dépourvus d’informations de débogage ou situés en dehors du binaire ClickHouse principal (voir [ci-dessus](#server-config)).
+
+    Si la symbolisation est désactivée, ou si vous souhaitez résoudre à la volée les adresses brutes de la colonne `trace` (par exemple, pour développer les cadres intégrés), activez les fonctions d’introspection avec le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings/allow#allow_introspection_functions) :
+
+    ```sql
+    SET allow_introspection_functions=1
+    ```
+
+    <Note>
+      Pour des raisons de sécurité, les fonctions d’introspection sont désactivées par défaut
+    </Note>
+
+    Utilisez les [fonctions d’introspection](/fr/reference/functions/regular-functions/introspection) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` et `demangle` pour obtenir les noms des fonctions et leur position dans le code de ClickHouse. Comme la symbolisation, ces fonctions sont disponibles sur les plateformes ELF (telles que Linux) et macOS, mais pas sur FreeBSD.
+
+    <Tip>
+      Si vous devez visualiser les informations de `trace_log`, essayez [flamegraph](/fr/integrations/connectors/tools/gui#clickhouse-flamegraph) et [speedscope](https://www.speedscope.app).
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="flamegraph">
+  ## Création de flame graphs avec la fonction `flameGraph`
+</div>
+
+ClickHouse fournit la fonction d&#39;agrégation [`flameGraph`](/fr/reference/functions/aggregate-functions/flame_graph), qui crée un flame graph directement à partir des traces de pile stockées dans `trace_log`.
+Le résultat est un tableau de chaînes, dans un format compatible avec [flamegraph.pl](https://github.com/brendangregg/FlameGraph).
+
+**Syntaxe :**
+
+```sql
+flameGraph(traces, [size = 1], [ptr = 0])
+```
+
+**Arguments :**
+
+* `traces` — une stacktrace. [`Array(UInt64)`](/fr/reference/data-types/array).
+* `size` — une taille d’allocation pour le profilage mémoire. [`Int64`](/fr/reference/data-types/int-uint).
+* `ptr` — une adresse d’allocation. [`UInt64`](/fr/reference/data-types/int-uint).
+
+Lorsque `ptr` est différent de zéro, `flameGraph` associe les allocations (`size > 0`) et les désallocations (`size < 0`) ayant la même taille et le même pointeur.
+Seules les allocations qui n’ont pas été libérées sont affichées.
+Les désallocations sans correspondance sont ignorées.
+
+<div id="cpu-flame-graph">
+  ### Flame graph du CPU
+</div>
+
+<Note>
+  Les requêtes ci-dessous nécessitent que [flamegraph.pl](https://github.com/brendangregg/FlameGraph) soit installé.
+
+  Pour l’installer, exécutez :
+
+  ```bash
+  git clone https://github.com/brendangregg/FlameGraph
+  # Puis utilisez-le ainsi :
+  # ~/FlameGraph/flamegraph.pl
+  ```
+
+  Remplacez `flamegraph.pl` dans les requêtes suivantes par le chemin d’accès à `flamegraph.pl` sur votre machine
+</Note>
+
+```sql
+SET query_profiler_cpu_time_period_ns = 10000000;
+```
+
+Exécutez votre requête, puis générez le flame graph :
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(arrayReverse(trace)))
+        FROM system.trace_log
+        WHERE trace_type = 'CPU' AND query_id = '<query_id>'" \
+    | flamegraph.pl > flame_cpu.svg
+```
+
+<div id="memory-flame-graph-all">
+  ### Flame graph de la mémoire — toutes les allocations
+</div>
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+Exécutez votre requête, puis générez le flame graph :
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+```
+
+<div id="memory-flame-graph-unfreed">
+  ### Flame graph de la mémoire — allocations non libérées
+</div>
+
+Cette variante associe les allocations aux désallocations par pointeur et n&#39;affiche que la mémoire qui n&#39;a pas été libérée durant l&#39;exécution de la requête.
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1,
+    use_uncompressed_cache = 1,
+    merge_tree_max_rows_to_use_cache = 100000000000,
+    merge_tree_max_bytes_to_use_cache = 1000000000000;
+```
+
+Exécutez la requête suivante pour générer le flame graph :
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM system.trace_log
+        WHERE trace_type = 'MemorySample' AND query_id = '<query_id>'" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_unfreed.svg
+```
+
+<div id="memory-flame-graph-time-point">
+  ### Flame graph de la mémoire — allocations actives à un instant donné
+</div>
+
+Cette approche vous permet d’identifier le pic d’utilisation de la mémoire et de visualiser ce qui a été alloué à cet instant.
+
+```sql
+SET memory_profiler_sample_probability = 1, max_untracked_memory = 1;
+```
+
+<div id="find-memory-usage-over-time">
+  #### Trouver l’utilisation de la mémoire au fil du temps
+</div>
+
+```sql
+SELECT
+    event_time,
+    formatReadableSize(max(s)) AS m
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+)
+GROUP BY event_time
+ORDER BY event_time;
+```
+
+<div id="find-time-point-maximum-memory-usage">
+  #### Trouvez l’instant où l’utilisation mémoire est maximale
+</div>
+
+```sql
+SELECT
+    argMax(event_time, s),
+    max(s)
+FROM (
+    SELECT
+        event_time,
+        sum(size) OVER (ORDER BY event_time) AS s
+    FROM system.trace_log
+    WHERE query_id = '<query_id>' AND trace_type = 'MemorySample'
+);
+```
+
+<div id="build-flame-graph">
+  #### Créer un flame graph des allocations actives à cet instant
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time <= '<time_point>'
+            ORDER BY event_time
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_pos.svg
+```
+
+<div id="build-flame-graph-deallocations">
+  #### Construisez un flame graph des libérations de mémoire après ce point temporel (pour comprendre ce qui a été libéré par la suite)
+</div>
+
+```bash
+clickhouse client --allow_introspection_functions=1 \
+    -q "SELECT arrayJoin(flameGraph(trace, -size, ptr))
+        FROM (
+            SELECT * FROM system.trace_log
+            WHERE trace_type = 'MemorySample'
+              AND query_id = '<query_id>'
+              AND event_time > '<time_point>'
+            ORDER BY event_time DESC
+        )" \
+    | flamegraph.pl --countname=bytes --color=mem > flame_mem_time_point_neg.svg
+```
+
+<div id="example">
+  ## Exemple
+</div>
+
+L’extrait de code ci-dessous :
+
+* Filtre les données de `trace_log` par identifiant de requête et par date courante.
+* Lit les colonnes `symbols` et `lines` déjà symbolisées afin de générer un rapport contenant :
+  * Les noms des symboles et les fonctions correspondantes du code source.
+  * Les emplacements de ces fonctions dans le code source.
+* Agrège par trace de pile brute (la colonne `trace`), en utilisant les colonnes symbolisées uniquement pour l’affichage, afin que des traces de pile distinctes ne soient jamais fusionnées du fait d’une symbolisation approximative.
+
+```sql
+SELECT
+    count(),
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
+FROM system.trace_log
+WHERE (query_id = '<query_id>') AND (event_date = today())
+GROUP BY trace
+ORDER BY count() DESC
+LIMIT 10
+```

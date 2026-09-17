@@ -25,7 +25,13 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsBool use_strict_insert_block_limits;
 }
 
 namespace ErrorCodes
@@ -182,7 +188,6 @@ private:
         ++recursive_step;
 
         SelectQueryOptions select_query_options;
-        select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization = false;
 
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
@@ -206,11 +211,43 @@ private:
             return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
         });
 
-        /// TODO: Support squashing transform
+        /// Squash small chunks before writing them into the intermediate table. A recursive step
+        /// writes one block per produced chunk, and the next step reads the working table block by
+        /// block, so without squashing a step that produces many small chunks leaves many tiny
+        /// blocks behind and the read of the next step degrades.
+        ///
+        /// The settings for the thresholds are modeled after the corresponding settings for INSERT.
+        bool prefers_large_blocks = intermediate_temporary_table_storage->prefersLargeBlocks();
+        size_t squashing_min_block_size_rows = prefers_large_blocks
+            ? recursive_subquery_settings[Setting::min_insert_block_size_rows]
+            : recursive_subquery_settings[Setting::max_block_size];
+        size_t squashing_min_block_size_bytes = prefers_large_blocks
+            ? recursive_subquery_settings[Setting::min_insert_block_size_bytes]
+            : 0;
 
+        /// `addChain` below resizes to a single-stream anyway, so squash to a single stream here too.
+        /// If we wouldn't do that then each of the parallel streams reading the working
+        /// table would only squash their own chunks.
+        pipeline_builder.resize(1);
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            /// Totals and extremes are dropped by the sink below anyways
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+
+            return std::make_shared<SquashingTransform>(
+                in_header,
+                squashing_min_block_size_rows,
+                squashing_min_block_size_bytes,
+                recursive_subquery_settings[Setting::max_insert_block_size],
+                recursive_subquery_settings[Setting::max_insert_block_size_bytes],
+                recursive_subquery_settings[Setting::use_strict_insert_block_limits]);
+        });
+
+        const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
         auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
             {},
-            intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false),
+            metadata_snapshot,
             recursive_query_context,
             false /*async_insert*/);
 
@@ -227,8 +264,9 @@ private:
     {
         /// TODO: Support proper locking
         TableExclusiveLockHolder table_exclusive_lock;
+        const auto metadata_snapshot = temporary_table->getInMemoryMetadataPtr(recursive_query_context, false);
         temporary_table->truncate({},
-            temporary_table->getInMemoryMetadataPtr(recursive_query_context, false),
+            metadata_snapshot,
             recursive_query_context,
             table_exclusive_lock);
     }

@@ -2,7 +2,7 @@
 -- no-random-settings, no-random-merge-tree-settings, no-parallel-replicas: Explain output may differ
 
 SET max_threads = 16;
-
+SET explain_query_plan_default = 'legacy';
 -- { echo }
 
 -- When the partition key is a function of the LIMIT BY key (so partitions can be read independently)

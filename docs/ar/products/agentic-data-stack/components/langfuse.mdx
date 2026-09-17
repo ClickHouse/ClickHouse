@@ -1,0 +1,33 @@
+---
+sidebarTitle: 'Langfuse'
+title: 'Langfuse'
+description: 'كيف يوفّر Langfuse الأوبزرفابيليتي والتتبّع لـ Agentic Data Stack'
+doc_type: 'guide'
+keywords: ['Agentic Data Stack', 'Langfuse', 'الأوبزرفابيليتي', 'التتبّع', 'LLM']
+---
+
+Langfuse هي **طبقة الأوبزرفابيليتي** في [Agentic Data Stack](/ar/products/agentic-data-stack/overview). وهي تسجّل ما الذي فعله الوكيل في LibreChat، بحيث يمكنك استكشاف أخطائه وإصلاحها، وقياس الجودة، وتتبع التكلفة. ومبنيًا على OpenTelemetry، يعمل Langfuse على ClickHouse.
+
+<div id="trace">
+  ## تتبّع وافحص كل تشغيل
+</div>
+
+يُسجَّل كل conversation باعتباره [تتبّع في Langfuse](https://langfuse.com/docs/observability/overview): الـ prompts، وكل استدعاء للأدوات (بما في ذلك SQL التي شغّلها agent)، والاستجابة. كما يسجّل كل تتبّع أيضًا استخدام الـ token، والتكلفة، وزمن الاستجابة. افتح أي تشغيل لترى ما الذي فعله agent وأين أخفق. فرز حسب المستخدم وsession لمعرفة من الأكثر إنفاقًا.
+
+<div id="evals">
+  ## قيّم جودة المخرجات
+</div>
+
+ولأن مخرجات النموذج غير حتمية، يتيح لك Langfuse قياس الجودة بدلًا من الاكتفاء بالتخمين. يمكنك تقييم عمليات التشغيل باستخدام [مراجعة بشرية](https://langfuse.com/docs/evaluation/evaluation-methods/annotation) أو مُقيِّم آلي من نوع [LLM-as-a-judge](https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge)، مثل رصد الحالات التي تكون فيها الإجابة خاطئة أو يكون فيها التحليل غير مفيد.
+
+<div id="in-the-stack">
+  ## ضمن المكدس
+</div>
+
+يربط المكدس LibreChat بـ Langfuse، لذا يُتتبَّع كل تشغيل تلقائيًا من دون الحاجة إلى إضافة أي instrumentation. تُخزَّن التتبعات في مثيل ClickHouse الخاص بالمكدس نفسه، مما يُبقي بيانات أوبزرفابيليتي إلى جانب البيانات التي تستعلم عنها. لتشغيله كجزء من المكدس، راجع [دليل إعداد Docker](/ar/products/agentic-data-stack/docker-setup).
+
+لإرسال التتبعات من مثيل LibreChat مستقل، أو لاستخدام نقطة نهاية إقليمية أو نقطة نهاية متوافقة مع HIPAA لـ Langfuse، راجع [الدليل المصاحب لـ Langfuse](https://langfuse.com/integrations/agentic-data-stack). وللاطّلاع على Langfuse على ClickHouse بشكل عام، راجع [نظرة عامة على Langfuse](/ar/products/cloud/features/ai-ml/langfuse).
+
+<Info>
+  **هل تفضّل تجربة مُدارة؟** [Langfuse Cloud](https://cloud.langfuse.com) هو نشر مُدار بالكامل ومدعوم بعنقود ClickHouse مُدار — من دون أي بنية تحتية تحتاج إلى تشغيلها.
+</Info>

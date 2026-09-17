@@ -11,11 +11,16 @@ def started_cluster():
         # 25.10 stored implicit indices in ZooKeeper metadata.
         # Newer versions only store explicit indices, so upgrading
         # requires backward-compatible metadata comparison.
+        # System logs are disabled so that the new server does not create
+        # rotated system log tables marked with the `table_readonly` setting,
+        # which the older binary started via `restart_with_original_version`
+        # would not know and would fail to attach.
         cluster.add_instance(
             "node",
             with_zookeeper=True,
             image="clickhouse/clickhouse-server",
             tag="25.10",
+            main_configs=["configs/zz_disable_system_logs.xml"],
             with_installed_binary=True,
             stay_alive=True,
         )
@@ -224,6 +229,12 @@ def test_implicit_index_upgrade_alter_replay(started_cluster):
     )
 
     wait_for_active_replica(node2, "test_alter_replay")
+
+    # wait_for_active_replica only waits for is_readonly = 0, not for the freshly-joined
+    # replica to finish fetching parts. SYSTEM SYNC REPLICA blocks until node2 has fetched
+    # all parts; otherwise the count assertion below races with the background fetch and can
+    # observe only the small VALUES part (1 row) before the 10000-row part arrives.
+    node2.query("SYSTEM SYNC REPLICA test_alter_replay;")
 
     # Verify node2 has the ALTER-added column and all data.
     assert node2.query("SELECT count() FROM test_alter_replay;").strip() == "10001"

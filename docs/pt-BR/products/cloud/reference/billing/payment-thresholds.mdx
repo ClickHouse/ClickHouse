@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'Limites de pagamento'
+slug: /cloud/billing/payment-thresholds
+title: 'Limites de pagamento'
+description: 'Limites de pagamento e emissão automática de faturas no ClickHouse Cloud.'
+keywords: ['cobrança', 'limites de pagamento', 'emissão automática de faturas', 'fatura']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="threshholds">
+  ## Limites de pagamento
+</div>
+
+Se você é um cliente com pagamento conforme o uso e o valor devido no seu período de faturamento do ClickHouse Cloud atingir US$ 1.000 ou o valor equivalente, o método de pagamento configurado para a sua organização será cobrado automaticamente.
+
+<Tip>
+  Após o primeiro pagamento de fatura bem-sucedido, o limite é aumentado para US$ 5.000. Um segundo pagamento de fatura bem-sucedido aumenta o limite para US$ 10.000. Se quiser ajustar o valor do seu limite de pagamento, [entre em contato com o suporte](mailto:support@clickhouse.com).
+</Tip>
+
+Uma cobrança com falha resultará na suspensão dos seus serviços após um período de carência de 14 dias.
+Se você receber várias faturas dentro de um período de faturamento, todas vencem no ato do recebimento e devem ser pagas para manter sua organização ClickHouse Cloud [em conformidade](/pt-BR/products/cloud/reference/billing/billing-compliance).
+
+Se houver falha na sua cobrança automática, isso pode ser devido a um problema com o cartão de crédito configurado, ao fato de você não ter configurado um e-mandate no seu cartão de crédito ou de o seu cartão não estar em conformidade com as regras do Reserve Bank of India (RBI) para o processamento de e-mandates em transações online recorrentes.
+Caso seus cartões de crédito não estejam em conformidade com o RBI, você deverá adicionar um novo método de pagamento compatível com o RBI ou continuar fazendo pagamentos manuais até conseguir configurar o e-mandate no seu cartão.
+
+No exemplo abaixo, é mostrada a UI de Billing no Cloud Console:
+
+<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="Onde encontrar billing na UI" />
+
+<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="Fatura" />
+
+Como você pode ver no exemplo acima, foi enviada uma fatura de limite durante o período de faturamento de 28 de fevereiro a 31 de março e, em seguida, outra fatura foi enviada no mesmo período de faturamento referente ao uso restante acima de US$ 1.000.
+
+<div id="threshholds-notifications">
+  ## Notificações de limite de pagamento
+</div>
+
+Se a sua organização atingir 90% do limite de pagamento e estiver a caminho de excedê-lo no meio do período, o endereço de e-mail do Contato de faturamento associado à organização receberá uma notificação por e-mail.
+Você também receberá uma notificação por e-mail, bem como uma fatura, quando exceder o limite de pagamento.
+
+<Note>
+  No momento, as notificações de limite de pagamento são compatíveis apenas com organizações cobradas em atraso (PAYG)
+</Note>

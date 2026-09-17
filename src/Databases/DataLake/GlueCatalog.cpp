@@ -92,11 +92,27 @@ namespace CurrentMetrics
 namespace DataLake
 {
 
+namespace
+{
+
+/// A Glue table is readable only if it is an Iceberg table. `table_type` is available in
+/// both the bulk `GetTables` listing and `tryGetTableMetadata`, so the two stay consistent.
+bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
+{
+    const auto & parameters = table.GetParameters();
+    auto it = parameters.find("table_type");
+    const std::string table_type = it != parameters.end() ? it->second : "";
+    return Poco::toUpper(table_type) == "ICEBERG";
+}
+
+}
+
 GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
-    DB::ASTPtr table_engine_definition_)
+    DB::ASTPtr table_engine_definition_,
+    bool allow_server_credentials_in_user_queries_)
     : ICatalog("")
     , DB::WithContext(context_)
     , log(getLogger("GlueCatalog(" + settings_.region + ")"))
@@ -110,6 +126,11 @@ GlueCatalog::GlueCatalog(
     creds_config.role_arn = settings.aws_role_arn;
     creds_config.role_session_name = settings.aws_role_session_name;
     creds_config.external_id = settings.aws_external_id;
+
+    /// A Glue catalog is created by user SQL, so it must not reuse the server's credentials unless allowed at
+    /// CREATE time. The cached catalog uses the global context, so pass the value captured then, not the live setting.
+    creds_config.forbid_implicit_credentials
+        = getContext()->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries_);
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
@@ -155,10 +176,10 @@ GlueCatalog::GlueCatalog(
         client_configuration.endpointOverride = endpoint;
         endpoint_provider->OverrideEndpoint(endpoint);
 
-        if (credentials.IsEmpty())
+        if (credentials.IsEmpty() && !creds_config.forbid_implicit_credentials)
         {
-            /// You can specify any key for fake moto glue, it's just important
-            /// for it not to be empty.
+            /// Placeholder key for mocked moto glue (must be non-empty). Skipped under the restriction with no
+            /// explicit credentials, so it does not mask the refusal that the test exercises.
             credentials.SetAWSAccessKeyId("testing");
             credentials.SetAWSSecretKey("testing");
         }
@@ -222,10 +243,10 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
     return result;
 }
 
-DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t limit) const
+CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t limit) const
 {
     LOG_TEST(log, "Getting tables for database '{}' with limit {}", db_name, limit);
-    DB::Names result;
+    CatalogTables result;
     Aws::Glue::Model::GetTablesRequest request;
     request.SetDatabaseName(db_name);
     if (limit != 0)
@@ -256,12 +277,20 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
 
                 if (limit != 0 && result.size() >= limit)
                     break;
-                result.push_back(db_name + "." + table.GetName());
+                result.push_back(CatalogTable{
+                    .name = db_name + "." + table.GetName(),
+                    .is_readable = isReadableGlueTable(table),
+                });
             }
             next_token = tables_result.GetNextToken();
         }
         else
         {
+            /// The database is absent from Glue, so it contributes no tables. The error names the database, so
+            /// any pages already collected belong to a database that is gone and are dropped too.
+            if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+                return {};
+
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Exception calling GetTables {}", outcome.GetError().GetMessage());
         }
         if (limit != 0 && result.size() >= limit)
@@ -272,10 +301,10 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     return result;
 }
 
-DB::Names GlueCatalog::getTables() const
+CatalogTables GlueCatalog::getTables() const
 {
     auto databases = getDatabases("");
-    DB::Names result;
+    CatalogTables result;
     for (const auto & database : databases)
     {
         auto tables_in_database = getTablesForDatabase(database);
@@ -284,14 +313,21 @@ DB::Names GlueCatalog::getTables() const
     return result;
 }
 
+DataLake::ICatalog::Namespaces GlueCatalog::getNamespaces() const
+{
+    /// Glue databases are flat — they cannot contain nested namespaces.
+    return getDatabases("");
+}
+
+CatalogTables GlueCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return getTablesForDatabase(namespace_name);
+}
+
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
-    Aws::Glue::Model::GetTableRequest request;
-    request.SetDatabaseName(database_name);
-    request.SetName(table_name);
-
-    auto outcome = glue_client->GetTable(request);
-    return outcome.IsSuccess();
+    TableMetadata metadata;
+    return tryGetTableMetadata(database_name, table_name, metadata);
 }
 
 bool GlueCatalog::tryGetTableMetadata(
@@ -314,7 +350,7 @@ bool GlueCatalog::tryGetTableMetadata(
         if (table_outcome.GetParameters().contains("table_type"))
             table_type = table_outcome.GetParameters().at("table_type");
 
-        if (Poco::toUpper(table_type) != "ICEBERG")
+        if (!isReadableGlueTable(table_outcome))
         {
             std::string message_part;
             if (!table_type.empty())
@@ -592,20 +628,25 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     }
 }
 
-void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
 {
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;
     db_input.SetName(namespace_name);
     create_request.SetDatabaseInput(db_input);
 
-    glue_client->CreateDatabase(create_request);
+    auto outcome = glue_client->CreateDatabase(create_request);
+    if (!outcome.IsSuccess() && outcome.GetError().GetErrorType() != Aws::Glue::GlueErrors::ALREADY_EXISTS)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling CreateDatabase for namespace {}: {}",
+            namespace_name, outcome.GetError().GetMessage());
+    }
 }
 
 void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
-    createNamespaceIfNotExists(namespace_name);
-
     Aws::Glue::Model::CreateTableRequest request;
     request.SetDatabaseName(namespace_name);
 
@@ -684,7 +725,7 @@ bool GlueCatalog::updateSchema(
     return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
-void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
 {
     Aws::Glue::Model::DeleteTableRequest request;
     request.SetDatabaseName(namespace_name);

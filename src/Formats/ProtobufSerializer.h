@@ -16,7 +16,7 @@ class ProtobufReader;
 class ProtobufWriter;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 using Strings = std::vector<String>;
 class WriteBuffer;
 

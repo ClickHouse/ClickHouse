@@ -49,21 +49,21 @@ WITH RECURSIVE t AS (
 UNION ALL
     SELECT n+1 FROM t WHERE n < 5
 )
-SELECT * FROM t;
+SELECT * FROM t ORDER BY ALL;
 
 -- This'd be an infinite loop, but outside query reads only as much as needed
 WITH RECURSIVE t AS (
     SELECT 1 AS n
 UNION ALL
     SELECT n+1 FROM t)
-SELECT * FROM t LIMIT 10;
+SELECT * FROM t LIMIT 10 SETTINGS max_threads = 1;
 
 WITH RECURSIVE t AS (
     SELECT 'foo' AS n
 UNION ALL
     SELECT n || ' bar' FROM t WHERE length(n) < 20
 )
-SELECT n, toTypeName(n) FROM t;
+SELECT n, toTypeName(n) FROM t ORDER BY ALL;
 
 WITH RECURSIVE t AS (
     SELECT '7' AS n

@@ -27,7 +27,7 @@ def test_attach_substr(started_cluster):
     node.query("DETACH TABLE file")
 
     metadata_path = node.query(
-        f"SELECT metadata_path FROM system.detached_tables WHERE database='default' AND table='file'"
+        "SELECT metadata_path FROM system.detached_tables WHERE database='default' AND table='file'"
     ).strip()
 
     # Replace substring to substr
@@ -50,7 +50,7 @@ def test_attach_substr_restart(started_cluster):
     )
 
     metadata_path = node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='default' AND table='file'"
+        "SELECT metadata_path FROM system.tables WHERE database='default' AND table='file'"
     ).strip()
 
     # Replace substring to substr

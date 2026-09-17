@@ -1,0 +1,122 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-10
+title: 'Демо-дни — 2026-07-10'
+sidebarTitle: '2026-07-10'
+description: 'Демо-дни ClickStack от 2026-07-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Демо-дни']
+---
+
+<div id="text-index-fix-for-map-column-disjunction-filters">
+  ## Исправление text index для дизъюнктивных фильтров по столбцу Map
+</div>
+
+*Демо от [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/i7SOQ5uSfm8" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron обнаружил эту проблему, помогая отлаживать отчёт, в котором запросы к атрибуту в столбце Map неожиданно работали медленно. Пользователь уже сам обошёл её, добавив материализованный столбец и bloom filter, хотя в этом не должно было быть необходимости, учитывая уже существующие оптимизации для атрибутов Map.
+
+Выяснилось, что при фильтрации по нескольким возможным значениям атрибута Map использовалась функция `hasAny` — по сути, проверка дизъюнкции массива. Например, при сопоставлении атрибутов логов, таких как идентификатор пользователя, со списком значений. В версиях ClickHouse ниже 26.5 это не задействовало text index. Исправление переписывает такую дизъюнкцию в набор проверок на равенство, объединённых через OR и заключённых в скобки, что корректно активирует индекс. Aaron подтвердил с помощью `EXPLAIN`, что после такого переписывания запрос теперь, как и ожидалось, использует индекс пропуска данных.
+
+Большинство пользователей уже работают на версии 26.5 или новее, но для тех, кто ещё не обновился, это позволит таким запросам пока оставаться быстрыми.
+
+**Связанные PR:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: переработка getAllKeyValues и добавление фильтров, заполняемых из text indices
+
+<div id="profiling-data-in-clickcannon">
+  ## Данные профилирования в ClickCannon
+</div>
+
+*Демо от [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Fo1XCHsA3rU" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Недавно мы [рассказывали в блоге о ClickCannon](https://clickhouse.com/blog/building-clickcannon-a-tool-for-benchmark-clickhouse) — инструменте для генерации синтетических данных и бенчмаркинга ClickHouse. Теперь Spencer добавил сигнал профилирования наряду с уже существующей поддержкой логов, метрик и трассировок. Вы можете генерировать данные профилирования с настраиваемой глубиной стека — либо моделируя их на лету, либо считывая с диска, — и отправлять их так же, как и другие сигналы: достаточно указать ClickCannon на таблицу профилей, и он начнёт генерировать строки.
+
+Полезная нагрузка профилей оказалась заметно больше, чем у других сигналов, поэтому работа по настройке числа ключей, добавляемых в каждый сэмпл, и проверке пропускной способности относительно размера инстанса всё ещё продолжается. Возможность генерировать такие данные в больших объёмах позволяет команде приступить к оптимизации схемы и получить для неё опорную точку, что связано с более широкой работой по поддержке данных профилирования и их визуализации во всём ClickStack. Spencer также впервые рассмотрел отображение кадров профиля в средстве просмотра логов ClickStack.
+
+<div id="bar-charts">
+  ## Столбчатые диаграммы
+</div>
+
+*Демо от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JIQJpGMh5tk" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Появились столбчатые диаграммы — их добавили по мотивам PR, который был открыт несколько месяцев назад, но во время ребейза застопорился и в итоге устарел. Теперь они поддерживаются везде, где в ClickStack используются диаграммы: на панелях мониторинга, в конструкторе панелей мониторинга MCP и не только. Поскольку столбчатые диаграммы теперь решают те же задачи точечных сравнений, для которых раньше использовались линейные графики, линейные графики были переименованы во временные ряды, чтобы различие стало понятнее.
+
+Столбчатые диаграммы поддерживают ограничение на число серий, поэтому вы можете управлять тем, сколько столбцов отображать при группировке по полю с высокой кардинальностью, а также задавать пользовательскую сортировку, чтобы упорядочивать данные по наиболее важной для вас метрике, а не по умолчанию.
+
+**Связанные PR:** [#2606](https://github.com/hyperdxio/hyperdx/pull/2606) feat: Add categorical bar chart display type, [#2618](https://github.com/hyperdxio/hyperdx/pull/2618) feat: Allow custom order by on categorical (pie/bar) charts
+
+<div id="community-contributions">
+  ## Вклад сообщества
+</div>
+
+*Демо от [@vinzee](https://github.com/vinzee) и [@zoov-xavier](https://github.com/zoov-xavier)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/f4xNJS6tcmY" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+На этой неделе в ходе ревью PR появилось несколько отличных вкладов от сообщества. От [@vinzee](https://github.com/vinzee): кнопка справки по синтаксису рядом с переключателем Lucene/SQL в строке поиска, которая дает пользователям быстрый доступ к встроенным примерам синтаксиса запроса и доступным параметрам, не покидая страницу.
+
+От [@zoov-xavier](https://github.com/zoov-xavier): теперь плашки фильтров поддерживают значения, введенные вручную. Раньше можно было выбирать только из выпадающего списка значений из выборки, из-за чего нельзя было фильтровать по значению, которое еще не попало в эту выборку. Теперь можно просто ввести нужное значение и нажать Enter.
+
+**Связанные PR:** [#2381](https://github.com/hyperdxio/hyperdx/pull/2381) Добавить справку по синтаксису запроса в поле поиска, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): разрешить произвольные текстовые значения при редактировании плашки фильтра
+
+<div id="alert-annotations-on-charts">
+  ## Аннотации оповещений на графиках
+</div>
+
+*Демо от [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/NmEYBvtjpAQ" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Это появилось по запросу клиента, который хотел видеть аннотации на своих графиках в моменты срабатывания оповещений. Появился новый переключатель show alert annotations, по умолчанию отключённый, который отмечает прямо на графике точный момент срабатывания оповещения и момент его снятия. Если оповещение было активно за пределами текущего видимого временного диапазона, на левом краю графика появляется маркер, показывающий, что оно уже сработало до начала этого окна, а аннотации обновляются в реальном времени по мере срабатывания и снятия оповещений.
+
+Том реализовал это с помощью переиспользуемого шаблона аннотаций, поэтому позже на тот же подход можно будет легко добавить новые типы аннотаций, например для релизов или событий Kubernetes.
+
+**Связанные PR:** [#2605](https://github.com/hyperdxio/hyperdx/pull/2605) feat(dashboards): alert firing/recovery annotations on tile charts, [#2616](https://github.com/hyperdxio/hyperdx/pull/2616) fix(dashboards): improve alert annotation visibility on tile charts
+
+<div id="event-patterns-tile-polish-and-line-series-actions">
+  ## Шаблоны событий, улучшения плиток и действия для линейных серий
+</div>
+
+*Демо от [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Nwo_nt5VZL4" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Шаблоны событий теперь официально стали полноценным типом плитки панели мониторинга. Вы можете создать такую плитку и передать в неё предложение `WHERE` или выражение шаблона — например, с фильтрацией по имени сервиса или тексту серьёзности, — чтобы сразу видеть повторяющиеся шаблоны.
+
+Брэндон также улучшил перенос текста в визуализациях на маленьких плитках: длинные заголовки теперь переносятся на несколько строк и заканчиваются многоточием, а не обрезаются странным образом. Кроме того, стало аккуратнее отображаться кнопки действий плитки: на маленьких плитках они сворачиваются в контекстное меню с помощью container query в CSS, а после увеличения размера снова появляются прямо на плитке. Также исправлен случай, когда закрытие настроек отображения плитки без сохранения могло незаметно привести к потере изменений; теперь перед потерей правок выводится предупреждение.
+
+Наконец, в ответ на отзывы пользователей теперь можно нажать на линейную серию, чтобы скопировать её значение или сфокусироваться только на этой линии, в дополнение к уже существующему действию поиска. Брэндон также уже частично выполнил обновление до Recharts v3, которое должно исправить обрезание всплывающих подсказок в таблицах с большим количеством групп.
+
+**Связанные PR:** [#2604](https://github.com/hyperdxio/hyperdx/pull/2604) feat: добавить Шаблоны событий как полноценный тип плитки панели мониторинга, [#2596](https://github.com/hyperdxio/hyperdx/pull/2596) fix(charts): использовать многострочное многоточие для заголовков плиток панели мониторинга, [#2597](https://github.com/hyperdxio/hyperdx/pull/2597) fix: отслеживать display/heatmap settings как изменённые для модального окна о несохранённых изменениях, [#2611](https://github.com/hyperdxio/hyperdx/pull/2611) feat(charts): действия drill-down для отдельных серий, drill-in в новой вкладке и фокусировка с синхронизацией поиска
+
+<div id="dashboard-and-service-map-styling">
+  ## Оформление панели мониторинга и карты сервисов
+</div>
+
+*Демо от [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yzgjzU8RIz0" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Набор небольших улучшений оформления, ориентированных на удобство использования: по отдельности они незначительны, но вместе делают интерфейс заметно чище. На панелях мониторинга у редактируемых плиток в светлом режиме был непоследовательный цвет заголовков — где-то серый, где-то белый. Теперь это исправлено: оформление стало единообразным, с аккуратной линией-разделителем под заголовком. Действия плиток, доступные только при наведении, также переместили, чтобы они не перекрывали заголовки на небольших адаптивных карточках, а диаграммы теперь поддерживают сброс масштаба.
+
+Карта сервисов получила аналогичные улучшения: элементы управления теперь учитывают цветовой режим, оставаясь светлыми в светлой теме и тёмными в тёмной, вместо того чтобы всегда быть чёрными по умолчанию; легенды теперь понятнее показывают задержку, частоту ошибок и пропускную способность; кроме того, можно щёлкнуть по сервису, чтобы сфокусироваться на нём, а затем щёлкнуть ещё раз, чтобы снять фокус и вернуться к полному представлению.
+
+**Связанные PR:** [#2592](https://github.com/hyperdxio/hyperdx/pull/2592) Доработка оформления плиток панели мониторинга и структуры заголовка, [#2601](https://github.com/hyperdxio/hyperdx/pull/2601) feat(service-map): переключатель цветов метрик и улучшение popover

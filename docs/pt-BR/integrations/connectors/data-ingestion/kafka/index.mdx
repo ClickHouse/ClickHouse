@@ -1,0 +1,131 @@
+---
+sidebarTitle: 'Integrando o Kafka ao ClickHouse'
+slug: /integrations/kafka
+description: 'Introdução ao Kafka com ClickHouse'
+title: 'Integrando o Kafka ao ClickHouse'
+keywords: ['Apache Kafka', 'streaming de eventos', 'pipeline de dados', 'broker de mensagens', 'dados em tempo real']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+[Apache Kafka](https://kafka.apache.org/) é uma plataforma distribuída de streaming de eventos de código aberto, usada por milhares de empresas para pipelines de dados de alto desempenho, análises em streaming, integração de dados e aplicações de missão crítica. O ClickHouse oferece várias opções para **ler dados do** e **gravar dados no** Kafka e em outros brokers compatíveis com a API do Kafka (por exemplo, Redpanda, Amazon MSK).
+
+<div id="available-options">
+  ## Opções disponíveis
+</div>
+
+Escolher a opção mais adequada ao seu caso de uso depende de vários fatores, incluindo o tipo de implantação do ClickHouse, a direção do fluxo de dados e os requisitos operacionais.
+
+| Opção                                                                                             | Tipo de implantação               | Totalmente gerenciado | Kafka para ClickHouse | ClickHouse para Kafka |
+| ------------------------------------------------------------------------------------------------- | --------------------------------- | :-------------------: | :-------------------: | :-------------------: |
+| [ClickPipes for Kafka](/pt-BR/integrations/clickpipes/kafka/index)                                      | [Cloud], [BYOC] (em breve!)       |           ✅           |           ✅           |                       |
+| [Kafka Connect Sink](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink) | [Cloud], [BYOC], [Autogerenciado] |                       |           ✅           |                       |
+| [engine de tabela Kafka](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine)        | [Cloud], [BYOC], [Autogerenciado] |                       |           ✅           |           ✅           |
+
+Para ver uma comparação mais detalhada entre essas opções, consulte [Escolhendo uma opção](#choosing-an-option).
+
+<div id="clickpipes-for-kafka">
+  ### ClickPipes for Kafka
+</div>
+
+[ClickPipes](/pt-BR/integrations/clickpipes/home) é uma plataforma de integração gerenciada que torna a ingestão de dados de um conjunto diversificado de fontes tão simples quanto clicar em alguns botões. Por ser totalmente gerenciada e voltada para workloads de produção, a ClickPipes reduz significativamente os custos de infraestrutura e de operação, eliminando a necessidade de ferramentas externas de streaming de dados e ETL.
+
+<Tip>
+  Esta é a opção recomendada se você usa ClickHouse Cloud. A ClickPipes é **totalmente gerenciada** e voltada para oferecer o **melhor desempenho** em ambientes Cloud.
+</Tip>
+
+<div id="clickpipes-for-kafka-main-features">
+  #### Principais recursos
+</div>
+
+* Otimizado para ClickHouse Cloud, oferecendo desempenho altíssimo
+* Escalabilidade horizontal e vertical para workloads de alta taxa de transferência
+* Tolerância a falhas integrada, com réplicas configuráveis e novas tentativas automáticas
+* Implantação e gerenciamento por meio da UI do ClickHouse Cloud, da [Open API](/pt-BR/integrations/clickpipes/programmatic-access/openapi) ou do [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform)
+* Segurança de nível empresarial com suporte a autorização cloud-native (IAM) e conectividade privada (PrivateLink)
+* Oferece suporte a uma ampla variedade de [fontes de dados](/pt-BR/integrations/clickpipes/kafka/reference), incluindo Confluent Cloud, Amazon MSK, Redpanda Cloud e Azure Event Hubs
+* Oferece suporte aos formatos de serialização mais comuns (JSON, Avro, Protobuf)
+
+<div id="clickpipes-for-kafka-getting-started">
+  #### Primeiros passos
+</div>
+
+Para começar a usar o ClickPipes for Kafka, consulte a [documentação de referência](/pt-BR/integrations/clickpipes/kafka/reference) ou vá para a aba `Data Sources` na UI do ClickHouse Cloud.
+
+<div id="kafka-connect-sink">
+  ### Kafka Connect Sink
+</div>
+
+Kafka Connect é um framework open source que funciona como um hub centralizado para a integração simples de dados entre o Kafka e outros sistemas de dados. O conector [ClickHouse Kafka Connect Sink](https://github.com/ClickHouse/clickhouse-kafka-connect) oferece uma opção escalável e altamente configurável para ler dados do Apache Kafka e de outros brokers compatíveis com a API do Kafka.
+
+<Tip>
+  Esta é a opção recomendada se você busca **alta configurabilidade** ou já usa o Kafka Connect.
+</Tip>
+
+<div id="kafka-connect-sink-main-features">
+  #### Principais funcionalidades
+</div>
+
+* Pode ser configurado para oferecer a semântica exactly-once
+* Suporta os formatos de serialização mais comuns (JSON, Avro, Protobuf)
+* Testado continuamente com o ClickHouse Cloud
+
+<div id="clickpipes-for-kafka-getting-started">
+  #### Primeiros passos
+</div>
+
+Para começar a usar o ClickHouse Kafka Connect Sink, consulte a [documentação de referência](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink).
+
+<div id="kafka-table-engine">
+  ### Engine de tabela Kafka
+</div>
+
+O [engine de tabela Kafka](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine) pode ser usado para ler dados do Apache Kafka e gravar dados no Apache Kafka e em outros brokers compatíveis com a API do Kafka. Essa opção já vem incluída no ClickHouse de código aberto e está disponível em todos os tipos de implantação.
+
+<Tip>
+  Esta é a opção recomendada se você hospeda o ClickHouse por conta própria e precisa de uma opção com **baixa barreira de entrada** ou se precisa **gravar** dados no Kafka.
+</Tip>
+
+<div id="clickpipes-for-kafka-main-features">
+  #### Principais recursos
+</div>
+
+* Pode ser usado para [ler](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine#kafka-to-clickhouse) e [gravar](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka) dados
+* Incluído na versão open source do ClickHouse
+* Suporta os formatos de serialização mais comuns (JSON, Avro, Protobuf)
+
+<div id="clickpipes-for-kafka-getting-started">
+  #### Primeiros passos
+</div>
+
+Para começar a usar o engine de tabela Kafka, consulte a [documentação de referência](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine).
+
+<div id="choosing-an-option">
+  ### Como escolher uma opção
+</div>
+
+| Produto                  | Pontos fortes                                                                                                                                                                                                                                                                                       | Pontos fracos                                                                                                                                                                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ClickPipes for Kafka** | • Arquitetura escalável para alta vazão e baixa latência<br />• Monitoramento e gerenciamento de esquema integrados<br />• Conexões de rede privadas (via PrivateLink)<br />• Suporta autenticação SSL/TLS e autorização IAM<br />• Suporta configuração programática (Terraform, endpoints de API) | • Não oferece suporte a enviar dados para o Kafka<br />• Semântica at-least-once                                                                                                                                                                     |
+| **Kafka Connect Sink**   | • Semântica exactly-once<br />• Permite controle granular sobre transformação de dados, agrupamento em lotes e tratamento de erros<br />• Pode ser implantado em redes privadas<br />• Permite replicação em tempo real de bancos de dados ainda não compatíveis com o ClickPipes via Debezium      | • Não oferece suporte a enviar dados para o Kafka<br />• É operacionalmente complexo de configurar e manter<br />• Requer experiência com Kafka e Kafka Connect                                                                                      |
+| **engine de tabela Kafka**   | • Suporta [enviar dados para o Kafka](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)<br />• É operacionalmente simples de configurar                                                                                                                         | • Semântica at-least-once<br />• Escalabilidade horizontal limitada para consumidores. Não pode ser escalado independentemente do servidor ClickHouse<br />• Opções limitadas de tratamento de erros e depuração<br />• Requer experiência com Kafka |
+
+<div id="other-options">
+  ### Outras opções
+</div>
+
+* [**Confluent Cloud**](/pt-BR/integrations/connectors/data-ingestion/kafka/confluent/index) - A Confluent Platform oferece a opção de fazer upload e [executar o ClickHouse Connector Sink no Confluent Cloud](/pt-BR/integrations/connectors/data-ingestion/kafka/confluent/custom-connector) ou usar o [HTTP Sink Connector for Confluent Platform](/pt-BR/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http), que integra o Apache Kafka a uma API via HTTP ou HTTPS.
+
+* [**Vector**](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-vector) - O Vector é um pipeline de dados independente de fornecedor. Com a capacidade de ler dados do Kafka e enviar eventos ao ClickHouse, ele representa uma opção de integração robusta.
+
+* [**JDBC Connect Sink**](/pt-BR/integrations/connectors/data-ingestion/kafka/kafka-connect-jdbc) - O conector Kafka Connect JDBC Sink permite exportar dados de tópicos do Kafka para qualquer banco de dados relacional com um driver JDBC.
+
+* **Código personalizado** - O uso de código personalizado com Kafka e [bibliotecas de cliente](/pt-BR/integrations/language-clients/index) do ClickHouse pode ser apropriado quando for necessário processar eventos de forma personalizada.
+
+[BYOC]: /products/cloud/guides/infrastructure/deployment-options/byoc/overview
+
+[Cloud]: /products/cloud/getting-started/cloud-get-started
+
+[Self-hosted]: /get-started/about/intro

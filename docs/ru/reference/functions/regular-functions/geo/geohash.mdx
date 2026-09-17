@@ -1,0 +1,131 @@
+---
+description: 'Документация по Geohash'
+sidebarTitle: 'Geohash'
+slug: /sql-reference/functions/geo/geohash
+title: 'Функции для работы с Geohash'
+doc_type: 'reference'
+---
+
+<div id="geohash">
+  ## Geohash
+</div>
+
+[Geohash](https://en.wikipedia.org/wiki/Geohash) — это система геокодирования, которая разбивает поверхность Земли на ячейки сетки и кодирует каждую ячейку короткой строкой из букв и цифр. Это иерархическая структура данных, поэтому чем длиннее строка Geohash, тем точнее определяется географическое местоположение.
+
+Если вам нужно вручную преобразовать географические координаты в строки Geohash, вы можете воспользоваться [geohash.org](http://geohash.co/)
+
+<div id="geohashencode">
+  ## geohashEncode
+</div>
+
+Кодирует широту и долготу в строку [geohash](#geohash).
+
+**Синтаксис**
+
+```sql
+geohashEncode(longitude, latitude, [precision])
+```
+
+**Входные значения**
+
+* `longitude` — Долгота координаты, которую нужно закодировать. Число с плавающей запятой в диапазоне `[-180°, 180°]`. [Float](/ru/reference/data-types/float).
+* `latitude` — Широта координаты, которую нужно закодировать. Число с плавающей запятой в диапазоне `[-90°, 90°]`. [Float](/ru/reference/data-types/float).
+* `precision` (необязательно) — Длина итоговой закодированной строки. По умолчанию — `12`. Целое число в диапазоне `[1, 12]`. [Int8](/ru/reference/data-types/int-uint).
+
+<Note>
+  - Все параметры координат должны быть одного типа: либо `Float32`, либо `Float64`.
+  - Для параметра `precision` любое значение меньше `1` или больше `12` без предупреждения преобразуется в `12`.
+</Note>
+
+**Возвращаемые значения**
+
+* Буквенно-цифровая строка с закодированной координатой (используется модифицированная версия алфавита кодирования base32). [String](/ru/reference/data-types/string).
+
+**Пример**
+
+```sql title="Query"
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
+```
+
+```text title="Response"
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+```
+
+<div id="geohashdecode">
+  ## geohashDecode
+</div>
+
+Декодирует любую строку в формате [geohash](#geohash) в долготу и широту.
+
+**Синтаксис**
+
+```sql
+geohashDecode(hash_str)
+```
+
+**Входные значения**
+
+* `hash_str` — строка, закодированная в формате Geohash.
+
+**Возвращаемые значения**
+
+* Tuple `(longitude, latitude)` со значениями `Float64`, представляющими долготу и широту. [Tuple](/ru/reference/data-types/tuple)([Float64](/ru/reference/data-types/float))
+
+**Пример**
+
+```sql
+SELECT geohashDecode('ezs42') AS res;
+```
+
+```text
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+```
+
+<div id="geohashesinbox">
+  ## geohashesInBox
+</div>
+
+Возвращает массив строк в кодировке [Geohash](#geohash) заданной точности, которые покрывают указанный прямоугольник, находясь внутри него или пересекая его границы; по сути, это двумерная сетка, развернутая в массив.
+
+**Синтаксис**
+
+```sql
+geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
+```
+
+**Аргументы**
+
+* `longitude_min` — Минимальная долгота. Диапазон: `[-180°, 180°]`. [Float](/ru/reference/data-types/float).
+* `latitude_min` — Минимальная широта. Диапазон: `[-90°, 90°]`. [Float](/ru/reference/data-types/float).
+* `longitude_max` — Максимальная долгота. Диапазон: `[-180°, 180°]`. [Float](/ru/reference/data-types/float).
+* `latitude_max` — Максимальная широта. Диапазон: `[-90°, 90°]`. [Float](/ru/reference/data-types/float).
+* `precision` — Точность Geohash. Диапазон: `[1, 12]`. [UInt8](/ru/reference/data-types/int-uint).
+
+<Note>
+  Все параметры координат должны быть одного типа: либо `Float32`, либо `Float64`.
+</Note>
+
+**Возвращаемые значения**
+
+* Массив строк Geohash длины `precision`, покрывающих указанную область; порядок элементов не гарантируется. [Array](/ru/reference/data-types/array)([String](/ru/reference/data-types/string)).
+* `[]` — Пустой массив, если минимальные значения широты и долготы не меньше соответствующих максимальных значений.
+
+<Note>
+  Функция генерирует исключение, если итоговый массив содержит более 10&#39;000&#39;000 элементов.
+</Note>
+
+**Пример**
+
+```sql title="Query"
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
+```
+
+```text title="Response"
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+```

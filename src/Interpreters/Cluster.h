@@ -122,6 +122,11 @@ public:
         String database_shard_name;
         String database_replica_name;
         UInt16 port{0};
+        /// Optional per-node ports for the distributed-plan engine: the interserver port the
+        /// initiator dispatches tasks to, and the streaming-exchange listener port. Zero means
+        /// "not configured" (the initiator then falls back to the server-level ports).
+        UInt16 stateless_worker_port{0};
+        UInt16 streaming_exchange_port{0};
         String user;
         String password;
         String proto_send_chunked = "notchunked";

@@ -45,6 +45,7 @@ ORDER BY test2.col1
 SELECT col2, col2 + 1 FROM test1
 FULL OUTER JOIN test2 USING (col1)
 PREWHERE (col2 * 2) :: UInt8
+ORDER BY abs(col2) DESC
 ;
 
 DROP TABLE IF EXISTS test1;

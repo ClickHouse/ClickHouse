@@ -1,0 +1,39 @@
+insert	1	1	1	0
+insert	2	1	1	1
+insert	3	1	2	0
+insert	4	1	2	1
+
+DETACH ATTACH
+attach	1	1	3	0
+attach	2	1	3	1
+attach	3	1	4	0
+attach	4	1	4	1
+
+ALTER TABLE t UPDATE b = 2 WHERE a = 1
+update	1	2	3	0
+update	2	1	3	1
+update	3	1	4	0
+update	4	1	4	1
+
+ALTER TABLE t UPDATE b = 3 WHERE a = 2
+update_again	1	2	3	0
+update_again	2	3	3	1
+update_again	3	1	4	0
+update_again	4	1	4	1
+
+ALTER TABLE t DELETE WHERE a = 4
+delete	1	2	3	0
+delete	2	3	3	1
+delete	3	1	4	0
+
+OPTIMIZE TABLE t FINAL
+merge	1	2	3	0
+merge	2	3	3	1
+merge	3	1	4	0
+
+INSERT INTO t VALUES (5, 1), (6, 1)
+merge_after_insert	1	2	3	0
+merge_after_insert	2	3	3	1
+merge_after_insert	3	1	4	0
+merge_after_insert	5	1	8	0
+merge_after_insert	6	1	8	1

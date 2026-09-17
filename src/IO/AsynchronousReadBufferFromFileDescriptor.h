@@ -85,6 +85,8 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
+    bool supportsExternalBufferMode() const override { return false; }
+
 private:
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 

@@ -188,7 +188,7 @@ public:
             nested_func->add(place, nested, i, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -201,7 +201,7 @@ public:
         nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
     }

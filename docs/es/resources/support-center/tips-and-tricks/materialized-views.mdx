@@ -1,0 +1,77 @@
+---
+slug: /tips-and-tricks/materialized-views
+sidebarTitle: 'Vistas materializadas'
+doc_type: 'guide'
+keywords: [
+  'clickhouse materialized views',
+  'materialized view optimization',
+  'materialized view storage issues',
+  'materialized view best practices',
+  'database aggregation patterns',
+  'materialized view anti-patterns',
+  'storage explosion problems',
+  'materialized view performance',
+  'database view optimization',
+  'aggregation strategy',
+  'materialized view troubleshooting',
+  'view storage overhead'
+]
+title: 'Lecciones: vistas materializadas'
+description: 'Ejemplos reales de vistas materializadas, problemas y soluciones'
+---
+
+*Esta guía forma parte de una recopilación de aprendizajes surgidos en encuentros de la comunidad. Para ver más soluciones y experiencias reales, puedes [explorar por problema específico](/es/resources/support-center/tips-and-tricks/community-wisdom).*
+*¿Demasiadas partes están ralentizando tu base de datos? Consulta la guía de la comunidad sobre [Too Many Parts](/es/resources/support-center/tips-and-tricks/too-many-parts).*
+*Más información sobre [vistas materializadas](/es/concepts/features/materialized-views/index).*
+
+<div id="storage-antipattern">
+  ## El antipatrón de almacenamiento 10x
+</div>
+
+**Problema real en producción:** *&quot;Teníamos una vista materializada. La tabla de logs sin procesar ocupaba unos 20 GB, pero la vista basada en esa tabla de logs creció hasta 190 GB, es decir, casi 10 veces el tamaño de la tabla sin procesar. Esto ocurrió porque estábamos creando una fila por atributo y cada log puede tener 10 atributos.&quot;*
+
+**Regla:** Si tu `GROUP BY` crea más filas de las que elimina, estás creando un índice costoso, no una vista materializada.
+
+<div id="mv-health-validation">
+  ## Verificación del estado de la vista materializada en producción
+</div>
+
+Esta consulta te ayuda a prever si una vista materializada comprimirá tus datos o hará que se disparen antes de crearla. Ejecútala sobre tu tabla y tus columnas reales para evitar el escenario de la &quot;explosión de 190 GB&quot;.
+
+**Qué muestra:**
+
+* **Ratio de agregación bajo** (&lt;10%) = Buena MV, compresión significativa
+* **Ratio de agregación alto** (&gt;70%) = Mala MV, riesgo de explosión del almacenamiento
+* **Multiplicador de almacenamiento** = Cuánto más grande o más pequeña será tu MV
+
+```sql
+-- Reemplaza con tu tabla y columnas reales
+SELECT 
+    count() as total_rows,
+    uniq(your_group_by_columns) as unique_combinations,
+    round(uniq(your_group_by_columns) / count() * 100, 2) as aggregation_ratio
+FROM your_table
+WHERE your_filter_conditions;
+
+-- Si aggregation_ratio > 70%, reconsidera el diseño de tu MV
+-- Si aggregation_ratio < 10%, obtendrás una buena compresión
+```
+
+<div id="mv-problems">
+  ## Cuando las vistas materializadas se convierten en un problema
+</div>
+
+**Señales de advertencia que conviene vigilar:**
+
+* Aumenta la latencia de inserción (las consultas que tardaban 10 ms ahora tardan 100 ms o más)
+* Los errores &quot;Too many parts&quot; aparecen con más frecuencia
+* Picos de CPU durante las operaciones de inserción
+* Timeouts en las inserciones que antes no se producían
+
+Puedes comparar el rendimiento de inserción antes y después de añadir MVs usando `system.query_log` para seguir la evolución de la duración de las consultas.
+
+<div id="video-sources">
+  ## Fuentes en video
+</div>
+
+* [ClickHouse en CommonRoom - Kirill Sapchuk](https://www.youtube.com/watch?v=liTgGiTuhJE) - Fuente del caso de estudio sobre el &quot;entusiasmo excesivo por las vistas materializadas&quot; y la &quot;explosión de 20GB→190GB&quot;

@@ -1,0 +1,29 @@
+---
+description: 'timeSeriesData renvoie la table [data](/reference/engines/table-engines/integrations/time-series#samples-table)
+  utilisée par la table `db_name.time_series_table`, dont le moteur de table est TimeSeries.'
+sidebarTitle: 'timeSeriesData'
+slug: /sql-reference/table-functions/timeSeriesData
+title: 'timeSeriesData'
+doc_type: 'reference'
+---
+
+`timeSeriesData(db_name.time_series_table)` - Renvoie la table [data](/fr/reference/engines/table-engines/integrations/time-series#samples-table)
+utilisée par la table `db_name.time_series_table`, dont le moteur de table est [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) :
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA data_table
+```
+
+La fonction fonctionne aussi si la table *data* est interne :
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+Les requêtes suivantes sont équivalentes :
+
+```sql
+SELECT * FROM timeSeriesData(db_name.time_series_table);
+SELECT * FROM timeSeriesData('db_name.time_series_table');
+SELECT * FROM timeSeriesData('db_name', 'time_series_table');
+```

@@ -1,0 +1,7 @@
+Replacing local	120000	163999940000
+Replacing distributed	120000	163999940000
+Replacing read distributes	1
+Collapsing local	50000	3749975000
+Collapsing distributed	50000	3749975000
+Summing local	100000	1500000
+Summing distributed	100000	1500000

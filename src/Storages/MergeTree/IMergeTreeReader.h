@@ -34,11 +34,8 @@ public:
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
-    /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
-    /// If rows_offset is not 0, when reading from MergeTree, the first rows_offset rows will be skipped.
-    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                            bool continue_reading, size_t max_rows_to_read,
-                            size_t rows_offset, Columns & res_columns) = 0;
+    virtual size_t readRows(size_t from_mark, bool continue_reading,
+                            size_t max_rows_to_read, MutableColumns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -60,7 +57,11 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
+    /// `previous_step_columns` names columns produced by earlier reader-chain steps; a subcolumn
+    /// whose parent is among them is deferred to evaluateMissingDefaults instead of default-filled.
+    void fillMissingColumns(
+        Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+        const NameSet & previous_step_columns = {}) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -76,6 +77,11 @@ public:
     /// before `performRequiredConversions` is applied.
     const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
 
+    /// Columns for which only a part of the streams is read (e.g. only the offsets of an array
+    /// whose data is missing from the part). Such columns are not fully populated until
+    /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
+    const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
+
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -84,7 +90,7 @@ public:
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
-    virtual bool canSkipMark(size_t, size_t) { return false; }
+    virtual bool canSkipMark(size_t) { return false; }
 
     /// Returns true if this reader can skip whole marks via `canSkipMark` for at least some inputs.
     /// Independent of any particular mark index. Used by callers that need to know upfront whether
@@ -92,9 +98,21 @@ public:
     /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
     virtual bool canSkipAnyMark() const { return false; }
 
-    virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
+    virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
+
+    /// Read hints (currently vector-search results) are per-reader state: they are set once after the
+    /// reader is created and consumed later by `MergeTreeRangeReader`. They live on the reader rather
+    /// than on the shared `data_part_info_for_read`, which is one object per part and would otherwise
+    /// be mutated concurrently when several tasks read the same part from different threads.
+    void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns)
+    {
+        if (read_columns.contains("_distance") || read_hints_.use_vector_search_result_filter)
+            read_hints = read_hints_;
+    }
+
+    const RangesInDataPartReadHints & getReadHints() const { return read_hints; }
 
 protected:
     /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
@@ -111,7 +129,7 @@ protected:
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
+    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -137,6 +155,12 @@ protected:
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
+    /// Last mark of `all_mark_ranges`, used as the right bound of ranged read requests on remote disks.
+    /// Cached because the ranges can contain thousands of fragments and the bound is needed on every read.
+    size_t last_mark_to_read = 0;
+
+    /// Per-reader read hints (see setReadHints/getReadHints above).
+    RangesInDataPartReadHints read_hints;
 
     /// Column, serialization and level (of nesting) of column
     /// which is used for reading offsets for missing nested column.
@@ -161,6 +185,9 @@ protected:
     /// by a pending mutation that hasn't been applied to this part yet.
     /// Such columns should not be read from the part; defaults should be used instead.
     bool isColumnDroppedByPendingMutation(size_t pos) const;
+
+    /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
+    bool isSystemColumnInvalidated(size_t pos) const;
 
 private:
     friend class MergeTreeReaderIndex;

@@ -73,7 +73,9 @@ void appendLambdaColumnName(
     }
     writeString("), ", out);
 
-    ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context);
+    /// The lambda body is a value expression whose reconstructed name must match the original
+    /// expression exactly, so truthiness-only rewrites must not apply.
+    ActionsDAGWithInversionPushDown inverted_capture_dag(capture_dag.getOutputs().at(0), context, /* boolean_context */ false);
     appendColumnNameWithoutAlias(*inverted_capture_dag.predicate, out, context, use_analyzer, legacy);
     writeChar(')', out);
 }
@@ -506,6 +508,24 @@ std::optional<RPNBuilderFunctionTreeNode> RPNBuilderTreeNode::toFunctionNodeOrNu
     return RPNBuilderFunctionTreeNode(getNodeWithoutAlias(dag_node), tree_context);
 }
 
+std::optional<RPNBuilderTreeNode> RPNBuilderTreeNode::getArrayJoinArgument() const
+{
+    if (ast_node)
+    {
+        const auto * ast_function = typeid_cast<const ASTFunction *>(ast_node);
+        if (ast_function && ast_function->name == "arrayJoin" && ast_function->arguments
+            && ast_function->arguments->children.size() == 1)
+            return RPNBuilderTreeNode(ast_function->arguments->children[0].get(), tree_context);
+        return {};
+    }
+
+    const auto * node_without_alias = getNodeWithoutAlias(dag_node);
+    if (node_without_alias->type == ActionsDAG::ActionType::ARRAY_JOIN && node_without_alias->children.size() == 1)
+        return RPNBuilderTreeNode(node_without_alias->children[0], tree_context);
+
+    return {};
+}
+
 std::string RPNBuilderFunctionTreeNode::getFunctionName() const
 {
     if (ast_node)
@@ -597,6 +617,16 @@ void RPNBuilder<RPNElement>::traverseTree(const RPNBuilderTreeNode & node)
     {
         auto function_node = node.toFunctionNode();
 
+        if constexpr (!RPNBuilderTraits<RPNElement>::expand_index_hint)
+        {
+            if (function_node.getFunctionName() == "indexHint")
+            {
+                element.function = RPNElement::ALWAYS_TRUE;
+                rpn_elements.emplace_back(std::move(element));
+                return;
+            }
+        }
+
         if (extractLogicalOperatorFromTree(function_node, element))
         {
             size_t arguments_size = function_node.getArgumentsSize();
@@ -657,6 +687,13 @@ bool RPNBuilder<RPNElement>::extractLogicalOperatorFromTree(const RPNBuilderFunc
 
     return true;
 }
+
+/// Estimating selectivity is the one use that must not descend into `indexHint`.
+template <>
+struct RPNBuilderTraits<ConditionSelectivityEstimator::RPNElement>
+{
+    static constexpr bool expand_index_hint = false;
+};
 
 template class RPNBuilder<KeyCondition::RPNElement>;
 template class RPNBuilder<ConditionSelectivityEstimator::RPNElement>;

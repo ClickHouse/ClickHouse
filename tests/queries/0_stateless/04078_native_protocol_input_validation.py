@@ -12,7 +12,6 @@ import os
 import random
 import socket
 import struct
-import sys
 import time
 
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", 9000))
@@ -196,7 +195,7 @@ def get_response(sock, timeout=5.0):
         pkt_type = read_varuint(sock)
         if pkt_type == SERVER_EXCEPTION:
             code = struct.unpack("<I", recv_exact(sock, 4))[0]
-            name = read_string(sock)
+            read_string(sock)
             message = read_string(sock)
             return False, f"{code}:{message}"
         return True, f"pkt_type={pkt_type}"
@@ -244,7 +243,7 @@ def test_invalid_stage(host, port):
         assert "Unknown query processing stage" in msg, f"stage={stage}: {msg}"
     # Stage 7 (QueryPlan) is valid but disabled by default
     ok, msg = run_query(host, port, stage=7)
-    assert not ok, f"stage=7 should fail (disabled), got ok"
+    assert not ok, "stage=7 should fail (disabled), got ok"
     print("invalid stage values are rejected")
 
 

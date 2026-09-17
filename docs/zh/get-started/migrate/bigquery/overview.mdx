@@ -1,0 +1,537 @@
+---
+title: 'ClickHouse Cloud 与 BigQuery 对比'
+slug: /migrations/bigquery/biquery-vs-clickhouse-cloud
+description: 'BigQuery 与 ClickHouse Cloud 有何不同'
+keywords: ['BigQuery']
+show_related_blogs: true
+sidebarTitle: '概览'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="resource-organization">
+  ## 资源组织
+</div>
+
+ClickHouse Cloud 的资源组织方式与 [BigQuery 的资源层级结构](https://cloud.google.com/bigquery/docs/resource-hierarchy) 类似。下图展示了 ClickHouse Cloud 的资源层级结构，下面将说明其中的具体差异：
+
+<Image img="/images/migrations/bigquery-1.webp" size="md" alt="资源组织" />
+
+<div id="organizations">
+  ### 组织
+</div>
+
+与 BigQuery 类似，组织是 ClickHouse Cloud 资源层级结构中的根节点。您在 ClickHouse Cloud 账户中设置的第一个用户会自动被分配到一个由其拥有的组织。该用户可以邀请其他用户加入该组织。
+
+<div id="bigquery-projects-vs-clickhouse-cloud-services">
+  ### BigQuery Projects 与 ClickHouse Cloud 服务
+</div>
+
+在 组织 中，你可以创建与 BigQuery 项目大致对应的服务，因为 ClickHouse Cloud 中存储的数据是与服务关联的。ClickHouse Cloud 中[提供多种服务类型](/zh/products/cloud/features/cloud-tiers)。每个 ClickHouse Cloud 服务都会部署在特定区域，并包含：
+
+1. 一组计算节点 (目前，Development 层级服务为 2 个节点，Production 层级服务为 3 个节点) 。对于这些节点，ClickHouse Cloud [支持垂直和横向扩缩容](/zh/products/cloud/features/autoscaling/overview#how-scaling-works-in-clickhouse-cloud)，既可手动进行，也可自动进行。
+2. 一个 object storage 文件夹，服务会在其中存储所有数据。
+3. 一个端点 (或通过 ClickHouse Cloud UI Console 创建的多个端点)  - 即用于连接到该服务的服务 URL (例如：`https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
+
+<div id="bigquery-datasets-vs-clickhouse-cloud-databases">
+  ### BigQuery 数据集与 ClickHouse Cloud 数据库
+</div>
+
+ClickHouse 会在逻辑上将表归入数据库中。与 BigQuery 数据集类似，ClickHouse 数据库也是用于组织表数据并控制其访问权限的逻辑容器。
+
+<div id="bigquery-folders">
+  ### BigQuery 文件夹
+</div>
+
+ClickHouse Cloud 目前没有与 BigQuery 文件夹对应的概念。
+
+<div id="bigquery-slot-reservations-and-quotas">
+  ### BigQuery Slot 预留和配额
+</div>
+
+与 BigQuery Slot 预留类似，你可以在 ClickHouse Cloud 中[配置纵向和横向自动扩缩容](/zh/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling)。对于纵向自动扩缩容，你可以为服务中计算节点的内存和 CPU 核心设置最小和最大规格。随后，服务会在这些范围内按需扩缩容。这些设置在初始服务创建流程中也可配置。服务中的每个计算节点规格都相同。你还可以通过[横向扩缩容](/zh/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)调整服务中的计算节点数量。
+
+此外，与 BigQuery 配额类似，ClickHouse Cloud 提供并发控制、内存使用限制和 I/O 调度，使你能够将查询隔离到不同的工作负载类别中。通过为特定工作负载类别中的共享资源 (CPU 核心、DRAM、磁盘和网络 I/O) 设置限制，可以确保这些查询不会影响其他关键业务查询。在高并发查询场景下，并发控制可防止线程过度订阅。
+
+ClickHouse 会在服务器、用户和查询级别跟踪内存分配的字节大小，从而支持灵活的内存使用限制。内存 overcommit 允许查询使用超出保障内存之外的额外空闲内存，同时保证其他查询的内存限制。此外，还可以限制 aggregation、sort 和 join clauses 的内存使用，以便在超出内存限制时回退到外部算法。
+
+最后，I/O 调度允许你根据最大带宽、进行中的请求数和策略，限制工作负载类别对本地和远程磁盘的访问。
+
+<div id="permissions">
+  ### 权限
+</div>
+
+ClickHouse Cloud 通过两个层面控制用户访问：一是 [Cloud Console](/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)，二是 [数据库](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users)。控制台访问通过 [clickhouse.cloud](https://console.clickhouse.cloud) 用户界面进行管理。数据库访问则通过数据库用户账户和角色进行管理。此外，还可以为控制台用户授予数据库中的角色，使其能够通过我们的 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 与数据库交互。
+
+<div id="data-types">
+  ## 数据类型
+</div>
+
+ClickHouse 在数值类型方面提供了更细粒度的精度选择。例如，BigQuery 提供数值类型 [`INT64`, `NUMERIC`, `BIGNUMERIC` and `FLOAT64`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)。相比之下，ClickHouse 为小数、浮点数和整数提供了多种精度类型。借助这些数据类型，你可以优化存储和内存开销，从而获得更快的查询速度并降低资源消耗。下面列出了每种 BigQuery 类型对应的 ClickHouse 等效类型：
+
+| BigQuery                                                                                                 | ClickHouse                                                                                                                                                        |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#array_type)             | [Array(t)](/zh/reference/data-types/array)                                                                                                                           |
+| [NUMERIC](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#decimal_types)        | [Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S)](/zh/reference/data-types/decimal)                                                                         |
+| [BIG NUMERIC](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#decimal_types)    | [Decimal256(S)](/zh/reference/data-types/decimal)                                                                                                                    |
+| [BOOL](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#boolean_type)            | [Bool](/zh/reference/data-types/boolean)                                                                                                                             |
+| [BYTES](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#bytes_type)             | [FixedString](/zh/reference/data-types/fixedstring)                                                                                                                  |
+| [DATE](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#date_type)               | [Date32](/zh/reference/data-types/date32) (范围更窄)                                                                                                                     |
+| [DATETIME](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#datetime_type)       | [DateTime](/zh/reference/data-types/datetime), [DateTime64](/zh/reference/data-types/datetime64) (范围较窄，但精度更高)                                                           |
+| [FLOAT64](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#floating_point_types) | [Float64](/zh/reference/data-types/float)                                                                                                                            |
+| [GEOGRAPHY](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#geography_type)     | [Geo Data Types](/zh/reference/data-types/float)                                                                                                                     |
+| [INT64](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types)          | [UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/zh/reference/data-types/int-uint)                                      |
+| [INTERVAL](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types)       | 不适用 - [可作为表达式使用](/zh/reference/data-types/special-data-types/interval#usage-remarks) 或 [通过函数支持](/zh/reference/functions/regular-functions/date-time-functions#addYears) |
+| [JSON](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#json_type)               | [JSON](/zh/guides/clickhouse/data-formats/json/inference)                                                                                                            |
+| [STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#string_type)           | [String (bytes)](/zh/reference/data-types/string)                                                                                                                    |
+| [STRUCT](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#constructing_a_struct) | [Tuple](/zh/reference/data-types/tuple), [Nested](/zh/reference/data-types/nested-data-structures/index)                                                                |
+| [TIME](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#time_type)               | [DateTime64](/zh/reference/data-types/datetime64)                                                                                                                    |
+| [TIMESTAMP](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#timestamp_type)     | [DateTime64](/zh/reference/data-types/datetime64)                                                                                                                    |
+
+当 ClickHouse 类型有多个可选项时，请根据数据的实际范围，选择满足需求的最低类型。此外，也可以考虑使用[合适的编解码器](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)来进一步压缩。
+
+<div id="query-acceleration-techniques">
+  ## 查询加速技术
+</div>
+
+<div id="primary-and-foreign-keys-and-primary-index">
+  ### 主键、外键和主索引
+</div>
+
+在 BigQuery 中，表可以具有[主键和外键约束](https://cloud.google.com/bigquery/docs/information-schema-table-constraints)。通常，主键和外键用于关系型数据库中，以确保数据完整性。主键值通常对于每一行都是唯一的，且不为 `NULL`。每一行中的外键值都必须存在于主键表的主键列中，或者为 `NULL`。在 BigQuery 中，这些约束并不会被强制执行，但查询优化器可能会利用这些信息进一步优化查询。
+
+在 ClickHouse 中，表也可以有主键。与 BigQuery 一样，ClickHouse 不会强制要求表的主键列值唯一。与 BigQuery 不同，表数据会按照主键列的顺序[排序](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files)并存储在磁盘上。查询优化器会利用这种排序顺序来避免重新排序、尽量减少 join 的内存使用，并对 limit 子句启用短路。与 BigQuery 不同，ClickHouse 会根据主键列值自动创建[ (稀疏) 主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales)。该索引用于加速所有包含主键列过滤条件的查询。ClickHouse 当前不支持外键约束。
+
+<div id="secondary-indexes-only-available-in-clickhouse">
+  ## 二级索引 (仅 ClickHouse 可用)
+</div>
+
+除了基于表主键列值创建的主索引外，ClickHouse 还允许在主键之外的列上创建二级索引。ClickHouse 提供了多种二级索引类型，分别适用于不同类型的查询：
+
+* [**Bloom Filter Index**](/zh/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter):
+  * 用于加速带有等值条件 (例如 `=`、`IN`) 的查询。
+  * 使用概率型数据结构来判断某个值是否存在于数据块中。
+* [**Token Bloom Filter Index**](/zh/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter):
+  * 与 Bloom Filter Index 类似，但用于分词后的字符串，适合全文搜索查询。
+* [**Min-Max Index**](/zh/reference/engines/table-engines/mergetree-family/mergetree#minmax):
+  * 为每个数据分区片段维护某一列的最小值和最大值。
+  * 有助于跳过读取不在指定范围内的数据分区片段。
+
+<div id="search-indexes">
+  ## 搜索索引
+</div>
+
+与 BigQuery 中的[搜索索引](https://cloud.google.com/bigquery/docs/search-index)类似，ClickHouse 表中包含字符串值的列也可以创建[全文索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
+
+<div id="vector-indexes">
+  ## 向量索引
+</div>
+
+BigQuery 最近推出了作为 Pre-GA 功能的[向量索引](https://cloud.google.com/bigquery/docs/vector-index)。同样，ClickHouse 也对用于加速向量搜索场景的[索引](/zh/reference/engines/table-engines/mergetree-family/annindexes)提供 Experimental 支持。
+
+<div id="partitioning">
+  ## 分区
+</div>
+
+与 BigQuery 类似，ClickHouse 通过表分区将大型表拆分为更小、更易于管理的分区，从而提升性能和可管理性。有关 ClickHouse 分区的详细说明，请参见[此处](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)。
+
+<div id="clustering">
+  ## 聚簇
+</div>
+
+使用聚簇后，BigQuery 会根据少数几个指定列的值自动对表数据进行排序，并将相近的数据集中存放在大小经过优化的块中。聚簇可提升查询性能，使 BigQuery 能更准确地估算查询运行成本。对于聚簇列，查询还可以避免扫描不必要的数据。
+
+在 ClickHouse 中，数据会根据表的主键列自动在[磁盘上聚簇](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files)，并在逻辑上组织为块；利用主索引数据结构的查询可以快速定位这些块，或将其剪枝。
+
+<div id="materialized-views">
+  ## Materialized views
+</div>
+
+BigQuery 和 ClickHouse 都支持 materialized views——即基于对 基表 执行转换查询所得结果预先计算并存储的结果，以提升性能和效率。
+
+<div id="querying-materialized-views">
+  ## 查询 materialized view
+</div>
+
+BigQuery 的 materialized view 可以直接查询，也可以由优化器用于处理针对基表的查询。如果对基表的更改可能导致 materialized view 失效，数据就会直接从基表读取。如果对基表的更改不会使 materialized view 失效，其余数据则从 materialized view 中读取，只有变更部分从基表读取。
+
+在 ClickHouse 中，materialized view 只能直接查询。不过，与 BigQuery 相比 (BigQuery 会在基表发生更改后的 5 分钟内自动刷新 materialized view，但刷新频率不会高于[每 30 分钟一次](https://cloud.google.com/bigquery/docs/materialized-views-manage#refresh)) ，materialized view 在 ClickHouse 中始终与基表保持同步。
+
+**更新 materialized view**
+
+BigQuery 会定期通过对基表运行该视图的转换查询，来完整刷新 materialized view。在两次刷新之间，BigQuery 会将 materialized view 中的数据与基表中的新数据结合起来，在继续使用 materialized view 的同时提供一致的查询结果。
+
+在 ClickHouse 中，materialized view 采用增量更新。这种增量更新机制具有很高的可扩展性，同时计算成本也较低：增量更新的 materialized view 专为基表包含数十亿甚至数万亿行的场景而设计。ClickHouse 无需反复查询持续增长的基表来刷新 materialized view，而只需根据新插入基表的行中的值计算部分结果。该部分结果会在后台与先前计算出的部分结果逐步合并。与反复基于整个基表刷新 materialized view 相比，这种方式可显著降低计算成本。
+
+<div id="transactions">
+  ## 事务
+</div>
+
+与 ClickHouse 不同，BigQuery 支持在单个查询内执行多语句事务；使用会话时，也支持跨多个查询执行多语句事务。多语句事务允许你执行数据更改操作，例如在一个或多个表中插入或删除行，并以原子方式提交或回滚这些更改。多语句事务已列入 [ClickHouse 的 2024 年路线图](https://github.com/ClickHouse/ClickHouse/issues/58392)。
+
+<div id="aggregate-functions">
+  ## 聚合函数
+</div>
+
+与 BigQuery 相比，ClickHouse 提供了更多数量可观的内置聚合函数：
+
+* BigQuery 提供了 [18 个聚合函数](https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions) 和 [4 个近似聚合函数](https://cloud.google.com/bigquery/docs/reference/standard-sql/approximate_aggregate_functions)。
+* ClickHouse 拥有超过 [150 个预置聚合函数](/zh/reference/functions/aggregate-functions/reference-index)，以及强大的 [聚合组合器](/zh/reference/functions/aggregate-functions/combinators)，可用于[扩展](https://www.youtube.com/watch?v=7ApwD0cfAFI)这些预置聚合函数的行为。比如，只需在调用时添加 [-Array 后缀](/zh/reference/functions/aggregate-functions/combinators#-array)，就可以将这 150 多个预置聚合函数应用于数组，而不是表中的行。使用 [-Map 后缀](/zh/reference/functions/aggregate-functions/combinators#-map) 时，你可以将任何聚合函数应用于 Map。使用 [-ForEach 后缀](/zh/reference/functions/aggregate-functions/combinators#-foreach) 时，你可以将任何聚合函数应用于嵌套数组。
+
+<div id="data-sources-and-file-formats">
+  ## 数据源和文件格式
+</div>
+
+与 BigQuery 相比，ClickHouse 支持的文件格式和数据源要丰富得多：
+
+* ClickHouse 原生支持从几乎任何数据源加载采用 90 多种文件格式的数据
+* BigQuery 支持 5 种文件格式和 19 种数据源
+
+<div id="sql-language-features">
+  ## SQL 语言特性
+</div>
+
+ClickHouse 提供标准 SQL，并在此基础上增加了许多扩展和改进，使其更适合分析类任务。例如，ClickHouse SQL [支持 lambda 函数](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda) 和高阶函数，因此在进行转换时，无需对数组执行 unnest/explode。与 BigQuery 等其他系统相比，这是一个很大的优势。
+
+<div id="arrays">
+  ## 数组
+</div>
+
+与 BigQuery 的 8 个数组函数相比，ClickHouse 拥有 80 多个[内置数组函数](/zh/reference/functions/regular-functions/array-functions)，能够以优雅而简洁的方式对各种问题进行建模和求解。
+
+ClickHouse 中一种典型的设计模式是使用 [`groupArray`](/zh/reference/functions/aggregate-functions/groupArray) 聚合函数，将表中特定的行值 (临时) 转换为数组。随后便可通过数组函数方便地处理该数组，再通过 [`arrayJoin`](/zh/reference/functions/regular-functions/array-join) 函数将结果重新转换为单独的表行。
+
+由于 ClickHouse SQL 支持[高阶 lambda 函数](/zh/reference/functions/regular-functions/overview#arrow-operator-and-lambda)，许多高级数组操作只需调用某个高阶内置数组函数即可完成，而不必像 BigQuery 中通常[需要](https://cloud.google.com/bigquery/docs/arrays)的那样，先将数组临时转换回表，例如对数组进行[过滤](https://cloud.google.com/bigquery/docs/arrays#filtering_arrays)或[压缩 (zip) ](https://cloud.google.com/bigquery/docs/arrays#zipping_arrays)。在 ClickHouse 中，这些操作分别只需简单调用高阶函数 [`arrayFilter`](/zh/reference/functions/regular-functions/array-functions#arrayFilter) 和 [`arrayZip`](/zh/reference/functions/regular-functions/array-functions#arrayZip)。
+
+下面我们给出从 BigQuery 到 ClickHouse 的数组操作映射：
+
+| BigQuery                                                                                                                 | ClickHouse                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| [ARRAY&#95;CONCAT](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_concat)           | [arrayConcat](/zh/reference/functions/regular-functions/array-functions#arrayConcat)                         |
+| [ARRAY&#95;LENGTH](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_length)           | [length](/zh/reference/functions/regular-functions/array-functions#length)                                   |
+| [ARRAY&#95;REVERSE](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_reverse)         | [arrayReverse](/zh/reference/functions/regular-functions/array-functions#arrayReverse)                       |
+| [ARRAY&#95;TO&#95;STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_to_string) | [arrayStringConcat](/zh/reference/functions/regular-functions/splitting-merging-functions#arrayStringConcat) |
+| [GENERATE&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_array)       | [range](/zh/reference/functions/regular-functions/array-functions#range)                                     |
+
+**在子查询中为每一行创建一个仅包含单个元素的数组**
+
+*BigQuery*
+
+[ARRAY function](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array)
+
+```sql
+SELECT ARRAY
+  (SELECT 1 UNION  ALL
+   SELECT 2 UNION ALL
+   SELECT 3) AS new_array;
+
+/*-----------*
+ | new_array |
+ +-----------+
+ | [1, 2, 3] |
+ *-----------*/
+```
+
+*ClickHouse*
+
+[groupArray](/zh/reference/functions/aggregate-functions/groupArray) 聚合函数
+
+```sql
+SELECT groupArray(*) AS new_array
+FROM
+(
+    SELECT 1
+    UNION ALL
+    SELECT 2
+    UNION ALL
+    SELECT 3
+)
+```
+
+```response
+   ┌─new_array─┐
+1. │ [1,2,3]   │
+   └───────────┘
+```
+
+**将数组展开为多行**
+
+*BigQuery*
+
+[`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator) 运算符
+
+```sql
+SELECT *
+FROM UNNEST(['foo', 'bar', 'baz', 'qux', 'corge', 'garply', 'waldo', 'fred'])
+  AS element
+WITH OFFSET AS offset
+ORDER BY offset;
+
+/*----------+--------*
+ | element  | offset |
+ +----------+--------+
+ | foo      | 0      |
+ | bar      | 1      |
+ | baz      | 2      |
+ | qux      | 3      |
+ | corge    | 4      |
+ | garply   | 5      |
+ | waldo    | 6      |
+ | fred     | 7      |
+ *----------+--------*/
+```
+
+*ClickHouse*
+
+[ARRAY JOIN](/zh/reference/statements/select/array-join) 子句
+
+```sql
+WITH ['foo', 'bar', 'baz', 'qux', 'corge', 'garply', 'waldo', 'fred'] AS values
+SELECT element, num-1 AS offset
+FROM (SELECT values AS element) AS subquery
+ARRAY JOIN element, arrayEnumerate(element) AS num;
+
+/*----------+--------*
+ | element  | offset |
+ +----------+--------+
+ | foo      | 0      |
+ | bar      | 1      |
+ | baz      | 2      |
+ | qux      | 3      |
+ | corge    | 4      |
+ | garply   | 5      |
+ | waldo    | 6      |
+ | fred     | 7      |
+ *----------+--------*/
+```
+
+**返回日期数组**
+
+*BigQuery*
+
+[GENERATE&#95;DATE&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_date_array) 函数
+
+```sql
+SELECT GENERATE_DATE_ARRAY('2016-10-05', '2016-10-08') AS example;
+
+/*--------------------------------------------------*
+ | example                                          |
+ +--------------------------------------------------+
+ | [2016-10-05, 2016-10-06, 2016-10-07, 2016-10-08] |
+ *--------------------------------------------------*/
+```
+
+[range](/zh/reference/functions/regular-functions/array-functions#range) + [arrayMap](/zh/reference/functions/regular-functions/array-functions#arrayMap) 函数
+
+*ClickHouse*
+
+```sql
+SELECT arrayMap(x -> (toDate('2016-10-05') + x), range(toUInt32((toDate('2016-10-08') - toDate('2016-10-05')) + 1))) AS example
+```
+
+```response
+┌─example───────────────────────────────────────────────┐
+1. │ ['2016-10-05','2016-10-06','2016-10-07','2016-10-08'] │
+   └───────────────────────────────────────────────────────┘
+```
+
+**返回一个时间戳数组**
+
+*BigQuery*
+
+[GENERATE&#95;TIMESTAMP&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_timestamp_array) 函数
+
+```sql
+SELECT GENERATE_TIMESTAMP_ARRAY('2016-10-05 00:00:00', '2016-10-07 00:00:00',
+                                INTERVAL 1 DAY) AS timestamp_array;
+
+/*--------------------------------------------------------------------------*
+ | timestamp_array                                                          |
+ +--------------------------------------------------------------------------+
+ | [2016-10-05 00:00:00+00, 2016-10-06 00:00:00+00, 2016-10-07 00:00:00+00] |
+ *--------------------------------------------------------------------------*/
+```
+
+*ClickHouse*
+
+[range](/zh/reference/functions/regular-functions/array-functions#range) + [arrayMap](/zh/reference/functions/regular-functions/array-functions#arrayMap) 函数
+
+```sql
+SELECT arrayMap(x -> (toDateTime('2016-10-05 00:00:00') + toIntervalDay(x)), range(dateDiff('day', toDateTime('2016-10-05 00:00:00'), toDateTime('2016-10-07 00:00:00')) + 1)) AS timestamp_array
+```
+
+```response
+Query id: b324c11f-655b-479f-9337-f4d34fd02190
+
+   ┌─timestamp_array─────────────────────────────────────────────────────┐
+1. │ ['2016-10-05 00:00:00','2016-10-06 00:00:00','2016-10-07 00:00:00'] │
+   └─────────────────────────────────────────────────────────────────────┘
+```
+
+**过滤 Arrays**
+
+*BigQuery*
+
+需要通过 [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator) 运算符将数组临时转换回表
+
+```sql
+WITH Sequences AS
+  (SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+   UNION ALL SELECT [2, 4, 8, 16, 32] AS some_numbers
+   UNION ALL SELECT [5, 10] AS some_numbers)
+SELECT
+  ARRAY(SELECT x * 2
+        FROM UNNEST(some_numbers) AS x
+        WHERE x < 5) AS doubled_less_than_five
+FROM Sequences;
+
+/*------------------------*
+ | doubled_less_than_five |
+ +------------------------+
+ | [0, 2, 2, 4, 6]        |
+ | [4, 8]                 |
+ | []                     |
+ *------------------------*/
+```
+
+*ClickHouse*
+
+[arrayFilter](/zh/reference/functions/regular-functions/array-functions#arrayFilter) 函数
+
+```sql
+WITH Sequences AS
+    (
+        SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+        UNION ALL
+        SELECT [2, 4, 8, 16, 32] AS some_numbers
+        UNION ALL
+        SELECT [5, 10] AS some_numbers
+    )
+SELECT arrayMap(x -> (x * 2), arrayFilter(x -> (x < 5), some_numbers)) AS doubled_less_than_five
+FROM Sequences;
+```
+
+```response
+   ┌─doubled_less_than_five─┐
+1. │ [0,2,2,4,6]            │
+   └────────────────────────┘
+   ┌─doubled_less_than_five─┐
+2. │ []                     │
+   └────────────────────────┘
+   ┌─doubled_less_than_five─┐
+3. │ [4,8]                  │
+   └────────────────────────┘
+```
+
+**拉链合并数组**
+
+*BigQuery*
+
+需要先通过 [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator) 运算符将数组临时还原为表
+
+```sql
+WITH
+  Combinations AS (
+    SELECT
+      ['a', 'b'] AS letters,
+      [1, 2, 3] AS numbers
+  )
+SELECT
+  ARRAY(
+    SELECT AS STRUCT
+      letters[SAFE_OFFSET(index)] AS letter,
+      numbers[SAFE_OFFSET(index)] AS number
+    FROM Combinations
+    CROSS JOIN
+      UNNEST(
+        GENERATE_ARRAY(
+          0,
+          LEAST(ARRAY_LENGTH(letters), ARRAY_LENGTH(numbers)) - 1)) AS index
+    ORDER BY index
+  );
+
+/*------------------------------*
+ | pairs                        |
+ +------------------------------+
+ | [{ letter: "a", number: 1 }, |
+ |  { letter: "b", number: 2 }] |
+ *------------------------------*/
+```
+
+*ClickHouse*
+
+[arrayZip](/zh/reference/functions/regular-functions/array-functions#arrayZip) 函数
+
+```sql
+WITH Combinations AS
+    (
+        SELECT
+            ['a', 'b'] AS letters,
+            [1, 2, 3] AS numbers
+    )
+SELECT arrayZip(letters, arrayResize(numbers, length(letters))) AS pairs
+FROM Combinations;
+```
+
+```response
+   ┌─pairs─────────────┐
+1. │ [('a',1),('b',2)] │
+   └───────────────────┘
+```
+
+**数组聚合**
+
+*BigQuery*
+
+需要通过 [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator) 运算符将数组重新展开为表
+
+```sql
+WITH Sequences AS
+  (SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+   UNION ALL SELECT [2, 4, 8, 16, 32] AS some_numbers
+   UNION ALL SELECT [5, 10] AS some_numbers)
+SELECT some_numbers,
+  (SELECT SUM(x)
+   FROM UNNEST(s.some_numbers) AS x) AS sums
+FROM Sequences AS s;
+
+/*--------------------+------*
+ | some_numbers       | sums |
+ +--------------------+------+
+ | [0, 1, 1, 2, 3, 5] | 12   |
+ | [2, 4, 8, 16, 32]  | 62   |
+ | [5, 10]            | 15   |
+ *--------------------+------*/
+```
+
+*ClickHouse*
+
+[arraySum](/zh/reference/functions/regular-functions/array-functions#arraySum)、[arrayAvg](/zh/reference/functions/regular-functions/array-functions#arrayAvg) 等函数，或现有 90 多个聚合函数名中的任意一个，作为 [arrayReduce](/zh/reference/functions/regular-functions/array-functions#arrayReduce) 函数的参数
+
+```sql
+WITH Sequences AS
+    (
+        SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+        UNION ALL
+        SELECT [2, 4, 8, 16, 32] AS some_numbers
+        UNION ALL
+        SELECT [5, 10] AS some_numbers
+    )
+SELECT
+    some_numbers,
+    arraySum(some_numbers) AS sums
+FROM Sequences;
+```
+
+```response
+   ┌─some_numbers──┬─sums─┐
+1. │ [0,1,1,2,3,5] │   12 │
+   └───────────────┴──────┘
+   ┌─some_numbers──┬─sums─┐
+2. │ [2,4,8,16,32] │   62 │
+   └───────────────┴──────┘
+   ┌─some_numbers─┬─sums─┐
+3. │ [5,10]       │   15 │
+   └──────────────┴──────┘
+```

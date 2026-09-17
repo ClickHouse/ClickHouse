@@ -20,6 +20,11 @@ UInt128 SerializationDate32::getHash(const DateLUTImpl & time_zone_)
     return hash.get128();
 }
 
+void SerializationDate32::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeText(column, row_num, ostr, settings);
+}
+
 void SerializationDate32::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeDateText(ExtendedDayNum(assert_cast<const ColumnInt32 &>(column).getData()[row_num]), ostr, time_zone);

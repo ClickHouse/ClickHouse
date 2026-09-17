@@ -20,6 +20,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 query="SELECT DISTINCT 1025, toFixedString('%', 1048576), 100 UNION ALL SELECT 9223372036854775807, '\0', materialize(toLowCardinality(1025)) SETTINGS extremes = 1 FORMAT Null"
 
+# Loop up to 500 times, but stop after 60 seconds. A buggy build crashes within a few dozen
+# iterations, so this is plenty; the cap keeps slow configs (TSan, s3) under the run timeout, as
+# each iteration spawns a fresh client and process startup dominates there.
+start=$SECONDS
 for _ in {1..500}; do
     $CLICKHOUSE_CLIENT --memory_tracker_fault_probability=0.001 --max_untracked_memory=0 --query="$query" >/dev/null 2>&1 ||:
+    (( SECONDS - start < 60 )) || break
 done
+
+# The loop's last evaluated command is the arithmetic test above, which is false (status 1) when the
+# time budget is not yet reached. Exit explicitly so the script's status does not depend on it.
+exit 0

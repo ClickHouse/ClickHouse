@@ -60,6 +60,11 @@ struct LimitByAnalysisResult
     Names limit_by_column_names;
 };
 
+struct LimitRangeAnalysisResult
+{
+    ActionsAndProjectInputsFlagPtr before_limit_range_actions;
+};
+
 class PlannerExpressionsAnalysisResult
 {
 public:
@@ -177,6 +182,21 @@ public:
         limit_by_analysis_result = std::move(limit_by_analysis_result_);
     }
 
+    bool hasLimitRange() const
+    {
+        return limit_range_analysis_result.before_limit_range_actions != nullptr;
+    }
+
+    LimitRangeAnalysisResult & getLimitRange()
+    {
+        return limit_range_analysis_result;
+    }
+
+    void addLimitRange(LimitRangeAnalysisResult limit_range_analysis_result_)
+    {
+        limit_range_analysis_result = std::move(limit_range_analysis_result_);
+    }
+
 private:
     ProjectionAnalysisResult projection_analysis_result;
     FilterAnalysisResult where_analysis_result;
@@ -186,12 +206,16 @@ private:
     FilterAnalysisResult qualify_analysis_result;
     SortAnalysisResult sort_analysis_result;
     LimitByAnalysisResult limit_by_analysis_result;
+    LimitRangeAnalysisResult limit_range_analysis_result;
 };
 
-/// Build expression analysis result for query tree, join tree input columns and planner context
+/// Build expression analysis result for query tree, join tree input columns and planner context.
+/// `source_constants` (see `JoinTreeQueryPlan::source_constants`) are constant columns the chain
+/// keeps flowing rather than fold-and-drop, so a distributed shard delivers what the initiator expects.
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info);
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants = {});
 
 }

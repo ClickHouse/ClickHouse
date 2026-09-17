@@ -1,0 +1,14 @@
+a
+UInt32
+0
+a	UInt32					
+a	b
+UInt32	String
+0
+a
+UInt32
+id	geometry	properties
+Nullable(String)	Geometry	Nullable(JSON)
+0
+1
+2

@@ -1,0 +1,31 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/intro
+title: 'Migrer d’Elastic vers ClickStack'
+sidebarTitle: 'Présentation'
+description: 'Présentation de la migration d’Elastic vers la stack d’observability ClickHouse'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+<div id="migrating-to-clickstack-from-elastic">
+  ## Migrer vers ClickStack depuis Elastic
+</div>
+
+Ce guide s’adresse aux utilisateurs qui migrent depuis l’Elastic Stack, en particulier à ceux qui utilisent Kibana pour surveiller les logs, les traces et les métriques collectés via Elastic Agent et stockés dans Elasticsearch. Il présente les concepts et les types de données équivalents dans ClickStack, explique comment traduire les requêtes Kibana basées sur Lucene vers la syntaxe de HyperDX, et fournit des conseils pour migrer à la fois les données et les agents afin d’assurer une transition fluide.
+
+Avant d’entamer une migration, il est important de comprendre les compromis entre ClickStack et l’Elastic Stack.
+
+Vous devriez envisager de passer à ClickStack si :
+
+* Vous ingérez de gros volumes de données d’observabilité et jugez Elastic trop coûteux en raison d’une compression inefficace et d’une mauvaise utilisation des ressources. ClickStack peut réduire significativement les coûts de stockage et de calcul, avec au moins une compression par 10 des données brutes.
+* Vous rencontrez de mauvaises performances de recherche à grande échelle ou des goulots d’étranglement lors de l’ingestion.
+* Vous souhaitez corréler les signaux d’observabilité avec des données métier à l’aide de SQL, en unifiant les workflows d’observabilité et d’analytics.
+* Vous misez sur OpenTelemetry et souhaitez éviter l’enfermement propriétaire.
+* Vous souhaitez tirer parti de la séparation du stockage et du calcul dans ClickHouse Cloud, qui permet une montée en charge quasiment illimitée, tout en ne payant que le calcul d’ingestion et l’object storage pendant les périodes d’inactivité.
+
+Cependant, ClickStack peut ne pas convenir si :
+
+* Vous utilisez principalement les données d’observabilité pour des cas d’usage liés à la sécurité et avez besoin d’un produit orienté SIEM.
+* Le profiling universel constitue un élément critique de votre workflow.
+* Vous avez besoin d’une plateforme de tableaux de bord de business intelligence (BI). ClickStack propose délibérément des workflows visuels orientés SRE et développeurs, et n’est pas conçu comme un outil de Business Intelligence (BI). Pour des capacités équivalentes, nous recommandons d’utiliser [Grafana with the ClickHouse plugin](/fr/integrations/connectors/data-visualization/grafana/index) ou [Superset](/fr/integrations/connectors/data-visualization/superset-and-clickhouse).

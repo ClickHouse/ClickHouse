@@ -3,6 +3,8 @@
 -- layouts and across merges that rewrite the archive. State is checked via system tables and
 -- EXPLAIN indexes = 1 only (no on-disk file listing) so the test works on any storage.
 
+SET explain_query_plan_default = 'legacy';
+
 -- ---------------------------------------------------------------------------------------------
 -- Wide part with packed minmax.
 -- ---------------------------------------------------------------------------------------------

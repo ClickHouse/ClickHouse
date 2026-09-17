@@ -1,0 +1,37 @@
+---
+title: Navegar no Managed
+---
+
+Selecione &#39;Launch ClickStack&#39; para acessar a UI do ClickStack (HyperDX). Você será autenticado automaticamente e redirecionado.
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    As fontes de dados serão criadas automaticamente para quaisquer dados do OpenTelemetry.
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+
+  <Tab title="Vector">
+    Se você estiver usando o Vector, precisará criar suas próprias fontes de dados. Na primeira vez que fizer login, será solicitado que você crie uma. Abaixo, mostramos uma configuração de exemplo para uma fonte de dados de logs.
+
+    <img src="/images/clickstack/create-vector-datasource.webp" alt="" />
+
+    Essa configuração pressupõe um esquema no estilo Nginx, com uma coluna `time_local` usada como timestamp. Sempre que possível, esta deve ser a coluna de timestamp declarada na chave primária. **Essa coluna é obrigatória**.
+
+    Também recomendamos atualizar o `Default SELECT` para definir explicitamente quais colunas são retornadas na visualização de logs. Se houver campos adicionais disponíveis, como nome do serviço, nível de log ou uma coluna `Body`, eles também poderão ser configurados. A coluna exibida como timestamp também pode ser substituída caso seja diferente da coluna usada na chave primária da tabela e configurada acima.
+
+    No exemplo acima, não existe uma coluna `Body` nos dados. Em vez disso, ela é definida usando uma expressão SQL que reconstrói uma linha de log do Nginx a partir dos campos disponíveis.
+
+    Para ver outras opções, consulte a [referência de configuração](/pt-BR/clickstack/managing/config).
+
+    Depois de criada, você deverá ser direcionado para a Search view, onde poderá começar imediatamente a explorar seus dados.
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+</Tabs>
+
+<br />
+
+E é isso — está tudo pronto. 🎉
+
+Agora, explore o ClickStack: comece pesquisando logs e traces, veja como logs, traces e métricas se correlacionam em tempo real, crie dashboards, explore mapas de serviço, descubra event deltas e patterns e configure alertas para se antecipar aos problemas.

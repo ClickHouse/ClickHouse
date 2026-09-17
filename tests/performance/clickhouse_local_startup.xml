@@ -1,0 +1,16 @@
+<test>
+    <!--
+        Measure how fast `clickhouse-local` starts up. The query is trivial
+        (`SELECT 1`), so the measured wall-clock time is dominated by process
+        startup: dynamic linking, static initializers, context setup, etc.
+
+        This is a shell-script query (type="shell"): it is run with bash and
+        timed end to end, instead of being sent over the native protocol. The
+        $CLICKHOUSE_* environment variables are prepared per-server, so the
+        reference (LEFT) and the patched (RIGHT) binary are measured each on
+        their own, exactly like the SQL performance tests.
+    -->
+    <query type="shell"><![CDATA[
+        $CLICKHOUSE_LOCAL --query "SELECT 1" > /dev/null
+    ]]></query>
+</test>

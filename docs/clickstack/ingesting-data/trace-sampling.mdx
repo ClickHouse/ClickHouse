@@ -1,0 +1,52 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/trace-sampling
+title: 'Trace sampling'
+sidebarTitle: 'Trace sampling'
+description: 'Configure sample-weighted aggregations for sampled trace data in ClickStack.'
+doc_type: 'guide'
+keywords: ['clickstack', 'trace sampling', 'tail sampling', 'sample rate', 'weighted aggregations', 'OpenTelemetry', 'SampleRate']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+High-throughput services can produce millions of spans per second. Storing every span is expensive, so teams commonly run the OpenTelemetry Collector's [tail-sampling processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) to keep only 1-in-N spans. Each kept span carries a `SampleRate` attribute recording N.
+
+Once data is sampled, naive aggregations are wrong: `count()` returns N-times fewer events than actually occurred, `sum()` and `avg()` are biased, and percentiles shift. Dashboards show misleadingly low request counts, throughput, and error rates.
+
+ClickStack solves this with a sampling-aware query engine. When you configure a sample rate expression on a trace source, the query builder rewrites SQL aggregations to weight each span by its sample rate — across dashboards, alerts, and ad-hoc searches.
+
+## How it works {#how-it-works}
+
+When a trace source has a `sampleRateExpression` configured, ClickStack wraps it as:
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+Spans without a `SampleRate` attribute default to weight 1, so unsampled data produces identical results to the original queries.
+
+The query builder then rewrites aggregations:
+
+| Aggregation | Before | After (sample-corrected) |
+|---|---|---|
+| count | `count()` | `sum(weight)` |
+| count + condition | `countIf(cond)` | `sumIf(weight, cond)` |
+| avg | `avg(col)` | `sum(col * weight) / sum(weight)` |
+| sum | `sum(col)` | `sum(col * weight)` |
+| quantile(p) | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max | unchanged | unchanged |
+| count_distinct | unchanged | unchanged |
+
+<Note>
+Percentiles under sampling use `quantileTDigestWeighted`, an approximate T-Digest sketch. Results are close but not exact.
+</Note>
+
+## Configuring the sample rate expression {#configuring}
+
+Open your trace source in **Source Settings** and enter the ClickHouse expression that evaluates to the per-span sample rate in the **Sample Rate Expression** field.
+
+For example, if your OpenTelemetry tail-sampling processor writes the rate into `SpanAttributes['SampleRate']`:
+
+<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Sample Rate Expression field in ClickStack Source Settings" size="lg"/>
+
+Once configured, all charts, dashboards, alerts, and service dashboard panels automatically apply sample-weighted aggregations. No changes to individual queries are needed.

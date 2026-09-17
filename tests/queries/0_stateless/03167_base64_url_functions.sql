@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- no-fasttest because aklomp-base64 library is required
+-- no-fasttest because simdutf library is required
 
 -- incorrect number of arguments
 SELECT base64URLEncode(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
@@ -30,6 +30,15 @@ SELECT base64URLDecode('12?'); -- { serverError INCORRECT_DATA }
 SELECT tryBase64URLDecode('12?');
 SELECT base64URLDecode('aHR0cHM6Ly9jbGlja'); -- { serverError INCORRECT_DATA }
 SELECT tryBase64URLDecode('aHR0cHM6Ly9jbGlja');
+
+-- the standard base64 alphabet ('+' and '/') is also accepted on decode, matching the previous implementation
+
+SELECT hex(base64URLDecode('+w==')), hex(base64URLDecode('/w=='));
+SELECT hex(tryBase64URLDecode('+w==')), hex(tryBase64URLDecode('/w=='));
+
+-- ASCII whitespace in the input is ignored
+
+SELECT base64URLDecode('aHR0cHM6 Ly9jbGlj'), tryBase64URLDecode('aHR0cHM6\tLy9jbGlj');
 
 -- test FixedString argument
 

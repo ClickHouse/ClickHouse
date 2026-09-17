@@ -1,0 +1,71 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayResample'
+title: 'groupArrayResample'
+description: 'groupArray で Resample コンビネータを使用する例'
+keywords: ['groupArray', 'Resample', 'combinator', 'examples', 'groupArrayResample']
+sidebarTitle: 'groupArrayResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`Resample`](/ja/reference/functions/aggregate-functions/combinators#-resample)
+コンビネータは、[`groupArray`](/ja/reference/functions/aggregate-functions/sum) 集約関数に適用することで、
+指定したキーカラムの範囲を固定数のインターバル (`N`) に分割し、
+各インターバルに含まれるデータポイントから 1 つの代表値
+(最小のキーに対応する値) を選んで、結果のArrayを構築できます。
+これはすべての値を収集するのではなく、データをダウンサンプリングしたビューを作成します。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+例を見てみましょう。従業員の`name`、`age`、`wage`を格納するテーブルを作成し、
+そこにいくつかのデータを挿入します。
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+年齢が `[30,60)`
+および `[60,75)` のインターバルに含まれる人の名前を取得してみましょう。年齢は整数で表現しているため、
+対象となる年齢の範囲は `[30, 59]` および `[60,74]` のインターバルになります。
+
+名前を Array に集約するには、`groupArray` 集約関数を使用します。
+これは 1 つの引数を取ります。この場合は、name カラムです。`groupArrayResample`
+関数では、年齢ごとに名前を集約するために age カラムを使用します。必要な
+インターバルを定義するため、`groupArrayResample`
+関数に `30`、`75`、`30` を引数として渡します。
+
+```sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
+```
+
+```response
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`groupArray`](/ja/reference/functions/aggregate-functions/groupArray)
+* [`Resample コンビネータ`](/ja/reference/functions/aggregate-functions/combinators#-resample)

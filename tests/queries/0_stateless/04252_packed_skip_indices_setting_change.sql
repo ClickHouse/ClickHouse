@@ -13,6 +13,8 @@
 --
 -- Test both Compact and Wide part layouts.
 
+SET explain_query_plan_default = 'legacy';
+
 -- ------------------------------------------------------------------
 -- Wide: threshold raised from 0 (packing disabled) to 1 MiB.
 -- ------------------------------------------------------------------

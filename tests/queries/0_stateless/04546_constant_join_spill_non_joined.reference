@@ -1,0 +1,10 @@
+right_join_spill_by_rows
+20000	20000	199990000	100	0
+right_join_spill_by_bytes
+20000	20000	199990000	100	0
+full_join_spill_by_rows
+20001	20000	199990000	0	1
+spilled
+04546_spill_by_bytes	1
+04546_spill_by_rows	1
+04546_spill_by_rows_full	1

@@ -1,0 +1,20 @@
+---
+title: العرض التوضيحي
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="demo-architecture">
+  ### معمارية العرض التوضيحي
+</div>
+
+يتكوّن العرض التوضيحي من خدمات مصغّرة مكتوبة بلغات برمجة مختلفة، وتتواصل فيما بينها عبر gRPC وHTTP، بالإضافة إلى مولّد حمل يستخدم Locust لمحاكاة حركة مرور المستخدمين. وقد عُدِّلت الشفرة المصدرية الأصلية لهذا العرض التوضيحي لاستخدام [أدوات القياس في ClickStack](/ar/clickstack/ingesting-data/sdks/index).
+
+<Image img="/images/use-cases/observability/hyperdx-demo/architecture.webp" alt="معمارية" size="lg" />
+
+*المصدر: https://opentelemetry.io/docs/demo/architecture/*
+
+يمكن العثور على مزيد من التفاصيل حول العرض التوضيحي هنا:
+
+* [وثائق OpenTelemetry](https://opentelemetry.io/docs/demo/)
+* [التفرّع الذي يتولى ClickStack صيانته](https://github.com/ClickHouse/opentelemetry-demo)

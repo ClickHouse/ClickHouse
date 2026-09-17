@@ -1,0 +1,337 @@
+---
+description: 'Documentation des coordonnées'
+sidebarTitle: 'Coordonnées géographiques'
+slug: /sql-reference/functions/geo/coordinates
+title: 'Fonctions de manipulation des coordonnées géographiques'
+doc_type: 'reference'
+---
+
+<div id="greatcircledistance">
+  ## greatCircleDistance
+</div>
+
+Calcule la distance entre deux points à la surface de la Terre à l’aide de [la formule du grand cercle](https://en.wikipedia.org/wiki/Great-circle_distance).
+
+```sql
+greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Paramètres d&#39;entrée**
+
+* `lon1Deg` — Longitude du premier point, en degrés. Intervalle : `[-180°, 180°]`.
+* `lat1Deg` — Latitude du premier point, en degrés. Intervalle : `[-90°, 90°]`.
+* `lon2Deg` — Longitude du deuxième point, en degrés. Intervalle : `[-180°, 180°]`.
+* `lat2Deg` — Latitude du deuxième point, en degrés. Intervalle : `[-90°, 90°]`.
+
+Les valeurs positives correspondent aux latitudes nord et aux longitudes est, et les valeurs négatives aux latitudes sud et aux longitudes ouest.
+
+**Valeur renvoyée**
+
+La distance entre deux points à la surface de la Terre, en mètres.
+
+Déclenche une exception si les valeurs des paramètres d&#39;entrée sont hors de cet intervalle.
+
+**Exemple**
+
+```sql
+SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
+```
+
+```text
+┌─greatCircleDistance─┐
+│            14128352 │
+└─────────────────────┘
+```
+
+<div id="geodistance">
+  ## geoDistance
+</div>
+
+Semblable à `greatCircleDistance`, mais calcule la distance sur l’ellipsoïde WGS-84 plutôt que sur la sphère. Il s’agit d’une approximation plus précise du géoïde terrestre.
+Les performances sont les mêmes que pour `greatCircleDistance` (sans perte de performances). Il est recommandé d’utiliser `geoDistance` pour calculer les distances à la surface de la Terre.
+
+Note technique : pour des points suffisamment proches, nous calculons la distance à l’aide d’une approximation plane, avec la métrique du plan tangent au milieu des coordonnées.
+
+```sql
+geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Paramètres d&#39;entrée**
+
+* `lon1Deg` — Longitude du premier point en degrés. Intervalle : `[-180°, 180°]`.
+* `lat1Deg` — Latitude du premier point en degrés. Intervalle : `[-90°, 90°]`.
+* `lon2Deg` — Longitude du deuxième point en degrés. Intervalle : `[-180°, 180°]`.
+* `lat2Deg` — Latitude du deuxième point en degrés. Intervalle : `[-90°, 90°]`.
+
+Les valeurs positives correspondent à la latitude nord et à la longitude est, tandis que les valeurs négatives correspondent à la latitude sud et à la longitude ouest.
+
+**Valeur renvoyée**
+
+La distance entre deux points à la surface de la Terre, en mètres.
+
+Génère une exception si les valeurs des paramètres d&#39;entrée sont en dehors de cet intervalle.
+
+**Exemple**
+
+```sql
+SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
+```
+
+```text
+┌─geoDistance─┐
+│   212458.73 │
+└─────────────┘
+```
+
+<div id="greatcircleangle">
+  ## greatCircleAngle
+</div>
+
+Calcule l’angle au centre entre deux points situés à la surface de la Terre à l’aide de [la formule du grand cercle](https://en.wikipedia.org/wiki/Great-circle_distance).
+
+```sql
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Paramètres d’entrée**
+
+* `lon1Deg` — Longitude du premier point en degrés.
+* `lat1Deg` — Latitude du premier point en degrés.
+* `lon2Deg` — Longitude du deuxième point en degrés.
+* `lat2Deg` — Latitude du deuxième point en degrés.
+
+**Valeur renvoyée**
+
+L’angle central entre deux points, en degrés.
+
+**Exemple**
+
+```sql
+SELECT greatCircleAngle(0, 0, 45, 0) AS arc
+```
+
+```text
+┌─arc─┐
+│  45 │
+└─────┘
+```
+
+<div id="geotoutm">
+  ## geoToUTM
+</div>
+
+Convertit des coordonnées géographiques WGS84 `(longitude, latitude)` en coordonnées [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
+
+L’UTM est un ensemble de 60 projections transverses de Mercator, chacune couvrant une zone longitudinale de 6°, qui convertissent des coordonnées géographiques en une grille plane exprimée en mètres. La zone est sélectionnée automatiquement à partir de la longitude, en appliquant les exceptions standard pour la Norvège et le Svalbard, sauf si une `zone` explicite est fournie. L’UTM n’est défini que pour les latitudes dans la plage `[-80°, 84°]` ; les calottes polaires utilisent le système UPS séparé.
+
+```sql
+geoToUTM(longitude, latitude[, zone])
+```
+
+**Arguments**
+
+* `longitude` — Longitude en degrés. Plage : `[-180°, 180°]`. [`Float32`](/fr/reference/data-types/float)/[`Float64`](/fr/reference/data-types/float).
+* `latitude` — Latitude en degrés. Plage : `[-80°, 84°]`. [`Float32`](/fr/reference/data-types/float)/[`Float64`](/fr/reference/data-types/float).
+* `zone` — Facultatif. Force la projection dans cette zone UTM au lieu de la déterminer automatiquement. Plage : `[1, 60]`. [`(U)Int*`](/fr/reference/data-types/int-uint).
+
+**Valeur renvoyée**
+
+Un tuple nommé `(easting, northing, zone, band)` : `easting` et `northing` en mètres ([`Float64`](/fr/reference/data-types/float)), le numéro de zone UTM `zone` ([`UInt8`](/fr/reference/data-types/int-uint)) et la lettre de bande de latitude MGRS `band` ([`FixedString(1)`](/fr/reference/data-types/fixedstring)). Une valeur de `band` égale à `'N'` ou postérieure indique l&#39;hémisphère nord.
+
+Génère une exception lorsque la latitude est hors de `[-80°, 84°]` ou la longitude hors de `[-180°, 180°]`.
+
+**Exemple**
+
+```sql
+SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
+```
+
+```text
+(448251.5978370684,5411935.125629659,31,'U')
+```
+
+<div id="utmtogeo">
+  ## UTMToGeo
+</div>
+
+Convertit les coordonnées [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) en coordonnées géographiques WGS84 `(longitude, latitude)`. Il s’agit de l’opération inverse de [`geoToUTM`](#geotoutm).
+
+```sql
+UTMToGeo(easting, northing, zone, is_north)
+```
+
+**Arguments**
+
+* `easting` — Coordonnée est en mètres (inclut la fausse abscisse de 500000 m). [`(U)Int*`](/fr/reference/data-types/int-uint)/[`Float*`](/fr/reference/data-types/float).
+* `northing` — Coordonnée nord en mètres (inclut la fausse ordonnée de 10000000 m dans l&#39;hémisphère sud). [`(U)Int*`](/fr/reference/data-types/int-uint)/[`Float*`](/fr/reference/data-types/float).
+* `zone` — Numéro de zone UTM. Plage : `[1, 60]`. [`(U)Int*`](/fr/reference/data-types/int-uint).
+* `is_north` — Hémisphère : `1` pour l&#39;hémisphère nord, `0` pour l&#39;hémisphère sud. [`(U)Int*`](/fr/reference/data-types/int-uint).
+
+**Valeur renvoyée**
+
+Un tuple nommé `(longitude, latitude)` en degrés. [`Tuple(Float64, Float64)`](/fr/reference/data-types/tuple).
+
+**Exemple**
+
+```sql
+SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
+```
+
+```text
+(2.2944970289079203,48.85822204127082)
+```
+
+<div id="geotomgrs">
+  ## geoToMGRS
+</div>
+
+Convertit des coordonnées géographiques WGS84 `(longitude, latitude)` en chaîne [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System).
+
+La chaîne a la forme `<zone><band><100km square><easting><northing>`, par exemple `31UDQ4825111935`. L’argument `precision` contrôle le nombre de chiffres utilisés pour chacune des composantes est et nord : `5` (par défaut) pour 1 m, `4` pour 10 m, `3` pour 100 m, `2` pour 1 km, `1` pour 10 km et `0` pour le carré de grille de 100 km uniquement. MGRS n’est défini que pour des latitudes dans la plage `[-80°, 84°]`.
+
+```sql
+geoToMGRS(longitude, latitude[, precision])
+```
+
+**Arguments**
+
+* `longitude` — Longitude en degrés. Intervalle : `[-180°, 180°]`. [`Float32`](/fr/reference/data-types/float)/[`Float64`](/fr/reference/data-types/float).
+* `latitude` — Latitude en degrés. Intervalle : `[-80°, 84°]`. [`Float32`](/fr/reference/data-types/float)/[`Float64`](/fr/reference/data-types/float).
+* `precision` — Facultatif. Nombre de chiffres pour chacune des coordonnées est et nord. Valeur par défaut : `5`. Intervalle : `[0, 5]`. [`(U)Int*`](/fr/reference/data-types/int-uint).
+
+**Valeur renvoyée**
+
+La chaîne de référence MGRS. [`String`](/fr/reference/data-types/string).
+
+**Exemple**
+
+```sql
+SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3) AS mgrs_100m;
+```
+
+```text
+┌─mgrs────────────┬─mgrs_100m───┐
+│ 31UDQ4825111935 │ 31UDQ482119 │
+└─────────────────┴─────────────┘
+```
+
+<div id="mgrstogeo">
+  ## MGRSToGeo
+</div>
+
+Décode une chaîne [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) en coordonnées géographiques WGS84 `(longitude, latitude)`. Il s’agit de l’inverse de [`geoToMGRS`](#geotomgrs).
+
+Le point renvoyé correspond au centre de la maille de grille indiquée ; la précision du résultat correspond donc à celle encodée dans la chaîne. Les espaces dans l’entrée sont ignorés et la casse des lettres n’est pas prise en compte.
+
+```sql
+MGRSToGeo(mgrs)
+```
+
+**Arguments**
+
+* `mgrs` — chaîne de référence MGRS à décoder. [`String`](/fr/reference/data-types/string)/[`FixedString`](/fr/reference/data-types/fixedstring).
+
+**Valeur renvoyée**
+
+Un tuple nommé `(longitude, latitude)`, en degrés. [`Tuple(Float64, Float64)`](/fr/reference/data-types/tuple).
+
+**Exemple**
+
+```sql
+SELECT MGRSToGeo('31UDQ4825111935') AS coord;
+```
+
+```text
+(2.294495618908297,48.85822536113692)
+```
+
+<div id="pointinellipses">
+  ## pointInEllipses
+</div>
+
+Vérifie si le point appartient à au moins une des ellipses.
+Les coordonnées sont géométriques dans le système de coordonnées cartésien.
+
+```sql
+pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
+```
+
+**Paramètres d&#39;entrée**
+
+* `x, y` — Coordonnées d&#39;un point dans le plan.
+* `xᵢ, yᵢ` — Coordonnées du centre de la `i`-ième ellipse.
+* `aᵢ, bᵢ` — Axes de la `i`-ième ellipse, dans les unités des coordonnées x et y.
+
+Le nombre de paramètres d&#39;entrée doit être de `2+4⋅n`, où `n` est le nombre d&#39;ellipses.
+
+**Valeurs renvoyées**
+
+`1` si le point se trouve à l&#39;intérieur d&#39;au moins une ellipse ; `0` dans le cas contraire.
+
+**Exemple**
+
+```sql
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
+```
+
+```text
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
+```
+
+<div id="pointinpolygon">
+  ## pointInPolygon
+</div>
+
+Vérifie si le point appartient au polygone dans le plan.
+
+```sql
+pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
+```
+
+**Valeurs d’entrée**
+
+* `(x, y)` — Coordonnées d’un point dans le plan. Type de données — [Tuple](/fr/reference/data-types/tuple) — un tuple de deux nombres, ou un [Point](/fr/reference/data-types/geo#point).
+* `[(a, b), (c, d) ...]` — Sommets du polygone. Type de données — [Array](/fr/reference/data-types/array) ou [Ring](/fr/reference/data-types/geo#ring). Chaque sommet est représenté par une paire de coordonnées `(a, b)`. Les sommets doivent être indiqués dans le sens horaire ou antihoraire. Le nombre minimum de sommets est de 3.
+* La fonction prend également en charge les polygones avec des trous (zones évidées). Type de données — [Polygon](/fr/reference/data-types/geo#polygon). Passez soit le `Polygon` entier comme deuxième argument, soit l’anneau extérieur d’abord, puis chaque trou comme argument supplémentaire distinct.
+* La fonction prend également en charge les multipolygones. Type de données — [MultiPolygon](/fr/reference/data-types/geo#multipolygon). Passez soit le `MultiPolygon` entier comme deuxième argument, soit chaque polygone qui le compose comme argument distinct.
+* L’argument polygone peut également être une colonne [Geometry](/fr/reference/data-types/geo#geometry) contenant des valeurs de type polygonal (`Ring`, `Polygon` ou `MultiPolygon`).
+
+Les types polygonaux ([Ring](/fr/reference/data-types/geo#ring), [Polygon](/fr/reference/data-types/geo#polygon), [MultiPolygon](/fr/reference/data-types/geo#multipolygon) et [Geometry](/fr/reference/data-types/geo#geometry)) peuvent être passés soit comme constantes, soit comme colonnes de table ordinaires (non constantes). Lorsque le polygone est fourni dans plusieurs arguments distincts (un anneau extérieur suivi de trous, ou plusieurs polygones d’un multipolygone), tous ces arguments doivent être constants.
+
+**Valeurs renvoyées**
+
+`1` si le point est à l’intérieur du polygone, `0` sinon.
+Si le point se trouve sur le bord du polygone, la fonction peut renvoyer 0 ou 1.
+
+**Exemple**
+
+```sql
+SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
+```
+
+```text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+Le polygone peut également être fourni à l’aide des types de données géométriques nommés, y compris en tant que colonne de table :
+
+```sql
+CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
+INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);
+SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
+```
+
+```text
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
+```
+
+> **Remarque**
+> • Vous pouvez définir `validate_polygons = 0` pour contourner la validation de la géométrie.
+> • `pointInPolygon` suppose que chaque polygone est bien formé. Si l’entrée se recoupe, comporte des anneaux mal ordonnés ou des arêtes qui se chevauchent, les résultats deviennent peu fiables, en particulier pour les points situés exactement sur une arête, un sommet ou à l’intérieur d’une auto-intersection, où la notion de &quot;à l’intérieur&quot; ou &quot;à l’extérieur&quot; n’est pas définie.
+> • Lorsque l’argument polygone est constant et que le point est exprimé à l’aide de colonnes de clé indexées (par exemple, `pointInPolygon((x, y), constant_polygon)` sur une table où `x, y` font partie de la `PRIMARY KEY` ou sont couverts par un index `minmax`), ClickHouse peut utiliser à la fois la clé primaire et les index de data-skipping `minmax` pour écarter les granules non pertinentes.

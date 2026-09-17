@@ -55,6 +55,13 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE alias_strict_target SYNC"
 # Both targets disable the sync window and enable the async one. A direct async insert deduplicates
 # the two identical batches via the async window (3 rows). The alias must behave identically. With
 # the unfixed code the alias used the sync window (= 0, no dedup) and kept both batches (6 rows).
+#
+# NOTE: this discriminates the bug only while the legacy per-source async window is honored
+# (insert_deduplication_version = old_separate_hashes / compatible_double_hashes). Under the default
+# new_unified_hash both the direct and the alias paths share the sync window, so this parity holds
+# (6 == 6) even if the alias sink drops async_insert. The version-pinned coverage lives in the
+# integration test
+# test_migration_deduplication_hash::test_alias_async_insert_uses_async_window_compatible.
 
 two_identical_async_batches() {
     local table=$1

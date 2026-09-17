@@ -37,6 +37,25 @@ function wait_for_all_mutations()
     ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
 }
 
+function wait_for_mutation_created()
+{
+    local table=$1
+    local mutation_id=$2
+    local database=$3
+    database=${database:="${CLICKHOUSE_DATABASE}"}
+
+    for _ in {1..300}
+    do
+        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -ge 1 ]]; then
+            return
+        fi
+        sleep 0.3
+    done
+
+    echo "Timed out while waiting for mutation to be created!"
+    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table'"
+}
+
 function wait_for_mutation_in_progress()
 {
     local table=$1

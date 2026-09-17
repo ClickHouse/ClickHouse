@@ -1,7 +1,6 @@
 import os
 import threading
 import time
-from tempfile import NamedTemporaryFile
 
 import pytest
 

@@ -7,6 +7,7 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
@@ -28,7 +29,7 @@
 namespace DB
 {
 
-class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize
+class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize, public IReadBufferMetadataProvider
 {
     friend class BuilderRWBufferFromHTTP;
 public:
@@ -43,6 +44,9 @@ public:
 
     using OutStreamCallback = std::function<void(std::ostream &)>;
     using NextCallback = std::function<void(size_t)>;
+    using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
+
+    const Poco::URI & getCurrentURI() const { return current_uri; }
 
 private:
     /// Byte range, including right bound [begin, end].
@@ -85,7 +89,12 @@ private:
     const bool http_skip_not_found_url;
     bool has_not_found_url = false;
 
-    std::function<void(std::ostream &)> out_stream_callback;
+    OutStreamCallback out_stream_callback;
+    /// When set, the request body produced by `out_stream_callback` is sent with a fixed
+    /// Content-Length instead of chunked transfer encoding. Some HTTP servers (e.g. the
+    /// Snowflake Horizon Iceberg REST catalog) reject chunked request bodies.
+    std::optional<size_t> out_stream_fixed_content_length;
+    RedirectCallback redirect_callback;
 
     Poco::URI current_uri;
     size_t redirects = 0;
@@ -155,9 +164,11 @@ private:
         size_t max_redirects_,
         bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
+        std::optional<size_t> out_stream_fixed_content_length_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
+        RedirectCallback redirect_callback_,
         bool delay_initialization,
         std::optional<HTTPFileInfo> file_info_);
 
@@ -194,6 +205,7 @@ public:
     static HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);
 
     Map getResponseHeaders() const;
+    std::optional<Field> getMetadata(const String & name) const override;
 };
 
 using ReadWriteBufferFromHTTPPtr = std::unique_ptr<ReadWriteBufferFromHTTP>;
@@ -211,6 +223,8 @@ class BuilderRWBufferFromHTTP
     size_t max_redirects = 0;
     bool enable_url_encoding = false;
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = nullptr;
+    std::optional<size_t> out_stream_fixed_content_length = std::nullopt;
+    ReadWriteBufferFromHTTP::RedirectCallback redirect_callback = nullptr;
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
@@ -239,6 +253,8 @@ public:
     setterMember(withRedirects, max_redirects)
     setterMember(withEnableUrlEncoding, enable_url_encoding)
     setterMember(withOutCallback, out_stream_callback)
+    setterMember(withOutCallbackFixedContentLength, out_stream_fixed_content_length)
+    setterMember(withRedirectCallback, redirect_callback)
     setterMember(withHeaders, http_header_entries)
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
@@ -246,7 +262,20 @@ public:
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
+    /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
+
+    /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header when empty).
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(const std::string & bearer_token_);
+
+    /// Authenticate with the bearer token when it is non-empty, otherwise with the Basic
+    /// credentials: both occupy the `Authorization` header, so a request carries one or the
+    /// other, never both.
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(
+        const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
 };
+
+/// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri);
 
 }

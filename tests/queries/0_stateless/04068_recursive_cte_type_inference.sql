@@ -4,11 +4,11 @@
 SET enable_analyzer = 1;
 
 WITH RECURSIVE t AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM t)
-SELECT x, toTypeName(x) FROM t WHERE x >= 256 LIMIT 1;
+SELECT x, toTypeName(x) FROM t WHERE x >= 256 LIMIT 1 SETTINGS max_threads = 1;
 
 -- Verify that explicit cast still works as before.
 WITH RECURSIVE t AS (SELECT 1::UInt64 AS x UNION ALL SELECT x + 1 FROM t)
-SELECT x, toTypeName(x) FROM t WHERE x >= 256 LIMIT 1;
+SELECT x, toTypeName(x) FROM t WHERE x >= 256 LIMIT 1 SETTINGS max_threads = 1;
 
 -- Reach a value above `UInt16` range, which requires more than one widening step.
 -- Each `x + 1000` re-resolve advances the type by more than one rank
@@ -17,7 +17,7 @@ SELECT x, toTypeName(x) FROM t WHERE x >= 256 LIMIT 1;
 -- a step of 1000 keeps the recursion depth well under
 -- `max_recursive_cte_evaluation_depth`.
 WITH RECURSIVE t AS (SELECT 1 AS x UNION ALL SELECT x + 1000 FROM t)
-SELECT x, toTypeName(x) FROM t WHERE x >= 70000 LIMIT 1;
+SELECT x, toTypeName(x) FROM t WHERE x >= 70000 LIMIT 1 SETTINGS max_threads = 1;
 
 -- Also test a chain that stays within `UInt16` range to confirm convergence happens early
 -- when no further widening is needed.

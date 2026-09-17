@@ -1,4 +1,3 @@
-import os
 import time
 import pytest
 import logging
@@ -224,7 +223,7 @@ def test_mark_cache_eviction_functionality(start_cluster, setup_cache_test_envir
     assert marks_evicted >= files_evicted, \
         f"Marks evicted ({marks_evicted}) should be >= files evicted ({files_evicted})"
 
-    logger.info(f"✓ Test passed - Cache eviction metrics working correctly")
+    logger.info("✓ Test passed - Cache eviction metrics working correctly")
 
 def test_mark_cache_query_log_integration(start_cluster, setup_cache_test_environment):
     """
@@ -239,7 +238,7 @@ def test_mark_cache_query_log_integration(start_cluster, setup_cache_test_enviro
     node.query("SYSTEM CLEAR MARK CACHE")
 
     # Get initial metrics
-    initial_metrics = get_current_cache_metrics()
+    get_current_cache_metrics()
 
     # Perform a query that should trigger cache evictions
     node.query(f"""

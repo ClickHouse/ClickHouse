@@ -1,0 +1,62 @@
+---
+slug: '/examples/aggregate-function-combinators/countIf'
+title: 'countIf'
+description: 'Пример использования комбинатора countIf'
+keywords: ['count', 'if', 'комбинатор', 'примеры', 'countIf']
+sidebarTitle: 'countIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`If`](/ru/reference/functions/aggregate-functions/combinators#-if) можно применять к функции [`count`](/ru/reference/functions/aggregate-functions/count),
+чтобы подсчитывать количество строк, для которых выполняется условие,
+используя функцию агрегатного комбинатора `countIf`.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+В этом примере мы создадим таблицу для хранения попыток входа пользователей
+и будем использовать `countIf`, чтобы подсчитать число успешных входов.
+
+```sql title="Query"
+CREATE TABLE login_attempts(
+    user_id UInt32,
+    timestamp DateTime,
+    is_successful UInt8
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO login_attempts VALUES
+    (1, '2024-01-01 10:00:00', 1),
+    (1, '2024-01-01 10:05:00', 0),
+    (1, '2024-01-01 10:10:00', 1),
+    (2, '2024-01-01 11:00:00', 1),
+    (2, '2024-01-01 11:05:00', 1),
+    (2, '2024-01-01 11:10:00', 0);
+
+SELECT
+    user_id,
+    countIf(is_successful = 1) AS successful_logins
+FROM login_attempts
+GROUP BY user_id;
+```
+
+Функция `countIf` будет подсчитывать только те строки для каждого пользователя, где `is_successful = 1`.
+
+```response title="Response"
+   ┌─user_id─┬─successful_logins─┐
+1. │       1 │                 2 │
+2. │       2 │                 2 │
+   └─────────┴───────────────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`count`](/ru/reference/functions/aggregate-functions/count)
+* [`If комбинатор`](/ru/reference/functions/aggregate-functions/combinators#-if)

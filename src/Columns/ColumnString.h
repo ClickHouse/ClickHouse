@@ -127,6 +127,8 @@ public:
         return sizeAt(n) == 0;
     }
 
+    bool hasOnlyTypeDefaults() const override;
+
     void insert(const Field & x) override
     {
         const String & s = x.safeGet<String>();
@@ -214,9 +216,10 @@ public:
 
     void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
@@ -252,9 +255,9 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        auto last = offsets.back();
-        for (size_t i = 0; i < length; ++i)
-            offsets.push_back(last);
+        /// Only the offsets grow: a default string appends no characters.
+        const auto last = offsets.back(); /// By value: `resize_fill` may reallocate.
+        offsets.resize_fill(offsets.size() + length, last);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -274,6 +277,8 @@ public:
 
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
+
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res) const override;

@@ -28,6 +28,7 @@ struct UserDefinedExecutableFunctionConfiguration
     std::string name;
     std::string command;
     VectorWithMemoryTracking<std::string> command_arguments;
+    String command_working_directory;
     VectorWithMemoryTracking<UserDefinedExecutableFunctionArgument> arguments;
     VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> parameters;
     DataTypePtr result_type;
@@ -66,7 +67,12 @@ public:
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
-        return std::make_shared<UserDefinedExecutableFunction>(configuration, coordinator, lifetime);
+        /// Rebuild the coordinator so a reload starts a fresh process pool instead of
+        /// reusing pooled children that still run the previous version of the script.
+        return std::make_shared<UserDefinedExecutableFunction>(
+            configuration,
+            std::make_shared<ShellCommandSourceCoordinator>(coordinator->getConfiguration()),
+            lifetime);
     }
 
     const UserDefinedExecutableFunctionConfiguration & getConfiguration() const

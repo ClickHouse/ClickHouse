@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/04/2026-04-17
+title: 'Демо-дни — 2026-04-17'
+sidebarTitle: '2026-04-17'
+description: 'Демо-дни ClickStack от 2026-04-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Демо-дни']
+---
+
+<div id="summarize-logs-and-traces">
+  ## Сводка журналов и трассировок
+</div>
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/TWsFyWt-tD8" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+В HyperDX теперь есть функция ИИ-сводки, которая работает с журналами, трассировками и шаблонами. Новая кнопка Summarize преобразует телеметрические данные в понятную сводку, позволяя быстро понять, что произошло в наборе событий, без необходимости вручную просматривать их по одному.
+
+Архитектура спроектирована для интеграции с API Anthropic (или аналогичными сервисами) и поддерживает продолжение диалога, чтобы пользователи могли задавать дополнительные вопросы после первоначальной сводки.
+
+**Связанные PR:** [#2108](https://github.com/hyperdxio/hyperdx/pull/2108) feat: ИИ-суммаризация с расширяемыми subject, контекстом трассировки и усилением безопасности, [#2100](https://github.com/hyperdxio/hyperdx/pull/2100) Реализация реальных обратных вызовов ИИ-суммаризации с режимом умного тона
+
+<div id="event-deltas-heatmap-into-chart-builder">
+  ## Тепловая карта Event Deltas в конструкторе диаграмм
+</div>
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BLVhIQjocwE" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Визуализация тепловой карты Event Deltas переносится в основной конструктор диаграмм, благодаря чему она станет доступна как стандартный тип диаграммы наряду с другими визуализациями HyperDX. Раньше она была доступна только в отдельном представлении; теперь она работает в обозревателе диаграмм вместе с остальными типами диаграмм.
+
+После завершения этой работы пользователи смогут добавлять тепловую карту Event Deltas прямо в плитки панели мониторинга, где она будет поддерживать ту же фильтрацию по полям и элементы управления временным диапазоном, что и любая другая диаграмма. Работа всё ещё продолжается.
+
+**Связанные PR:** [#2107](https://github.com/hyperdxio/hyperdx/pull/2107) Добавить диаграмму тепловой карты в редактор панели мониторинга и рендеринг плиток, [#2102](https://github.com/hyperdxio/hyperdx/pull/2102) Реализовать переиспользуемую диаграмму Heatmap с поддержкой Event Deltas
+
+<div id="benchmarking-for-schema-improvements">
+  ## Бенчмаркинг улучшений схемы
+</div>
+
+*Демо от [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Аарон рассказывает о результатах бенчмаркинга обновлённой схемы логов OpenTelemetry по умолчанию в HyperDX. Ключевое изменение — отказ от устаревшего столбца `timestamp_time` (32-битной Unix-временной метки с точностью до секунды) в пользу использования только `timestamp`, который обеспечивает наносекундную точность и убирает один столбец из схемы. В широком наборе бенчмарков запросов обновлённая схема почти во всех случаях показывает результаты не хуже или лучше старой.
+
+Итоговая схема также включает оптимизации порядка чтения, которые дают заметный прирост на выборочных запросах. Поиск относительно редкого значения в Map выполнялся примерно вдвое быстрее по сравнению с базовым вариантом, а поиск часто встречающихся значений показал ещё более существенное улучшение. Нагрузка при вставке немного выше (нужно поддерживать больше столбцов), но производительность запросов в целом осталась на том же уровне или улучшилась, что делает это обновление простым и очевидным.
+
+**Связанные PR:** [#2125](https://github.com/hyperdxio/hyperdx/pull/2125) feat: optimized default otel-logs schema
+
+<div id="improvements-to-autocomplete">
+  ## Улучшения автодополнения
+</div>
+
+*Демо от [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8zDZx49uYQo" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Автодополнение в HyperDX серьезно переработали, чтобы поддерживать значительно большую мощность и быстрее загружать значения. Новая реализация опирается на rollup-таблицы (`AggregatingMergeTrees`, которые предварительно агрегируют пары ключ-значение в 15-минутных временных бакетах), поэтому вместо запросов к сырым данным при каждом вводе символа система читает гораздо меньший, предварительно вычисленный набор данных. В ходе живого демо на staging-экземпляре с 230 миллионами строк автодополнение быстро загружало значения для полей с высокой мощностью, таких как `hostname`, без заметных задержек.
+
+Система поддерживает как rollup только по ключам (возвращает все ключи, но без значений, что снижает накладные расходы при высокой мощности), так и полный rollup ключ-значение. Если доступен только rollup по ключам, на этапе поиска значений система переключается на существующую стратегию fetch-values. Если rollup-таблица вообще не обнаружена, система корректно возвращается к текущему поведению. Aaron также отмечает, что в будущем полезным дополнением мог бы стать интерфейс allow-list для управления тем, для каких ключей создавать rollup значений, особенно для клиентов с данными очень высокой мощности.
+
+**Связанные PR:** [#2128](https://github.com/hyperdxio/hyperdx/pull/2128) feat: fast and full autocomplete, [#2127](https://github.com/hyperdxio/hyperdx/pull/2127) feat: better autocomplete
+
+<div id="improvements-to-alerting-with-sql">
+  ## Улучшения в оповещениях с SQL
+</div>
+
+*Демо от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+В развитие добавленной на прошлой неделе поддержки оповещений для линейных и столбчатых диаграмм Raw SQL, HyperDX теперь также поддерживает оповещения для числовых диаграмм Raw SQL. Параметр фильтра по времени больше не обязателен при настройке оповещения: если его не указать, будет показано предупреждение, но запросы без временного измерения теперь полностью допустимы. Это упрощает создание оповещений для значений конфигурации или системных метрик, которые не меняются со временем, например для проверки того, что число узлов в кластере ClickHouse соответствует ожидаемому значению.
+
+Также было добавлено несколько новых типов порогов: not-equals, is-above, at-most, between и outside. Они дают командам гораздо больше гибкости при задании условий оповещения по сравнению с простыми сравнениями «больше чем». Наконец, история оповещений теперь отображается прямо в редакторе плитки, поэтому, когда сработавшее оповещение ссылается на конкретную плитку панели мониторинга, пользователи могут увидеть полную историю, понять, что именно его вызвало, а также подтвердить или заглушить оповещение, не покидая панель мониторинга.
+
+**Связанные PR:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Реализовать оповещения для плиток панели мониторинга на основе Raw SQL, [#2114](https://github.com/hyperdxio/hyperdx/pull/2114) feat: Поддержка оповещений для числовых диаграмм Raw SQL, [#2122](https://github.com/hyperdxio/hyperdx/pull/2122) feat: Добавить дополнительные типы порогов оповещений, [#2130](https://github.com/hyperdxio/hyperdx/pull/2130) feat: Добавить пороги оповещений between и not-between, [#2123](https://github.com/hyperdxio/hyperdx/pull/2123) feat: Добавить историю оповещений и ack в редактор оповещений
+
+<div id="errors-during-alert-execution">
+  ## Ошибки при выполнении оповещений
+</div>
+
+*Демо от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Если выполнение оповещения завершается с ошибкой, HyperDX теперь показывает её прямо в интерфейсе, а не просто молча игнорирует. Раньше пользователи могли замечать пропуски в истории оповещений без каких-либо объяснений: ни сообщения об ошибке, ни возможности понять, что пошло не так. Теперь рядом с разными типами сбоев отображаются отдельные значки ошибок, в том числе для некорректных запросов, сбоев доставки в вебхук и отсутствующих или неверно настроенных параметров вебхука.
+
+При нажатии на значок ошибки отображаются конкретные сведения, необходимые для диагностики и устранения проблемы, поэтому пользователи могут исправлять неверно настроенные оповещения без изучения серверного журнала или обращения в поддержку. Цель — перевести разбор сбоев оповещений в режим самообслуживания: увидеть ошибку, понять её, исправить.
+
+**Связанные PR:** [#2132](https://github.com/hyperdxio/hyperdx/pull/2132) feat: Показывать ошибки выполнения оповещений в интерфейсе, [#2136](https://github.com/hyperdxio/hyperdx/pull/2136) fix: Скрывать потенциально чувствительные ошибки оповещений

@@ -1,0 +1,112 @@
+---
+sidebarTitle: 'Chat'
+slug: /cloud/features/ai-ml/agents/chat
+title: 'Chat'
+description: 'Conversaciones, marcadores, conversaciones fijadas, bifurcaciones, atajos de teclado y compartir chats en ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'chat', 'conversaciones', 'marcadores', 'conversaciones fijadas', 'atajos de teclado', 'bifurcación', 'compartir']
+doc_type: 'referencia'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+La interfaz de chat de ClickHouse Agents permite gestionar conversaciones, crear bifurcaciones y compartirlas.
+
+<Image img="/images/cloud/agent-builder/chat/chat.webp" alt="Interfaz de chat de ClickHouse Agent que muestra la barra de navegación izquierda, el encabezado de identidad del agente y el cuadro de redacción" size="lg" />
+
+<div id="conversations">
+  ## Conversaciones
+</div>
+
+Inicia una nueva conversación haciendo clic en el icono de redacción de la barra de navegación izquierda.
+Selecciona el agente que quieras usar en el cuadro de diálogo del selector de agentes, en la parte superior izquierda de la ventana de conversación; de forma predeterminada, está seleccionado **ClickHouse Agent**.
+Ahora puedes escribir tu mensaje en el cuadro de redacción y pulsar Enviar. Cada conversación se guarda en el historial de la barra lateral y se puede volver a abrir, renombrar o eliminar más tarde.
+
+<Image img="/images/cloud/agent-builder/chat/conversation.webp" alt="Interfaz de chat con el icono de redacción resaltado en la barra de navegación izquierda, la barra lateral mostrando el historial de Chats con una conversación guardada de Top 10 Tables Ranked, y el cuadro de redacción con una pregunta de ejemplo escrita" size="lg" />
+
+Puedes editar cualquiera de tus mensajes en el mismo lugar, y el agente volverá a generar su respuesta a partir de ese punto del historial de la conversación.
+También puedes volver a generar solo la última respuesta del agente, sin volver a enviar tu mensaje.
+
+<div id="bookmarks">
+  ## Marcadores
+</div>
+
+Marca un mensaje o una conversación completa para señalarlo y recuperarlo rápidamente. Los marcadores son privados y se conservan aunque cambies el nombre de la conversación.
+
+<Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="Encabezado del chat con el icono de marcador resaltado y un tooltip de Add Bookmarks visible" size="lg" />
+
+<div id="pinned-conversations">
+  ## Conversaciones fijadas
+</div>
+
+Fija una conversación para mantenerla en la parte superior de la barra lateral, separada del historial agrupado por fecha que aparece debajo. En la barra lateral, abre el menú de opciones de la conversación (el icono de tres puntos) y selecciona **Fijar**. Las conversaciones fijadas se muestran en una sección de **Fijadas** encima de los grupos **Hoy**, **Ayer** y anteriores.
+
+Para desfijarla, abre el mismo menú y selecciona **Desfijar**.
+
+<div id="forking">
+  ## Bifurcación
+</div>
+
+La bifurcación crea una nueva conversación a partir de un mensaje específico. Puedes usarla para explorar una ruta alternativa sin alterar el hilo original.
+Hay tres modos de bifurcación disponibles:
+
+* **Solo mensajes visibles** - te permite copiar la ruta directa hasta el mensaje bifurcado.
+* **Incluir ramas relacionadas** - te permite copiar la ruta principal junto con las ramas existentes.
+* **Incluir todo hasta aquí** - te permite copiar todo hasta el mensaje bifurcado.
+
+Las conversaciones bifurcadas son independientes, por lo que los cambios no se sincronizan con la conversación original.
+
+<Image img="/images/cloud/agent-builder/chat/fork.webp" alt="Cuadro de diálogo para seleccionar una opción de bifurcación que muestra tres iconos de modo de bifurcación, las casillas Start fork here y Remember, y la barra de herramientas de acciones del mensaje debajo" size="lg" />
+
+<div id="sharing-chats">
+  ## Compartir chats
+</div>
+
+Genera un enlace para compartir cualquier conversación y enviárselo a un compañero de equipo o guardarlo como referencia. Los destinatarios verán una vista de solo lectura, incluidos los artefactos y las ramas visibles. Puedes revocar un enlace desde el panel de uso compartido en cualquier momento.
+
+Las ediciones de los mensajes existentes aparecen en la vista compartida; los mensajes añadidos después de generar el enlace no aparecen.
+
+Cualquiera que vea un enlace compartido puede retomar la conversación en su propia cuenta haciendo clic en **Continue this chat**. Esto copia la conversación —incluida la rama que está viendo— en su historial como una conversación nueva y privada, sin modificar la original.
+
+Para compartir una conversación, abre su menú en la barra lateral y selecciona **Share**:
+
+<Image img="/images/cloud/agent-builder/chat/share.webp" alt="Menú de la conversación en la barra lateral con las opciones Share, Rename, Duplicate, Archive y Delete visibles" size="lg" />
+
+Luego, haz clic en **Create link** en el cuadro de diálogo para compartir:
+
+<Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="Cuadro de diálogo Share link to chat con el botón Create link y una nota de que tu nombre y cualquier mensaje añadido después de compartir permanecen privados" size="md" />
+
+<div id="keyboard-shortcuts">
+  ## Atajos de teclado
+</div>
+
+Abre la referencia de atajos de teclado con `Cmd+Shift+/` (`Ctrl+Shift+/` en Windows y Linux), o desde el menú de la cuenta, en **Help** → **Keyboard shortcuts**. Todos los atajos se pueden personalizar: haz clic en una fila del cuadro de diálogo para registrar una nueva combinación y usa **Reset all to defaults** para restablecerlos.
+
+Los atajos predeterminados son:
+
+| Acción                                        | macOS                 | Windows y Linux        |
+| --------------------------------------------- | --------------------- | ---------------------- |
+| Mostrar atajos de teclado                     | `Cmd+Shift+/`         | `Ctrl+Shift+/`         |
+| Nuevo chat                                    | `Cmd+Shift+O`         | `Ctrl+Shift+O`         |
+| Poner el foco en el campo de entrada del chat | `Shift+Esc`           | `Shift+Esc`            |
+| Subir un archivo                              | `Cmd+Shift+U`         | `Ctrl+Shift+U`         |
+| Copiar la última respuesta                    | `Cmd+Shift+;`         | `Ctrl+Shift+;`         |
+| Enviar mensaje                                | `Cmd+Enter`           | `Ctrl+Enter`           |
+| Mostrar u ocultar la barra lateral            | `Cmd+Shift+S`         | `Ctrl+Shift+S`         |
+| Abrir el selector de modelos                  | `Cmd+Shift+M`         | `Ctrl+Shift+M`         |
+| Poner el foco en Búsqueda                     | `Cmd+/`               | `Ctrl+/`               |
+| Abrir la configuración                        | `Cmd+Shift+,`         | `Ctrl+Shift+,`         |
+| Guardar la conversación en marcadores         | `Cmd+Shift+B`         | `Ctrl+Shift+B`         |
+| Detener la generación                         | `Cmd+Shift+X`         | `Ctrl+Shift+X`         |
+| Regenerar respuesta                           | `Cmd+Shift+E`         | `Ctrl+Shift+E`         |
+| Editar el último mensaje                      | `Cmd+Shift+I`         | `Ctrl+Shift+I`         |
+| Continuar respuesta                           | `Cmd+Shift+C`         | `Ctrl+Shift+C`         |
+| Copiar el último bloque de código             | `Cmd+Shift+K`         | `Ctrl+Shift+K`         |
+| Ir al inicio                                  | `Cmd+Shift+Up`        | `Ctrl+Shift+Up`        |
+| Ir al final                                   | `Cmd+Shift+Down`      | `Ctrl+Shift+Down`      |
+| Archivar conversación                         | `Cmd+Shift+L`         | `Ctrl+Shift+L`         |
+| Eliminar conversación                         | `Cmd+Shift+Backspace` | `Ctrl+Shift+Backspace` |
+
+También puedes asignar tus propios atajos para abrir paneles como agents, Prompts, archivos y marcadores; no tienen teclas predeterminadas.

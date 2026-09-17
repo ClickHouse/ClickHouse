@@ -5,8 +5,12 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Common/FailPoint.h>
+#include <Common/SipHash.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
+
+#include <filesystem>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -27,6 +31,11 @@ namespace DB::ErrorCodes
 namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsBool no_sign_request;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_kernel_force_credentials_fingerprint_drift[];
 }
 
 namespace DeltaLake
@@ -79,12 +88,15 @@ class S3KernelHelper final : public IKernelHelper
 public:
     S3KernelHelper(
         const DB::S3::URI & url_,
-        std::shared_ptr<const DB::S3::Client> client_,
+        DB::ObjectStoragePtr object_storage_,
         const DB::S3::S3AuthSettings & auth_settings)
         : url(url_)
         , table_location(getTableLocation(url_))
-        , client(client_)
+        , object_storage(std::move(object_storage_))
     {
+        /// Resolve the bucket's region once at construction. Region is bucket-bound and
+        /// doesn't rotate; credentials do — fetch the live client every time we need them.
+        auto client = object_storage->getS3StorageClient();
         region = client->getRegion();
         if (region.empty() || region == Aws::Region::AWS_GLOBAL)
             region = client->getRegionForBucket(url.bucket, /* force_detect */true);
@@ -101,6 +113,33 @@ public:
 
     const std::string & getDataPath() const override { return url.key; }
 
+    DB::UInt128 getCredentialsFingerprint() const override
+    {
+        /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
+        /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
+        /// snapshot would keep returning the original session.
+        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
+
+        SipHash hash;
+        hash.update(credentials.GetAWSAccessKeyId());
+        hash.update(credentials.GetAWSSecretKey());
+        hash.update(credentials.GetSessionToken());
+        auto fp = hash.get128();
+        /// Simulates a credentials rotation between consecutive reads of the same cached
+        /// snapshot. Deterministic XOR keeps the perturbed value stable while the failpoint
+        /// is armed, so exactly one rebuild fires before the system re-stabilizes.
+        fiu_do_on(DB::FailPoints::delta_kernel_force_credentials_fingerprint_drift,
+        {
+            fp ^= DB::UInt128(1);
+        });
+        return fp;
+    }
+
+    bool refreshCredentials() override
+    {
+        return object_storage->tryRefreshCredentialsViaCallback();
+    }
+
     ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
@@ -115,7 +154,8 @@ public:
             setBuilderOption(builder, name, value);
         };
 
-        const auto & credentials = client->getCredentials();
+        /// Read credentials from the *current* client — see `getCredentialsFingerprint`.
+        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
         auto access_key_id = credentials.GetAWSAccessKeyId();
         auto secret_access_key = credentials.GetAWSSecretKey();
         auto token = credentials.GetSessionToken();
@@ -158,7 +198,7 @@ public:
 private:
     DB::S3::URI url;
     const std::string table_location;
-    const std::shared_ptr<const DB::S3::Client> client;
+    const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log = getLogger("S3KernelHelper");
 
     std::string region;
@@ -288,6 +328,7 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
         case 1: /// ClientSecretCredential
         case 3: /// WorkloadIdentityCredential
         case 5: /// StaticCredential
+        case 6: /// TokenProviderCredential
         default:
             /// Other variants are not supported yet
             throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
@@ -297,13 +338,30 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
 
-    /// For non-standard endpoints (e.g., Azurite emulator), set the endpoint explicitly.
-    /// Also allow plain HTTP connections when the endpoint uses http://, since the object-store
-    /// Azure builder defaults to https_only=true and would reject plain HTTP requests.
-    if (!endpoint.storage_account_url.empty() && endpoint.storage_account_url.starts_with("http://"))
+    /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which
+    /// otherwise derives the public `<account>.blob.core.windows.net` host from the account
+    /// name (wrong for Azurite, sovereign clouds, private links). For ConnectionString auth
+    /// `storage_account_url` holds the raw connection string, not a URL, and the endpoint was
+    /// already set above from the parsed connection string. Plain HTTP must be allowed
+    /// explicitly, since the object-store builder is https-only by default.
+    if (endpoint.storage_account_url.starts_with("http://") || endpoint.storage_account_url.starts_with("https://"))
     {
-        set_option("azure_endpoint", connection_params.getConnectionURL());
-        set_option("azure_allow_http", "true");
+        std::string azure_endpoint = endpoint.storage_account_url;
+        /// Endpoint-style disk configurations (`<endpoint>http://host:port/account/container/prefix</endpoint>`)
+        /// keep only the scheme and host in `storage_account_url` and carry the account name as a
+        /// separate path segment (`add_account_name_to_url` is true), the same way
+        /// `Endpoint::getServiceEndpoint` re-assembles the URL for the SDK client. All other
+        /// configuration forms set `add_account_name_to_url` to false or leave it unset, keeping the
+        /// account either in the URL path already or in the host name, so nothing is appended for them.
+        if (!endpoint.account_name.empty() && endpoint.add_account_name_to_url.value_or(false))
+        {
+            if (!azure_endpoint.ends_with('/'))
+                azure_endpoint += '/';
+            azure_endpoint += endpoint.account_name;
+        }
+        set_option("azure_endpoint", azure_endpoint);
+        if (endpoint.storage_account_url.starts_with("http://"))
+            set_option("azure_allow_http", "true");
     }
 
     return options;
@@ -318,7 +376,7 @@ public:
         const std::string & blob_path_)
         : connection_params(connection_params_)
         , table_location(buildTableLocation(connection_params_, blob_path_))
-        , data_path(blob_path_)
+        , data_path(normalizeBlobPath(blob_path_))
     {}
 
     const std::string & getTableLocation() const override { return table_location; }
@@ -351,13 +409,21 @@ private:
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
 
+    /// `blob_path` may carry a leading slash (e.g. from a disk-based configuration),
+    /// which Azure would keep as a part of the blob name. Strip it so that the data
+    /// path agrees with the normalized table location committed to the Delta log.
+    static std::string normalizeBlobPath(const std::string & blob_path)
+    {
+        if (!blob_path.empty() && blob_path.front() == '/')
+            return blob_path.substr(1);
+        return blob_path;
+    }
+
     static std::string buildTableLocation(
         const DB::AzureBlobStorage::ConnectionParams & params,
         const std::string & blob_path)
     {
-        auto path = blob_path;
-        if (!path.empty() && path.front() == '/')
-            path = path.substr(1);
+        auto path = normalizeBlobPath(blob_path);
 
         const auto & prefix = params.endpoint.prefix;
         std::string full_path = prefix.empty() ? path : (std::filesystem::path(prefix) / path).string();
@@ -386,6 +452,12 @@ public:
             "get_engine_builder");
 
         return builder;
+    }
+
+    /// The kernel's local `object_store` backend requires the table directory to exist before `get_engine_builder`; create it here.
+    void prepareForTableCreation() const override
+    {
+        std::filesystem::create_directories(path);
     }
 
 private:
@@ -420,7 +492,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
             return std::make_shared<DeltaLake::S3KernelHelper>(
                 s3_conf->url,
-                object_storage->getS3StorageClient(),
+                object_storage,
                 s3_conf->getAuthSettings());
         }
 #if USE_AZURE_BLOB_STORAGE

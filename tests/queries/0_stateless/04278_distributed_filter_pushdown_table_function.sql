@@ -8,6 +8,7 @@
 -- `TableFunctionNode`. Previously `addFilters` only accepted `TableNode`, so
 -- the predicate was silently dropped from the remote query.
 
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET prefer_localhost_replica = 1;

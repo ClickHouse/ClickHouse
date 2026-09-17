@@ -1,0 +1,64 @@
+-- { echoOn }
+WITH t AS (SELECT number, * FROM numbers(3))
+SELECT *, (SELECT t.number WHERE t.number >= 0) AS r FROM t
+ORDER BY 1
+SETTINGS correlated_subqueries_default_join_kind = 'right', correlated_subqueries_use_in_memory_buffer = 0;
+0	0	0
+1	1	1
+2	2	2
+WITH t AS (SELECT number, * FROM numbers(3))
+SELECT *, (SELECT t.number WHERE t.number >= 0) AS r FROM t
+ORDER BY 1
+SETTINGS correlated_subqueries_default_join_kind = 'left', correlated_subqueries_use_in_memory_buffer = 0;
+0	0	0
+1	1	1
+2	2	2
+WITH t AS (SELECT number, *, * FROM numbers(3))
+SELECT *, (SELECT t.number WHERE t.number >= 0) AS r FROM t
+ORDER BY 1
+SETTINGS correlated_subqueries_default_join_kind = 'right', correlated_subqueries_use_in_memory_buffer = 0;
+0	0	0	0
+1	1	1	1
+2	2	2	2
+1
+1
+-- Post-`preCalculateKeys` shapes: when the join key is a computed expression, `preCalculateKeys`
+-- appends it to the build header under its unqualified function name (e.g. `plus(__table3.b, 1_UInt8)`),
+-- while a user projection of the same expression is qualified (`__table3.bp1`, or `__table3.`plus(b, 1)``
+-- without an alias). The two names never collide, so the runtime filter is built on the single correct
+-- column and results are correct (the guard checks the pre-`preCalculateKeys` build header, which is safe
+-- because bailing out after `preCalculateKeys` would leave the join step's already-updated input header
+-- desynced from its stream).
+-- { echoOn }
+SELECT * FROM (SELECT number AS a FROM numbers(100)) AS l
+ANY RIGHT JOIN (SELECT number AS b, b + 1 AS bp1 FROM numbers(3)) AS r ON l.a = r.b + 1
+ORDER BY 1;
+1	0	1
+2	1	2
+3	2	3
+SELECT * FROM (SELECT number AS a FROM numbers(100)) AS l
+ANY RIGHT JOIN (SELECT *, b + 1 FROM (SELECT number AS b FROM numbers(3))) AS r ON l.a = r.b + 1
+ORDER BY 1;
+1	0	1
+2	1	2
+3	2	3
+-- The one post-`preCalculateKeys` duplicate that IS reachable: two predicates sharing the same computed
+-- key append `plus(__table3.b, 1_UInt8)` to the build header twice. Unlike the plain-column crash at the
+-- top of this test, this duplicate is a freshly-computed key that every build-subtree step declares
+-- consistently, so there is no downstream `Block structure mismatch`; the two filters are redundant (both
+-- address the first column), not wrong. Verified for `hash` and `parallel_hash`.
+SELECT * FROM (SELECT number AS a, number AS a2 FROM numbers(100)) AS l
+ANY RIGHT JOIN (SELECT number AS b FROM numbers(3)) AS r ON l.a = r.b + 1 AND l.a2 = r.b + 1
+ORDER BY 1;
+1	1	0
+2	2	1
+3	3	2
+SELECT * FROM (SELECT number AS a, number AS a2 FROM numbers(100)) AS l
+ANY RIGHT JOIN (SELECT number AS b FROM numbers(3)) AS r ON l.a = r.b + 1 AND l.a2 = r.b + 1
+ORDER BY 1
+SETTINGS join_algorithm = 'parallel_hash';
+1	1	0
+2	2	1
+3	3	2
+1
+1

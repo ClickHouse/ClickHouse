@@ -1,0 +1,26 @@
+source	String
+0
+0
+Asynchronous Metric	1
+Compression Codec	1
+Current Metric	1
+Profile Event	1
+System Table	1
+Compression Codec	LZ4
+Current Metric	Query
+Profile Event	Query
+System Table	documentation
+src/Core/Settings.cpp
+src/Storages/MergeTree/MergeTreeSettings.cpp
+src/Core/ServerSettings.cpp
+src/Common/ProfileEvents.cpp
+src/Common/CurrentMetrics.cpp
+0
+0
+1
+src/Functions/moduloOrNull.cpp
+src/Compression/CompressionCodecLZ4.cpp
+1
+1
+1
+1

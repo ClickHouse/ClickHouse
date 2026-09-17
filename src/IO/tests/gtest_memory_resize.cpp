@@ -1,6 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/BufferWithOwnMemoryImpl.h>
 #include <gtest/gtest.h>
 #include <Common/ErrnoException.h>
 

@@ -53,17 +53,32 @@ std::optional<UInt64> getCurrentQueryHardLimit()
 Int64 getCurrentQueryMemoryUsage()
 {
     /// Use query-level memory tracker
-    auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();
-    if (!thread_memory_tracker || thread_memory_tracker->level != VariableContext::Thread)
+    auto * current_memory_tracker = DB::CurrentThread::getMemoryTracker();
+    while (current_memory_tracker && current_memory_tracker->level == VariableContext::Thread)
+        current_memory_tracker = current_memory_tracker->getParent();
+
+    if (!current_memory_tracker || current_memory_tracker->level != VariableContext::Process)
         return 0;
 
-    auto * query_process_memory_tracker = thread_memory_tracker->getParent();
-    if (!query_process_memory_tracker || query_process_memory_tracker->level != VariableContext::Process)
-        return 0;
-
-    return query_process_memory_tracker->get();
+    return current_memory_tracker->get();
 }
 
+
+std::unique_ptr<MemoryTracker> tryCreateMemoryTrackerUnderCurrentQuery()
+{
+    auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();
+    if (!thread_memory_tracker || thread_memory_tracker->level != VariableContext::Thread)
+        return nullptr;
+
+    auto * query_memory_tracker = thread_memory_tracker->getParent();
+    if (!query_memory_tracker || query_memory_tracker->level != VariableContext::Process)
+        return nullptr;
+
+    return std::make_unique<MemoryTracker>(query_memory_tracker, VariableContext::Thread);
+}
+
+
+extern MemoryTracker total_memory_tracker;
 
 static size_t getMaxThreadsForAvailableMemoryImpl(size_t max_threads, UInt64 min_free_per_thread)
 {

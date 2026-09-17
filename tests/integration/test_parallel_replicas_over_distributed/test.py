@@ -128,7 +128,7 @@ def test_parallel_replicas_over_distributed(
     create_tables(cluster, table_name)
 
     node = nodes[0]
-    expected_result = f"6003\t-1999\t1999\t3\n"
+    expected_result = "6003\t-1999\t1999\t3\n"
 
     # sync all replicas to get consistent result
     node.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster} {table_name}")

@@ -1,0 +1,110 @@
+---
+slug: /cloud/manage/postman
+sidebarTitle: 'Programmatic API access with Postman'
+title: 'Programmatic API access with Postman'
+description: 'This guide will help you test the ClickHouse Cloud API using Postman'
+doc_type: 'guide'
+keywords: ['api', 'postman', 'rest api', 'cloud management', 'integration']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+This guide will help you test the ClickHouse Cloud API using [Postman](https://www.postman.com/product/what-is-postman/). 
+The Postman Application is available for use within a web browser or can be downloaded to a desktop.
+
+### Create an account {#create-an-account}
+
+* Free accounts are available at [https://www.postman.com](https://www.postman.com).
+
+<Image img="/images/cloud/manage/postman/postman1.webp" size="md" alt="Postman site" border/>
+
+### Create a workspace {#create-a-workspace}
+
+* Name your workspace and set the visibility level. 
+
+<Image img="/images/cloud/manage/postman/postman2.webp" size="md" alt="Create workspace" border/>
+
+### Create a collection {#create-a-collection}
+
+* Below "Explore" on the top left Menu click "Import": 
+
+<Image img="/images/cloud/manage/postman/postman3.webp" size="md" alt="Explore > Import" border/>
+
+* A modal will appear:
+
+<Image img="/images/cloud/manage/postman/postman4.webp" size="md" alt="API URL entry" border/>
+
+* Enter the API address: "https://api.clickhouse.cloud/v1" and press 'Enter':
+
+* Select "Postman Collection" by clicking on the "Import" button:
+
+<Image img="/images/cloud/manage/postman/postman6.webp" size="md" alt="Collection > Import" border/>
+
+### Interface with the ClickHouse Cloud API spec {#interface-with-the-clickhouse-cloud-api-spec}
+* The "API spec for ClickHouse Cloud" will now appear within "Collections" (Left Navigation).
+
+<Image img="/images/cloud/manage/postman/postman7.webp" size="md" alt="Import your API" border/>
+
+* Click on "API spec for ClickHouse Cloud." From the middle pain select the 'Authorization' tab:
+
+<Image img="/images/cloud/manage/postman/postman8.webp" size="md" alt="Import complete" border/>
+
+### Set authorization {#set-authorization}
+* Toggle the dropdown menu to select "Basic Auth":
+
+<Image img="/images/cloud/manage/postman/postman9.webp" size="md" alt="Basic auth" border/>
+
+* Enter the Username and Password received when you set up your ClickHouse Cloud API keys:
+
+<Image img="/images/cloud/manage/postman/postman10.webp" size="md" alt="credentials" border/>
+
+### Enable variables {#enable-variables}
+
+* [Variables](https://learning.postman.com/docs/sending-requests/variables/) enable the storage and reuse of values in Postman allowing for easier API testing.
+
+#### Set the organization ID and Service ID {#set-the-organization-id-and-service-id}
+
+* Within the "Collection", click the "Variable" tab in the middle pane (The Base URL will have been set by the earlier API import):
+* Below `baseURL` click the open field "Add new value", and Substitute your organization ID and service ID:
+
+<Image img="/images/cloud/manage/postman/postman11.webp" size="md" alt="Organization ID and Service ID" border/>
+
+## Test the ClickHouse Cloud API functionalities {#test-the-clickhouse-cloud-api-functionalities}
+
+### Test "GET list of available organizations" {#test-get-list-of-available-organizations}
+
+* Under the "OpenAPI spec for ClickHouse Cloud", expand the folder > V1 > organizations
+* Click "GET list of available organizations" and press the blue "Send" button on the right:
+
+<Image img="/images/cloud/manage/postman/postman12.webp" size="md" alt="Test retrieval of organizations" border/>
+
+* The returned results should deliver your organization details with "status": 200. (If you receive a "status" 400 with no organization information your configuration isn't correct).
+
+<Image img="/images/cloud/manage/postman/postman13.webp" size="md" alt="Status" border/>
+
+### Test "GET organizational details" {#test-get-organizational-details}
+
+* Under the `organizationid` folder, navigate to "GET organizational details":
+* In the middle frame menu under Params an `organizationid` is required.
+
+<Image img="/images/cloud/manage/postman/postman14.webp" size="md" alt="Test retrieval of organization details" border/>
+
+* Edit this value with `orgid` in curly braces `{{orgid}}` (From setting this value earlier a menu will appear with the value):
+
+<Image img="/images/cloud/manage/postman/postman15.webp" size="md" alt="Submit test" border/>
+
+* After pressing the "Save" button, press the blue "Send" button at the top right of the screen.
+
+<Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="Return value" border/>
+
+* The returned results should deliver your organization details with "status": 200. (If you receive a "status" 400 with no organization information your configuration isn't correct).
+
+### Test "GET service details" {#test-get-service-details}
+
+* Click "GET service details"
+* Edit the Values for `organizationid` and `serviceid` with `{{orgid}}` and `{{serviceid}}` respectively.
+* Press "Save" and then the blue "Send" button on the right.
+
+<Image img="/images/cloud/manage/postman/postman17.webp" size="md" alt="List of services" border/>
+
+* The returned results should deliver a list of your services and their details with "status": 200. (If you receive a "status" 400 with no services information your configuration isn't correct).

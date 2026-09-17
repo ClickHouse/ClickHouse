@@ -131,10 +131,10 @@ private:
 
             if (!type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} for function {} must be {}-dimentional array. Actual {}",
+                    "Argument {} for function {} must be {}-dimensional array. Actual {}",
                     i + 1,
-                    array_depth,
                     getName(),
+                    array_depth,
                     argument.type->getName());
 
             names.push_back(std::string{column.getDataAt(i)});
@@ -161,7 +161,7 @@ private:
 
         if (array_col->size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "First argument for function {} must be constant column with N-dimentional array of strings, "
+                "First argument for function {} must be constant column with N-dimensional array of strings, "
                 "where the all arrays except the most inner one must have size = 1. "
                 "The size of array at depth {} is {}",
                 getName(), array_depth, array_col->size());

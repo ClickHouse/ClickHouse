@@ -1,0 +1,133 @@
+---
+slug: /integrations/clickpipes/kinesis/auth
+sidebarTitle: 'Acesso baseado em funções no Kinesis'
+title: 'Acesso baseado em funções no Kinesis'
+description: 'Este artigo mostra como os clientes do ClickPipes podem usar acesso baseado em funções para se autenticar no Amazon Kinesis e acessar seus streams de dados com segurança.'
+doc_type: 'guide'
+keywords: ['Amazon Kinesis']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este artigo demonstra como os clientes do ClickPipes podem usar o acesso baseado em funções para se autenticar no Amazon Kinesis e acessar seus streams de dados com segurança.
+
+<div id="prerequisite">
+  ## Pré-requisitos
+</div>
+
+Para seguir este guia, você precisará de:
+
+* Um serviço ClickHouse Cloud ativo
+* Uma conta AWS
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Antes de entrar na configuração do acesso seguro ao Kinesis, é importante entender o mecanismo. Veja a seguir uma visão geral de como o ClickPipes pode acessar streams do Amazon Kinesis ao assumir uma função nas contas AWS dos clientes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="Kinesis seguro" size="lg" border />
+
+Com essa abordagem, os clientes podem gerenciar todo o acesso aos streams de dados do Kinesis em um único lugar (a política do IAM da função assumida), sem precisar modificar individualmente a política de acesso de cada stream.
+
+<div id="setup">
+  ## Configuração
+</div>
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### Obtendo o ARN da função de IAM do serviço ClickHouse
+</div>
+
+* 1. Faça login na sua conta do ClickHouse Cloud.
+* 2. Selecione o serviço do ClickHouse para o qual você deseja criar a integração
+* 3. Selecione a guia **Settings**
+* 4. Role a página até a seção **Network security information**, na parte inferior da página
+* 5. Copie o valor de **Service role ID (IAM)** do serviço, como mostrado abaixo.
+
+<Image img="/images/cloud/security/secures3_arn.webp" alt="ARN seguro do S3" size="lg" border />
+
+<div id="setting-up-iam-assume-role">
+  ### Configurar a assunção de função no IAM
+</div>
+
+<div id="manually-create-iam-role">
+  #### Criar uma função de IAM manualmente.
+</div>
+
+* 1. Faça login na sua conta AWS no navegador com um usuário do IAM que tenha permissão para criar e gerenciar uma função de IAM.
+
+* 2. Acesse o Console do IAM
+
+* 3. Crie uma nova função de IAM com Trusted Entity Type igual a `AWS account`. Observe que o nome da função de IAM **deve começar com** `ClickHouseAccessRole-` para que isso funcione.
+
+  **i. Configure a política de confiança**
+
+  A política de confiança permite que a função de IAM do ClickHouse assuma essa função de IAM. Substitua `{ClickHouse_IAM_ARN}` pelo ARN da função de IAM do seu serviço ClickHouse (obtido na etapa anterior).
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "{ClickHouse_IAM_ARN}"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  }
+  ```
+
+  **ii. Configure a política de permissões**
+
+  A política de permissões concede acesso ao seu stream do Kinesis. Substitua os seguintes placeholders:
+
+  * `{REGION}`: Sua região da AWS (por exemplo, `us-east-1`)
+  * `{ACCOUNT_ID}`: O ID da sua conta AWS
+  * `{STREAM_NAME}`: O nome do seu stream do Kinesis
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:DescribeStream",
+          "kinesis:GetShardIterator",
+          "kinesis:GetRecords",
+          "kinesis:ListShards",
+          "kinesis:RegisterStreamConsumer",
+          "kinesis:DeregisterStreamConsumer",
+          "kinesis:ListStreamConsumers"
+        ],
+        "Resource": [
+          "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:SubscribeToShard",
+          "kinesis:DescribeStreamConsumer"
+        ],
+        "Resource": [
+          "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}/*"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:ListStreams"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
+  ```
+
+* 4. Copie o novo **IAM Role Arn** após a criação. É isso que você precisará para acessar seu stream do Kinesis.

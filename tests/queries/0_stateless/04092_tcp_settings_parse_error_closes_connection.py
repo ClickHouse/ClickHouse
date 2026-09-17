@@ -145,7 +145,7 @@ def send_empty_block(sock):
 def read_exception(sock):
     """Fully consume an Exception packet (after packet type is already read)."""
     code = struct.unpack("<I", recv_exact(sock, 4))[0]
-    name = read_string(sock)
+    read_string(sock)
     message = read_string(sock)
     _stack_trace = read_string(sock)
     has_nested = recv_exact(sock, 1)[0]

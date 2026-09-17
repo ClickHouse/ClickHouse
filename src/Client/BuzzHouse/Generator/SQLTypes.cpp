@@ -301,9 +301,9 @@ std::unique_ptr<SQLType> FloatType::typeDeepCopy() const
     return std::make_unique<FloatType>(size);
 }
 
-String FloatType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
+String FloatType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    return nextFloatingPoint(rg, true);
+    return nextFloatingPoint(rg, gen.fc.fuzz_floating_points);
 }
 
 String FloatType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -477,7 +477,7 @@ String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerat
 {
     const bool allow_func = gen.getAllowNotDetermistic();
     String ret
-        = extended ? rg.nextDateTime64("'", allow_func, precision.has_value()) : rg.nextDateTime("'", allow_func, precision.has_value());
+        = extended ? rg.nextDateTime64("'", allow_func, precision.value_or(0)) : rg.nextDateTime("'", allow_func, precision.has_value());
 
     ret += allow_func ? fmt::format("::{}", typeName(false, false)) : "";
     return ret;
@@ -672,14 +672,10 @@ String UUIDType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & ge
     return appendRandomRawValue(rg, gen);
 }
 
-String EnumType::typeName(const bool escape, const bool simplified) const
+String EnumType::typeName(const bool escape, const bool) const
 {
     String ret;
 
-    if (simplified)
-    {
-        return "String";
-    }
     ret += "Enum";
     ret += std::to_string(size);
     ret += "(";
@@ -949,7 +945,7 @@ String JSONType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &
     std::uniform_int_distribution<int> dopt(1, gen.fc.max_depth);
     std::uniform_int_distribution<int> wopt(1, gen.fc.max_width);
 
-    return "'" + strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator)) + "'";
+    return "'" + strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), gen.fc.fuzz_floating_points) + "'";
 }
 
 String JSONType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const uint32_t, const uint32_t) const
@@ -1377,7 +1373,9 @@ String VariantType::insertNumberEntry(
 
 String QBitType::typeName(const bool escape, const bool simplified) const
 {
-    return fmt::format("QBit({}, {})", subtype->typeName(escape, simplified), dimension);
+    if (stride == dimension)
+        return fmt::format("QBit({}, {})", subtype->typeName(escape, simplified), dimension);
+    return fmt::format("QBit({}, {}, {})", subtype->typeName(escape, simplified), dimension, stride);
 }
 
 String QBitType::MySQLtypeName(RandomGenerator &, const bool) const
@@ -1397,7 +1395,7 @@ String QBitType::SQLitetypeName(RandomGenerator &, const bool) const
 
 std::unique_ptr<SQLType> QBitType::typeDeepCopy() const
 {
-    return std::make_unique<QBitType>(subtype->typeDeepCopy(), dimension);
+    return std::make_unique<QBitType>(subtype->typeDeepCopy(), dimension, stride);
 }
 
 String QBitType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1819,7 +1817,7 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
     {
         this->depth++;
         subtypes.emplace_back(
-            this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter2, tp ? af->add_types() : nullptr));
+            this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter2, tp ? af->add_types() : nullptr));
         this->depth--;
     }
     if (tp)
@@ -1828,6 +1826,41 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
         af->set_aggr(aggr);
     }
     return std::make_unique<AggregateFunctionType>(simple, std::move(aggr), std::move(params), std::move(subtypes));
+}
+
+std::vector<EnumValue> StatementGenerator::setRandomEnumValues(RandomGenerator & rg, const bool bits16, EnumDef * edef)
+{
+    std::vector<EnumValue> evs;
+    const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
+
+    if (edef)
+    {
+        edef->set_bits(bits16);
+    }
+    std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
+    if (bits16)
+    {
+        std::shuffle(enum16_ids.begin(), enum16_ids.end(), rg.generator);
+    }
+    else
+    {
+        std::shuffle(enum8_ids.begin(), enum8_ids.end(), rg.generator);
+    }
+    for (uint32_t i = 0; i < nvalues; i++)
+    {
+        const String & nval = enum_values[i];
+        const int32_t num = static_cast<int32_t>(bits16 ? enum16_ids[i] : enum8_ids[i]);
+
+        if (edef)
+        {
+            EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
+
+            edf->set_enumv(nval);
+            edf->set_number(num);
+        }
+        evs.emplace_back(EnumValue(nval, num));
+    }
+    return evs;
 }
 
 std::unique_ptr<SQLType>
@@ -1895,7 +1928,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           {
               DateTimeTp * dtp = tp ? tp->mutable_datetimes() : nullptr;
 
-              res = randomDateTimeType(rg, low_card ? (allowed_types & ~(allow_datetime64)) : allowed_types, dtp);
+              res = randomDateTimeType(rg, low_card ? (allowed_types & ~allow_datetime64) : allowed_types, dtp);
           }},
          {string_type,
           [&]
@@ -1935,38 +1968,9 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               const bool bits16 = rg.nextBool();
-              std::vector<EnumValue> evs;
-              const uint32_t nvalues = (rg.nextLargeNumber() % static_cast<uint32_t>(enum_values.size())) + 1;
-              EnumDef * edef = tp ? tp->mutable_enum_def() : nullptr;
+              std::vector<EnumValue> evs = setRandomEnumValues(rg, bits16, tp ? tp->mutable_enum_def() : nullptr);
 
-              if (edef)
-              {
-                  edef->set_bits(bits16);
-              }
-              std::shuffle(enum_values.begin(), enum_values.end(), rg.generator);
-              if (bits16)
-              {
-                  std::shuffle(enum16_ids.begin(), enum16_ids.end(), rg.generator);
-              }
-              else
-              {
-                  std::shuffle(enum8_ids.begin(), enum8_ids.end(), rg.generator);
-              }
-              for (uint32_t i = 0; i < nvalues; i++)
-              {
-                  const String & nval = enum_values[i];
-                  const int32_t num = static_cast<const int32_t>(bits16 ? enum16_ids[i] : enum8_ids[i]);
-
-                  if (edef)
-                  {
-                      EnumDefValue * edf = i == 0 ? edef->mutable_first_value() : edef->add_other_values();
-
-                      edf->set_number(num);
-                      edf->set_enumv(nval);
-                  }
-                  evs.emplace_back(EnumValue(nval, num));
-              }
-              res = std::make_unique<EnumType>(bits16 ? 16 : 8, evs);
+              res = std::make_unique<EnumType>(bits16 ? 16 : 8, std::move(evs));
           }},
          {uuid_type,
           [&]
@@ -2106,24 +2110,49 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           {
               TimeTp * tt = tp ? tp->mutable_times() : nullptr;
 
-              res = randomTimeType(rg, low_card ? (allowed_types & ~(allow_time64)) : allowed_types, tt);
+              res = randomTimeType(rg, low_card ? (allowed_types & ~allow_time64) : allowed_types, tt);
           }},
          {qbit_type,
           [&]
           {
               std::unique_ptr<SQLType> sub;
-              FloatingPoints nflo = {};
-              const uint32_t dimension = rg.nextSmallNumber();
+              uint32_t dimension = rg.nextSmallNumber();
+              uint32_t stride = dimension;
+              QBit * qbit = tp ? tp->mutable_qbit() : nullptr;
 
-              std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
-              if (tp)
+              /// Occasionally generate a strided QBit. Constraints: dimension % stride == 0 and stride % 8 == 0.
+              if (rg.nextSmallNumber() < 3)
               {
-                  QBit * qbit = tp->mutable_qbit();
-
-                  qbit->set_subtype(nflo);
-                  qbit->set_dimension(dimension);
+                  const uint32_t num_groups = std::max<uint32_t>(1, rg.nextSmallNumber());
+                  stride = 8;
+                  dimension = stride * num_groups;
               }
-              res = std::make_unique<QBitType>(std::move(sub), dimension);
+
+              if (rg.nextSmallNumber() < 3)
+              {
+                  sub = std::make_unique<IntType>(8, false);
+                  if (tp)
+                  {
+                      qbit->set_int8(true);
+                  }
+              }
+              else
+              {
+                  FloatingPoints nflo = {};
+
+                  std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
+                  if (tp)
+                  {
+                      qbit->set_floats(nflo);
+                  }
+              }
+              if (qbit)
+              {
+                  qbit->set_dimension(dimension);
+                  if (stride != dimension)
+                      qbit->set_stride(stride);
+              }
+              res = std::make_unique<QBitType>(std::move(sub), dimension, stride);
           }},
          {geo_type,
           [&]
@@ -2187,7 +2216,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               TopTypeName * arr = tp ? tp->mutable_array() : nullptr;
 
               this->depth++;
-              auto k = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, arr);
+              auto k = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, arr);
               this->depth--;
               result = std::make_unique<ArrayType>(std::move(k));
           }},
@@ -2201,7 +2230,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               auto k = this->randomNextType(
                   rg, this->next_type_mask & ~(allow_nullable | allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
               this->width++;
-              auto v = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
+              auto v = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, mt ? mt->mutable_value() : nullptr);
               this->depth--;
               this->width--;
               result = std::make_unique<MapType>(std::move(k), std::move(v));
@@ -2239,7 +2268,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
                       opt_cname = std::optional<uint32_t>(ncname);
                   }
                   auto k
-                      = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
+                      = this->randomNextType(rg, this->next_type_mask & ~allow_nested, col_counter, tcd ? tcd->mutable_type_name() : ttn);
                   subtypes.emplace_back(SubType(opt_cname, std::move(k)));
               }
               this->depth--;
@@ -2286,13 +2315,36 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
                       tcd->mutable_col()->set_column(cname);
                   }
                   auto k = this->randomNextType(
-                      rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
+                      rg, this->next_type_mask & ~allow_nested, col_counter, tcd ? tcd->mutable_type_name() : nullptr);
                   subtypes.emplace_back(NestedSubType(cname, std::move(k)));
               }
               this->depth--;
               result = std::make_unique<NestedType>(std::move(subtypes));
           }}});
     return result;
+}
+
+EnumType * getColumnEnumType(SQLType * tp)
+{
+    while (tp)
+    {
+        if (auto * et = dynamic_cast<EnumType *>(tp))
+        {
+            return et;
+        }
+        if (auto * nl = dynamic_cast<Nullable *>(tp))
+        {
+            tp = nl->subtype.get();
+            continue;
+        }
+        if (auto * lc = dynamic_cast<LowCardinality *>(tp))
+        {
+            tp = lc->subtype.get();
+            continue;
+        }
+        break;
+    }
+    return nullptr;
 }
 
 String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t left, const uint32_t right)
@@ -2441,12 +2493,30 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
 {
     String ret;
     const uint32_t limit = rg.randomInt<uint32_t>(0, 10);
-    const GeoTypes imp
-        = gt == GeoTypes::Geometry ? static_cast<GeoTypes>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(GeoTypes::MultiPolygon))) : gt;
+    GeoTypes imp = gt;
+
+    if (gt == GeoTypes::Geometry)
+    {
+        /// Pick any concrete geo type. In the enumeration, `Geometry` sits between `MultiPolygon` and `MultiPoint`,
+        /// so remap a draw of `Geometry` to `MultiPoint` to cover all seven concrete alternatives uniformly.
+        const uint32_t choice = rg.randomInt<uint32_t>(1, static_cast<uint32_t>(GeoTypes::Geometry));
+        imp = choice == static_cast<uint32_t>(GeoTypes::Geometry) ? GeoTypes::MultiPoint : static_cast<GeoTypes>(choice);
+    }
 
     switch (imp)
     {
         case GeoTypes::Point: ret = nextGeoPoint(rg); break;
+        case GeoTypes::MultiPoint:
+            /// Set of points, no closure requirement
+            ret += "[";
+            for (uint32_t i = 0; i < limit; i++)
+            {
+                if (i != 0)
+                    ret += ", ";
+                ret += nextGeoPoint(rg);
+            }
+            ret += "]";
+            break;
         case GeoTypes::Ring:
             /// Closed ring: array of points where first == last
             ret = nextGeoRing(rg, limit);
@@ -2518,7 +2588,7 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
     return ret;
 }
 
-static String homogeneousJSONArray(RandomGenerator & rg)
+static String homogeneousJSONArray(RandomGenerator & rg, const bool fuzz_floating_points)
 {
     /// Homogeneous typed array: pick element type once, generate 0-5 elements of that type
     String ret;
@@ -2540,7 +2610,7 @@ static String homogeneousJSONArray(RandomGenerator & rg)
             }
             case 2: ret += std::to_string(rg.nextRandomInt64()); break;
             case 3: ret += std::to_string(rg.nextRandomUInt64()); break;
-            case 4: ret += nextFloatingPoint(rg, true); break;
+            case 4: ret += nextFloatingPoint(rg, fuzz_floating_points); break;
             case 5: ret += rg.nextString("\"", false, rg.nextStrlen()); break;
             case 6: ret += rg.nextBool() ? "true" : "false"; break;
             case 7: ret += "null"; break;
@@ -2563,7 +2633,7 @@ static String homogeneousJSONArray(RandomGenerator & rg)
     return ret;
 }
 
-String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth)
+String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, const bool fuzz_floating_points)
 {
     std::uniform_int_distribution<int> jopt(1, 4);
     int nelems = 0;
@@ -2588,26 +2658,26 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
             {
                 case 1:
                     /// Object
-                    ret += strBuildJSON(rg, jdepth - 1, next_width);
+                    ret += strBuildJSON(rg, jdepth - 1, next_width, fuzz_floating_points);
                     break;
                 case 2:
                     /// Array
-                    ret += strBuildJSONArray(rg, jdepth - 1, next_width);
+                    ret += strBuildJSONArray(rg, jdepth - 1, next_width, fuzz_floating_points);
                     break;
                 case 3:
                     /// Others
-                    ret += strBuildJSONElement(rg);
+                    ret += strBuildJSONElement(rg, fuzz_floating_points);
                     break;
                 case 4:
                     /// Homogeneous array
-                    ret += homogeneousJSONArray(rg);
+                    ret += homogeneousJSONArray(rg, fuzz_floating_points);
                     break;
                 default: UNREACHABLE();
             }
         }
         else
         {
-            ret += strBuildJSONElement(rg);
+            ret += strBuildJSONElement(rg, fuzz_floating_points);
         }
         next_width--;
     }
@@ -2615,7 +2685,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
     return ret;
 }
 
-String strBuildJSONElement(RandomGenerator & rg)
+String strBuildJSONElement(RandomGenerator & rg, const bool fuzz_floating_points)
 {
     String ret;
     std::uniform_int_distribution<int> opts(1, 25);
@@ -2679,7 +2749,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 19:
             /// Datetime64
-            ret = rg.nextDateTime64("\"", false, rg.nextSmallNumber() < 8);
+            ret = rg.nextDateTime64("\"", false, rg.nextSmallNumber() - 1);
             break;
         case 20:
             /// UUID
@@ -2695,7 +2765,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 23:
             /// Floating-point
-            ret = nextFloatingPoint(rg, true);
+            ret = nextFloatingPoint(rg, fuzz_floating_points);
             break;
         case 24:
             /// Empty string
@@ -2703,14 +2773,14 @@ String strBuildJSONElement(RandomGenerator & rg)
             break;
         case 25:
             /// String with escape sequences
-            ret = '[' + homogeneousJSONArray(rg) + ']';
+            ret = '[' + homogeneousJSONArray(rg, fuzz_floating_points) + ']';
             break;
         default: UNREACHABLE();
     }
     return ret;
 }
 
-String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
+String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth, const bool fuzz_floating_points)
 {
     String ret = "{";
 
@@ -2734,15 +2804,15 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
             {
                 case 1:
                     /// Object
-                    ret += strBuildJSON(rg, jdepth - 1, jwidth);
+                    ret += strBuildJSON(rg, jdepth - 1, jwidth, fuzz_floating_points);
                     break;
                 case 2:
                     /// Array
-                    ret += strBuildJSONArray(rg, jdepth - 1, jwidth);
+                    ret += strBuildJSONArray(rg, jdepth - 1, jwidth, fuzz_floating_points);
                     break;
                 case 3:
                     /// Others
-                    ret += strBuildJSONElement(rg);
+                    ret += strBuildJSONElement(rg, fuzz_floating_points);
                     break;
                 default: UNREACHABLE();
             }

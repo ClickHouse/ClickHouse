@@ -11,7 +11,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-ColumnsDescription getResultColumns(const PQT & promql_tree, const PrometheusQueryEvaluationSettings & settings)
+ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings)
 {
     auto result_type = getResultType(promql_tree, settings);
     const auto & timestamp_data_type = settings.timestamp_data_type;
@@ -56,7 +56,7 @@ ColumnsDescription getResultColumns(const PQT & promql_tree, const PrometheusQue
                         DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}))});
             columns.add(
                 ColumnDescription{
-                    ColumnNames::TimeSeries,
+                    ColumnNames::getOuterSamples(settings.time_series_version),
                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_data_type, scalar_data_type}))});
             return columns;
         }

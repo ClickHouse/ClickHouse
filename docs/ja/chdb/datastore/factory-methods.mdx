@@ -1,0 +1,562 @@
+---
+title: 'DataStore のファクトリメソッド'
+sidebarTitle: 'ファクトリメソッド'
+slug: /chdb/datastore/factory-methods
+description: 'ファイル、データベース、Cloud ストレージ、データレイクから DataStore インスタンスを作成'
+keywords: ['chdb', 'datastore', 'factory', 'from_file', 'from_s3', 'uri', 'mysql', 'postgresql']
+doc_type: 'reference'
+---
+
+DataStore には、ローカルファイル、データベース、Cloud ストレージ、データレイクなど、さまざまなデータソースからインスタンスを作成できるファクトリメソッドが 20 種類以上用意されています。
+
+<div id="uri">
+  ## ユニバーサル URI インターフェイス
+</div>
+
+`uri()` メソッドは、ソースの種類を自動検出する推奨の汎用エントリポイントです。
+
+```python
+from chdb.datastore import DataStore
+
+# ローカルファイル
+ds = DataStore.uri("data.csv")
+ds = DataStore.uri("/path/to/data.parquet")
+
+# Cloud ストレージ
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+ds = DataStore.uri("https://example.com/data.csv")
+
+# データベース
+ds = DataStore.uri("mysql://user:pass@host:3306/db/table")
+ds = DataStore.uri("postgresql://user:pass@host:5432/db/table")
+```
+
+<div id="uri-syntax">
+  ### URI 構文リファレンス
+</div>
+
+| ソースタイプ     | URI 形式                                      | 例                                                      |
+| ---------- | ------------------------------------------- | ------------------------------------------------------ |
+| ローカルファイル   | `path/to/file`                              | `data.csv`, `/abs/path/data.parquet`                   |
+| S3         | `s3://bucket/path`                          | `s3://mybucket/data.parquet?nosign=true`               |
+| GCS        | `gs://bucket/path`                          | `gs://mybucket/data.csv`                               |
+| Azure      | `az://container/path`                       | `az://mycontainer/data.parquet`                        |
+| HTTP/HTTPS | `https://url`                               | `https://example.com/data.csv`                         |
+| MySQL      | `mysql://user:pass@host:port/db/table`      | `mysql://root:pass@localhost:3306/mydb/users`          |
+| PostgreSQL | `postgresql://user:pass@host:port/db/table` | `postgresql://postgres:pass@localhost:5432/mydb/users` |
+| SQLite     | `sqlite:///path?table=name`                 | `sqlite:///data.db?table=users`                        |
+| ClickHouse | `clickhouse://host:port/db/table`           | `clickhouse://localhost:9000/default/hits`             |
+
+***
+
+<div id="file-sources">
+  ## File SOURCES
+</div>
+
+<div id="from-file">
+  ### `from_file`
+</div>
+
+ローカルまたはリモートのファイルから、フォーマットを自動検出してDataStoreを作成します。
+
+```python
+DataStore.from_file(path, format=None, compression=None, **kwargs)
+```
+
+**パラメータ:**
+
+| パラメータ         | 型   | デフォルト      | 説明                          |
+| ------------- | --- | ---------- | --------------------------- |
+| `path`        | str | *required* | ファイルのパス (ローカルまたは URL)       |
+| `format`      | str | `None`     | ファイルフォーマット (None の場合は自動検出)  |
+| `compression` | str | `None`     | 圧縮方式 (None の場合は自動検出)        |
+
+**対応フォーマット:** CSV, TSV, Parquet, JSON, JSONLines, ORC, Avro, Arrow
+
+**例:**
+
+```python
+from chdb.datastore import DataStore
+
+# 拡張子からフォーマットを自動検出
+ds = DataStore.from_file("data.csv")
+ds = DataStore.from_file("data.parquet")
+ds = DataStore.from_file("data.json")
+
+# フォーマットを明示的に指定
+ds = DataStore.from_file("data.txt", format="CSV")
+
+# 圧縮あり
+ds = DataStore.from_file("data.csv.gz", compression="gzip")
+```
+
+<div id="pandas-read">
+  ### Pandas互換の読み込み関数
+</div>
+
+```python
+from chdb import datastore as pd
+
+# CSVファイル
+ds = pd.read_csv("data.csv")
+ds = pd.read_csv("data.csv", sep=";", header=0, nrows=1000)
+
+# Parquetファイル（大規模データセットに推奨）
+ds = pd.read_parquet("data.parquet")
+ds = pd.read_parquet("data.parquet", columns=['col1', 'col2'])
+
+# JSONファイル
+ds = pd.read_json("data.json")
+ds = pd.read_json("data.jsonl", lines=True)
+
+# Excelファイル
+ds = pd.read_excel("data.xlsx", sheet_name="Sheet1")
+```
+
+***
+
+<div id="cloud-storage">
+  ## Cloud ストレージ
+</div>
+
+<div id="from-s3">
+  ### `from_s3`
+</div>
+
+Amazon S3からDataStoreを作成します。
+
+```python
+DataStore.from_s3(url, access_key_id=None, secret_access_key=None, format=None, **kwargs)
+```
+
+**パラメータ:**
+
+| パラメータ               | 型   | デフォルト  | 説明                         |
+| ------------------- | --- | ------ | -------------------------- |
+| `url`               | str | *必須*   | S3 URL (s3://bucket/path)  |
+| `access_key_id`     | str | `None` | AWSアクセスキー ID               |
+| `secret_access_key` | str | `None` | AWSシークレットアクセスキー            |
+| `format`            | str | `None` | ファイルフォーマット (自動検出)          |
+
+**例:**
+
+```python
+from chdb.datastore import DataStore
+
+# 匿名アクセス（公開バケット）
+ds = DataStore.from_s3("s3://bucket/data.parquet")
+
+# 認証情報を使用する場合
+ds = DataStore.from_s3(
+    "s3://bucket/data.parquet",
+    access_key_id="AKIAIOSFODNN7EXAMPLE",
+    secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+)
+
+# クエリパラメータ付きのURIを使用する場合
+ds = DataStore.uri("s3://bucket/data.parquet?nosign=true")
+ds = DataStore.uri("s3://bucket/data.parquet?access_key_id=KEY&secret_access_key=SECRET")
+```
+
+<div id="from-gcs">
+  ### `from_gcs`
+</div>
+
+Google Cloud StorageからDataStoreを作成します。
+
+```python
+DataStore.from_gcs(url, credentials_path=None, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_gcs("gs://bucket/data.parquet")
+ds = DataStore.from_gcs("gs://bucket/data.parquet", credentials_path="/path/to/creds.json")
+```
+
+<div id="from-azure">
+  ### `from_azure`
+</div>
+
+Azure Blob StorageからDataStoreを作成します。
+
+```python
+DataStore.from_azure(url, account_name=None, account_key=None, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_azure(
+    "az://container/data.parquet",
+    account_name="myaccount",
+    account_key="mykey"
+)
+```
+
+<div id="from-hdfs">
+  ### `from_hdfs`
+</div>
+
+HDFS から DataStore を作成します。
+
+```python
+DataStore.from_hdfs(url, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_hdfs("hdfs://namenode:8020/path/data.parquet")
+```
+
+<div id="from-url">
+  ### `from_url`
+</div>
+
+HTTP/HTTPS URLからDataStoreを作成します。
+
+```python
+DataStore.from_url(url, format=None, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_url("https://example.com/data.csv")
+ds = DataStore.from_url("https://raw.githubusercontent.com/user/repo/main/data.parquet")
+```
+
+***
+
+<div id="databases">
+  ## データベース
+</div>
+
+<div id="from-mysql">
+  ### `from_mysql`
+</div>
+
+MySQL データベースから DataStore を作成します。
+
+```python
+DataStore.from_mysql(host, database, table, user, password, port=3306, **kwargs)
+```
+
+**パラメータ:**
+
+| パラメータ      | 型   | デフォルト  | 説明        |
+| ---------- | --- | ------ | --------- |
+| `host`     | str | *必須*   | MySQL ホスト |
+| `database` | str | *必須*   | データベース名   |
+| `table`    | str | *必須*   | テーブル名     |
+| `user`     | str | *必須*   | ユーザー名     |
+| `password` | str | *必須*   | パスワード     |
+| `port`     | int | `3306` | ポート番号     |
+
+**例:**
+
+```python
+ds = DataStore.from_mysql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="root",
+    password="password"
+)
+
+# URIを使用する場合
+ds = DataStore.uri("mysql://root:password@localhost:3306/mydb/users")
+```
+
+<div id="from-postgresql">
+  ### `from_postgresql`
+</div>
+
+PostgreSQLデータベースからDataStoreを作成します。
+
+```python
+DataStore.from_postgresql(host, database, table, user, password, port=5432, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_postgresql(
+    host="localhost",
+    database="mydb",
+    table="users",
+    user="postgres",
+    password="password"
+)
+
+# URIを使用する場合
+ds = DataStore.uri("postgresql://postgres:password@localhost:5432/mydb/users")
+```
+
+<div id="from-clickhouse">
+  ### `from_clickhouse`
+</div>
+
+ClickHouse serverからDataStoreを作成します。
+
+```python
+DataStore.from_clickhouse(host, database, table, user=None, password=None, port=9000, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_clickhouse(
+    host="localhost",
+    database="default",
+    table="hits",
+    user="default",
+    password=""
+)
+
+# 接続レベルモード（データベースを探索）
+ds = DataStore.from_clickhouse(
+    host="analytics.company.com",
+    user="analyst",
+    password="secret"
+)
+ds.databases()                  # データベース一覧
+ds.tables("production")         # テーブル一覧
+result = ds.sql("SELECT * FROM production.users LIMIT 10")
+```
+
+<div id="from-mongodb">
+  ### `from_mongodb`
+</div>
+
+MongoDBからDataStoreを作成します。
+
+```python
+DataStore.from_mongodb(uri, database, collection, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_mongodb(
+    uri="mongodb://localhost:27017",
+    database="mydb",
+    collection="users"
+)
+```
+
+<div id="from-sqlite">
+  ### `from_sqlite`
+</div>
+
+SQLiteデータベースからDataStoreを作成します。
+
+```python
+DataStore.from_sqlite(database_path, table, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_sqlite("data.db", table="users")
+
+# URIを使用する場合
+ds = DataStore.uri("sqlite:///data.db?table=users")
+```
+
+***
+
+<div id="data-lakes">
+  ## データレイク
+</div>
+
+<div id="from-iceberg">
+  ### `from_iceberg`
+</div>
+
+Apache Iceberg テーブルから DataStore を作成します。
+
+```python
+DataStore.from_iceberg(path, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_iceberg("/path/to/iceberg_table")
+ds = DataStore.uri("iceberg://catalog/namespace/table")
+```
+
+<div id="from-delta">
+  ### `from_delta`
+</div>
+
+Delta LakeのテーブルからDataStoreを作成します。
+
+```python
+DataStore.from_delta(path, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_delta("/path/to/delta_table")
+ds = DataStore.uri("deltalake:///path/to/delta_table")
+```
+
+<div id="from-hudi">
+  ### `from_hudi`
+</div>
+
+Apache HudiテーブルからDataStoreを作成します。
+
+```python
+DataStore.from_hudi(path, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_hudi("/path/to/hudi_table")
+ds = DataStore.uri("hudi:///path/to/hudi_table")
+```
+
+***
+
+<div id="in-memory">
+  ## インメモリSOURCES
+</div>
+
+<div id="from-df">
+  ### `from_df` / `from_dataframe`
+</div>
+
+pandasのDataFrameからDataStoreを作成します。
+
+```python
+DataStore.from_df(df, name=None)
+DataStore.from_dataframe(df, name=None)  # エイリアス
+```
+
+**例:**
+
+```python
+import pandas
+from chdb.datastore import DataStore
+
+pdf = pandas.DataFrame({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+ds = DataStore.from_df(pdf)
+```
+
+<div id="dataframe-constructor">
+  ### `DataFrame` コンストラクタ
+</div>
+
+pandasライクなコンストラクタでDataStoreを作成します。
+
+```python
+from chdb import datastore as pd
+
+# 辞書から
+ds = pd.DataFrame({
+    'name': ['Alice', 'Bob'],
+    'age': [25, 30]
+})
+
+# pandas DataFrameから
+import pandas
+pdf = pandas.DataFrame({'a': [1, 2, 3]})
+ds = pd.DataFrame(pdf)
+```
+
+***
+
+<div id="special-sources">
+  ## 特殊なSOURCES
+</div>
+
+<div id="from-numbers">
+  ### `from_numbers`
+</div>
+
+連続した数値の DataStore を作成します (テストに便利です) 。
+
+```python
+DataStore.from_numbers(count, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_numbers(1000000)  # 100万行、'number' カラム
+result = ds.filter(ds['number'] % 2 == 0).head(10)  # 偶数
+```
+
+<div id="from-random">
+  ### `from_random`
+</div>
+
+ランダムデータを使ってDataStoreを作成します。
+
+```python
+DataStore.from_random(rows, columns, **kwargs)
+```
+
+**例:**
+
+```python
+ds = DataStore.from_random(rows=1000, columns=5)
+```
+
+<div id="run-sql">
+  ### `run_sql`
+</div>
+
+Raw SQLクエリからDataStoreを作成します。
+
+```python
+DataStore.run_sql(query)
+```
+
+**例:**
+
+```python
+ds = DataStore.run_sql("""
+    SELECT number, number * 2 as doubled
+    FROM numbers(100)
+    WHERE number % 10 = 0
+""")
+```
+
+***
+
+<div id="summary">
+  ## サマリー表
+</div>
+
+| Method              | ソースの種類               | 例                                                        |
+| ------------------- | -------------------- | -------------------------------------------------------- |
+| `uri()`             | 汎用                   | `DataStore.uri("s3://bucket/data.parquet")`              |
+| `from_file()`       | ローカル/リモートファイル        | `DataStore.from_file("data.csv")`                        |
+| `read_csv()`        | CSVファイル              | `pd.read_csv("data.csv")`                                |
+| `read_parquet()`    | Parquetファイル          | `pd.read_parquet("data.parquet")`                        |
+| `from_s3()`         | Amazon S3            | `DataStore.from_s3("s3://bucket/path")`                  |
+| `from_gcs()`        | Google Cloud ストレージ   | `DataStore.from_gcs("gs://bucket/path")`                 |
+| `from_azure()`      | Azure Blob           | `DataStore.from_azure("az://container/path")`            |
+| `from_hdfs()`       | HDFS                 | `DataStore.from_hdfs("hdfs://host/path")`                |
+| `from_url()`        | HTTP/HTTPS           | `DataStore.from_url("https://example.com/data.csv")`     |
+| `from_mysql()`      | MySQL                | `DataStore.from_mysql(host, db, table, user, pass)`      |
+| `from_postgresql()` | PostgreSQL           | `DataStore.from_postgresql(host, db, table, user, pass)` |
+| `from_clickhouse()` | ClickHouse           | `DataStore.from_clickhouse(host, db, table)`             |
+| `from_mongodb()`    | MongoDB              | `DataStore.from_mongodb(uri, db, collection)`            |
+| `from_sqlite()`     | SQLite               | `DataStore.from_sqlite("data.db", table)`                |
+| `from_iceberg()`    | Apache Iceberg       | `DataStore.from_iceberg("/path/to/table")`               |
+| `from_delta()`      | Delta Lake           | `DataStore.from_delta("/path/to/table")`                 |
+| `from_hudi()`       | Apache Hudi          | `DataStore.from_hudi("/path/to/table")`                  |
+| `from_df()`         | pandas DataFrame     | `DataStore.from_df(pandas_df)`                           |
+| `DataFrame()`       | Dictionary/DataFrame | `pd.DataFrame({'a': [1, 2, 3]})`                         |
+| `from_numbers()`    | 連続した数値               | `DataStore.from_numbers(1000000)`                        |
+| `from_random()`     | ランダムデータ              | `DataStore.from_random(rows=1000, columns=5)`            |
+| `run_sql()`         | Raw SQL              | `DataStore.run_sql("SELECT * FROM ...")`                 |

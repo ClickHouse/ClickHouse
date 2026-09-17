@@ -15,22 +15,6 @@
 #include <mutex>
 
 
-namespace ProfileEvents
-{
-    extern const Event SchedulerIOReadRequests;
-    extern const Event SchedulerIOReadBytes;
-    extern const Event SchedulerIOReadWaitMicroseconds;
-    extern const Event SchedulerIOWriteRequests;
-    extern const Event SchedulerIOWriteBytes;
-    extern const Event SchedulerIOWriteWaitMicroseconds;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric SchedulerIOReadScheduled;
-    extern const Metric SchedulerIOWriteScheduled;
-}
-
 namespace DB
 {
 
@@ -57,27 +41,13 @@ public:
         const ProfileEvents::Event wait_microseconds = ProfileEvents::end();
         const CurrentMetrics::Metric scheduled_count = CurrentMetrics::end();
 
-        static const Metrics * getIORead()
-        {
-            static Metrics metrics{
-                .requests = ProfileEvents::SchedulerIOReadRequests,
-                .cost = ProfileEvents::SchedulerIOReadBytes,
-                .wait_microseconds = ProfileEvents::SchedulerIOReadWaitMicroseconds,
-                .scheduled_count = CurrentMetrics::SchedulerIOReadScheduled
-            };
-            return &metrics;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static const Metrics * getIORead();
 
-        static const Metrics * getIOWrite()
-        {
-            static Metrics metrics{
-                .requests = ProfileEvents::SchedulerIOWriteRequests,
-                .cost = ProfileEvents::SchedulerIOWriteBytes,
-                .wait_microseconds = ProfileEvents::SchedulerIOWriteWaitMicroseconds,
-                .scheduled_count = CurrentMetrics::SchedulerIOWriteScheduled
-            };
-            return &metrics;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static const Metrics * getIOWrite();
     };
 
     enum RequestState
@@ -138,11 +108,32 @@ public:
             ProfileEvents::increment(metrics->cost, real_cost_);
         }
 
+        // If the request was failed by the scheduler, reset it to `Finished` for reuse and report it.
+        // `finish()` and the failed path are alternatives: a failed request must NOT be `finish()`ed,
+        // because that touches its queue (`adjustBudget()`) and the queue may already be destroyed — the
+        // request is often failed precisely because its queue is being purged/destructed, so the raw
+        // `ResourceLink::queue` would dangle. NOTE: this means the budget transaction made by
+        // `enqueueRequestUsingBudget` is not rolled back for a failed request, so the queue budget may be
+        // slightly off afterwards. That is acceptable: failures are rare and the queue (with its budget) is
+        // usually gone anyway, while touching it here would be a use-after-free.
+        bool consumeException()
+        {
+            // lock(mutex) is not required because a `Dequeued` request cannot be used by the scheduler thread
+            chassert(state == Dequeued);
+            if (exception)
+            {
+                exception = nullptr;
+                state = Finished;
+                return true;
+            }
+            return false;
+        }
+
         // Restore a reused request to the `Finished` state after a `ResourceGuard` constructor failed
         // (either `enqueue()` or `wait()` threw). Because the constructor is unwinding, `~ResourceGuard()`
         // will not run, so this is the only chance to make the thread-local instance reusable; otherwise the
         // next request enqueued on this thread would hit `chassert(state == Finished)`.
-        void recoverAfterConstructorFailure(ResourceLink link_)
+        void recoverAfterConstructorFailure(ResourceLink)
         {
             if (state == Enqueued)
                 // `enqueue()` threw before the request entered the scheduler (e.g. the queue is being
@@ -150,9 +141,9 @@ public:
                 // has rolled back its budget transaction, so just restore the state.
                 state = Finished;
             else if (state == Dequeued)
-                // `wait()` threw: the request was failed by the scheduler. Finish it as the destructor would;
-                // `ResourceRequest::finish()` is a no-op for a failed request.
-                finish(0, link_);
+                // `wait()` threw: the request was failed by the scheduler. Reset it for reuse without
+                // calling `finish()` — see `consumeException()` (the queue may already be destroyed).
+                consumeException();
         }
 
         void assertFinished()
@@ -161,14 +152,9 @@ public:
             chassert(state == Finished);
         }
 
-        static Request & local(const Metrics * metrics)
-        {
-            // Since single thread cannot use more than one resource request simultaneously,
-            // we can reuse thread-local request to avoid allocations
-            static thread_local Request instance;
-            instance.metrics = metrics;
-            return instance;
-        }
+        /// Defined out of line: a static local in a header-defined function gives every
+        /// shared object its own copy.
+        static Request & local(const Metrics * metrics);
 
         const Metrics * metrics = nullptr; // Must be initialized before use
 
@@ -230,7 +216,10 @@ public:
         consume(consumed);
         if (link)
         {
-            request.finish(real_cost, link);
+            // `finish()` and the failed path are alternatives: skip `finish()` (and the queue access it
+            // performs) if the request was failed, otherwise it would touch a possibly-destroyed queue.
+            if (!request.consumeException())
+                request.finish(real_cost, link);
             link.reset();
         }
     }

@@ -26,6 +26,8 @@ INSERT INTO test_rls_projection VALUES
 
 ALTER TABLE test_rls_projection MATERIALIZE PROJECTION proj_by_data;
 
+SET explain_query_plan_default = 'legacy';
+
 -- Baseline without any row policy: all rows are visible, so 'item_1' is counted 3 times
 -- (twice for tenant_A and once for tenant_B) and 'item_3' is present.
 SELECT data, count() as cnt
