@@ -41,10 +41,10 @@ public:
     FunctionDateTrunc(
         FunctionOverloadResolverPtr to_start_of_interval_,
         IntervalKind::Kind datepart_kind_,
-        std::optional<DateRoundingResultFamily> narrowing_result_family_)
+        std::optional<Date32RoundingNarrowing> date32_narrowing_)
         : to_start_of_interval(to_start_of_interval_)
         , datepart_kind(datepart_kind_)
-        , narrowing_result_family(narrowing_result_family_)
+        , date32_narrowing(date32_narrowing_)
     {
     }
 
@@ -91,8 +91,7 @@ public:
         /// result's range, and a wrapping rounding is not monotonic. At
         /// `function_date_trunc_return_type_behavior = 0` the result widens to `Date32`/`DateTime64`
         /// instead, so nothing wraps.
-        if (narrowing_result_family && WhichDataType(type).isDate32()
-            && !date32RangeFitsRoundingResult(*narrowing_result_family, left, right))
+        if (date32_narrowing && isDate32IgnoringWrappers(type) && !date32RangeFitsRoundingResult(*date32_narrowing, left, right))
             return {.is_always_monotonic_where_defined = true};
 
         return { .is_monotonic = true, .is_always_monotonic = true };
@@ -101,8 +100,8 @@ public:
 private:
     FunctionOverloadResolverPtr to_start_of_interval;
     IntervalKind::Kind datepart_kind;
-    /// The result family that a `Date32` argument is narrowed into, if the result narrows at all.
-    std::optional<DateRoundingResultFamily> narrowing_result_family;
+    /// How a `Date32` argument is narrowed into the result, if the result narrows at all.
+    std::optional<Date32RoundingNarrowing> date32_narrowing;
 };
 
 
@@ -256,13 +255,8 @@ public:
         if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-        std::optional<DateRoundingResultFamily> narrowing_result_family;
-        if (isDate(return_type))
-            narrowing_result_family = DateRoundingResultFamily::Date;
-        else if (isDateTime(return_type))
-            narrowing_result_family = DateRoundingResultFamily::DateTime;
-
-        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind, narrowing_result_family);
+        auto date32_narrowing = describeDate32RoundingNarrowing(return_type, datepart_kind, /*num_units*/ 1);
+        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind, date32_narrowing);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

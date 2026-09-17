@@ -66,16 +66,15 @@ class FunctionToStartOfInterval final : public IFunction
 {
 private:
     ToStartOfIntervalOverload overload;
-    /// The result family that a `Date32` argument is narrowed into, if the result narrows at all.
-    std::optional<DateRoundingResultFamily> narrowing_result_family;
+    /// How a `Date32` argument is narrowed into the result, if the result narrows at all.
+    std::optional<Date32RoundingNarrowing> date32_narrowing;
 
 public:
     static constexpr auto name = "toStartOfInterval";
 
-    FunctionToStartOfInterval(
-        ToStartOfIntervalOverload overload_, std::optional<DateRoundingResultFamily> narrowing_result_family_)
+    FunctionToStartOfInterval(ToStartOfIntervalOverload overload_, std::optional<Date32RoundingNarrowing> date32_narrowing_)
         : overload(overload_)
-        , narrowing_result_family(narrowing_result_family_)
+        , date32_narrowing(date32_narrowing_)
     {
     }
 
@@ -95,8 +94,7 @@ public:
         /// plain cast, and a wrapping rounding is not monotonic. With
         /// `enable_extended_results_for_datetime_functions` or with the `origin` overload the result
         /// is `Date32`/`DateTime64` instead, which holds the whole `Date32` domain, so nothing wraps.
-        if (narrowing_result_family && WhichDataType(type).isDate32()
-            && !date32RangeFitsRoundingResult(*narrowing_result_family, left, right))
+        if (date32_narrowing && isDate32IgnoringWrappers(type) && !date32RangeFitsRoundingResult(*date32_narrowing, left, right))
             return {.is_always_monotonic_where_defined = true};
 
         return { .is_monotonic = true, .is_always_monotonic = true };
@@ -645,13 +643,19 @@ public:
         if (args.size() >= 3 && isDateOrDate32OrDateTimeOrDateTime64(args[2].type))
             overload = ToStartOfIntervalOverload::Origin;
 
-        std::optional<DateRoundingResultFamily> narrowing_result_family;
-        if (isDate(return_type))
-            narrowing_result_family = DateRoundingResultFamily::Date;
-        else if (isDateTime(return_type))
-            narrowing_result_family = DateRoundingResultFamily::DateTime;
+        /// The arguments are not necessarily validated here: for a `NULL` argument, `build` skips
+        /// `getReturnTypeImpl` and hands over a `Nullable(Nothing)` result, with any number of arguments of
+        /// any type. A non-constant interval is left with an unknown length, which cannot be proven to fit.
+        std::optional<Date32RoundingNarrowing> date32_narrowing;
+        const auto * interval_type = args.size() >= 2 ? checkAndGetDataType<DataTypeInterval>(args[1].type.get()) : nullptr;
+        if (interval_type)
+        {
+            const auto * interval_column = checkAndGetColumnConst<ColumnInt64>(args[1].column.get());
+            const Int64 num_units = interval_column ? interval_column->getValue<Int64>() : 0;
+            date32_narrowing = describeDate32RoundingNarrowing(return_type, interval_type->getKind(), num_units);
+        }
 
-        auto function = std::make_shared<FunctionToStartOfInterval>(overload, narrowing_result_family);
+        auto function = std::make_shared<FunctionToStartOfInterval>(overload, date32_narrowing);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
