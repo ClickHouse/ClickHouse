@@ -2181,13 +2181,16 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 }
 
 
-/// Whether the cast below can be probed against this target at all: it needs a target that
-/// `castColumnAccurateOrNull` accepts, so a failure against a target it does not accept says
-/// nothing about the values.
-static bool canProbeAccurateCastTo(const DataTypePtr & target_type)
+/// Whether applying the `CAST` of the key DAG straight to a constant of another type gives the same
+/// value as normalizing the constant to the key column's type first and then applying it. A
+/// `Dynamic` value keeps the type it was inserted with, so `CAST(CAST(x, 'Dynamic'), 'String')`
+/// renders `x` the way its own type does and the round trip can be skipped. Every other key type
+/// puts the value into its own value space first - `DateTime64(3)` keeps three fractional digits of a
+/// `DateTime64(6)` constant, and so does `Array(DateTime64(3))` for each element - so the direct
+/// `CAST` would render a value the key space does not hold.
+static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input_type)
 {
-    const DataTypePtr probe_type = removeLowCardinality(target_type);
-    return (probe_type->isNullable() || probe_type->canBeInsideNullable()) && canBeAccurateCastOrNullTarget(probe_type);
+    return isDynamic(removeLowCardinality(key_input_type));
 }
 
 
@@ -2324,14 +2327,15 @@ static bool convertColumnForDeterministicDag(
         if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
         {
             /// The round trip is not always possible - `String` -> `Dynamic` -> `String` - and the cast
-            /// above refuses such a target outright. Apply the `CAST` of the DAG directly then.
+            /// above refuses such a target outright. Apply the `CAST` of the DAG directly then, but only
+            /// for a key type where that is known to give the value the normalized round trip would.
             ///
-            /// When the target *can* be probed and the cast still failed, the constant simply is not
-            /// representable in the key column's type. Rendering it from its own type instead would put
-            /// it in a different value space - and this helper also transforms whole set columns, where
-            /// one such element would drag the representable ones along - so decline: the caller then
-            /// reads more instead of pruning by a value the key space does not hold.
-            if (!canProbeAccurateCastTo(dag.input_type) && try_apply_direct_cast_fast_path())
+            /// For every other key type the constant is either not representable in the key column's
+            /// type or the cast cannot be probed at all (`Array`, `Tuple`). Rendering it from its own
+            /// type instead would put it in a different value space - and this helper also transforms
+            /// whole set columns, where one such element would drag the representable ones along - so
+            /// decline: the caller then reads more instead of pruning by a value the key space does not hold.
+            if (isDirectCastEquivalentToNormalizedCast(dag.input_type) && try_apply_direct_cast_fast_path())
             {
                 out_transform_applied = true;
                 return true;
