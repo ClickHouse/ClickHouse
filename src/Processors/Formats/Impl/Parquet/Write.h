@@ -96,6 +96,10 @@ struct ColumnChunkIndexes
     /// Set to false when a non-null page has stats dropped (e.g. value exceeded max_statistics_size).
     /// When false, the column index must not be written because it would contain invalid bounds.
     bool column_index_valid = true;
+    /// Set to false when a page had to start in the middle of a record, which the offset index
+    /// cannot describe: its first_row_index addresses whole rows. Only a record too large to fit
+    /// the format's 32-bit page size does that.
+    bool offset_index_valid = true;
     parq::BloomFilterHeader bloom_filter_header;
     PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
