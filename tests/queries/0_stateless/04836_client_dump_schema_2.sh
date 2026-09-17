@@ -445,26 +445,29 @@ DROP TABLE ${DB}.zzz_cluster_merge_src;
 "
 rm -f "$WRAPPED_MERGE_DUMP_FILE"
 
-# Empty merge databases resolve to the owner under the replay's USE statement.
+# Empty merge databases resolve to the owner under the replay's USE statement. The source name has
+# to be unique server-wide: an empty database is ambiguous exactly when another database holds a
+# matching table, and a concurrent run of this file in its own database is such a namesake.
+EMPTYDB_SRC="zzz_merge_emptydb_src_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 EMPTYDB_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_emptydb.sql"
 $CLICKHOUSE_CLIENT -mq "
-CREATE TABLE ${DB}.zzz_merge_emptydb_src (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE VIEW ${DB}.aaa_merge_emptydb AS SELECT * FROM merge('', '^zzz_merge_emptydb_src\$');
+CREATE TABLE ${DB}.${EMPTYDB_SRC} (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW ${DB}.aaa_merge_emptydb AS SELECT * FROM merge('', '^${EMPTYDB_SRC}\$');
 "
 if $CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$EMPTYDB_DUMP_FILE" 2>"$ERR_FILE"; then
     EMPTYDB_READER_LINE=$(grep -n "CREATE VIEW ${DB}.aaa_merge_emptydb" "$EMPTYDB_DUMP_FILE" | head -1 | cut -d: -f1)
-    EMPTYDB_SRC_LINE=$(grep -n "CREATE TABLE ${DB}.zzz_merge_emptydb_src" "$EMPTYDB_DUMP_FILE" | head -1 | cut -d: -f1)
+    EMPTYDB_SRC_LINE=$(grep -n "CREATE TABLE ${DB}.${EMPTYDB_SRC}" "$EMPTYDB_DUMP_FILE" | head -1 | cut -d: -f1)
     if [ -n "$EMPTYDB_READER_LINE" ] && [ -n "$EMPTYDB_SRC_LINE" ] && [ "$EMPTYDB_SRC_LINE" -lt "$EMPTYDB_READER_LINE" ]; then
         echo 'OK: empty-database merge() resolves against the owning database'
     else
         echo 'FAIL: empty-database merge() did not order its source before its reader'
     fi
 else
-    echo 'FAIL: dump refused for the empty-database merge()'
+    echo "FAIL: dump refused for the empty-database merge(): $(cat "$ERR_FILE")"
 fi
 $CLICKHOUSE_CLIENT -mq "
 DROP TABLE ${DB}.aaa_merge_emptydb;
-DROP TABLE ${DB}.zzz_merge_emptydb_src;
+DROP TABLE ${DB}.${EMPTYDB_SRC};
 "
 rm -f "$EMPTYDB_DUMP_FILE"
 
