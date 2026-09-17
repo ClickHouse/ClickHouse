@@ -1684,7 +1684,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         auto format_ptr = make_input_format(*insert_stream);
 
         executor->start();
-        Int32 rows_count = 0;
+        UInt64 rows_count = 0;
         try
         {
             while (true)
@@ -1693,7 +1693,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
                 if (chunk.empty())
                     break;
 
-                rows_count += static_cast<Int32>(chunk.getNumRows());
+                rows_count += chunk.getNumRows();
                 executor->push(convert_arrays(std::move(chunk)));
             }
             executor->finish();
@@ -1755,9 +1755,12 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         else if (table_name.starts_with("`pg_catalog`."))
             table_name.erase(0, sizeof("`pg_catalog`.") - 1);
 
+        /// `COPY (query) TO STDOUT` is how libpq/pqxx stream result sets, so the inner query must see the
+        /// same emulated catalog surface as a plain `Query` message: strip the `pg_catalog.` qualifier so
+        /// the per-session catalog views are hit, and rewrite `pg_table_is_visible` into the search-path check.
         auto select_query = copy_query->subquery.empty()
             ? fmt::format("SELECT {} FROM {};", columns_to_select, table_name)
-            : copy_query->subquery;
+            : rewritePgTableIsVisible(removePgCatalogQualifier(copy_query->subquery));
         auto [ast, io] = executeQuery(select_query, query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pulling());
 
@@ -1794,7 +1797,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
         auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, output_header, query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
-        Int32 rows_count = 0;
+        UInt64 rows_count = 0;
         try
         {
             while (executor->pull(block))
@@ -1833,7 +1836,7 @@ PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const Str
 
                     message_transport->send(PostgreSQLProtocol::Messaging::CopyOutData(result_buf));
                 }
-                rows_count += static_cast<Int32>(materialized.rows());
+                rows_count += materialized.rows();
             }
             /// The buffer is finalized after each row above, but a result with no rows at all (for example a
             /// catalog probe for a table that does not exist) never enters the loop, and a `WriteBuffer` must
