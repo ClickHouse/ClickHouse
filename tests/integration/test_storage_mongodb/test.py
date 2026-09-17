@@ -755,6 +755,29 @@ def test_dates_casting(started_cluster):
         == "1999-02-28 11:23:16\t1999-02-28 11:23:16.000\t1999-02-28\t1999-02-28\n"
     )
 
+    # An `IN` list of `DateTime64` literals against a `DateTime` column is pushed down as `$in`.
+    # The constants are converted to the column's type with the list's type as the hint, which
+    # has to reach each element: without it the elements are bare decimals with no semantic type
+    # and the conversion throws `TYPE_MISMATCH`, failing the query instead of pushing it down.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime NOT IN (toDateTime64('1999-02-28 11:23:16', 3))"
+        )
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3), toDateTime64('2000-01-01 00:00:00', 3))"
+        )
+        == "1\n"
+    )
+
     node.query("DROP TABLE dates_table")
     dates_mongo_table.drop()
 

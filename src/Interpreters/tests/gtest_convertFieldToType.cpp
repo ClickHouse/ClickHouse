@@ -104,6 +104,37 @@ INSTANTIATE_TEST_SUITE_P(
     })
 );
 
+/// The source type hint has to reach the elements of a container, not only a scalar. `StorageMongoDB`
+/// converts the constants of `$in` / `$nin` with the literal's type as the hint, and an `IN` list
+/// arrives as `Array(DateTime64(3))`. The `Array` / `Tuple` / `Map` branches used to recurse with no
+/// hint at all, so each element was a bare `Decimal64` field with no semantic type, missed the
+/// `DateTime64` -> `DateTime` branch, and threw `TYPE_MISMATCH` - failing the whole query instead
+/// of pushing the predicate down. 2020-01-01 00:00:00 UTC is 1577836800 seconds.
+INSTANTIATE_TEST_SUITE_P(
+    ContainerElementsCarryTheHint,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "Array(DateTime64(3, 'UTC'))",
+            Field(Array{DecimalField<DateTime64>(DateTime64(1577836800000), 3)}),
+            "Array(DateTime('UTC'))",
+            Field(Array{Field(static_cast<UInt64>(1577836800))})
+        },
+        {
+            "Tuple(DateTime64(3, 'UTC'), String)",
+            Field(Tuple{DecimalField<DateTime64>(DateTime64(1577836800000), 3), Field(String("x"))}),
+            "Tuple(DateTime('UTC'), String)",
+            Field(Tuple{Field(static_cast<UInt64>(1577836800)), Field(String("x"))})
+        },
+        {
+            "Map(String, DateTime64(3, 'UTC'))",
+            Field(Map{Tuple{Field(String("k")), DecimalField<DateTime64>(DateTime64(1577836800000), 3)}}),
+            "Map(String, DateTime('UTC'))",
+            Field(Map{Tuple{Field(String("k")), Field(static_cast<UInt64>(1577836800))}})
+        },
+    })
+);
+
 /// A source type reaches `convertFieldToType` exactly as the caller declared it: `to_type` is
 /// unwrapped on the way in, the hint is not. `StorageMongoDB`'s predicate pushdown passes the
 /// literal's own result type, so `CAST(... AS Nullable(DateTime64))` arrives wrapped. Every

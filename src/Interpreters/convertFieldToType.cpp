@@ -226,6 +226,28 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 }
 
 
+/// The source type of one element of a container value, when the container's own source type is
+/// known: the nested type of an `Array`, or element `i` of a `Tuple`. An `IN` list arrives as a
+/// tuple literal converted to the set's array type, so a `Tuple` source is paired with an `Array`
+/// target as well. Null when the source type is not a container of a known shape, in which case
+/// the element is converted with no hint, as before.
+const IDataType * getElementTypeHint(const IDataType * container_hint, size_t i)
+{
+    if (!container_hint)
+        return nullptr;
+
+    if (const auto * array_hint = typeid_cast<const DataTypeArray *>(container_hint))
+        return array_hint->getNestedType().get();
+
+    if (const auto * tuple_hint = typeid_cast<const DataTypeTuple *>(container_hint))
+    {
+        const auto & elements = tuple_hint->getElements();
+        return i < elements.size() ? elements[i].get() : nullptr;
+    }
+
+    return nullptr;
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     /// `convertFieldToType` unwraps `to_type` but passes the source type as it was written, so a
@@ -659,7 +681,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_arr[i], element_type, getElementTypeHint(from_type_hint, i), format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -691,7 +713,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_tuple[i], element_type, getElementTypeHint(from_type_hint, i), format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -867,6 +889,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
+            const auto * map_hint = typeid_cast<const DataTypeMap *>(from_type_hint);
+            const IDataType * key_hint = map_hint ? map_hint->getKeyType().get() : nullptr;
+            const IDataType * value_hint = map_hint ? map_hint->getValueType().get() : nullptr;
+
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
@@ -883,12 +909,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, key_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, value_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
