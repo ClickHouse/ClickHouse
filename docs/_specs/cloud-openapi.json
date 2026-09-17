@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "/en/cloud/manage/openapi?referrer=openapi-1130983",
+      "url": "/cloud/manage/openapi?referrer=openapi-1130983",
       "email": "support@clickhouse.com"
     }
   },
@@ -22797,7 +22797,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /en/integrations/clickpipes/kafka#iam",
+            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/kafka#iam",
             "type": [
               "string",
               "null"
@@ -22903,7 +22903,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /en/integrations/clickpipes/kafka#iam",
+            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/kafka#iam",
             "type": [
               "string",
               "null"
@@ -22997,7 +22997,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /en/integrations/clickpipes/kafka#iam",
+            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/kafka#iam",
             "type": [
               "string",
               "null"
@@ -23245,7 +23245,7 @@
             ]
           },
           "url": {
-            "description": "Provide a path to the file(s) you want to ingest. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /en/integrations/clickpipes/object-storage#limitations",
+            "description": "Provide a path to the file(s) you want to ingest. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": "string",
             "example": "https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/**.ndjson.gz"
           },
@@ -23321,7 +23321,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /en/integrations/clickpipes/object-storage#authentication",
+            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/object-storage#authentication",
             "type": [
               "string",
               "null"
@@ -23337,7 +23337,7 @@
             "example": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
           },
           "path": {
-            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /en/integrations/clickpipes/object-storage#limitations",
+            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": [
               "string",
               "null"
@@ -23383,7 +23383,7 @@
             ]
           },
           "url": {
-            "description": "Provide a path to the file(s) you want to ingest. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /en/integrations/clickpipes/object-storage#limitations",
+            "description": "Provide a path to the file(s) you want to ingest. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": "string",
             "example": "https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/**.ndjson.gz"
           },
@@ -23459,7 +23459,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /en/integrations/clickpipes/object-storage#authentication",
+            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/object-storage#authentication",
             "type": [
               "string",
               "null"
@@ -23475,7 +23475,7 @@
             "example": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
           },
           "path": {
-            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /en/integrations/clickpipes/object-storage#limitations",
+            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": [
               "string",
               "null"
@@ -23541,7 +23541,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /en/integrations/clickpipes/object-storage#authentication",
+            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/object-storage#authentication",
             "type": [
               "string",
               "null"
@@ -23557,7 +23557,7 @@
             "example": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
           },
           "path": {
-            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /en/integrations/clickpipes/object-storage#limitations",
+            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": [
               "string",
               "null"
