@@ -1,10 +1,10 @@
 SET session_timezone = 'UTC';
 
--- `toDayOfWeek` is monotonic only inside a single day, so the factor transform that decides it has to
--- keep the day number exactly. `toDate` narrows the day number to `UInt16`, which aliases it modulo
--- 65536 on the extended carriers: `1970-01-01` (day 0) and `2149-06-07` (day 65536) got the same
--- factor, a key range spanning them was reported monotonic even though the weekday wraps inside it,
--- and the granule holding a matching Monday was pruned away.
+-- The factor transform that decides the monotonicity of `toDayOfWeek` has to keep the day number
+-- exactly. `toDate` and `toMonday` narrow it to `UInt16`, which aliases it modulo 65536 on the extended
+-- carriers: `1970-01-01` (day 0) and `2149-06-07` (day 65536) got the same factor, a key range spanning
+-- them was reported monotonic even though the weekday wraps inside it, and the granule holding a
+-- matching Monday was pruned away.
 
 DROP TABLE IF EXISTS t_day_of_week_date32;
 

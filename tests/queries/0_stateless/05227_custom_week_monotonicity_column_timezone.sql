@@ -16,6 +16,18 @@ SELECT countIf(toStartOfWeek(dt) = toDate('2026-08-09')), count() FROM t_week_tz
 
 DROP TABLE t_week_tz;
 
+-- `toWeek` restarts its numbering at the start of the year, so it is monotonic only inside one year - of
+-- the column's time zone. Every row below is on 2025-12-31 in UTC, while Tokyo is nine hours ahead and
+-- enters 2026 at 15:00 UTC, where `toWeek` drops from 52 to 0.
+
+CREATE TABLE t_week_tz (dt DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY dt;
+INSERT INTO t_week_tz SELECT toDateTime('2025-12-31 10:00:00', 'UTC') + (3600 * number) FROM numbers(11);
+
+SELECT countIf(toWeek(dt) = 52), count() FROM t_week_tz WHERE toWeek(dt) = 52;
+SELECT countIf(toWeek(dt) = 0), count() FROM t_week_tz WHERE toWeek(dt) = 0;
+
+DROP TABLE t_week_tz;
+
 -- The same data in a column whose time zone is the session one is unaffected.
 
 CREATE TABLE t_week_tz (dt DateTime('UTC')) ENGINE = MergeTree ORDER BY dt;
