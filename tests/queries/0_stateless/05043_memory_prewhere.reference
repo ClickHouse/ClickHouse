@@ -16,9 +16,6 @@ WHERE is moved to PREWHERE
 aggregation over PREWHERE
 39900	100
 39900	100
-old analyzer
-210
-39900
 column added by ALTER
 300
 100

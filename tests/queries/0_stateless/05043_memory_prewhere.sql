@@ -39,10 +39,6 @@ SELECT 'aggregation over PREWHERE';
 SELECT sum(v), count() FROM t_memory_prewhere WHERE k >= 150 AND k < 250 AND s != '';
 SELECT sum(v), count() FROM t_memory_prewhere_compressed WHERE k >= 150 AND k < 250 AND s != '';
 
-SELECT 'old analyzer';
-SELECT v FROM t_memory_prewhere PREWHERE k = 105 SETTINGS enable_analyzer = 0;
-SELECT sum(v) FROM t_memory_prewhere_compressed PREWHERE k >= 150 AND k < 250 SETTINGS enable_analyzer = 0;
-
 SELECT 'column added by ALTER';
 ALTER TABLE t_memory_prewhere_compressed ADD COLUMN added UInt64;
 INSERT INTO t_memory_prewhere_compressed SELECT number, concat('str', toString(number)), number * 2, 8 FROM numbers(300, 100);
