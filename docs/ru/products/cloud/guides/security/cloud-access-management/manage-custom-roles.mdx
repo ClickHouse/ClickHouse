@@ -8,7 +8,6 @@ keywords: ['пользовательские роли', 'безопасност�
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Это руководство предназначено для пользователей с ролью Admin в ClickHouse Cloud.
 
@@ -66,21 +65,19 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   </Step>
 </Steps>
 
-## Управление ролями базы данных (бета) {#manage-database-roles}
-
-<BetaBadge />
+## Управление ролями базы данных {#manage-database-roles}
 
 Помимо разрешений консоли, пользовательские роли могут включать политику `Data`, определяющую доступ к базам данных выбранных сервисов. Это позволяет управлять доступом к консоли и базам данных в одном месте, не поддерживая отдельные роли в каждой базе данных.
 
 <Note>
-  Эта возможность находится на стадии бета-тестирования и доступна для сервисов с ClickHouse версии 26.4 и выше.
+  Эта возможность доступна для сервисов с ClickHouse версии 26.4 и выше.
 </Note>
 
 Когда вы добавляете политику `Data` в пользовательскую роль, ClickHouse Cloud создает соответствующую роль в каждом выбранном сервисе с префиксом `cloud:`. Например, пользовательская роль с именем `readonly` отображается в базе данных как `cloud:readonly`. Участники пользовательской роли получают эти разрешения базы данных при подключении к сервису через беспарольную аутентификацию в SQL Console.
 
-<Tip>
-  Роли баз данных, управляемые Cloud, заменяют вручную назначенные роли [`sql-console-role:<email>`](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles), которые несовместимы с [JWT-аутентификацией](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
-</Tip>
+<Warning>
+  Роли баз данных, управляемые Cloud, заменяют вручную назначенные роли [`sql-console-role:<email>`](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles), которые несовместимы с JWT-сеансами в SQL Console.
+</Warning>
 
 ### Предварительные требования {#manage-database-roles-prerequisites}
 

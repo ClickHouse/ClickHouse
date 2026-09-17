@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-17T19:59:58.062Z",
+          "updatedAt": "2026-09-17T20:21:18.482Z",
           "fileName": "docs.json",
           "postProcessHash": "e929099e895afcb18062477175bc6976d375395c4eed21740c66f74bbf113be9"
         },
         "ja": {
-          "updatedAt": "2026-09-17T19:59:56.726Z",
+          "updatedAt": "2026-09-17T20:21:17.681Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-17T19:59:57.420Z",
+          "updatedAt": "2026-09-17T20:21:18.086Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-17T19:59:57.648Z",
+          "updatedAt": "2026-09-17T20:21:18.216Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-17T19:59:57.195Z",
+          "updatedAt": "2026-09-17T20:21:17.952Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-17T19:59:56.956Z",
+          "updatedAt": "2026-09-17T20:21:17.817Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-17T19:59:56.429Z",
+          "updatedAt": "2026-09-17T20:21:17.533Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-17T19:59:57.875Z",
+          "updatedAt": "2026-09-17T20:21:18.349Z",
           "fileName": "docs.json"
         }
       },
@@ -31013,51 +31013,50 @@
     },
     {
       "fileId": "fc15594b85c81057f19678993f9ecc89e285a8089c77d25597f4430b544225c9",
-      "versionId": "d996e0320663ed591b9a5b73f859f9c3c38be29c581c8f589c21d4087ddd23a7",
+      "versionId": "74ca8facfd7a22d0c3396ee760a7d2837dd4d10a623dae1768e69be2eee45bf8",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.368Z",
-          "fileName": "es/concepts/features/interfaces/arrowflight.mdx",
-          "postProcessHash": "ff1cb6187b6035e9390e9ae570bd34ff91476115c75f672c7ccf8057bfbc5af8"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.368Z",
-          "fileName": "ja/concepts/features/interfaces/arrowflight.mdx",
-          "postProcessHash": "ea6d6062aa1ae858ec2d573a60759f8be9cd6a0fe840eeda130c3eead96ef7a8"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.368Z",
-          "fileName": "ko/concepts/features/interfaces/arrowflight.mdx",
-          "postProcessHash": "2fa8cec1415d7c9385001c64b75ce3e780b9542afa5fd21695add76a11ef3048"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.369Z",
-          "fileName": "pt-BR/concepts/features/interfaces/arrowflight.mdx",
-          "postProcessHash": "bdd33cf8337735a9379c772e33732a452ed542532d578be36b2caac0eef2d990"
+        "zh": {
+          "updatedAt": "2026-09-17T20:21:21.839Z",
+          "fileName": "zh/concepts/features/interfaces/arrowflight.mdx",
+          "postProcessHash": "ba96a20ff738ce9391de6dee7cf01343c15040a17b9fbb5f301af2175c1629b7"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.369Z",
+          "updatedAt": "2026-09-17T20:21:21.839Z",
           "fileName": "ru/concepts/features/interfaces/arrowflight.mdx",
-          "postProcessHash": "7976baf96400e96ab4634a43f8156354c4660f3a5210885044ce9179d52adf9a"
+          "postProcessHash": "5571a77c6cd3d42fdfdc157c3bba355ff01de5604b5ea871da227c671fb83ab7"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.369Z",
-          "fileName": "zh/concepts/features/interfaces/arrowflight.mdx",
-          "postProcessHash": "abb1e03b64914e8a5ad7642aceaede915626be96244ca8ddb26e90390a814c20"
+        "pt-BR": {
+          "updatedAt": "2026-09-17T20:21:21.840Z",
+          "fileName": "pt-BR/concepts/features/interfaces/arrowflight.mdx",
+          "postProcessHash": "828717836805f1a8b841e9525c79241125a812d0f35864930ad7cef2b3b4bfa7"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.369Z",
-          "fileName": "ar/concepts/features/interfaces/arrowflight.mdx",
-          "postProcessHash": "54ef1de1db55cf90e4051615b55f7bece1bbd206f0d535dcb49c6ac01ca8915e"
+        "es": {
+          "updatedAt": "2026-09-17T20:21:21.840Z",
+          "fileName": "es/concepts/features/interfaces/arrowflight.mdx",
+          "postProcessHash": "4767b88180e9459f9e9d01766cbe12e0cdc3323d5482e4b410f96fd6f96922ee"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.369Z",
+          "updatedAt": "2026-09-17T20:21:21.841Z",
           "fileName": "fr/concepts/features/interfaces/arrowflight.mdx",
-          "postProcessHash": "85ea80cfc0e8b6f6f6481c119c48c7c012a4d2d737087ae34408fca001d4c011"
+          "postProcessHash": "2c383d2fa84b422eda4451287caff3d4abe9906b40254eddf8304f070eb91a5a"
+        },
+        "ko": {
+          "updatedAt": "2026-09-17T20:21:21.841Z",
+          "fileName": "ko/concepts/features/interfaces/arrowflight.mdx",
+          "postProcessHash": "6598d2e91cc34a6af3594d8a59f00a3cea4ab510a2a4cf1df8fbef2f64d6fea4"
+        },
+        "ja": {
+          "updatedAt": "2026-09-17T20:21:21.842Z",
+          "fileName": "ja/concepts/features/interfaces/arrowflight.mdx",
+          "postProcessHash": "38a82538feaa8b26a938fb89d0e95dc1e714bd3b2cc84616c9cb5dc8ff80c170"
+        },
+        "ar": {
+          "updatedAt": "2026-09-17T20:21:21.842Z",
+          "fileName": "ar/concepts/features/interfaces/arrowflight.mdx",
+          "postProcessHash": "a3e7bf6117de3fe68e57714e89d93a5cd16a0a6cf6d8bdbca8bcdb15a7057847"
         }
       },
-      "fileName": "concepts/features/interfaces/arrowflight.mdx",
-      "staged": false
+      "fileName": "concepts/features/interfaces/arrowflight.mdx"
     },
     {
       "fileId": "97dba0d3e79efb1f4b2cd1b0c9005eeb851f843bb462649beedd5d00c4e5b36f",
@@ -99196,47 +99195,47 @@
     },
     {
       "fileId": "c5e0cdf93b369c31bd2022c2f630a1bcdb3ea9c6893eec4e17dcecef1dbc651c",
-      "versionId": "4b919b9080aec8a96b362ec8bc4f7d2425155793ce7833fa714a88db14247c6f",
+      "versionId": "19a776166d999af01705ef8d2df784edaebc692dd0a3a5dd711fe0cf0baa3750",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-26T23:12:58.643Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "c28d77f0fd17a2665edd8c60e2f718c6b1fdfaaa5a53d4cec259156ae9ad7afa"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T23:12:58.647Z",
-          "fileName": "ja/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "29b69648493042861f0e4e56f7bfc594c16dc45817b8cce2dc0d66d27fd9d4ae"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T23:12:58.649Z",
-          "fileName": "fr/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "a954e4101adcb5ecd8cfa1c695d14af743f7a674f850e67eb019a935579d67d4"
-        },
         "ru": {
-          "updatedAt": "2026-08-26T23:12:58.653Z",
+          "updatedAt": "2026-09-17T20:21:21.828Z",
           "fileName": "ru/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "24e2f75660638775bb41865228c0866596128c327f8540baf745d5551f9edf84"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T23:12:58.654Z",
-          "fileName": "zh/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "ab45f7749a0c90da97b661b6bd08d1c28a216d9e243d13fb762f99bc60ffbfac"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T23:12:58.655Z",
-          "fileName": "ko/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "889bd96748e45f3ab6813ab46e80debe012a0db72db9a0050ac450f3f59803e4"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T23:12:58.657Z",
-          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "a9579e8c8e49c499afe897ab0e829a41b2e35a531547cb86034d1341c077b430"
+          "postProcessHash": "8def08e80fa6bcbdfa8498d8b6744659aed4b8eebe91eab0a1fb3938c592baf4"
         },
         "ar": {
-          "updatedAt": "2026-08-26T23:12:58.683Z",
+          "updatedAt": "2026-09-17T20:21:21.828Z",
           "fileName": "ar/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
-          "postProcessHash": "40925e3d5db1bd704c7ce5cfe533fdcc8948d4e5984d0eedc522bc9a1a5ec205"
+          "postProcessHash": "88f1ff1c76b236b2d6e95414f8b3ba0e821f8d42a0c560397c46ea68bb4dad60"
+        },
+        "fr": {
+          "updatedAt": "2026-09-17T20:21:21.832Z",
+          "fileName": "fr/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "9c1fa16f80b93f0534c0c747139861d9e1040756c99dab9481b4112509911094"
+        },
+        "es": {
+          "updatedAt": "2026-09-17T20:21:21.833Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "a0e293c341f94c9c4733765adbb8a3f6ff0f7206caecb3ddc62cf71872f45a60"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-17T20:21:21.833Z",
+          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "2f1d77bfd688fec15e9197c3056b68014b29626cebf43fca4e597b33dfea33aa"
+        },
+        "ko": {
+          "updatedAt": "2026-09-17T20:21:21.834Z",
+          "fileName": "ko/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "915e68356bef9afc3784e794949a1cf0aeb304b07fb28043439807e16b554995"
+        },
+        "ja": {
+          "updatedAt": "2026-09-17T20:21:21.834Z",
+          "fileName": "ja/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "d322dec1677fbc6394ff5ea5d8ad5488c11ce84bc0594525ca67f503554a0dc1"
+        },
+        "zh": {
+          "updatedAt": "2026-09-17T20:21:21.839Z",
+          "fileName": "zh/products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx",
+          "postProcessHash": "af8f99acb9bcf648800e87ea385436efeb771e3fbad790b1cb7e1cc68b74b990"
         }
       },
       "fileName": "products/cloud/guides/security/cloud-access-management/common-access-management-queries.mdx"
@@ -99338,47 +99337,47 @@
     },
     {
       "fileId": "3fc1e975ebc4cb9c2746adc2fb844e9954e1db503a356c1e5a8bd691577e8f90",
-      "versionId": "71f6823abf730642d53465b9ac923cc6770627bf73ede607db4e6ba90229260d",
+      "versionId": "27fa04608193f35d3b03c891d4f8f250bb81a0e20f74e34b461f3f5225b0e187",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:44.100Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "a2801901745fa1090df3fb185c238057d9c8c935a4b92dab8ea312237ca5fcec"
+        "pt-BR": {
+          "updatedAt": "2026-09-17T20:21:21.829Z",
+          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
+          "postProcessHash": "8dc4d8f6d5959085946356a588f96efffcbc4e674c25b0d54d67effabf88515d"
         },
         "ja": {
-          "updatedAt": "2026-09-15T11:36:44.100Z",
+          "updatedAt": "2026-09-17T20:21:21.829Z",
           "fileName": "ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "22fd97aaf4eeb5a2ad1ac751cb83c70abe5d7baf16e42273c88d9a92b6c7addb"
+          "postProcessHash": "5cdeaeddcdf8c80be37719e2bad997d1f27470af9caf80d019b5bd5519211fec"
         },
         "ko": {
-          "updatedAt": "2026-09-15T11:36:44.101Z",
+          "updatedAt": "2026-09-17T20:21:21.831Z",
           "fileName": "ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "468d9e2d5a49991b62c5fbbd62606ebf8dbd42368cffb7af9ad01122702de5c0"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:44.101Z",
-          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "346340708b68a0602a42a6cc86752dc422ac17b7bfda235658629ae1f0531f37"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:44.101Z",
-          "fileName": "ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "73b4986f2fb99b23d3d064c46593d02af7608424feedeb4b3f62cdcb1865b342"
+          "postProcessHash": "cdb612cead62d1cce0b32f78542b9771d7da383dc8dfbe10594fefe12caef9cb"
         },
         "zh": {
-          "updatedAt": "2026-09-15T11:36:44.102Z",
+          "updatedAt": "2026-09-17T20:21:21.832Z",
           "fileName": "zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "f56a46cdc539f2e7003e4c91112de9d378a36efbb2928d3ad4d5881aaa69e423"
-        },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:44.102Z",
-          "fileName": "ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "dce94b2650d7b2ee1be923e28b7b489730f96de899cc72ab106d5f43755bab06"
+          "postProcessHash": "a48bf5b2a39f0bbcca1f105df1155385b0c22924e876e4a19ac78ce35c337190"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:44.102Z",
+          "updatedAt": "2026-09-17T20:21:21.833Z",
           "fileName": "fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
-          "postProcessHash": "1b6cc507106851ad28f022eaa76b1746822b818cef422237fb8baee812b9ac18"
+          "postProcessHash": "d9197d9dbfa1fb03c16b56277e094b7627d756f4eb1c6907c60a08e5348398b5"
+        },
+        "ru": {
+          "updatedAt": "2026-09-17T20:21:21.835Z",
+          "fileName": "ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
+          "postProcessHash": "fb2baeebc50ab37dd64cf9142edb277dc64a590d83f4b5f461a08ee8580b33e6"
+        },
+        "ar": {
+          "updatedAt": "2026-09-17T20:21:21.835Z",
+          "fileName": "ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
+          "postProcessHash": "0559c25a9aee4fb12cbda36091f5569beb18ff3178807ed7b6f4240fb2cbd126"
+        },
+        "es": {
+          "updatedAt": "2026-09-17T20:21:21.835Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx",
+          "postProcessHash": "9a009167735a8fcc03773d39a152c8c2c9c83d2e041f745f67c5976195d414aa"
         }
       },
       "fileName": "products/cloud/guides/security/cloud-access-management/manage-custom-roles.mdx"
@@ -99433,47 +99432,47 @@
     },
     {
       "fileId": "5671c2726fa333b338a8b94a8ee6897e69d589383cfbf5fd8e6c96413ca857f0",
-      "versionId": "ef08ed36c4dfa48dbdab107b467b4fcca26baf7a7462b29676496a731d9feeb6",
+      "versionId": "3d5fe1769212792e9fe91790278f2d3205a8e21b711ab9a7081c420c8c1f9109",
       "translations": {
         "es": {
-          "updatedAt": "2026-09-15T11:36:44.104Z",
+          "updatedAt": "2026-09-17T20:21:21.834Z",
           "fileName": "es/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "d42bf7dc2af594398c5d323229f91388cd6a4b20388384d0f074cfb626757ca0"
+          "postProcessHash": "ec2db2dea3db9997fcf893cf3b0802feeca46f8c9e9b86db30bb76641ac98974"
         },
         "ja": {
-          "updatedAt": "2026-09-15T11:36:44.104Z",
+          "updatedAt": "2026-09-17T20:21:21.836Z",
           "fileName": "ja/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "3829fb146aab348fd467cb9cb853db6791ee9b1314aa31c1ff9ca3f50f6fbc73"
+          "postProcessHash": "b6c0e363ca0b6a7673f157ba909cb1825b679a2ad5794187195d02af851a8316"
         },
         "ko": {
-          "updatedAt": "2026-09-15T11:36:44.104Z",
+          "updatedAt": "2026-09-17T20:21:21.836Z",
           "fileName": "ko/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "57e7bc10685431d1e1f50b3d3c5415735e77df7b604a12b102ecad2823e09825"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:44.104Z",
-          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "8f4212310adb0fd43bcd26c7b36035002482135e5e82febc6578aa44d9b15919"
+          "postProcessHash": "5e532f196cf000be4edd70e96e73e50646607c6c57816c93137b8f66da0f9d78"
         },
         "ru": {
-          "updatedAt": "2026-09-15T11:36:44.105Z",
+          "updatedAt": "2026-09-17T20:21:21.837Z",
           "fileName": "ru/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "0a8c534e6b148e785defedcae86974f25a9d48096899df13909461414e95fd6e"
-        },
-        "zh": {
-          "updatedAt": "2026-09-15T11:36:44.105Z",
-          "fileName": "zh/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "4f74586de2b51014b9aa410987d5583c393e0b9cbdcab8ff86fbc6691a5fb159"
+          "postProcessHash": "600717a2f4bea1033aa111c6ad4797c7d93a9af51fd48cc0a063284c050da8cb"
         },
         "ar": {
-          "updatedAt": "2026-09-15T11:36:44.105Z",
+          "updatedAt": "2026-09-17T20:21:21.837Z",
           "fileName": "ar/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "6d7b9b7d12873b017667bfac940700e785b5757e36e44218d02cca7543c59008"
+          "postProcessHash": "c6d1420214ec99739f5a2393027690b5afbdbeb5cbc773a74f053a4118cce5b2"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-17T20:21:21.837Z",
+          "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
+          "postProcessHash": "319b3f363bfd5aebe7e26a62ab442fb87691c16287a4749574e3d26e06e49dab"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:44.106Z",
+          "updatedAt": "2026-09-17T20:21:21.838Z",
           "fileName": "fr/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
-          "postProcessHash": "f1b38156d4602892aa573e9ab702e21f21b1bcf525cd2769c2b5b96b9cf0b0dc"
+          "postProcessHash": "e704d33abef9554c346e60bb60404bfd8c8bec73104f7a33317ec4d18777ca97"
+        },
+        "zh": {
+          "updatedAt": "2026-09-17T20:21:21.838Z",
+          "fileName": "zh/products/cloud/guides/security/cloud-access-management/manage-database-users.mdx",
+          "postProcessHash": "546fcbf1427b99fd3f0a5adf981890b0de66d04e0c697ba3a1623bf25cde1cd0"
         }
       },
       "fileName": "products/cloud/guides/security/cloud-access-management/manage-database-users.mdx"
@@ -134818,47 +134817,47 @@
     },
     {
       "fileId": "525232c2f0aececd1cb5ed1ac736c0abf52b0840b083f7b6ee9128c00a1b9769",
-      "versionId": "2614b81d15f7cd3b94a15f5c09c0f5fb3969f63918a1b763fc5662e9e6053b08",
+      "versionId": "0803d965535c8ceb9ef835c1aaba598900637d5cf940932db39ab1bc478f84dc",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-08-26T23:12:58.640Z",
-          "fileName": "zh/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "8848820fe2b2c3701b37ca96020c72df7748ccdbac3040069a127ea6110ee6f7"
-        },
-        "es": {
-          "updatedAt": "2026-08-26T23:12:58.646Z",
-          "fileName": "es/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "a1edd4b832c86f17a3a84150d8f1e88babc1c0ff2e1fe8818e3aa71bb7e7e199"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T23:12:58.650Z",
-          "fileName": "ko/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "b18e6041bdbcaa5714198b4a719a6053f10ac032ff28396c8c04797720064f00"
-        },
-        "fr": {
-          "updatedAt": "2026-08-26T23:12:58.651Z",
-          "fileName": "fr/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "8d998f2006a24d94a5e03729caf20eb51ec140940bf40b5e7797188dc438090d"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T23:12:58.658Z",
-          "fileName": "ar/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "56dfca02306217115b2ad251adf7ffe58f3f0241b14d6cc27246942d007e3114"
+        "pt-BR": {
+          "updatedAt": "2026-09-17T20:21:21.830Z",
+          "fileName": "pt-BR/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "e7940b83e289e49ca719f5115b829cc5938b59b13e84c0650357d9f6a1bfe262"
         },
         "ja": {
-          "updatedAt": "2026-08-26T23:12:58.662Z",
+          "updatedAt": "2026-09-17T20:21:21.830Z",
           "fileName": "ja/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "b9d549c599fdbc38885283ed8146050b258a1c84635de14b573b2b30c63a47ca"
+          "postProcessHash": "1d3a3cb0759ef8a5edae51ae514e6df722f92e85be790f7f75788711ed7bbe81"
         },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T23:12:58.674Z",
-          "fileName": "pt-BR/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "fdf8980cc5a466350649ace30cc2a45f42dbab5fcbdd4e251470940af8eebee9"
+        "zh": {
+          "updatedAt": "2026-09-17T20:21:21.831Z",
+          "fileName": "zh/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "e061f221fa0086a319aa2142965d4946e839e65059a9ac3969edd1d06ca57c57"
+        },
+        "ko": {
+          "updatedAt": "2026-09-17T20:21:21.831Z",
+          "fileName": "ko/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "8e71561f825d804d6324730e4d1be7f03824cfb24fe3cdb7a37d8c7c6aa6baed"
         },
         "ru": {
-          "updatedAt": "2026-08-26T23:12:58.684Z",
+          "updatedAt": "2026-09-17T20:21:21.834Z",
           "fileName": "ru/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
-          "postProcessHash": "16cc4b1d8f2954402fbc37adff852a7a55ff344f0928a7d8ace0ca5c0d505c77"
+          "postProcessHash": "3091fa54e5a6d91a460a3514952ca5a686f27b11550ef25ddf1e6746d9c0ba14"
+        },
+        "es": {
+          "updatedAt": "2026-09-17T20:21:21.836Z",
+          "fileName": "es/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "6234153d7329952912c4cfd2bd9acaf72f1ab17b5d6d4bed6bef8b4a04428e4c"
+        },
+        "fr": {
+          "updatedAt": "2026-09-17T20:21:21.838Z",
+          "fileName": "fr/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "8fd25be10004246dcd10427f803aa515d0ae9f6719b964cd370930240fefc73d"
+        },
+        "ar": {
+          "updatedAt": "2026-09-17T20:21:21.838Z",
+          "fileName": "ar/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx",
+          "postProcessHash": "4880c11bf3319d11b70c0a8c3e778afb6cca689ff12c7927f3bdcb12138290a3"
         }
       },
       "fileName": "resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console.mdx"

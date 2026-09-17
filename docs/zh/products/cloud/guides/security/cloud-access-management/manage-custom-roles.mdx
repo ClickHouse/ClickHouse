@@ -8,7 +8,6 @@ keywords: ['自定义角色', '安全', '权限']
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 本指南适用于在 ClickHouse Cloud 中拥有 Admin 角色的用户。
 
@@ -66,21 +65,19 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
   </Step>
 </Steps>
 
-## 管理数据库角色 (Beta) {#manage-database-roles}
-
-<BetaBadge />
+## 管理数据库角色 {#manage-database-roles}
 
 除控制台权限外，自定义角色还可包含 `Data` 策略，以控制对所选服务中数据库的访问。这样，您可以在一个位置管理控制台和数据库访问权限，无需在每个数据库中分别维护角色。
 
 <Note>
-  此功能目前处于 Beta 阶段，适用于运行 ClickHouse 26.4 及更高版本的服务。
+  此功能适用于运行 ClickHouse 26.4 及更高版本的服务。
 </Note>
 
 向自定义角色添加 `Data` 策略时，ClickHouse Cloud 会在每个所选服务中创建一个对应的角色，并添加 `cloud:` 前缀。例如，名为 `readonly` 的自定义角色会在数据库中显示为 `cloud:readonly`。自定义角色的成员通过 SQL 控制台的免密码身份验证连接到服务时，将获得这些数据库权限。
 
-<Tip>
-  Cloud 托管的数据库角色会替代手动分配的 [`sql-console-role:<email>`](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 角色；后者与 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) 不兼容。
-</Tip>
+<Warning>
+  Cloud 托管的数据库角色会替代手动分配的 [`sql-console-role:<email>`](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 角色；后者与 SQL 控制台中的 JWT 会话不兼容。
+</Warning>
 
 ### 前置条件 {#manage-database-roles-prerequisites}
 

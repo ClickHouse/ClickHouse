@@ -8,7 +8,6 @@ keywords: ['カスタムロール', 'セキュリティ', '権限']
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 このガイドは、ClickHouse Cloud で Admin ロールを持つユーザーを対象としています。
 
@@ -66,21 +65,19 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   </Step>
 </Steps>
 
-## データベースロールを管理する (ベータ) {#manage-database-roles}
-
-<BetaBadge />
+## データベースロールを管理する {#manage-database-roles}
 
 コンソールの権限に加え、カスタムロールには、選択したサービスのデータベースへのアクセスを制御する `Data` ポリシーを含めることができます。これにより、各データベースで個別にロールを管理する代わりに、コンソールとデータベースへのアクセスを一元管理できます。
 
 <Note>
-  この機能はベータ版であり、ClickHouse バージョン 26.4 以降を実行しているサービスで利用できます。
+  この機能は、ClickHouse バージョン 26.4 以降を実行しているサービスで利用できます。
 </Note>
 
 カスタムロールに `Data` ポリシーを追加すると、ClickHouse Cloud は選択した各サービスに、`cloud:` をプレフィックスとする対応するロールを作成します。たとえば、`readonly` というカスタムロールは、データベースでは `cloud:readonly` として表示されます。カスタムロールのメンバーは、SQL コンソールのパスワードレス認証を使用してサービスに接続すると、これらのデータベースの権限を取得します。
 
-<Tip>
-  Cloud 管理のデータベースロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)と互換性のない、手動で割り当てられた [`sql-console-role:<email>`](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) ロールに代わるものです。
-</Tip>
+<Warning>
+  Cloud 管理のデータベースロールは、SQL コンソール内の JWT セッションと互換性のない、手動で割り当てられた [`sql-console-role:<email>`](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) ロールに代わるものです。
+</Warning>
 
 ### 前提条件 {#manage-database-roles-prerequisites}
 

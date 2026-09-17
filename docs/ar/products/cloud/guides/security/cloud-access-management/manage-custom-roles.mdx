@@ -8,7 +8,6 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذا الدليل مخصص للمستخدمين الذين لديهم دور Admin في ClickHouse Cloud.
 
@@ -66,21 +65,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   </Step>
 </Steps>
 
-## إدارة أدوار قاعدة البيانات (Beta) {#manage-database-roles}
-
-<BetaBadge />
+## إدارة أدوار قاعدة البيانات {#manage-database-roles}
 
 بالإضافة إلى أذونات Console، يمكن أن تتضمن الأدوار المخصصة سياسة `Data` تتحكم في الوصول إلى قواعد بيانات الخدمات المحددة. يتيح لك ذلك إدارة الوصول إلى Console وقواعد البيانات من مكان واحد بدلًا من إدارة أدوار منفصلة في كل قاعدة بيانات.
 
 <Note>
-  هذه الميزة في مرحلة Beta، وهي متاحة للخدمات التي تعمل بإصدار ClickHouse 26.4 أو أحدث.
+  هذه الميزة متاحة للخدمات التي تعمل بإصدار ClickHouse 26.4 أو أحدث.
 </Note>
 
 عند إضافة سياسة `Data` إلى دور مخصص، ينشئ ClickHouse Cloud دورًا مطابقًا في كل خدمة محددة، مع البادئة `cloud:`. على سبيل المثال، يظهر الدور المخصص المسمى `readonly` في قاعدة البيانات باسم `cloud:readonly`. يحصل أعضاء الدور المخصص على أذونات قاعدة البيانات هذه عند اتصالهم بالخدمة عبر المصادقة من دون كلمة مرور في SQL Console.
 
-<Tip>
-  تحل أدوار قاعدة البيانات التي يديرها Cloud محل أدوار [`sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) المعيّنة يدويًا، وهي غير متوافقة مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
-</Tip>
+<Warning>
+  تحل أدوار قاعدة البيانات التي يديرها Cloud محل أدوار [`sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) المعيّنة يدويًا، وهي غير متوافقة مع جلسات JWT داخل SQL Console.
+</Warning>
 
 ### المتطلبات الأساسية {#manage-database-roles-prerequisites}
 

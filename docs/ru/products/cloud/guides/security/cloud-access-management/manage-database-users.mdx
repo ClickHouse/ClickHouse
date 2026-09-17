@@ -22,7 +22,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Базовые роли консоли SQL можно назначать пользователям с разрешениями Service Read Only и Service Admin. Подробнее см. в разделе [Управление пользователями Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). В этом руководстве показано, как создать пользовательскую роль для пользователя консоли SQL.
 
 <Tip>
-  Предпочтительно используйте [роли базы данных, управляемые Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (бета) для управления доступом к базе данных из консоли. Роли `sql-console-role:<email>` несовместимы с [JWT-аутентификацией](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+  Предпочтительно используйте [роли базы данных, управляемые Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) для управления доступом к базе данных из консоли. Роли `sql-console-role:<email>` несовместимы с JWT-сеансами в консоли SQL.
 </Tip>
 
 Чтобы создать пользовательскую роль для пользователя консоли SQL и назначить ей роль общего назначения, выполните следующие команды. Адрес электронной почты должен совпадать с адресом электронной почты пользователя в консоли.

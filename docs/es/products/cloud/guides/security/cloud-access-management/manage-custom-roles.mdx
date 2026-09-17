@@ -8,7 +8,6 @@ keywords: ['roles personalizados', 'seguridad', 'permisos']
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Esta guía está dirigida a usuarios con el rol Admin en ClickHouse Cloud.
 
@@ -66,21 +65,19 @@ Los roles personalizados pueden incluir una combinación de permisos de organiza
   </Step>
 </Steps>
 
-## Administrar roles de base de datos (beta) {#manage-database-roles}
-
-<BetaBadge />
+## Administrar roles de base de datos {#manage-database-roles}
 
 Además de los permisos de la consola, los roles personalizados pueden incluir una política `Data` que controla el acceso a las bases de datos de los servicios seleccionados. Esto permite administrar el acceso a la consola y a las bases de datos desde un único lugar, en vez de mantener roles independientes en cada base de datos.
 
 <Note>
-  Esta función se encuentra en beta y está disponible para servicios que ejecutan ClickHouse versión 26.4 o posterior.
+  Esta función está disponible para servicios que ejecutan ClickHouse versión 26.4 o posterior.
 </Note>
 
 Al añadir una política `Data` a un rol personalizado, ClickHouse Cloud crea un rol correspondiente en cada servicio seleccionado con el prefijo `cloud:`. Por ejemplo, un rol personalizado llamado `readonly` aparece en la base de datos como `cloud:readonly`. Los miembros del rol personalizado reciben estos permisos de base de datos al conectarse al servicio mediante la autenticación sin contraseña de SQL Console.
 
-<Tip>
-  Los roles de base de datos administrados por Cloud sustituyen los roles [`sql-console-role:<email>`](/es/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) asignados manualmente, que no son compatibles con la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
-</Tip>
+<Warning>
+  Los roles de base de datos administrados por Cloud sustituyen los roles [`sql-console-role:<email>`](/es/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) asignados manualmente, que no son compatibles con las sesiones JWT dentro de SQL Console.
+</Warning>
 
 ### Requisitos previos {#manage-database-roles-prerequisites}
 

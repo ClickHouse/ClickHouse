@@ -8,7 +8,6 @@ keywords: ['사용자 지정 역할', '보안', '권한']
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이 가이드는 ClickHouse Cloud에서 관리자 역할을 가진 사용자를 대상으로 합니다.
 
@@ -66,21 +65,19 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
   </Step>
 </Steps>
 
-## 데이터베이스 역할 관리(베타) {#manage-database-roles}
-
-<BetaBadge />
+## 데이터베이스 역할 관리 {#manage-database-roles}
 
 콘솔 권한 외에도 사용자 지정 역할에 선택한 서비스의 데이터베이스 접근을 제어하는 `Data` 정책을 포함할 수 있습니다. 따라서 각 데이터베이스에서 역할을 별도로 관리하지 않고 한곳에서 콘솔 및 데이터베이스 접근을 관리할 수 있습니다.
 
 <Note>
-  이 기능은 베타이며 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 사용할 수 있습니다.
+  이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 사용할 수 있습니다.
 </Note>
 
 사용자 지정 역할에 `Data` 정책을 추가하면 ClickHouse Cloud는 선택한 각 서비스에 `cloud:` 접두사가 붙은 동일한 역할을 생성합니다. 예를 들어 `readonly`라는 사용자 지정 역할은 데이터베이스에서 `cloud:readonly`로 표시됩니다. 사용자 지정 역할의 구성원은 SQL 콘솔의 비밀번호 없는 인증을 통해 서비스에 연결할 때 이러한 데이터베이스 권한을 부여받습니다.
 
-<Tip>
-  Cloud 관리형 데이터베이스 역할은 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)과 호환되지 않는, 수동으로 할당한 [`sql-console-role:<email>`](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 역할을 대체합니다.
-</Tip>
+<Warning>
+  Cloud 관리형 데이터베이스 역할은 SQL 콘솔 내 JWT 세션과 호환되지 않는, 수동으로 할당한 [`sql-console-role:<email>`](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 역할을 대체합니다.
+</Warning>
 
 ### 사전 요구 사항 {#manage-database-roles-prerequisites}
 

@@ -8,7 +8,6 @@ keywords: ['funções personalizadas', 'segurança', 'permissões']
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Este guia é destinado a usuários com a Função Admin no ClickHouse Cloud.
 
@@ -66,21 +65,19 @@ As funções personalizadas podem incluir uma combinação de permissões de org
   </Step>
 </Steps>
 
-## Gerenciar funções de banco de dados (beta) {#manage-database-roles}
-
-<BetaBadge />
+## Gerenciar funções de banco de dados {#manage-database-roles}
 
 Além das permissões do console, as funções personalizadas podem incluir uma política `Data` que controla o acesso aos bancos de dados dos serviços selecionados. Isso permite gerenciar o acesso ao console e aos bancos de dados em um só lugar, em vez de manter funções separadas em cada banco de dados.
 
 <Note>
-  Este recurso está em beta e está disponível para serviços que executam o ClickHouse versão 26.4 ou superior.
+  Este recurso está disponível para serviços que executam o ClickHouse versão 26.4 ou superior.
 </Note>
 
 Quando você adiciona uma política `Data` a uma função personalizada, o ClickHouse Cloud cria uma função correspondente em cada serviço selecionado, com o prefixo `cloud:`. Por exemplo, uma função personalizada chamada `readonly` aparece no banco de dados como `cloud:readonly`. Os membros da função personalizada recebem essas permissões de banco de dados ao se conectarem ao serviço por meio da autenticação sem senha do SQL Console.
 
-<Tip>
-  As funções de banco de dados gerenciadas pelo Cloud substituem as funções [`sql-console-role:<email>`](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) atribuídas manualmente, que não são compatíveis com a [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
-</Tip>
+<Warning>
+  As funções de banco de dados gerenciadas pelo Cloud substituem as funções [`sql-console-role:<email>`](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) atribuídas manualmente, que não são compatíveis com sessões JWT no SQL Console.
+</Warning>
 
 ### Pré-requisitos {#manage-database-roles-prerequisites}
 
