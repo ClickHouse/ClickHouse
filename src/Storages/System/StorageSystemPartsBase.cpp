@@ -54,7 +54,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int DEADLOCK_AVOIDED;
 }
 
 namespace FailPoints
@@ -561,52 +560,29 @@ VirtualColumnsDescription StorageSystemPartsBase::createVirtuals()
 
 bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
 {
-    /// Acquire the lock in short slices, polling the query status between the attempts,
-    /// so that a killed or soft-timed-out query does not sit inside RWLockImpl::getLock
-    /// for the whole lock_acquire_timeout while a concurrent DDL query holds the drop lock.
-    static constexpr std::chrono::milliseconds cancellation_check_period{100};
+    const Poco::Timespan acquire_timeout(lock_timeout.count() * 1000);
 
-    std::chrono::milliseconds remaining = lock_timeout;
-    const bool infinite_lock_timeout = lock_timeout == std::chrono::milliseconds::zero();
-    while (true)
+    if (!query_status)
     {
-        const auto attempt_timeout = query_status
-            ? (infinite_lock_timeout ? cancellation_check_period : std::min(remaining, cancellation_check_period))
-            : remaining;
-        try
-        {
-            info.table_lock = info.storage->tryLockForShare(query_id, Poco::Timespan(attempt_timeout.count() * 1000));
-            // nullptr means table was dropped while acquiring the lock
-            return info.table_lock != nullptr;
-        }
-        catch (Exception & e)
-        {
-            if (e.code() != ErrorCodes::DEADLOCK_AVOIDED)
-                throw;
-
-            if (!infinite_lock_timeout)
-            {
-                remaining -= attempt_timeout;
-                if (remaining.count() <= 0)
-                {
-                    /// The exception from the last attempt describes only the final slice, so a query
-                    /// that really waited the whole lock_acquire_timeout would report a timeout of
-                    /// 100 ms. Amend it with the total wait, and keep the rest of the message: it
-                    /// carries the owner query ids of the lock.
-                    if (attempt_timeout != lock_timeout)
-                        e.addMessage("The total lock acquisition timeout of {} ms has been exhausted; the lock was "
-                            "acquired in {} ms slices with query cancellation checks between the attempts",
-                            lock_timeout.count(), cancellation_check_period.count());
-                    throw;
-                }
-            }
-
-            /// Throws if the query is cancelled or the time limit is exceeded in the 'throw' overflow mode.
-            /// In the 'break' mode it returns false instead: give up on this table, and the caller
-            /// stops instead of failing the query.
-            if (query_status && !query_status->checkTimeLimit())
-                return false;
-        }
+        info.table_lock = info.storage->tryLockForShare(query_id, acquire_timeout);
+        // nullptr means table was dropped while acquiring the lock
+        return info.table_lock != nullptr;
     }
+
+    /// Wait for the lock in short slices, polling the query status between them, so that a killed
+    /// or soft-timed-out query does not sit inside RWLockImpl::getLock for the whole
+    /// lock_acquire_timeout while a concurrent DDL query holds the drop lock. The slicing is done
+    /// by IStorage below its throwing API boundary: an expired slice is a plain retry, not an
+    /// exception, and only the exhaustion of the whole lock_acquire_timeout throws DEADLOCK_AVOIDED.
+    static const Poco::Timespan cancellation_check_period(100 * 1000);
+
+    /// checkTimeLimit throws if the query is cancelled or the time limit is exceeded in the 'throw'
+    /// overflow mode. In the 'break' mode it returns false instead: give up on this table, and the
+    /// caller stops instead of failing the query.
+    auto need_stop = [this] { return !query_status->checkTimeLimit(); };
+
+    info.table_lock = info.storage->tryLockForShare(query_id, acquire_timeout, need_stop, cancellation_check_period);
+    // nullptr means the table was dropped while acquiring the lock, or the query was stopped
+    return info.table_lock != nullptr;
 }
 }
