@@ -2629,7 +2629,9 @@ class TestCase:
         r"SYSTEM\s+ENABLE\s+FAILPOINT\s+([A-Za-z_][A-Za-z_0-9]*)", re.IGNORECASE
     )
     # Anything that runs a query in a separate process rather than on the shared server.
-    LOCAL_INVOCATION_RE = re.compile(r"clickhouse-local|CLICKHOUSE_LOCAL|clickhouse_local")
+    LOCAL_INVOCATION_RE = re.compile(
+        r"clickhouse-local|CLICKHOUSE_LOCAL|clickhouse_local"
+    )
 
     def failpoints_armed_by_test(self):
         """Names the test arms with a literal `SYSTEM ENABLE FAILPOINT` sent to the shared
