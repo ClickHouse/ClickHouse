@@ -2,6 +2,9 @@
 
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/StatisticsCache.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -39,12 +42,13 @@ bool tryEstimateWithStatistics(
     ConditionSelectivityEstimatorBuilder builder(context);
     bool has_any_stats = false;
 
+    auto statistics_cache = context->getStatisticsCache();
     for (const auto & part : parts)
     {
-        auto stats = part.data_part->loadStatistics();
+        auto stats = part.data_part->loadStatistics(filter_input_columns, statistics_cache.get());
         if (!stats.empty())
         {
-            builder.markDataPart(part.data_part);
+            builder.incrementRowCount(part.data_part->rows_count);
             for (const auto & [column_name, stat] : stats)
                 builder.addStatistics(column_name, stat);
             has_any_stats = true;

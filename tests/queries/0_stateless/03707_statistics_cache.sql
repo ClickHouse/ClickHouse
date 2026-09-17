@@ -12,8 +12,7 @@ CREATE TABLE sc_core
     v Nullable(Float64)
 )
 ENGINE = MergeTree
-ORDER BY k
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY k;
 
 INSERT INTO sc_core
 SELECT number, if(number % 20 = 0, NULL, toFloat64(rand()) / 4294967296.0)
@@ -33,8 +32,7 @@ CREATE TABLE sc_unused
     val UInt64
 )
 ENGINE = MergeTree
-ORDER BY k
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY k;
 
 INSERT INTO sc_unused
 SELECT number, number % 100
@@ -44,7 +42,7 @@ ALTER TABLE sc_unused ADD STATISTICS val TYPE basic;
 ALTER TABLE sc_unused MATERIALIZE STATISTICS ALL;
 
 SELECT sum(val) FROM sc_unused
-SETTINGS use_statistics_cache = 0, log_comment = 'nouse-agg' FORMAT Null;
+SETTINGS log_comment = 'nouse-agg' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -65,8 +63,7 @@ CREATE TABLE st_cm_lc
     cat LowCardinality(String)
 )
 ENGINE = MergeTree
-ORDER BY k
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY k;
 
 INSERT INTO st_cm_lc
 SELECT number,
@@ -77,7 +74,7 @@ ALTER TABLE st_cm_lc ADD STATISTICS cat TYPE CountMin;
 ALTER TABLE st_cm_lc MATERIALIZE STATISTICS ALL;
 
 SELECT count() FROM st_cm_lc WHERE cat = 'PROMO'
-SETTINGS use_statistics_cache = 0, log_comment = 'cm-lc-load' FORMAT Null;
+SETTINGS log_comment = 'cm-lc-load' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -95,13 +92,11 @@ DROP TABLE IF EXISTS sj_b SYNC;
 
 CREATE TABLE sj_a (id UInt32, p UInt8)
 ENGINE = MergeTree
-ORDER BY id
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY id;
 
 CREATE TABLE sj_b (id UInt32, t LowCardinality(String))
 ENGINE = MergeTree
-ORDER BY id
-SETTINGS refresh_statistics_interval = 0;
+ORDER BY id;
 
 INSERT INTO sj_a SELECT number, number % 2 FROM numbers(60000);
 INSERT INTO sj_b SELECT number, if(number % 5 = 0, 'PROMO', 'OTHER') FROM numbers(60000);
@@ -116,7 +111,7 @@ SELECT count()
 FROM sj_a a
 JOIN sj_b b ON a.id = b.id
 WHERE b.t = 'PROMO'
-SETTINGS use_statistics_cache = 0, query_plan_optimize_join_order_limit = 10, log_comment = 'join-load'
+SETTINGS query_plan_optimize_join_order_limit = 10, log_comment = 'join-load'
 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;

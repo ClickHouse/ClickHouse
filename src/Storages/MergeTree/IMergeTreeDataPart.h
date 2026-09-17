@@ -104,6 +104,10 @@ using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 class PrimaryIndexCache;
 using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
+class StatisticsCache;
+using StatisticsCachePtr = std::shared_ptr<StatisticsCache>;
+struct StatisticsCacheCell;
+
 class DeleteBitmapCache;
 using DeleteBitmapCachePtr = std::shared_ptr<DeleteBitmapCache>;
 
@@ -242,8 +246,15 @@ public:
 
     void remove();
 
-    ColumnsStatistics loadStatistics() const;
-    ColumnsStatistics loadStatistics(const Names & required_columns) const;
+    /// The statistics of the part's columns; an empty `required_columns` means all columns.
+    /// Without a cache, the statistics are read from disk and are private to the caller.
+    /// With a cache, the statistics of a column are read from disk only when they are not cached, and the
+    /// returned objects are shared with other callers, so they must not be modified.
+    ColumnsStatistics loadStatistics(const NameSet & required_columns = {}, StatisticsCache * cache = nullptr) const;
+    /// Loads the statistics of all columns into the cache (prewarming).
+    void loadStatisticsToCache(StatisticsCache & cache) const;
+    /// Removes the statistics of all columns of the part from the cache.
+    void removeStatisticsFromCache(StatisticsCache * cache) const;
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
 
@@ -977,9 +988,13 @@ private:
     void loadDefaultCompressionCodec();
     void loadPatchPartIndex();
 
-    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
-    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
+    /// Reads one statistics file of the part. `packed_reader` is nullptr if the part stores every
+    /// statistics file separately instead of in the packed archive.
+    std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
+        const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 
