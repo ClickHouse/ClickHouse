@@ -263,6 +263,57 @@ def delete_ldap_group(ldap_cluster, group_cn):
     assert code == 0
 
 
+def add_ldap_user(ldap_cluster, user_cn, password):
+    """Add an `inetOrgPerson` under `ou=users,dc=example,dc=org`, the shape of the fixture's users."""
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """echo "dn: cn={user_cn},ou=users,dc=example,dc=org
+objectClass: inetOrgPerson
+cn: {user_cn}
+sn: {user_cn}
+uid: {user_cn}
+userPassword: {password}" | \
+ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+    """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
+                password=password,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_execute_as add_ldap_user code:{code} stdout:{stdout} stderr:{stderr}"
+    )
+    assert code == 0
+
+
+def delete_ldap_user(ldap_cluster, user_cn):
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """ldapdelete -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password} "cn={user_cn},ou=users,dc=example,dc=org"
+    """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                user_cn=user_cn,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_execute_as delete_ldap_user code:{code} stdout:{stdout} stderr:{stderr}"
+    )
+
+
 def test_execute_as_ldap_user_without_prior_login(started_cluster):
     """The reproducer from the issue.
 
@@ -308,14 +359,37 @@ def test_execute_as_requires_impersonate_grant(started_cluster):
 
     `restricted` is a users.xml user without `access_management`, so it has no
     IMPERSONATE grant on any user. EXECUTE AS must fail with an access denied error
-    before the LDAP forced-lookup path has a chance to materialize the target user.
+    before the LDAP forced-lookup path has a chance to materialize the target user:
+    `impersonate_target` has never been resolved on `node`, so the denial must leave no
+    `ldap` entry for the name, while `admin` can then resolve it, which proves the name
+    was resolvable all along.
     """
-    error = node.query_and_get_error(
-        "EXECUTE AS janedoe SELECT 1",
-        user="restricted",
-        password="qwerty",
-    )
-    assert "ACCESS_DENIED" in error or "Not enough privileges" in error
+    add_ldap_user(started_cluster, "impersonate_target", "qwerty")
+    try:
+        error = node.query_and_get_error(
+            "EXECUTE AS impersonate_target SELECT 1",
+            user="restricted",
+            password="qwerty",
+        )
+        assert "ACCESS_DENIED" in error or "Not enough privileges" in error, error
+        assert (
+            node.query(
+                "SELECT count() FROM system.users WHERE name = 'impersonate_target' AND storage = 'ldap'",
+                user="admin",
+                password="qwerty",
+            ).strip()
+            == "0"
+        )
+        assert (
+            node.query(
+                "EXECUTE AS impersonate_target SELECT currentUser()",
+                user="admin",
+                password="qwerty",
+            ).strip()
+            == "impersonate_target"
+        )
+    finally:
+        delete_ldap_user(started_cluster, "impersonate_target")
 
 
 def test_execute_as_unknown_ldap_user_throws(started_cluster):
@@ -779,6 +853,17 @@ def test_execute_as_already_materialized_ldap_user_when_ldap_first(started_clust
         password="qwerty",
     )
     assert pre_ldap_count.strip() == "1", pre_ldap_count
+
+    # The two principals share the name; only the local one carries `local_janedoe_profile`
+    # (`max_result_rows` = 12345), so the setting shows which storage won.
+    assert (
+        node_with_local_user_precedence.query(
+            "EXECUTE AS janedoe SELECT getSetting('max_result_rows')",
+            user="admin",
+            password="qwerty",
+        ).strip()
+        == "0"
+    )
 
     # First pass returns the LDAP entry because LDAP is ordered first; the
     # storage that owns the resolved id is `ldap`. The session runs as the

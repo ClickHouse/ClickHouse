@@ -110,7 +110,7 @@ When `user_dn_detection` is used together with `lookup_bind_dn`, the search must
 | `base_dn` | — | Template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}` and `{user_dn}` substrings of the template with the actual user name, bind DN and user DN during the LDAP search (before the detection has run, `{user_dn}` equals the bind DN). When `bind_dn` is `{user_dn}` (search and bind), only `{user_name}` may be used here. |
 | `scope` | `subtree` | Scope of the LDAP search. Accepted values: `base`, `one_level`, `children`, `subtree`. |
 | `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}` and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN and base DN during the LDAP search (before the detection has run, `{user_dn}` equals the bind DN). When `bind_dn` is `{user_dn}` (search and bind), only `{user_name}` and `{base_dn}` may be used here. Note that special characters must be escaped properly in XML. |
-| `attribute` | `dn` | Attribute whose value becomes the user DN. Must stay `dn` when `bind_dn` is `{user_dn}`, because that value is the DN the user's password is verified against. |
+| `attribute` | `dn` | Attribute whose value becomes the user DN. Must stay `dn` whenever `lookup_bind_dn` is set, whatever `bind_dn` is: the value is consumed as the user DN by every `{user_dn}` placeholder, and in search and bind it is also the DN the user's password is verified against. |
 
 ### Transport security and timeouts {#ldap-server-tls-and-timeouts}
 
