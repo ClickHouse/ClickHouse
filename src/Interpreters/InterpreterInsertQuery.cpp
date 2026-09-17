@@ -1276,7 +1276,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     StoragePtr table = getTable(query);
-    was_by_name = query.by_name;
+    was_by_name = query.by_name || query.by_name_resolved;
     setInsertContextValues(context, query, table);
     if (was_by_name)
     {
@@ -1462,6 +1462,7 @@ void InterpreterInsertQuery::resolveInsertByNameColumns(ContextMutablePtr contex
     });
     query.children.insert(insert_position, columns);
     query.by_name = false;
+    query.by_name_resolved = true;
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory);

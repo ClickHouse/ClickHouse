@@ -5,8 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-table="insert_by_name_access_05228"
-user="insert_by_name_user_05228"
+table="insert_by_name_access_05230"
+user="insert_by_name_user_05230"
 password="password"
 
 cleanup()
