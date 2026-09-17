@@ -1310,6 +1310,12 @@ private:
         const DataTypePtr & element_type = array_type ? array_type->getNestedType() : arguments[0].type;
         const DataTypePtr & value_type = arguments[1].type;
 
+        /// A `Field` cannot say whether a value inside an `Array` or a `Map` came from a
+        /// `FixedString`, and `equals` compares those through a cast that removes its padding.
+        /// `executeGeneric` below makes that cast, so leave the comparison to it.
+        if (fixedStringPaddingInsideContainer(element_type, value_type))
+            return nullptr;
+
         if (isColumnConst(*item_arg))
         {
             ResultType current = 0;
@@ -1398,6 +1404,16 @@ private:
     static ColumnPtr executeGeneric(const ColumnsWithTypeAndName & arguments)
     {
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+
+        /// `executeConst` declines the shapes whose answer a `Field` comparison cannot express, so
+        /// the array argument can still be constant here.
+        ColumnPtr full_array;
+        if (!col_array)
+        {
+            full_array = arguments[0].column->convertToFullColumnIfConst();
+            col_array = checkAndGetColumn<ColumnArray>(full_array.get());
+        }
+
         if (!col_array)
             return nullptr;
 

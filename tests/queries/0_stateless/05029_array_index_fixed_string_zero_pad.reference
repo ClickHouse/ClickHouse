@@ -53,6 +53,25 @@ mixed tuple hasAny	0	0
 mixed tuple hasAll	0	0
 mixed tuple indexOf	0	0
 mixed tuple countEqual	0	0
+array elem, str needle	0	0
+array elem, wider fs needle	1	1
+str array elem, fs needle	0	0
+map elem	0	0
+twice nested array elem	0	0
+array inside tuple	0	0
+array inside tuple, wider fs needle	1	1
+map inside tuple	0	0
+array elem indexOf	0	0
+array elem countEqual	0	0
+array elem, per-row needle	V0	1
+array elem, per-row needle	V0\0	1
+array elem, per-row needle	X	1
+array elem hasAny	0	0
+array elem hasAll	0	0
+array elem hasSubstr	0	0
+array elem hasAny wider fs needle	1	1
+array elem indexOfAssumeSorted	0	0
+array elem indexOfAssumeSorted wider fs needle	1	1
 hasAny hasAll hasSubstr
 fs4 needle, const	1	1	1
 fs4 needle, materialized	1	1	1
@@ -67,6 +86,10 @@ has, tuple elem	1
 has, mixed tuple	1
 has, mixed tuple materialized	1
 hasAny, mixed tuple	1
+has, array elem	1
+has, array elem materialized	1
+has, array elem wider fs needle	1
+has, map elem	1
 has, nullable elem	1
 indexOf, const	1
 countEqual, const	1

@@ -53,6 +53,60 @@ bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & ri
         && (isFixedString(left_decayed) || isFixedString(right_decayed));
 }
 
+static bool containsFixedString(const DataTypePtr & type)
+{
+    auto decayed = removeLowCardinalityAndNullable(type);
+
+    if (isFixedString(decayed))
+        return true;
+
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(decayed.get()))
+        return containsFixedString(type_array->getNestedType());
+
+    if (const auto * type_map = typeid_cast<const DataTypeMap *>(decayed.get()))
+        return containsFixedString(type_map->getKeyType()) || containsFixedString(type_map->getValueType());
+
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(decayed.get()))
+    {
+        for (const auto & element : type_tuple->getElements())
+            if (containsFixedString(element))
+                return true;
+    }
+
+    return false;
+}
+
+bool fixedStringPaddingInsideContainer(const DataTypePtr & left, const DataTypePtr & right)
+{
+    if (!left || !right)
+        return false;
+
+    auto left_decayed = removeLowCardinalityAndNullable(left);
+    auto right_decayed = removeLowCardinalityAndNullable(right);
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_decayed.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_decayed.get());
+    if (left_tuple && right_tuple)
+    {
+        const auto & left_elements = left_tuple->getElements();
+        const auto & right_elements = right_tuple->getElements();
+        if (left_elements.size() != right_elements.size())
+            return false;
+
+        for (size_t i = 0; i < left_elements.size(); ++i)
+            if (fixedStringPaddingInsideContainer(left_elements[i], right_elements[i]))
+                return true;
+
+        return false;
+    }
+
+    const bool inside_container = typeid_cast<const DataTypeArray *>(left_decayed.get())
+        || typeid_cast<const DataTypeMap *>(left_decayed.get()) || typeid_cast<const DataTypeArray *>(right_decayed.get())
+        || typeid_cast<const DataTypeMap *>(right_decayed.get());
+
+    return inside_container && (containsFixedString(left_decayed) || containsFixedString(right_decayed));
+}
+
 bool zeroPaddedStringConstant(const DataTypePtr & type)
 {
     if (!type)

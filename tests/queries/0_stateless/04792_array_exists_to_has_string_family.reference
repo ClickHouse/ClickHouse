@@ -84,8 +84,9 @@ SELECT arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]) SETT
 1
 SELECT arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
 1
--- Array and Map elements: over a column both spellings answer 0, but over a constant array
--- `has` compares raw Fields and answers 1 where `equals` answers 0, so they diverge as well.
+-- Array and Map elements: `equals` compares these through a cast to their common type, and `has`
+-- does the same, so both spellings answer 0 over a column and over a constant array alike. The
+-- rewrite is declined for them regardless, which the rows further down pin.
 DROP TABLE IF EXISTS t_nested_arr;
 CREATE TABLE t_nested_arr (v Array(Array(FixedString(3)))) ENGINE = Memory;
 INSERT INTO t_nested_arr SELECT [[toFixedString('V0', 3)]];

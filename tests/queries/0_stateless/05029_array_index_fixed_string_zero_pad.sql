@@ -157,6 +157,67 @@ select 'mixed tuple countEqual',
     countEqual([tuple('a\0', toFixedString('b', 1))], tuple('a', toFixedString('b', 2))),
     countEqual(materialize([tuple('a\0', toFixedString('b', 1))]), tuple('a', toFixedString('b', 2)));
 
+-- `Array` and `Map` elements. `equals` compares those through a cast to their common type, which
+-- removes the padding of only the operand it converts, so the rule does not reach their elements.
+-- A `Field` cannot express that, having no `FixedString` type, so the constant array has to be
+-- answered by the same cast rather than by comparing `Field`s.
+select 'array elem, str needle',
+    has([[toFixedString('V0', 3)]], ['V0\0']),
+    has(materialize([[toFixedString('V0', 3)]]), ['V0\0']);
+select 'array elem, wider fs needle',
+    has([[toFixedString('V0', 3)]], [toFixedString('V0', 4)]),
+    has(materialize([[toFixedString('V0', 3)]]), [toFixedString('V0', 4)]);
+select 'str array elem, fs needle',
+    has([['V0\0']], [toFixedString('V0', 3)]),
+    has(materialize([['V0\0']]), [toFixedString('V0', 3)]);
+select 'map elem',
+    has([map('k', toFixedString('V0', 3))], map('k', 'V0\0')),
+    has(materialize([map('k', toFixedString('V0', 3))]), map('k', 'V0\0'));
+select 'twice nested array elem',
+    has([[[toFixedString('V0', 3)]]], [['V0\0']]),
+    has(materialize([[[toFixedString('V0', 3)]]]), [['V0\0']]);
+-- A container reached through a `Tuple` follows the container rule, not the tuple one.
+select 'array inside tuple',
+    has([tuple([toFixedString('V0', 3)])], tuple(['V0\0'])),
+    has(materialize([tuple([toFixedString('V0', 3)])]), tuple(['V0\0']));
+select 'array inside tuple, wider fs needle',
+    has([tuple([toFixedString('V0', 3)])], tuple([toFixedString('V0', 4)])),
+    has(materialize([tuple([toFixedString('V0', 3)])]), tuple([toFixedString('V0', 4)]));
+select 'map inside tuple',
+    has([tuple(map('k', toFixedString('V0', 3)))], tuple(map('k', 'V0\0'))),
+    has(materialize([tuple(map('k', toFixedString('V0', 3)))]), tuple(map('k', 'V0\0')));
+-- indexOf and countEqual take the same path.
+select 'array elem indexOf',
+    indexOf([[toFixedString('V0', 3)]], ['V0\0']),
+    indexOf(materialize([[toFixedString('V0', 3)]]), ['V0\0']);
+select 'array elem countEqual',
+    countEqual([[toFixedString('V0', 3)]], ['V0\0']),
+    countEqual(materialize([[toFixedString('V0', 3)]]), ['V0\0']);
+-- A needle that varies per row takes the other branch of the constant-array path, and the constant
+-- array is materialized for it. Each row answers 1 by agreeing with `equals` on the same operands.
+select 'array elem, per-row needle', needle,
+    has([[toFixedString('V0', 3)]], [needle]) = ([toFixedString('V0', 3)] = [needle])
+from (select arrayJoin(['V0\0', 'V0', 'X']) as needle) order by needle;
+-- The functions with their own canonicalisation, and the sorted search, over the same element.
+select 'array elem hasAny',
+    hasAny([[toFixedString('V0', 3)]], [['V0\0']]),
+    hasAny(materialize([[toFixedString('V0', 3)]]), [['V0\0']]);
+select 'array elem hasAll',
+    hasAll([[toFixedString('V0', 3)]], [['V0\0']]),
+    hasAll(materialize([[toFixedString('V0', 3)]]), [['V0\0']]);
+select 'array elem hasSubstr',
+    hasSubstr([[toFixedString('V0', 3)]], [['V0\0']]),
+    hasSubstr(materialize([[toFixedString('V0', 3)]]), [['V0\0']]);
+select 'array elem hasAny wider fs needle',
+    hasAny([[toFixedString('V0', 3)]], [[toFixedString('V0', 4)]]),
+    hasAny(materialize([[toFixedString('V0', 3)]]), [[toFixedString('V0', 4)]]);
+select 'array elem indexOfAssumeSorted',
+    indexOfAssumeSorted([[toFixedString('V0', 3)]], ['V0\0']),
+    indexOfAssumeSorted(materialize([[toFixedString('V0', 3)]]), ['V0\0']);
+select 'array elem indexOfAssumeSorted wider fs needle',
+    indexOfAssumeSorted([[toFixedString('V0', 3)]], [toFixedString('V0', 4)]),
+    indexOfAssumeSorted(materialize([[toFixedString('V0', 3)]]), [toFixedString('V0', 4)]);
+
 -- `hasAny`, `hasAll` and `hasSubstr` share one comparison with `has` and must not disagree with it
 -- on the same operands. Every array argument here is a one-element array, so all four reduce to the
 -- same question. Both a constant and a materialized haystack, since that is the split the issue is
@@ -204,6 +265,14 @@ select 'has, mixed tuple materialized',
     = (tuple('a\0', toFixedString('b', 1)) = tuple('a', toFixedString('b', 2)));
 select 'hasAny, mixed tuple', hasAny([tuple('a\0', toFixedString('b', 1))], [tuple('a', toFixedString('b', 2))])
     = (tuple('a\0', toFixedString('b', 1)) = tuple('a', toFixedString('b', 2)));
+select 'has, array elem',   has([[toFixedString('V0', 3)]], ['V0\0'])
+    = ([toFixedString('V0', 3)] = ['V0\0']);
+select 'has, array elem materialized',
+    has(materialize([[toFixedString('V0', 3)]]), ['V0\0']) = ([toFixedString('V0', 3)] = ['V0\0']);
+select 'has, array elem wider fs needle', has([[toFixedString('V0', 3)]], [toFixedString('V0', 4)])
+    = ([toFixedString('V0', 3)] = [toFixedString('V0', 4)]);
+select 'has, map elem',     has([map('k', toFixedString('V0', 3))], map('k', 'V0\0'))
+    = (map('k', toFixedString('V0', 3)) = map('k', 'V0\0'));
 select 'has, nullable elem',
     has(cast([toFixedString('V0', 3), null], 'Array(Nullable(FixedString(3)))'), toFixedString('V0', 4))
     = arrayExists(x -> x = toFixedString('V0', 4), cast([toFixedString('V0', 3), null], 'Array(Nullable(FixedString(3)))'));

@@ -30,6 +30,10 @@ namespace DB
 /// through a lossy cast and so does not apply the rule to.
 bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & right);
 
+/// Whether a `FixedString` sits inside an `Array` or a `Map` in either type. Recurses into `Tuple`.
+/// A `Field` comparison cannot answer these, so the caller compares the cast columns instead.
+bool fixedStringPaddingInsideContainer(const DataTypePtr & left, const DataTypePtr & right);
+
 /// Whether a search constant of this type is subject to the rule, and so has no single canonical
 /// spelling among the values it matches. A skip index that stores one hash or one term per stored
 /// value cannot probe all of them, so it must decline rather than prune a matching granule.
