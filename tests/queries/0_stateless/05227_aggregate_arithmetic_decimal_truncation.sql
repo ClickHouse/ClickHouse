@@ -14,6 +14,12 @@ SELECT min(a * 9223372036854775807), max(a * 9223372036854775807), sum(a * 42949
 SELECT min(a * 9223372036854775807), max(a * 9223372036854775807), sum(a * 4294967296) FROM t_aggregate_arithmetic_decimal
 SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 
+-- The sibling rewrite of `sum(column +/- literal)` into `sum(column) +/- literal * count(column)` is
+-- guarded by the same invariant: `a + 4294967296` adds `0` to every `Decimal32` row.
+SELECT sum(a + 4294967296), sum(a - 4294967296), sum(4294967296 - a), sum(4294967296 + a) FROM t_aggregate_arithmetic_decimal;
+SELECT sum(a + 4294967296), sum(a - 4294967296), sum(4294967296 - a), sum(4294967296 + a) FROM t_aggregate_arithmetic_decimal
+SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
+
 -- The mirrored shape: an integer column wider than the native width of the `Decimal` constant.
 DROP TABLE IF EXISTS t_aggregate_arithmetic_int;
 CREATE TABLE t_aggregate_arithmetic_int (a Int64) ENGINE = MergeTree ORDER BY a;
@@ -26,6 +32,13 @@ SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0;
 SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (multiply|min)') AS outer_function
 FROM (EXPLAIN QUERY TREE SELECT min(a * toDecimal32(1, 0)) FROM t_aggregate_arithmetic_int);
 
+SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (plus|sum)') AS outer_function
+FROM (EXPLAIN QUERY TREE SELECT sum(a + 4294967296) FROM t_aggregate_arithmetic_decimal);
+SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (minus|sum)') AS outer_function
+FROM (EXPLAIN QUERY TREE SELECT sum(4294967296 - a) FROM t_aggregate_arithmetic_decimal);
+SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (plus|sum)') AS outer_function
+FROM (EXPLAIN QUERY TREE SELECT sum(a + toDecimal32(1, 0)) FROM t_aggregate_arithmetic_int);
+
 -- A constant that fits the native width is hoisted as before, and so is one used with an integer column
 -- narrow enough for the width of the `Decimal` constant.
 SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (multiply|sum)') AS outer_function
@@ -36,6 +49,10 @@ SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (mul
 FROM (EXPLAIN QUERY TREE SELECT sum(number * 4294967296) FROM numbers(10));
 SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (multiply|min)') AS outer_function
 FROM (EXPLAIN QUERY TREE SELECT min(toInt16(a) * toDecimal32(1, 0)) FROM t_aggregate_arithmetic_int);
+SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (plus|sum)') AS outer_function
+FROM (EXPLAIN QUERY TREE SELECT sum(a + 2) FROM t_aggregate_arithmetic_decimal);
+SELECT extract(arrayStringConcat(groupArray(explain), ' '), 'function_name: (plus|sum)') AS outer_function
+FROM (EXPLAIN QUERY TREE SELECT sum(a + toDecimal64(1, 0)) FROM t_aggregate_arithmetic_int);
 
 DROP TABLE t_aggregate_arithmetic_decimal;
 DROP TABLE t_aggregate_arithmetic_int;

@@ -1,5 +1,7 @@
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <DataTypes/DecimalNativeWidthTruncation.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -89,6 +91,10 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     const auto column_type = column_type_name->type;
     if (!column_type || !isNumber(*column_type))
+        return;
+
+    /// `sum(a + 4294967296)` over a `Decimal32` column adds `0` per row, `sum(a) + 4294967296 * count(a)` would not.
+    if (operandTruncatesIntoDecimalWidth(column_type, applyVisitor(FieldToDataType(), literal->value), literal->value))
         return;
 
     const String & column_name = column_type_name->name;
