@@ -196,6 +196,15 @@ std::string formatObjectPath(
 
 Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path)
 {
+    if (prefix.starts_with("arn:"))
+    {
+        /// MRAP `_path` values append the literal key after a separator. Keep every separator in the key.
+        const auto key_start = prefix.size() + 1;
+        if (path.size() < key_start || !path.starts_with(prefix) || path[prefix.size()] != '/')
+            return {};
+        return {path.substr(key_start)};
+    }
+
     auto relative_path = relativizePathUnderPrefix(prefix, path);
     if (prefix.empty() || relative_path.empty() || relative_path.starts_with("/"))
         return {std::move(relative_path)};

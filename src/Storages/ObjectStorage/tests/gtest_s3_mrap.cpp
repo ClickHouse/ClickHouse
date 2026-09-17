@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 TEST(StorageS3MRAP, ObjectIdentityPreservesLiteralKeys)
 {
@@ -23,6 +24,19 @@ TEST(StorageS3MRAP, ObjectIdentityPreservesLiteralKeys)
         EXPECT_EQ(DB::StorageObjectStorageSource::getUniqueStoragePathIdentifier(configuration, object, false),
             configuration.url.bucket + "/" + key);
     }
+}
+
+TEST(StorageS3MRAP, PathFilterCandidatesPreserveLiteralKeys)
+{
+    DB::StorageS3Configuration configuration;
+    configuration.url = DB::S3::URI::fromMRAPArn(
+        "arn:aws:s3::123456789012:accesspoint/example.mrap", "key");
+    for (const auto * key : {"key", "/key", "//key", "a/b", "a//b", "a%2Fb"})
+    {
+        const auto path = DB::formatObjectPath(configuration, key, /*include_connection_info=*/false);
+        EXPECT_EQ(DB::candidateKeysUnderPrefix(configuration.getNamespace(), path), DB::Strings{key});
+    }
+    EXPECT_TRUE(DB::candidateKeysUnderPrefix(configuration.getNamespace(), "other/key").empty());
 }
 
 TEST(StorageS3MRAP, PartitionedWriteAcceptsARNNamespace)
