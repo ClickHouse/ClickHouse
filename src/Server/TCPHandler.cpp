@@ -1198,10 +1198,9 @@ void TCPHandler::runImpl()
 
                 /// A query packet is always followed by one or more data packets.
                 /// If some of those data packets are left, try to skip them - but only from a packet
-                /// boundary. A rejected packet's body is never read and a failed body read stops
-                /// halfway, and skipping from there would parse those bytes as packets of their own
-                /// and then block until `receive_timeout`.
-                if (!query_state->read_all_data && !query_state->packet_body_partially_read
+                /// boundary. Skipping from inside a packet parses its remaining bytes as packets of
+                /// their own, deserializing whatever they say and then blocking until `receive_timeout`.
+                if (!query_state->read_all_data && query_state->at_packet_boundary
                     && exception_code != ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
                     skipData(*query_state);
             }
@@ -1213,9 +1212,9 @@ void TCPHandler::runImpl()
             }
 
             /// We close the connection after an exception if there is something wrong with the connection,
-            /// otherwise we try to preserve it and reuse for other queries. A half-read packet body
-            /// counts as wrong: the next query would read the rest of it as a packet.
-            if (query_state->packet_body_partially_read || exception_code == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT
+            /// otherwise we try to preserve it and reuse for other queries. A half-read packet counts
+            /// as wrong: the next query would read the rest of it as a packet of its own.
+            if (!query_state->at_packet_boundary || exception_code == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT
                 || exception_code == ErrorCodes::USER_EXPIRED || exception_code == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
@@ -1347,6 +1346,8 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
         }
 
         UInt64 packet_type = 0;
+        /// The type is a varuint, so a client can leave the input mid-packet by truncating it.
+        state.at_packet_boundary = false;
         readVarUInt(packet_type, *in);
 
         switch (packet_type)
@@ -1376,12 +1377,14 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 return receiveQueryPlan(state);
 
             case Protocol::Client::Ping:
+                state.at_packet_boundary = true;  /// no body
                 writeVarUInt(Protocol::Server::Pong, *out);
                 out->finishChunk();
                 out->sync();
                 continue;
 
             case Protocol::Client::Cancel:
+                state.at_packet_boundary = true;  /// no body, and `processCancel` throws
                 processCancel(state);
                 return false; // We return false from this function as if no more data received
 
@@ -2445,20 +2448,21 @@ void TCPHandler::sendHello()
 ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
+    state.at_packet_boundary = false;
     readVarUInt(packet_type, *in);
 
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
+            state.at_packet_boundary = true;  /// no body, and `processCancel` throws
             processCancel(state);
             return {};
 
         case Protocol::Client::ReadTaskResponse:
         {
             auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
-            state.packet_body_partially_read = true;
             task->deserialize(*in);
-            state.packet_body_partially_read = false;
+            state.at_packet_boundary = true;
             return task;
         }
 
@@ -2472,20 +2476,21 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
 std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
+    state.at_packet_boundary = false;
     readVarUInt(packet_type, *in);
 
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
+            state.at_packet_boundary = true;  /// no body, and `processCancel` throws
             processCancel(state);
             return {};
 
         case Protocol::Client::MergeTreeReadTaskResponse:
         {
             ParallelReadResponse response;
-            state.packet_body_partially_read = true;
             response.deserialize(*in, client_parallel_replicas_protocol_version);
-            state.packet_body_partially_read = false;
+            state.at_packet_boundary = true;
             return response;
         }
 
@@ -2500,19 +2505,20 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
 InitialAllRangesAnnouncementResponse TCPHandler::receiveAllRangesAnnouncementResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
+    state.at_packet_boundary = false;
     readVarUInt(packet_type, *in);
 
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
+            state.at_packet_boundary = true;  /// no body, and `processCancel` throws
             processCancel(state);
             return {};
 
         case Protocol::Client::MergeTreeAllRangesAnnouncementResponse:
         {
-            state.packet_body_partially_read = true;
             auto response = InitialAllRangesAnnouncementResponse::deserialize(*in, client_parallel_replicas_protocol_version);
-            state.packet_body_partially_read = false;
+            state.at_packet_boundary = true;
             return response;
         }
 
@@ -2876,11 +2882,10 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
         throwUnexpectedPacket(Protocol::Client::QueryPlan);
 
     const auto & context = state.query_context;
-    state.packet_body_partially_read = true;
 
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
-    state.packet_body_partially_read = false;
+    state.at_packet_boundary = true;
     LOG_TRACE(log, "Received query plan");
 
     state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
@@ -2893,12 +2898,11 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     /// The name of the temporary table for writing data, default to empty string
     auto temporary_id = StorageID::createEmpty();
-    state.packet_body_partially_read = true;
     readStringBinary(temporary_id.table_name, *in);
 
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
-    state.packet_body_partially_read = false;
+    state.at_packet_boundary = true;
 
     if (block.empty())
         return false;
@@ -2954,8 +2958,6 @@ bool TCPHandler::skipDataPacket(QueryState & state)
     /// The client keeps sending the data of a query that has already failed. The block is
     /// deserialized only to find where the packet ends, so that the rest of the data can be
     /// discarded and the connection reused for the next query.
-    state.packet_body_partially_read = true;
-
     String skip_external_table_name;
     readStringBinary(skip_external_table_name, *in);
 
@@ -2968,7 +2970,7 @@ bool TCPHandler::skipDataPacket(QueryState & state)
     NativeReader skip_block_in(*maybe_compressed_in, client_tcp_protocol_version);
     bool has_rows = !skip_block_in.read().empty();
 
-    state.packet_body_partially_read = false;
+    state.at_packet_boundary = true;
     return has_rows;
 }
 
@@ -3120,11 +3122,13 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
                 throw NetException(ErrorCodes::ABORTED, "Client has dropped the connection, cancel the query.");
 
             UInt64 packet_type = 0;
+            state.at_packet_boundary = false;
             readVarUInt(packet_type, *in);
 
             switch (packet_type)
             {
                 case Protocol::Client::Cancel:
+                    state.at_packet_boundary = true;  /// no body, and `processCancel` throws
                     processCancel(state);
                     break;
 

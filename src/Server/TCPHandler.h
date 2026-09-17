@@ -130,9 +130,10 @@ struct QueryState
 
     /// If true, the data packets will be skipped instead of reading. Used to recover after errors.
     bool skipping_data = false;
-    /// Set while a packet's body is being read, so it stays set if that read throws. The leftover
-    /// input then starts mid-packet and can only be discarded along with the connection.
-    bool packet_body_partially_read = false;
+    /// Whether the input is positioned at the start of a packet. Cleared before the packet type is
+    /// read and set again once the packet is fully consumed, so any throw in between leaves it
+    /// cleared. Input starting mid-packet can only be discarded with the connection.
+    bool at_packet_boundary = true;
     bool query_duration_already_logged = false;
     bool run_query_in_background = false;
 
