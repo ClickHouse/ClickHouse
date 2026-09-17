@@ -1426,6 +1426,7 @@ size_t LDAPAccessStorage::createMissingRoles(const std::set<String> & role_names
     };
 
     size_t created = 0;
+    size_t removed = 0;
     for (const auto & role_name : role_names)
     {
         /// The guard `CREATE ROLE` gets from `MultipleAccessStorage::insertImpl`: the role must not exist in any
@@ -1450,7 +1451,11 @@ size_t LDAPAccessStorage::createMissingRoles(const std::set<String> & role_names
 
         if (const auto elsewhere = find_elsewhere(role_name))
         {
-            storage.tryRemove(*id);
+            /// The copy was resolvable by name for a moment, so another session may already have granted it or
+            /// named it in a `TO` list. Removed the way `DROP ROLE` removes, through `AccessControl`, whose
+            /// `removeReferencesToRemovedIDs` cleans such references in every storage, not only in `storage`.
+            access_control.tryRemove(*id);
+            ++removed;
             LOG_WARNING(getLogger(), "Role '{}' was created in storage {} while LDAP directory {} was creating it in storage {}; the latter copy was removed",
                 role_name, backQuote(*elsewhere), backQuote(getStorageName()), backQuote(storage.getStorageName()));
             continue;
@@ -1461,12 +1466,12 @@ size_t LDAPAccessStorage::createMissingRoles(const std::set<String> & role_names
     }
 
     if (created > 0)
-    {
         ProfileEvents::increment(ProfileEvents::LDAPSyncRolesCreated, created);
-        /// Direct storage writes only enqueue notifications; deliver them so that `processRoleChange`
-        /// learns the ids before the users are assigned.
+
+    /// Direct storage writes only enqueue notifications; deliver them so that `processRoleChange`
+    /// learns the ids (and forgets the removed ones) before the users are assigned.
+    if (created > 0 || removed > 0)
         access_control.getChangesNotifier().sendNotifications();
-    }
 
     return created;
 }
