@@ -1,3 +1,4 @@
+#include <bit>
 #include <cstring>
 #include <memory>
 
@@ -7,8 +8,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -32,44 +35,69 @@ namespace
 
 struct AggregateFunctionProductData
 {
-    Float64 product = 1;
-    UInt8 has_value = 0;
+    /// Use a signaling NaN payload as the empty-state sentinel. Arithmetic NaNs are quiet NaNs,
+    /// so they cannot become empty again after a value has been accumulated.
+    static constexpr UInt64 empty_bits = 0x7ff0000000000001ULL;
+    static constexpr UInt64 quiet_nan_bit = 0x0008000000000000ULL;
+    static constexpr UInt64 exponent_mask = 0x7ff0000000000000ULL;
+    static constexpr UInt64 mantissa_mask = 0x000fffffffffffffULL;
+
+    Float64 product = std::bit_cast<Float64>(empty_bits);
+
+    static Float64 normalizeInput(Float64 value)
+    {
+        UInt64 value_bits = std::bit_cast<UInt64>(value);
+        if (value_bits == empty_bits)
+            value_bits |= quiet_nan_bit;
+        return std::bit_cast<Float64>(value_bits);
+    }
+
+    static bool isNaNValue(Float64 value)
+    {
+        const UInt64 value_bits = std::bit_cast<UInt64>(value);
+        return (value_bits & exponent_mask) == exponent_mask && (value_bits & mantissa_mask) != 0;
+    }
+
+    bool isEmpty() const { return std::bit_cast<UInt64>(product) == empty_bits; }
+    bool isNullResult() const { return isEmpty() || isNaNValue(product); }
 
     void add(Float64 value)
     {
-        product *= value;
-        has_value = 1;
+        if (isEmpty())
+            product = value;
+        else
+            product *= value;
     }
 
     void addDefaultValues(size_t length)
     {
-        if (length == 0)
-            return;
-
-        product *= 0.0;
-        has_value = 1;
+        if (length != 0)
+            add(0.0);
     }
 
     void merge(const AggregateFunctionProductData & rhs)
     {
-        product *= rhs.product;
-        has_value |= rhs.has_value;
+        if (rhs.isEmpty())
+            return;
+
+        if (isEmpty())
+            product = rhs.product;
+        else
+            product *= rhs.product;
     }
 
     void write(WriteBuffer & buf) const
     {
         writeBinaryLittleEndian(product, buf);
-        writeBinaryLittleEndian(has_value, buf);
     }
 
     void read(ReadBuffer & buf)
     {
         readBinaryLittleEndian(product, buf);
-        readBinaryLittleEndian(has_value, buf);
     }
 };
 
-static_assert(sizeof(AggregateFunctionProductData) <= 16);
+static_assert(sizeof(AggregateFunctionProductData) == sizeof(Float64));
 
 template <typename T>
 class AggregateFunctionProduct final
@@ -81,10 +109,13 @@ private:
 
     static Float64 toFloat64(const T & value, UInt32 scale)
     {
+        Float64 converted = 0;
         if constexpr (is_decimal<T>)
-            return DecimalUtils::convertTo<Float64>(value, scale);
+            converted = DecimalUtils::convertTo<Float64>(value, scale);
         else
-            return static_cast<Float64>(value);
+            converted = static_cast<Float64>(value);
+
+        return converted;
     }
 
     static Float64 selectValueOrOne(const T & value, UInt8 keep, UInt32 scale)
@@ -128,8 +159,9 @@ private:
         const Keep & keep) const
     {
         auto & data = this->data(place);
-        Float64 product = data.product;
-        UInt8 has_value = data.has_value;
+        const bool was_empty = data.isEmpty();
+        Float64 product = was_empty ? 1.0 : data.product;
+        UInt8 has_value = static_cast<UInt8>(!was_empty);
 
         for (size_t i = row_begin; i < row_end; ++i)
         {
@@ -138,8 +170,8 @@ private:
             product *= selectValueOrOne(values[i], keep_value, decimal_scale);
         }
 
-        data.product = product;
-        data.has_value = has_value;
+        if (has_value)
+            data.product = product;
     }
 
 public:
@@ -147,7 +179,7 @@ public:
 
     explicit AggregateFunctionProduct(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionProduct<T>>(
-            argument_types_, {}, std::make_shared<DataTypeNumber<Float64>>())
+            argument_types_, {}, makeNullable(std::make_shared<DataTypeNumber<Float64>>()))
         , decimal_scale(is_decimal<T> ? getDecimalScale(*argument_types_[0]) : 0)
     {
     }
@@ -159,7 +191,10 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        this->data(place).add(toFloat64(column.getData()[row_num], decimal_scale));
+        Float64 value = toFloat64(column.getData()[row_num], decimal_scale);
+        if constexpr (is_floating_point<T>)
+            value = Data::normalizeInput(value);
+        this->data(place).add(value);
     }
 
     void addBatchSinglePlace(
@@ -251,8 +286,17 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
-            this->data(place).has_value ? this->data(place).product : 0.0);
+        auto & nullable_column = assert_cast<ColumnNullable &>(to);
+        const auto & data = this->data(place);
+
+        if (data.isNullResult())
+        {
+            nullable_column.insertDefault();
+            return;
+        }
+
+        assert_cast<ColumnVector<Float64> &>(nullable_column.getNestedColumn()).getData().push_back(data.product);
+        nullable_column.getNullMapData().push_back(false);
     }
 
 private:
@@ -302,8 +346,8 @@ input is already an array, use
     };
     FunctionDocumentation::Parameters parameters = {};
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the product of the input values as a `Float64`. Returns `0` for an empty non-nullable input.",
-        {"Float64"}
+        "Returns the product of the input values as a `Float64`. Returns `NULL` for empty input or if the product is `NaN`.",
+        {"Float64", "NULL"}
     };
     FunctionDocumentation::Examples examples = {
     {
@@ -323,7 +367,8 @@ FROM VALUES('x Float64', (1.5), (2), (4));
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("product", {createAggregateFunctionProduct, documentation}, AggregateFunctionFactory::Case::Insensitive);
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    factory.registerFunction("product", {createAggregateFunctionProduct, documentation, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

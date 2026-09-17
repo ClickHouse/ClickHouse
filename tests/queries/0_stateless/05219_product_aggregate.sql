@@ -33,8 +33,14 @@ WITH t AS
 SELECT productIf(x, keep) = 1 FROM t;
 
 SELECT 'filtered non-finite values';
-SELECT isNaN(productIf(x, isFinite(x))), productIf(x, isFinite(x))
+SELECT isNull(productIf(x, isFinite(x))), productIf(x, isFinite(x))
 FROM VALUES('x Float64', (2), (nan), (3), (inf));
+
+SELECT 'non-finite result semantics';
+SELECT isNull(product(x)) FROM VALUES('x Float64', (nan), (2));
+SELECT isNull(product(x)) FROM VALUES('x Float64', (0), (inf), (2));
+SELECT isNull(product(x)) FROM VALUES('x Float64', (inf), (0), (2));
+SELECT isNull(product(x)), isInfinite(product(x)) FROM VALUES('x Float64', (inf), (2));
 
 SELECT 'partial states';
 SELECT productMerge(state)
@@ -44,6 +50,30 @@ FROM
     UNION ALL
     SELECT productState(x) AS state FROM VALUES('x Float64', (4), (5))
 );
+SELECT productMerge(state)
+FROM
+(
+    SELECT productState(toFloat64(number)) AS state FROM numbers(0)
+    UNION ALL
+    SELECT productState(x) AS state FROM VALUES('x Float64', (2), (3))
+);
+SELECT isNull(productMerge(state))
+FROM
+(
+    SELECT productState(x) AS state FROM VALUES('x Float64', (0), (inf))
+    UNION ALL
+    SELECT productState(x) AS state FROM VALUES('x Float64', (2))
+);
+
+SELECT 'ordered input';
+SELECT product(x) = 0
+FROM
+(
+    SELECT x
+    FROM VALUES('x Float64', (1e200), (1e200), (1e-200), (1e-200))
+    ORDER BY x ASC
+)
+SETTINGS max_threads = 1;
 
 SELECT 'window aggregation';
 SELECT product(x) OVER (ORDER BY x ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
