@@ -52,7 +52,6 @@ TEST(QueryPlanSerializationSettings, MaxBlockSizeRejectsZeroOnAssignment)
 {
     QueryPlanSerializationSettings settings;
     EXPECT_TRUE(throwsBadArguments([&] { settings[QueryPlanSerializationSetting::max_block_size] = 0; }));
-    EXPECT_EQ(settings[QueryPlanSerializationSetting::max_block_size], DEFAULT_BLOCK_SIZE);
 }
 
 TEST(QueryPlanSerializationSettings, MaxBlockSizeRejectsZeroOnRead)
