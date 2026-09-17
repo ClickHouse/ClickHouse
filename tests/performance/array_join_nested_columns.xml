@@ -1,0 +1,11 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+    </settings>
+    <create_query>CREATE TABLE array_join_nested_columns (samples Array(Array(UInt64))) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO array_join_nested_columns SELECT [arrayMap(x -> x + number, range(16384))] FROM numbers(512)</fill_query>
+    <query>SELECT sum(arraySum(values)) FROM array_join_nested_columns ARRAY JOIN samples AS values</query>
+    <query>SELECT sum(arraySum(values)) FROM array_join_nested_columns ARRAY JOIN samples AS values WHERE values[1] % 2 = 0 SETTINGS query_plan_fuse_filter_into_array_join = 1</query>
+    <drop_query>DROP TABLE array_join_nested_columns</drop_query>
+</test>
