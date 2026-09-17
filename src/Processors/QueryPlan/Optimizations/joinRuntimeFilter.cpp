@@ -201,13 +201,15 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     return filter_condition;
 }
 
-static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
+static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, JoinStrictness join_strictness)
 {
     /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
+    /// `GraceHashJoin` never executes an `ASOF` join (see `GraceHashJoin::isSupported`), so it must not be treated as a viable
+    /// runtime-filter target for one: keeping it would let this pass prune away the algorithms that could actually run the join.
     return
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        join_algorithm == JoinAlgorithm::GRACE_HASH;
+        (join_algorithm == JoinAlgorithm::GRACE_HASH && join_strictness != JoinStrictness::Asof);
 }
 
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
@@ -299,7 +301,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
-        std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
+        std::find_if(
+            join_algorithms.begin(),
+            join_algorithms.end(),
+            [&](auto join_algorithm) { return supportsRuntimeFilter(join_algorithm, join_operator.strictness); })
+            != join_algorithms.end();
 
     if (!can_use_runtime_filter)
         return false;
@@ -635,7 +641,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     node.children = {apply_filter_node, build_filter_node};
 
     /// Remove algorithms that are not compatible with runtime filters
-    std::erase_if(join_algorithms, [](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm); });
+    std::erase_if(
+        join_algorithms,
+        [&](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm, join_operator.strictness); });
 
     return true;
 }
