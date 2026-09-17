@@ -190,6 +190,25 @@ SELECT count() FROM numbers(100) WHERE NOT and(materialize(1), materialize(0));
 -- `not` of NULL is NULL, which is not decisive and filters everything out
 SELECT count() FROM numbers(100) WHERE NOT materialize(CAST(NULL AS Nullable(UInt8)));
 
+-- `xor` is value-only like `not`: it never short-circuits and has no const-only argument. The
+-- analyzer cannot fold it on its own because it is not saturable, so it relied entirely on this pass.
+SELECT 'xor folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(0)));
+SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(0));
+SELECT 'xor folded to false', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(1)));
+SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(1));
+-- variadic form folds pairwise: 1 xor 1 xor 1 = 1
+SELECT 'variadic xor folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(1), materialize(1)));
+SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(1), materialize(1));
+-- `xor` with NULL is NULL, which is not decisive and filters everything out
+SELECT count() FROM numbers(100) WHERE xor(materialize(1), materialize(CAST(NULL AS Nullable(UInt8))));
+-- a column-dependent argument is not constant, so nothing folds
+SELECT 'xor over a column not folded', countIf(explain LIKE '%Filter column: xor(materialize(1), number = 1)%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE xor(materialize(1), number = 1));
+SELECT count() FROM numbers(100) WHERE xor(materialize(1), number = 1);
+
 -- `isNull` / `isNotNull` read only the null map of their argument, which a `ColumnConst` and the
 -- column it wraps share, so they fold through `materialize` as well. The analyzer cannot fold them
 -- on its own here: `getConstantResultForNonConstArguments` gives up as soon as the argument type

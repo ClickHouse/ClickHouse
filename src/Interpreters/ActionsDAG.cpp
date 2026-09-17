@@ -1075,6 +1075,8 @@ const std::unordered_set<std::string> & foldablePredicateFunctions()
 {
     static const std::unordered_set<std::string> functions{
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or", "not",
+        /// `xor` never short-circuits and reads its arguments by value only, the same shape as `not`
+        "xor",
         /// `isNull` / `isNotNull` only look at the null map of their argument, so a `ColumnConst`
         /// and the materialized column it wraps give the same answer
         "isNull", "isNotNull"};
