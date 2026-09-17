@@ -133,6 +133,36 @@ FROM prometheusQuery(
     'clamp(timestamp(vector(1)), 2, 1)',
     toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
 
+-- The fused `sum(...) <op> max(...)` path evaluates the shared argument once; when that argument is provably
+-- empty it returns early, and the early-returned piece must keep the `Float64` override too.
+SELECT toTypeName(any(value)), count()
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'sum(timestamp(clamp(vector(1), 2, 1))) + max(timestamp(clamp(vector(1), 2, 1)))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+-- Two histogram buckets of the same metric, sharing one sample timestamp with fractional seconds.
+INSERT INTO promql_timestamp_float32_tags VALUES
+    (2, 'float32_histogram_bucket', map('le', '1000000000.5'),
+     toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'),
+     toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC')),
+    (3, 'float32_histogram_bucket', map('le', '+Inf'),
+     toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'),
+     toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'));
+
+INSERT INTO promql_timestamp_float32_samples VALUES
+    (2, toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'), 1),
+    (3, toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'), 1);
+
+-- `histogram_quantile` must carry the argument's `Float64` override: both buckets get the sample timestamp
+-- 1764498605.125 as their cumulative count, so the quantile interpolates to 1000000000.5 * 0.5 = 500000000.25,
+-- which the table's `Float32` value type rounds to 500000000.
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'histogram_quantile(0.5, timestamp(float32_histogram_bucket))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
 DROP TABLE promql_timestamp_float32;
 DROP TABLE promql_timestamp_float32_tags;
 DROP TABLE promql_timestamp_float32_samples;
