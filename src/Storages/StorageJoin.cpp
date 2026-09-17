@@ -908,7 +908,7 @@ protected:
                     if constexpr (SetJoinMaps<MapsShape>)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a set map");
                     else
-                        chunk = createChunk<kind, strictness>(std::get<typename HashJoinTableMapsFor<MapsShape>::Type>(join->clause.tableMaps().maps));
+                        chunk = createChunk<kind, strictness>(std::get<typename HashJoinTableMapsFor<MapsShape>::Type>(join->clauses.front().tableMaps().maps));
                 }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;

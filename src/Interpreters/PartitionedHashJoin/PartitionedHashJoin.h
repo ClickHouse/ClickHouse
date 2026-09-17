@@ -47,6 +47,12 @@ class TableJoin;
   * Post-build scatters keys and row locators. Workers insert. One thread drains overflow that
   * wrapped past a range end.
   *
+  * A join with several disjuncts (`ON a OR b`) holds one clause per disjunct over the one store, as
+  * `HashJoin` holds one map per disjunct. The fill routes every row to every clause. The barrier builds
+  * the tables, at once when no memory budget applies and one after another under a budget. The probe
+  * walks the clauses in order. A right row reached through several keys is emitted once
+  * (`KnownRowsHolder`).
+  *
   * The table doubles in place when a wrapping insert would take the last empty cell. It also
   * doubles between waves when the projected fill would exceed 50%. Duplicates of a key are
   * stored inline, as an exact span, or as a newest-first chain of spans (`SpanWriter`).
@@ -59,9 +65,10 @@ class TableJoin;
   * used flags and the probe. Used flags are `cells + 1` entries (offset 0 is the zero-value cell).
   * That is the layout `JoinUsedFlags` and the non-joined scan expect.
   *
-  * Several ON disjuncts, or a mixed non-equi ON condition on a RIGHT or FULL join, need used flags
-  * per right-table row, not per cell. Those joins run a standard `HashJoin` behind this interface
-  * (`delegate_mode`) instead of a partitioned build.
+  * Several disjuncts, or a mixed non-equi ON condition on a RIGHT or FULL join, make a right row
+  * reachable through several keys. Such a row needs a used flag per right-table row, not per cell.
+  * Those joins keep the flags per row (`used_flags_per_row`), attached to the stored blocks. Their
+  * non-joined scan walks the stored blocks instead of the table, as `HashJoin` does.
   *
   * The Join table engine (`StorageJoin`) runs this join in a third mode, `join_table_mode`: one
   * single-partition table, created empty with the join and filled one block at a time under the
@@ -166,9 +173,8 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     /// The fill is per-lane plus a short mutexed append, so right-side streams may fill
-    /// concurrently. The delegated path inserts into one `HashJoin`, which is not thread-safe, and
-    /// a build estimated small keeps the narrow pipeline on purpose.
-    bool supportParallelJoin() const override { return !delegate_mode && !single_fill_thread; }
+    /// concurrently. A build estimated small keeps the narrow pipeline on purpose.
+    bool supportParallelJoin() const override { return !single_fill_thread; }
     /// Probe blocks are joined whole, never scattered across slots, and the result caps its own blocks.
     bool emitsSizedOutputBlocks() const override { return true; }
 
@@ -196,8 +202,8 @@ public:
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// The table's cells are independent, so the non-joined scan splits them into `num_streams`
-    /// contiguous position ranges. Stream 0 also emits the zero-value cell and the null-key rows. The
-    /// delegated path stays single-stream, because `HashJoin` does not advertise the parallel regime.
+    /// contiguous position ranges. Stream 0 also emits the zero-value cell and the null-key rows. With
+    /// per-row flags the streams split the stored blocks instead.
     bool supportParallelNonJoinedBlocksProcessing() const override;
 
     IBlocksStreamPtr getNonJoinedBlocks(
@@ -223,31 +229,56 @@ public:
 
     void setEnableLazyColumnsIndexing(bool value) override;
 
-    /// See `HashJoinClause::BuildStats`. Valid after `runPostBuildPhase`.
+    /// See `HashJoinClause::BuildStats`, per clause. Valid after `runPostBuildPhase`.
     using BuildStats = HashJoinClause::BuildStats;
-    BuildStats getBuildStats() const;
+    BuildStats getBuildStats(size_t clause_idx = 0) const;
 
-    void setReserveSafetyFactorForTests(double factor) { clause.setReserveSafetyFactorForTests(factor); }
-    void setReserveOverrideForTests(size_t reserve) { clause.setReserveOverrideForTests(reserve); }
-    void setAmacEnabledForTests(bool value) { clause.setAmacEnabledForTests(value); }
-    void setL1CacheSizeForTests(size_t bytes) { clause.setL1CacheSizeForTests(bytes); }
+    void setReserveSafetyFactorForTests(double factor)
+    {
+        for (auto & clause : clauses)
+            clause.setReserveSafetyFactorForTests(factor);
+    }
+    void setReserveOverrideForTests(size_t reserve)
+    {
+        for (auto & clause : clauses)
+            clause.setReserveOverrideForTests(reserve);
+    }
+    void setAmacEnabledForTests(bool value)
+    {
+        for (auto & clause : clauses)
+            clause.setAmacEnabledForTests(value);
+    }
+    void setL1CacheSizeForTests(size_t bytes)
+    {
+        for (auto & clause : clauses)
+            clause.setL1CacheSizeForTests(bytes);
+    }
     /// A forced partition plan is a partitioned build, which a one-thread join would otherwise skip.
     void setPartitionBitsForTests(size_t value)
     {
-        clause.setPartitionBitsForTests(value);
+        for (auto & clause : clauses)
+            clause.setPartitionBitsForTests(value);
         single_fill_thread = false;
     }
-    void setGrowBudgetForTests(size_t bytes) { clause.setGrowBudgetForTests(bytes); }
-    void setGrowBudgetForDrainForTests(size_t bytes) { clause.setGrowBudgetForDrainForTests(bytes); }
-    size_t predictedArenaBytesForTests(bool grouped) const { return clause.predictedArenaBytesForTests(grouped); }
+    void setGrowBudgetForTests(size_t bytes)
+    {
+        for (auto & clause : clauses)
+            clause.setGrowBudgetForTests(bytes);
+    }
+    void setGrowBudgetForDrainForTests(size_t bytes)
+    {
+        for (auto & clause : clauses)
+            clause.setGrowBudgetForDrainForTests(bytes);
+    }
+    size_t predictedArenaBytesForTests(bool grouped) const { return clauses.front().predictedArenaBytesForTests(grouped); }
     size_t predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const
     {
-        return clause.predictedDuplicateScratchBytesForTests(rows_in_range, first_group);
+        return clauses.front().predictedDuplicateScratchBytesForTests(rows_in_range, first_group);
     }
 
     /// The post-build memory verdict, taken once at the barrier from numbers that already exist. A
-    /// delegated build always fits: its table is built. A single fill thread's resident set is compared
-    /// with the budget. A partitioned build asks the clause (`HashJoinClause::planPostBuild`).
+    /// single fill thread's resident set is compared with the budget. A partitioned build asks every
+    /// clause (`HashJoinClause::planPostBuild`) and takes the worst answer.
     using PostBuildPlan = HashJoinClause::PostBuildPlan;
     PostBuildPlan planPostBuild();
 
@@ -306,8 +337,11 @@ private:
     /// a merge never stalls the other lanes.
     struct FillLane
     {
+        explicit FillLane(size_t num_clauses) : hll(num_clauses) { }
+
         std::vector<FillBlock> blocks;
-        DenseHyperLogLog hll;
+        /// One sketch per clause, indexed like `clauses`.
+        std::vector<DenseHyperLogLog> hll;
         mutable std::mutex hll_mutex;
     };
 
@@ -321,7 +355,12 @@ private:
     void dropLastStoredBlock();
     /// The saved-block form of one stored block, for the drains that hand blocks to another join.
     Block storedBlockToBlock(StoredBlock && stored) const;
-    size_t liveDistinctEstimate() const;
+    /// The fill-phase distinct estimate of one clause; refreshing it refreshes every clause's.
+    size_t liveDistinctEstimate(size_t clause_idx) const;
+    /// The other clauses' tables and arenas, built or predicted; see `HashJoinClause::setBytesReservedElsewhere`.
+    size_t bytesReservedForOtherClauses(size_t clause_idx) const;
+    /// Every clause's table and arenas.
+    size_t tablesAndArenasBytes() const;
     /// Reads the previous run's distinct-key count into `cached_distinct_keys` and counts it as a
     /// preallocation. False when the cache has no entry for this join or the entry exceeds
     /// `max_size_to_preallocate_for_joins`.
@@ -329,6 +368,10 @@ private:
     void finishBuildPhase(bool all_values_unique);
     /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
     void reinitUsedFlags();
+    /// The pool of one clause's post-build waves. It is created on first use after the barrier and sized
+    /// to the smaller of the thread count and the block count. One per clause, so the clauses can build at
+    /// once; released with the scratch.
+    ThreadPool & postBuildPool(size_t clause_idx);
 
     /// `MapsShape` is the standard shape the (kind, strictness) pair dispatches to; the shared table is
     /// its partitioned counterpart, holding identical cells. With `join_get_columns` the block carries
@@ -342,6 +385,11 @@ private:
     /// block at `max_joined_block_rows`, as the standard join does.
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
     size_t joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
+
+    /// The probe of a join with several ON clauses (`ON a OR b`), over one table per clause: the
+    /// multi-map loop of `HashJoin`, with the used flags kept per right-table row.
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
+    size_t joinRightColumns(const std::vector<const Map *> & tables, AddedColumnsType & added_columns, const ScatteredBlock & block);
 
     /// Per-probe-stream scratch, pooled on the join and reused across blocks: the find pass's results.
     /// `found_word` is the matched cell's mapped value by value (see `amac_mapped_fits_word`; 0 is a
@@ -367,14 +415,18 @@ private:
     const size_t max_bytes_before_external_join;
 
     /// Owns everything the emit machinery needs: block preparation, the saved block sample, the
-    /// shared row store, the used flags, the output samples. Its own map stays empty and the shared
-    /// table replaces it - except on the delegated path, where it runs the join whole.
+    /// shared row store, the used flags, the output samples. Its own maps stay empty and the clauses'
+    /// tables replace them.
     std::unique_ptr<HashJoin> hash_join;
 
-    /// Set for the shapes that need per-row used flags; see the class comment.
-    const bool delegate_mode;
     /// The Join table engine's mode; see the class comment.
     const bool join_table_mode;
+    /// The used flags are keyed per right-table row instead of per cell (`HashJoin::needUsedFlagsForPerRightTableRow`);
+    /// see the class comment.
+    const bool used_flags_per_row;
+    /// Whether the shape keeps used flags at all (`MapGetter::flagged`); with `used_flags_per_row` every
+    /// stored block then carries one flag per row.
+    bool allocate_per_row_flags = false;
     /// A query's instance after `shareJoinTable`.
     bool shared_from_join_table = false;
     /// See `markPartialBuild`.
@@ -398,10 +450,11 @@ private:
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
-    /// Fill-phase distinct estimate for `predictedResidentBytes`. Merging every lane on every block
-    /// would cost `lanes * 8 KiB`, so the value is reused until the row count has grown by a
-    /// sixteenth. A slightly stale value only delays the switch by one refresh interval.
-    mutable std::atomic<size_t> cached_distinct_estimate{0};
+    /// Fill-phase distinct estimates for `predictedResidentBytes`, one per clause. Merging every lane
+    /// on every block would cost `lanes * clauses * 8 KiB`. The values are therefore reused until the
+    /// row count has grown by a sixteenth. A slightly stale value only delays the switch by one refresh
+    /// interval.
+    mutable std::vector<std::atomic<size_t>> cached_distinct_estimates;
     mutable std::atomic<size_t> distinct_estimate_at_rows{0};
 
     std::optional<size_t> build_rows_hint;
@@ -442,8 +495,13 @@ private:
 
     LoggerPtr log;
 
-    /// The one clause's table and its build, over this join's store, fill blocks and byte count.
-    HashJoinClause clause;
+    /// See `postBuildPool`; indexed like `clauses`.
+    std::vector<std::unique_ptr<ThreadPool>> post_build_pools;
+
+    /// One per ON clause, indexed like `TableJoin::getClauses`: each holds its table and its build, all
+    /// over this join's store, fill blocks and byte count. A deque, because the clause is neither copyable
+    /// nor movable (reference members).
+    std::deque<HashJoinClause> clauses;
 };
 
 }
