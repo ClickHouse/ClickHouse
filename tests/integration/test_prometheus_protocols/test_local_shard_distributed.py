@@ -237,7 +237,7 @@ def test_remote_write_is_refused_when_only_the_probes_database_is_healthy():
     assert int(node.query("SELECT count() FROM timeSeriesTags(default.ts_swap)")) == 0
 
 
-def test_the_local_shard_preflight_asks_for_the_grant_the_sink_asks_for():
+def test_the_local_shard_insert_asks_for_every_column_the_sink_sends():
     """The sink sends every column the wrapper declares, so the shard-local insert asks for INSERT on
     all of them: remote write is refused exactly where a plain INSERT through the wrapper is.
     """
