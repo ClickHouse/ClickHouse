@@ -2,12 +2,13 @@
 
 #include <Client/ConnectionParameters.h>
 #include <Client/IServerConnection.h>
-#include <Common/Exception.h>
 #include <Core/QueryProcessingStage.h>
+#include <IO/CompressionMethod.h>
+#include <IO/Progress.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
-#include <IO/CompressionMethod.h>
 #include <base/types.h>
+#include <Common/Exception.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -25,17 +26,13 @@ namespace DB
 
 class WriteBuffer;
 
-/// Owns the independent client sessions used by interactive background jobs.
-/// A terminal job is retained, together with its spooled output, until it is
-/// consumed by foreground() or the manager is destroyed.
+/// Owns client sessions and spooled output retained for interactive background jobs.
 class BackgroundQueryManager
 {
 public:
     using JobId = UInt64;
 
-    /// Identifies a foreground query while it is still attached. Attached
-    /// handles live in a separate namespace from public job IDs: a query which
-    /// finishes in the foreground must not consume a number visible in \jobs.
+    /// Hidden handle for an attached query that must not consume a public job ID.
     class AttachedHandle
     {
     public:
@@ -95,6 +92,17 @@ public:
 
     struct JobInfo
     {
+        struct Metrics
+        {
+            ProgressValues progress;
+            double cpu_usage = 0;
+            UInt64 memory_usage = 0;
+            UInt64 max_host_memory_usage = 0;
+            Int64 peak_memory_usage = -1;
+            UInt64 temporary_data_on_disk = 0;
+            UInt64 max_host_temporary_data_on_disk = 0;
+        };
+
         JobId id = 0;
         String query_id;
         String query;
@@ -104,6 +112,7 @@ public:
         String output_format;
         bool output_is_tty_friendly = true;
         String error;
+        Metrics metrics;
     };
 
     enum class ForegroundStatus : UInt8
@@ -152,15 +161,8 @@ public:
     /// Starts one query using a context copy and a dedicated TCP connection.
     JobId start(String query, String display_query, Snapshot snapshot);
 
-    /** Start a foreground query on a worker, transferring the caller's current
-      * connection to it. Query result bytes initially go directly to
-      * `foreground_output`. If requestDetach() is acknowledged at a safe point
-      * in the worker's receive loop, subsequent result bytes go to the job's
-      * anonymous spool and the job is assigned a public ID.
-      *
-      * The caller must keep `foreground_output` alive until the query either
-      * becomes terminal or promoteDetached() returns a public job ID.
-      */
+    /// Starts on the caller's connection and output until detachment is acknowledged.
+    /// Keep `foreground_output` alive until terminal completion or promotion.
     AttachedHandle startAttached(
         String query,
         String display_query,
@@ -186,9 +188,7 @@ public:
     /// attached query to become terminal.
     AttachedWaitStatus waitAttached(AttachedHandle handle, std::chrono::milliseconds timeout) const;
 
-    /// Ask the worker to redirect future result bytes to its spool. The request
-    /// is nonblocking; waitAttached() reports when the receive loop has
-    /// acknowledged the handoff.
+    /// Requests a nonblocking redirect; waitAttached() reports its acknowledgement.
     void requestDetach(AttachedHandle handle);
 
     /// Move an acknowledged detached query into the public job list. Returns

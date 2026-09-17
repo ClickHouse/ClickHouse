@@ -1923,16 +1923,10 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
         while (true)
         {
-            /// A detachable query owns its connection and output stack on a
-            /// worker from the outset. Let that worker perform the output
-            /// switch itself at a receive-loop checkpoint, so Ctrl+B never
-            /// attempts to move this call stack.
+            /// The owning worker switches output at a receive-loop checkpoint.
             checkQueryDetachment();
 
-            /// A client that owns a disposable connection may prefer to stop
-            /// draining immediately after its persistent cancellation request
-            /// has been sent. This also bounds shutdown when the server stops
-            /// responding after it receives the cancellation packet.
+            /// Disposable jobs disconnect after cancellation instead of draining forever.
             if (cancelled && isQueryCancellationRequested())
             {
                 connection->disconnect();
@@ -2064,6 +2058,8 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
 void ClientBase::onProgress(const Progress & value)
 {
+    onQueryProgress(value);
+
     if (!progress_indication.updateProgress(value))
     {
         // Just a keep-alive update.
@@ -2199,6 +2195,7 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].temp_data_on_disk_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
+        onQueryProfileEvents();
         progress_table.updateTable(block);
 
         if (need_render_progress && tty_buf)
@@ -2935,10 +2932,7 @@ void ClientBase::processParsedSingleQuery(
         }
     }
 
-    /// A concrete interactive client may hand this query, together with the
-    /// current connection, to an attached worker. That worker runs the normal
-    /// processing path on its own ClientBase instance; returning here avoids
-    /// applying per-query settings or sending the statement twice.
+    /// A detachable client may move the connection to a worker running this query path.
     if (tryExecuteDetachableQuery(query_, parsed_query, insert_query_without_data_length))
         return;
 

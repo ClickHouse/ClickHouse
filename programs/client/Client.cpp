@@ -203,6 +203,77 @@ std::optional<String> getDetachableOutputFormat(
     return format;
 }
 
+String formatBackgroundJobMetrics(const BackgroundQueryManager::JobInfo & job)
+{
+    const auto & progress = job.metrics.progress;
+    String result = fmt::format(
+        "read: {} rows, {}", formatReadableQuantity(progress.read_rows), formatReadableSizeWithDecimalSuffix(progress.read_bytes));
+
+    const double elapsed_seconds
+        = progress.elapsed_ns ? static_cast<double>(progress.elapsed_ns) / 1e9 : static_cast<double>(job.elapsed.count()) / 1000.0;
+    if (elapsed_seconds > 0 && (progress.read_rows || progress.read_bytes))
+    {
+        result += fmt::format(
+            " ({} rows/s., {}/s.)",
+            formatReadableQuantity(static_cast<double>(progress.read_rows) / elapsed_seconds),
+            formatReadableSizeWithDecimalSuffix(static_cast<double>(progress.read_bytes) / elapsed_seconds));
+    }
+
+    UInt64 current = 0;
+    UInt64 total = 0;
+    if (progress.total_rows_to_read)
+    {
+        current = progress.read_rows;
+        total = progress.total_rows_to_read;
+    }
+    else if (progress.total_bytes_to_read)
+    {
+        current = progress.read_bytes;
+        total = progress.total_bytes_to_read;
+    }
+    if (total)
+    {
+        const auto denominator = std::max(current, total);
+        const bool completed = job.state == BackgroundQueryManager::State::Succeeded && current >= total;
+        const auto scale = completed ? 100.0L : 99.0L;
+        const auto percent = static_cast<UInt64>(scale * static_cast<long double>(current) / static_cast<long double>(denominator));
+        result += fmt::format("  {}%", percent);
+    }
+
+    if (progress.written_rows || progress.written_bytes)
+    {
+        result += fmt::format(
+            "  written: {} rows, {}",
+            formatReadableQuantity(progress.written_rows),
+            formatReadableSizeWithDecimalSuffix(progress.written_bytes));
+    }
+    if (progress.result_rows || progress.result_bytes)
+    {
+        result += fmt::format(
+            "  result: {} rows, {}",
+            formatReadableQuantity(progress.result_rows),
+            formatReadableSizeWithDecimalSuffix(progress.result_bytes));
+    }
+
+    const auto & metrics = job.metrics;
+    if (metrics.cpu_usage > 0 || metrics.memory_usage > 0 || metrics.temporary_data_on_disk > 0)
+    {
+        result += fmt::format("  ({:.1f} CPU", std::max(metrics.cpu_usage, 0.0));
+        if (metrics.memory_usage)
+            result += ", " + formatReadableSizeWithDecimalSuffix(metrics.memory_usage) + " RAM";
+        if (metrics.max_host_memory_usage < metrics.memory_usage)
+            result += ", " + formatReadableSizeWithDecimalSuffix(metrics.max_host_memory_usage) + " max/host";
+        if (metrics.temporary_data_on_disk)
+            result += ", " + formatReadableSizeWithDecimalSuffix(metrics.temporary_data_on_disk) + " disk";
+        if (metrics.max_host_temporary_data_on_disk < metrics.temporary_data_on_disk)
+            result += ", " + formatReadableSizeWithDecimalSuffix(metrics.max_host_temporary_data_on_disk) + " max/host";
+        result += ')';
+    }
+    if (metrics.peak_memory_usage >= 0)
+        result += "  peak RAM: " + formatReadableSizeWithDecimalSuffix(metrics.peak_memory_usage);
+
+    return result;
+}
 }
 
 bool Client::tryProcessInteractiveClientCommand(std::string_view input)
@@ -317,9 +388,9 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
 
         for (const auto & job : jobs)
         {
-            output_stream << '[' << job.id << "] " << BackgroundQueryManager::stateName(job.state)
-                          << "  " << fmt::format("{:.1f}", static_cast<double>(job.elapsed.count()) / 1000.0) << " sec"
-                          << "  " << formatReadableSizeWithBinarySuffix(job.spool_bytes)
+            output_stream << '[' << job.id << "] " << BackgroundQueryManager::stateName(job.state) << "  "
+                          << fmt::format("{:.1f}", static_cast<double>(job.elapsed.count()) / 1000.0) << " sec"
+                          << "  " << formatBackgroundJobMetrics(job) << "  spooled: " << formatReadableSizeWithBinarySuffix(job.spool_bytes)
                           << "  " << job.query_id << "  " << job.query << std::endl;
         }
         return true;
@@ -511,10 +582,7 @@ bool Client::tryExecuteDetachableQuery(
         || containsSetting(parsed_query, "profile"))
         return false;
 
-    /// This hook runs before ClientBase's usual connection preflight because
-    /// the worker executes that normal path. Synchronize or establish the
-    /// session before transferring it, then let the worker apply query-local
-    /// settings and send the statement.
+    /// Prepare the session before the worker runs the normal query path.
     if (connection_needs_resynchronization)
         resynchronizeConnectionAfterError();
     else if (!connection || !connection->checkConnectedWithoutRoundTrip())
@@ -556,15 +624,10 @@ bool Client::tryExecuteDetachableQuery(
             foreground_tty_fd = stdin_fd;
     }
 
-    /// Construct the only remaining potentially allocating local before the
-    /// connection is transferred to the worker. From that point onward every
-    /// exit must either collect the hidden handle or publish it as a job.
+    /// Complete local allocation before transferring connection ownership.
     AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> diagnostics(stderr_fd);
 
-    /// Arm both controls before handing the live connection to the worker. In
-    /// particular, constructing the terminal interceptor's thread may throw;
-    /// after startAttached() succeeds there must be no unguarded exit which
-    /// leaves a hidden worker writing to the foreground buffers.
+    /// Arm controls before transfer so interceptor startup cannot orphan a worker.
     query_interrupt_handler.start(/* signals_before_stop = */ 1);
     SCOPE_EXIT({
         stopKeystrokeInterceptorIfExists();
@@ -599,9 +662,7 @@ bool Client::tryExecuteDetachableQuery(
             background_queries.discardAttached(handle);
     });
 
-    /// The worker now owns the exchange. Until normal completion returns the
-    /// connection, no main-thread reconnection or resynchronization may touch
-    /// it.
+    /// The main thread must not touch the exchange until the worker returns it.
     connection_needs_resynchronization = false;
 
     bool cancellation_requested = false;
@@ -628,9 +689,7 @@ bool Client::tryExecuteDetachableQuery(
                 continue;
 
             attached_handle_owned = false;
-            /// Restore canonical terminal input before displaying a fresh
-            /// prompt. The worker acknowledged the output redirect, so it can
-            /// no longer write result bytes to the foreground buffer.
+            /// Restore terminal input only after the worker redirects its output.
             stopKeystrokeInterceptorIfExists();
             output_stream << "\nBackground job " << *id
                           << " detached. The main client will reconnect with a new session." << std::endl;

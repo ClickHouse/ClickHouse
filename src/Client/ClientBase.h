@@ -258,19 +258,14 @@ protected:
     /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
 
-    /// Give a concrete interactive client a chance to consume an application-specific
-    /// meta-command before the text is parsed as SQL. The base client commands live in
-    /// `processQueryText`; commands that only make sense for a remote client (and would be
-    /// misleading in clickhouse-local or the embedded client) belong in this hook.
+    /// Lets a concrete interactive client consume remote-only meta-commands before SQL parsing.
     virtual bool tryProcessInteractiveClientCommand(std::string_view) { return false; }
 
     /// A client whose query is owned by another thread can use this to close the
     /// race between publishing itself and arming the per-query interrupt handler.
     virtual bool isQueryCancellationRequested() const { return false; }
 
-    /// Called after the effective result format is resolved but before any
-    /// result bytes are written. Specialized clients can use this to defer a
-    /// terminal-safety decision until the result is consumed elsewhere.
+    /// Called after format selection and before result bytes are written.
     virtual void onOutputFormatSelected(std::string_view, bool) { }
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
@@ -342,17 +337,14 @@ private:
     /// that can later be detached without moving a live receive stack.
     virtual bool tryExecuteDetachableQuery(std::string_view, const ASTPtr &, size_t) { return false; }
 
-    /// Terminal keystrokes are intercepted only while a query is running.
-    /// Concrete clients use these hooks to turn Ctrl+B into a detach request;
-    /// the actual handoff is acknowledged by the query-owning worker at a
-    /// receive-loop checkpoint through checkQueryDetachment().
+    /// Ctrl+B requests detachment; the owning worker acknowledges it at a checkpoint.
     virtual bool supportsQueryDetachment() const { return false; }
     virtual void requestQueryDetachment() { }
     virtual void checkQueryDetachment() { }
+    virtual void onQueryProgress(const Progress &) { }
+    virtual void onQueryProfileEvents() { }
 
-    /// Specialized clients can supply a log sink whose destination changes
-    /// together with query output. The reset notification invalidates any raw
-    /// pointer they retain to that sink.
+    /// Specialized clients can redirect logs with query output and observe sink resets.
     virtual std::unique_ptr<WriteBuffer> createDefaultLogsOutputBuffer();
     virtual void onLogsOutputBufferReset() { }
 
@@ -531,13 +523,9 @@ protected:
     bool progress_table_toggle_enabled = true;
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
-    /// Only the worker which owns an attached query needs the shorter receive
-    /// poll interval. The interactive Client also supports the Ctrl+B
-    /// keystroke, but ineligible queries should keep the normal interval.
+    /// Only an attached worker needs the shorter receive-poll interval.
     bool poll_for_query_detachment = false;
-    /// BackgroundClient normally has batch parsing semantics, but an attached
-    /// foreground query still needs the usual interactive Ok/cancel/summary
-    /// text in the stream which will either stay attached or be spooled.
+    /// Attached workers retain interactive summaries despite batch parsing semantics.
     bool print_interactive_query_summary = false;
     bool written_first_block = false;
     /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,

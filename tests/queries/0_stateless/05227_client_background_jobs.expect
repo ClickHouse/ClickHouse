@@ -1,11 +1,7 @@
 #!/usr/bin/expect -f
 
-# Exercise the interactive clickhouse-client background-job commands. A long-running job must use
-# its own connection: the normal prompt stays usable, its output is not interleaved with foreground
-# output, and asking for its result is nonblocking. A short job covers successful spooling/replay;
-# long jobs cover listing and asynchronous cancellation; the final cases cover input validation,
-# binary-output confirmation, spool sizes, discarding a terminal job, and moving an already-running
-# foreground query into the background with Ctrl+B.
+# Exercise background commands, output replay, cancellation, validation, and Ctrl+B detachment.
+# Long-running cases also verify prompt responsiveness and isolated output.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -25,13 +21,37 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-# Give replxx time to consume the text before submitting it. Sending the text and carriage return
-# together is racy on a loaded machine: replxx can interpret the carriage return as a newline in
-# one multiline input instead of as submission.
+# Give replxx time to consume text before sending carriage return on loaded machines.
 proc submit {text} {
     send -- $text
     expect -ex $text
     send -- "\r"
+}
+
+proc wait_for_running_read_metrics {job_id} {
+    set seen 0
+    set live_re [format {(?i)\[%s\][^\r\n]*running[^\r\n]*read:[[:space:]]+([1-9][0-9]*(\.[0-9]+)?)[[:space:]]+rows,[[:space:]]+([1-9][0-9]*(\.[0-9]+)?)[[:space:]]+([KMGTPEZY]i?)?B} $job_id]
+    set waiting_re [format {(?i)\[%s\][^\r\n]*(starting|running)} $job_id]
+    set terminal_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed|failed|cancel+ed)} $job_id]
+    for {set attempt 0} {$attempt < 200 && !$seen} {incr attempt} {
+        submit {\jobs}
+        expect {
+            -re $live_re {
+                set seen 1
+                expect ":) "
+            }
+            -re $waiting_re {
+                expect ":) "
+                after 100
+            }
+            -re $terminal_re {
+                exit 1
+            }
+        }
+    }
+    if {!$seen} {
+        exit 1
+    }
 }
 
 # Keep progress rendering enabled: Ctrl+B must synchronize with both the formatter's flush callback
@@ -39,9 +59,8 @@ proc submit {text} {
 spawn bash -c "source $basedir/../shell_config.sh ; CLICKHOUSE_BACKGROUND_EXPECT_OPT=\"\${CLICKHOUSE_CLIENT_EXPECT_OPT/--progress no/--progress tty}\" ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_BACKGROUND_EXPECT_OPT --history_file=$history_file"
 expect ":) "
 
-# Eligible foreground SELECTs are owned by an attached worker from their first byte so they can be
-# detached later. A normally completed query must nevertheless keep using and return the original
-# session; otherwise temporary tables disappear even when the user never presses Ctrl+B.
+# A normally completed detachable query must return its original session.
+# Temporary tables make a lost or replaced connection observable.
 submit {CREATE TEMPORARY TABLE detach_session_05227 (value UInt8) ENGINE = Memory}
 expect ":) "
 submit {INSERT INTO detach_session_05227 VALUES (42)}
@@ -53,10 +72,7 @@ submit {SELECT count() FROM detach_session_05227 FORMAT TabSeparatedRaw}
 expect -ex {1}
 expect ":) "
 
-# A finished job's result is kept out of the terminal until `\fg` replays it. Construct the marker
-# from separate literals so neither the command echo nor the `\jobs` query preview contains the full
-# marker, then guard every expect until replay. This also catches a result that leaks asynchronously
-# after the client has already returned the prompt.
+# Guard a split marker until `\fg` to catch synchronous or asynchronous output leaks.
 expect_before -ex {background-result-05227} { exit 1 }
 submit {\bg SELECT concat('background-', 'result-05227') FORMAT TabSeparatedRaw}
 expect -re {(?i)(job[^\r\n]*1[^\r\n]*start|start[^\r\n]*job[^\r\n]*1)}
@@ -71,7 +87,7 @@ set succeeded 0
 for {set attempt 0} {$attempt < 200 && !$succeeded} {incr attempt} {
     submit {\jobs}
     expect {
-        -re {(?i)\[1\][^\r\n]*(succeeded|completed)[^\r\n]*[0-9]+\.[0-9]+[[:space:]]+([KMGTPE]i)?B} {
+        -re {(?i)\[1\][^\r\n]*(succeeded|completed)[^\r\n]*spooled:[[:space:]]+[0-9]+\.[0-9]+[[:space:]]+([KMGTPE]i)?B} {
             set succeeded 1
             expect ":) "
         }
@@ -100,32 +116,12 @@ expect ":) "
 
 # Keep the second job alive long enough to prove that foreground work and `\fg` do not wait for it.
 # max_block_size=1 makes the sleep duration independent of block sizing.
-submit {\bg SELECT sleepEachRow(0.05) FROM numbers(600) SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 60000000 FORMAT Null}
+submit {\bg SELECT sleepEachRow(0.05) FROM numbers(600) SETTINGS max_threads = 1, max_block_size = 1, function_sleep_max_microseconds_per_block = 60000000 FORMAT Null}
 expect -re {(?i)(job[^\r\n]*2[^\r\n]*start|start[^\r\n]*job[^\r\n]*2)}
 expect ":) "
 
-# Synchronize on the job actually executing, rather than assuming that its worker gets scheduled
-# before the next input. This makes the foreground query below a real concurrent-connection check.
-set running 0
-for {set attempt 0} {$attempt < 200 && !$running} {incr attempt} {
-    submit {\jobs}
-    expect {
-        -re {(?i)\[2\][^\r\n]*running} {
-            set running 1
-            expect ":) "
-        }
-        -re {(?i)\[2\][^\r\n]*starting} {
-            expect ":) "
-            after 100
-        }
-        -re {(?i)\[2\][^\r\n]*(succeeded|completed|failed|cancel+ed)} {
-            exit 1
-        }
-    }
-}
-if {!$running} {
-    exit 1
-}
+# Require live server metrics while the explicit background job is still running.
+wait_for_running_read_metrics 2
 
 submit {SELECT 'main-connection-responsive-05227' FORMAT TabSeparatedRaw}
 expect -ex {main-connection-responsive-05227}
@@ -166,11 +162,8 @@ submit {\fg 2}
 expect -re {(?i)background job[[:space:]]+2[[:space:]]+cancel+ed}
 expect ":) "
 
-# Regression for cancellation racing with worker startup: request it immediately after the start
-# acknowledgement, without first waiting for the worker to install its active query handler. The
-# query takes about 60 seconds without cancellation, while the cancellation deadline below is 10
-# seconds. A request lost when the per-query interrupt handler is armed therefore cannot pass
-# merely because the worker labels the job `cancelled` after executing the whole query.
+# Cancel before the worker installs its active handler; the natural runtime is about 60 seconds.
+# The 10-second deadline catches a startup request that was lost.
 submit {\bg SELECT sleepEachRow(0.05) FROM numbers(1200) SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 60000000 FORMAT Null}
 expect -re {(?i)(job[^\r\n]*3[^\r\n]*start|start[^\r\n]*job[^\r\n]*3)}
 
@@ -239,10 +232,8 @@ submit {\bg INSERT INTO nonexistent VALUES (1)}
 expect -ex {A background job supports INSERT only as INSERT ... SELECT}
 expect ":) "
 
-# Binary output must not be written to an interactive terminal without confirmation. Refusing the
-# replay emits no RowBinary payload (the value 1 is the single byte 0x01) and retains the job. Its
-# listing also pins the new spool-size field. The rejected commands above must not allocate IDs, so
-# this is job 4. Cancelling the terminal job then discards the spool.
+# Refusing binary replay emits no 0x01 payload and retains job 4 with its spool.
+# Cancelling that terminal job then discards the retained output.
 expect_before -ex "\x01" { exit 1 }
 submit {\bg SELECT 1 FORMAT RowBinary}
 expect -re {(?i)(job[^\r\n]*4[^\r\n]*start|start[^\r\n]*job[^\r\n]*4)}
@@ -252,7 +243,7 @@ set binary_succeeded 0
 for {set attempt 0} {$attempt < 200 && !$binary_succeeded} {incr attempt} {
     submit {\jobs}
     expect {
-        -re {(?i)\[4\][^\r\n]*succeeded[^\r\n]*1\.00 B[^\r\n]*SELECT 1 FORMAT RowBinary} {
+        -re {(?i)\[4\][^\r\n]*succeeded[^\r\n]*spooled:[[:space:]]+1\.00 B[^\r\n]*SELECT 1 FORMAT RowBinary} {
             set binary_succeeded 1
             expect ":) "
         }
@@ -276,7 +267,7 @@ expect -ex {Background job 4 was not replayed; use \cancel 4 to discard it}
 expect ":) "
 
 submit {\jobs}
-expect -re {(?i)\[4\][^\r\n]*succeeded[^\r\n]*1\.00 B[^\r\n]*SELECT 1 FORMAT RowBinary}
+expect -re {(?i)\[4\][^\r\n]*succeeded[^\r\n]*spooled:[[:space:]]+1\.00 B[^\r\n]*SELECT 1 FORMAT RowBinary}
 expect ":) "
 
 submit {\cancel 4}
@@ -288,10 +279,8 @@ expect -ex {No background jobs.}
 expect ":) "
 expect_before -i $spawn_id
 
-# Ctrl+B (ASCII STX, 0x02) moves an eligible foreground query into the background. Wait for the
-# first streamed row before pressing it: that proves this is an already-running foreground query,
-# rather than another spelling of `\bg`. Single-threaded one-row blocks make the output order and
-# the split between terminal output and retained output deterministic.
+# Send Ctrl+B after the first row to prove an already-running query is detached.
+# Single-threaded one-row blocks make the output split deterministic.
 submit {SELECT concat('detached-row-', toString(number), '-05227') FROM numbers(20) WHERE sleepEachRow(0.5) = 0 SETTINGS max_threads = 1, max_block_size = 1, function_sleep_max_microseconds_per_block = 60000000 FORMAT TabSeparatedRaw}
 expect -ex {detached-row-0-05227}
 send -- "\002"
@@ -309,9 +298,7 @@ submit {SELECT concat('detached-main-', 'responsive-05227') FORMAT TabSeparatedR
 expect -ex {detached-main-responsive-05227}
 expect ":) "
 
-submit {\jobs}
-expect -re [format {(?i)\[%s\][^\r\n]*running[^\r\n]*[0-9]+\.[0-9]+[[:space:]]+([KMGTPE]i)?B} $detached_job_id]
-expect ":) "
+wait_for_running_read_metrics $detached_job_id
 
 # Foregrounding a running detached query stays nonblocking, exactly like a job started with `\bg`.
 submit [format {\fg %s} $detached_job_id]
@@ -319,7 +306,7 @@ expect -re [format {Background job[[:space:]]+%s[^\r\n]*(is still running|has no
 expect ":) "
 
 set detached_succeeded 0
-set detached_succeeded_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed)[^\r\n]*[1-9][0-9]*\.[0-9]+[[:space:]]+([KMGTPE]i)?B} $detached_job_id]
+set detached_succeeded_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed)[^\r\n]*spooled:[[:space:]]+[1-9][0-9]*\.[0-9]+[[:space:]]+([KMGTPE]i)?B} $detached_job_id]
 set detached_running_re [format {(?i)\[%s\][^\r\n]*(starting|running)} $detached_job_id]
 set detached_failed_re [format {(?i)\[%s\][^\r\n]*(failed|cancel+ed)} $detached_job_id]
 for {set attempt 0} {$attempt < 200 && !$detached_succeeded} {incr attempt} {
@@ -352,9 +339,7 @@ expect -re [format {Background job[[:space:]]+%s[[:space:]]+(succeeded|completed
 expect ":) "
 expect_before -i $spawn_id
 
-# Exercise the default interactive Pretty format without a FORMAT clause. Pin nonzero squash
-# intervals so its normal asynchronous writer remains active across the handoff; detachment must
-# synchronize destination changes without altering ordinary foreground formatting semantics.
+# Keep Pretty's asynchronous writer active while detachment changes its destination.
 submit {SET output_format_pretty_squash_consecutive_ms = 50, output_format_pretty_squash_max_wait_ms = 250, output_format_pretty_glue_chunks = 0, output_format_pretty_max_rows = 1000, output_format_pretty_max_value_width = 10000}
 expect ":) "
 
@@ -376,7 +361,7 @@ expect -ex {pretty-main-responsive-05227}
 expect ":) "
 
 set pretty_detached_succeeded 0
-set pretty_detached_succeeded_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed)[^\r\n]*[1-9][0-9]*\.[0-9]+[[:space:]]+([KMGTPE]i)?B} $pretty_detached_job_id]
+set pretty_detached_succeeded_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed)[^\r\n]*spooled:[[:space:]]+[1-9][0-9]*\.[0-9]+[[:space:]]+([KMGTPE]i)?B} $pretty_detached_job_id]
 set pretty_detached_running_re [format {(?i)\[%s\][^\r\n]*(starting|running)} $pretty_detached_job_id]
 set pretty_detached_failed_re [format {(?i)\[%s\][^\r\n]*(failed|cancel+ed)} $pretty_detached_job_id]
 for {set attempt 0} {$attempt < 200 && !$pretty_detached_succeeded} {incr attempt} {
@@ -409,9 +394,8 @@ expect -re [format {Background job[[:space:]]+%s[[:space:]]+(succeeded|completed
 expect ":) "
 expect_before -i $spawn_id
 
-# A foreground query remains cancellable after it has been detached. It would run for about a
-# minute without cancellation, so reaching the cancelled state within the deadline also catches a
-# Ctrl+B implementation that merely returns a prompt while losing control of the original query.
+# A detached query remains cancellable; its natural runtime is about one minute.
+# The deadline catches a handoff that loses control of the original query.
 submit {SELECT concat('detached-cancel-', toString(number), '-05227') FROM numbers(1200) WHERE sleepEachRow(0.05) = 0 SETTINGS max_threads = 1, max_block_size = 1, function_sleep_max_microseconds_per_block = 60000000 FORMAT TabSeparatedRaw}
 expect -ex {detached-cancel-0-05227}
 send -- "\002"
@@ -463,9 +447,8 @@ submit {\jobs}
 expect -ex {No background jobs.}
 expect ":) "
 
-# Server logs use a separately initialized output path. Synchronize on the query-start log, detach,
-# and verify that the deterministic completion log is retained instead of appearing at the prompt.
-# Keep this last because changing the session log level would otherwise affect later cases.
+# Detach after the query-start log and require the completion log only during replay.
+# Changing the session log level makes this the final case for the first client.
 submit {SET send_logs_level = 'debug', send_logs_source_regexp = 'executeQuery'}
 expect ":) "
 
@@ -516,10 +499,8 @@ expect ":) "
 send -- "\4"
 expect eof
 
-# ProfileEvents initialize the diagnostics router lazily. Use a fresh client whose first such output
-# is printed only at query completion, after detachment, and verify that it is retained for replay.
-# This covers creation of the redirectable log sink after the handoff rather than merely switching
-# a sink which had already printed a server log.
+# Print the first ProfileEvents output after detachment to create the log router lazily.
+# Requiring it during replay covers sink creation after the handoff.
 spawn bash -c "export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal ; source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --print-profile-events --profile-events-delay-ms=-1"
 expect ":) "
 

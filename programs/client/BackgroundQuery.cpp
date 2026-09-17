@@ -146,9 +146,8 @@ private:
     std::array<char, 4096> buffer;
 };
 
-/// Routes ordinary ostream diagnostics and summaries to the terminal until
-/// the worker acknowledges detachment, then to the job spool. It is used for
-/// output which does not pass through ClientBase::std_out.
+/// Routes ostream diagnostics to the terminal until detachment, then to the spool.
+/// This covers output which does not pass through ClientBase::std_out.
 class RedirectableStreamBuf final : public std::streambuf
 {
 public:
@@ -195,9 +194,8 @@ private:
     bool detached = false;
 };
 
-/// Create a mode-0600 spool, open both interfaces that ClientBase needs, and
-/// unlink it immediately. The descriptors keep the contents alive without
-/// leaving query results behind in the temporary directory after a crash.
+/// Creates and immediately unlinks a mode-0600 spool.
+/// Its descriptors retain the contents without leaving files after a crash.
 class SecureTemporaryFile
 {
 public:
@@ -290,15 +288,8 @@ private:
     std::unique_ptr<std::ostream> output_stream;
 };
 
-/// Keeps the formatter's sink stable for the whole query while allowing the
-/// query-owning worker to change where bytes go at a receive-loop checkpoint.
-/// Before detach(), every flush is forwarded to the caller's foreground
-/// buffer. After detach(), bytes are appended to the job's anonymous spool.
-///
-/// Some formats flush from a helper thread. Detachment therefore switches only
-/// the destination pointer: it never touches this buffer's write position. A
-/// flush which was already forwarding to the terminal completes before
-/// detach() returns, and every later flush observes the spool destination.
+/// Keeps the formatter sink stable while the worker redirects completed flushes.
+/// The destination lock serializes helper-thread flushes with detachment.
 class RedirectableWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
@@ -338,9 +329,7 @@ private:
 
     void cancelImpl() noexcept override
     {
-        /// The foreground buffer belongs to the interactive client. Never
-        /// propagate cancellation into it. The spool buffer owns no fd and is
-        /// safe to cancel independently.
+        /// The foreground buffer is borrowed; only cancel the owned spool buffer.
         spool_output.cancel();
     }
 
@@ -349,6 +338,17 @@ private:
     std::mutex destination_mutex;
     WriteBuffer * destination;
     bool detached = false;
+};
+
+struct BackgroundQueryMetrics
+{
+    Progress progress;
+    std::atomic<double> cpu_usage{0};
+    std::atomic<UInt64> memory_usage{0};
+    std::atomic<UInt64> max_host_memory_usage{0};
+    std::atomic<Int64> peak_memory_usage{-1};
+    std::atomic<UInt64> temporary_data_on_disk{0};
+    std::atomic<UInt64> max_host_temporary_data_on_disk{0};
 };
 
 class BackgroundClient final : public ClientBase
@@ -376,6 +376,7 @@ public:
         QueryProcessingStage::Enum query_processing_stage_,
         ClientInfo::QueryKind query_kind_,
         const std::atomic_bool & cancellation_requested_,
+        BackgroundQueryMetrics & metrics_,
         std::unique_ptr<WriteBuffer> output_buffer_ = {},
         RedirectableWriteBuffer * redirectable_output_ = nullptr,
         ServerConnectionPtr adopted_connection_ = {},
@@ -402,6 +403,7 @@ public:
         , configuration_snapshot(std::move(configuration_))
         , configuration(new Poco::Util::LayeredConfiguration)
         , cancellation_requested(cancellation_requested_)
+        , metrics(metrics_)
         , redirectable_output(redirectable_output_)
         , detachment_requested(detachment_requested_)
         , detachment_acknowledged(detachment_acknowledged_)
@@ -442,9 +444,7 @@ public:
 
         if (attached_mode)
         {
-            /// Formatting decisions should reflect the terminal to which the
-            /// result is currently attached, rather than the anonymous spool
-            /// descriptor installed as stdout_fd.
+            /// Use the attached terminal for formatting, not the spool descriptor.
             stdout_is_a_tty = logical_stdout_is_a_tty;
             stderr_is_a_tty = logical_stderr_is_a_tty;
             terminal_width = logical_terminal_width;
@@ -456,10 +456,7 @@ public:
                 tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(foreground_tty_fd, 1024);
         }
 
-        /// Populate the client-owned defaults and command-line settings before
-        /// installing the copied interactive context. Otherwise configured
-        /// format options could overwrite a later `SET output_format` captured
-        /// in that context.
+        /// Load configured defaults before the copied context so later SET values win.
         setDefaultFormatsAndCompressionFromConfiguration();
         initClientContext(std::move(context));
         default_output_format = std::move(default_output_format_);
@@ -478,9 +475,7 @@ public:
 
     ~BackgroundClient() override
     {
-        /// The default server-log router in the base owns a reference to the
-        /// foreground buffer below. Destroy it while that buffer is still
-        /// alive; derived members are otherwise destroyed before base members.
+        /// Destroy the base log router before its derived foreground buffer.
         logs_out_stream.reset();
         out_logs_buf.reset();
         onLogsOutputBufferReset();
@@ -552,9 +547,7 @@ private:
 
     void processError(std::string_view query) const override
     {
-        /// An attached completion is reported by the interactive Client after
-        /// collectAttached() returns cloned exceptions. A detached job has no
-        /// such caller, so retain its normal diagnostic text for `\fg`.
+        /// Attached errors return to Client; detached errors stay spooled for `\fg`.
         if (attached_mode && !detachment_acknowledged->load(std::memory_order_acquire))
             return;
 
@@ -582,16 +575,24 @@ private:
     {
         const bool requested = cancellation_requested.load(std::memory_order_acquire);
         cancellation_was_observed |= requested;
-        /// While still attached, requestCancellation() reaches the live client
-        /// under client_mutex and stops its normal interrupt handler. Returning
-        /// a persistent request here would trigger ClientBase's disposable-job
-        /// fast path and disconnect a session which must be handed back to the
-        /// interactive client. Once detached, that fast path is desirable.
+        /// Drain attached cancellation to preserve its session; detached jobs may disconnect.
         return requested && (!attached_mode
             || (detachment_acknowledged && detachment_acknowledged->load(std::memory_order_acquire))
             || !cancelled.load(std::memory_order_acquire));
     }
     bool supportsQueryDetachment() const override { return attached_mode; }
+    void onQueryProgress(const Progress & value) override { metrics.progress.incrementPiecewiseAtomically(value); }
+    void onQueryProfileEvents() override
+    {
+        const auto memory = progress_indication.getMemoryUsage();
+        const auto temporary_data = progress_indication.getTempDataOnDiskUsage();
+        metrics.cpu_usage.store(progress_indication.getCPUUsage(), std::memory_order_relaxed);
+        metrics.memory_usage.store(memory.total, std::memory_order_relaxed);
+        metrics.max_host_memory_usage.store(memory.max, std::memory_order_relaxed);
+        metrics.peak_memory_usage.store(memory.peak, std::memory_order_relaxed);
+        metrics.temporary_data_on_disk.store(temporary_data.total, std::memory_order_relaxed);
+        metrics.max_host_temporary_data_on_disk.store(temporary_data.max, std::memory_order_relaxed);
+    }
     std::unique_ptr<WriteBuffer> createDefaultLogsOutputBuffer() override
     {
         if (!attached_mode || foreground_stderr_fd < 0)
@@ -654,6 +655,7 @@ private:
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> configuration_snapshot;
     Poco::AutoPtr<Poco::Util::LayeredConfiguration> configuration;
     const std::atomic_bool & cancellation_requested;
+    BackgroundQueryMetrics & metrics;
     RedirectableWriteBuffer * redirectable_output = nullptr;
     const std::atomic_bool * detachment_requested = nullptr;
     std::atomic_bool * detachment_acknowledged = nullptr;
@@ -754,6 +756,7 @@ struct BackgroundQueryManager::Impl
         String output_format;
         bool output_is_tty_friendly = true;
         bool cancellation_was_observed = false;
+        BackgroundQueryMetrics metrics;
         bool attached = false;
         WriteBuffer * foreground_output = nullptr;
         std::ostream * foreground_output_stream = nullptr;
@@ -801,6 +804,13 @@ struct BackgroundQueryManager::Impl
         const auto end = isTerminal(result.state) ? job.finished_at : std::chrono::steady_clock::now();
         result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - job.started_at);
         result.spool_bytes = job.output.size() + job.diagnostics.size();
+        result.metrics.progress = job.metrics.progress.getValues();
+        result.metrics.cpu_usage = job.metrics.cpu_usage.load(std::memory_order_relaxed);
+        result.metrics.memory_usage = job.metrics.memory_usage.load(std::memory_order_relaxed);
+        result.metrics.max_host_memory_usage = job.metrics.max_host_memory_usage.load(std::memory_order_relaxed);
+        result.metrics.peak_memory_usage = job.metrics.peak_memory_usage.load(std::memory_order_relaxed);
+        result.metrics.temporary_data_on_disk = job.metrics.temporary_data_on_disk.load(std::memory_order_relaxed);
+        result.metrics.max_host_temporary_data_on_disk = job.metrics.max_host_temporary_data_on_disk.load(std::memory_order_relaxed);
         if (isTerminal(result.state))
         {
             result.output_format = job.output_format;
@@ -829,9 +839,7 @@ struct BackgroundQueryManager::Impl
             job->server_exception = client.cloneServerException();
             job->client_exception = client.cloneClientException();
 
-            /// A detached connection remains owned by the background worker
-            /// and is closed with it. Only a query which completed before the
-            /// detach acknowledgement may return its session to the caller.
+            /// Only a query completed before detach may return its session.
             if (!job->detach_acknowledged.load(std::memory_order_acquire))
             {
                 job->returned_connection_needs_resynchronization = client.needsResynchronization();
@@ -849,9 +857,7 @@ struct BackgroundQueryManager::Impl
         std::unique_ptr<BackgroundClient> client;
         try
         {
-            /// Credentials are needed only while the worker connects. Moving
-            /// the snapshot out first prevents every early-exit path from
-            /// retaining a second copy of connection secrets in the job list.
+            /// Move connection secrets out before any worker early exit can retain them.
             auto snapshot = std::move(job->snapshot);
             auto context = std::move(job->context);
             auto query = std::move(job->query);
@@ -904,10 +910,7 @@ struct BackgroundQueryManager::Impl
                 client_output_stream = attached_output_stream.get();
                 client_error_stream = attached_error_stream.get();
 
-                /// ProgressIndication and ProgressTable capture their terminal
-                /// descriptors in ClientBase's constructor. Give them a real
-                /// terminal when progress rendering is enabled; eligible
-                /// SELECTs never read from this descriptor.
+                /// Progress helpers capture this descriptor but eligible SELECTs never read it.
                 if (job->foreground_tty_fd >= 0)
                 {
                     client_input_fd = job->foreground_tty_fd;
@@ -937,6 +940,7 @@ struct BackgroundQueryManager::Impl
                 snapshot->query_processing_stage,
                 snapshot->query_kind,
                 job->cancel_requested,
+                job->metrics,
                 std::move(attached_output),
                 redirectable_output,
                 std::move(job->adopted_connection),
@@ -958,9 +962,7 @@ struct BackgroundQueryManager::Impl
                 job->render_progress,
                 job->render_progress_table,
                 job->progress_table_toggle_enabled,
-                job->progress_table_toggle_source
-                    ? job->progress_table_toggle_source->load(std::memory_order_acquire)
-                    : false);
+                job->progress_table_toggle_source ? job->progress_table_toggle_source->load(std::memory_order_acquire) : false);
             snapshot.reset();
 
             {
@@ -1100,9 +1102,7 @@ BackgroundQueryManager::Snapshot::Snapshot(
     , query_processing_stage(query_processing_stage_)
     , query_kind(query_kind_)
 {
-    /// BackgroundClient only needs presentation-related client options. Do
-    /// not retain the full configuration, which can include plaintext
-    /// credentials and unrelated connection profiles.
+    /// Copy only presentation options; the full config can contain credentials.
     static constexpr std::array<std::string_view, 17> copied_configuration_keys{
         "quota_key",
         "stacktrace",
@@ -1206,9 +1206,7 @@ BackgroundQueryManager::AttachedHandle BackgroundQueryManager::startAttached(
     if (!connection)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "An attached query requires an established server connection");
 
-    /// The interactive Client has already selected the query ID. Unlike an
-    /// explicit `\bg`, preserve it while still isolating subsequent SET/USE
-    /// changes from the worker.
+    /// Preserve the foreground query ID while isolating later SET/USE changes.
     auto context = Context::createCopy(snapshot.context);
     snapshot.context.reset();
     String query_id = context->getCurrentQueryId();
@@ -1243,9 +1241,7 @@ BackgroundQueryManager::AttachedHandle BackgroundQueryManager::startAttached(
             progress_table_toggle_enabled,
             progress_table_toggle_on);
 
-        /// Construct both spools and publish the hidden handle before taking
-        /// ownership of the caller's connection. None of the operations after
-        /// this assignment can throw until std::thread construction below.
+        /// Publish the handle before the no-throw connection transfer.
         impl->attached_jobs.emplace(handle_value, job);
         job->adopted_connection = std::move(connection);
     }
@@ -1292,9 +1288,7 @@ BackgroundQueryManager::AttachedWaitStatus BackgroundQueryManager::waitAttached(
         job->state_changed.wait_for(lock, timeout, ready);
     }
 
-    /// Give an acknowledged handoff priority over a completion which followed
-    /// it. Loading the terminal state first makes the worker's earlier
-    /// acknowledgement visible through the state release/acquire ordering.
+    /// Load state first so its release sequence also exposes an earlier detach ack.
     const auto state = job->state.load(std::memory_order_acquire);
     if (job->detach_acknowledged.load(std::memory_order_acquire))
         return AttachedWaitStatus::DetachAcknowledged;
@@ -1367,10 +1361,7 @@ void BackgroundQueryManager::discardAttached(AttachedHandle handle) noexcept
         job = it->second;
     }
 
-    /// Make the session disposable before cancelling. Attached cancellation
-    /// normally drains the exchange so the connection can be returned, but an
-    /// exceptional caller is abandoning it; once the worker reaches its next
-    /// receive-loop checkpoint it should redirect and disconnect promptly.
+    /// An exceptional caller abandons the session, so detach before cancellation.
     job->detach_requested.store(true, std::memory_order_release);
     Impl::requestCancellation(job);
     if (job->worker.joinable())

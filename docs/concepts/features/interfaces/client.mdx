@@ -214,6 +214,8 @@ Use the server setting for work such as `INSERT ... SELECT` that must survive a 
 | `\fg <job_id>`      | Print and remove a finished job; if it is still running, return to the prompt                          |
 | `\cancel <job_id>`  | Request cancellation of a running job, or remove a finished job and discard its spooled output       |
 
+`\jobs` includes the latest server-reported read rows and bytes, throughput, estimated completion percentage, writes, CPU, memory, and temporary-disk usage when those metrics are available. Metrics continue updating for both queries started with `\bg` and foreground queries detached with `Ctrl+B`.
+
 To move a foreground query into the background, press `Ctrl+B` while it is running. The client prints the assigned job ID and returns to a prompt. Output already written to the terminal remains there; `\fg` later replays only the bytes produced after detachment. Start the query with `\bg` when you need its complete output to be replayed as one unit.
 
 Foreground detachment currently supports `SELECT` queries and has stricter limits than `\bg`. It requires an append-compatible, TTY-friendly format and uncompressed standard output, and is disabled while a pager is active. Formats with document-level framing, such as `JSON` and `XML`, are not eligible. Use `nopager` before starting the query if necessary. Queries that use `INTO OUTFILE`, read client-side input, or use command-line external tables or scalars cannot be detached. Network compression is independent of result-output compression and does not prevent detachment.
