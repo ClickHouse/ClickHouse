@@ -53,10 +53,13 @@ struct JoinOnKeyColumns
     /// 1 = skip), prepared once per call: without an ON-section condition the null map is
     /// returned directly, no copy (nullptr when the keys are not nullable either = no row
     /// is skipped); with one, `buffer` is filled with the merged null-and-mask bytes.
-    /// Only the positions the caller will probe are written (continuation chunks visit a
-    /// subset of the source block); the rest of `buffer` stays uninitialized and must not
-    /// be read.
+    /// Only the positions the caller will probe are written (continuation chunks and
+    /// index selectors visit a subset of the source block); the rest of `buffer` stays
+    /// uninitialized and must not be read.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
+    /// `PartitionedHashJoin::joinRightColumns` calls this overload when its selector holds
+    /// row indexes rather than one continuous range.
+    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const;
 };
 
 struct LazyOutput
