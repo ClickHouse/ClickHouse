@@ -353,10 +353,14 @@ ExpressionActionsPtr tryBuildMinMaxActions(
     {
         if (isNullableOrLowCardinalityNullable(index_data_types[i]))
             return nullptr;
+        /// A `LowCardinality` input would make every comparison node return `LowCardinality(UInt8)`,
+        /// and `can_be_true` is consumed as a plain `ColumnUInt8`. The bounds are read as full columns
+        /// in `getPossibleGranules`, so the DAG works on the nested type.
+        const auto input_type = removeLowCardinality(index_data_types[i]);
         String min_name = minMaxInputName(false, i);
         String max_name = minMaxInputName(true, i);
-        const auto & min_input = dag.addInput(min_name, index_data_types[i]);
-        const auto & max_input = dag.addInput(max_name, index_data_types[i]);
+        const auto & min_input = dag.addInput(min_name, input_type);
+        const auto & max_input = dag.addInput(max_name, input_type);
         inputs.emplace_back(&min_input, &max_input);
     }
 
@@ -978,9 +982,12 @@ IMergeTreeIndexCondition::FilteredGranules MergeTreeIndexConditionMinMax::getPos
     Block block;
     for (size_t i = 0; i < bulk.cols.size(); ++i)
     {
-        const auto & type = index_data_types[i];
-        block.insert(ColumnWithTypeAndName(bulk.cols[i].min_col->getPtr(), type, minMaxInputName(false, i)));
-        block.insert(ColumnWithTypeAndName(bulk.cols[i].max_col->getPtr(), type, minMaxInputName(true, i)));
+        /// The DAG inputs are declared with the nested type, see `tryBuildMinMaxActions`.
+        const auto type = removeLowCardinality(index_data_types[i]);
+        block.insert(ColumnWithTypeAndName(
+            bulk.cols[i].min_col->convertToFullColumnIfLowCardinality(), type, minMaxInputName(false, i)));
+        block.insert(ColumnWithTypeAndName(
+            bulk.cols[i].max_col->convertToFullColumnIfLowCardinality(), type, minMaxInputName(true, i)));
     }
     size_t num_rows = bulk.size();
     minmax_actions->execute(block, num_rows);
