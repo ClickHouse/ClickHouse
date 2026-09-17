@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# The fix is in the new analyzer; the old one does not accept a dotted `db.view(...)` call at all.
+# The fix is in the analyzer and the test pins it: with enable_analyzer = 0 a dotted `db.view(...)` call fails with UNKNOWN_FUNCTION.
 CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer=1 --joined_subquery_requires_alias=1"
 DB=$CLICKHOUSE_DATABASE
 
