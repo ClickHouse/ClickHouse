@@ -540,13 +540,13 @@ def run_fuzz_job(check_name: str):
         else:
             # Check for OOM in dmesg for non-sanitized builds
             if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
-                # CIDB takes `test_name` from a sub-result's name, so a host OOM
+                # CIDB takes `test_name` from a sub-result's name, so an OOM kill
                 # needs a named one to stay greppable. The grep is negated: it
                 # exits non-zero exactly when an OOM line is present, and
                 # `with_info_on_failure` captures that line into `info`.
                 oom_result = Result.from_commands_run(
                     name="OOM in dmesg",
-                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' -e 'Memory cgroup out of memory: Killed process' -e 'oom-kill:constraint=CONSTRAINT_MEMCG' | tee /dev/stderr | grep -q .",
                 )
                 if not oom_result.is_ok():
                     # ERROR, not FAIL: `Result.create_from` resolves an ERROR
