@@ -34,6 +34,7 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Common/CurrentThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
@@ -1613,6 +1614,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     }
     catch (...)
     {
+        /// Error delivery must work even when setup or authentication exceeded a memory limit.
+        /// Keep its allocations tracked without replacing the original exception with another one.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
         SCOPE_EXIT({
             MemoryTrackerSwitcher session_memory_scope(&total_memory_tracker);
             request_credentials.reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
