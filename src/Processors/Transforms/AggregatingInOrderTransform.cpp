@@ -244,7 +244,10 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
             /// Enough groups have been emitted and the new key starts a new value of the
             /// `ORDER BY` prefix, so the rest of the input cannot be needed (see `limit_prefix_columns`).
-            if (limit_hint && cur_block_size + res_rows >= limit_hint && isLimitPrefixBoundary(key_columns, key_end))
+            /// With `group_by_key`, `cur_block_size` counts runs of the sorted key columns rather than
+            /// groups; the groups accumulated for the current block are the entries of the hash table.
+            size_t cur_block_groups = group_by_key ? variants.size() : cur_block_size;
+            if (limit_hint && cur_block_groups + res_rows >= limit_hint && isLimitPrefixBoundary(key_columns, key_end))
                 limit_reached = true;
 
             /// If max_block_size or limit_hint is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.

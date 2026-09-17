@@ -126,3 +126,80 @@ FROM
 );
 
 DROP TABLE t_agg_in_order_limit_prefix_reads;
+
+-- The table is sorted only by `a`, so the in-order aggregation of `GROUP BY a, b` keeps the
+-- groups of one `a` run in a hash table (the `group_by_key` path of `AggregatingInOrderTransform`).
+-- The stream must count the groups it accumulated, not the `a` runs: a single run already
+-- holds 10 complete groups, so a `LIMIT 5` stream stops right after the first run.
+
+DROP TABLE IF EXISTS t_agg_in_order_limit_partial_key;
+
+CREATE TABLE t_agg_in_order_limit_partial_key (a UInt32, b UInt32, x UInt32)
+ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 8;
+
+SYSTEM STOP MERGES t_agg_in_order_limit_partial_key;
+
+-- Two parts, 100 values of `a` with 10 values of `b` each; sum(x) is 3 for every group.
+INSERT INTO t_agg_in_order_limit_partial_key SELECT intDiv(number, 10), number % 10, 1 FROM numbers(1000);
+INSERT INTO t_agg_in_order_limit_partial_key SELECT intDiv(number, 10), number % 10, 2 FROM numbers(1000);
+
+SELECT sum(x) = 3
+FROM t_agg_in_order_limit_partial_key
+GROUP BY a, b
+ORDER BY a
+LIMIT 5
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+
+SELECT sum(x) = 3
+FROM t_agg_in_order_limit_partial_key
+GROUP BY a, b
+ORDER BY a, b
+LIMIT 5 OFFSET 7
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+
+SELECT sum(x) = 3
+FROM t_agg_in_order_limit_partial_key
+GROUP BY a, b
+ORDER BY a
+LIMIT 5
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_threads = 1, max_block_size = 16,
+         merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0,
+         merge_tree_min_rows_for_seek = 0,
+         enable_parallel_replicas = 0,
+         log_comment = '05055_partial_key_pushdown_on';
+
+SELECT sum(x) = 3
+FROM t_agg_in_order_limit_partial_key
+GROUP BY a, b
+ORDER BY a
+LIMIT 5
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0,
+         max_threads = 1, max_block_size = 16,
+         merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0,
+         merge_tree_min_rows_for_seek = 0,
+         enable_parallel_replicas = 0,
+         log_comment = '05055_partial_key_pushdown_off';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Stopping after the first `a` run reads a small fraction of the table; counting `a` runs
+-- instead of groups would need five runs, i.e. several times more rows.
+SELECT if(on_reads * 20 <= off_reads, 'PUSHDOWN_FIRES', format('FAIL: on={} off={}', on_reads, off_reads))
+FROM
+(
+    SELECT
+        anyIf(read_rows, log_comment = '05055_partial_key_pushdown_on') AS on_reads,
+        anyIf(read_rows, log_comment = '05055_partial_key_pushdown_off') AS off_reads
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND log_comment IN ('05055_partial_key_pushdown_on', '05055_partial_key_pushdown_off')
+      AND type = 'QueryFinish'
+      AND event_date >= yesterday()
+      AND event_time >= now() - 600
+);
+
+DROP TABLE t_agg_in_order_limit_partial_key;
