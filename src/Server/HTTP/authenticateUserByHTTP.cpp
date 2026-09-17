@@ -7,13 +7,10 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
-
-#include <optional>
 
 #if USE_SSL
 #    include <Common/Crypto/X509Certificate.h>
@@ -27,13 +24,7 @@ namespace ErrorCodes
 {
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsString default_session_user;
 }
 
 
@@ -47,27 +38,8 @@ namespace
     }
 
     /// Checks that a specified user name is not empty, and throws an exception if it's empty.
-    /// An empty user name means that the request carried no user name and the default session
-    /// user is configured to be empty (i.e. requests without a user name are prohibited), so the
-    /// reject is recorded in `system.session_log` as a login failure to keep it auditable.
-    void checkUserNameNotEmptyAndServerHasEnoughMemory(
-        const String & user_name,
-        std::string_view method,
-        const ContextPtr & context,
-        Session & session,
-        const Poco::Net::SocketAddress & address)
+    void checkUserNameNotEmptyAndServerHasEnoughMemory(const String & user_name, std::string_view method, const ContextPtr & context)
     {
-        /// The empty-user reject must come before the memory check: the request is rejected
-        /// either way, and rejecting it as an anonymous login keeps the `LoginFailure` row in
-        /// `system.session_log` that the `default_session_user` setting promises for every
-        /// prohibited anonymous connection, even when the server is over the memory limit.
-        if (user_name.empty())
-        {
-            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
-            session.onAuthenticationFailure(user_name, address, exception);
-            throw exception; /// NOLINT
-        }
-
         auto users_to_ignore_early_memory_limit_check = context->getUsersToIgnoreEarlyMemoryLimitCheck();
         if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user_name)))
         {
@@ -76,19 +48,13 @@ namespace
         }
         else
             LOG_TEST(getLogger("authenticateUserByHTTP"), "Skipping memory limit check for user: {}", user_name);
+
+        if (user_name.empty())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
     }
 }
 
 
-bool authenticateUserByHTTP(
-    const HTTPServerRequest & request,
-    const HTMLForm & params,
-    HTTPServerResponse & response,
-    Session & session,
-    std::unique_ptr<Credentials> & request_credentials,
-    const HTTPHandlerConnectionConfig & connection_config,
-    ContextPtr global_context,
-    LoggerPtr log);
 bool authenticateUserByHTTP(
     const HTTPServerRequest & request,
     const HTMLForm & params,
@@ -102,16 +68,6 @@ bool authenticateUserByHTTP(
     /// Get the credentials created by the previous call of authenticateUserByHTTP() while handling the previous HTTP request.
     auto current_credentials = std::move(request_credentials);
     const auto & config_credentials = connection_config.credentials;
-
-    /// The user name assumed when the client passed an empty user name (or none at all):
-    /// the `default_session_user` server setting, possibly overridden for this handler
-    /// (composable protocols allow a per-endpoint default user). It can be explicitly
-    /// configured to be empty to prohibit requests without a user name. Interserver HTTP
-    /// connections do not pass through this function (see `InterserverIOHTTPHandler`),
-    /// so the default session user is never applied to them.
-    const String default_session_user = connection_config.default_session_user
-        ? *connection_config.default_session_user
-        : String(global_context->getServerSettings()[ServerSetting::default_session_user]);
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
@@ -127,76 +83,25 @@ bool authenticateUserByHTTP(
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
+    bool has_http_credentials = request.hasCredentials() && request.get("Authorization") != "never";
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
-
-    /// Whether the request carries an `Authorization` header that should be treated as
-    /// credentials. The sentinel value `never` (which `play.html` sets on the requests it can
-    /// add headers to) disables it.
-    bool has_authorization_header = request.hasCredentials() && request.get("Authorization") != "never";
-
-    /// Credentials passed in the URL query parameters take precedence over the HTTP
-    /// `Authorization` header: when both are present, the header is ignored instead of
-    /// rejecting the request for mixing authentication methods.
-    ///
-    /// This is needed because once a browser has remembered HTTP Basic credentials for an
-    /// origin, it attaches the `Authorization` header to every subsequent request to that
-    /// origin automatically - including requests that the application has no way to add or
-    /// remove headers from, such as a form submission or a download navigation. The Web UI
-    /// (`play.html`) authenticates by putting the user name and password into the URL query
-    /// parameters, so without this precedence such a request would carry both the remembered
-    /// header and the parameters and be rejected. (The special value `Authorization: never`
-    /// also suppresses the header, but it can only be set from a scripted request such as
-    /// `fetch` or `XHR`, not from a plain navigation.)
-    ///
-    /// This precedence applies only to the default authentication path. When the handler has
-    /// its own configured credentials, an `Authorization` header is still rejected as a mix of
-    /// authentication methods, regardless of the query parameters (see below).
-    bool has_http_credentials = has_authorization_header && !has_credentials_in_query_params;
 
     std::string spnego_challenge;
 #if USE_SSL
     X509Certificate::Subjects certificate_subjects;
-
-    /// Capture the TLS client certificate (if the client presented one) regardless of the selected
-    /// authentication method, so that session_log records it even when the connection authenticates
-    /// by another method (headers, basic, query parameters, config) or the login fails.
-    /// Mirrors the native protocol path in TCPHandler::receiveHello.
-    std::optional<X509Certificate> peer_certificate;
-    if (request.havePeerCertificate())
-    {
-        peer_certificate = request.peerCertificate();
-        session.setClientCertificate(*peer_certificate);
-    }
 #endif
-
-    /// Client info and its effective address must be ready before the early empty-user
-    /// rejection below, so its session-log record has the same address as regular HTTP
-    /// authentication failures.
-    session.setHTTPClientInfo(request);
-    const auto & client_info = session.getClientInfo();
-    auto forwarded_address = client_info.getLastForwardedFor();
-    const bool use_forwarded_address = global_context->getConfigRef().getBool("auth_use_forwarded_address", false);
-    if (use_forwarded_address && !client_info.forwarded_for.empty() && !forwarded_address)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Invalid address in `X-Forwarded-For` HTTP header: expected an IP literal with an optional numeric port");
-
-    const auto client_address = forwarded_address && use_forwarded_address
-        ? *forwarded_address
-        : request.clientAddress();
 
     if (config_credentials)
     {
-        checkUserNameNotEmptyAndServerHasEnoughMemory(
-            config_credentials->getUserName(), "config authentication", global_context, session, client_address);
+        checkUserNameNotEmptyAndServerHasEnoughMemory(config_credentials->getUserName(), "config authentication", global_context);
     }
     if (has_ssl_certificate_auth)
     {
 #if USE_SSL
-        /// It is prohibited to mix different authorization schemes. The mix is rejected before
-        /// the empty user name is resolved through the default session user: a handler with
-        /// fixed credentials ignores the setting, so a stray incomplete authentication header
-        /// must produce the mixed-authentication error, not an anonymous-login reject.
+        /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
+
+        /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication set in config");
         if (!password.empty())
@@ -206,14 +111,11 @@ bool authenticateUserByHTTP(
         if (has_credentials_in_query_params)
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via parameters");
 
-        /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
-        /// If the header is not set (or empty), the certificate must authenticate the default session user.
-        if (user.empty())
-            user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, client_address);
-
-        if (peer_certificate)
-            certificate_subjects = peer_certificate->extractAllSubjects();
+        if (request.havePeerCertificate())
+        {
+            auto certificate = X509Certificate(request.peerCertificate());
+            certificate_subjects = certificate.extractAllSubjects();
+        }
 
         if (certificate_subjects.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
@@ -226,28 +128,23 @@ bool authenticateUserByHTTP(
     }
     else if (has_auth_headers)
     {
-        /// It is prohibited to mix different authorization schemes. The mix is rejected before
-        /// the empty user name is resolved through the default session user (see above).
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
+
+        /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication set in config");
         if (has_http_credentials)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "Authorization HTTP header");
         if (has_credentials_in_query_params)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication via parameters");
-
-        /// The client passed "X-ClickHouse-Key" without "X-ClickHouse-User" (or with an empty one):
-        /// the password is checked against the default session user.
-        if (user.empty())
-            user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, client_address);
     }
     else if (has_http_credentials)
     {
         /// It is prohibited to mix different authorization schemes.
-        /// (Authentication via query parameters takes precedence over the `Authorization`
-        /// header and is handled above by excluding it from `has_http_credentials`.)
         if (has_config_credentials)
             throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
+        if (has_credentials_in_query_params)
+            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication via parameters");
 
         std::string scheme;
         std::string auth_info;
@@ -258,10 +155,7 @@ bool authenticateUserByHTTP(
             Poco::Net::HTTPBasicCredentials credentials(auth_info);
             user = credentials.getUsername();
             password = credentials.getPassword();
-            /// An empty user name in Basic credentials means the default session user.
-            if (user.empty())
-                user = default_session_user;
-            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context, session, client_address);
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context);
         }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
@@ -277,29 +171,10 @@ bool authenticateUserByHTTP(
     }
     else
     {
-        /// Authentication via the URL query parameters (or, if absent, the default session user).
-        /// The query parameters take precedence over the `Authorization` header (which was
-        /// excluded from `has_http_credentials` above), but mixing the header with credentials
-        /// configured for the handler is still rejected, as for every other method.
-        if (has_config_credentials && has_authorization_header)
-            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
-
-        user = params.get("user", "");
+        /// If the user name is not set we assume it's the 'default' user.
+        user = params.get("user", "default");
         password = params.get("password", "");
-
-        /// When the handler has credentials configured (`handler.user` of an `http_handlers`
-        /// rule or `user` of a `prometheus` protocol), they are applied below regardless of
-        /// the request, so an absent user name is not resolved through the default session
-        /// user: an empty `default_session_user` (which prohibits requests without a user
-        /// name) must not reject handlers with a fixed user. The configured user name has
-        /// already been checked above.
-        if (!has_config_credentials)
-        {
-            /// If the user name is not set (or set to an empty string), the default session user is assumed.
-            if (user.empty())
-                user = default_session_user;
-            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context, session, client_address);
-        }
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context);
     }
 
     if (has_config_credentials)
@@ -373,12 +248,17 @@ bool authenticateUserByHTTP(
         quota_key = params.get("quota_key");
     }
 
-    /// Client info is already set above; the quota key is used for accounting parameters in `setUser`.
+    /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
+
+    session.setHTTPClientInfo(request);
     session.setQuotaClientKey(quota_key);
 
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    auto forwarded_address = session.getClientInfo().getLastForwardedFor();
     try
     {
-        if (forwarded_address && use_forwarded_address)
+        if (forwarded_address && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
             session.authenticate(*current_credentials, *forwarded_address, request.clientAddress());
         else
             session.authenticate(*current_credentials, request.clientAddress());

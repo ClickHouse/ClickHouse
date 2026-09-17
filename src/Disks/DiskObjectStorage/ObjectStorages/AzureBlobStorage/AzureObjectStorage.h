@@ -8,7 +8,6 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
-#include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
@@ -65,9 +64,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        bool use_external_buffer = false,
-        bool restrict_seek = false) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -85,21 +82,15 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    void tagObjects( /// NOLINT
-        const StoredObjects & objects,
-        const std::string & tag_key,
-        const std::string & tag_value,
-        StoredObjects * successful_objects = nullptr) override;
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    String copyObject( /// NOLINT
+    void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
@@ -124,7 +115,6 @@ public:
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override { return connection_params; }
 
     bool isReadOnly() const override { return settings.get()->read_only; }
 
@@ -136,23 +126,16 @@ public:
     }
 
 private:
-    /// Deletes one blob. When `object.etag` is set, only that generation is deleted (`If-Match`);
-    /// a blob that has since been overwritten is left in place and `FILE_CHANGED_DURING_READ` is
-    /// thrown, whatever `if_exists` says.
     void removeObjectImpl(
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
         bool if_exists,
-        BlobStorageLogWriterPtr blob_storage_log,
-        StoredObjects * successful_objects = nullptr);
+        BlobStorageLogWriterPtr blob_storage_log);
 
     void removeObjectsBatchIfExists(
         const StoredObjects & objects,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-        BlobStorageLogWriterPtr blob_storage_log,
-        StoredObjects * successful_objects = nullptr);
-
-    std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
+        BlobStorageLogWriterPtr blob_storage_log);
 
     const String name;
     AzureBlobStorage::AuthMethod auth_method;

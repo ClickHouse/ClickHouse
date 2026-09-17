@@ -11,10 +11,8 @@ Connection::Connection(const ConnectionInfo & connection_info_, bool replication
     : connection_info(connection_info_), replication(replication_), num_tries(num_tries_)
     , log(getLogger("PostgreSQLReplicaConnection"))
 {
-    /// Amended in place to keep `tls_secret_files` alive: the temporary credential files must
-    /// live as long as the connection string that references them.
     if (replication)
-        connection_info.connection_string = fmt::format("{} replication=database", connection_info.connection_string);
+        connection_info = {fmt::format("{} replication=database", connection_info.connection_string), connection_info.host_port};
 }
 
 void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)> & exec)

@@ -48,5 +48,8 @@ SELECT 1 FROM numbers(3) AS l, numbers(3) AS r WHERE and(arrayJoin([l.number, r.
 -- Subquery with arrayJoin from both sides
 SELECT sum(x) FROM (SELECT arrayJoin([l.number, r.number]) AS x FROM numbers(2) AS l, numbers(2) AS r WHERE 1);
 
+-- Same tests with legacy join step
+SET query_plan_use_logical_join_step = 0;
+
 SELECT 1 FROM numbers(1) AS l, numbers(2) AS r WHERE and(arrayJoin([*, 1]), 1);
 SELECT count() FROM numbers(1) AS l, numbers(2) AS r WHERE arrayJoin([*, 1]);
