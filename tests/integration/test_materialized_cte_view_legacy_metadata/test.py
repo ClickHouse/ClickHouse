@@ -2,7 +2,7 @@
 # 1. A stored definition that fixes `enable_global_with_statement` (legacy metadata, which a fresh CREATE
 #    now rejects) keeps the legacy full expansion when loaded by short ATTACH and at server start.
 # 2. In a Replicated database, a CREATE or MODIFY QUERY committed by an older initiator that fixes the
-#    setting is replayed on an upgraded replica with the legacy expansion instead of failing, while
+#    setting is replayed on an upgraded replica with the legacy full expansion instead of failing, while
 #    the upgraded replica rejects such a command of its own before enqueueing it.
 import pytest
 
