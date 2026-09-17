@@ -173,6 +173,7 @@ namespace FailPoints
     extern const char atomic_populate_fail_before_subscription[];
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
+    extern const char attach_database_fail_after_load[];
     extern const char atomic_populate_pause_before_source_guard[];
 }
 
@@ -431,6 +432,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     /// while no metadata references the collection any more. The database-level `DDLGuard` acquired above
     /// is held until this function returns, so no other create of this name is in flight, and, as the
     /// database does not exist, every live entry under the name belongs to this or an earlier failed create.
+    /// A failed `ATTACH DATABASE` of a detached database is covered as well: `DETACH DATABASE` recorded
+    /// the entries of the database and of its tables in the detached list, which nothing here touches,
+    /// and those entries keep refusing the drop while the metadata can be attached back (a database
+    /// cannot be detached permanently, so every database with metadata is attached at the server start).
     bool created = false;
     SCOPE_EXIT({
         if (!created)
@@ -493,6 +498,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
+        }
+
+        if (create.attach)
+        {
+            fiu_do_on(FailPoints::attach_database_fail_after_load,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to attach the database after its tables were loaded");
+            });
         }
     }
     catch (...)
