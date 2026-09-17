@@ -8,22 +8,30 @@
 #include <Common/typeid_cast.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Databases/DatabaseAtomic.h>
+#include <Databases/UDT/ILifecycleAdapter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
+#include <Interpreters/UDTTableIntrospection.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Common/Exception.h>
 
+#include <chrono>
+#include <new>
+
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
 }
 
@@ -34,6 +42,15 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
+    extern const int ABORTED;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int DEADLOCK_AVOIDED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 BlockIO InterpreterShowCreateQuery::execute()
@@ -72,6 +89,10 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         auto table_id = getContext()->resolveStorageID(*show_query, resolve_table_type);
 
         bool is_dictionary = static_cast<bool>(query_ptr->as<ASTShowCreateDictionaryQuery>());
+        DatabasePtr udt_introspection_database;
+        StoragePtr udt_introspection_table;
+        TableLockHolder udt_introspection_table_lock;
+        std::shared_ptr<void> udt_introspection_lease;
 
         /// Access is checked on the *requested* identifier, before any lookup or hinting. This is what
         /// bounds the "Maybe you meant ...?" hint: it appears only when the user's grant covers the
@@ -102,8 +123,10 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         /// fetch proves it to be a dictionary. Every other outcome is reported identically as a missing
         /// dictionary, carrying the same "Maybe you meant ...?" hint (which only ever suggests
         /// dictionaries to this user): a hidden regular table, a name that does not exist, and - crucially
-        /// - any failure of `getCreateTableQuery` itself. The decision must not key on the failure's
-        /// error code: `getCreateTableQuery` goes through `tryGetTable`, so a hidden regular table that
+        /// - any object/metadata failure of `getCreateTableQuery` itself. Query cancellation, its
+        /// deadline, and allocation failure are control-flow/resource failures and are always rethrown.
+        /// The visibility decision otherwise must not key on the failure's error code:
+        /// `getCreateTableQuery` goes through `tryGetTable`, so a hidden regular table that
         /// is still starting up, has corrupted metadata, or otherwise throws would surface a distinguishing
         /// error and reopen the oracle. Unless the fetch positively proves the object is a dictionary, it
         /// is masked. The swallowed error is not lost: it resurfaces when a user who is allowed to see the
@@ -111,21 +134,35 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         /// diagnostics below. This mirrors `InterpreterExistsQuery`, which likewise answers a
         /// dictionary-only user from a single observation instead of a second visibility-changing lookup.
         bool remask_as_missing_dictionary = false;
+        bool dictionary_only_visibility = false;
         if (is_dictionary)
         {
             const auto & access = getContext()->getAccess();
             const bool can_see_as_table
                 = access->isGranted(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name)
                 || access->isGranted(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name);
+            dictionary_only_visibility = !can_see_as_table;
             if (!can_see_as_table)
             {
                 try
                 {
                     create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
                 }
+                catch (const std::bad_alloc &)
+                {
+                    throw;
+                }
+                catch (const Exception & error)
+                {
+                    if (error.code() == ErrorCodes::QUERY_WAS_CANCELLED || error.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+                        || error.code() == ErrorCodes::TIMEOUT_EXCEEDED || error.code() == ErrorCodes::DEADLOCK_AVOIDED
+                        || error.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || error.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+                        throw;
+                    create_query = nullptr;
+                }
                 catch (...)
                 {
-                    /// Ok to swallow: fail closed for a dictionary-only user. Any failure to produce the
+                    /// Ok to swallow: fail closed for a dictionary-only user. Any non-control-flow failure to produce the
                     /// create query - a name that does not exist, a hidden regular table that fails to
                     /// load or start up, or metadata that cannot be read - is treated as "not a
                     /// dictionary", so all of these stay indistinguishable and the hidden table's
@@ -142,10 +179,8 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             }
         }
 
-        if (remask_as_missing_dictionary)
+        const auto throw_missing_dictionary = [&]() -> void
         {
-            /// Discard any create query fetched for a hidden table so its definition cannot leak.
-            create_query = nullptr;
             auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
             TableNameHints hints(database, getContext());
             auto hint = hints.getHintForTable(table_id.table_name);
@@ -155,17 +190,69 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no dictionary {}.{}. Maybe you meant {}.{}?",
                 backQuoteIfNeed(table_id.database_name), backQuoteIfNeed(table_id.table_name),
                 backQuoteIfNeed(hint.first), backQuoteIfNeed(hint.second));
+        };
+
+        if (remask_as_missing_dictionary)
+        {
+            /// Discard any create query fetched for a hidden table so its definition cannot leak.
+            create_query = nullptr;
+            throw_missing_dictionary();
         }
 
+        if (!create_query && !is_dictionary)
+        {
+            udt_introspection_database
+                = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+            udt_introspection_table = udt_introspection_database->tryGetTable(
+                table_id.table_name, getContext());
+            if (udt_introspection_table)
+            {
+                udt_introspection_table_lock = udt_introspection_table->lockForShare(
+                    getContext()->getInitialQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+                /// Keep this unconditional for a live object: the lifecycle
+                /// adapter chooses a schema-only physical lease or the full
+                /// ALTER -> schema lease while closing a concurrent
+                /// physical-to-mapped transition between those paths.
+                udt_introspection_lease = udt_introspection_database->getUDTLifecycleAdapter().acquireTableIntrospectionLease(
+                    udt_introspection_table,
+                    std::chrono::milliseconds(getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()),
+                    [context = getContext()]
+                    {
+                        if (const auto process_list_element = context->getProcessListElementSafe())
+                            static_cast<void>(process_list_element->checkTimeLimit());
+                    });
+                /// Unsupported lifecycle adapters return no lease. Such
+                /// databases cannot own durable UDT bindings and may expose a
+                /// fresh transient proxy on every lookup (DatabaseRemote is
+                /// one example), so pointer identity is meaningful only when
+                /// an adapter actually pinned the introspection lifecycle.
+                if (udt_introspection_lease
+                    && udt_introspection_database->tryGetTable(table_id.table_name, getContext()) != udt_introspection_table)
+                {
+                    throw Exception(ErrorCodes::ABORTED, "Table changed while acquiring its user-defined type introspection lease");
+                }
+                /// Refetch under the share lock and schema snapshot so the
+                /// live AST and outer metadata describe one object image.
+                create_query = udt_introspection_database->getCreateTableQuery(
+                    table_id.table_name, getContext());
+            }
+            else
+            {
+                /// DatabaseOnDisk deliberately serves persisted CREATE
+                /// metadata for detached objects. Keep this AST-only fallback
+                /// reachable when there is no live Storage to lock or lease.
+                create_query = udt_introspection_database->getCreateTableQuery(
+                    table_id.table_name, getContext());
+            }
+        }
         if (!create_query)
             create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
 
-        auto & ast_create_query = create_query->as<ASTCreateQuery &>();
-
         /// A table is a `StorageAlias` exactly when its definition names the `Alias` engine, so the
         /// create query answers that without opening the storage object, which can throw on its own.
-        if (!is_dictionary && ast_create_query.storage && ast_create_query.storage->engine
-            && ast_create_query.storage->engine->name == "Alias")
+        const auto & initially_fetched_create_query = create_query->as<const ASTCreateQuery &>();
+        if (!is_dictionary && initially_fetched_create_query.storage && initially_fetched_create_query.storage->engine
+            && initially_fetched_create_query.storage->engine->name == "Alias")
         {
             auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
             if (const auto * alias = table ? table->as<StorageAlias>() : nullptr;
@@ -173,17 +260,132 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
                 throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to show metadata exposed by {}", table_id.getNameForLogs());
         }
 
-        if (query_ptr->as<ASTShowCreateViewQuery>())
+        const auto validate_requested_kind = [&](const ASTCreateQuery & create)
         {
-            if (!ast_create_query.isView())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a VIEW",
-                    backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
+            if (query_ptr->as<ASTShowCreateViewQuery>() && !create.isView())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a VIEW", backQuote(create.getDatabase()), backQuote(create.getTable()));
+            if (is_dictionary && !create.is_dictionary)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a DICTIONARY", backQuote(create.getDatabase()), backQuote(create.getTable()));
+        };
+        validate_requested_kind(create_query->as<const ASTCreateQuery &>());
+
+        /// Dictionary-only visibility was already decided from one positive
+        /// CREATE fetch above. Acquire the mapped-metadata lease only after
+        /// that proof so a hidden regular table can never become an oracle.
+        /// If the object changes during acquisition, remask the race as the
+        /// same missing-dictionary result for that restricted caller.
+        if (is_dictionary)
+        {
+            const UUID initially_fetched_uuid = create_query->as<const ASTCreateQuery &>().uuid;
+            const auto acquire_dictionary_introspection = [&]
+            {
+                udt_introspection_database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+                udt_introspection_table = udt_introspection_database->tryGetTable(table_id.table_name, getContext());
+                if (!udt_introspection_table)
+                    return;
+                udt_introspection_table_lock = udt_introspection_table->lockForShare(
+                    getContext()->getInitialQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+                auto metadata_snapshot = udt_introspection_table->IStorage::getInMemoryMetadataPtr(getContext(), true);
+                if (metadata_snapshot->getBoundUDTReferences())
+                {
+                    udt_introspection_lease = udt_introspection_database->getUDTLifecycleAdapter().acquireTableIntrospectionLease(
+                        udt_introspection_table,
+                        std::chrono::milliseconds(getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()),
+                        [context = getContext()]
+                        {
+                            if (const auto process_list_element = context->getProcessListElementSafe())
+                                static_cast<void>(process_list_element->checkTimeLimit());
+                        });
+                }
+                if (udt_introspection_database->tryGetTable(table_id.table_name, getContext()) != udt_introspection_table)
+                    throw Exception(ErrorCodes::ABORTED, "Dictionary changed while acquiring its user-defined type introspection lease");
+                create_query = udt_introspection_database->getCreateTableQuery(table_id.table_name, getContext());
+                validate_requested_kind(create_query->as<const ASTCreateQuery &>());
+                const auto current_uuid = udt_introspection_table->getStorageID().uuid;
+                const auto fetched_uuid = create_query->as<const ASTCreateQuery &>().uuid;
+                if ((initially_fetched_uuid != UUIDHelpers::Nil && initially_fetched_uuid != current_uuid)
+                    || (fetched_uuid != UUIDHelpers::Nil && fetched_uuid != current_uuid))
+                    throw Exception(ErrorCodes::ABORTED, "Dictionary identity changed while acquiring its introspection snapshot");
+            };
+
+            if (dictionary_only_visibility)
+            {
+                try
+                {
+                    acquire_dictionary_introspection();
+                }
+                catch (const std::bad_alloc &)
+                {
+                    throw;
+                }
+                catch (const Exception & error)
+                {
+                    if (error.code() == ErrorCodes::QUERY_WAS_CANCELLED || error.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+                        || error.code() == ErrorCodes::TIMEOUT_EXCEEDED || error.code() == ErrorCodes::DEADLOCK_AVOIDED
+                        || error.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || error.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+                        throw;
+                    create_query = nullptr;
+                    throw_missing_dictionary();
+                }
+                catch (...)
+                {
+                    create_query = nullptr;
+                    throw_missing_dictionary();
+                }
+            }
+            else
+                acquire_dictionary_introspection();
         }
-        else if (is_dictionary)
+
+        if (!udt_introspection_table)
         {
-            if (!ast_create_query.is_dictionary)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a DICTIONARY",
-                    backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
+            const auto detached_uuid = create_query->as<const ASTCreateQuery &>().uuid;
+            auto * atomic_database = udt_introspection_database
+                ? typeid_cast<DatabaseAtomic *>(udt_introspection_database.get())
+                : nullptr;
+            if (atomic_database && detached_uuid != UUIDHelpers::Nil
+                && atomic_database->hasDatabaseOwnedUDTObject(detached_uuid))
+            {
+                /// Persisted mapped CREATE metadata is physicalized. Without
+                /// the detached storage's exact bound sidecar, returning that
+                /// AST would silently erase logical identity from introspection.
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot show CREATE for detached mapped object {} without its exact live user-defined type binding",
+                    table_id.getNameForLogs());
+            }
+        }
+
+        auto & ast_create_query = create_query->as<ASTCreateQuery &>();
+
+        if (udt_introspection_table && query_ptr->as<ASTShowCreateTableQuery>()
+            && !ast_create_query.isView() && !ast_create_query.is_dictionary)
+        {
+            auto table = udt_introspection_table;
+            auto metadata_snapshot = table->IStorage::getInMemoryMetadataPtr(getContext(), true);
+            if (metadata_snapshot->getBoundUDTReferences())
+            {
+                if (!udt_introspection_database || !udt_introspection_lease)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped SHOW CREATE TABLE lacks its Atomic schema lease");
+                auto declared_columns = UDT::projectCurrentDeclaredTableColumnTypes(
+                    table->getStorageID(), *metadata_snapshot, *udt_introspection_database);
+                UDT::applyCurrentDeclaredTableColumnTypes(
+                    ast_create_query, table->getStorageID(), declared_columns);
+            }
+        }
+        else if (udt_introspection_table && (ast_create_query.isView() || ast_create_query.is_dictionary))
+        {
+            auto table = udt_introspection_table;
+            auto metadata_snapshot = table->IStorage::getInMemoryMetadataPtr(getContext(), true);
+            if (metadata_snapshot->getBoundUDTReferences())
+            {
+                if (!udt_introspection_database || !udt_introspection_lease)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped SHOW CREATE stored object lacks its Atomic schema lease");
+                UDT::applyCurrentDeclaredStoredObjectTypes(
+                    ast_create_query, table->getStorageID(), *metadata_snapshot, *udt_introspection_database);
+            }
         }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))

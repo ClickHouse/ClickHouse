@@ -12,6 +12,7 @@
 
 #include <DataTypes/BuiltInDataTypeFamilyClassifier.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/UDT/BoundObjectTypeReferences.h>
 #include <DataTypes/UDT/CanonicalHash.h>
 #include <DataTypes/UDT/DefinitionLowering.h>
 #include <DataTypes/UDT/PhysicalTypeFingerprint.h>
@@ -26,6 +27,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Parsers/ASTAlterTypeCommentQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateTypeQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTDropTypeQuery.h>
@@ -40,6 +42,9 @@
 #include <Parsers/ASTUDTReference.h>
 #include <Parsers/ParserCreateTypeQuery.h>
 #include <Parsers/parseQuery.h>
+
+#include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Common/Exception.h>
 #include <Common/UniqueLock.h>
@@ -240,6 +245,12 @@ std::string_view definitionMutationOperationName(DefinitionMutationKind kind)
 [[noreturn]] void rejectAfterShutdown(std::string_view operation)
 {
     throw Exception(ErrorCodes::ABORTED, "Cannot {} because the owning Atomic database has been shut down", operation);
+}
+
+[[noreturn]] void rejectDuringMappedTableStartup(std::string_view operation)
+{
+    throw Exception(
+        ErrorCodes::ABORTED, "Cannot {} before every mapped table is bound to the recovered Atomic user-defined type authority", operation);
 }
 
 [[noreturn]] void rejectDuringDegradedAuthorityStartup(std::string_view operation)
@@ -977,6 +988,17 @@ bool isMappedStorageObjectKind(SchemaObjectKind kind) noexcept
     return kind == SchemaObjectKind::Table || kind == SchemaObjectKind::View || kind == SchemaObjectKind::Dictionary;
 }
 
+bool storageMatchesMappedObjectKind(const IStorage & storage, SchemaObjectKind kind) noexcept
+{
+    if (kind == SchemaObjectKind::Table)
+        return !storage.isView() && !storage.isDictionary();
+    if (kind == SchemaObjectKind::View)
+        return storage.isView();
+    if (kind == SchemaObjectKind::Dictionary)
+        return storage.isDictionary();
+    return false;
+}
+
 template <typename RequireExactAuthorization, typename RequireDatabaseDiagnosticsAuthorization>
 StoragePtr findAuthorizedLivePhysicalizationTable(
     DatabaseAtomic & database,
@@ -1075,6 +1097,120 @@ void AtomicLifecycleAdapter::requireCapabilities(TypeAuthorityCapabilityMask req
 {
     if (!getCapabilities().containsAll(required))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Atomic user-defined type authority lacks capabilities required for {}", operation);
+}
+
+std::shared_ptr<void> AtomicLifecycleAdapter::acquireTableIntrospectionLease(
+    const StoragePtr & table, std::chrono::milliseconds timeout, std::function<void()> check_cancellation) const
+{
+    struct Lease final
+    {
+        Lease(std::optional<IStorage::AlterLockHolder> table_alter_lock_, std::unique_lock<std::mutex> schema_lock_)
+            : table_alter_lock(std::move(table_alter_lock_))
+            , schema_lock(std::move(schema_lock_))
+        {
+        }
+
+        std::optional<IStorage::AlterLockHolder> table_alter_lock;
+        std::unique_lock<std::mutex> schema_lock;
+    };
+
+    if (!table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic user-defined type introspection received no table");
+
+    constexpr auto cancellation_poll_interval = std::chrono::milliseconds(10);
+    timeout = std::max(timeout, std::chrono::milliseconds::zero());
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    const auto wait_for_lock = [&](std::string_view lock_name)
+    {
+        if (check_cancellation)
+            check_cancellation();
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline)
+        {
+            throw Exception(
+                ErrorCodes::DEADLOCK_AVOIDED,
+                "Locking attempt for Atomic user-defined type introspection {} in database UUID {} has timed out! ({} ms) "
+                "Possible deadlock avoided. Client should retry.",
+                lock_name,
+                database.getUUID(),
+                timeout.count());
+        }
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        std::this_thread::sleep_for(std::max(std::chrono::milliseconds(1), std::min(cancellation_poll_interval, remaining)));
+    };
+
+    const auto acquire_schema_lock = [&]
+    {
+        std::unique_lock<std::mutex> schema_lock(database.udt_schema_mutation_mutex, std::defer_lock);
+        while (!schema_lock.try_lock())
+            wait_for_lock("schema lock");
+        return schema_lock;
+    };
+
+    const auto get_outer_metadata = [&]
+    {
+        auto metadata = table->IStorage::getInMemoryMetadataPtr(nullptr, true);
+        if (!metadata)
+            throw Exception(ErrorCodes::ABORTED, "Atomic user-defined type introspection received no table metadata snapshot");
+        metadata->validateBoundUDTReferences();
+        return metadata;
+    };
+    const auto has_outer_udt_binding = [](const StorageMetadataPtr & metadata)
+    {
+        return static_cast<bool>(metadata->getBoundUDTReferences()) || static_cast<bool>(metadata->getBoundUDTExpectation());
+    };
+
+    /// Ordinary physical tables do not need the storage ALTER lock: SHOW may
+    /// read the last published metadata while an ALTER is still computing its
+    /// next image. Pin the database schema boundary briefly and recheck both
+    /// the outer metadata and the database-owned UUID inventory under it. A
+    /// physical-to-mapped publication gap is therefore redirected to the full
+    /// ALTER -> schema path instead of being exposed as a physical snapshot.
+    auto metadata = get_outer_metadata();
+    if (!has_outer_udt_binding(metadata))
+    {
+        auto schema_lock = acquire_schema_lock();
+        metadata = get_outer_metadata();
+        if (!has_outer_udt_binding(metadata) && !database.hasDatabaseOwnedUDTObject(table->getStorageID().uuid))
+        {
+            if (check_cancellation)
+                check_cancellation();
+            return std::make_shared<Lease>(std::nullopt, std::move(schema_lock));
+        }
+    }
+
+    /// ALTER holds this lock for its entire storage callback, including both
+    /// the durable authority commit and the final live-metadata publication.
+    /// The caller already retains the table share lock. Taking ALTER before
+    /// the database schema mutex preserves the global share -> ALTER -> schema
+    /// order and closes the otherwise observable commit/publication gap.
+    std::optional<IStorage::AlterLockHolder> table_alter_lock;
+    while (!table_alter_lock)
+    {
+        if (check_cancellation)
+            check_cancellation();
+        table_alter_lock = table->tryLockForAlter(Poco::Timespan(0));
+        if (!table_alter_lock)
+            wait_for_lock("table ALTER lock");
+    }
+
+    /// Durable bindings belong to the outer storage. In particular, Alias
+    /// forwards its virtual metadata lookup to the target; treating that as
+    /// the Alias object's binding would lock and expose the wrong authority.
+    auto schema_lock = acquire_schema_lock();
+    metadata = get_outer_metadata();
+    const bool has_outer_binding = has_outer_udt_binding(metadata);
+    const bool has_database_owned_object = database.hasDatabaseOwnedUDTObject(table->getStorageID().uuid);
+    if (has_outer_binding != has_database_owned_object)
+    {
+        throw Exception(
+            ErrorCodes::ABORTED,
+            "Atomic user-defined type introspection found a persistent live/durable binding mismatch for table {}",
+            table->getStorageID().getNameForLogs());
+    }
+    if (check_cancellation)
+        check_cancellation();
+    return std::make_shared<Lease>(std::move(table_alter_lock), std::move(schema_lock));
 }
 
 std::unique_ptr<const ILifecycleSnapshot> AtomicLifecycleAdapter::acquireSnapshot() const

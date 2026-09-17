@@ -1,5 +1,8 @@
 #include <Storages/IStorage.h>
 
+#include <DataTypes/UDT/BoundObjectTypeReferences.h>
+#include <DataTypes/UDT/TableColumnTypeAlterBindings.h>
+#include <DataTypes/UDT/TableColumnTypeBindings.h>
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -21,6 +24,8 @@
 #include <Backups/IBackup.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
 
+#include <exception>
+
 
 namespace DB
 {
@@ -40,13 +45,74 @@ namespace ErrorCodes
     extern const int TABLE_IS_BEING_RESTARTED;
 }
 
+namespace
+{
+
+void validateInMemoryMetadataForPublication(const StorageID & storage_id, const StorageInMemoryMetadata & metadata)
+{
+    metadata.validateBoundUDTReferences();
+    const auto & bound_references = metadata.getBoundUDTReferences();
+    if (!bound_references)
+        return;
+
+    if (!storage_id.hasUUID() || bound_references->getObject().object_uuid != storage_id.uuid)
+    {
+        throw UDT::TableColumnTypeBindingError(
+            UDT::TableColumnTypeBindingError::Code::SidecarMismatch,
+            "storage identity differs from the table-column binding owner");
+    }
+}
+
+}
+
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
 {
     if (metadata_)
+    {
+        if (metadata_->getPendingUDTColumnAlter())
+            throw std::logic_error("storage cannot be constructed from an unpublished table-column ALTER plan");
+        validateInMemoryMetadataForPublication(storage_id, *metadata_);
         metadata.set(std::move(metadata_));
+    }
     else
         metadata.set(std::make_unique<StorageInMemoryMetadata>());
+}
+
+void IStorage::setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
+{
+    std::lock_guard lock(id_mutex);
+    auto publication = std::make_unique<StorageInMemoryMetadata>(metadata_);
+    if (const auto & pending = publication->getPendingUDTColumnAlter())
+    {
+        const auto completed = pending->getCompletedPublication();
+        if (!completed)
+            throw std::logic_error("storage cannot publish an uncommitted table-column ALTER plan");
+        if (static_cast<bool>(completed->bound_references) != static_cast<bool>(completed->expectation)
+            || static_cast<bool>(completed->bound_references) != static_cast<bool>(completed->verification_stamp))
+            throw std::logic_error("completed table-column ALTER publication package is incomplete");
+        auto publication_columns = publication->getColumns();
+        if (completed->bound_references)
+        {
+            if (completed->bound_references->getObject().kind == UDT::SchemaObjectKind::Table)
+            {
+                publication->setColumnsAndBoundUDTReferences(
+                    std::move(publication_columns), completed->bound_references, *completed->expectation);
+            }
+            else
+            {
+                publication->setColumnsAndBoundStoredObjectUDTReferences(
+                    std::move(publication_columns), completed->bound_references, *completed->expectation);
+            }
+            publication->setBoundUDTVerificationStamp(completed->verification_stamp);
+        }
+        else
+        {
+            publication->setColumns(std::move(publication_columns));
+        }
+    }
+    validateInMemoryMetadataForPublication(storage_id, *publication);
+    metadata.set(std::move(publication));
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -163,6 +229,7 @@ void IStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    storage_snapshot->assertUDTReadContinuationAllowed();
     auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
     /// parallelize processing if not yet
@@ -220,8 +287,18 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     auto storage_metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
     params.apply(new_metadata, context);
+    new_metadata.prepareUDTAlterPublication();
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
-    setInMemoryMetadata(new_metadata);
+    try
+    {
+        setInMemoryMetadata(new_metadata);
+    }
+    catch (...)
+    {
+        if (const auto & pending = new_metadata.getPendingUDTColumnAlter(); pending && pending->getCompletedPublication())
+            std::terminate();
+        throw;
+    }
 }
 
 void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
@@ -321,6 +398,7 @@ ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(cons
 void IStorage::renameInMemory(const StorageID & new_table_id)
 {
     std::lock_guard lock(id_mutex);
+    validateInMemoryMetadataForPublication(new_table_id, *metadata.get());
     storage_id = new_table_id;
 }
 

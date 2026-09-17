@@ -1,10 +1,12 @@
 #include <DataTypes/DataTypeString.h>
-#include <Disks/DiskType.h>
+#include <DataTypes/UDT/TableColumnTypeAlterBindings.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -1439,7 +1441,8 @@ void MergeTreeData::setProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    bool acquire_udt_commit_fence)
 {
     /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
     /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
@@ -1455,10 +1458,47 @@ void MergeTreeData::setProperties(
         allow_nullable_key,
         local_context);
 
+    std::shared_ptr<StorageInMemoryMetadata> committed_metadata;
+    if (acquire_udt_commit_fence)
+    {
+        committed_metadata = std::make_shared<StorageInMemoryMetadata>(new_metadata);
+        if (const auto & pending = committed_metadata->getPendingUDTColumnAlter())
+        {
+            const auto completed = pending->getCompletedPublication();
+            if (!completed)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Durably committed MergeTree ALTER has no completed UDT publication package");
+            if (static_cast<bool>(completed->bound_references) != static_cast<bool>(completed->expectation)
+                || static_cast<bool>(completed->bound_references) != static_cast<bool>(completed->verification_stamp))
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Durably committed MergeTree ALTER has an incomplete UDT publication package");
+            }
+
+            auto publication_columns = committed_metadata->getColumns();
+            if (completed->bound_references)
+            {
+                committed_metadata->setColumnsAndBoundUDTReferences(
+                    std::move(publication_columns), completed->bound_references, *completed->expectation);
+                committed_metadata->setBoundUDTVerificationStamp(completed->verification_stamp);
+            }
+            else
+                committed_metadata->setColumns(std::move(publication_columns));
+        }
+    }
+
     {
         /// Publish the new metadata and clear the cache of effective sorting keys atomically.
         std::lock_guard lock(patch_parts_sorting_keys_mutex);
-        setInMemoryMetadata(new_metadata);
+        std::optional<UDT::AuthorityStorageNewOperationCommitGuard> udt_commit_guard;
+        if (committed_metadata)
+        {
+            /// The cache mutex is acquired before the writer-preferred fence.
+            /// No fenced MergeTree path takes it in the opposite order.
+            udt_commit_guard.emplace(
+                UDT::acquireAuthorityStorageNewOperationCommitGuard(*this, committed_metadata, UDT::AuthorityQuarantineOperationKind::DDL));
+            setInMemoryMetadata(*committed_metadata);
+        }
+        else
+            setInMemoryMetadata(new_metadata);
         patch_parts_sorting_keys_cache.clear();
     }
     {
@@ -3277,6 +3317,16 @@ catch (...)
 void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 {
     std::lock_guard refresh_lock(refresh_parts_mutex);
+
+    const auto udt_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (udt_metadata_snapshot->getBoundUDTReferences())
+    {
+        /// Read-only disk refresh discovers and activates an open-ended set of
+        /// externally appeared parts. Its direct preparePartForCommit path has
+        /// neither a bounded final rollback seam nor authority-owned source
+        /// provenance, so it cannot race quarantine publication safely.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Read-only disk part refresh is not supported for mapped UDT MergeTree tables");
+    }
 
     fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
     {
@@ -6659,6 +6709,13 @@ bool MergeTreeData::addTempPart(
     if (&out_transaction.data != this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::Transaction for one table cannot be used with another. It is a bug.");
 
+    const auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
+    const bool mapped_udt = static_cast<bool>(metadata_snapshot->getBoundUDTReferences());
+    if (out_transaction.txn && mapped_udt)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "MergeTree transactions are not supported for mapped UDT part publication");
+    }
+
     if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
 
@@ -6676,6 +6733,8 @@ bool MergeTreeData::addTempPart(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
+    UDT::assertAuthorityStorageNewOperationAllowed(*this, metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Write);
+    out_transaction.requires_udt_commit_gate = out_transaction.requires_udt_commit_gate || mapped_udt;
     preparePartForCommit(part, out_transaction, lock, /* need_rename = */false);
 
     if (out_covered_parts)
@@ -6702,6 +6761,13 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     if (&out_transaction.data != this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::Transaction for one table cannot be used with another. It is a bug.");
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
+    const bool mapped_udt = static_cast<bool>(metadata_snapshot->getBoundUDTReferences());
+    if (out_transaction.txn && mapped_udt)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "MergeTree transactions are not supported for mapped UDT part replacement");
+    }
 
     part->assertState({DataPartState::Temporary});
     checkPartPartition(part, lock);
@@ -6738,6 +6804,8 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
+    UDT::assertAuthorityStorageNewOperationAllowed(*this, metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Write);
+    out_transaction.requires_udt_commit_gate = out_transaction.requires_udt_commit_gate || mapped_udt;
     preparePartForCommit(part, out_transaction, lock, /* need_rename= */ true, rename_in_transaction);
 
     if (out_covered_parts)
@@ -7910,17 +7978,24 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
             if (active_part_it == data_parts_by_info.end())
                 throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Cannot swap part '{}', no such active part.", part_copy->name);
 
-            /// We do not check allow_remote_fs_zero_copy_replication here because data may be shared
-            /// when allow_remote_fs_zero_copy_replication turned on and off again
-            original_active_part->force_keep_shared_data = false;
+            const bool force_keep_shared_data = original_active_part->getDataPartStorage().supportZeroCopyReplication()
+                && part_copy->getDataPartStorage().supportZeroCopyReplication()
+                && original_active_part->getDataPartStorage().getUniqueId() == part_copy->getDataPartStorage().getUniqueId();
 
-            if (original_active_part->getDataPartStorage().supportZeroCopyReplication() &&
-                part_copy->getDataPartStorage().supportZeroCopyReplication() &&
-                original_active_part->getDataPartStorage().getUniqueId() == part_copy->getDataPartStorage().getUniqueId())
-            {
-                /// May be when several volumes use the same S3/HDFS storage
-                original_active_part->force_keep_shared_data = true;
-            }
+            /// Both explicit and TTL/background disk moves converge here. Do
+            /// the potentially large Active-part search first, then acquire
+            /// the fence immediately before the bounded visible replacement.
+            /// A mapped explicit MOVE is rejected earlier because its
+            /// preparation is asynchronous; this closes autonomously scheduled
+            /// moves that were admitted before quarantine publication.
+            const auto commit_metadata_snapshot = getInMemoryMetadataPtr(nullptr, true);
+            [[maybe_unused]] auto udt_commit_guard = UDT::acquireAuthorityStorageNewOperationCommitGuard(
+                *this, commit_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Mutation);
+
+            /// We do not check allow_remote_fs_zero_copy_replication here because data may be shared
+            /// when allow_remote_fs_zero_copy_replication turned on and off again. This includes the
+            /// same-storage case used by several volumes.
+            original_active_part->force_keep_shared_data = force_keep_shared_data;
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy, lock);
             LOG_TEST(log, "swapActivePart: removing {} from data_parts_indexes", (*active_part_it)->getNameWithState());
@@ -8660,6 +8735,31 @@ Pipe MergeTreeData::alterPartition(
     if (metadata_snapshot && metadata_snapshot->hasUniqueKey() && !commands.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
+
+    if (metadata_snapshot && metadata_snapshot->getBoundUDTReferences())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == PartitionCommand::MOVE_PARTITION)
+            {
+                /// Disk/volume moves publish from a background executor (also
+                /// when the caller waits for its future), while TABLE moves
+                /// mutate two independent working sets. Neither has a single
+                /// bounded final quarantine-fence seam today.
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "MOVE PART/PARTITION is not supported for mapped UDT MergeTree tables");
+            }
+            if (command.type == PartitionCommand::DROP_DETACHED_PARTITION || command.type == PartitionCommand::FREEZE_PARTITION
+                || command.type == PartitionCommand::FREEZE_ALL_PARTITIONS || command.type == PartitionCommand::UNFREEZE_PARTITION
+                || command.type == PartitionCommand::UNFREEZE_ALL_PARTITIONS)
+            {
+                /// These commands expose a sequence of filesystem effects and
+                /// have no bounded atomic final-publication seam. Holding the
+                /// authority fence across their I/O would starve quarantine.
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED, "DROP DETACHED and FREEZE/UNFREEZE are not supported for mapped UDT MergeTree tables");
+            }
+        }
+    }
 
     /// A read-only table must reject explicit partition mutations as well.
     if ((*getSettings())[MergeTreeSetting::table_readonly])
@@ -10926,6 +11026,7 @@ void MergeTreeData::Transaction::clear()
     chassert(precommitted_parts.size() >= precommitted_parts_need_rename.size());
     precommitted_parts.clear();
     precommitted_parts_need_rename.clear();
+    requires_udt_commit_gate = false;
 }
 
 void MergeTreeData::Transaction::renameParts()
@@ -10947,6 +11048,25 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
+
+    std::optional<UDT::AuthorityStorageNewOperationCommitGuard> udt_commit_guard;
+    if (requires_udt_commit_gate)
+    {
+        if (txn)
+        {
+            /// A real MergeTree transaction becomes visible only at its later
+            /// CSN publication, after this table-local transaction returns.
+            /// Reject defensively instead of releasing the authority fence
+            /// before the true engine-visible commit point.
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "MergeTree transactions are not supported for mapped UDT part commit");
+        }
+        /// Acquire only at the final commit. This bounds publisher delay and
+        /// avoids retaining the fence while parts are merely PreActive.
+        const auto commit_metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, true);
+        udt_commit_guard.emplace(
+            UDT::acquireAuthorityStorageNewOperationCommitGuard(
+                data, commit_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Write));
+    }
 
     if (!isEmpty())
     {

@@ -5,6 +5,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
@@ -24,6 +25,7 @@ namespace ErrorCodes
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace FailPoints
@@ -226,9 +228,27 @@ Coordination::Requests MergeTreeTransaction::getRequestsOnRollback() const
 scope_guard MergeTreeTransaction::beforeCommit()
 {
     RunningMutationsList mutations_to_wait;
+    std::vector<StoragePtr> storages_to_validate;
     {
         std::lock_guard lock{mutex};
         mutations_to_wait = mutations;
+        storages_to_validate.assign(storages.begin(), storages.end());
+    }
+
+    /// A transaction may have staged physical-table changes before another
+    /// session durably converts that table to a mapped UDT image. Re-check the
+    /// current metadata at the true process-global commit boundary. Mapped
+    /// transactions are unsupported because the later one-CSN publication can
+    /// span several independent database-owned authority fences; rejecting
+    /// here also closes the physical-to-mapped conversion race without holding
+    /// any fence across ZooKeeper I/O.
+    for (const auto & storage : storages_to_validate)
+    {
+        const auto metadata = storage->getInMemoryMetadataPtr(nullptr, true);
+        if (metadata->getBoundUDTReferences())
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "MergeTree transactions cannot commit changes to mapped UDT tables");
+        }
     }
 
     /// We should wait for mutations to finish before committing transaction, because some mutation may fail and cause rollback.

@@ -320,6 +320,11 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     setInMemoryMetadata(storage_metadata);
 }
 
+StoragePtr StorageMergeTreeIndex::getSourceTable() const
+{
+    return source_table;
+}
+
 VirtualColumnsDescription StorageMergeTreeIndex::createVirtuals()
 {
     VirtualColumnsDescription desc;

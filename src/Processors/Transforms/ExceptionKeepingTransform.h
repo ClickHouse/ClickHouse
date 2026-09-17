@@ -1,7 +1,12 @@
 #pragma once
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+
+#include <functional>
 #include <memory>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -62,6 +67,23 @@ protected:
 public:
     ExceptionKeepingTransform(SharedHeader in_header, SharedHeader out_header, bool ignore_on_start_and_finish_ = true);
 
+    /// Register an additional final-publication guard which must be retained
+    /// while consume/onFinish executes. Most transforms have no factories, so
+    /// their fast path is a single null check and owns no factory allocation.
+    template <typename Factory>
+    void addAdditionalCommitGuardFactory(Factory && factory)
+    {
+        using FactoryType = std::decay_t<Factory>;
+        using Guard = std::decay_t<std::invoke_result_t<FactoryType &>>;
+
+        if (!additional_commit_guard_factories)
+            additional_commit_guard_factories = std::make_unique<AdditionalCommitGuardFactories>();
+
+        additional_commit_guard_factories->emplace_back(
+            [guard_factory = FactoryType(std::forward<Factory>(factory))]() mutable -> AdditionalCommitGuardPtr
+            { return std::make_unique<AdditionalCommitGuardHolder<Guard>>(guard_factory()); });
+    }
+
     Status prepare() override;
     void work() override;
 
@@ -71,7 +93,34 @@ public:
     void setRuntimeData(ThreadGroupPtr thread_group_);
 
 private:
+    class AdditionalCommitGuard
+    {
+    public:
+        virtual ~AdditionalCommitGuard() = default;
+    };
+
+    template <typename Guard>
+    class AdditionalCommitGuardHolder final : public AdditionalCommitGuard
+    {
+    public:
+        explicit AdditionalCommitGuardHolder(Guard guard_)
+            : guard(std::move(guard_))
+        {
+        }
+
+    private:
+        Guard guard;
+    };
+
+    using AdditionalCommitGuardPtr = std::unique_ptr<AdditionalCommitGuard>;
+    using AdditionalCommitGuardFactory = std::function<AdditionalCommitGuardPtr()>;
+    using AdditionalCommitGuardFactories = std::vector<AdditionalCommitGuardFactory>;
+    using AdditionalCommitGuards = std::vector<AdditionalCommitGuardPtr>;
+
+    AdditionalCommitGuards acquireAdditionalCommitGuards();
+
     ThreadGroupPtr thread_group = nullptr;
+    std::unique_ptr<AdditionalCommitGuardFactories> additional_commit_guard_factories;
 };
 
 }

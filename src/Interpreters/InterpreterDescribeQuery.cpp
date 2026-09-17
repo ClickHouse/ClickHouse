@@ -1,36 +1,46 @@
-#include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/BlockIO.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
-#include <Columns/IColumn.h>
-#include <Common/typeid_cast.h>
-#include <Analyzer/Utils.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
+#include <Columns/IColumn.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/UDT/BoundObjectTypeReferences.h>
+#include <Databases/UDT/ILifecycleAdapter.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/UDTTableIntrospection.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/BlockIO.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterDescribeQuery.h>
-#include <Interpreters/IdentifierSemantic.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
-#include <DataTypes/NestedUtils.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
+
+#include <algorithm>
+#include <chrono>
 
 namespace DB
 {
@@ -50,6 +60,8 @@ namespace ErrorCodes
 extern const int ACCESS_DENIED;
 extern const int UNSUPPORTED_METHOD;
 extern const int UNKNOWN_FUNCTION;
+extern const int LOGICAL_ERROR;
+extern const int ABORTED;
 
 }
 
@@ -263,10 +275,121 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
             "Cannot infer table schema for the parameterized view when no query parameters are provided");
     }
 
+    DatabasePtr database;
+    std::shared_ptr<void> udt_introspection_lease;
+    if (!temporary)
+    {
+        /// External metadata refresh may itself mutate table metadata, so let
+        /// it finish before taking the Atomic UDT schema lease.
+        {
+            auto update_lock = table->lockForShare(
+                getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
+            table->updateExternalDynamicMetadataIfExists(query_context);
+        }
+        database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    }
+
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
-    table->updateExternalDynamicMetadataIfExists(query_context);
+    if (temporary)
+        table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
+    if (!temporary && metadata_snapshot->getBoundUDTReferences())
+    {
+        /// The first snapshot is a cheap physical-table fast path. For a
+        /// mapped table, retain share and acquire ALTER -> schema before the
+        /// reread. This both closes ALTER's durable/live publication gap and
+        /// preserves the share -> schema order of cross-database RENAME.
+        udt_introspection_lease
+            = database->getUDTLifecycleAdapter().acquireTableIntrospectionLease(
+                table,
+                std::chrono::milliseconds(settings[Setting::lock_acquire_timeout].totalMilliseconds()),
+                [query_context]
+                {
+                    if (const auto process_list_element = query_context->getProcessListElementSafe())
+                        static_cast<void>(process_list_element->checkTimeLimit());
+                });
+        if (database->tryGetTable(table_id.table_name, query_context) != table)
+            throw Exception(ErrorCodes::ABORTED, "Table changed while acquiring its user-defined type introspection lease");
+        metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
+    }
+    if (metadata_snapshot->getBoundUDTReferences())
+    {
+        if (!database)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A temporary table unexpectedly retained database-owned user-defined types");
+        const auto & object = metadata_snapshot->getBoundUDTReferences()->getObject();
+        if (object.kind == UDT::SchemaObjectKind::Table)
+        {
+            auto projected_columns = UDT::projectCurrentDeclaredTableColumnTypes(table->getStorageID(), *metadata_snapshot, *database);
+            for (const auto & projected : projected_columns)
+            {
+                if (!projected.has_logical_references)
+                    continue;
+                if (!projected.declared_type
+                    || !declared_column_types.emplace(projected.column_name, projected.declared_type->formatWithSecretsOneLine()).second)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Bound-table UDT introspection produced duplicate or empty declared columns");
+                }
+            }
+        }
+        else if (object.kind == UDT::SchemaObjectKind::View || object.kind == UDT::SchemaObjectKind::Dictionary)
+        {
+            auto create_query = database->getCreateTableQuery(table_id.table_name, query_context);
+            auto & create = create_query->as<ASTCreateQuery &>();
+            UDT::applyCurrentDeclaredStoredObjectTypes(create, table->getStorageID(), *metadata_snapshot, *database);
+            if (object.kind == UDT::SchemaObjectKind::View)
+            {
+                if (!create.columns_list || !create.columns_list->columns)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound View introspection produced no output declarations");
+                for (const auto & child : create.columns_list->columns->children)
+                {
+                    const auto * declaration = child ? child->as<ASTColumnDeclaration>() : nullptr;
+                    if (!declaration || declaration->name.empty() || !declaration->getType()
+                        || !declared_column_types.emplace(declaration->name, declaration->getType()->formatWithSecretsOneLine()).second)
+                    {
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound View introspection produced duplicate or malformed outputs");
+                    }
+                }
+                const auto runtime_columns = metadata_snapshot->getColumns().getAllPhysical();
+                if (declared_column_types.size() != runtime_columns.size()
+                    || std::any_of(
+                        runtime_columns.begin(),
+                        runtime_columns.end(),
+                        [&](const auto & column) { return !declared_column_types.contains(column.name); }))
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound View introspection output count differs from runtime columns");
+                }
+            }
+            else
+            {
+                if (!create.is_dictionary || !create.dictionary_attributes_list)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound Dictionary introspection produced no attribute declarations");
+                for (const auto & child : create.dictionary_attributes_list->children)
+                {
+                    const auto * declaration = child ? child->as<ASTDictionaryAttributeDeclaration>() : nullptr;
+                    if (!declaration || declaration->name.empty() || !declaration->type
+                        || !declared_column_types.emplace(declaration->name, declaration->type->formatWithSecretsOneLine()).second)
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR, "Bound Dictionary introspection produced duplicate or malformed attributes");
+                    }
+                }
+                const auto runtime_columns = metadata_snapshot->getColumns().getAllPhysical();
+                if (declared_column_types.size() != runtime_columns.size()
+                    || std::any_of(
+                        runtime_columns.begin(),
+                        runtime_columns.end(),
+                        [&](const auto & column) { return !declared_column_types.contains(column.name); }))
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "Bound Dictionary introspection attribute count differs from runtime columns");
+                }
+            }
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound stored object has no kind-aware DESCRIBE renderer");
+    }
     const auto & column_descriptions = metadata_snapshot->getColumns();
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);
@@ -285,7 +408,10 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
     size_t i = 0;
     res_columns[i++]->insert(column.name);
 
-    if (settings[Setting::print_pretty_type_names])
+    const auto declared_type = is_virtual ? declared_column_types.end() : declared_column_types.find(column.name);
+    if (declared_type != declared_column_types.end())
+        res_columns[i++]->insert(declared_type->second);
+    else if (settings[Setting::print_pretty_type_names])
         res_columns[i++]->insert(column.type->getPrettyName());
     else
         res_columns[i++]->insert(column.type->getName());

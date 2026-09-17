@@ -8,6 +8,7 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Backups/IBackupCoordination.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseAtomic.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -28,6 +29,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <filesystem>
+#include <map>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -158,6 +160,11 @@ BackupEntries BackupEntriesCollector::run()
 
     /// Find databases and tables which we're going to put to the backup.
     gatherMetadataAndCheckConsistency();
+
+    /// Table share locks were acquired by the final successful metadata pass.
+    /// Recheck Atomic UDT admission now and retain its schema leases until all
+    /// backup entries and post-tasks have been emitted.
+    acquireAtomicUDTBackupLeases();
 
     /// Make backup entries for the definitions of the found databases.
     makeBackupEntriesForDatabasesDefs();
@@ -707,6 +714,34 @@ void BackupEntriesCollector::lockTablesForReading()
             const auto & table_info = key_value.second;
             return table_info.storage && !table_info.table_lock; /// Table was dropped while acquiring the lock.
         });
+}
+
+void BackupEntriesCollector::acquireAtomicUDTBackupLeases()
+{
+    std::map<String, std::pair<DatabaseAtomic *, std::vector<StoragePtr>>> tables_by_database;
+    for (const auto & [table_name, table_info] : table_infos)
+    {
+        static_cast<void>(table_name);
+        if (!table_info.storage)
+            continue;
+        auto * atomic_database = dynamic_cast<DatabaseAtomic *>(table_info.database.get());
+        if (!atomic_database)
+            continue;
+
+        auto & [database, tables] = tables_by_database[atomic_database->getDatabaseName()];
+        database = atomic_database;
+        tables.push_back(table_info.storage);
+    }
+
+    atomic_udt_backup_leases.clear();
+    atomic_udt_backup_leases.reserve(tables_by_database.size());
+    for (auto & [database_name, database_and_tables] : tables_by_database)
+    {
+        static_cast<void>(database_name);
+        auto & [database, tables] = database_and_tables;
+        if (auto lease = database->acquireUDTBackupLease(tables, context))
+            atomic_udt_backup_leases.push_back(std::move(lease));
+    }
 }
 
 /// Check consistency of collected information about databases and tables.

@@ -44,13 +44,14 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 class FutureSetFromSubquery;
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
-/// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
-/// Such table can be accessed from everywhere by its ID.
-/// Removes the table from database on destruction.
-/// TemporaryTableHolder object can be attached to a query or session Context, so table will be accessible through the context.
+/// Creates temporary table in `_temporary_and_external_tables` with randomly
+/// generated unique StorageID. Such table can be accessed from everywhere by
+/// its ID. Removes the table from database on destruction. TemporaryTableHolder
+/// object can be attached to a query or session Context, so table will be
+/// accessible through the context.
 struct TemporaryTableHolder : boost::noncopyable, WithContext
 {
-    using Creator = std::function<StoragePtr (const StorageID &)>;
+    using Creator = std::function<StoragePtr(const StorageID &)>;
 
     TemporaryTableHolder(ContextPtr context, const Creator & creator, const ASTPtr & query = {});
 
@@ -73,7 +74,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     std::shared_ptr<IDatabase> getDatabase() const;
 
-    operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
+    operator bool() const { return id != UUIDHelpers::Nil; } /// NOLINT
 
     std::weak_ptr<IDatabase> temporary_tables;
     UUID id = UUIDHelpers::Nil;
@@ -82,7 +83,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
 using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 
-///TODO maybe remove shared_ptr from here?
+/// TODO maybe remove shared_ptr from here?
 using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
@@ -181,7 +182,8 @@ public:
     /// empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
 
-    /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
+    /// For all of the following methods database_name in table_id must be not
+    /// empty (even for temporary tables).
     void assertTableDoesntExist(const StorageID & table_id, ContextPtr context) const;
     bool isTableExist(const StorageID & table_id, ContextPtr context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
@@ -190,13 +192,12 @@ public:
     StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id,
-                                  ContextPtr context,
-                                  std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id, ContextPtr context, std::optional<Exception> * exception = nullptr) const;
 
-    /// Returns true if a passed table_id refers to one of the predefined tables' names.
-    /// All tables in the "system" database with System* table engine are predefined.
-    /// Four views (tables, views, columns, schemata) in the "information_schema" database are predefined too.
+    /// Returns true if a passed table_id refers to one of the predefined tables'
+    /// names. All tables in the "system" database with System* table engine are
+    /// predefined. Four views (tables, views, columns, schemata) in the
+    /// "information_schema" database are predefined too.
     bool isPredefinedTable(const StorageID & table_id) const;
 
     /// View dependencies between a source table and its view.
@@ -254,6 +255,10 @@ public:
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false);
     void undropTable(StorageID table_id, std::function<void()> throw_if_cancelled = {});
 
+    /// Makes an already-enqueued Atomic tombstone immediately eligible for its
+    /// normal background cleanup. It does not wait and is safe to call after a
+    /// parent drop worker has enqueued an owned child.
+    void expediteDroppedTableCleanup(const UUID & uuid);
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 
     bool isShuttingDown() const { return is_shutting_down.load(); }
@@ -294,9 +299,16 @@ public:
         const TableNamesSet & new_loading_dependencies,
         const TableNamesSet & new_view_dependencies);
 
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
+    void checkTableCanBeRemovedOrRenamed(
+        const StorageID & table_id,
+        bool check_referential_dependencies,
+        bool check_loading_dependencies,
+        bool is_drop_database = false) const;
 
-    void checkTableCanBeAddedWithNoCyclicDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
+    void checkTableCanBeAddedWithNoCyclicDependencies(
+        const QualifiedTableName & table_name,
+        const TableNamesSet & new_referential_dependencies,
+        const TableNamesSet & new_loading_dependencies);
     void checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     void checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2);
 
@@ -307,6 +319,11 @@ public:
         DiskPtr db_disk;
         String metadata_path;
         time_t drop_time{};
+        /// True when this queue entry was reconstructed from the untagged
+        /// metadata_dropped namespace instead of retaining the StoragePtr from
+        /// the DROP operation. In a durable-UDT Atomic database that provenance
+        /// is required to keep generic UNDROP fail closed after restart.
+        bool reconstructed_from_dropped_metadata = false;
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
@@ -339,7 +356,9 @@ private:
 
     void shutdownImpl(std::function<void()> shutdown_system_logs);
 
-    void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
+    void checkTableCanBeRemovedOrRenamedUnlocked(
+        const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const
+        TSA_REQUIRES(databases_mutex);
 
     struct UUIDToStorageMapPart
     {
@@ -414,8 +433,9 @@ private:
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
     TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
-    /// A multiset: the same UUID may appear more than once when a fixed explicit UUID is reused across
-    /// CREATE OR REPLACE TABLE, which enqueues several intermediate tables sharing that UUID for drop.
+    /// A multiset: the same UUID may appear more than once when a fixed explicit
+    /// UUID is reused across CREATE OR REPLACE TABLE, which enqueues several
+    /// intermediate tables sharing that UUID for drop.
     std::unordered_multiset<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 

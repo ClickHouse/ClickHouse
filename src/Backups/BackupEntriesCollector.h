@@ -91,6 +91,7 @@ private:
     void gatherTablesMetadata();
     std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
     void lockTablesForReading();
+    void acquireAtomicUDTBackupLeases();
     bool compareWithPrevious(String & mismatch_description);
 
     void makeBackupEntriesForDatabasesDefs();
@@ -183,6 +184,11 @@ private:
     std::unordered_map<QualifiedTableName, TableInfo> table_infos;
     std::vector<std::pair<String, String>> previous_databases_metadata;
     std::vector<std::pair<QualifiedTableName, String>> previous_tables_metadata;
+
+    /// Retained from the final metadata recheck through definition/data entry
+    /// emission. Type-erased to keep DatabaseAtomic internals out of this
+    /// generic backup header.
+    std::vector<std::shared_ptr<void>> atomic_udt_backup_leases;
 
     std::optional<std::unordered_map<UUID, AccessEntityPtr>> all_access_entities;
 

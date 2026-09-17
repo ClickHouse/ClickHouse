@@ -60,7 +60,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric TablesToDropQueueSize;
+extern const Metric TablesToDropQueueSize;
 }
 
 namespace DB
@@ -68,7 +68,7 @@ namespace DB
 
 namespace ServerSetting
 {
-    extern const ServerSettingsUInt64 database_atomic_delay_before_drop_table_sec;
+extern const ServerSettingsUInt64 database_atomic_delay_before_drop_table_sec;
 extern const ServerSettingsUInt64 database_catalog_drop_error_cooldown_sec;
 extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
 extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
@@ -78,9 +78,9 @@ extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
 namespace ErrorCodes
 {
 extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
-    extern const int TABLE_UUID_MISMATCH;
-    extern const int TABLE_ALREADY_EXISTS;
+extern const int UNKNOWN_TABLE;
+extern const int TABLE_UUID_MISMATCH;
+extern const int TABLE_ALREADY_EXISTS;
 extern const int DATABASE_ALREADY_EXISTS;
 extern const int DATABASE_NOT_EMPTY;
 extern const int DATABASE_ACCESS_DENIED;
@@ -97,8 +97,8 @@ namespace Setting
 {
 extern const SettingsBool fsync_metadata;
 extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
-    extern const SettingsBool show_remote_databases_in_system_tables;
+extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+extern const SettingsBool show_remote_databases_in_system_tables;
 } // namespace Setting
 
 namespace MergeTreeSetting
@@ -177,7 +177,6 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     table->startup();
 }
 
-
 TemporaryTableHolder::TemporaryTableHolder(
     ContextPtr context_,
     const ColumnsDescription & columns,
@@ -185,22 +184,26 @@ TemporaryTableHolder::TemporaryTableHolder(
     const ASTPtr & query,
     bool create_for_global_subquery)
     : TemporaryTableHolder(
-        context_,
-        [&](const StorageID & table_id)
-        {
-            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{}, MemorySettings{});
+          context_,
+          [&](const StorageID & table_id)
+          {
+              auto storage = std::make_shared<StorageMemory>(
+                  table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{}, MemorySettings{});
 
-            if (create_for_global_subquery)
-                storage->delayReadForGlobalSubqueries();
+              if (create_for_global_subquery)
+                  storage->delayReadForGlobalSubqueries();
 
-            return storage;
-        },
-        query)
+              return storage;
+          },
+          query)
 {
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(std::move(rhs.temporary_tables)), id(rhs.id), future_set(std::move(rhs.future_set))
+    : WithContext(rhs.context)
+    , temporary_tables(std::move(rhs.temporary_tables))
+    , id(rhs.id)
+    , future_set(std::move(rhs.future_set))
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -219,7 +222,7 @@ TemporaryTableHolder::~TemporaryTableHolder()
         try
         {
             auto table = getTable();
-            table->flushAndShutdown(/*is_drop=*/ true);
+            table->flushAndShutdown(/*is_drop=*/true);
             getDatabase()->dropTable(getContext(), "_tmp_" + toString(id));
         }
         catch (...)
@@ -238,8 +241,10 @@ std::shared_ptr<IDatabase> TemporaryTableHolder::getDatabase() const
 {
     auto database = temporary_tables.lock();
     if (!database)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Database for temporary tables is already destroyed, but TemporaryTableHolder for {} is still alive",
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Database for temporary tables is already destroyed, but "
+            "TemporaryTableHolder for {} is still alive",
             getGlobalTableID().getNameForLogs());
     return database;
 }
@@ -425,11 +430,7 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     return it->second;
 }
 
-
-DatabaseAndTable DatabaseCatalog::getTableImpl(
-    const StorageID & table_id,
-    ContextPtr context_,
-    std::optional<Exception> * exception) const
+DatabaseAndTable DatabaseCatalog::getTableImpl(const StorageID & table_id, ContextPtr context_, std::optional<Exception> * exception) const
 {
     checkStackSize();
 
@@ -449,7 +450,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         {
             if (db_and_table.first && !db_and_table.second)
             {
-                /// UUID is used by a database, not a table: the user specified a table UUID that collides with a database UUID.
+                /// UUID is used by a database, not a table: the user specified a table
+                /// UUID that collides with a database UUID.
                 if (exception)
                     exception->emplace(Exception(
                         ErrorCodes::TABLE_ALREADY_EXISTS,
@@ -466,19 +468,30 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                 if (hint_db_name.empty())
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
                 else
-                    exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}.{}?", table_id.getNameForLogs(), backQuoteIfNeed(hint_db_name), backQuoteIfNeed(hint_table_name)));
+                    exception->emplace(Exception(
+                        ErrorCodes::UNKNOWN_TABLE,
+                        "Table {} does not exist. Maybe you meant {}.{}?",
+                        table_id.getNameForLogs(),
+                        backQuoteIfNeed(hint_db_name),
+                        backQuoteIfNeed(hint_table_name)));
             }
             return {};
         }
-        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
+        /// In old analyzer resolving done in multiple places, so we ignore
+        /// TABLE_UUID_MISMATCH error.
         else if (analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
-            if (db_and_table.first->getDatabaseName() != table_id.database_name ||
-                std::tie(table_storage_id.database_name, table_storage_id.table_name) != std::tie(table_id.database_name, table_id.table_name))
+            if (db_and_table.first->getDatabaseName() != table_id.database_name
+                || std::tie(table_storage_id.database_name, table_storage_id.table_name)
+                    != std::tie(table_id.database_name, table_id.table_name))
             {
                 if (exception)
-                    exception->emplace(Exception(ErrorCodes::TABLE_UUID_MISMATCH, "Table {} does not match {}", table_id.getNameForLogs(), table_storage_id.getNameForLogs()));
+                    exception->emplace(Exception(
+                        ErrorCodes::TABLE_UUID_MISMATCH,
+                        "Table {} does not match {}",
+                        table_id.getNameForLogs(),
+                        table_storage_id.getNameForLogs()));
                 return {};
             }
         }
@@ -489,9 +502,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
-                                        assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get())->getPostgreSQLDatabaseName(),
-                                        db_and_table.second->getStorageID().table_name);
+            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(
+                std::move(db_and_table.second),
+                getContext(),
+                assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get())->getPostgreSQLDatabaseName(),
+                db_and_table.second->getStorageID().table_name);
         }
 #endif
 
@@ -501,17 +516,21 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     if (table_id.database_name == TEMPORARY_DATABASE)
     {
         /// For temporary tables UUIDs are set in Context::resolveStorageID(...).
-        /// If table_id has no UUID, then the name of database was specified by user and table_id was not resolved through context.
-        /// Do not allow access to TEMPORARY_DATABASE because it contains all temporary tables of all contexts and users.
+        /// If table_id has no UUID, then the name of database was specified by user
+        /// and table_id was not resolved through context. Do not allow access to
+        /// TEMPORARY_DATABASE because it contains all temporary tables of all
+        /// contexts and users.
         if (exception)
-            exception->emplace(Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", TEMPORARY_DATABASE));
+            exception->emplace(
+                Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", TEMPORARY_DATABASE));
         return {};
     }
 
     DatabasePtr database;
     {
-        // Callers assume that this method doesn't throw exceptions, but getDatabaseName() will throw if there is no database part.
-        // So, fail early and gracefully...
+        // Callers assume that this method doesn't throw exceptions, but
+        // getDatabaseName() will throw if there is no database part. So, fail early
+        // and gracefully...
         if (!table_id.hasDatabase())
         {
             if (exception)
@@ -533,11 +552,16 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             auto names = hints.getHints(table_id.getDatabaseName());
             if (names.empty())
             {
-                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
+                exception->emplace(
+                    Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
             }
             else
             {
-                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(table_id.getDatabaseName()), backQuoteIfNeed(names[0])));
+                exception->emplace(Exception(
+                    ErrorCodes::UNKNOWN_DATABASE,
+                    "Database {} does not exist. Maybe you meant {}?",
+                    backQuoteIfNeed(table_id.getDatabaseName()),
+                    backQuoteIfNeed(names[0])));
             }
         }
         return {};
@@ -570,7 +594,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
         else
         {
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}.{}?", table_id.getNameForLogs(), backQuoteIfNeed(hint_db_name), backQuoteIfNeed(hint_table_name)));
+            exception->emplace(Exception(
+                ErrorCodes::UNKNOWN_TABLE,
+                "Table {} does not exist. Maybe you meant {}.{}?",
+                table_id.getNameForLogs(),
+                backQuoteIfNeed(hint_db_name),
+                backQuoteIfNeed(hint_table_name)));
         }
     }
     if (!table)
@@ -612,7 +641,9 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
                 return true;
             auto res_id = storage->getStorageID();
             String database_name = res_id.getDatabaseName();
-            if (database_name != SYSTEM_DATABASE) /// If (database_name == SYSTEM_DATABASE) then we have already checked it (see isSystemStorage() above).
+            if (database_name != SYSTEM_DATABASE) /// If (database_name == SYSTEM_DATABASE) then we
+                /// have already checked it (see isSystemStorage()
+                /// above).
                 return check_database_and_table_name(database_name, res_id.getTableName());
         }
         return false;
@@ -1304,9 +1335,11 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
     }
 #endif
     std::optional<Exception> exc;
-    auto table = local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }).second :
-        getTableImpl(table_id, local_context, &exc).second;
+    auto table = local_context->hasQueryContext()
+        ? local_context->getQueryContext()
+              ->getOrCacheStorage(table_id, [&]() { return getTableImpl(table_id, local_context, &exc); })
+              .second
+        : getTableImpl(table_id, local_context, &exc).second;
     if (!table)
         throw Exception(*exc);
     return table;
@@ -1314,17 +1347,19 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }).second :
-        getTableImpl(table_id, local_context, nullptr).second;
+    return local_context->hasQueryContext()
+        ? local_context->getQueryContext()
+              ->getOrCacheStorage(table_id, [&]() { return getTableImpl(table_id, local_context, nullptr); })
+              .second
+        : getTableImpl(table_id, local_context, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     std::optional<Exception> exc;
-    auto res = local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }) :
-        getTableImpl(table_id, local_context, &exc);
+    auto res = local_context->hasQueryContext()
+        ? local_context->getQueryContext()->getOrCacheStorage(table_id, [&]() { return getTableImpl(table_id, local_context, &exc); })
+        : getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -1332,9 +1367,9 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
-    return local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }) :
-        getTableImpl(table_id, local_context, nullptr);
+    return local_context->hasQueryContext()
+        ? local_context->getQueryContext()->getOrCacheStorage(table_id, [&]() { return getTableImpl(table_id, local_context, nullptr); })
+        : getTableImpl(table_id, local_context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
@@ -1342,8 +1377,9 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     chassert(!cleanup_task);
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::loadMarkedAsDroppedTables");
-    // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
-    // we need to check the dropped metadata on these disks, not just the default database disk.
+    // Because some DBs might have a `disk` setting defining the disk to store the
+    // table metadata files, we need to check the dropped metadata on these disks,
+    // not just the default database disk.
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
     String path = fs::path("metadata_dropped") / "";
 
@@ -1358,13 +1394,13 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         metadata_disk_list.insert(std::move(db_disk));
     }
 
-
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
     /// Data directories of such tables still exists in store/
     /// and metadata still exists in ZooKeeper for ReplicatedMergeTree tables.
     /// If server restarts before such tables was completely dropped,
-    /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
+    /// we should load them and enqueue cleanup to remove data from store/ and
+    /// metadata from ZooKeeper
     for (const auto & db_disk : metadata_disk_list)
     {
         for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
@@ -1378,7 +1414,8 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             if (!sub_path_filename.ends_with(".sql"))
                 continue;
 
-            /// Process .sql files with metadata of tables which were marked as dropped
+            /// Process .sql files with metadata of tables which were marked as
+            /// dropped
             StorageID dropped_id = StorageID::createEmpty();
             size_t dot_pos = sub_path_filename.find('.');
             if (dot_pos == std::string::npos)
@@ -1413,7 +1450,8 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         auto full_path = elem.first;
         auto storage_id = elem.second.first;
         auto db_disk = elem.second.second;
-        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
+        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]()
+                                   { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1451,6 +1489,9 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
     chassert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
 
     /// Table was removed from database. Enqueue removal of its data from disk.
+    /// Preserve whether the entry arrived without its original StoragePtr:
+    /// parsing physical metadata below cannot recover logical UDT ownership.
+    const bool reconstructed_from_dropped_metadata = !table;
     time_t drop_time = 0;
     if (table)
     {
@@ -1462,10 +1503,16 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
     }
     else
     {
-        /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
+        /// Try load table from metadata to drop it correctly (e.g. remove metadata
+        /// from zk or remove data from all volumes)
         LOG_INFO(log, "Trying load partially dropped table {} from {}", table_id.getNameForLogs(), dropped_metadata_path);
         ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(
-            log, getContext(), db_disk, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/ false);
+            log,
+            getContext(),
+            db_disk,
+            dropped_metadata_path,
+            /*throw_on_error*/ false,
+            /*remove_empty*/ false);
         auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
         chassert(!create || create->uuid == table_id.uuid);
 
@@ -1476,21 +1523,29 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
             create->setTable(table_id.table_name);
             try
             {
-                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE).second;
+                table = createTableFromAST(
+                            *create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE)
+                            .second;
                 table->is_dropped = true;
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Cannot load partially dropped table " + table_id.getNameForLogs() +
-                                            " from: " + dropped_metadata_path +
-                                            ". Parsed query: " + create->formatForLogging() +
-                                            ". Will remove metadata and " + data_path +
-                                            ". Garbage may be left in ZooKeeper.");
+                tryLogCurrentException(
+                    log,
+                    "Cannot load partially dropped table " + table_id.getNameForLogs() + " from: " + dropped_metadata_path
+                        + ". Parsed query: " + create->formatForLogging() + ". Will remove metadata and " + data_path
+                        + ". Garbage may be left in ZooKeeper.");
             }
         }
         else
         {
-            LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
+            LOG_WARNING(
+                log,
+                "Cannot parse metadata of partially dropped table {} from "
+                "{}. Will remove metadata file and data directory. Garbage "
+                "may be left in /store directory and ZooKeeper.",
+                table_id.getNameForLogs(),
+                dropped_metadata_path);
         }
 
         addUUIDMapping(table_id.uuid);
@@ -1500,10 +1555,12 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
     std::lock_guard lock(tables_marked_dropped_mutex);
     if (ignore_delay)
     {
-        /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
-        /// but the queue will remain fair for multiple sync drop queries.
+        /// Insert it before first_async_drop_in_queue, so sync drop queries will
+        /// have priority over async ones, but the queue will remain fair for
+        /// multiple sync drop queries.
         tables_marked_dropped.emplace(
-            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time});
+            first_async_drop_in_queue,
+            TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time, reconstructed_from_dropped_metadata});
     }
     else
     {
@@ -1512,8 +1569,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
              table,
              db_disk,
              dropped_metadata_path,
-             drop_time
-                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])});
+             drop_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),
+             reconstructed_from_dropped_metadata});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1528,7 +1585,12 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
 void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
-    auto db_disk = getDatabase(table_id.database_name)->getDisk();
+    const auto database = getDatabase(table_id.database_name);
+    auto db_disk = database->getDisk();
+    const auto * atomic_database = typeid_cast<const DatabaseAtomic *>(database.get());
+    if (atomic_database)
+        atomic_database->waitDatabaseStarted();
+    const bool has_durable_udt_authority = atomic_database && atomic_database->hasDurableUDTAuthorityState();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1548,9 +1610,8 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             /// If table uuid exists, only find tables with equal uuid.
             if (table_id.uuid != UUIDHelpers::Nil)
                 continue;
-            if (it->table_id.database_name == table_id.database_name &&
-                it->table_id.table_name == table_id.table_name &&
-                it->drop_time >= latest_drop_time)
+            if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name
+                && it->drop_time >= latest_drop_time)
             {
                 latest_drop_time = it->drop_time;
                 it_dropped_table = it;
@@ -1558,11 +1619,53 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             }
         }
         if (it_dropped_table == tables_marked_dropped.end())
-            throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE,
+                "Table {} is being dropped, has been dropped, or the "
+                "database engine does not support UNDROP",
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
+
+        if (atomic_database)
+        {
+            bool exact_mapped_tombstone = false;
+            if (dropped_table.table)
+            {
+                const auto metadata = dropped_table.table->getInMemoryMetadataPtr(getContext(), false);
+                if (!metadata)
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot prove that Atomic tombstone {} is safe to UNDROP without its metadata snapshot",
+                        dropped_table.table_id.getNameForLogs());
+                metadata->validateBoundUDTReferences();
+                exact_mapped_tombstone
+                    = metadata->getBoundUDTReferences() || metadata->getBoundUDTExpectation() || metadata->getBoundUDTVerificationStamp();
+            }
+
+            if (exact_mapped_tombstone)
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot UNDROP formerly mapped object {} because its logical user-defined type sidecar and dependency edges "
+                    "were removed by DROP",
+                    dropped_table.table_id.getNameForLogs());
+            }
+
+            /// The physical tombstone format contains only database/name/UUID
+            /// and canonical table metadata. Checkpoint compaction may already
+            /// have retired the mapped DROP's Before installation record, so a
+            /// reconstructed entry cannot be distinguished from an ordinary
+            /// DROP after the database has durable UDT state.
+            if (dropped_table.reconstructed_from_dropped_metadata && has_durable_udt_authority)
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot prove that recovered Atomic tombstone {} is safe to UNDROP after user-defined type authority "
+                    "checkpointing",
+                    dropped_table.table_id.getNameForLogs());
+            }
+        }
 
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
@@ -1572,26 +1675,34 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
         tables_marked_dropped.erase(it_dropped_table);
-        /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
+        /// Erase a single occurrence: the same UUID may be present more than once
+        /// (CREATE OR REPLACE with a fixed UUID).
         auto id_it = tables_marked_dropped_ids.find(dropped_table.table_id.uuid);
         chassert(id_it != tables_marked_dropped_ids.end());
         if (id_it != tables_marked_dropped_ids.end())
             tables_marked_dropped_ids.erase(id_it);
         else
-            LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being undropped, it's a bug",
-                      dropped_table.table_id.getNameForLogs());
+            LOG_ERROR(
+                log,
+                "Table {} is missing from tables_marked_dropped_ids while "
+                "being undropped, it's a bug",
+                dropped_table.table_id.getNameForLogs());
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
     }
 
-    LOG_INFO(log, "Attaching undropped table {} (metadata moved from {})",
-             dropped_table.table_id.getNameForLogs(), latest_metadata_dropped_path);
+    LOG_INFO(
+        log,
+        "Attaching undropped table {} (metadata moved from {})",
+        dropped_table.table_id.getNameForLogs(),
+        latest_metadata_dropped_path);
 
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
     while (!isSharedPtrUnique(dropped_table.table))
     {
         if (throw_if_cancelled)
-            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED if the query has been killed
+            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED if the query has been
+        /// killed
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     dropped_table.table.reset();
@@ -1602,12 +1713,12 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     ast_attach->setTable(dropped_table.table_id.table_name);
 
     auto query_context = Context::createCopy(getContext());
-    /// Attach table needs to acquire ddl guard, that has already been acquired in undrop table,
-    /// and cannot be acquired in the attach table again.
+    /// Attach table needs to acquire ddl guard, that has already been acquired in
+    /// undrop table, and cannot be acquired in the attach table again.
     InterpreterCreateQuery interpreter(ast_attach, query_context);
     interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(true);
-    interpreter.setDontNeedDDLGuard();  /// It's already locked by caller
+    interpreter.setDontNeedDDLGuard(); /// It's already locked by caller
     interpreter.execute();
 
     LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());
@@ -1687,7 +1798,8 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
     ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
 
-    /// Handle cases when enqueueAndKeepTrack() **itself** throws, i.e. CANNOT_SCHEDULE_TASK
+    /// Handle cases when enqueueAndKeepTrack() **itself** throws, i.e.
+    /// CANNOT_SCHEDULE_TASK
     auto it = tables_to_drop.begin();
     SCOPE_EXIT({
         runner.waitForAllToFinish();
@@ -1700,28 +1812,33 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
     for (; it != tables_to_drop.end(); ++it)
     {
-        auto job = [this, table_iterator = it] ()
+        auto job = [this, table_iterator = it]()
         {
             try
             {
                 dropTableFinally(*table_iterator);
 
-                /// The UUID mapping is gone (dropTableFinally above) but the id is still in
-                /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
+                /// The UUID mapping is gone (dropTableFinally above) but the id is
+                /// still in tables_marked_dropped_ids until the guarded erase below:
+                /// window for a same-UUID re-drop.
                 FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
 
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
 
-                    /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
+                    /// Erase a single occurrence: the same UUID may be present more than
+                    /// once (CREATE OR REPLACE with a fixed UUID).
                     auto id_it = tables_marked_dropped_ids.find(table_iterator->table_id.uuid);
                     chassert(id_it != tables_marked_dropped_ids.end());
                     if (id_it != tables_marked_dropped_ids.end())
                         tables_marked_dropped_ids.erase(id_it);
                     else
-                        LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being dropped, it's a bug",
-                                  table_iterator->table_id.getNameForLogs());
+                        LOG_ERROR(
+                            log,
+                            "Table {} is missing from tables_marked_dropped_ids "
+                            "while being dropped, it's a bug",
+                            table_iterator->table_id.getNameForLogs());
 
                     table_to_delete_without_lock = std::move(*table_iterator);
 
@@ -1730,11 +1847,11 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
             }
             catch (...)
             {
-                tryLogCurrentException(log, "Cannot drop table " + table_iterator->table_id.getNameForLogs() +
-                                            ". Will retry later.");
+                tryLogCurrentException(log, "Cannot drop table " + table_iterator->table_id.getNameForLogs() + ". Will retry later.");
                 std::lock_guard lock(tables_marked_dropped_mutex);
 
-                table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + getContext()->getServerSettings()[ServerSetting::database_catalog_drop_error_cooldown_sec];
+                table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now())
+                    + getContext()->getServerSettings()[ServerSetting::database_catalog_drop_error_cooldown_sec];
                 tables_marked_dropped.emplace_back(std::move(*table_iterator));
 
                 if (first_async_drop_in_queue == tables_marked_dropped.end())
@@ -1750,8 +1867,9 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 
 void DatabaseCatalog::dropTableDataTask()
 {
-    /// Background task that removes data of tables which were marked as dropped by Atomic databases.
-    /// Table can be removed when it's not used by queries and drop_delay_sec elapsed since it was marked as dropped.
+    /// Background task that removes data of tables which were marked as dropped
+    /// by Atomic databases. Table can be removed when it's not used by queries
+    /// and drop_delay_sec elapsed since it was marked as dropped.
 
     auto [drop_tables_count, drop_tables_in_use_count] = getDroppedTablesCountAndInuseCount();
 
@@ -1759,8 +1877,13 @@ void DatabaseCatalog::dropTableDataTask()
 
     if (!tables_to_drop.empty())
     {
-        LOG_INFO(log, "Have {} tables in drop queue ({} of them are in use), will try drop {} tables",
-            drop_tables_count, drop_tables_in_use_count, tables_to_drop.size());
+        LOG_INFO(
+            log,
+            "Have {} tables in drop queue ({} of them are in use), will try "
+            "drop {} tables",
+            drop_tables_count,
+            drop_tables_in_use_count,
+            tables_to_drop.size());
 
         try
         {
@@ -1787,7 +1910,8 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
 
     /// Check if we are interested in a particular disk
-    ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
+    ///   or it is better to bypass it e.g. to avoid interactions with a remote
+    ///   storage
     auto is_disk_eligible_for_search = [](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
     {
         bool is_disk_eligible = !disk->isReadOnly();
@@ -1821,6 +1945,26 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
 }
 
+void DatabaseCatalog::expediteDroppedTableCleanup(const UUID & uuid)
+{
+    if (uuid == UUIDHelpers::Nil)
+        return;
+
+    bool found = false;
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        for (auto & table : tables_marked_dropped)
+        {
+            if (table.table_id.uuid != uuid)
+                continue;
+            table.drop_time = 0;
+            found = true;
+        }
+    }
+    if (found && drop_task)
+        (*drop_task)->schedule();
+}
+
 String DatabaseCatalog::getPathForUUID(const UUID & uuid)
 {
     const size_t uuid_prefix_len = 3;
@@ -1838,16 +1982,25 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid, std::function<v
     while (tables_marked_dropped_ids.contains(uuid) && !is_shutting_down)
     {
         if (throw_if_cancelled)
-            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
+            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED
+        /// if the query has been killed
         wait_table_finally_dropped.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(1));
     }
 
     const bool has_table = tables_marked_dropped_ids.contains(uuid);
-    LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
+    LOG_DEBUG(
+        log,
+        "Done waiting for the table {} to be dropped. The outcome: {}",
+        toString(uuid),
+        has_table ? "table still exists" : "table dropped successfully");
 
     if (has_table)
-        throw Exception(ErrorCodes::UNFINISHED, "Did not finish dropping the table with UUID {} because the server is shutting down, "
-                                                "will finish after restart", uuid);
+        throw Exception(
+            ErrorCodes::UNFINISHED,
+            "Did not finish dropping the table with UUID {} because "
+            "the server is shutting down, "
+            "will finish after restart",
+            uuid);
 }
 
 void DatabaseCatalog::addDependencies(
@@ -2010,22 +2163,29 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamedUnlocked(
     if (!is_drop_database)
     {
         if (!dependents.empty())
-            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                            removing_table, fmt::join(dependents, ", "));
+            throw Exception(
+                ErrorCodes::HAVE_DEPENDENT_OBJECTS,
+                "Cannot drop or rename {}, because some tables depend on it: {}",
+                removing_table,
+                fmt::join(dependents, ", "));
         return;
     }
 
-    /// For DROP DATABASE we should ignore dependent tables from the same database.
-    /// `InterpreterDropQuery::executeToDatabaseImpl` unloads tables in reverse topological order of loading
-    /// and referential dependencies, so a dependent is always dropped before the tables it depends on.
+    /// For DROP DATABASE we should ignore dependent tables from the same
+    /// database. `InterpreterDropQuery::executeToDatabaseImpl` unloads tables in
+    /// reverse topological order of loading and referential dependencies, so a
+    /// dependent is always dropped before the tables it depends on.
     std::vector<StorageID> from_other_databases;
     for (const auto & dependent : dependents)
         if (dependent.database_name != removing_table.database_name)
             from_other_databases.push_back(dependent);
 
     if (!from_other_databases.empty())
-        throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                        removing_table, fmt::join(from_other_databases, ", "));
+        throw Exception(
+            ErrorCodes::HAVE_DEPENDENT_OBJECTS,
+            "Cannot drop or rename {}, because some tables depend on it: {}",
+            removing_table,
+            fmt::join(from_other_databases, ", "));
 }
 
 void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
@@ -2057,7 +2217,8 @@ void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
             restore_dependencies();
             throw Exception(
                 ErrorCodes::INFINITE_LOOP,
-                "Cannot add dependencies for '{}', because it will lead to cyclic dependencies: {}",
+                "Cannot add dependencies for '{}', because it will lead "
+                "to cyclic dependencies: {}",
                 table_name.getFullName(),
                 cyclic_dependencies_description);
         }
@@ -2089,7 +2250,8 @@ void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const Stora
             restore_dependencies();
             throw Exception(
                 ErrorCodes::INFINITE_LOOP,
-                "Cannot rename '{}' to '{}', because it will lead to cyclic dependencies: {}",
+                "Cannot rename '{}' to '{}', because it will lead to "
+                "cyclic dependencies: {}",
                 from_table_id.getFullTableName(),
                 to_table_id.getFullTableName(),
                 cyclic_dependencies_description);
@@ -2126,7 +2288,8 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
             restore_dependencies();
             throw Exception(
                 ErrorCodes::INFINITE_LOOP,
-                "Cannot exchange '{}' and '{}', because it will lead to cyclic dependencies: {}",
+                "Cannot exchange '{}' and '{}', because it will lead to "
+                "cyclic dependencies: {}",
                 table_id_1.getFullTableName(),
                 table_id_2.getFullTableName(),
                 cyclic_dependencies_description);
@@ -2442,25 +2605,31 @@ DDLGuard::~DDLGuard()
 
 std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
 {
-    /// Ask the prompter for several ranked candidates (closest first), not only the single closest
-    /// one. A `SHOW_DICTIONARIES`-only grant can make the closest raw name a hidden table that must
-    /// not be suggested; in that case we still want to offer a slightly farther dictionary the user
-    /// is allowed to see, instead of masking it and falling back to the bare error.
+    /// Ask the prompter for several ranked candidates (closest first), not only
+    /// the single closest one. A `SHOW_DICTIONARIES`-only grant can make the
+    /// closest raw name a hidden table that must not be suggested; in that case
+    /// we still want to offer a slightly farther dictionary the user is allowed
+    /// to see, instead of masking it and falling back to the bare error.
     auto results = NamePrompter<max_hint_candidates>::getHints(table_name, getAllRegisteredNames());
 
-    /// Return the closest candidate the user is actually allowed to see. Scanning past hidden names
-    /// (rather than checking only the closest) is what lets a `SHOW_DICTIONARIES`-only user still get
-    /// a dictionary hint when a closer hidden table would otherwise mask it. The visibility check is
-    /// cheap for `SHOW_TABLES`-covered names and loads at most one table per remaining candidate.
+    /// Return the closest candidate the user is actually allowed to see. Scanning
+    /// past hidden names (rather than checking only the closest) is what lets a
+    /// `SHOW_DICTIONARIES`-only user still get a dictionary hint when a closer
+    /// hidden table would otherwise mask it. The visibility check is cheap for
+    /// `SHOW_TABLES`-covered names and loads at most one table per remaining
+    /// candidate.
     for (const auto & candidate : results)
     {
-        /// Skip an exact match from the same database - suggesting the same name is not helpful. This
-        /// can happen when a table name appears in `getAllRegisteredNames` but the table itself cannot
-        /// be retrieved (e.g., during server startup when a table has not yet been loaded, or when the
-        /// table is looked up by a stale UUID and a new table with the same name exists), and also on
-        /// the remasked `SHOW CREATE DICTIONARY` path where the exact name is a hidden table. Skip only
-        /// this one candidate and keep scanning - a slightly farther but visible name in this database
-        /// (e.g. a dictionary such a user may see) is still a useful hint and must not be masked by it.
+        /// Skip an exact match from the same database - suggesting the same name is
+        /// not helpful. This can happen when a table name appears in
+        /// `getAllRegisteredNames` but the table itself cannot be retrieved (e.g.,
+        /// during server startup when a table has not yet been loaded, or when the
+        /// table is looked up by a stale UUID and a new table with the same name
+        /// exists), and also on the remasked `SHOW CREATE DICTIONARY` path where
+        /// the exact name is a hidden table. Skip only this one candidate and keep
+        /// scanning - a slightly farther but visible name in this database (e.g. a
+        /// dictionary such a user may see) is still a useful hint and must not be
+        /// masked by it.
         if (candidate == table_name)
             continue;
 
@@ -2468,7 +2637,8 @@ std::pair<String, String> TableNameHints::getHintForTable(const String & table_n
             return std::make_pair(database->getDatabaseName(), candidate);
     }
 
-    /// Nothing else visible in this database - the table may still exist in another one.
+    /// Nothing else visible in this database - the table may still exist in
+    /// another one.
     return getExtendedHintForTable(table_name);
 }
 
@@ -2476,20 +2646,23 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 {
     /// load all available databases from the DatabaseCatalog instance
     auto & database_catalog = DatabaseCatalog::instance();
-    /// NOTE Skip cross-database data lake catalog hints to avoid unnecessary access to remote services (can be expensive).
-    /// Remote databases are checked in `TableNameHints::getAllRegisteredNames` before listing their tables.
+    /// NOTE Skip cross-database data lake catalog hints to avoid unnecessary
+    /// access to remote services (can be expensive). Remote databases are checked
+    /// in `TableNameHints::getAllRegisteredNames` before listing their tables.
     auto all_databases = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
-    /// Cross-database hints would otherwise leak existence of databases the user cannot `SHOW`.
-    /// Match the access checks done by `DatabaseNameHints`: skip databases the user does not have
-    /// `SHOW_DATABASES` on. Per-table `SHOW_TABLES` filtering is applied inside `getAllRegisteredNames`.
+    /// Cross-database hints would otherwise leak existence of databases the user
+    /// cannot `SHOW`. Match the access checks done by `DatabaseNameHints`: skip
+    /// databases the user does not have `SHOW_DATABASES` on. Per-table
+    /// `SHOW_TABLES` filtering is applied inside `getAllRegisteredNames`.
     auto access = context ? context->getAccess() : nullptr;
     const bool need_to_check_access_for_databases = access && !access->isGranted(AccessType::SHOW_DATABASES);
 
-    /// Pick the closest match across all databases, not just the first match found.
-    /// Returning the first database with any match is non-deterministic when several
-    /// databases contain similarly named tables (e.g. concurrent runs of the same
-    /// stateless test in the flaky check), and the closest hint is more useful.
+    /// Pick the closest match across all databases, not just the first match
+    /// found. Returning the first database with any match is non-deterministic
+    /// when several databases contain similarly named tables (e.g. concurrent
+    /// runs of the same stateless test in the flaky check), and the closest hint
+    /// is more useful.
     std::pair<String, String> best_match;
     size_t best_distance = std::numeric_limits<size_t>::max();
 
@@ -2504,16 +2677,18 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
         TableNameHints hints(db, context);
         auto results = NamePrompter<max_hint_candidates>::getHints(table_name, hints.getAllRegisteredNames());
-        /// As in `getHintForTable`, pick the closest candidate the user may actually see. Scanning
-        /// past hidden names (rather than checking only the closest) means a `SHOW_DICTIONARIES`-only
-        /// user still gets a dictionary hint when a closer hidden table would otherwise mask it.
+        /// As in `getHintForTable`, pick the closest candidate the user may
+        /// actually see. Scanning past hidden names (rather than checking only the
+        /// closest) means a `SHOW_DICTIONARIES`-only user still gets a dictionary
+        /// hint when a closer hidden table would otherwise mask it.
         for (const auto & candidate : results)
         {
             if (!hints.isHintNameVisible(candidate))
                 continue;
 
-            /// Candidates are ordered closest-first, so the first visible one is the closest visible
-            /// one for this database and no farther candidate here can beat it.
+            /// Candidates are ordered closest-first, so the first visible one is the
+            /// closest visible one for this database and no farther candidate here
+            /// can beat it.
             size_t distance = levenshteinDistanceCaseInsensitive(candidate, table_name);
             if (distance < best_distance)
             {
@@ -2530,22 +2705,26 @@ VectorWithMemoryTracking<String> TableNameHints::getAllRegisteredNames() const
 {
     if (!database)
         return {};
-    /// `DataLakeCatalog::getAllTableNames` lists all tables from remote catalog - expensive. Skip when user opted out.
+    /// `DataLakeCatalog::getAllTableNames` lists all tables from remote catalog -
+    /// expensive. Skip when user opted out.
     if (database->isDatalakeCatalog() && context && !context->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
         return {};
     if (database->isRemoteDatabase() && context && !context->getSettingsRef()[Setting::show_remote_databases_in_system_tables])
         return {};
     auto names = database->getAllTableNames(context);
 
-    /// Filter out names the user cannot `SHOW`, otherwise the hint can leak the existence of
-    /// tables (e.g. for the cross-database hint search in `getExtendedHintForTable`).
+    /// Filter out names the user cannot `SHOW`, otherwise the hint can leak the
+    /// existence of tables (e.g. for the cross-database hint search in
+    /// `getExtendedHintForTable`).
     ///
-    /// This is a cheap, name-only filter - it never loads a table. `SHOW CREATE DICTIONARY` is
-    /// authorized with `SHOW_DICTIONARIES`, which does not imply `SHOW_TABLES`, so a name visible
-    /// only through that grant is kept here as a candidate. Whether such a candidate is really a
-    /// dictionary (and not a table whose existence must stay hidden) is verified later by
-    /// `isHintNameVisible`, which runs only for the few names that actually match the query - not
-    /// for every table, which would otherwise foreground-load the whole database on a single typo.
+    /// This is a cheap, name-only filter - it never loads a table. `SHOW CREATE
+    /// DICTIONARY` is authorized with `SHOW_DICTIONARIES`, which does not imply
+    /// `SHOW_TABLES`, so a name visible only through that grant is kept here as a
+    /// candidate. Whether such a candidate is really a dictionary (and not a
+    /// table whose existence must stay hidden) is verified later by
+    /// `isHintNameVisible`, which runs only for the few names that actually match
+    /// the query - not for every table, which would otherwise foreground-load the
+    /// whole database on a single typo.
     if (context)
     {
         const auto access = context->getAccess();
@@ -2553,11 +2732,13 @@ VectorWithMemoryTracking<String> TableNameHints::getAllRegisteredNames() const
         const bool need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, database_name);
         if (need_to_check_access_for_tables)
         {
-            std::erase_if(names, [&](const String & name)
-            {
-                return !access->isGranted(AccessType::SHOW_TABLES, database_name, name)
-                    && !access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, name);
-            });
+            std::erase_if(
+                names,
+                [&](const String & name)
+                {
+                    return !access->isGranted(AccessType::SHOW_TABLES, database_name, name)
+                        && !access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, name);
+                });
         }
     }
     return names;
@@ -2571,23 +2752,27 @@ bool TableNameHints::isHintNameVisible(const String & name) const
     const auto access = context->getAccess();
     const String & database_name = database->getDatabaseName();
 
-    /// Fast path: a name the user may `SHOW TABLES` is always safe to suggest, without any load.
+    /// Fast path: a name the user may `SHOW TABLES` is always safe to suggest,
+    /// without any load.
     if (access->isGranted(AccessType::SHOW_TABLES, database_name, name))
         return true;
 
-    /// Otherwise the name survived `getAllRegisteredNames` only because of a `SHOW_DICTIONARIES`
-    /// grant. That grant does not tell tables and dictionaries apart, so verify the object really
-    /// is a dictionary before suggesting it - suggesting a table here would leak the existence of a
-    /// table the user is not allowed to see. This loads a single table (the matched candidate),
-    /// never the whole database.
+    /// Otherwise the name survived `getAllRegisteredNames` only because of a
+    /// `SHOW_DICTIONARIES` grant. That grant does not tell tables and
+    /// dictionaries apart, so verify the object really is a dictionary before
+    /// suggesting it - suggesting a table here would leak the existence of a
+    /// table the user is not allowed to see. This loads a single table (the
+    /// matched candidate), never the whole database.
     if (access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, name))
     {
         /// Fail closed. `TableNameHints` is shared by generic unknown-table lookups
-        /// (`IDatabase::getTable`, `DatabaseCatalog::tryGetTable`, `IdentifierResolver`, ...), not
-        /// only by the guarded `SHOW CREATE` wrapper, and `tryGetTable` on ordinary/atomic databases
-        /// waits for the matched table to start up and rethrows any load error. Computing a hint must
-        /// never replace the original `UNKNOWN_TABLE` with an unrelated startup/load failure, so treat
-        /// any such error - like a name that turned out not to be a dictionary - as "not visible".
+        /// (`IDatabase::getTable`, `DatabaseCatalog::tryGetTable`,
+        /// `IdentifierResolver`, ...), not only by the guarded `SHOW CREATE`
+        /// wrapper, and `tryGetTable` on ordinary/atomic databases waits for the
+        /// matched table to start up and rethrows any load error. Computing a hint
+        /// must never replace the original `UNKNOWN_TABLE` with an unrelated
+        /// startup/load failure, so treat any such error - like a name that turned
+        /// out not to be a dictionary - as "not visible".
         try
         {
             auto table = database->tryGetTable(name, context);
@@ -2595,8 +2780,9 @@ bool TableNameHints::isHintNameVisible(const String & name) const
         }
         catch (...)
         {
-            /// Ok to swallow: this runs only while formatting a hint. Any load error is not the
-            /// reason the lookup failed, and it will resurface when the user really touches the table.
+            /// Ok to swallow: this runs only while formatting a hint. Any load error
+            /// is not the reason the lookup failed, and it will resurface when the
+            /// user really touches the table.
             return false;
         }
     }

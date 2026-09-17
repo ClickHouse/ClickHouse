@@ -6,6 +6,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <map>
 
 namespace DB
 {
@@ -37,6 +38,7 @@ private:
 
     std::vector<ColumnDescription> columns;
     std::vector<ColumnDescription> virtual_columns;
+    std::map<String, String, std::less<>> declared_column_types;
 };
 
 

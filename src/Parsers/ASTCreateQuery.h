@@ -201,6 +201,13 @@ public:
 
     bool isCreateQueryWithImmediateInsertSelect() const;
 
+    /// Runtime-only provenance attached by a foreign-dialect adapter after it
+    /// has produced this native AST. Formatting/JSON deliberately omit it:
+    /// the adapter may preserve existing physical CREATE behavior, but its
+    /// derived schema cannot become authority for durable UDT identity.
+    void markUDTDialectAdapterPhysicalOnly() noexcept { udt_dialect_adapter_physical_only = true; }
+    bool isUDTDialectAdapterPhysicalOnly() const noexcept { return udt_dialect_adapter_physical_only; }
+
 protected:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
@@ -221,6 +228,9 @@ protected:
         f(reinterpret_cast<IAST **>(&dictionary_attributes_list), nullptr);
         f(reinterpret_cast<IAST **>(&dictionary), nullptr);
     }
+
+private:
+    bool udt_dialect_adapter_physical_only = false;
 };
 
 }

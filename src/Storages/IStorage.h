@@ -259,10 +259,7 @@ public:
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.
-    void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
-    {
-        metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
-    }
+    void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_);
 
     void setInMemoryMetadataComment(const String & comment)
     {

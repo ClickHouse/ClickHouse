@@ -12,6 +12,7 @@ namespace DB::UDT
 {
 
 class AtomicAuthority;
+class AtomicDatabaseSchemaMutationStorage;
 class AuthorityRoot;
 class BoundObjectTypeReferences;
 class EffectiveResourceLimits;
@@ -29,6 +30,9 @@ public:
     const TypeAuthorityCapabilities & getCapabilities() const noexcept override;
     UUID getDatabaseUUID() const noexcept override;
     void requireCapabilities(TypeAuthorityCapabilityMask required, std::string_view operation) const override;
+
+    std::shared_ptr<void> acquireTableIntrospectionLease(
+        const StoragePtr & table, std::chrono::milliseconds timeout, std::function<void()> check_cancellation) const override;
     std::unique_ptr<const ILifecycleSnapshot> acquireSnapshot() const override;
 
     void createOrAttach(const ASTCreateTypeQuery & query, const LifecycleActor & actor) override;

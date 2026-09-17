@@ -164,4 +164,19 @@ PersistedTypeReferencesLimits makePersistedTypeReferencesLimits(const EffectiveR
     return result;
 }
 
+TableColumnTypeBindingLimits makeTableColumnTypeBindingLimits(const EffectiveResourceLimits & limits)
+{
+    TableColumnTypeBindingLimits result;
+    lowerPersistedTypeReferencesLimits(result.persisted, limits);
+    result.maximum_descriptor_occurrences = lower(result.maximum_descriptor_occurrences, limits, ResourceLimit::OccurrencePathsPerObject);
+    return result;
+}
+
+BoundObjectTypeReferencesLimits makeBoundObjectTypeReferencesLimits(const EffectiveResourceLimits & limits)
+{
+    BoundObjectTypeReferencesLimits result;
+    lowerPersistedTypeReferencesLimits(result.persisted, limits);
+    return result;
+}
+
 }

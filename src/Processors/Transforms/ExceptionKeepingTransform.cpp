@@ -21,6 +21,15 @@ ExceptionKeepingTransform::ExceptionKeepingTransform(SharedHeader in_header, Sha
 {
 }
 
+ExceptionKeepingTransform::AdditionalCommitGuards ExceptionKeepingTransform::acquireAdditionalCommitGuards()
+{
+    AdditionalCommitGuards guards;
+    guards.reserve(additional_commit_guard_factories->size());
+    for (auto & factory : *additional_commit_guard_factories)
+        guards.emplace_back(factory());
+    return guards;
+}
+
 IProcessor::Status ExceptionKeepingTransform::prepare()
 {
     if (stage == Stage::Start)
@@ -134,7 +143,20 @@ void ExceptionKeepingTransform::work()
         {
             ready_input = false;
 
-            if (auto exception = runStep([this] { onConsume(std::move(data.chunk)); }, thread_group))
+            if (auto exception = runStep(
+                    [this]
+                    {
+                        if (!additional_commit_guard_factories)
+                        {
+                            onConsume(std::move(data.chunk));
+                            return;
+                        }
+
+                        auto chunk = std::move(data.chunk);
+                        auto additional_commit_guards = acquireAdditionalCommitGuards();
+                        onConsume(std::move(chunk));
+                    },
+                    thread_group))
             {
                 stage = Stage::Exception;
                 ready_output = true;
@@ -186,7 +208,20 @@ void ExceptionKeepingTransform::work()
             data.chunk = std::move(res.chunk);
             ready_output = true;
         }
-        else if (auto finish_exception = runStep([this] { onFinish(); }, thread_group))
+        else if (
+            auto finish_exception = runStep(
+                [this]
+                {
+                    if (!additional_commit_guard_factories)
+                    {
+                        onFinish();
+                        return;
+                    }
+
+                    auto additional_commit_guards = acquireAdditionalCommitGuards();
+                    onFinish();
+                },
+                thread_group))
         {
             stage = Stage::Exception;
             ready_output = true;

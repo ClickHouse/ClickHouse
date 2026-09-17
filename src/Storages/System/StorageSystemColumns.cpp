@@ -1,29 +1,49 @@
 #include <optional>
-#include <Storages/System/SystemTableSourceRegistry.h>
-#include <Storages/System/StorageSystemColumns.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageAlias.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnNullable.h>
-#include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/UDT/BoundObjectTypeReferences.h>
+#include <DataTypes/UDT/CanonicalTypeArguments.h>
 #include <Databases/IDatabase.h>
-#include <Processors/Sources/NullSource.h>
-#include <Interpreters/Context.h>
+#include <Databases/UDT/ILifecycleAdapter.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/UDTTableIntrospection.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/System/StorageSystemColumns.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <map>
+#include <memory>
+#include <span>
+#include <string_view>
+#include <type_traits>
+#include <variant>
+#include <vector>
 
 namespace DB
 {
@@ -34,10 +54,43 @@ namespace Setting
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
+
+    auto string = std::make_shared<DataTypeString>();
+    auto type_arguments = std::make_shared<DataTypeArray>(string);
+    auto logical_reference = std::make_shared<DataTypeTuple>(
+        DataTypes{
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
+            std::make_shared<DataTypeUInt64>(),
+            string,
+            std::make_shared<DataTypeUUID>(),
+            std::make_shared<DataTypeUInt64>(),
+            string,
+            type_arguments,
+            string,
+            string,
+            string,
+        },
+        Names{
+            "path",
+            "occurrence_ordinal",
+            "declared_type",
+            "type_uuid",
+            "type_revision",
+            "type_definition_hash",
+            "type_arguments",
+            "type_instantiation_hash",
+            "physical_type",
+            "storage_fingerprint",
+        });
 
     /// NOTE: when changing the list of columns, take care of the ColumnsSource::generate method,
     /// when they are referenced by their numeric positions.
@@ -69,7 +122,14 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
         { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
-        { "statistics",                 std::make_shared<DataTypeString>(), "The types of statistics created in this columns."}
+        { "statistics",                 std::make_shared<DataTypeString>(), "The types of statistics created in this columns."},
+        { "udt_declared_type",          string, "Current qualified declared UDT at the column root, or an empty string."},
+        { "udt_uuid",                   std::make_shared<DataTypeUUID>(), "Stable identity of the declared UDT at the column root, or the nil UUID."},
+        { "udt_revision",               std::make_shared<DataTypeUInt64>(), "Immutable revision of the declared UDT at the column root, or zero."},
+        { "udt_definition_hash",        string, "Format-tagged definition hash of the declared UDT at the column root, or an empty string."},
+        { "udt_arguments",              type_arguments, "Canonical physical representations of the declared UDT arguments at the column root."},
+        { "udt_instantiation_hash",     string, "Format-tagged semantic instantiation hash of the declared UDT at the column root, or an empty string."},
+        { "udt_references",             std::make_shared<DataTypeArray>(logical_reference), "All logical UDT occurrences in this physical column, in canonical path order."}
     });
 
     description.setAliases({
@@ -93,6 +153,83 @@ VirtualColumnsDescription StorageSystemColumns::createVirtuals()
 namespace
 {
     using Storages = std::map<std::pair<std::string, std::string>, StoragePtr>;
+
+    String lowerHexDigest(const UDT::Digest & digest)
+    {
+        static constexpr std::array<char, 16> digits{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+        String result(digest.size() * 2, '\0');
+        for (size_t index = 0; index < digest.size(); ++index)
+        {
+            result[2 * index] = digits[digest[index] >> 4];
+            result[2 * index + 1] = digits[digest[index] & 0x0f];
+        }
+        return result;
+    }
+
+    String formatTaggedDigest(const UDT::Digest & digest)
+    {
+        return "v2:" + lowerHexDigest(digest);
+    }
+
+    std::vector<String> formatCanonicalTypeArguments(const UDT::CanonicalTypeArguments & arguments)
+    {
+        std::vector<String> result;
+        result.reserve(arguments.values().size());
+        for (const auto & argument : arguments.values())
+        {
+            result.push_back(std::visit(
+                [](const auto & value) -> String
+                {
+                    using Value = std::decay_t<decltype(value)>;
+                    if constexpr (std::is_same_v<Value, UDT::CanonicalTypeArgument>)
+                        return value.getCanonicalName();
+                    else if constexpr (std::is_same_v<Value, bool>)
+                        return value ? "true" : "false";
+                    else if constexpr (std::is_same_v<Value, String>)
+                        return quoteString(value);
+                    else
+                        return std::to_string(value);
+                },
+                argument.value));
+        }
+        return result;
+    }
+
+    Array makeArgumentsArray(const std::vector<String> & arguments)
+    {
+        Array result;
+        result.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            result.emplace_back(argument);
+        return result;
+    }
+
+    struct LogicalTypeReferenceProjection
+    {
+        UDT::PersistedTypeOccurrencePath path;
+        String declared_type;
+        UUID type_uuid = UUIDHelpers::Nil;
+        UInt64 type_revision = 0;
+        String type_definition_hash;
+        std::vector<String> type_arguments;
+        String type_instantiation_hash;
+        String physical_type;
+        String storage_fingerprint;
+    };
+
+    struct ColumnLogicalTypeProjection
+    {
+        std::optional<LogicalTypeReferenceProjection> root;
+        Array references;
+    };
+
+    using LogicalTypeOccurrenceKey = std::pair<std::vector<UInt64>, UInt64>;
+
+    struct CurrentLogicalTypeOccurrenceProjection
+    {
+        UInt32 descriptor_index = 0;
+        String declared_type;
+    };
 }
 
 
@@ -106,6 +243,7 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
+        Databases catalog_databases_,
         ContextPtr context_)
         : ISource(header_)
         , columns_mask(std::move(columns_mask_))
@@ -113,6 +251,7 @@ public:
         , databases(std::move(databases_))
         , tables(std::move(tables_))
         , storages(std::move(storages_))
+        , catalog_databases(std::move(catalog_databases_))
         , context(std::move(context_))
         , client_info_interface(context->getClientInfo().interface)
         , total_tables(tables->size())
@@ -140,6 +279,23 @@ protected:
             const std::string table_name = (*tables)[db_table_num].safeGet<std::string>();
             ++db_table_num;
 
+            /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
+            /// This check must precede all UDT-specific work so hidden tables cannot be used as a schema-lock timing oracle.
+            if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                continue;
+
+            StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
+            const auto * alias = storage->as<StorageAlias>();
+            const bool need_to_check_access_for_columns
+                = need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+            const bool need_udt_columns
+                = std::any_of(columns_mask.begin() + 23, columns_mask.end(), [](UInt8 selected) { return selected != 0; });
+            /// Alias metadata belongs to its target table. Its UDT sidecar cannot be validated against
+            /// the alias storage/database identity, and resolving the target here would precede the
+            /// target-column access checks below. Keep alias UDT projection fail-closed.
+            const bool may_read_udt_sidecar
+                = need_udt_columns && !need_to_check_access_for_columns && !alias;
+
             ColumnsDescription columns;
             Names cols_required_for_partition_key;
             Names cols_required_for_sorting_key;
@@ -147,8 +303,11 @@ protected:
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
-            StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-            const auto * alias = storage->as<StorageAlias>();
+            std::shared_ptr<const UDT::BoundObjectTypeReferences> bound_type_references;
+            StorageMetadataHandle metadata_snapshot;
+            StorageID source_table_id = StorageID::createEmpty();
+            DatabasePtr introspection_database;
+            std::shared_ptr<void> udt_introspection_lease;
 
             {
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
@@ -159,7 +318,35 @@ protected:
                     continue;
                 }
 
-                const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                source_table_id = storage->getStorageID();
+                metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+
+                if (may_read_udt_sidecar && metadata_snapshot->getBoundUDTReferences())
+                {
+                    /// This first read is only a cheap physical-table fast path.
+                    /// A mapped table is reread under share -> ALTER -> schema:
+                    /// ALTER spans the storage's durable-commit/live-publication
+                    /// interval, while schema pins the matching authority root.
+                    /// Retaining share preserves the cross-database RENAME order.
+                    const auto database_it = catalog_databases.find(database_name);
+                    if (database_it == catalog_databases.end() || !database_it->second)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT authority database is absent from system.columns");
+                    introspection_database = database_it->second;
+                    udt_introspection_lease
+                        = introspection_database->getUDTLifecycleAdapter().acquireTableIntrospectionLease(
+                            storage,
+                            lock_acquire_timeout,
+                            [query_context = context]
+                            {
+                                if (const auto process_list_element = query_context->getProcessListElementSafe())
+                                    static_cast<void>(process_list_element->checkTimeLimit());
+                            });
+                    if (introspection_database->tryGetTable(table_name, context) != storage)
+                        continue;
+                    source_table_id = storage->getStorageID();
+                    metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                }
+
                 columns = metadata_snapshot->getColumns();
 
                 const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[21];
@@ -197,19 +384,191 @@ protected:
                     if (auto hints = storage->tryGetSerializationHints())
                         serialization_hints = std::move(*hints);
                 }
+
+                if (may_read_udt_sidecar)
+                    bound_type_references = metadata_snapshot->getBoundUDTReferences();
             }
 
-            /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
-            if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
-                continue;
+            std::vector<UInt8> visible_columns;
+            std::vector<UInt8> visible_physical_columns;
+            visible_columns.reserve(columns.size());
+            for (const auto & column : columns)
+            {
+                const bool visible = !need_to_check_access_for_columns
+                    || access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name);
+                visible_columns.push_back(visible);
+                if (column.default_desc.kind != ColumnDefaultKind::Alias
+                    && column.default_desc.kind != ColumnDefaultKind::Ephemeral)
+                {
+                    visible_physical_columns.push_back(visible);
+                }
+            }
 
-            bool need_to_check_access_for_columns = need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+            /// A persisted UDT sidecar and its authority expectation are
+            /// table-wide integrity objects. Column-scoped visibility cannot
+            /// safely decode them without making hidden-column structure and
+            /// corruption observable through work or diagnostics. Preserve
+            /// ordinary row filtering, but expose UDT-specific fields only to
+            /// callers with table-wide SHOW COLUMNS.
+            std::vector<ColumnLogicalTypeProjection> logical_type_projections;
+            if (bound_type_references)
+            {
+                const size_t physical_column_count = visible_physical_columns.size();
+                logical_type_projections.resize(physical_column_count);
+                const bool need_root_projection = std::any_of(
+                    columns_mask.begin() + 23, columns_mask.begin() + 29, [](UInt8 selected) { return selected != 0; });
+                const bool need_reference_array = columns_mask[29];
+                const auto descriptors = bound_type_references->getDescriptors();
+
+                if (!introspection_database)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT authority database is absent from system.columns");
+                auto current_declared_columns = UDT::projectCurrentDeclaredTableColumnTypes(
+                    source_table_id,
+                    *metadata_snapshot,
+                    *introspection_database,
+                    std::span<const UInt8>(visible_physical_columns),
+                    need_reference_array);
+                if (current_declared_columns.size() != physical_column_count)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT projection has a different physical-column count");
+
+                std::vector<std::map<LogicalTypeOccurrenceKey, CurrentLogicalTypeOccurrenceProjection>> current_occurrences;
+                if (need_reference_array)
+                {
+                    current_occurrences.resize(physical_column_count);
+                    for (size_t physical_ordinal = 0; physical_ordinal < current_declared_columns.size(); ++physical_ordinal)
+                    {
+                        const auto & column_projection = current_declared_columns[physical_ordinal];
+                        if (!visible_physical_columns[physical_ordinal])
+                        {
+                            if (!column_projection.logical_occurrences.empty())
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "A hidden system.columns column received a UDT presentation");
+                            continue;
+                        }
+                        auto & occurrence_map = current_occurrences[physical_ordinal];
+                        for (const auto & occurrence : column_projection.logical_occurrences)
+                        {
+                            if (!occurrence.declared_type)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "A system.columns UDT occurrence has no declared type");
+                            const bool inserted = occurrence_map.emplace(
+                                LogicalTypeOccurrenceKey{occurrence.type_child_ordinals, occurrence.occurrence_ordinal},
+                                CurrentLogicalTypeOccurrenceProjection{
+                                    .descriptor_index = occurrence.descriptor_index,
+                                    .declared_type = occurrence.declared_type->formatWithSecretsOneLine(),
+                                }).second;
+                            if (!inserted)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "A system.columns UDT occurrence presentation is duplicated");
+                        }
+                    }
+                }
+
+                for (const auto & use : bound_type_references->getUses())
+                {
+                    const auto & path = use.getPath();
+                    if (path.section != UDT::PersistedTypePathSection::ColumnType
+                        || path.site != UDT::PersistedTypeOccurrenceSite::Declaration
+                        || path.object_ordinal >= logical_type_projections.size())
+                    {
+                        if (need_to_check_access_for_columns)
+                            continue;
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT reference has an invalid system.columns path");
+                    }
+
+                    const size_t physical_ordinal = static_cast<size_t>(path.object_ordinal);
+                    if (!visible_physical_columns[physical_ordinal])
+                        continue;
+
+                    const bool is_root = path.type_child_ordinals.empty() && path.occurrence_ordinal == 0;
+                    if ((!need_root_projection || !is_root) && !need_reference_array)
+                        continue;
+
+                    if (use.getDescriptorIndex() >= descriptors.size() || !descriptors[use.getDescriptorIndex()])
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT reference has an invalid descriptor index");
+                    String current_declared_type;
+                    if (need_reference_array)
+                    {
+                        const auto presentation_it = current_occurrences[physical_ordinal].find(
+                            LogicalTypeOccurrenceKey{path.type_child_ordinals, path.occurrence_ordinal});
+                        if (presentation_it == current_occurrences[physical_ordinal].end()
+                            || presentation_it->second.descriptor_index != use.getDescriptorIndex())
+                        {
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT reference lacks its checked system.columns presentation");
+                        }
+                        current_declared_type = presentation_it->second.declared_type;
+                    }
+                    else
+                    {
+                        const auto & column_projection = current_declared_columns[physical_ordinal];
+                        if (!is_root || !column_projection.has_logical_references || !column_projection.declared_type)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT root lacks its checked system.columns presentation");
+                        current_declared_type = column_projection.declared_type->formatWithSecretsOneLine();
+                    }
+                    const auto & descriptor = *descriptors[use.getDescriptorIndex()];
+                    const auto & persisted = descriptor.getPersistedDescriptor();
+                    const auto & identity = persisted.getDefinitionIdentity();
+
+                    LogicalTypeReferenceProjection projection{
+                        .path = path,
+                        .declared_type = std::move(current_declared_type),
+                        .type_uuid = identity.type_uuid,
+                        .type_revision = identity.revision,
+                        .type_definition_hash = formatTaggedDigest(persisted.getDefinitionHash()),
+                        .type_arguments = formatCanonicalTypeArguments(descriptor.getCanonicalArguments()),
+                        .type_instantiation_hash = formatTaggedDigest(persisted.getInstantiationSemanticHash()),
+                        .physical_type = use.getPhysicalType()->getName(),
+                        .storage_fingerprint = formatTaggedDigest(persisted.getStorageFingerprint()),
+                    };
+
+                    auto & column_projection = logical_type_projections[physical_ordinal];
+                    if (need_root_projection && is_root)
+                    {
+                        if (column_projection.root)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT references contain duplicate root occurrences");
+                        column_projection.root = projection;
+                    }
+                    if (need_reference_array)
+                    {
+                        Array type_path;
+                        type_path.reserve(path.type_child_ordinals.size());
+                        for (const UInt64 ordinal : path.type_child_ordinals)
+                            type_path.emplace_back(ordinal);
+                        column_projection.references.emplace_back(Tuple{
+                            std::move(type_path),
+                            path.occurrence_ordinal,
+                            projection.declared_type,
+                            projection.type_uuid,
+                            projection.type_revision,
+                            projection.type_definition_hash,
+                            makeArgumentsArray(projection.type_arguments),
+                            projection.type_instantiation_hash,
+                            projection.physical_type,
+                            projection.storage_fingerprint,
+                        });
+                    }
+                }
+            }
 
             size_t position = 0;
+            size_t column_ordinal = 0;
+            size_t physical_ordinal = 0;
             for (const auto & column : columns)
             {
                 ++position;
-                if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
+                if (column_ordinal >= visible_columns.size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "system.columns visibility mask is out of range");
+                const bool visible = visible_columns[column_ordinal++];
+                const bool is_physical
+                    = column.default_desc.kind != ColumnDefaultKind::Alias && column.default_desc.kind != ColumnDefaultKind::Ephemeral;
+                const ColumnLogicalTypeProjection * logical_projection = nullptr;
+                if (is_physical && !logical_type_projections.empty())
+                {
+                    if (physical_ordinal >= logical_type_projections.size())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT physical-column ordinal is out of range");
+                    logical_projection = std::addressof(logical_type_projections[physical_ordinal]);
+                }
+                if (is_physical)
+                    ++physical_ordinal;
+
+                if (!visible)
                     continue;
 
                 if (alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name))
@@ -363,8 +722,33 @@ protected:
                     res_columns[res_index++]->insert(stats.getNameForLogs());
                 }
 
+                const LogicalTypeReferenceProjection * root_projection
+                    = logical_projection && logical_projection->root ? std::addressof(*logical_projection->root) : nullptr;
+                if (columns_mask[src_index++])
+                    root_projection ? res_columns[res_index++]->insert(root_projection->declared_type) : res_columns[res_index++]->insertDefault();
+                if (columns_mask[src_index++])
+                    root_projection ? res_columns[res_index++]->insert(root_projection->type_uuid) : res_columns[res_index++]->insertDefault();
+                if (columns_mask[src_index++])
+                    root_projection ? res_columns[res_index++]->insert(root_projection->type_revision) : res_columns[res_index++]->insertDefault();
+                if (columns_mask[src_index++])
+                    root_projection ? res_columns[res_index++]->insert(root_projection->type_definition_hash) : res_columns[res_index++]->insertDefault();
+                if (columns_mask[src_index++])
+                    root_projection ? res_columns[res_index++]->insert(makeArgumentsArray(root_projection->type_arguments))
+                                    : res_columns[res_index++]->insertDefault();
+                if (columns_mask[src_index++])
+                    root_projection ? res_columns[res_index++]->insert(root_projection->type_instantiation_hash)
+                                    : res_columns[res_index++]->insertDefault();
+                if (columns_mask[src_index++])
+                    logical_projection ? res_columns[res_index++]->insert(logical_projection->references)
+                                       : res_columns[res_index++]->insertDefault();
+
                 ++rows_count;
             }
+
+            if (bound_type_references && physical_ordinal != logical_type_projections.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Bound-table UDT physical-column count disagrees with system.columns metadata");
+            if (column_ordinal != visible_columns.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "system.columns visibility mask has a different column count");
         }
 
         return Chunk(std::move(res_columns), rows_count);
@@ -376,6 +760,7 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    Databases catalog_databases;
     ContextPtr context;
     ClientInfo::Interface client_info_interface;
     size_t db_table_num = 0;
@@ -468,6 +853,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 {
     Block block_to_filter;
     Storages storages;
+    Databases catalog_databases;
     Pipes pipes;
     auto header = getOutputHeader();
 
@@ -477,10 +863,10 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 
         const auto & context = getContext();
         const auto & settings = context->getSettingsRef();
-        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
+        catalog_databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
             .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
             .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
-        for (const auto & [database_name, database] : databases)
+        for (const auto & [database_name, database] : catalog_databases)
         {
             if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
                 continue; /// We don't want to show the internal database for temporary tables in system.columns
@@ -528,7 +914,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
             }
             else
             {
-                const DatabasePtr & database = databases.at(database_name);
+                const DatabasePtr & database = catalog_databases.at(database_name);
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())
@@ -563,7 +949,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
     pipes.emplace_back(std::make_shared<ColumnsSource>(
             std::move(columns_mask), std::move(header), max_block_size,
             std::move(filtered_database_column), std::move(filtered_table_column),
-            std::move(storages), context));
+            std::move(storages), std::move(catalog_databases), context));
 
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
 }

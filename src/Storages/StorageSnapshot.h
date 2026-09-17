@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace UDT
+{
+class AuthorityStorageReadContinuationEvidence;
+}
+
 class IStorage;
 class ICompressionCodec;
 
@@ -28,6 +33,10 @@ struct StorageSnapshot
     using DataPtr = std::shared_ptr<const Data>;
     const DataPtr data;
 
+    /// Present only for a mapped Atomic UDT object. Clones retain the same
+    /// compact exact-root proof rather than reopening the current authority.
+    const std::shared_ptr<const UDT::AuthorityStorageReadContinuationEvidence> udt_read_continuation_evidence;
+
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_);
@@ -39,6 +48,11 @@ struct StorageSnapshot
 
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
     std::shared_ptr<StorageSnapshot> clone(StorageMetadataPtr metadata_, DataPtr data_) const;
+
+    /// Rechecks an already-admitted mapped read against a quarantine that may
+    /// have appeared after this snapshot was created. Physical-only snapshots
+    /// are a no-op.
+    void assertUDTReadContinuationAllowed() const;
 
     /// Get columns description
     ColumnsDescription getAllColumnsDescription() const;
@@ -65,6 +79,17 @@ struct StorageSnapshot
     /// Get default expression for a column.
     /// Takes into account physical and virtual columns.
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
+
+private:
+    struct PreserveUDTReadEvidenceTag
+    {
+    };
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
+        DataPtr data_,
+        std::shared_ptr<const UDT::AuthorityStorageReadContinuationEvidence> evidence_,
+        PreserveUDTReadEvidenceTag);
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

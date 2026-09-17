@@ -2,23 +2,25 @@
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 
-#include <Interpreters/TemporaryDataOnDisk.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
-#include <boost/noncopyable.hpp>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Databases/DatabasesCommon.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/getColumnFromBlock.h>
-#include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/UDT/TableColumnTypeAlterBindings.h>
+#include <Databases/DatabasesCommon.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/getColumnFromBlock.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MemorySettings.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
-#include <Storages/MemorySettings.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <boost/noncopyable.hpp>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -47,6 +49,8 @@
 #include <IO/copyData.h>
 #include <Common/FailPoint.h>
 #include <Common/FileChecker.h>
+
+#include <exception>
 
 
 namespace DB
@@ -79,6 +83,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char backup_add_empty_memory_table[];
+    extern const char udt_table_alter_pause_before_authority_publication[];
+    extern const char udt_table_alter_pause_before_metadata_publication[];
 }
 
 class MemorySink final : public SinkToStorage
@@ -152,6 +158,9 @@ public:
         // append new data to modified storage table and commit
         new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
 
+        const auto commit_metadata_snapshot = storage.getInMemoryMetadataPtr(nullptr, true);
+        [[maybe_unused]] auto udt_commit_guard = UDT::acquireAuthorityStorageNewOperationCommitGuard(
+            storage, commit_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Write);
         storage.data.set(std::move(new_data));
         storage.total_size_rows.store(new_total_rows, std::memory_order_relaxed);
         storage.total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
@@ -418,6 +427,9 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         rows += buffer.rows();
         bytes += buffer.bytes();
     }
+    const auto commit_metadata_snapshot = getInMemoryMetadataPtr(context, true);
+    [[maybe_unused]] auto udt_commit_guard = UDT::acquireAuthorityStorageNewOperationCommitGuard(
+        *this, commit_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Mutation);
     total_size_bytes.store(bytes, std::memory_order_relaxed);
     total_size_rows.store(rows, std::memory_order_relaxed);
     data.set(std::move(new_data));
@@ -427,6 +439,10 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 void StorageMemory::truncate(
     const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
+    std::lock_guard lock(mutex);
+    const auto commit_metadata_snapshot = getInMemoryMetadataPtr(nullptr, true);
+    [[maybe_unused]] auto udt_commit_guard
+        = UDT::acquireAuthorityStorageNewOperationCommitGuard(*this, commit_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::DDL);
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
@@ -438,55 +454,121 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
+    new_metadata.prepareUDTAlterPublication();
 
     /// Check that the resulting metadata does not exceed max_query_size before mutating any in-memory state.
     checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, context);
 
+    std::optional<MemorySettings> changed_settings;
+    bool prune_data_for_changed_settings = false;
     if (params.isSettingsAlter())
     {
         auto & settings_changes = new_metadata.settings_changes->as<ASTSetQuery &>();
-        auto changed_settings = *memory_settings;
-        changed_settings.applyChanges(settings_changes.changes);
-        changed_settings.sanityCheck();
+        changed_settings.emplace(*memory_settings);
+        changed_settings->applyChanges(settings_changes.changes);
+        changed_settings->sanityCheck();
 
         /// When modifying the values of max_bytes_to_keep and max_rows_to_keep to be smaller than the old values,
         /// the old data needs to be removed.
-        if (!(*memory_settings)[MemorySetting::max_bytes_to_keep] || (*memory_settings)[MemorySetting::max_bytes_to_keep] > changed_settings[MemorySetting::max_bytes_to_keep]
-            || !(*memory_settings)[MemorySetting::max_rows_to_keep] || (*memory_settings)[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep])
-        {
-            std::lock_guard lock(mutex);
-
-            auto new_data = std::make_unique<Blocks>(*(data.get()));
-            UInt64 new_total_rows = total_size_rows.load(std::memory_order_relaxed);
-            UInt64 new_total_bytes = total_size_bytes.load(std::memory_order_relaxed);
-            while (!new_data->empty()
-                   && ((changed_settings[MemorySetting::max_bytes_to_keep] && new_total_bytes > changed_settings[MemorySetting::max_bytes_to_keep])
-                       || (changed_settings[MemorySetting::max_rows_to_keep] && new_total_rows > changed_settings[MemorySetting::max_rows_to_keep])))
-            {
-                Block oldest_block = new_data->front();
-                UInt64 rows_to_remove = oldest_block.rows();
-                UInt64 bytes_to_remove = oldest_block.allocatedBytes();
-                if (new_total_bytes - bytes_to_remove < changed_settings[MemorySetting::min_bytes_to_keep]
-                    || new_total_rows - rows_to_remove < changed_settings[MemorySetting::min_rows_to_keep])
-                {
-                    break; // stop - removing next block will put us under min_bytes / min_rows threshold
-                }
-
-                // delete old block from current storage table
-                new_total_rows -= rows_to_remove;
-                new_total_bytes -= bytes_to_remove;
-                new_data->erase(new_data->begin());
-            }
-
-            data.set(std::move(new_data));
-            total_size_rows.store(new_total_rows, std::memory_order_relaxed);
-            total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
-        }
-        *memory_settings = std::move(changed_settings);
+        prune_data_for_changed_settings = !(*memory_settings)[MemorySetting::max_bytes_to_keep]
+            || (*memory_settings)[MemorySetting::max_bytes_to_keep] > (*changed_settings)[MemorySetting::max_bytes_to_keep]
+            || !(*memory_settings)[MemorySetting::max_rows_to_keep]
+            || (*memory_settings)[MemorySetting::max_rows_to_keep] > (*changed_settings)[MemorySetting::max_rows_to_keep];
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
-    setInMemoryMetadata(new_metadata);
+    if (new_metadata.getPendingUDTColumnAlter())
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::udt_table_alter_pause_before_authority_publication);
+    }
+
+    DatabaseCatalog::instance()
+        .getDatabase(table_id.database_name)
+        ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+
+    /// DatabaseAtomic has published the durable metadata and authority root, but
+    /// this storage still exposes its previous immutable metadata snapshot. The
+    /// table ALTER lock must keep introspection from pairing those two images.
+    if (new_metadata.getPendingUDTColumnAlter())
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::udt_table_alter_pause_before_metadata_publication);
+    }
+
+    /// DatabaseAtomic may have durably committed a sidecar/expectation/root
+    /// transition at this point. Publish settings, pruned data, and the exact
+    /// completed metadata only afterwards. A publication exception cannot be
+    /// returned to the client as an ordinary failed ALTER because that would
+    /// expose a durable/in-memory split; fail-stop lets startup converge from
+    /// the committed database transaction.
+    try
+    {
+        auto committed_metadata = std::make_shared<StorageInMemoryMetadata>(new_metadata);
+        if (const auto & pending = committed_metadata->getPendingUDTColumnAlter())
+        {
+            const auto completed = pending->getCompletedPublication();
+            if (!completed)
+                throw std::logic_error("durably committed Memory ALTER has no completed UDT publication package");
+            if (static_cast<bool>(completed->bound_references) != static_cast<bool>(completed->expectation)
+                || static_cast<bool>(completed->bound_references) != static_cast<bool>(completed->verification_stamp))
+            {
+                throw std::logic_error("durably committed Memory ALTER has an incomplete UDT publication package");
+            }
+
+            auto publication_columns = committed_metadata->getColumns();
+            if (completed->bound_references)
+            {
+                committed_metadata->setColumnsAndBoundUDTReferences(
+                    std::move(publication_columns), completed->bound_references, *completed->expectation);
+                committed_metadata->setBoundUDTVerificationStamp(completed->verification_stamp);
+            }
+            else
+                committed_metadata->setColumns(std::move(publication_columns));
+        }
+
+        std::lock_guard lock(mutex);
+        [[maybe_unused]] auto udt_commit_guard
+            = UDT::acquireAuthorityStorageNewOperationCommitGuard(*this, committed_metadata, UDT::AuthorityQuarantineOperationKind::DDL);
+        if (changed_settings)
+        {
+            if (prune_data_for_changed_settings)
+            {
+                auto new_data = std::make_unique<Blocks>(*(data.get()));
+                UInt64 new_total_rows = total_size_rows.load(std::memory_order_relaxed);
+                UInt64 new_total_bytes = total_size_bytes.load(std::memory_order_relaxed);
+                while (!new_data->empty()
+                       && (((*changed_settings)[MemorySetting::max_bytes_to_keep]
+                               && new_total_bytes > (*changed_settings)[MemorySetting::max_bytes_to_keep])
+                           || ((*changed_settings)[MemorySetting::max_rows_to_keep]
+                               && new_total_rows > (*changed_settings)[MemorySetting::max_rows_to_keep])))
+                {
+                    Block oldest_block = new_data->front();
+                    UInt64 rows_to_remove = oldest_block.rows();
+                    UInt64 bytes_to_remove = oldest_block.allocatedBytes();
+                    if (new_total_bytes - bytes_to_remove < (*changed_settings)[MemorySetting::min_bytes_to_keep]
+                        || new_total_rows - rows_to_remove < (*changed_settings)[MemorySetting::min_rows_to_keep])
+                    {
+                        break; // stop - removing next block will put us under min_bytes / min_rows threshold
+                    }
+
+                    new_total_rows -= rows_to_remove;
+                    new_total_bytes -= bytes_to_remove;
+                    new_data->erase(new_data->begin());
+                }
+
+                data.set(std::move(new_data));
+                total_size_rows.store(new_total_rows, std::memory_order_relaxed);
+                total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
+            }
+            *memory_settings = std::move(*changed_settings);
+        }
+        setInMemoryMetadata(*committed_metadata);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("StorageMemory"),
+            "Failed to publish Memory metadata after a durable ALTER; terminating so startup can recover the committed schema");
+        std::terminate();
+    }
 }
 
 
@@ -713,12 +795,18 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         }
     }
 
-    /// Append old blocks with the new ones.
+    /// Append and publish under the same mutex -> authority-fence order used by
+    /// inserts, mutations, truncation, and ALTER. Runtime quarantine publication
+    /// never takes the Memory mutex, so the final gate cannot invert this order.
+    std::lock_guard lock(mutex);
     auto old_blocks = data.get();
     Blocks old_and_new_blocks = *old_blocks;
     old_and_new_blocks.insert(old_and_new_blocks.end(), std::make_move_iterator(new_blocks.begin()), std::make_move_iterator(new_blocks.end()));
 
     /// Finish restoring.
+    const auto commit_metadata_snapshot = getInMemoryMetadataPtr(nullptr, true);
+    [[maybe_unused]] auto udt_commit_guard = UDT::acquireAuthorityStorageNewOperationCommitGuard(
+        *this, commit_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Attach);
     data.set(std::make_unique<Blocks>(std::move(old_and_new_blocks)));
     total_size_bytes += new_bytes;
     total_size_rows += new_rows;

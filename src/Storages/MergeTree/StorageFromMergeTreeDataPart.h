@@ -29,7 +29,10 @@ public:
         , partition_id(part_->info.getPartitionId())
     {
         auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-        setInMemoryMetadata(*storage_metadata_snapshot);
+        /// This mutation-only storage has a fresh UUID, so it must not claim
+        /// the source table's logical UDT identity. Mutation planning consumes
+        /// the already-physical column types.
+        setInMemoryMetadata(storage_metadata_snapshot->cloneAsPhysicalOnlyForIndependentStorage());
     }
 
     /// Used in queries with projection.
@@ -39,6 +42,8 @@ public:
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+        /// This query helper deliberately keeps the source StorageID, so its
+        /// logical UDT owner package remains valid and must be preserved.
         setInMemoryMetadata(*storage_metadata_snapshot);
     }
 

@@ -35,6 +35,8 @@ public:
 
     String getName() const override { return "MergeTreeIndex"; }
 
+    StoragePtr getSourceTable() const;
+
     static VirtualColumnsDescription createVirtuals();
 
 private:

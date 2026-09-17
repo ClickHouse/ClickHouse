@@ -2,6 +2,8 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -69,6 +71,51 @@ extern const int UNKNOWN_TYPE;
 
 namespace
 {
+
+BlockIO oneStringColumn(String column_name, std::vector<String> values)
+{
+    MutableColumnPtr column = ColumnString::create();
+    column->reserve(values.size());
+    for (auto & value : values)
+        column->insert(std::move(value));
+
+    Block sample{{ColumnString::create(), std::make_shared<DataTypeString>(), std::move(column_name)}};
+    MutableColumns columns;
+    columns.emplace_back(std::move(column));
+    const std::size_t rows = columns.front()->size();
+
+    BlockIO result;
+    result.pipeline = QueryPipeline(
+        std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample)), Chunk(std::move(columns), rows)));
+    return result;
+}
+
+BlockIO twoStringColumns(String first_name, String second_name, const UDT::DescribeRows & rows)
+{
+    MutableColumnPtr first = ColumnString::create();
+    MutableColumnPtr second = ColumnString::create();
+    first->reserve(rows.size());
+    second->reserve(rows.size());
+    for (const auto & [property, value] : rows)
+    {
+        first->insert(property);
+        second->insert(value);
+    }
+
+    Block sample{
+        {ColumnString::create(), std::make_shared<DataTypeString>(), std::move(first_name)},
+        {ColumnString::create(), std::make_shared<DataTypeString>(), std::move(second_name)},
+    };
+    MutableColumns columns;
+    columns.emplace_back(std::move(first));
+    columns.emplace_back(std::move(second));
+    const std::size_t row_count = columns.front()->size();
+
+    BlockIO result;
+    result.pipeline = QueryPipeline(
+        std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample)), Chunk(std::move(columns), row_count)));
+    return result;
+}
 
 String lowerHex(std::span<const UDT::CanonicalByte> bytes)
 {

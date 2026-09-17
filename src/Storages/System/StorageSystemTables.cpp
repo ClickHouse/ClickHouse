@@ -1,5 +1,5 @@
-#include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/DatabaseTablesCursor.h>
+#include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <set>
@@ -10,6 +10,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -21,7 +22,9 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/RenderedCreateQuery.h>
+#include <Databases/UDT/AuthorityVerificationStamp.h>
 #include <Disks/IStoragePolicy.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -39,11 +42,11 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Columns/ColumnConst.h>
-#include <Functions/IFunction.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/typeid_cast.h>
+
+#include <base/hex.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -125,9 +128,7 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
     while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
         node = node->children[0];
 
-    if (node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base
-        && node->function_base->getName() == "and")
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and")
     {
         for (const auto * child : node->children)
             conjuncts.push_back(child);
@@ -143,9 +144,7 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
         while (conjunct->type == ActionsDAG::ActionType::ALIAS && !conjunct->children.empty())
             conjunct = conjunct->children[0];
 
-        if (conjunct->type != ActionsDAG::ActionType::FUNCTION
-            || !conjunct->function_base
-            || conjunct->children.size() != 2)
+        if (conjunct->type != ActionsDAG::ActionType::FUNCTION || !conjunct->function_base || conjunct->children.size() != 2)
             continue;
 
         const auto & fn_name = conjunct->function_base->getName();
@@ -155,10 +154,7 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
 
         /// The `name` column reads as an INPUT named "name" once aliases are
         /// unwrapped. (A constant carries `column`; the column reference does not.)
-        auto is_name_column = [](const ActionsDAG::Node * n)
-        {
-            return n && n->result_name == "name" && !n->column;
-        };
+        auto is_name_column = [](const ActionsDAG::Node * n) { return n && n->result_name == "name" && !n->column; };
         const bool lhs_is_name = is_name_column(lhs);
         const bool rhs_is_name = is_name_column(rhs);
         if (!lhs_is_name && !rhs_is_name)
@@ -195,6 +191,17 @@ TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
     return like_filter;
 }
 
+String digestToLowerHex(const UDT::Digest & digest)
+{
+    String result(digest.size() * 2, '\0');
+    for (size_t index = 0; index < digest.size(); ++index)
+    {
+        const auto byte = static_cast<unsigned char>(digest[index]);
+        result[2 * index] = hexDigitLowercase(byte >> 4);
+        result[2 * index + 1] = hexDigitLowercase(byte & 0x0f);
+    }
+    return result;
+}
 }
 
 namespace detail
@@ -204,9 +211,10 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
     MutableColumnPtr column = ColumnString::create();
 
     const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
-        .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
-        .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
+    const auto databases = DatabaseCatalog::instance().getDatabases(
+        GetDatabasesOptions{
+            .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
+            .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -289,10 +297,11 @@ ColumnPtr getFilteredTables(
         {
             if (engine_column || uuid_column)
             {
-                auto table_it = database->getTablesIteratorWithHint(context,
-                                                                       /* filter_by_table_name */ {},
-                                                                       /* skip_not_loaded */ false,
-                                                                       tables_filter);
+                auto table_it = database->getTablesIteratorWithHint(
+                    context,
+                    /* filter_by_table_name */ {},
+                    /* skip_not_loaded */ false,
+                    tables_filter);
                 for (; table_it->isValid(); table_it->next())
                 {
                     const auto & table = table_it->table();
@@ -310,10 +319,11 @@ ColumnPtr getFilteredTables(
             }
             else
             {
-                auto table_details = database->getLightweightTablesIteratorWithHint(context,
-                                                                      /* filter_by_table_name */ {},
-                                                                      /* skip_not_loaded */ false,
-                                                                      tables_filter);
+                auto table_details = database->getLightweightTablesIteratorWithHint(
+                    context,
+                    /* filter_by_table_name */ {},
+                    /* skip_not_loaded */ false,
+                    tables_filter);
                 for (const auto & table_detail : table_details)
                 {
                     table_column->insert(table_detail.name);
@@ -350,79 +360,107 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Paths to the table data in the file systems."},
         {"metadata_path", std::make_shared<DataTypeString>(), "Path to the table metadata in the file system."},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>(), "Time of latest modification of the table metadata."},
-        {"metadata_version", std::make_shared<DataTypeInt32>(), "Metadata version for ReplicatedMergeTree table, 0 for non ReplicatedMergeTree table."},
+        {"metadata_version",
+         std::make_shared<DataTypeInt32>(),
+         "Metadata version for ReplicatedMergeTree table, 0 for non ReplicatedMergeTree table."},
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Database dependencies."},
-        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (materialized views the current table)."},
+        {"dependencies_table",
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+         "Table dependencies (materialized views the current table)."},
         {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the table engine."},
         {"as_select", std::make_shared<DataTypeString>(), "SELECT query for view."},
         {"parameterized_view_parameters",
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"name", "type"})),
-            "Parameters of parameterized view."
-        },
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+             DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"name", "type"})),
+         "Parameters of parameterized view."},
         {"partition_key", std::make_shared<DataTypeString>(), "The partition key expression specified in the table."},
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
         {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
-        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, tokenbf_v1, text, vector_similarity). Empty for tables without skip indices."},
-        {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
-        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
-        },
-        {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Total number of bytes, if it is possible to quickly determine exact number "
-            "of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). "
-            "If the table stores data on disk, returns used space on disk (i.e. compressed). "
-            "If the table stores data in memory, returns approximated number of used bytes in memory."
-        },
-        {"total_bytes_uncompressed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
-            "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into account)."
-        },
+        {"skipping_indices_types",
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+         "An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, "
+         "tokenbf_v1, text, vector_similarity). Empty for tables without skip indices."},
+        {"storage_policy",
+         std::make_shared<DataTypeString>(),
+         "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
+        {"total_rows",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+         "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including "
+         "underlying Buffer table)."},
+        {"total_bytes",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+         "Total number of bytes, if it is possible to quickly determine exact number "
+         "of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). "
+         "If the table stores data on disk, returns used space on disk (i.e. compressed). "
+         "If the table stores data in memory, returns approximated number of used bytes in memory."},
+        {"total_bytes_uncompressed",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+         "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
+         "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into "
+         "account)."},
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of parts in this table."},
-        {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
-        {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
-        {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
-        {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMN) suitable for applying on the fly."},
-        {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
+        {"active_parts",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+         "The number of active parts in this table."},
+        {"total_marks",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+         "The total number of marks in all parts in this table."},
+        {"active_on_fly_data_mutations",
+         std::make_shared<DataTypeUInt64>(),
+         "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
+        {"active_on_fly_alter_mutations",
+         std::make_shared<DataTypeUInt64>(),
+         "Total number of active alter mutations (MODIFY COLUMN) suitable for applying on the fly."},
+        {"active_on_fly_metadata_mutations",
+         std::make_shared<DataTypeUInt64>(),
+         "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
         {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
-        {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Total number of rows INSERTed since server start (only for Buffer tables)."
-        },
-        {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Total number of bytes INSERTed since server start (only for Buffer tables)."
-        },
+        {"lifetime_rows",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+         "Total number of rows INSERTed since server start (only for Buffer tables)."},
+        {"lifetime_bytes",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+         "Total number of bytes INSERTed since server start (only for Buffer tables)."},
         {"comment", std::make_shared<DataTypeString>(), "The comment for the table."},
-        {"has_own_data", std::make_shared<DataTypeUInt8>(),
-            "Flag that indicates whether the table itself stores some data on disk or only accesses some other source."
-        },
-        {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-            "Database loading dependencies (list of objects which should be loaded before the current object)."
-        },
-        {"loading_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-            "Table loading dependencies (list of objects which should be loaded before the current object)."
-        },
-        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-            "Dependent loading database."
-        },
-        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-            "Dependent loading table."
-        },
-        {"target_database", std::make_shared<DataTypeString>(),
-            "For a materialized view, the database of the destination table the view writes to "
-            "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
-        },
-        {"target_table", std::make_shared<DataTypeString>(),
-            "For a materialized view, the name of the destination table the view writes to "
-            "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
-        },
+        {"has_own_data",
+         std::make_shared<DataTypeUInt8>(),
+         "Flag that indicates whether the table itself stores some data on disk or only accesses some other source."},
+        {"loading_dependencies_database",
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+         "Database loading dependencies (list of objects which should be loaded before the current object)."},
+        {"loading_dependencies_table",
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+         "Table loading dependencies (list of objects which should be loaded before the current object)."},
+        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Dependent loading database."},
+        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Dependent loading table."},
+        {"target_database",
+         std::make_shared<DataTypeString>(),
+         "For a materialized view, the database of the destination table the view writes to "
+         "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."},
+        {"target_table",
+         std::make_shared<DataTypeString>(),
+         "For a materialized view, the name of the destination table the view writes to "
+         "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."},
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
+        {"udt_verification_stamp_available",
+         std::make_shared<DataTypeUInt8>(),
+         "Whether the current table metadata carries an exact UDT integrity verification stamp."},
+        {"udt_verification_stamp_root_catalog_epoch",
+         std::make_shared<DataTypeUInt64>(),
+         "Catalog epoch of the exact authority root used to verify the current mapped object image."},
+        {"udt_verification_stamp_root_authority_anchor",
+         std::make_shared<DataTypeString>(),
+         "Lowercase hexadecimal anchor of the exact authority root used to verify the current mapped object image; empty when "
+         "unavailable."},
+        {"udt_verification_stamp_object_schema_revision",
+         std::make_shared<DataTypeUInt64>(),
+         "Schema revision of the exact mapped object image covered by the current verification stamp."},
     };
 
-    description.setAliases({
-        {"table", std::make_shared<DataTypeString>(), "name"}
-    });
+    description.setAliases({{"table", std::make_shared<DataTypeString>(), "name"}});
 
     storage_metadata.setColumns(std::move(description));
     storage_metadata.setVirtuals(createVirtuals());
@@ -432,8 +470,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 VirtualColumnsDescription StorageSystemTables::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral(
+        "_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral(
+        "_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     return desc;
 }
 
@@ -529,14 +569,15 @@ protected:
     /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
-        auto table_details = databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(context,
-                                /* filter_by_table_name */ {},
-                                /* skip_not_loaded */ false,
-                                tables_filter);
+        auto table_details = databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(
+            context,
+            /* filter_by_table_name */ {},
+            /* skip_not_loaded */ false,
+            tables_filter);
 
         size_t count = 0;
 
-        for (const auto & table_detail: table_details)
+        for (const auto & table_detail : table_details)
         {
             if (!tables.contains(table_detail.name))
                 continue;
@@ -708,15 +749,17 @@ protected:
             }
 
             const String & database_name = databases_cursor.getDatabaseName();
-            const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
+            const bool need_to_check_access_for_tables
+                = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             /// This is for queries similar to 'show tables', where only name of the table is needed
             auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
             bool needs_one_column = (needed_columns.size() == 1 && needed_columns[0].name == "name");
 
-            bool needs_two_columns = (needed_columns.size() == 2 &&
-                        ((needed_columns[0].name == "name" && needed_columns[1].name == "database") ||
-                            (needed_columns[0].name == "database" && needed_columns[1].name == "name")));
+            bool needs_two_columns
+                = (needed_columns.size() == 2
+                   && ((needed_columns[0].name == "name" && needed_columns[1].name == "database")
+                       || (needed_columns[0].name == "database" && needed_columns[1].name == "name")));
 
             /// A database whose iterator survived a block boundary was started on the
             /// slow path and must be finished there, not re-emitted whole.
@@ -730,10 +773,11 @@ protected:
 
             const DatabasePtr & database = databases_cursor.getDatabase();
             if (!databases_cursor.hasTablesIterator())
-                databases_cursor.setTablesIterator(database->getTablesIteratorWithHint(context,
-                        /* filter_by_table_name */ {},
-                        /* skip_not_loaded */ false,
-                        tables_filter));
+                databases_cursor.setTablesIterator(database->getTablesIteratorWithHint(
+                    context,
+                    /* filter_by_table_name */ {},
+                    /* skip_not_loaded */ false,
+                    tables_filter));
 
             auto & tables_it = databases_cursor.getTablesIterator();
             for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
@@ -794,7 +838,7 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(0u);  // is_temporary
+                    res_columns[res_index++]->insert(0u); // is_temporary
 
                 if (columns_mask[src_index++])
                 {
@@ -1156,11 +1200,35 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                UDT::AuthorityVerificationStamp::Ptr verification_stamp;
+                if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
+                {
+                    if (metadata_snapshot)
+                        verification_stamp = metadata_snapshot->getBoundUDTVerificationStamp();
+                }
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(static_cast<UInt8>(static_cast<bool>(verification_stamp)));
+                if (columns_mask[src_index++])
+                {
+                    res_columns[res_index++]->insert(verification_stamp ? verification_stamp->getVerifiedRoot().database_catalog_epoch : 0);
+                }
+                if (columns_mask[src_index++])
+                {
+                    res_columns[res_index++]->insert(
+                        verification_stamp ? digestToLowerHex(verification_stamp->getVerifiedRoot().authority_anchor) : String{});
+                }
+                if (columns_mask[src_index++])
+                {
+                    res_columns[res_index++]->insert(
+                        verification_stamp ? verification_stamp->getVerifiedObject().object_schema_revision : 0);
+                }
             }
         }
         UInt64 num_rows = res_columns.at(0)->size();
         return Chunk(std::move(res_columns), num_rows);
     }
+
 private:
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
@@ -1187,11 +1255,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::make_shared<const Block>(std::move(sample_block)),
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
+              std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
     {
@@ -1253,12 +1317,22 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context, std::move(tables_filter)));
+    Pipe pipe(
+        std::make_shared<TablesBlockSource>(
+            std::move(columns_mask),
+            getOutputHeader(),
+            max_block_size,
+            std::move(filtered_databases_column),
+            std::move(filtered_tables_column),
+            context,
+            std::move(tables_filter)));
     pipeline.init(std::move(pipe));
 }
 
 }
 
 /// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTables) }
+namespace DB
+{
+REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTables)
+}

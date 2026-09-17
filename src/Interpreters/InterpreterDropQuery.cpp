@@ -1,3 +1,4 @@
+#include <Databases/DatabaseAtomic.h>
 #include <Databases/IDatabase.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
@@ -98,8 +99,38 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
+    const auto preflight_udt_detach_on_cluster = [&]
+    {
+        if (drop.kind != ASTDropQuery::Kind::Detach)
+            return;
+
+        /// Preserve the normal access-check ordering: mapped-state diagnostics
+        /// must not become an authorization side channel on the initiator.
+        getContext()->checkAccess(getRequiredAccessForDDLOnCluster());
+
+        const String database_name = drop.getDatabase().empty() ? getContext()->getCurrentDatabase() : drop.getDatabase();
+        auto database = tryGetDatabase(database_name, true);
+        auto * atomic_database = database ? typeid_cast<DatabaseAtomic *>(database.get()) : nullptr;
+        if (!atomic_database)
+            return;
+        atomic_database->waitDatabaseStarted();
+
+        if (drop.table)
+        {
+            if (auto table = database->tryGetTable(drop.getTable(), getContext()))
+            {
+                atomic_database->assertUDTTableAllowsOrdinaryMetadataMutation(
+                    table, getContext(), drop.permanently ? "DETACH PERMANENTLY ON CLUSTER" : "DETACH ON CLUSTER");
+            }
+            return;
+        }
+
+        atomic_database->assertUDTDatabaseAllowsDetach("DETACH ON CLUSTER");
+    };
+
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
+        preflight_udt_detach_on_cluster();
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
@@ -112,6 +143,7 @@ BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_p
         return executeToTable(drop);
     if (drop.database && !drop.cluster.empty() && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
+        preflight_udt_detach_on_cluster();
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(current_query_ptr, getContext(), params);
@@ -147,13 +179,32 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 {
     DatabasePtr database;
     UUID table_to_wait_on = UUIDHelpers::Nil;
-    auto res = executeToTableImpl(getContext(), query, database, table_to_wait_on);
+    UUID owned_inner_table_to_wait_on = UUIDHelpers::Nil;
+    auto res = executeToTableImpl(getContext(), query, database, table_to_wait_on, nullptr, &owned_inner_table_to_wait_on);
     if (query.sync)
+    {
+        /// A mapped inner-table MV publishes its outer tombstone first and its
+        /// background cleanup then enqueues the physical child. Waiting for the
+        /// outer UUID first proves that enqueue has happened (or that no child
+        /// remained), so the second wait preserves ordinary DROP ... SYNC
+        /// semantics without blocking the schema lock or the outer drop worker.
         waitForTableToBeActuallyDroppedOrDetached(query, database, table_to_wait_on, getContext());
+        if (query.kind == ASTDropQuery::Kind::Drop && owned_inner_table_to_wait_on != UUIDHelpers::Nil)
+        {
+            DatabaseCatalog::instance().expediteDroppedTableCleanup(owned_inner_table_to_wait_on);
+            waitForTableToBeActuallyDroppedOrDetached(query, database, owned_inner_table_to_wait_on, getContext());
+        }
+    }
     return res;
 }
 
-BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
+BlockIO InterpreterDropQuery::executeToTableImpl(
+    const ContextPtr & context_,
+    ASTDropQuery & query,
+    DatabasePtr & db,
+    UUID & uuid_to_wait,
+    DatabaseAtomic::UDTDetachGuard * database_detach_guard,
+    UUID * owned_inner_uuid_to_wait)
 {
     if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
@@ -213,6 +264,38 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         /// Prevents recursive drop from drop database query. The original query must specify a table.
         bool is_drop_or_detach_database = !current_query_ptr->as<ASTDropQuery>()->table;
 
+        /// Resolve the identity and ownership before the probabilistic DROP
+        /// rewrite below. Otherwise a DROP of a protected in-memory inner table
+        /// could become TRUNCATE and bypass the physical-child guard.
+        table_id.uuid = database->tryGetTableUUID(table_id.table_name);
+
+        AccessFlags drop_storage;
+        if (table->isView())
+            drop_storage = AccessType::DROP_VIEW;
+        else if (table->isDictionary())
+            drop_storage = AccessType::DROP_DICTIONARY;
+        else
+            drop_storage = AccessType::DROP_TABLE;
+
+        /// A generated inner table is physical storage owned exclusively by
+        /// its mapped MaterializedView. Reject an independent DROP before ON
+        /// CLUSTER/replicated dispatch and before any shutdown or dependency
+        /// mutation below. Authorization must precede the ownership probe so
+        /// an unauthorized caller cannot distinguish mapped inner tables.
+        if (query.kind == ASTDropQuery::Kind::Drop)
+        {
+            if (!query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
+            if (const auto * atomic_database = typeid_cast<const DatabaseAtomic *>(database.get()))
+                atomic_database->assertUDTPhysicalInnerTableOperationAllowed(table, "DROP");
+        }
+        else if (query.kind == ASTDropQuery::Kind::Truncate)
+        {
+            context_->checkAccess(AccessType::TRUNCATE, table_id);
+            if (const auto * atomic_database = typeid_cast<const DatabaseAtomic *>(database.get()))
+                atomic_database->assertUDTPhysicalInnerTableOperationAllowed(table, "TRUNCATE");
+        }
+
         /// Don't ignore DROP when it's part of DROP DATABASE: selectively ignoring individual
         /// table drops can break dependency invariants (e.g., a dependent table's drop is ignored
         /// while the table it depends on is dropped, since DROP DATABASE skips same-database
@@ -232,17 +315,29 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             ast_drop_query.kind = ASTDropQuery::Truncate;
         }
 
-        /// Now get UUID, so we can wait for table data to be finally dropped
-        table_id.uuid = database->tryGetTableUUID(table_id.table_name);
-
-        AccessFlags drop_storage;
-
-        if (table->isView())
-            drop_storage = AccessType::DROP_VIEW;
-        else if (table->isDictionary())
-            drop_storage = AccessType::DROP_DICTIONARY;
-        else
-            drop_storage = AccessType::DROP_TABLE;
+        /// Reject mapped DETACH before ON CLUSTER/replicated dispatch and,
+        /// locally, before flushAndShutdown or dependency removal.
+        if (query.kind == ASTDropQuery::Kind::Detach && !database_detach_guard)
+        {
+            /// Authorization must precede mapped-state inspection so an
+            /// unauthorized caller cannot distinguish mapped and physical tables.
+            context_->checkAccess(drop_storage, table_id);
+            if (auto * atomic_database = typeid_cast<DatabaseAtomic *>(database.get()))
+            {
+                atomic_database->assertUDTPhysicalInnerTableOperationAllowed(table, "DETACH");
+                /// A local temporary DETACH retains the exact authority
+                /// mapping and is validated under the table/schema guard
+                /// immediately before any shutdown or catalog mutation below.
+                /// Distributed delivery and permanent detach cannot carry
+                /// that retained-identity proof, so they remain early
+                /// fail-closed before enqueue/dispatch.
+                if (query.permanently || !query.cluster.empty())
+                {
+                    atomic_database->assertUDTTableAllowsOrdinaryMetadataMutation(
+                        table, context_, query.permanently ? "DETACH PERMANENTLY" : "DETACH ON CLUSTER");
+                }
+            }
+        }
 
         auto new_query_ptr = query.clone();
         auto & query_to_send = new_query_ptr->as<ASTDropQuery &>();
@@ -258,7 +353,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
         if (database->shouldReplicateQuery(getContext(), current_query_ptr))
         {
-            if (query.kind == ASTDropQuery::Kind::Detach)
+            if (query.kind == ASTDropQuery::Kind::Detach && database_detach_guard)
                 context_->checkAccess(drop_storage, table_id);
             else if (query.kind == ASTDropQuery::Kind::Truncate)
                 context_->checkAccess(AccessType::TRUNCATE, table_id);
@@ -274,9 +369,27 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, QueryFlags{ .internal = internal }, std::move(ddl_guard));
         }
 
+        std::optional<IStorage::AlterLockHolder> atomic_detach_alter_lock;
+        std::optional<DatabaseAtomic::UDTDetachGuard> table_detach_guard;
+        auto * effective_detach_guard = database_detach_guard;
+        auto * atomic_database = typeid_cast<DatabaseAtomic *>(database.get());
+        if (query.kind == ASTDropQuery::Kind::Detach && atomic_database && !effective_detach_guard)
+        {
+            /// ALTER uses table -> Atomic schema lock. Retain that same order
+            /// across every DETACH side effect so a table cannot become mapped
+            /// after admission and so shutdown cannot form a schema/table ABBA.
+            atomic_detach_alter_lock.emplace(table->lockForAlter(settings[Setting::lock_acquire_timeout]));
+            table_detach_guard.emplace(atomic_database->acquireUDTTableDetachGuard(
+                table, context_, query.permanently ? "DETACH PERMANENTLY" : "DETACH"));
+            effective_detach_guard = &*table_detach_guard;
+        }
+
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
-            context_->checkAccess(drop_storage, table_id);
+            /// Standalone DETACH was authorized before the UDT admission check.
+            /// Recursive DETACH DATABASE keeps the historical per-table check.
+            if (database_detach_guard)
+                context_->checkAccess(drop_storage, table_id);
 
             if (table->isDictionary())
             {
@@ -308,12 +421,24 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
                 NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
-                database->detachTablePermanently(context_, table_id.table_name);
+                if (atomic_database && effective_detach_guard)
+                {
+                    atomic_database->detachTablePermanentlyUnderUDTGuard(
+                        context_, table_id.table_name, table, *effective_detach_guard);
+                }
+                else
+                    database->detachTablePermanently(context_, table_id.table_name);
             }
             else
             {
                 /// Drop table from memory, don't touch data and metadata
-                database->detachTable(context_, table_id.table_name);
+                if (atomic_database && effective_detach_guard)
+                {
+                    static_cast<void>(atomic_database->detachTableUnderUDTGuard(
+                        context_, table_id.table_name, table, *effective_detach_guard));
+                }
+                else
+                    database->detachTable(context_, table_id.table_name);
             }
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
@@ -322,6 +447,12 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot TRUNCATE dictionary");
 
             context_->checkAccess(AccessType::TRUNCATE, table_id);
+
+            /// Repeat immediately before the first table-specific side effect:
+            /// ownership may have changed after early dispatch admission.
+            if (atomic_database)
+                atomic_database->assertUDTPhysicalInnerTableOperationAllowed(table, "TRUNCATE");
+
             if (table->isStaticStorage())
                 throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
@@ -341,6 +472,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         {
             if (!query.no_access_check)
                 context_->checkAccess(drop_storage, table_id);
+
+            /// Repeat immediately before the first table-specific side effect:
+            /// authority ownership may have changed after early dispatch
+            /// admission. During DROP DATABASE the mapped outer is ordered
+            /// before its generated child, so the child becomes ordinary only
+            /// after the outer authority transition has committed.
+            if (atomic_database)
+                atomic_database->assertUDTPhysicalInnerTableOperationAllowed(table, "DROP");
 
             if (table->isDictionary())
             {
@@ -364,6 +503,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             NamedCollectionFactory::instance().removeDependencies(table_id);
+            if (owned_inner_uuid_to_wait)
+            {
+                if (const auto * owned_materialized_view = table->as<StorageMaterializedView>();
+                    owned_materialized_view && owned_materialized_view->hasInnerTable())
+                {
+                    *owned_inner_uuid_to_wait = owned_materialized_view->getTargetTableId().uuid;
+                }
+            }
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
@@ -428,7 +575,11 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
         if (query.sync)
         {
             for (const auto & table_uuid : tables_to_wait)
+            {
+                if (query.kind == ASTDropQuery::Kind::Drop)
+                    DatabaseCatalog::instance().expediteDroppedTableCleanup(table_uuid);
                 waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid, getContext());
+            }
         }
         throw;
     }
@@ -436,7 +587,11 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     if (query.sync)
     {
         for (const auto & table_uuid : tables_to_wait)
+        {
+            if (query.kind == ASTDropQuery::Kind::Drop)
+                DatabaseCatalog::instance().expediteDroppedTableCleanup(table_uuid);
             waitForTableToBeActuallyDroppedOrDetached(query, database, table_uuid, getContext());
+        }
     }
     return res;
 }
@@ -481,6 +636,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
     auto * const db_replicated = dynamic_cast<DatabaseReplicated *>(database.get());
+    auto * const db_atomic = typeid_cast<DatabaseAtomic *>(database.get());
     if (truncate && db_replicated)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TRUNCATE DATABASE is not implemented for replicated databases");
 
@@ -489,6 +645,49 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     if (query.if_empty)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
+
+    /// Database DETACH prepares and shuts down its tables in bulk before the
+    /// per-table detach callbacks below. Acquire every table ALTER lock in a
+    /// stable order, then retain the Atomic schema lock through all per-table
+    /// work. This both rejects an existing mapped table before side effects and
+    /// prevents a physical table from becoming mapped while those effects run.
+    std::vector<StoragePtr> atomic_database_detach_tables;
+    std::vector<IStorage::AlterLockHolder> atomic_database_detach_alter_locks;
+    std::optional<DatabaseAtomic::UDTDetachGuard> atomic_database_detach_guard;
+    if (query.kind == ASTDropQuery::Kind::Detach)
+    {
+        if (auto * atomic_database = db_atomic)
+        {
+            auto table_context = Context::createCopy(getContext());
+            table_context->setInternalQuery(true);
+            for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
+            {
+                if (auto table = iterator->table())
+                    atomic_database_detach_tables.push_back(std::move(table));
+            }
+            std::sort(
+                atomic_database_detach_tables.begin(),
+                atomic_database_detach_tables.end(),
+                [](const StoragePtr & lhs, const StoragePtr & rhs)
+                {
+                    return lhs->getStorageID().getNameForLogs() < rhs->getStorageID().getNameForLogs();
+                });
+            atomic_database_detach_tables.erase(
+                std::unique(
+                    atomic_database_detach_tables.begin(),
+                    atomic_database_detach_tables.end(),
+                    [](const StoragePtr & lhs, const StoragePtr & rhs) { return lhs.get() == rhs.get(); }),
+                atomic_database_detach_tables.end());
+
+            atomic_database_detach_alter_locks.reserve(atomic_database_detach_tables.size());
+            for (const auto & table : atomic_database_detach_tables)
+            {
+                atomic_database_detach_alter_locks.emplace_back(
+                    table->lockForAlter(getContext()->getSettingsRef()[Setting::lock_acquire_timeout]));
+            }
+            atomic_database_detach_guard.emplace(atomic_database->acquireUDTDatabaseDetachGuard("DETACH"));
+        }
+    }
 
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
@@ -531,8 +730,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             std::unordered_set<UUID> prepared_tables;
             std::vector<std::pair<StorageID, bool>> tables_to_drop;
             std::vector<StoragePtr> tables_to_prepare;
+            std::unordered_map<String, String> mapped_inner_table_to_owner;
 
-            auto collect_tables = [&] {
+            auto collect_tables = [&]
+            {
+                mapped_inner_table_to_owner.clear();
                 // NOTE: This means we wait for all tables to be loaded inside getTablesIterator() call in case of `async_load_databases = true`.
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
@@ -549,6 +751,17 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
                     StorageID storage_id = table_ptr->getStorageID();
                     tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
+                    if (const auto * materialized_view = table_ptr->as<StorageMaterializedView>();
+                        materialized_view && materialized_view->hasInnerTable())
+                    {
+                        const auto metadata = table_ptr->getInMemoryMetadataPtr(table_context, false);
+                        metadata->validateBoundUDTReferences();
+                        if (metadata->getBoundUDTReferences() || (db_atomic && db_atomic->hasDatabaseOwnedUDTObject(storage_id.uuid)))
+                        {
+                            mapped_inner_table_to_owner.emplace(
+                                materialized_view->getTargetTableId().getFullTableName(), storage_id.getFullTableName());
+                        }
+                    }
                     /// If the database doesn't support table UUIDs, we might call
                     /// IStorage::flushAndPrepareForShutdown() twice. That's ok.
                     /// (And shouldn't normally happen because refreshable materialized views don't work
@@ -636,32 +849,65 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (size_t i = 0; i < sorted.size(); ++i)
                     position[sorted[i].getFullTableName()] = i;
 
-                std::sort(tables_to_drop.begin(), tables_to_drop.end(), [&](const auto & a, const auto & b)
+                auto is_inner_table_name = [](const String & name)
                 {
-                    /// Inner tables (e.g. `.inner_id.*` for MVs) must be dropped before their parent views.
-                    /// In Replicated databases, if we drop an MV first, its dropInnerTableIfAny() tries to
-                    /// drop the inner table via executeDropQuery which fails because the replicated DDL path
-                    /// rejects secondary queries. Dropping inner tables first makes dropInnerTableIfAny() a no-op.
-                    /// Note: refreshable MVs also create `.tmp.inner_id.*` temporary tables during refresh,
-                    /// and `dropInnerTableIfAny` drops those too, so they must also be classified as inner.
-                    auto is_inner_table_name = [](const String & name)
+                    return name.starts_with(".inner_id.") || name.starts_with(".inner.") || name.starts_with(".tmp.inner_id.")
+                        || name.starts_with(".tmp.inner.");
+                };
+                struct DropOrderKey
+                {
+                    bool ordinary_inner = false;
+                    size_t dependency_position = 0;
+                    String group_name;
+                    bool mapped_child = false;
+                    String object_name;
+                };
+                auto make_drop_order_key = [&](const auto & item)
+                {
+                    DropOrderKey key;
+                    key.object_name = item.first.getFullTableName();
+                    if (const auto it = mapped_inner_table_to_owner.find(key.object_name); it != mapped_inner_table_to_owner.end())
                     {
-                        return name.starts_with(".inner_id.") || name.starts_with(".inner.")
-                            || name.starts_with(".tmp.inner_id.") || name.starts_with(".tmp.inner.");
-                    };
-                    bool a_is_inner = is_inner_table_name(a.first.table_name);
-                    bool b_is_inner = is_inner_table_name(b.first.table_name);
-                    if (a_is_inner != b_is_inner)
-                        return a_is_inner;
+                        /// Treat a mapped outer and its child as one ordering
+                        /// group, with the outer first. Unlike a pairwise
+                        /// comparator override, this remains a strict weak
+                        /// ordering in the presence of unrelated tables.
+                        key.group_name = it->second;
+                        key.mapped_child = true;
+                    }
+                    else
+                    {
+                        key.group_name = key.object_name;
+                        key.ordinary_inner = is_inner_table_name(item.first.table_name);
+                    }
+                    if (const auto it = position.find(key.group_name); it != position.end())
+                        key.dependency_position = it->second;
+                    return key;
+                };
 
-                    size_t pos_a = 0;
-                    size_t pos_b = 0;
-                    if (auto it = position.find(a.first.getFullTableName()); it != position.end())
-                        pos_a = it->second;
-                    if (auto it = position.find(b.first.getFullTableName()); it != position.end())
-                        pos_b = it->second;
-                    return pos_a > pos_b;
-                });
+                std::sort(
+                    tables_to_drop.begin(),
+                    tables_to_drop.end(),
+                    [&](const auto & a, const auto & b)
+                    {
+                        const auto a_key = make_drop_order_key(a);
+                        const auto b_key = make_drop_order_key(b);
+
+                        /// Other inner tables (including refreshable `.tmp` tables)
+                        /// retain the historical inner-first rule. Mapped children
+                        /// use their non-inner outer's group and are ordered after
+                        /// that outer, so the logical DROP commits before physical
+                        /// storage disappears.
+                        if (a_key.ordinary_inner != b_key.ordinary_inner)
+                            return a_key.ordinary_inner;
+                        if (a_key.dependency_position != b_key.dependency_position)
+                            return a_key.dependency_position > b_key.dependency_position;
+                        if (a_key.group_name != b_key.group_name)
+                            return a_key.group_name < b_key.group_name;
+                        if (a_key.mapped_child != b_key.mapped_child)
+                            return !a_key.mapped_child;
+                        return a_key.object_name < b_key.object_name;
+                    });
             }
 
             /// Save original values that may be modified by ignore_drop_queries_probability
@@ -680,12 +926,32 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 query_for_table.sync = original_sync;
                 DatabasePtr db;
                 UUID table_to_wait = UUIDHelpers::Nil;
+                UUID owned_inner_table_to_wait = UUIDHelpers::Nil;
                 /// Note: if this throws exception, the remaining tables won't be dropped and will stay in a
                 /// limbo state where flushAndPrepareForShutdown() was called but no shutdown() followed. Not ideal.
-                executeToTableImpl(table_context, query_for_table, db, table_to_wait);
+                executeToTableImpl(
+                    table_context,
+                    query_for_table,
+                    db,
+                    table_to_wait,
+                    atomic_database_detach_guard ? &*atomic_database_detach_guard : nullptr,
+                    query_for_table.sync && query_for_table.kind == ASTDropQuery::Kind::Drop ? &owned_inner_table_to_wait : nullptr);
                 uuids_to_wait.push_back(table_to_wait);
+                if (owned_inner_table_to_wait != UUIDHelpers::Nil)
+                    uuids_to_wait.push_back(owned_inner_table_to_wait);
             }
         }
+    }
+
+    if (atomic_database_detach_guard)
+    {
+        /// Per-table detach is complete and the retained database schema guard
+        /// still prevents any table from becoming mapped. Unlock ALTER mutexes
+        /// while their Storage objects are alive, then release our StoragePtrs;
+        /// otherwise SYNC waits forever and assertCanBeDetached observes the
+        /// caller's own references as tables still in use.
+        atomic_database_detach_alter_locks.clear();
+        atomic_database_detach_tables.clear();
     }
 
     /// In case of TRUNCATE TABLES .. LIKE, we truncate only suitable tables
@@ -811,7 +1077,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
+    {
+        /// The exclusive database DDL guard now prevents new tables or schema
+        /// mutations. Release the UDT schema guard before catalog detach:
+        /// DatabaseAtomic::shutdown() enters the same mutex while draining its
+        /// authority runtime, so retaining it here would self-deadlock.
+        atomic_database_detach_guard.reset();
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+    }
 
     return {};
 }

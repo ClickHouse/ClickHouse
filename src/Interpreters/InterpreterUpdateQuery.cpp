@@ -2,28 +2,31 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTUpdateQuery.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Storages/MutationCommands.h>
 
 
 namespace DB
@@ -170,6 +173,9 @@ BlockIO InterpreterUpdateQuery::execute()
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    UDT::assertAuthorityOwnedInnerStorageOperationAllowed(table, "UPDATE");
+    const auto initial_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), true);
+    UDT::assertAuthorityStorageNewOperationAllowed(*table, initial_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Mutation);
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
@@ -217,6 +223,9 @@ BlockIO InterpreterUpdateQuery::execute()
     commands.emplace_back(createMutationCommand(update_query, settings));
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+
+    const auto final_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), true);
+    UDT::assertAuthorityStorageNewOperationAllowed(*table, final_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Mutation);
 
     BlockIO res;
     res.pipeline = table->updateLightweight(commands, getContext());

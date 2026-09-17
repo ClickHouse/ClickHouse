@@ -35,6 +35,11 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     setInMemoryMetadata(*projection->metadata);
 }
 
+StoragePtr StorageFromMergeTreeProjection::getParentStorage() const
+{
+    return parent_storage;
+}
+
 void StorageFromMergeTreeProjection::read(
     QueryPlan & query_plan,
     const Names & column_names,

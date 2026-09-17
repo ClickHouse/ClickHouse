@@ -320,6 +320,8 @@ static struct InitFiu
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(udt_lifecycle_pause_after_database_lookup) \
+    PAUSEABLE_ONCE(udt_table_alter_pause_before_authority_publication) \
+    PAUSEABLE_ONCE(udt_table_alter_pause_before_metadata_publication) \
     ONCE(udt_authority_root_builder_allocation_failure) \
     ONCE(udt_authority_root_builder_freeze_failure) \
     ONCE(udt_authority_recovery_parse_failure) \

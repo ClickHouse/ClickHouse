@@ -2,63 +2,64 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
-#include <Core/Settings.h>
-#include <Common/MemoryTracker.h>
-#include <Core/SettingsEnums.h>
-#include <Core/ServerSettings.h>
 #include <Core/DeduplicateInsert.h>
+#include <Core/Field.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/JoinedTables.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/processColumnTransformers.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Processors/Sinks/EmptySink.h>
-#include <Processors/Transforms/CountingTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/DeduplicationTokenTransforms.h>
-#include <Processors/Transforms/PlanSquashingTransform.h>
-#include <Processors/Transforms/ApplySquashingTransform.h>
-#include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/ResizeProcessor.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/Transforms/CountingTransform.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <Common/logger_useful.h>
-#include <Common/checkStackSize.h>
-#include <Common/quoteString.h>
-#include <Core/Field.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/StorageSnapshot.h>
-#include <Storages/ColumnsDescription.h>
-#include <Interpreters/JoinedTables.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 
 #include <memory>
 
@@ -1282,6 +1283,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    UDT::assertAuthorityStorageNewOperationAllowed(*table, metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Write);
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().
@@ -1291,6 +1293,8 @@ BlockIO InterpreterInsertQuery::execute()
     /// spurious `ACCESS_DENIED` for table-scoped grants. Source `SELECT` access is still checked below.
     if (!query.table_function && !skip_target_insert_access_check)
         context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
+
+    UDT::assertAuthorityOwnedInnerStorageOperationAllowed(table, "INSERT into");
 
     /// Access the storage itself guards the write with (e.g. the source access of a table of a
     /// `URL` database). It is also checked when the sink is created, but that happens in a

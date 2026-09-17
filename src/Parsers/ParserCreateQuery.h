@@ -163,7 +163,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_primary_key{Keyword::PRIMARY_KEY};
 
     NameParser name_parser;
-    ParserDataType type_parser;
+    ParserDataTypeWithQualifiedReferences type_parser;
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;

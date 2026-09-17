@@ -2,6 +2,13 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/IStorage.h>
 
+#include <Databases/DatabaseAtomic.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
+
+#include <DataTypes/UDT/BoundObjectTypeReferences.h>
+
+#include <Interpreters/DatabaseCatalog.h>
+
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 
@@ -19,34 +26,74 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
+    extern const int ABORTED;
+    extern const int LOGICAL_ERROR;
 }
 
-StorageSnapshot::StorageSnapshot(
-    const IStorage & storage_,
-    StorageMetadataPtr metadata_)
+StorageSnapshot::StorageSnapshot(const IStorage & storage_, StorageMetadataPtr metadata_)
     : storage(storage_)
     , metadata(std::move(metadata_))
+    , udt_read_continuation_evidence(UDT::acquireAuthorityStorageReadContinuationEvidence(storage, metadata))
+{
+}
+
+StorageSnapshot::StorageSnapshot(const IStorage & storage_, StorageMetadataPtr metadata_, DataPtr data_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , data(std::move(data_))
+    , udt_read_continuation_evidence(UDT::acquireAuthorityStorageReadContinuationEvidence(storage, metadata))
 {
 }
 
 StorageSnapshot::StorageSnapshot(
     const IStorage & storage_,
     StorageMetadataPtr metadata_,
-    DataPtr data_)
+    DataPtr data_,
+    std::shared_ptr<const UDT::AuthorityStorageReadContinuationEvidence> evidence_,
+    PreserveUDTReadEvidenceTag)
     : storage(storage_)
     , metadata(std::move(metadata_))
     , data(std::move(data_))
+    , udt_read_continuation_evidence(std::move(evidence_))
 {
+    if (!udt_read_continuation_evidence)
+        return;
+    if (!metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped UDT storage snapshot clone lost its metadata");
+    metadata->validateBoundUDTReferences();
+    const auto & bound = metadata->getBoundUDTReferences();
+    const auto & stamp = metadata->getBoundUDTVerificationStamp();
+    const auto & expected = udt_read_continuation_evidence->getObjectImage();
+    const auto & continuation_stamp = udt_read_continuation_evidence->getVerificationStamp();
+    if (!bound || !stamp || !continuation_stamp || continuation_stamp->getVerifiedObject() != expected
+        || bound->getObject() != expected.object || bound->getObjectSchemaRevision() != expected.object_schema_revision
+        || bound->getSidecarHash() != expected.sidecar_hash
+        || bound->getPhysicalSchemaFingerprint() != expected.physical_schema_fingerprint)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped UDT storage snapshot clone changed its admitted object image");
 }
 
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
-    return std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
+    return std::shared_ptr<StorageSnapshot>(
+        new StorageSnapshot(storage, metadata, std::move(data_), udt_read_continuation_evidence, PreserveUDTReadEvidenceTag{}));
 }
 
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(StorageMetadataPtr metadata_, DataPtr data_) const
 {
-    return std::make_shared<StorageSnapshot>(storage, std::move(metadata_), std::move(data_));
+    return std::shared_ptr<StorageSnapshot>(
+        new StorageSnapshot(storage, std::move(metadata_), std::move(data_), udt_read_continuation_evidence, PreserveUDTReadEvidenceTag{}));
+}
+
+void StorageSnapshot::assertUDTReadContinuationAllowed() const
+{
+    if (!udt_read_continuation_evidence)
+        return;
+    const auto storage_id = storage.getStorageID();
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.database_name);
+    const auto atomic = std::dynamic_pointer_cast<DatabaseAtomic>(database);
+    if (!atomic)
+        throw Exception(ErrorCodes::ABORTED, "Mapped UDT read continuation lost its owning Atomic database");
+    atomic->assertUDTStorageReadContinuationAllowed(*udt_read_continuation_evidence, metadata);
 }
 
 ColumnsDescription StorageSnapshot::getAllColumnsDescription() const

@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/UDT/TableColumnTypeAlterBindings.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -76,6 +77,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
@@ -104,6 +106,19 @@ namespace MergeTreeSetting
 
 namespace
 {
+
+bool requiresUDTColumnRebinding(const AlterCommand & command)
+{
+    switch (command.type)
+    {
+        case AlterCommand::ADD_COLUMN:
+        case AlterCommand::MODIFY_COLUMN:
+        case AlterCommand::MODIFY_QUERY:
+        case AlterCommand::RENAME_COLUMN: return true;
+        case AlterCommand::DROP_COLUMN: return !command.clear && !command.partition;
+        default: return false;
+    }
+}
 
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
@@ -1728,9 +1743,131 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     auto metadata_copy = metadata;
 
+    const auto before_bound_references = metadata.getBoundUDTReferences();
+    const auto before_expectation = metadata.getBoundUDTExpectation();
+    const auto before_physical_columns = metadata.getColumns().getAllPhysical();
+    const bool before_is_mapped_table
+        = before_bound_references && before_bound_references->getObject().kind == UDT::SchemaObjectKind::Table;
+    const bool before_is_mapped_stored_object = before_bound_references
+        && (before_bound_references->getObject().kind == UDT::SchemaObjectKind::View
+            || before_bound_references->getObject().kind == UDT::SchemaObjectKind::Dictionary);
+    const bool has_udt_replacement = std::any_of(
+        begin(),
+        end(),
+        [](const AlterCommand & command)
+        {
+            return !command.ignore && command.udt_column_references.has_value();
+        });
+    const bool mapped_column_rebind_requested = (before_is_mapped_table || has_udt_replacement)
+        && std::any_of(begin(), end(), [](const AlterCommand & command) { return !command.ignore && requiresUDTColumnRebinding(command); });
+    std::vector<UDT::TableColumnTypeAlterOperation> udt_operations;
+    const AlterCommand * stored_object_rebind = nullptr;
+
+    const auto has_physical_column = [](const NamesAndTypesList & columns, std::string_view name)
+    {
+        return std::any_of(columns.begin(), columns.end(), [&](const auto & column) { return column.name == name; });
+    };
+    const auto has_physical_column_or_nested = [&](const NamesAndTypesList & columns, std::string_view name)
+    {
+        return std::any_of(
+            columns.begin(),
+            columns.end(),
+            [&](const auto & column)
+            {
+                return column.name == name
+                    || (column.name.size() > name.size() && column.name.starts_with(name) && column.name[name.size()] == '.');
+            });
+    };
+
     for (const AlterCommand & command : *this)
+    {
+        const auto physical_before = metadata_copy.getColumns().getAllPhysical();
         if (!command.ignore)
             command.apply(metadata_copy, context, share_nested_offsets);
+        if (before_is_mapped_stored_object && !command.ignore && requiresUDTColumnRebinding(command))
+        {
+            if (command.type != AlterCommand::MODIFY_QUERY || !command.udt_stored_object_rebind_prepared || stored_object_rebind)
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mapped stored-object ALTER requires one exact prepared MODIFY QUERY binding");
+            }
+            stored_object_rebind = &command;
+        }
+        if (!mapped_column_rebind_requested || command.ignore || !requiresUDTColumnRebinding(command))
+            continue;
+
+        const auto physical_after = metadata_copy.getColumns().getAllPhysical();
+        const bool source_existed = has_physical_column(physical_before, command.column_name);
+        const bool source_exists_after = has_physical_column(physical_after, command.column_name);
+        switch (command.type)
+        {
+            case AlterCommand::ADD_COLUMN:
+                if (command.udt_column_references && physical_before != physical_after)
+                {
+                    udt_operations.push_back({
+                        .kind = UDT::TableColumnTypeAlterOperationKind::Replace,
+                        .column_name = command.column_name,
+                        .target_name = {},
+                        .replacement_physical_type = command.data_type,
+                        .replacement_column_references = command.udt_column_references,
+                        .physical_columns_after_operation = physical_after,
+                    });
+                }
+                break;
+            case AlterCommand::MODIFY_COLUMN:
+                if (command.data_type && source_existed && source_exists_after)
+                {
+                    udt_operations.push_back({
+                        .kind = UDT::TableColumnTypeAlterOperationKind::Replace,
+                        .column_name = command.column_name,
+                        .target_name = {},
+                        .replacement_physical_type = command.data_type,
+                        .replacement_column_references = command.udt_column_references,
+                        .physical_columns_after_operation = physical_after,
+                    });
+                }
+                else if (command.udt_column_references && physical_before != physical_after)
+                {
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Mapped table ALTER MODIFY with a user-defined type must retain one exact physical column identity");
+                }
+                break;
+            case AlterCommand::DROP_COLUMN:
+                if (!command.clear && !command.partition
+                    && has_physical_column_or_nested(physical_before, command.column_name)
+                    && !has_physical_column_or_nested(physical_after, command.column_name))
+                {
+                    udt_operations.push_back({
+                        .kind = UDT::TableColumnTypeAlterOperationKind::Drop,
+                        .column_name = command.column_name,
+                        .target_name = {},
+                        .replacement_physical_type = {},
+                        .replacement_column_references = std::nullopt,
+                        .physical_columns_after_operation = physical_after,
+                    });
+                }
+                break;
+            case AlterCommand::RENAME_COLUMN:
+                if (has_physical_column_or_nested(physical_before, command.column_name)
+                    && !has_physical_column_or_nested(physical_after, command.column_name)
+                    && has_physical_column_or_nested(physical_after, command.rename_to))
+                {
+                    udt_operations.push_back({
+                        .kind = UDT::TableColumnTypeAlterOperationKind::Rename,
+                        .column_name = command.column_name,
+                        .target_name = command.rename_to,
+                        .replacement_physical_type = {},
+                        .replacement_column_references = std::nullopt,
+                        .physical_columns_after_operation = physical_after,
+                    });
+                }
+                break;
+            case AlterCommand::MODIFY_QUERY:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mapped Atomic table ALTER MODIFY QUERY is not supported");
+            default:
+                break;
+        }
+    }
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
@@ -1844,6 +1981,48 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         }
     }
 
+    if (mapped_column_rebind_requested)
+    {
+        std::shared_ptr<UDT::PreparedTableColumnTypeAlter> pending;
+        if (before_bound_references)
+        {
+            if (!before_expectation)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped table ALTER lost its durable expectation");
+            pending = UDT::prepareTableColumnTypeAlter(
+                before_physical_columns,
+                *before_bound_references,
+                *before_expectation,
+                metadata_copy.getColumns().getAllPhysical(),
+                udt_operations);
+        }
+        else
+        {
+            pending = UDT::prepareInitialTableColumnTypeAlter(
+                before_physical_columns,
+                metadata_copy.getColumns().getAllPhysical(),
+                udt_operations);
+        }
+        /// ADD-then-DROP (and equivalent IF NOT EXISTS no-op batches) have no
+        /// final logical state. They must not activate dependent-object
+        /// support or enter the durable mapped-table path merely because the
+        /// binder ran.
+        if (before_bound_references || pending->getDesiredReferences())
+            metadata_copy.setColumnsAndPendingUDTAlter(metadata_copy.getColumns(), std::move(pending));
+    }
+    if (stored_object_rebind)
+    {
+        if (!before_expectation)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped stored-object ALTER lost its durable expectation");
+        const auto after_physical_columns = metadata_copy.getColumns().getAllPhysical();
+        if (stored_object_rebind->udt_stored_object_physical_outputs != after_physical_columns)
+        {
+            throw Exception(ErrorCodes::ABORTED, "Mapped stored-object ALTER output normalization differs from its exact analyzer binding");
+        }
+        auto pending = UDT::prepareStoredObjectTypeAlter(
+            *before_bound_references, *before_expectation, after_physical_columns, stored_object_rebind->udt_stored_object_references);
+        metadata_copy.setColumnsAndPendingUDTAlter(metadata_copy.getColumns(), std::move(pending));
+    }
+    metadata_copy.validateBoundUDTReferences();
     metadata = std::move(metadata_copy);
 }
 
@@ -2478,7 +2657,8 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
+MutationCommands AlterCommands::getMutationCommands(
+    StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -2527,5 +2707,4 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
 
     return result;
 }
-
 }

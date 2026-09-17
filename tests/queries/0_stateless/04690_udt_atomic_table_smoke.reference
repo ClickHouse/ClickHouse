@@ -1,0 +1,16 @@
+0
+1	11	1	11	100
+2	22	2	\N	\N
+id	UInt64	udt_04690_atomic_table.UserId
+ids	Array(UInt64)	<empty>
+pair	Tuple(owner UInt64, optional Nullable(UInt64))	<empty>
+boxed	Tuple(value Nullable(UInt64))	udt_04690_atomic_table.Box(Nullable(udt_04690_atomic_table.UserId))
+DEFAULT	id
+3	\N	2
+renamed_events	id	UInt64	udt_04690_atomic_table.PrincipalId
+renamed_events	ids	Array(UInt64)	<empty>
+renamed_events	pair	Tuple(owner UInt64, optional Nullable(UInt64))	<empty>
+renamed_events	boxed	Tuple(value Nullable(UInt64))	udt_04690_atomic_table.Box(Nullable(udt_04690_atomic_table.PrincipalId))
+renamed_events	extra	Nullable(UInt64)	<empty>
+UInt64	Nullable(UInt64)
+3	\N

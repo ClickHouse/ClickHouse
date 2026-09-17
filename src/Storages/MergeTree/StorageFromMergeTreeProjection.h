@@ -28,6 +28,8 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    StoragePtr getParentStorage() const;
+
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
 private:

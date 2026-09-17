@@ -1,10 +1,11 @@
+#include <Access/Common/AccessRightsElement.h>
+#include <Databases/DatabaseAtomic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
 #include <Interpreters/ProcessList.h>
-#include <Access/Common/AccessRightsElement.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTUndropQuery.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -61,6 +62,8 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->getEngineName() == "Replicated")
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Replicated database does not support UNDROP query");
+    if (const auto * atomic_database = typeid_cast<const DatabaseAtomic *>(database.get()))
+        atomic_database->assertUDTPhysicalInnerTableNameOperationAllowed(table_id.table_name, "UNDROP");
     if (database->isTableExist(table_id.table_name, getContext()))
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot undrop table, {} already exists", table_id);

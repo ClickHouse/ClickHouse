@@ -46,6 +46,64 @@ CREATE TYPE app.Box(T TYPE) AS Tuple(value T);
 
 Use `SHOW TYPES FROM app`, `SHOW CREATE TYPE app.UserId`, and `DESCRIBE TYPE app.UserId` to inspect definitions. `SHOW CREATE TYPE` and `DESCRIBE TYPE` require a qualified `database.type` name.
 
+## Use in table columns {#use-in-table-columns}
+
+Column references must be fully qualified and belong to the same Atomic database as the table:
+
+```sql
+CREATE TABLE app.users
+(
+    id app.UserId,
+    ids Array(app.UserId),
+    owner Tuple(id app.UserId, external app.FixedId(16)),
+    boxed app.Box(Nullable(app.UserId))
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+The supported engine scope is:
+
+- [`Memory`](/reference/engines/table-engines/special/memory);
+- local, non-replicated [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family engines.
+
+A UDT can occur at the column root or in traversable type positions, including `Array`, named or unnamed `Tuple`, `Nested`, `Map`, `Nullable`, `LowCardinality`, `Variant`, `QBit`, aggregate-function argument types, and typed `JSON` paths. The expanded physical type must also satisfy the ordinary validity rules of its wrapper. For example, `Nullable` and `LowCardinality` do not make an otherwise invalid underlying type valid, and a `Variant` occurrence cannot be in a branch removed or collapsed by physical normalization.
+
+Parameterized UDT arguments can contain supported physical type trees and same-database UDT applications. ClickHouse resolves each distinct stable type identity once for a table DDL operation and stores the canonical arguments with the binding.
+
+Fresh local creates can retain UDT bindings in these declaration sites:
+
+- table column declarations;
+- explicit View and Materialized View output declarations;
+- Dictionary attribute declarations;
+- exact selected outputs of `CREATE TABLE ... AS SELECT`, `EMPTY AS SELECT`, View, and supported Materialized View creates;
+- structured UDT `CAST` targets stored in a View or Materialized View query.
+
+Temporary objects, `ALIAS` and `EPHEMERAL` table columns, defaults, constraints, policy expressions, opaque type strings, and column-level `NULL`/`NOT NULL` modifiers cannot carry a durable UDT reference. Use an explicit `Nullable(...)` type where valid.
+
+`CREATE TABLE ... AS source` and `CLONE AS source` copy an exact logical sidecar only when source and destination are in the same owning Atomic database. `AS SELECT` and `EMPTY AS SELECT` propagate only analyzer-proven exact selected outputs: a direct projection or another registered identity-preserving operation can retain a binding, while arithmetic, generic functions, aggregation, and every unregistered transformation produce a physical-only output. An explicit physical destination schema remains physical and does not copy source provenance. Schema inference from table functions and foreign dialect adapters remains physical-only unless a closed exact adapter is available.
+
+Inferred logical output bindings require the analyzer and a fresh local create. Parameterized views are physical-only. An inferred mapped Materialized View must be non-refreshable. It may use an external target or its ordinary owned inner table. For an owned inner table, the analyzed output must exactly match the complete physical inner-table schema; the outer Materialized View owns the only logical sidecar and authority identity, while the inner table remains physical-only. While that mapped outer object is live, the guarded direct statement set on the owned inner table is rejected: `INSERT`; `UPDATE`, `DELETE`, and mutation commands; every `ALTER TABLE` command (including partition `ATTACH`, `FETCH`, `MOVE`, and `REPLACE`); `OPTIMIZE`; `TRUNCATE`; table `ATTACH`, `DETACH`, `DROP`, `UNDROP`, and `RENAME`; and cross-database moves. An explicitly addressed ordinary `SELECT` from the hidden inner name remains a physical-only read and exposes no logical UDT identity. Replicated database admission and `ON CLUSTER` are not supported.
+
+## Physical runtime semantics {#physical-runtime-semantics}
+
+UDTs are schema aliases, not runtime wrappers. ClickHouse specializes the declaration once and passes only the physical type to storage, serializers, query planning, functions, and clients.
+
+Consequently:
+
+- `toTypeName(column)` returns the underlying physical type;
+- `system.columns.type`, Native-format headers, parts, checksums, and client schemas remain physical;
+- inserts, filters, joins, grouping, sorting, and functions behave as they do for the textually expanded physical schema;
+- ordinary reads do not require `USAGE TYPE` and do not look up the UDT catalog.
+
+For example, a declared `app.UserId` column behaves as `UInt64` at runtime:
+
+```sql
+CREATE TABLE app.user_ids (id app.UserId) ENGINE = Memory;
+INSERT INTO app.user_ids VALUES (1);
+SELECT toTypeName(id), id = toUInt64(1) FROM app.user_ids;
+```
+
 ## Privileges {#privileges}
 
 Definition DDL uses the `CREATE TYPE`, `ALTER TYPE`, `DROP TYPE`, and `SHOW TYPES` access types. Creating a table reference, or adding or modifying a referenced column, additionally requires `USAGE TYPE` for every distinct stable database/type UUID used by the operation.
@@ -63,6 +121,55 @@ GRANT USAGE TYPE ON TYPE UUID '<database_uuid>' '<type_uuid>' TO app_writer;
 ```
 
 The exact grant follows the UUID across `ALTER TYPE ... RENAME TO`. Dropping and recreating the same name produces a new UUID and does not inherit an exact grant. Revoking `USAGE TYPE` prevents new reference-bearing table DDL, but does not prevent `SELECT` from an existing table.
+
+## Introspection {#introspection}
+
+`SHOW CREATE TABLE` and `DESCRIBE TABLE` preserve the declared logical type and resolve its current name by UUID. Renaming a type therefore changes its displayed name without rebinding the table. Recreating the same text name cannot satisfy an older binding.
+
+[`system.columns`](/reference/system-tables/columns) keeps `type` physical and adds the following UDT metadata:
+
+| Column | Meaning |
+|---|---|
+| `udt_declared_type` | Current qualified UDT application at the column root, including replayed logical UDTs in nested `TYPE` actuals, or an empty string. |
+| `udt_uuid` | Stable root-definition UUID, or the nil UUID. |
+| `udt_revision` | Bound immutable revision, or `0`. |
+| `udt_definition_hash` | Version-tagged definition hash, or an empty string. |
+| `udt_arguments` | Canonical physical root-application arguments as `Array(String)`; unlike `udt_declared_type`, nested UDT names are expanded to their physical types. |
+| `udt_instantiation_hash` | Version-tagged semantic instantiation hash, or an empty string. |
+| `udt_references` | Every root or nested occurrence in canonical path order, with its path, ordinal, exact current declared type, UUID, revision, hashes, canonical physical arguments, physical type, and storage fingerprint. |
+
+The scalar fields describe only a root UDT application. For a column such as `Array(app.UserId)`, inspect `udt_references`; the root scalar fields are empty because the column root is `Array`.
+
+```sql
+SELECT
+    name,
+    type,
+    udt_declared_type,
+    udt_uuid,
+    udt_revision,
+    udt_references
+FROM system.columns
+WHERE database = 'app' AND table = 'users'
+ORDER BY position;
+```
+
+## ALTER and lifecycle behavior {#alter-and-lifecycle-behavior}
+
+UDT-aware `ALTER TABLE ... ADD COLUMN`, `MODIFY COLUMN`, and `DROP COLUMN` update the stored bindings and dependency edges atomically. New or changed UDT references repeat the stable-identity `USAGE TYPE` check. Dropping a column removes only the edges no longer used by any occurrence.
+
+`DROP TYPE [IF EXISTS] database.name [RESTRICT]` always has `RESTRICT` semantics and fails while a table or another type depends on the definition. `DROP TYPE ... CASCADE` is not supported. `ALTER TYPE` supports `RENAME TO` and `COMMENT`; changing the definition with `ALTER TYPE ... AS` is not supported.
+
+A same-database table or type rename preserves stable identities. Cross-database type references and moves, `EXCHANGE TABLES`, and `ON CLUSTER` UDT operations are rejected rather than silently discarding or rebinding logical metadata.
+
+Manual `DETACH TABLE` of a mapped table, including `DETACH PERMANENTLY`, and `DETACH DATABASE` containing one are rejected before shutdown, dependency changes, or metadata moves. Manual reattachment of mapped metadata is also fail-closed; in particular, `ATTACH TABLE ... AS [NOT] REPLICATED` is rejected before engine conversion, transaction cleanup, or metadata rewrite. Exact startup recovery of the stored UUID, name, table metadata, and UDT mapping remains supported.
+
+For a mapped Materialized View with an owned inner table, `DROP ... SYNC` first completes the durable outer-object removal and then waits for the physical inner table's final cleanup. A failed outer authority transition leaves the inner table untouched; cleanup recovered after restart is retried idempotently from the outer tombstone.
+
+`UNDROP` rejects an exact same-process tombstone of a mapped object because mapped `DROP` has already removed its logical sidecar and dependency image. Ordinary same-process tombstones remain supported. After restart, a tombstone reconstructed from the untagged `metadata_dropped` namespace is rejected only in an Atomic database with durable UDT authority: checkpoint compaction may have retired the mapped `DROP` installation record, so the remaining physical metadata cannot prove that generic `UNDROP` is safe. This fail-closed restriction remains after the last definition has been removed.
+
+`RENAME DATABASE` is rejected once its UDT authority has been initialized or made durable, even if that authority is empty. `DROP DATABASE` is intentionally destructive instead: it drops mapped tables through their UDT-aware path and removes the database's complete UDT authority with the database.
+
+Backup archives do not carry the complete database authority, persisted verification-scheduler and resource-quota overrides, or object sidecars. `BACKUP` is therefore rejected for an Atomic database once its UDT authority is active or durable, and `RESTORE` cannot target such an authority. Physicalization does not remove the durable activation marker. For a physical-only backup, first physicalize the objects and copy their physical schemas and data into a never-enabled database.
 
 ## Verification, quarantine, and resource limits {#verification-quarantine-and-resource-limits}
 

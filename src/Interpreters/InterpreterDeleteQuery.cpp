@@ -5,26 +5,27 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserAlterQuery.h>
-#include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserUpdateQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MutationCommands.h>
 
 
 namespace DB
@@ -90,6 +91,9 @@ BlockIO InterpreterDeleteQuery::execute()
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    UDT::assertAuthorityOwnedInnerStorageOperationAllowed(table, "DELETE from");
+    const auto initial_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), true);
+    UDT::assertAuthorityStorageNewOperationAllowed(*table, initial_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Mutation);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
@@ -112,6 +116,7 @@ BlockIO InterpreterDeleteQuery::execute()
     /// supportsDelete() and subsequent mutation checks see valid metadata.
     table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+    UDT::assertAuthorityStorageNewOperationAllowed(*table, metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Mutation);
 
     if (table->supportsDelete())
     {
@@ -149,6 +154,8 @@ BlockIO InterpreterDeleteQuery::execute()
             MutationsInterpreter::Settings mutation_settings(false);
             MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
         }
+        const auto final_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), true);
+        UDT::assertAuthorityStorageNewOperationAllowed(*table, final_metadata_snapshot, UDT::AuthorityQuarantineOperationKind::Mutation);
         table->mutate(mutation_commands, getContext());
         return {};
     }

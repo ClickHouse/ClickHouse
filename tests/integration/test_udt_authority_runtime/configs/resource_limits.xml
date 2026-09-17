@@ -1,0 +1,35 @@
+<clickhouse>
+    <user_defined_types>
+        <authority_verification>
+            <schedule>
+                <successful_batch_interval_ms>50</successful_batch_interval_ms>
+                <retry_interval_ms>20</retry_interval_ms>
+                <empty_root_probe_interval_ms>50</empty_root_probe_interval_ms>
+                <failure_backoff_interval_ms>50</failure_backoff_interval_ms>
+                <snapshot_build_interval_ms>10</snapshot_build_interval_ms>
+                <load_throttle_retry_interval_ms>20</load_throttle_retry_interval_ms>
+            </schedule>
+            <throttle>
+                <maximum_foreground_queries>128</maximum_foreground_queries>
+                <maximum_competing_background_tasks>128</maximum_competing_background_tasks>
+            </throttle>
+            <database_overrides>
+                <a4000000-0000-4000-8000-000000000001>
+                    <schedule>
+                        <successful_batch_interval_ms>80</successful_batch_interval_ms>
+                    </schedule>
+                </a4000000-0000-4000-8000-000000000001>
+            </database_overrides>
+        </authority_verification>
+        <resource_limits>
+            <server>
+                <definitions_per_database>8</definitions_per_database>
+            </server>
+            <database_overrides>
+                <a4000000-0000-4000-8000-000000000001>
+                    <definitions_per_database>1</definitions_per_database>
+                </a4000000-0000-4000-8000-000000000001>
+            </database_overrides>
+        </resource_limits>
+    </user_defined_types>
+</clickhouse>

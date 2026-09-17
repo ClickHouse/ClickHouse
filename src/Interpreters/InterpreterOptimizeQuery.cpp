@@ -1,18 +1,19 @@
 #include "config.h"
 
-#include <Storages/IStorage.h>
-#include <Parsers/ASTOptimizeQuery.h>
-#include <Parsers/ASTLiteral.h>
+#include <Access/Common/AccessRightsElement.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
-#include <Access/Common/AccessRightsElement.h>
-#include <Common/typeid_cast.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOptimizeQuery.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Common/typeid_cast.h>
 
 #if USE_AVRO
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -48,6 +49,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    UDT::assertAuthorityOwnedInnerStorageOperationAllowed(table, "OPTIMIZE");
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, getContext());

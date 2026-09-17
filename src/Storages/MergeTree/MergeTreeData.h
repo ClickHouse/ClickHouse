@@ -1,46 +1,47 @@
 #pragma once
 
+#include <functional>
 #include <mutex>
 #include <tuple>
+#include <Disks/StoragePolicy.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/PartLog.h>
+#include <Processors/Merges/Algorithms/Graphite.h>
+#include <Storages/DataDestinationType.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
+#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartsMover.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/PinnedPartUUIDs.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/SharedPartColumns.h>
+#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
+#include <Storages/MergeTree/TemporaryParts.h>
+#include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/PartitionCommands.h>
+#include <Storages/Streaming/SubscriptionManager.h>
+#include <Storages/extractKeyExpressionList.h>
 #include <base/defines.h>
+#include <Poco/Timestamp.h>
 #include <Common/AggregatedMetrics.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/SimpleIncrement.h>
-#include <Common/SharedMutex.h>
-#include <Common/MultiVersion.h>
 #include <Common/Logger.h>
-#include <Interpreters/ExpressionActionsSettings.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Disks/StoragePolicy.h>
-#include <Processors/Merges/Algorithms/Graphite.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/SharedPartColumns.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreePartsMover.h>
-#include <Storages/MergeTree/PinnedPartUUIDs.h>
-#include <Storages/MergeTree/ZeroCopyLock.h>
-#include <Storages/MergeTree/TemporaryParts.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/Streaming/Cursors/CursorPromoter.h>
-#include <Storages/Streaming/SubscriptionManager.h>
-#include <Storages/IndicesDescription.h>
-#include <Storages/DataDestinationType.h>
-#include <Storages/extractKeyExpressionList.h>
-#include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
-#include <Interpreters/PartLog.h>
-#include <Poco/Timestamp.h>
+#include <Common/MultiVersion.h>
+#include <Common/SharedMutex.h>
+#include <Common/SimpleIncrement.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
-#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -402,6 +403,10 @@ public:
 
         MutableDataParts precommitted_parts;
         MutableDataParts precommitted_parts_need_rename;
+        /// Live prepare paths set this bit. Startup loading calls
+        /// preparePartForCommit directly and must not enter an inactive
+        /// authority runtime merely because it uses Transaction for rollback.
+        bool requires_udt_commit_gate = false;
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
@@ -1891,7 +1896,8 @@ protected:
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
         bool attach = false,
-        ContextPtr local_context = nullptr);
+        ContextPtr local_context = nullptr,
+        bool acquire_udt_commit_fence = false);
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 

@@ -11,8 +11,10 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/UDT/TableColumnTypeAlterBindings.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -44,31 +46,31 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
-#include <Common/saturatedDuration.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
-#include <Common/MemoryTracker.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/escapeForFileName.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/escapeForFileName.h>
+#include <Common/saturatedDuration.h>
 
 
 namespace ProfileEvents
@@ -445,6 +447,15 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
 {
     assertNotReadonly();
 
+    if (local_context->getCurrentTransaction() && metadata_snapshot->getBoundUDTReferences())
+    {
+        /// A MergeTree transaction makes the new part globally visible only
+        /// when its process-wide CSN is committed.  The table-local part
+        /// transaction cannot retain an authority commit fence until that
+        /// later, potentially cross-table publication point.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Transactional INSERT is not supported for mapped UDT MergeTree tables");
+    }
+
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
 }
@@ -479,6 +490,10 @@ void StorageMergeTree::alter(
     const auto & query_settings = local_context->getSettingsRef();
 
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    if (local_context->getCurrentTransaction() && metadata_snapshot->getBoundUDTReferences())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Transactional ALTER is not supported for mapped UDT MergeTree tables");
+    }
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
@@ -490,6 +505,19 @@ void StorageMergeTree::alter(
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
+    new_metadata.prepareUDTAlterPublication();
+    if (new_metadata.getPendingUDTColumnAlter() && transactions_enabled.load(std::memory_order_relaxed))
+    {
+        /// A process-global transaction that staged a physical part can publish
+        /// its CSN after this ALTER releases the table lock. There is no
+        /// bounded cross-table authority-fence protocol at that later commit
+        /// point. Once transactional part state has existed, reject mapping or
+        /// remapping before the durable schema mutation; a newly admitted
+        /// transaction cannot race this check because ALTER holds the table's
+        /// exclusive lock.
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED, "Mapped UDT ALTER is not supported after MergeTree transactional part state has been enabled");
+    }
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -498,7 +526,7 @@ void StorageMergeTree::alter(
     checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
 
     /// This alter can be performed at new_metadata level only
-    if (commands.isSettingsAlter())
+    if (commands.isSettingsAlter() && !new_metadata.getPendingUDTColumnAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
@@ -512,7 +540,7 @@ void StorageMergeTree::alter(
         /// Safe because the early max_query_size check already passed.
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
-    else if (commands.isCommentAlter())
+    else if (commands.isCommentAlter() && !new_metadata.getPendingUDTColumnAlter())
     {
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
@@ -649,7 +677,12 @@ void StorageMergeTree::alter(
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation registered");
                 });
 
-                setProperties(new_metadata, old_metadata, false, local_context);
+                setProperties(
+                    new_metadata,
+                    old_metadata,
+                    false,
+                    local_context,
+                    /* acquire_udt_commit_fence = */ true);
 
                 {
                     auto parts_lock = lockParts();
@@ -658,6 +691,17 @@ void StorageMergeTree::alter(
             }
             catch (...)
             {
+                if (const auto & pending = new_metadata.getPendingUDTColumnAlter(); pending && pending->getCompletedPublication())
+                {
+                    /// The Atomic schema transaction and exact successor root
+                    /// are already durable. In particular, a final quarantine
+                    /// gate rejection must not enter the legacy unfenced
+                    /// rollback/convergence publications below. Fail-stop lets
+                    /// startup rebuild one exact storage image from durability.
+                    tryLogCurrentException(
+                        log, "Failed to publish MergeTree metadata after a durable mapped UDT ALTER; terminating for startup recovery");
+                    std::terminate();
+                }
                 LOG_ERROR(log, "In-memory metadata commit failed, rolling back");
 
                 auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
@@ -726,13 +770,18 @@ void StorageMergeTree::alter(
                     background_lock.unlock();
 
                     bool durable_rolled_back = false;
+                    bool udt_boundary_rolled_back = false;
+                    StorageInMemoryMetadata rollback_metadata(old_metadata);
                     try
                     {
                         fiu_do_on(FailPoints::mt_alter_throw_in_durable_rollback,
                         {
                             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in durable rollback");
                         });
-                        database->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
+                        udt_boundary_rolled_back = database->rollbackUDTTableAlter(
+                            local_context, table_id, rollback_metadata, new_metadata);
+                        if (!udt_boundary_rolled_back)
+                            database->alterTable(local_context, table_id, rollback_metadata, /*validate_new_create_query=*/false);
                         durable_rolled_back = true;
                     }
                     catch (...)
@@ -742,6 +791,23 @@ void StorageMergeTree::alter(
 
                     if (durable_rolled_back)
                     {
+                        /// A reverse physical<->mapped transaction can produce a
+                        /// new exact sidecar revision rather than republishing
+                        /// the historical snapshot verbatim. Publish that
+                        /// database-returned package while merge selection is
+                        /// still unable to observe a schema without its matching
+                        /// mutation state.
+                        try
+                        {
+                            std::lock_guard relock(currently_processing_in_background_mutex);
+                            setProperties(rollback_metadata, new_metadata, false, local_context);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, "Failed to publish metadata after durable ALTER rollback");
+                            std::terminate();
+                        }
+
                         /// Durable metadata is `old_metadata` again; the rename mutation is no
                         /// longer needed. Remove the file now that nothing depends on it.
                         if (held_entry)
@@ -1155,6 +1221,12 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     assertNotReadonly();
+
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(query_context, false);
+    if (query_context->getCurrentTransaction() && metadata_snapshot_handle->getBoundUDTReferences())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Transactional mutations are not supported for mapped UDT MergeTree tables");
+    }
 
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
@@ -1828,6 +1900,12 @@ bool StorageMergeTree::merge(
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
 
+    auto current_metadata_handle = getInMemoryMetadataPtr(getContext(), false);
+    if (txn && current_metadata_handle->getBoundUDTReferences())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Transactional OPTIMIZE is not supported for mapped UDT MergeTree tables");
+    }
+
     auto merge_select_result = [&]()
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
@@ -2140,12 +2218,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     MergeTreeTransactionHolder transaction_for_merge;
     MergeTreeTransactionPtr txn;
-    if (transactions_enabled.load(std::memory_order_relaxed))
-    {
-        /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
-        txn = TransactionLog::instance().beginTransaction();
-        transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
-    }
 
     bool has_mutations = false;
     {
@@ -2156,6 +2228,17 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
         auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
         metadata_snapshot = metadata_snapshot_handle;
+
+        if (transactions_enabled.load(std::memory_order_relaxed) && !metadata_snapshot->getBoundUDTReferences())
+        {
+            /// The process-global CSN is a later visibility point than the
+            /// table-local part commit and cannot retain a bounded authority
+            /// fence. Mapped background work therefore uses the ordinary
+            /// table-local transaction and its exact final publication guard.
+            /// TODO Transactions: avoid beginning transaction if there is nothing to merge.
+            txn = TransactionLog::instance().beginTransaction();
+            transaction_for_merge = MergeTreeTransactionHolder{txn, /* autocommit = */ false};
+        }
 
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
@@ -2581,6 +2664,9 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         if (!part)
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
+        auto metadata_snapshot_handle = getInMemoryMetadataPtr(nullptr, true);
+        [[maybe_unused]] auto udt_commit_guard = UDT::acquireAuthorityStorageNewOperationCommitGuard(
+            *this, metadata_snapshot_handle, UDT::AuthorityQuarantineOperationKind::DDL);
         removePartsFromWorkingSet(txn, {part}, clear_without_timeout, parts_lock);
         return part;
     }
@@ -2599,26 +2685,36 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
     if (currently_merging_mutating_parts.contains(part))
         return nullptr;
 
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(nullptr, true);
+    [[maybe_unused]] auto udt_commit_guard = UDT::acquireAuthorityStorageNewOperationCommitGuard(
+        *this, metadata_snapshot_handle, UDT::AuthorityQuarantineOperationKind::Mutation);
     removePartsFromWorkingSet(txn, {part}, clear_without_timeout, parts_lock);
     return part;
 }
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
-    if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
+    try
     {
-        if (deduplication_log)
+        if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/false, /*clear_without_timeout=*/false))
         {
-            deduplication_log->dropPart(part->info);
+            if (deduplication_log)
+                deduplication_log->dropPart(part->info);
+
+            /// Need to destroy part objects before clearing them from filesystem.
+            part.reset();
+
+            clearOldPartsFromFilesystem();
         }
-
-        /// Need to destroy part objects before clearing them from filesystem.
-        part.reset();
-
-        clearOldPartsFromFilesystem();
+        /// Else nothing to do, part was removed in some different way.
     }
-
-    /// Else nothing to do, part was removed in some different way
+    catch (...)
+    {
+        /// Background empty/patch cleanup is opportunistic. In particular a
+        /// pending quarantine publisher must defer it instead of letting an
+        /// exception escape a method whose contract is no-throw.
+        tryLogCurrentException(log, "Cannot remove a MergeTree part in background");
+    }
 }
 
 struct FutureNewEmptyPart
@@ -2741,6 +2837,15 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
     assertNotReadonly();
+    auto txn = query_context->getCurrentTransaction();
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(query_context, false);
+    if (txn && metadata_snapshot_handle->getBoundUDTReferences())
+    {
+        /// The experimental multi-statement MergeTree transaction publishes
+        /// removals later through a process-global transaction commit which has
+        /// no per-storage UDT quarantine fence yet.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Transactional TRUNCATE is not supported for mapped UDT MergeTree tables");
+    }
 
     {
         /// Asks to complete merges and does not allow them to start.
@@ -2751,7 +2856,6 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         Stopwatch watch;
         ProfileEventsScope profile_events_scope;
 
-        auto txn = query_context->getCurrentTransaction();
         if (txn)
         {
             auto data_parts_lock = lockParts();
@@ -2799,6 +2903,21 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
+    auto txn = query_context->getCurrentTransaction();
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(query_context, false);
+    const bool mapped_udt = static_cast<bool>(metadata_snapshot_handle->getBoundUDTReferences());
+    if (mapped_udt && detach)
+    {
+        /// DETACH clones into a separately visible namespace before the empty
+        /// covering part becomes Active. There is no single rollback-safe final
+        /// seam spanning both publications.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DETACH PART is not supported for mapped UDT MergeTree tables");
+    }
+    if (mapped_udt && txn)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Transactional DROP PART is not supported for mapped UDT MergeTree tables");
+    }
+
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -2820,7 +2939,6 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
-        auto txn = query_context->getCurrentTransaction();
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
@@ -2871,6 +2989,18 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
 {
+    auto txn = query_context->getCurrentTransaction();
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(query_context, false);
+    const bool mapped_udt = static_cast<bool>(metadata_snapshot_handle->getBoundUDTReferences());
+    if (mapped_udt && detach)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "DETACH PARTITION is not supported for mapped UDT MergeTree tables");
+    }
+    if (mapped_udt && txn)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Transactional DROP PARTITION is not supported for mapped UDT MergeTree tables");
+    }
+
     {
         const auto * partition_ast = partition->as<ASTPartition>();
 
@@ -2916,8 +3046,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
-        auto txn = query_context->getCurrentTransaction();
-
         if (txn)
         {
             DataPartsVector parts_to_remove;
@@ -3020,6 +3148,15 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr &, ContextPtr local_context)
 {
+    auto metadata_snapshot_handle = getInMemoryMetadataPtr(local_context, false);
+    if (metadata_snapshot_handle->getBoundUDTReferences())
+    {
+        /// tryLoadPartsToAttach renames and repairs detached files before the
+        /// final Active-part transaction. Those preparation side effects cannot
+        /// be made atomic with quarantine publication by the current engine API.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ATTACH PART/PARTITION is not supported for mapped UDT MergeTree tables");
+    }
+
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
@@ -3061,16 +3198,35 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     assertNotReadonly();
     LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom\tsource_table: {}, replace: {}", source_table->getStorageID().getShortName(), replace);
 
+    auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto lock2
+        = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
+    auto my_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+
+    if (local_context->getCurrentTransaction() && my_metadata_snapshot->getBoundUDTReferences())
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Transactional ATTACH/REPLACE PARTITION FROM is not supported for mapped UDT MergeTree destinations");
+    }
+
     /// Source-side UK reject (destination-side rejection is centralized in
     /// MergeTreeData::alterPartition). Without this, REPLACE PARTITION FROM a
     /// UK source into a plain table would silently break UK invariants.
-    auto source_uk_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
-    if (source_uk_metadata_snapshot->hasUniqueKey())
+    if (source_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "REPLACE/ATTACH PARTITION FROM a source table with UNIQUE KEY is not supported");
 
-    auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    if (replace && my_metadata_snapshot->getBoundUDTReferences())
+    {
+        /// Activating cloned parts and removing the destination's old range are
+        /// two throwable publications in the current engine API. Reject before
+        /// stopping merges, cloning files, or creating PreActive parts rather
+        /// than returning a partially replaced mapped table.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "REPLACE PARTITION FROM is not supported for mapped UDT MergeTree destinations");
+    }
 
     bool is_all = partition->as<ASTPartition>()->all;
 
@@ -3094,8 +3250,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
 
-    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
-    auto my_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    [[maybe_unused]] auto source_read_evidence
+        = UDT::acquireAuthorityStorageReadContinuationEvidence(*source_table, source_metadata_snapshot);
 
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
@@ -3272,10 +3428,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 renameTempPartAndReplaceUnlocked(
                     part, transaction, data_parts_lock, /*rename_in_transaction=*/ false, /*check_table_size_limits=*/ false);
             }
-            /// Populate transaction
             transaction.commit(data_parts_lock);
 
-            /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
+            /// Mapped destinations reject REPLACE before any effects above.
+            /// Physical destinations retain the legacy engine publication.
             if (replace)
                 removePartsInRangeFromWorkingSet(local_context->getCurrentTransaction().get(), drop_range, data_parts_lock);
         }
@@ -3306,6 +3462,17 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     if (dest_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
+
+    auto source_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    if (source_metadata_snapshot->getBoundUDTReferences() || dest_uk_metadata_snapshot->getBoundUDTReferences())
+    {
+        /// MOVE publishes two independent working sets. Acquiring their runtime
+        /// fences one after another is not a valid atomic cross-database commit
+        /// and can deadlock against either authority's pending publication.
+        /// Reject mapped endpoints before cloning or part-state mutation until
+        /// a database-owned two-authority commit protocol exists.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "MOVE PARTITION TO TABLE is not supported for mapped UDT MergeTree tables");
+    }
 
     /// A read-only destination table (the `table_readonly` MergeTree setting, used e.g. for rotated
     /// system log tables) must not have parts moved into it. The source-side gate in
@@ -3345,7 +3512,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     OperationDataPartsLock operation_data_parts_lock_dest(dest_table_storage->operation_with_data_parts_mutex, std::adopt_lock);
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr(local_context, false);
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = std::move(source_metadata_snapshot);
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 

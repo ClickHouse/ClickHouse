@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <DataTypes/UDT/PersistedTypeReferences.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
@@ -91,6 +92,20 @@ struct AlterCommand
 
     /// For ADD and MODIFY, a new column type.
     DataTypePtr data_type = nullptr;
+
+    /// One-column logical sidecar fragment prepared from the original
+    /// ADD/MODIFY declared-type AST before it is lowered to `data_type`.
+    /// Absent means the explicit type is physical-only.
+    std::optional<UDT::PersistedTypeReferences> udt_column_references;
+
+    /// Exact analyzer/binder result for mapped MaterializedView MODIFY QUERY.
+    /// `prepared=true` with absent references deliberately means that the new
+    /// query is physical-only and removes the object's last logical
+    /// occurrence. The ordered physical outputs close the handoff against the
+    /// storage's independently normalized result before publication.
+    bool udt_stored_object_rebind_prepared = false;
+    NamesAndTypesList udt_stored_object_physical_outputs;
+    std::optional<UDT::PersistedTypeReferences> udt_stored_object_references;
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};

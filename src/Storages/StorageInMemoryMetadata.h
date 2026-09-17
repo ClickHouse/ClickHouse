@@ -14,6 +14,8 @@
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
 
+#include <DataTypes/UDT/CanonicalHash.h>
+
 #include <Common/MultiVersion.h>
 
 namespace DB
@@ -22,6 +24,14 @@ namespace DB
 class ClientInfo;
 class ASTSQLSecurity;
 
+namespace UDT
+{
+class BoundObjectTypeReferences;
+class AuthorityVerificationStamp;
+class PreparedTableColumnTypeAlter;
+struct SidecarExpectationRecord;
+}
+
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.
 struct StorageInMemoryMetadata
@@ -29,6 +39,27 @@ struct StorageInMemoryMetadata
     /// Columns of table with their names, types,
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
+
+private:
+    /// Immutable logical identity sidecar for user-defined column types. The
+    /// column types above remain physical, so ordinary storage/query paths do
+    /// not need to consult the database authority.
+    std::shared_ptr<const UDT::BoundObjectTypeReferences> bound_udt_references;
+    std::shared_ptr<const UDT::SidecarExpectationRecord> bound_udt_expectation;
+    /// Compact exact-root proof retained with the same immutable metadata
+    /// image. It contains no authority/root handle and is therefore safe for
+    /// ordinary long-running reads to pin without retaining catalog state.
+    std::shared_ptr<const UDT::AuthorityVerificationStamp> bound_udt_verification_stamp;
+    /// Fingerprint of the storage engine's runtime ColumnsDescription. View
+    /// and Dictionary sidecars intentionally fingerprint their own persisted
+    /// declaration schema, which need not be byte-identical to runtime columns.
+    std::optional<UDT::Digest> bound_udt_runtime_columns_fingerprint;
+    /// Query-local handoff from Table-column or mapped stored-object ALTER
+    /// preparation to the owning Atomic database. It is never a published
+    /// storage provenance source.
+    std::shared_ptr<UDT::PreparedTableColumnTypeAlter> pending_udt_column_alter;
+
+public:
     /// Virtual columns description (e.g. _part, _table, _row_exists).
     /// Not serialized to disk — recomputed by each storage engine.
     VirtualColumnsDescription virtuals;
@@ -104,8 +135,46 @@ struct StorageInMemoryMetadata
     /// Sets a user-defined comment for a table
     void setComment(const String & comment_);
 
-    /// Sets only real columns.
+    /// Sets only real columns and invalidates any logical identity index tied
+    /// to the previous physical schema.
     void setColumns(ColumnsDescription columns_);
+
+    /// Replaces physical columns, their immutable logical identity index, and
+    /// the database-owned durable expectation as one snapshot operation.
+    /// Physical-only state and provenance erasure use setColumns().
+    void setColumnsAndBoundUDTReferences(
+        ColumnsDescription columns_,
+        std::shared_ptr<const UDT::BoundObjectTypeReferences> bound_references_,
+        const UDT::SidecarExpectationRecord & expectation_);
+
+    /// Adds the exact successful integrity-verification proof to an already
+    /// prepared mapped metadata image. All validation and allocation happen
+    /// before the caller publishes the enclosing Storage metadata snapshot.
+    void setBoundUDTVerificationStamp(std::shared_ptr<const UDT::AuthorityVerificationStamp> stamp_);
+
+    /// Replaces physical columns with an unpublished, pure ALTER sidecar plan.
+    /// DatabaseAtomic must durably complete the plan before IStorage may
+    /// publish this metadata snapshot.
+    void setColumnsAndPendingUDTAlter(
+        ColumnsDescription columns_, std::shared_ptr<UDT::PreparedTableColumnTypeAlter> pending_alter_);
+
+    /// Turns a retained mapped Table/View/MaterializedView/Dictionary snapshot
+    /// into a query-local publication handoff even when the ALTER does not
+    /// change its physical schema (for example COMMENT, SQL SECURITY or
+    /// SETTINGS). This lets the owning Atomic database advance the durable
+    /// object revision while the storage remains the sole publisher of its
+    /// in-memory metadata at the engine-specific safe point.
+    void prepareUDTAlterPublication();
+
+    /// Verifies that a retained table-column logical identity index still
+    /// describes the current ordered physical column schema. This is a no-op
+    /// for physical-only metadata.
+    void validateBoundUDTReferences() const;
+
+    /// Copies all physical/storage metadata while intentionally dropping the
+    /// logical UDT owner package. Use only for a transient wrapper whose
+    /// StorageID is independent from the source table.
+    StorageInMemoryMetadata cloneAsPhysicalOnlyForIndependentStorage() const;
 
     /// Sets virtual columns
     void setVirtuals(VirtualColumnsDescription virtuals_);
@@ -155,6 +224,27 @@ struct StorageInMemoryMetadata
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
+
+    const std::shared_ptr<const UDT::BoundObjectTypeReferences> & getBoundUDTReferences() const noexcept
+    {
+        return bound_udt_references;
+    }
+
+    const std::shared_ptr<const UDT::SidecarExpectationRecord> &
+    getBoundUDTExpectation() const noexcept
+    {
+        return bound_udt_expectation;
+    }
+
+    const std::shared_ptr<const UDT::AuthorityVerificationStamp> & getBoundUDTVerificationStamp() const noexcept
+    {
+        return bound_udt_verification_stamp;
+    }
+
+    const std::shared_ptr<UDT::PreparedTableColumnTypeAlter> & getPendingUDTColumnAlter() const noexcept
+    {
+        return pending_udt_column_alter;
+    }
 
     /// Returns secondary indices
     const IndicesDescription & getSecondaryIndices() const;

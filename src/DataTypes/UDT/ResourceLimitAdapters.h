@@ -4,6 +4,7 @@
 #include <DataTypes/UDT/InstantiatedTypeDescriptor.h>
 #include <DataTypes/UDT/PersistedTypeReferences.h>
 #include <DataTypes/UDT/ResourceLimits.h>
+#include <DataTypes/UDT/TableColumnTypeBindings.h>
 #include <DataTypes/UDT/TemplateChecker.h>
 #include <DataTypes/UDT/TemplateSpecializer.h>
 #include <DataTypes/UDT/TypeResolver.h>
@@ -38,5 +39,7 @@ TypeDescriptorLimits makeTypeDescriptorLimits(const EffectiveResourceLimits & li
 TypeResolverLimits makeTypeResolverLimits(const EffectiveResourceLimits & limits);
 void lowerPersistedTypeReferencesLimits(PersistedTypeReferencesLimits & result, const EffectiveResourceLimits & limits) noexcept;
 PersistedTypeReferencesLimits makePersistedTypeReferencesLimits(const EffectiveResourceLimits & limits);
+TableColumnTypeBindingLimits makeTableColumnTypeBindingLimits(const EffectiveResourceLimits & limits);
+BoundObjectTypeReferencesLimits makeBoundObjectTypeReferencesLimits(const EffectiveResourceLimits & limits);
 
 }

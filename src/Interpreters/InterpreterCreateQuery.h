@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace UDT
+{
+class PreparedViewSchemaStringBindingHandoff;
+}
+
 class ASTCreateQuery;
 class ASTColumnDeclaration;
 class ASTExpressionList;
@@ -31,7 +36,10 @@ using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 class InterpreterCreateQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
+    InterpreterCreateQuery(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
+        std::shared_ptr<UDT::UDTStoredObjectDDLSelectBoundaryHandoff> udt_stored_object_ddl_select_boundary_handoff_ = {});
 
     BlockIO execute() override;
 
@@ -92,6 +100,9 @@ public:
     static void processSQLSecurityOption(ContextMutablePtr context_, ASTSQLSecurity & sql_security, bool is_materialized_view = false, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
 private:
+    struct UDTTableCreateState;
+    struct UDTNativeTableSourceState;
+
     struct TableProperties
     {
         ColumnsDescription columns;
@@ -105,15 +116,29 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(
+        ASTCreateQuery & create,
+        LoadingStrictnessLevel mode,
+        const UDTNativeTableSourceState * authorized_udt_source = nullptr,
+        std::shared_ptr<UDT::SelectedOutputTypeBindingCollector> selected_output_collector = {},
+        UDT::PreparedViewSchemaStringBindingHandoff * prepared_view_schema_strings = nullptr);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
-    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
-    BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
+    bool doCreateTable(
+        ASTCreateQuery & create,
+        const TableProperties & properties,
+        DDLGuardPtr & ddl_guard,
+        LoadingStrictnessLevel mode,
+        UDTTableCreateState * udt_state = nullptr);
+    BlockIO doCreateOrReplaceTable(
+        ASTCreateQuery & create,
+        const InterpreterCreateQuery::TableProperties & properties,
+        LoadingStrictnessLevel mode,
+        UDTTableCreateState * udt_state = nullptr);
     BlockIO doCreateOrReplaceTemporaryTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
 #if CLICKHOUSE_CLOUD
     /// Converts the "*MergeTree" table engine to "Replicated*MergeTree" or "Shared*MergeTree" if the corresponding settings are enabled.
@@ -190,6 +215,8 @@ private:
 #endif
 
     ASTPtr query_ptr;
+    std::shared_ptr<UDT::UDTStoredObjectDDLSelectBoundaryHandoff> udt_stored_object_ddl_select_boundary_handoff;
+    bool udt_stored_object_ddl_select_boundary_consumed = false;
 
     /// Skip safety threshold when loading tables.
     bool has_force_restore_data_flag = false;

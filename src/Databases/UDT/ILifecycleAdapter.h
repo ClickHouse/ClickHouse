@@ -96,6 +96,24 @@ public:
     virtual const TypeAuthorityCapabilities & getCapabilities() const noexcept = 0;
     virtual UUID getDatabaseUUID() const noexcept = 0;
     virtual void requireCapabilities(TypeAuthorityCapabilityMask required, std::string_view operation) const = 0;
+
+    /// Serializes a table-metadata read with dependent-object authority
+    /// publication. Callers retain the table share lock while acquiring this
+    /// lease. Proven physical tables take only the database schema mutex and
+    /// may expose their last published image while an ordinary ALTER computes
+    /// its successor. Mapped tables retain share -> ALTER -> database-schema;
+    /// a physical-to-mapped gap detected by database-owned UUID state releases
+    /// the schema mutex before switching to that full order. Waiting is bounded
+    /// by the caller's ordinary query lock timeout and periodically invokes
+    /// check_cancellation. Backends without a durable dependent-object
+    /// authority need no lease.
+    virtual std::shared_ptr<void>
+    acquireTableIntrospectionLease(const StoragePtr &, std::chrono::milliseconds, std::function<void()> check_cancellation) const
+    {
+        if (check_cancellation)
+            check_cancellation();
+        return {};
+    }
     virtual std::unique_ptr<const ILifecycleSnapshot> acquireSnapshot() const = 0;
 
     virtual void createOrAttach(const ASTCreateTypeQuery & query, const LifecycleActor & actor) = 0;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Databases/DatabaseAtomic.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTDropQuery.h>
@@ -48,7 +49,13 @@ private:
     BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait);
 
     BlockIO executeToTable(ASTDropQuery & query);
-    BlockIO executeToTableImpl(const ContextPtr& context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
+    BlockIO executeToTableImpl(
+        const ContextPtr & context_,
+        ASTDropQuery & query,
+        DatabasePtr & db,
+        UUID & uuid_to_wait,
+        DatabaseAtomic::UDTDetachGuard * database_detach_guard = nullptr,
+        UUID * owned_inner_uuid_to_wait = nullptr);
 
     static void waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait, ContextPtr context_);
 
