@@ -47,6 +47,13 @@ public:
             std::rethrow_exception(exception);
     }
 
+    /// Whether the check ran and rejected the write.
+    bool failed()
+    {
+        std::lock_guard lock(mutex);
+        return done && exception;
+    }
+
 private:
     std::mutex mutex;
     bool done = false;
@@ -119,11 +126,20 @@ public:
         /// A participant that already holds a gate for the table lends it to the group: that query has
         /// already made (or is making) its pre-write decision for the table, and this write must
         /// observe that decision instead of re-entering the check.
+        ///
+        /// A gate that rejected a write is not lent, though. The write it rejected did not happen, and
+        /// its rows are still in the buffer, waiting to be written by a later flush - the one asking
+        /// here. Sharing the rejection with that flush would make it fail without looking at the table
+        /// again, and the rows would stay in the buffer for good, however far the parts have been
+        /// merged away or the limit has been raised since; a query that only shares the flush with them
+        /// would be rejected as well. The rejection stays with the query it was made for: its own sinks
+        /// keep observing it through their registry, while a write on behalf of its buffered rows is a
+        /// new write that decides anew.
         InsertStartGatePtr gate;
         for (auto * registry : registries)
         {
             auto it = registry->gates.find(table_id);
-            if (it != registry->gates.end() && it->second)
+            if (it != registry->gates.end() && it->second && !it->second->failed())
             {
                 gate = it->second;
                 break;
@@ -133,6 +149,9 @@ public:
         if (!gate)
             gate = std::make_shared<InsertStartGate>();
 
+        /// A participant holding a gate that rejected a write keeps it - see above - and does not
+        /// adopt the new one: the rejection is the pre-write decision of that query, and the write on
+        /// behalf of its rows must not be mistaken for a decision the query itself made.
         for (auto * registry : registries)
         {
             auto & existing = registry->gates[table_id];

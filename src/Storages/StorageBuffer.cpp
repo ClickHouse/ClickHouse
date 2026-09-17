@@ -1254,7 +1254,10 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         buffer.data.swap(block_to_write);
 
-        /// The rows are back in the buffer, and so is the record of the queries they came from.
+        /// The rows are back in the buffer, and so is the record of the queries they came from. When
+        /// this write was the one rejected by the `Too many parts` check, the gate that rejected it now
+        /// sits in these registries; the next flush of the rows does not inherit that rejection - it
+        /// runs the check anew - see `InsertStartGates::get`.
         for (auto & gates : flushed_gates)
         {
             if (std::find(buffer.contributing_gates.begin(), buffer.contributing_gates.end(), gates)
