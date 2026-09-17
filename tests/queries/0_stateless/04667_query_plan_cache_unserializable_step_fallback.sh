@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-old-analyzer, no-parallel-replicas
-# Regression: a query that is eligible for the query plan cache but contains a step that does not
-# support serialization (here `ORDER BY ... WITH FILL`; window functions, the original reproducer,
-# have become serializable since) must be executed by the ordinary interpreter, not by the
-# cacheable logical-plan path. The logical plan is deliberately built with ordinary planner behaviors
-# switched off, so executing it for a query that can never produce a cache entry would make that
-# query permanently slower whenever `enable_query_plan_cache` is on, with nothing gained.
+# Regression: a query that is eligible for the query plan cache but whose plan contains a step that
+# does not support serialization must be executed by the ordinary interpreter, not by the cacheable
+# logical-plan path. The logical plan is deliberately built with ordinary planner behaviors switched
+# off, so executing it for a query that can never produce a cache entry would make that query
+# permanently slower whenever `enable_query_plan_cache` is on, with nothing gained.
+# Every step the analyzer puts into a cacheable plan is serializable today (window functions, the
+# original reproducer, and `ORDER BY ... WITH FILL`, the next one, have both become serializable), so
+# the unserializable step is simulated by the `query_plan_cache_serialization_not_implemented` fail
+# point, which makes plan serialization throw `NOT_IMPLEMENTED` exactly as such a step does.
 # The observable used here is the key-value lookup join: a `Join` engine on the right side of a join
 # is read through a direct lookup by the ordinary planner (only the matching keys are read), while a
 # cacheable logical plan must not bind that live storage into the plan and reads the whole table.
 # The plan cache is a single, server-wide cache inspected via `SYSTEM DROP QUERY PLAN CACHE` and
-# exact `QueryPlanCacheHits` counts, so the test runs in isolation (see 04489 for the full rationale
-# of the tags).
+# exact `QueryPlanCacheHits` counts, and the fail point is server-wide too, so the test runs in
+# isolation (see 04489 for the full rationale of the tags).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,6 +30,8 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_left VALUES (1), (2), (3);
     INSERT INTO t_join SELECT number, number FROM numbers(100000);
 "
+
+trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT query_plan_cache_serialization_not_implemented" 2>/dev/null' EXIT
 
 run()
 {
@@ -48,24 +53,28 @@ stats_of_last_run()
         LIMIT 1" | tr '\t' ' '
 }
 
-echo "-- 1. WITH FILL makes the plan unserializable: the query runs through the ordinary interpreter"
+JOIN_QUERY="SELECT k, v FROM ${CLICKHOUSE_DATABASE}.t_left ANY LEFT JOIN ${CLICKHOUSE_DATABASE}.t_join USING (k) ORDER BY k"
+
+echo "-- 1. the plan cannot be serialized: the query runs through the ordinary interpreter"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
-FILL_QUERY="SELECT k, v FROM ${CLICKHOUSE_DATABASE}.t_left ANY LEFT JOIN ${CLICKHOUSE_DATABASE}.t_join USING (k) ORDER BY k WITH FILL FROM 1 TO 6"
-echo "-- result: $(run "$FILL_QUERY" | tr '\t' ' ')"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT query_plan_cache_serialization_not_implemented"
+echo "-- result: $(run "$JOIN_QUERY" | tr '\t' ' ')"
 # Three rows of `t_left` looked up in `t_join` by key. Executing the cacheable logical plan instead
 # would read all 100000 rows of `t_join`, because a key-value lookup join is not used there.
 echo "-- hits and read_rows (must be 0 3 - not cached, and the direct lookup is used): $(stats_of_last_run 'SELECT k, v FROM')"
+run "$JOIN_QUERY" > /dev/null
+echo "-- hits and read_rows of a second run (must be 0 3 - still not cached): $(stats_of_last_run 'SELECT k, v FROM')"
 
 echo "-- 2. the same query with the plan cache disabled behaves identically"
-$CLICKHOUSE_CLIENT --query "$FILL_QUERY" > /dev/null
+$CLICKHOUSE_CLIENT --query "$JOIN_QUERY" > /dev/null
 echo "-- hits and read_rows: $(stats_of_last_run 'SELECT k, v FROM')"
 
-echo "-- 3. a serializable query over the same left table is still cached"
+echo "-- 3. once the plan can be serialized again, the same query is cached"
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT query_plan_cache_serialization_not_implemented"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
-PLAIN_QUERY="SELECT sum(k) FROM ${CLICKHOUSE_DATABASE}.t_left"
-run "$PLAIN_QUERY" > /dev/null
-run "$PLAIN_QUERY" > /dev/null
-echo "-- hits and read_rows of the second run (must be 1 3, cached): $(stats_of_last_run 'SELECT sum(k) FROM')"
+run "$JOIN_QUERY" > /dev/null
+run "$JOIN_QUERY" > /dev/null
+echo "-- hits and read_rows of the second run (must be 1 100003, cached and executed from the plan): $(stats_of_last_run 'SELECT k, v FROM')"
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE t_left;

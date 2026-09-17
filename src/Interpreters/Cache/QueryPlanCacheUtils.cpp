@@ -9,6 +9,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -57,6 +58,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char query_plan_cache_serialization_not_implemented[];
 }
 
 /// Defined in Processors/QueryPlan/resolveStorages.cpp; reused so that dependency names are
@@ -1084,6 +1091,14 @@ QueryPlan materializeCachedQueryPlan(
 
 String serializeQueryPlanForCache(const QueryPlan & plan)
 {
+    /// Stands in for a plan step that does not implement serialization. Every step the analyzer can
+    /// put into a cacheable logical plan is serializable today, so the fallback that keeps such a
+    /// query on the ordinary interpreter is only reachable through this fail point (see test 04667).
+    fiu_do_on(FailPoints::query_plan_cache_serialization_not_implemented,
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Injected: method serialize is not implemented for a step of this plan");
+    });
+
     WriteBufferFromOwnString out;
     plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     out.finalize();
