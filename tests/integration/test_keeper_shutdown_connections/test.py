@@ -10,7 +10,15 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", main_configs=["configs/keeper.xml"], stay_alive=True
+    "node",
+    main_configs=[
+        "configs/keeper.xml",
+        "configs/ssl_conf.xml",
+        "configs/dhparam.pem",
+        "configs/server.crt",
+        "configs/server.key",
+    ],
+    stay_alive=True,
 )
 
 int_struct = struct.Struct("!i")
@@ -136,6 +144,67 @@ def test_http_control_request_finishes_before_keeper_shutdown(started_cluster):
     finally:
         client.close()
         idle_client.close()
+        if node.get_process_pid("clickhouse server") is not None:
+            node.stop_clickhouse(kill=True)
+        node.start_clickhouse()
+
+
+# A handler stalled in a read is released only when the socket times out, which is bounded by
+# max(receive_timeout, send_timeout) of the global profile settings; both default to 300s.
+STALLED_READ_BOUND_SEC = 300
+
+# One handler parked in the read is enough for the sweep; several independent connections damp
+# per-thread scheduling jitter. They do not help if the whole host stalls.
+STALLED_CONNECTIONS = 4
+
+# Logged when a handler's first read reports EOF, which here means the shutdown sweep closed the
+# socket under it. The logger name is part of the marker: TCPHandler emits the same sentence for
+# the native protocol port.
+WAKE_MARKER = "KeeperTCPHandler: Client has not sent any data"
+
+
+@pytest.mark.parametrize("port", [9181, 9281], ids=["plain", "secure"])
+def test_connection_stalled_before_handshake_does_not_delay_shutdown(
+    started_cluster, port
+):
+    graceful_shutdown_deadline_seconds = 30
+    assert graceful_shutdown_deadline_seconds < STALLED_READ_BOUND_SEC
+
+    node.query("DROP TABLE IF EXISTS replicated_table SYNC")
+    keeper_utils.wait_nodes(cluster, [node])
+
+    # Bare TCP connects that never send a TLS ClientHello: on the secure listener each handler
+    # parks inside the handshake read, which is where it holds the socket's SSL mutex.
+    clients = [
+        keeper_utils.get_keeper_socket(cluster, node.name, port=port)
+        for _ in range(STALLED_CONNECTIONS)
+    ]
+    try:
+        # A later connection that is accepted and answered: any shutdown delay measured below is
+        # then not the stalled connections merely sitting in the accept queue.
+        assert keeper_utils.send_4lw_cmd(cluster, node, "ruok") == "imok"
+
+        # Nothing is logged between accept and that first read, so the handlers are given a moment
+        # to reach it; the marker assertion below is what proves they did.
+        time.sleep(5)
+        marker_count_before = int(node.count_in_log(WAKE_MARKER))
+
+        clickhouse_pid = node.get_process_pid("clickhouse server")
+        assert clickhouse_pid is not None
+        node.exec_in_container(
+            ["bash", "-c", f"kill -TERM {clickhouse_pid}"], user="root"
+        )
+        node.wait_start_failed(graceful_shutdown_deadline_seconds)
+
+        # A count delta, not contains_in_log: the log accumulates across this module's restarts,
+        # and the plain parametrization runs first and writes the very same line.
+        assert int(node.count_in_log(WAKE_MARKER)) > marker_count_before, (
+            "no stalled handler was woken out of its first read, so this run did not exercise "
+            "the stall the test exists for"
+        )
+    finally:
+        for client in clients:
+            client.close()
         if node.get_process_pid("clickhouse server") is not None:
             node.stop_clickhouse(kill=True)
         node.start_clickhouse()
