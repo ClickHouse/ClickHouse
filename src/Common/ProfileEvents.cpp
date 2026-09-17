@@ -1592,6 +1592,33 @@ The server successfully detected this situation and will download merged part fr
     M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionPoolWaitMicroseconds, "Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.", ValueType::Microseconds) \
+    M(UDTAuthorityVerificationRuns, "Number of database-owned periodic UDT authority verification scheduler invocations, including bounded throttled probes.", ValueType::Number) \
+    M(UDTAuthorityVerificationTargetsVerified, "Number of durable UDT authority inventory targets completed as verified.", ValueType::Number) \
+    M(UDTAuthorityVerificationTargetsDamaged, "Number of durable UDT authority inventory targets completed as damaged.", ValueType::Number) \
+    M(UDTAuthorityVerificationFailures, "Number of periodic UDT authority verification runs that failed before a schedulable outcome.", ValueType::Number) \
+    M(UDTAuthorityVerificationForegroundLoadThrottles, "Number of periodic UDT authority verifier admissions deferred for foreground query load.", ValueType::Number) \
+    M(UDTAuthorityVerificationBackgroundLoadThrottles, "Number of periodic UDT authority verifier admissions deferred for competing background load.", ValueType::Number) \
+    M(UDTAuthorityVerificationWallTimeYields, "Number of periodic UDT authority verifier runs cooperatively yielded at their wall-time budget.", ValueType::Number) \
+    M(UDTAuthorityVerificationCPUTimeYields, "Number of periodic UDT authority verifier runs cooperatively yielded at their CPU-time budget.", ValueType::Number) \
+    M(UDTAuthorityAutomaticRepairAttempts, "Number of automatic UDT authority repair attempts through the exact local-WAL, replicated-authority, and verified-backup hierarchy.", ValueType::Number) \
+    M(UDTAuthorityAutomaticRepairSuccesses, "Number of automatic UDT authority repairs or complete reverifications that released quarantine.", ValueType::Number) \
+    M(UDTAuthorityAutomaticRepairUnavailable, "Number of automatic UDT authority repair attempts without an exact releasable source result.", ValueType::Number) \
+    M(UDTAuthorityMappedOperationAdmissions, "Number of mapped UDT storage operation boundaries admitted against the exact runtime state.", ValueType::Number) \
+    M(UDTAuthorityMappedOperationRejections, "Number of mapped UDT storage operation boundaries rejected fail-closed by authority runtime state.", ValueType::Number) \
+    M(UDTAuthorityRootPublications, "Number of immutable UDT authority roots installed into an Atomic authority, including one recovered startup root.", ValueType::Number) \
+    M(UDTAuthorityPublishedDeterministicCatalogBytes, "Deterministic catalog bytes carried by immutable UDT authority root publications.", ValueType::Bytes) \
+    M(UDTAuthorityQuarantinePublications, "Number of exact-root UDT quarantine closure publications after integrity damage or a complete repair audit.", ValueType::Number) \
+    M(UDTAuthorityQuarantinedObjects, "Number of object identities carried by exact-root UDT quarantine closure publications.", ValueType::Number) \
+    M(UDTAuthorityQuarantineFailClosedPublications, "Number of UDT integrity-damage transitions that published a fail-closed runtime state because a bounded quarantine closure could not be constructed.", ValueType::Number) \
+    M(UDTAuthorityQuarantineReleases, "Number of exact-root UDT quarantine closures released after complete verification.", ValueType::Number) \
+    M(UDTAuthorityQuarantineReleasedObjects, "Number of object identities released from UDT quarantine after complete exact-root verification.", ValueType::Number) \
+    /* These counters intentionally reserve a stable ProfileEvents schema for semantic-manifest transport. */ \
+    /* They remain zero while the corresponding capability is inactive; registration alone does not imply support. */ \
+    M(UDTManifestEntries, "Number of UDT semantic manifest entries materialized. Zero while policy semantics is inactive.", ValueType::Number) \
+    M(UDTManifestBytes, "Canonical UDT semantic manifest bytes materialized. Zero while policy semantics is inactive.", ValueType::Bytes) \
+    M(UDTManifestDispatchCopies, "Number of UDT semantic manifest copies dispatched. Zero while distributed policy transport is inactive.", ValueType::Number) \
+    M(UDTManifestDispatchBytes, "UDT semantic manifest bytes dispatched across all copies. Zero while distributed policy transport is inactive.", ValueType::Bytes) \
+    M(UDTManifestReceiverAdmissions, "Number of received UDT semantic manifests admitted. Zero while distributed policy transport is inactive.", ValueType::Number) \
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \

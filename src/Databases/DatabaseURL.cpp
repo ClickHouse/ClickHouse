@@ -147,7 +147,9 @@ public:
         , table_function(std::move(table_function_))
     {
         const auto nested_metadata = nested->getInMemoryMetadataPtr(nullptr, false);
-        setInMemoryMetadata(*nested_metadata);
+        /// A URL-database table has a logical name independent from the
+        /// table-function delegate, so only the physical schema is forwarded.
+        setInMemoryMetadata(nested_metadata->cloneAsPhysicalOnlyForIndependentStorage());
     }
 
     StoragePtr getNested() const override { return nested; }

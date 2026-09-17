@@ -34,22 +34,16 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 class DatabaseOnDisk : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context);
+    DatabaseOnDisk(
+        const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context);
 
     void shutdown() override;
 
-    void createTable(
-        ContextPtr context,
-        const String & table_name,
-        const StoragePtr & table,
-        const ASTPtr & query) override;
+    void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
-    void dropTable(
-        ContextPtr context,
-        const String & table_name,
-        bool sync) override;
+    void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
     void renameTable(
         ContextPtr context,
@@ -66,7 +60,10 @@ public:
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
 
     String getDataPath() const override { return data_path; }
-    String getTableDataPath(const String & table_name) const override { return std::filesystem::path(data_path) / escapeForFileName(table_name) / ""; }
+    String getTableDataPath(const String & table_name) const override
+    {
+        return std::filesystem::path(data_path) / escapeForFileName(table_name) / "";
+    }
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 
@@ -97,22 +94,28 @@ protected:
 
     using IteratingFunction = std::function<void(const String &)>;
 
+    /// A database engine may reserve an exact visible subdirectory after its
+    /// owning subsystem has been activated. Unknown directories still fail.
+    virtual bool isReservedMetadataDirectory(const String & /*directory_name*/) const { return false; }
+
     void iterateMetadataFiles(const IteratingFunction & process_metadata_file) const;
 
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
-    ASTPtr getCreateTableQueryImpl(
-        const String & table_name,
-        ContextPtr context,
-        bool throw_on_error) const override;
+    ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
     virtual ASTPtr getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const;
     ASTPtr getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const;
 
-    virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                   const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
+    virtual void commitCreateTable(
+        const ASTCreateQuery & query,
+        const StoragePtr & table,
+        const String & table_metadata_tmp_path,
+        const String & table_metadata_path,
+        ContextPtr query_context);
 
-    virtual void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
-    virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) {}
+    virtual void
+    removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach);
+    virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) { }
 
     void createDirectories();
     void createDirectoriesUnlocked() TSA_REQUIRES(mutex);

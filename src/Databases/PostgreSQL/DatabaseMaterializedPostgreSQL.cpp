@@ -67,20 +67,28 @@ namespace ErrorCodes
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
-        ContextPtr context_,
-        const String & metadata_path_,
-        UUID uuid_,
-        bool is_attach_,
-        const String & database_name_,
-        const String & postgres_database_name,
-        const postgres::ConnectionInfo & connection_info_,
-        std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
+    ContextPtr context_,
+    const String & metadata_path_,
+    UUID uuid_,
+    bool is_attach_,
+    const String & database_name_,
+    const String & postgres_database_name,
+    const postgres::ConnectionInfo & connection_info_,
+    std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
+    : DatabaseAtomic(
+          database_name_,
+          metadata_path_,
+          uuid_,
+          "DatabaseMaterializedPostgreSQL (" + database_name_ + ")",
+          context_,
+          AuthorityMode::Unsupported)
     , is_attach(is_attach_)
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
-    , startup_task(getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
+    , startup_task(
+          getContext()->getSchedulePool()->createTask(
+              StorageID::createEmpty(), "MaterializedPostgreSQLDatabaseStartup", [this] { tryStartSynchronization(); }))
 {
 }
 

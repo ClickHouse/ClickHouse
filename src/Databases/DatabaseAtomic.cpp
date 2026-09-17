@@ -1,54 +1,101 @@
+#include <exception>
 #include <filesystem>
 #include <thread>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/UDT/isUDTResourceOrControlExceptionCode.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/DatabaseSchemaMutationTransaction.h>
+#include <Databases/DatabasesCommon.h>
+#include <Databases/UDT/AtomicAuthority.h>
+#include <Databases/UDT/AtomicAuthorityStartup.h>
+#include <Databases/UDT/AtomicDatabaseSchemaMutationStorage.h>
+#include <Databases/UDT/AuthorityVerificationBatchExecutor.h>
+#include <Databases/UDT/AuthorityVerificationRuntimeState.h>
+#include <Databases/UDT/AuthorityVerificationScheduler.h>
+#include <Databases/UDT/DatabaseResourceQuotaSettings.h>
+#include <Databases/UDT/ResourceLimitAdapters.h>
 #include <Disks/IStoragePolicy.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/StorageView.h>
+#include <Storages/Utils.h>
+#include <base/getMemoryAmount.h>
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
+#include <Common/AsyncLoader.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/PoolId.h>
+#include <Common/ProfileEvents.h>
+#include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
-#include <Common/AsyncLoader.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/ProcessList.h>
 
+#include <algorithm>
+#include <array>
+#include <limits>
+#include <map>
+#include <new>
+#include <optional>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace fs = std::filesystem;
 
+namespace ProfileEvents
+{
+extern const Event UDTAuthorityMappedOperationAdmissions;
+extern const Event UDTAuthorityMappedOperationRejections;
+}
+
 namespace DB
 {
+namespace FailPoints
+{
+extern const char udt_authority_shutdown_pause_before_fence[];
+}
+
 namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
-}
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
+} // namespace Setting
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DATABASE;
+extern const int UNKNOWN_DATABASE;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int CANNOT_ASSIGN_ALTER;
-    extern const int DATABASE_NOT_EMPTY;
-    extern const int NOT_IMPLEMENTED;
-    extern const int FILE_ALREADY_EXISTS;
-    extern const int INCORRECT_QUERY;
-    extern const int ABORTED;
-    extern const int LOGICAL_ERROR;
-    extern const int UNFINISHED;
-}
-
+extern const int CANNOT_ASSIGN_ALTER;
+extern const int DATABASE_NOT_EMPTY;
+extern const int NOT_IMPLEMENTED;
+extern const int FILE_ALREADY_EXISTS;
+extern const int INCORRECT_QUERY;
+extern const int ABORTED;
+extern const int UNKNOWN_TYPE;
+extern const int LOGICAL_ERROR;
+extern const int UNFINISHED;
+extern const int QUERY_IS_TOO_LARGE;
+} // namespace ErrorCodes
 
 namespace DatabaseMetadataDiskSetting
 {
@@ -65,6 +112,180 @@ public:
     UUID uuid() const override { return table()->getStorageID().uuid; }
 };
 
+namespace UDT
+{;
+
+} // namespace UDT
+
+namespace
+{
+
+constexpr UInt64 maximum_concurrent_udt_restore_publication_leases = 65'536;
+
+UDT::SchemaObjectKind mappedSchemaObjectKindForStorage(const IStorage & storage) noexcept
+{
+    if (storage.isDictionary())
+        return UDT::SchemaObjectKind::Dictionary;
+    if (storage.isView())
+        return UDT::SchemaObjectKind::View;
+    return UDT::SchemaObjectKind::Table;
+}
+
+UDT::AuthorityRootGraphIdentity authorityRootGraphIdentity(const UDT::AuthorityRoot & root)
+{
+    const auto & state = root.getAuthorityState();
+    return {
+        .authority_root = {
+            .database_uuid = state.database_uuid,
+            .database_catalog_epoch = state.database_catalog_epoch,
+            .authority_anchor = state.anchor_hash,
+        },
+        .schema_graph_root = state.schema_graph_root,
+    };
+}
+
+UDT::AuthorityVerificationSchedulerLimits applyEffectiveDatabaseVerificationLimits(
+    UDT::AuthorityVerificationSchedulerLimits scheduler_limits,
+    const UDT::EffectiveResourceLimits & database_limits,
+    const UDT::AuthorityRoot * existing_root = nullptr)
+{
+    const auto resource_schedule = UDT::makeAuthorityVerificationScheduleLimits(database_limits);
+    scheduler_limits.schedule.maximum_snapshot_targets
+        = std::min(scheduler_limits.schedule.maximum_snapshot_targets, resource_schedule.maximum_snapshot_targets);
+    scheduler_limits.schedule.maximum_targets_per_batch
+        = std::min(scheduler_limits.schedule.maximum_targets_per_batch, resource_schedule.maximum_targets_per_batch);
+    scheduler_limits.schedule.maximum_buckets = std::min(scheduler_limits.schedule.maximum_buckets, resource_schedule.maximum_buckets);
+    scheduler_limits.schedule.maximum_canonical_bytes_per_batch
+        = std::min(scheduler_limits.schedule.maximum_canonical_bytes_per_batch, resource_schedule.maximum_canonical_bytes_per_batch);
+    scheduler_limits.schedule.maximum_verification_work_units_per_batch = std::min(
+        scheduler_limits.schedule.maximum_verification_work_units_per_batch, resource_schedule.maximum_verification_work_units_per_batch);
+    scheduler_limits.schedule.maximum_transient_bytes_per_batch
+        = std::min(scheduler_limits.schedule.maximum_transient_bytes_per_batch, resource_schedule.maximum_transient_bytes_per_batch);
+    scheduler_limits.schedule.maximum_io_bytes_per_batch
+        = std::min(scheduler_limits.schedule.maximum_io_bytes_per_batch, resource_schedule.maximum_io_bytes_per_batch);
+    scheduler_limits.schedule.maximum_planner_work_units
+        = std::min(scheduler_limits.schedule.maximum_planner_work_units, resource_schedule.maximum_planner_work_units);
+    scheduler_limits.schedule.maximum_planner_scratch_bytes
+        = std::min(scheduler_limits.schedule.maximum_planner_scratch_bytes, resource_schedule.maximum_planner_scratch_bytes);
+    scheduler_limits.schedule.maximum_retained_canonical_bytes
+        = std::min(scheduler_limits.schedule.maximum_retained_canonical_bytes, resource_schedule.maximum_retained_canonical_bytes);
+    scheduler_limits.schedule.maximum_rooted_target_canonical_bytes = scheduler_limits.schedule.maximum_canonical_bytes_per_batch;
+    scheduler_limits.schedule.maximum_rooted_target_verification_work_units
+        = scheduler_limits.schedule.maximum_verification_work_units_per_batch;
+    scheduler_limits.schedule.maximum_rooted_target_transient_bytes = scheduler_limits.schedule.maximum_transient_bytes_per_batch;
+    scheduler_limits.schedule.maximum_rooted_target_io_bytes = scheduler_limits.schedule.maximum_io_bytes_per_batch;
+
+    if (existing_root)
+    {
+        /// Mutable policy is an admission ceiling, not a kill switch. Widen
+        /// only the exact immutable-root requirements: aggregate batch caps
+        /// stay lowered, while one indivisible rooted target and deterministic
+        /// planning state remain executable. The root's quota state is not
+        /// changed by this process-local escape.
+        constexpr UDT::AuthorityVerificationScheduleLimits implementation;
+        const auto & usage = existing_root->getDatabaseResourceQuota().getUsage();
+        const UInt64 existing_snapshot_targets = existing_root->getInventorySummary().leaf_count;
+        const auto widen = [](UInt64 configured, UInt64 rooted, UInt64 hard_maximum, std::string_view description)
+        {
+            if (rooted > hard_maximum)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Existing Atomic UDT authority {} exceeds its verifier implementation domain", description);
+            return std::max(configured, rooted);
+        };
+        scheduler_limits.schedule.maximum_snapshot_targets = widen(
+            scheduler_limits.schedule.maximum_snapshot_targets,
+            existing_snapshot_targets,
+            implementation.maximum_snapshot_targets,
+            "inventory");
+        scheduler_limits.schedule.maximum_buckets = widen(
+            scheduler_limits.schedule.maximum_buckets,
+            scheduler_limits.policy.bucket_count,
+            implementation.maximum_buckets,
+            "bucket topology");
+        scheduler_limits.schedule.maximum_rooted_target_canonical_bytes = widen(
+            scheduler_limits.schedule.maximum_rooted_target_canonical_bytes,
+            usage.get(UDT::ResourceLimit::VerificationCanonicalBytesPerBatch),
+            implementation.maximum_rooted_target_canonical_bytes,
+            "rooted canonical target requirement");
+        scheduler_limits.schedule.maximum_rooted_target_verification_work_units = widen(
+            scheduler_limits.schedule.maximum_rooted_target_verification_work_units,
+            usage.get(UDT::ResourceLimit::VerificationWorkUnitsPerBatch),
+            implementation.maximum_rooted_target_verification_work_units,
+            "rooted verification-work requirement");
+        scheduler_limits.schedule.maximum_rooted_target_transient_bytes = widen(
+            scheduler_limits.schedule.maximum_rooted_target_transient_bytes,
+            usage.get(UDT::ResourceLimit::VerificationTransientBytesPerBatch),
+            implementation.maximum_rooted_target_transient_bytes,
+            "rooted transient requirement");
+        scheduler_limits.schedule.maximum_rooted_target_io_bytes = widen(
+            scheduler_limits.schedule.maximum_rooted_target_io_bytes,
+            usage.get(UDT::ResourceLimit::VerificationIOBytesPerBatch),
+            implementation.maximum_rooted_target_io_bytes,
+            "rooted I/O requirement");
+
+        const auto planning = UDT::computeAuthorityVerificationPlanningRequirements(
+            existing_snapshot_targets, scheduler_limits.policy, scheduler_limits.schedule.maximum_targets_per_batch);
+        scheduler_limits.schedule.maximum_planner_work_units = widen(
+            scheduler_limits.schedule.maximum_planner_work_units,
+            planning.planner_work_units,
+            implementation.maximum_planner_work_units,
+            "planner-work requirement");
+        scheduler_limits.schedule.maximum_planner_scratch_bytes = widen(
+            scheduler_limits.schedule.maximum_planner_scratch_bytes,
+            planning.planner_scratch_bytes,
+            implementation.maximum_planner_scratch_bytes,
+            "planner-scratch requirement");
+        scheduler_limits.schedule.maximum_retained_canonical_bytes = widen(
+            scheduler_limits.schedule.maximum_retained_canonical_bytes,
+            planning.retained_canonical_bytes,
+            implementation.maximum_retained_canonical_bytes,
+            "planner-retained requirement");
+    }
+
+    /// One cooperative pass can never consume more snapshot/planning items
+    /// than exist in the effective target domain. This also keeps a lowered
+    /// target quota internally valid for a newly admitted database.
+    scheduler_limits.maximum_snapshot_targets_per_pass
+        = std::min(scheduler_limits.maximum_snapshot_targets_per_pass, scheduler_limits.schedule.maximum_snapshot_targets);
+
+    /// Exact-repair release reuses the same target snapshot, planner and
+    /// executor boundary as periodic verification. It must therefore inherit
+    /// the same effective two-domain limits instead of silently retaining the
+    /// implementation defaults.
+    scheduler_limits.automatic_repair.execution.verification_schedule = scheduler_limits.schedule;
+    scheduler_limits.automatic_repair.execution.verification_executor.object_verifier = scheduler_limits.executor.object_verifier;
+    scheduler_limits.automatic_repair.execution.verification_executor.maximum_terminal_targets
+        = scheduler_limits.executor.maximum_terminal_targets;
+    return UDT::AuthorityVerificationScheduler::validateEffectiveLimits(std::move(scheduler_limits));
+}
+
+} // namespace
+
+struct DatabaseAtomic::UDTAuthorityConfiguration final
+{
+    UDTAuthorityConfiguration(
+        UDT::AuthorityVerificationSchedulerLimits global_verification_scheduler_limits_,
+        UDT::AtomicDatabaseUDTPersistedConfigurationV2 configured_persisted_configuration_,
+        UDT::ResourceLimitLayer server_resource_limit_layer_,
+        UDT::EffectiveResourceLimits effective_database_limits_,
+        UDT::AuthorityVerificationSchedulerLimits effective_verification_scheduler_limits_)
+        : global_verification_scheduler_limits(std::move(global_verification_scheduler_limits_))
+        , configured_persisted_configuration(std::move(configured_persisted_configuration_))
+        , selected_persisted_configuration(configured_persisted_configuration)
+        , server_resource_limit_layer(std::move(server_resource_limit_layer_))
+        , effective_database_limits(std::move(effective_database_limits_))
+        , effective_verification_scheduler_limits(std::move(effective_verification_scheduler_limits_))
+    {
+    }
+
+    UDT::AuthorityVerificationSchedulerLimits global_verification_scheduler_limits;
+    UDT::AtomicDatabaseUDTPersistedConfigurationV2 configured_persisted_configuration;
+    UDT::AtomicDatabaseUDTPersistedConfigurationV2 selected_persisted_configuration;
+    UDT::ResourceLimitLayer server_resource_limit_layer;
+    UDT::EffectiveResourceLimits effective_database_limits;
+    UDT::AuthorityVerificationSchedulerLimits effective_verification_scheduler_limits;
+};
+
 DatabaseAtomic::DatabaseAtomic(
     String name_,
     String metadata_path_,
@@ -72,24 +293,790 @@ DatabaseAtomic::DatabaseAtomic(
     const String & logger_name,
     ContextPtr context_,
     DatabaseMetadataDiskSettings database_metadata_disk_settings_)
+    : DatabaseAtomic(
+          std::move(name_),
+          std::move(metadata_path_),
+          uuid,
+          logger_name,
+          context_,
+          AuthorityMode::Enabled,
+          std::move(database_metadata_disk_settings_))
+{
+}
+
+DatabaseAtomic::DatabaseAtomic(
+    String name_,
+    String metadata_path_,
+    UUID uuid,
+    const String & logger_name,
+    ContextPtr context_,
+    AuthorityMode udt_authority_mode_,
+    DatabaseMetadataDiskSettings database_metadata_disk_settings_)
     : DatabaseOrdinary(
-        name_,
-        metadata_path_,
-        DatabaseCatalog::getStoreDirPath() / "",
-        logger_name,
-        context_,
-        database_metadata_disk_settings_)
+          name_, metadata_path_, DatabaseCatalog::getStoreDirPath() / "", logger_name, context_, database_metadata_disk_settings_)
     , path_to_table_symlinks(DatabaseCatalog::getDataDirPath(name_) / "")
     , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_))
     , db_uuid(uuid)
+    , udt_authority_mode(udt_authority_mode_)
+    , udt_lifecycle_adapter(udt_authority_mode == AuthorityMode::Enabled ? std::make_unique<UDT::AtomicLifecycleAdapter>(*this) : nullptr)
 {
     chassert(db_uuid != UUIDHelpers::Nil);
+    if (udt_authority_mode == AuthorityMode::Enabled)
+    {
+        const auto & config = getContext()->getConfigRef();
+        auto scheduler_configuration = UDT::resolveAuthorityVerificationSchedulerConfigurationFromConfig(config, db_uuid);
+        auto quota_configuration
+            = UDT::resolveDatabaseResourceQuotaConfigurationFromConfig(config, db_uuid, static_cast<UInt64>(getMemoryAmount()));
+        UDT::AtomicDatabaseUDTPersistedConfigurationV2 persisted_configuration{
+            .verification_scheduler_override = std::move(scheduler_configuration.encoded_database_override),
+            .resource_quota_override = std::move(quota_configuration.encoded_database_override),
+        };
+        const auto database_layer = persisted_configuration.resource_quota_override
+            ? UDT::decodeDatabaseResourceQuotaOverrideV2(*persisted_configuration.resource_quota_override, db_uuid)
+            : UDT::makeDatabaseDefaultResourceLimitLayer();
+        auto effective_database_limits = UDT::calculateEffectiveDatabaseResourceLimits(
+            quota_configuration.server_layer, database_layer, UDT::atomicDatabaseAuthorityCapabilities().limits);
+        auto effective_scheduler_limits = persisted_configuration.verification_scheduler_override
+            ? UDT::mergeAuthorityVerificationSchedulerLimits(
+                  scheduler_configuration.global_limits,
+                  UDT::decodeAuthorityVerificationSchedulerOverrideV2(*persisted_configuration.verification_scheduler_override, db_uuid))
+            : UDT::AuthorityVerificationScheduler::validateEffectiveLimits(scheduler_configuration.global_limits);
+        udt_authority_configuration = std::make_unique<UDTAuthorityConfiguration>(
+            std::move(scheduler_configuration.global_limits),
+            std::move(persisted_configuration),
+            std::move(quota_configuration.server_layer),
+            std::move(effective_database_limits),
+            std::move(effective_scheduler_limits));
+        udt_lifecycle_adapter->configureEffectiveDatabaseResourceLimitsForStartup(udt_authority_configuration->effective_database_limits);
+    }
 }
 
 DatabaseAtomic::DatabaseAtomic(
     String name_, String metadata_path_, UUID uuid, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
     : DatabaseAtomic(name_, std::move(metadata_path_), uuid, "DatabaseAtomic (" + name_ + ")", context_, database_metadata_disk_settings_)
 {
+}
+
+DatabaseAtomic::~DatabaseAtomic()
+{
+    try
+    {
+        DatabaseAtomic::shutdown();
+    }
+    catch (...)
+    {
+        active_udt_authority.store(nullptr, std::memory_order_release);
+        active_udt_verification_runtime.store(nullptr, std::memory_order_release);
+        if (udt_authority)
+            udt_authority->setPublicationObserver(nullptr);
+        if (udt_verification_scheduler)
+            udt_verification_scheduler->shutdownAndDrain();
+        if (udt_verification_runtime)
+            udt_verification_runtime->shutdownAndDrain();
+        if (udt_authority)
+            udt_authority->shutdownAndDrain();
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+const UDT::TypeAuthorityCapabilities & DatabaseAtomic::getSupportedUDTAuthorityCapabilities() const noexcept
+{
+    if (udt_authority_mode == AuthorityMode::Unsupported)
+        return IDatabase::getSupportedUDTAuthorityCapabilities();
+    static constexpr auto capabilities = UDT::atomicDatabaseAuthorityCapabilities();
+    return capabilities;
+}
+
+const UDT::IAuthorityAdapter & DatabaseAtomic::getUDTAuthorityAdapter() const noexcept
+{
+    if (auto * authority = active_udt_authority.load(std::memory_order_acquire))
+        return *authority;
+    return UDT::getUnsupportedAuthorityAdapter();
+}
+
+UDT::AtomicAuthority &
+DatabaseAtomic::initializeUDTAuthorityUnlocked(std::unique_ptr<const UDT::AuthorityRoot> recovered_root, bool activate_recovered_authority)
+{
+    if (udt_authority_mode == AuthorityMode::Unsupported)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} databases cannot activate durable user-defined types", getEngineName());
+    if (udt_authority_shutdown)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot activate user-defined types after database shutdown");
+    if (udt_degraded_startup_status)
+        throw Exception(ErrorCodes::ABORTED, "Cannot activate an invalid or incomplete recovered user-defined type authority");
+    if (udt_authority)
+    {
+        if (recovered_root || !udt_verification_runtime || !udt_verification_scheduler)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "User-defined type authority is already initialized");
+        return *udt_authority;
+    }
+
+    if (activate_recovered_authority && !recovered_root)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot activate an Atomic user-defined type authority "
+            "without a recovered root");
+    if (!udt_authority_configuration)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT authority configuration was not initialized");
+    std::unique_ptr<const UDT::DatabaseSchemaWALExactRepairProvenance> recovered_repair_provenance;
+    if (recovered_root)
+    {
+        if (!udt_mutation_storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Recovered Atomic authority has no durable mutation storage");
+        if (auto provenance = udt_mutation_storage->loadLatestExactRepairProvenance())
+        {
+            recovered_repair_provenance = std::make_unique<const UDT::DatabaseSchemaWALExactRepairProvenance>(std::move(*provenance));
+        }
+    }
+    auto verification_scheduler_limits = applyEffectiveDatabaseVerificationLimits(
+        udt_authority_configuration->effective_verification_scheduler_limits,
+        udt_authority_configuration->effective_database_limits,
+        recovered_root.get());
+    if (recovered_root)
+    {
+        recovered_root = recovered_root->cloneWithVerificationPlanningDomainForStartup(
+            verification_scheduler_limits.policy, verification_scheduler_limits.schedule.maximum_targets_per_batch);
+    }
+    auto verification_cursor = UDT::makeAuthorityVerificationScheduleCursor(
+        db_uuid, verification_scheduler_limits.policy, verification_scheduler_limits.schedule);
+    if (activate_recovered_authority)
+    {
+        if (!udt_mutation_storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Recovered Atomic authority has no durable mutation storage");
+        bool persist_fresh_cursor = true;
+        if (auto durable_cursor = udt_mutation_storage->loadAuthorityVerificationCursor())
+        {
+            if (durable_cursor->contract_abi != UDT::authority_verification_schedule_contract_abi
+                || durable_cursor->database_uuid != db_uuid)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Persisted Atomic UDT verification cursor has an incompatible contract or database identity");
+            }
+            if (durable_cursor->bucket_count == verification_scheduler_limits.policy.bucket_count
+                && durable_cursor->bucket_seed == verification_scheduler_limits.policy.bucket_seed)
+            {
+                verification_cursor = std::move(*durable_cursor);
+                persist_fresh_cursor = false;
+            }
+            else
+            {
+                /// Bucket count/seed are administrator-owned scheduling policy,
+                /// not authority truth. A validated policy change starts a fresh
+                /// deterministic rotation instead of making the database unable
+                /// to start; the next complete clean batch replaces the old cursor.
+                LOG_INFO(
+                    log,
+                    "Resetting Atomic UDT verification rotation after scheduler policy changed from {}/{} to {}/{}",
+                    durable_cursor->bucket_count,
+                    durable_cursor->bucket_seed,
+                    verification_scheduler_limits.policy.bucket_count,
+                    verification_scheduler_limits.policy.bucket_seed);
+            }
+        }
+        if (persist_fresh_cursor)
+        {
+            /// Cursor policy is part of the durable scheduler identity. Publish
+            /// a fresh zero-progress cursor while startup still owns schema
+            /// serialization, before exposing the runtime or scheduling work.
+            udt_mutation_storage->persistAuthorityVerificationCursor(verification_cursor);
+        }
+    }
+    auto verification_runtime = std::make_unique<UDT::AuthorityVerificationRuntimeState>(db_uuid, std::move(verification_cursor));
+    auto verification_scheduler = std::make_unique<UDT::AuthorityVerificationScheduler>(*this, verification_scheduler_limits);
+    auto authority = std::make_unique<UDT::AtomicAuthority>(db_uuid, getSupportedUDTAuthorityCapabilities(), std::move(recovered_root));
+    auto * result = authority.get();
+    auto * runtime = verification_runtime.get();
+    udt_verification_runtime = std::move(verification_runtime);
+    udt_verification_scheduler = std::move(verification_scheduler);
+    udt_last_exact_repair_provenance = std::move(recovered_repair_provenance);
+    udt_authority = std::move(authority);
+    udt_authority->setPublicationObserver(udt_verification_runtime.get());
+    if (activate_recovered_authority)
+    {
+        active_udt_verification_runtime.store(runtime, std::memory_order_release);
+        active_udt_authority.store(result, std::memory_order_release);
+    }
+    return *result;
+}
+
+void DatabaseAtomic::activateUDTAuthorityAfterFirstPublication() noexcept
+{
+    std::lock_guard lock(udt_authority_mutex);
+    if (udt_authority_mode == AuthorityMode::Unsupported || !udt_authority || !udt_verification_runtime || !udt_verification_scheduler)
+        std::terminate();
+
+    auto * authority = udt_authority.get();
+    auto * runtime = udt_verification_runtime.get();
+    auto * active = active_udt_authority.load(std::memory_order_acquire);
+    if (udt_authority_shutdown)
+    {
+        /// The first mutation may already own the schema fence when shutdown
+        /// publishes its latch. Its durable Commit remains successful, but the
+        /// newly built runtime must stay private so shutdown can drain it and
+        /// startup can recover the committed root on the next process image.
+        if (active || active_udt_verification_runtime.load(std::memory_order_acquire) || !authority->isFirstPublicationReadyForActivation())
+            std::terminate();
+        return;
+    }
+    if (active == authority)
+    {
+        if (active_udt_verification_runtime.load(std::memory_order_acquire) != runtime)
+            std::terminate();
+        if (udt_database_startup_complete.load(std::memory_order_acquire))
+            udt_verification_scheduler->activateAfterDatabaseStartup();
+        return;
+    }
+    if (active || !authority->isFirstPublicationReadyForActivation())
+        std::terminate();
+    active_udt_verification_runtime.store(runtime, std::memory_order_release);
+    active_udt_authority.store(authority, std::memory_order_release);
+    if (udt_database_startup_complete.load(std::memory_order_acquire))
+        udt_verification_scheduler->activateAfterDatabaseStartup();
+}
+
+void DatabaseAtomic::transitionPendingUDTAuthorityToDegraded(std::unique_lock<std::mutex> schema_mutation_lock)
+{
+    if (!schema_mutation_lock.owns_lock() || schema_mutation_lock.mutex() != &udt_schema_mutation_mutex)
+        std::terminate();
+
+    std::unique_ptr<UDT::AuthorityVerificationScheduler> failed_scheduler;
+    std::unique_ptr<UDT::AuthorityVerificationRuntimeState> failed_runtime;
+    std::unique_ptr<UDT::AtomicAuthority> failed_authority;
+    {
+        std::lock_guard authority_lock(udt_authority_mutex);
+        /// shutdown() owns the pending state after publishing this latch while
+        /// holding the same schema->authority lock order. A late AsyncLoader
+        /// failure must yield to that cleanup and must not publish a degraded
+        /// image after shutdown has begun.
+        if (udt_authority_shutdown)
+            return;
+        if (!udt_table_startup_state || !udt_table_startup_state->unavailable_root_status || udt_degraded_startup_status || !udt_authority
+            || !udt_verification_runtime || !udt_verification_scheduler || active_udt_authority.load(std::memory_order_acquire)
+            || active_udt_verification_runtime.load(std::memory_order_acquire))
+        {
+            std::terminate();
+        }
+
+        active_udt_authority.store(nullptr, std::memory_order_release);
+        active_udt_verification_runtime.store(nullptr, std::memory_order_release);
+        udt_degraded_startup_status = std::move(udt_table_startup_state->unavailable_root_status);
+        udt_table_startup_state.reset();
+        udt_authority->setPublicationObserver(nullptr);
+        failed_scheduler = std::move(udt_verification_scheduler);
+        failed_runtime = std::move(udt_verification_runtime);
+        failed_authority = std::move(udt_authority);
+    }
+
+    /// Worker and hazard draining may re-enter unrelated database-owned
+    /// resources. The durable storage and degraded image are already visible;
+    /// release schema serialization before destroying the private runtime.
+    schema_mutation_lock.unlock();
+    if (failed_scheduler)
+    {
+        failed_scheduler->requestStop();
+        failed_scheduler->shutdownAndDrain();
+    }
+    if (failed_runtime)
+        failed_runtime->shutdownAndDrain();
+    if (failed_authority)
+        failed_authority->shutdownAndDrain();
+}
+
+bool DatabaseAtomic::hasActiveUDTAuthority() const noexcept
+{
+    return active_udt_authority.load(std::memory_order_acquire) != nullptr;
+}
+
+bool DatabaseAtomic::hasDurableUDTAuthorityState() const
+{
+    if (udt_authority_mode == AuthorityMode::Unsupported)
+        return false;
+    std::lock_guard authority_lock(udt_authority_mutex);
+    return udt_mutation_storage && udt_mutation_storage->hasDurableAuthorityMarker();
+}
+
+UDT::AuthorityQuarantineAdmissionDecision DatabaseAtomic::decideUDTQuarantineAdmission(
+    const UDT::AuthorityQuarantineOperationView & operation, const UDT::AuthorityQuarantineAdmissionLimits & limits) const noexcept
+{
+    if (!active_udt_authority.load(std::memory_order_acquire))
+        return {.status = UDT::AuthorityQuarantineAdmissionStatus::RuntimeFailClosed, .statistics = {}};
+    auto * runtime = active_udt_verification_runtime.load(std::memory_order_acquire);
+    if (!runtime)
+        return {.status = UDT::AuthorityQuarantineAdmissionStatus::RuntimeFailClosed, .statistics = {}};
+    return runtime->decideOperation(operation, limits);
+}
+
+void DatabaseAtomic::assertUDTNewDefinitionClosureOperationAllowed(
+    const UDT::BoundObjectTypeReferences & bound_references, UDT::AuthorityQuarantineOperationKind kind) const
+{
+    using UDT::AuthorityQuarantineOperationKind;
+    using UDT::AuthorityQuarantineOperationTiming;
+    using UDT::collectAuthorityVerificationRequiredDefinitions;
+    using UDT::SchemaObjectID;
+    using UDT::SchemaObjectKind;
+
+    if (kind != AuthorityQuarantineOperationKind::DDL && kind != AuthorityQuarantineOperationKind::Attach)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT prospective definition-closure gate received an invalid operation kind");
+    auto * authority = active_udt_authority.load(std::memory_order_acquire);
+    auto * runtime = active_udt_verification_runtime.load(std::memory_order_acquire);
+    if (!authority || !runtime)
+        throw Exception(ErrorCodes::ABORTED, "Atomic UDT prospective definition-closure gate has no active authority runtime");
+    auto root = authority->acquireCurrentRoot();
+    if (!root || active_udt_authority.load(std::memory_order_acquire) != authority
+        || active_udt_verification_runtime.load(std::memory_order_acquire) != runtime)
+        throw Exception(ErrorCodes::ABORTED, "Atomic UDT authority changed during prospective definition-closure admission");
+    const auto required_definitions = collectAuthorityVerificationRequiredDefinitions(bound_references);
+    std::vector<SchemaObjectID> touched;
+    touched.reserve(required_definitions.size());
+    for (const auto & definition : required_definitions)
+    {
+        const auto rooted_definition = root.get().findByIdentity(definition);
+        if (!rooted_definition)
+            throw Exception(ErrorCodes::ABORTED, "Atomic UDT prospective definition closure is stale");
+        touched.push_back({
+            .kind = SchemaObjectKind::TypeDefinition,
+            .database_uuid = definition.database_uuid,
+            .object_uuid = definition.type_uuid,
+        });
+    }
+    std::sort(touched.begin(), touched.end());
+    touched.erase(std::unique(touched.begin(), touched.end()), touched.end());
+    const auto decision = runtime->decideOperation({
+        .kind = kind,
+        .timing = AuthorityQuarantineOperationTiming::New,
+        .pinned_root = authorityRootGraphIdentity(root.get()),
+        .touch_set_is_complete = true,
+        .sorted_unique_touched_objects = touched,
+        .continuation_proof_set_is_complete = false,
+        .sorted_unique_continuation_proofs = {},
+    });
+    if (!decision.isAllowed())
+    {
+        throw Exception(
+            ErrorCodes::ABORTED,
+            "Atomic UDT quarantine rejected a prospective definition-closure operation (status {})",
+            static_cast<unsigned>(decision.status));
+    }
+}
+
+UDT::AuthorityVerificationScheduleCursor DatabaseAtomic::getUDTAuthorityVerificationCursor() const
+{
+    waitDatabaseStarted();
+    auto * runtime = active_udt_verification_runtime.load(std::memory_order_acquire);
+    if (!active_udt_authority.load(std::memory_order_acquire) || !runtime)
+        throw Exception(ErrorCodes::ABORTED, "Atomic user-defined type verification runtime is not active");
+    return runtime->getCursor();
+}
+
+UDT::AuthorityVerificationSchedulerStatus DatabaseAtomic::getUDTAuthorityVerificationSchedulerStatus() const noexcept
+{
+    try
+    {
+        std::lock_guard lock(udt_authority_mutex);
+        auto status = udt_verification_scheduler ? udt_verification_scheduler->getStatus() : UDT::AuthorityVerificationSchedulerStatus{};
+        if (udt_authority_configuration)
+        {
+            const auto & configured = udt_authority_configuration->configured_persisted_configuration;
+            const auto & selected = udt_authority_configuration->selected_persisted_configuration;
+            const bool authority_is_published
+                = udt_authority && active_udt_authority.load(std::memory_order_acquire) == udt_authority.get();
+            status.verification_scheduler_override_configured = configured.verification_scheduler_override.has_value();
+            status.verification_scheduler_override_effective = selected.verification_scheduler_override.has_value();
+            status.verification_scheduler_override_persisted = authority_is_published && status.verification_scheduler_override_effective;
+            status.database_resource_quota_override_configured = configured.resource_quota_override.has_value();
+            status.database_resource_quota_override_effective = selected.resource_quota_override.has_value();
+            status.database_resource_quota_override_persisted = authority_is_published && status.database_resource_quota_override_effective;
+        }
+        if (udt_last_exact_repair_provenance)
+        {
+            const auto & provenance = *udt_last_exact_repair_provenance;
+            status.last_repair_provenance_available = true;
+            status.last_repair_transaction_id = provenance.transaction_id;
+            status.last_repair_damaged_artifacts = provenance.damaged_artifact_count;
+            status.last_repair_damaged_artifact_manifest_digest = provenance.damaged_artifact_manifest_digest;
+            status.last_repair_local_wal_sources = provenance.local_wal_sources;
+            status.last_repair_replicated_authority_sources = provenance.replicated_authority_sources;
+            status.last_repair_verified_backup_sources = provenance.verified_backup_sources;
+            status.last_repair_previous_catalog_epoch = provenance.previous_catalog_epoch;
+            status.last_repair_previous_authority_anchor = provenance.previous_authority_anchor;
+            status.last_repair_repaired_catalog_epoch = provenance.repaired_catalog_epoch;
+            status.last_repair_repaired_authority_anchor = provenance.repaired_authority_anchor;
+        }
+        if (udt_degraded_startup_status)
+        {
+            status.scheduler_status_available = false;
+            status.runtime_status_available = true;
+            status.runtime_fail_closed = true;
+            status.last_error_code = 0;
+            switch (udt_degraded_startup_status->getGlobalStatus())
+            {
+                case UDT::AuthorityDefinitionStatus::Conflicted:
+                    status.last_error_kind = UDT::AuthorityVerificationSchedulerLastErrorKind::StartupConflicted;
+                    break;
+                case UDT::AuthorityDefinitionStatus::Invalid:
+                    status.last_error_kind = UDT::AuthorityVerificationSchedulerLastErrorKind::StartupInvalid;
+                    break;
+                case UDT::AuthorityDefinitionStatus::Incomplete:
+                    status.last_error_kind = UDT::AuthorityVerificationSchedulerLastErrorKind::StartupIncomplete;
+                    break;
+                case UDT::AuthorityDefinitionStatus::Active:
+                case UDT::AuthorityDefinitionStatus::Quarantined:
+                case UDT::AuthorityDefinitionStatus::OverQuota:
+                    status.last_error_kind = UDT::AuthorityVerificationSchedulerLastErrorKind::RuntimeFailClosed;
+                    break;
+            }
+        }
+        if (!udt_degraded_startup_status && udt_verification_runtime)
+        {
+            auto runtime = udt_verification_runtime->acquireSnapshot();
+            status.runtime_status_available = true;
+            status.runtime_fail_closed = runtime.isFailClosed()
+                || active_udt_verification_runtime.load(std::memory_order_acquire) != udt_verification_runtime.get();
+            status.runtime_revision = runtime.getRevision();
+            if (status.runtime_fail_closed)
+            {
+                status.last_error_kind
+                    = runtime.getLastErrorKind() == UDT::AuthorityVerificationRuntimeLastErrorKind::QuarantineConstructionFailed
+                    ? UDT::AuthorityVerificationSchedulerLastErrorKind::RuntimeQuarantineConstructionFailed
+                    : UDT::AuthorityVerificationSchedulerLastErrorKind::RuntimeFailClosed;
+                status.last_error_code = 0;
+            }
+            if (const auto & quarantine = runtime.getQuarantine())
+            {
+                status.quarantine_failing_seeds = static_cast<UInt64>(quarantine->getFailingSeeds().size());
+                status.quarantined_objects = static_cast<UInt64>(quarantine->getQuarantinedObjects().size());
+                if (!status.runtime_fail_closed && status.last_error_kind == UDT::AuthorityVerificationSchedulerLastErrorKind::None)
+                {
+                    status.last_error_kind = UDT::AuthorityVerificationSchedulerLastErrorKind::IntegrityDamageQuarantined;
+                }
+            }
+        }
+        if (!udt_degraded_startup_status && udt_authority)
+        {
+            auto root = udt_authority->acquireCurrentRoot();
+            if (root)
+            {
+                const auto & quota = root.get().getDatabaseResourceQuota();
+                const auto & quota_limits = quota.getLimits();
+                const auto & usage = quota.getUsage();
+                const auto & indexed_usage = root.get().getResourceUsageSummary();
+                status.root_quota_status_available = true;
+                status.root_quota_over_quota = quota.getState() == UDT::DatabaseResourceQuotaState::OverQuota;
+                status.root_quota_revision = quota.getRevision();
+                status.root_quota_definitions = usage.get(UDT::ResourceLimit::DefinitionsPerDatabase);
+                status.root_quota_deterministic_catalog_bytes = usage.get(UDT::ResourceLimit::DeterministicCatalogBytesPerDatabase);
+                status.root_quota_verification_targets = usage.get(UDT::ResourceLimit::VerificationTargetsPerDatabase);
+                status.root_quota_verification_buckets = usage.get(UDT::ResourceLimit::VerificationBucketsPerDatabase);
+                status.root_quota_verification_canonical_bytes = usage.get(UDT::ResourceLimit::VerificationCanonicalBytesPerBatch);
+                status.root_quota_verification_work_units = usage.get(UDT::ResourceLimit::VerificationWorkUnitsPerBatch);
+                status.root_quota_verification_transient_bytes = usage.get(UDT::ResourceLimit::VerificationTransientBytesPerBatch);
+                status.root_quota_verification_io_bytes = usage.get(UDT::ResourceLimit::VerificationIOBytesPerBatch);
+                status.root_quota_verification_planner_work_units = usage.get(UDT::ResourceLimit::VerificationPlannerWorkUnitsPerBatch);
+                status.root_quota_verification_planner_scratch_bytes
+                    = usage.get(UDT::ResourceLimit::VerificationPlannerScratchBytesPerBatch);
+                status.root_quota_verification_retained_bytes = usage.get(UDT::ResourceLimit::VerificationRetainedBytesPerBatch);
+                status.root_quota_durable_dependent_object_bytes = usage.get(UDT::ResourceLimit::DurableDependentObjectBytesPerDatabase);
+                status.root_quota_limit_definitions = quota_limits.get(UDT::ResourceLimit::DefinitionsPerDatabase);
+                status.root_quota_limit_deterministic_catalog_bytes
+                    = quota_limits.get(UDT::ResourceLimit::DeterministicCatalogBytesPerDatabase);
+                status.root_quota_limit_verification_targets = quota_limits.get(UDT::ResourceLimit::VerificationTargetsPerDatabase);
+                status.root_quota_limit_verification_buckets = quota_limits.get(UDT::ResourceLimit::VerificationBucketsPerDatabase);
+                status.root_quota_limit_verification_canonical_bytes
+                    = quota_limits.get(UDT::ResourceLimit::VerificationCanonicalBytesPerBatch);
+                status.root_quota_limit_verification_work_units = quota_limits.get(UDT::ResourceLimit::VerificationWorkUnitsPerBatch);
+                status.root_quota_limit_verification_transient_bytes
+                    = quota_limits.get(UDT::ResourceLimit::VerificationTransientBytesPerBatch);
+                status.root_quota_limit_verification_io_bytes = quota_limits.get(UDT::ResourceLimit::VerificationIOBytesPerBatch);
+                status.root_quota_limit_verification_planner_work_units
+                    = quota_limits.get(UDT::ResourceLimit::VerificationPlannerWorkUnitsPerBatch);
+                status.root_quota_limit_verification_planner_scratch_bytes
+                    = quota_limits.get(UDT::ResourceLimit::VerificationPlannerScratchBytesPerBatch);
+                status.root_quota_limit_verification_retained_bytes
+                    = quota_limits.get(UDT::ResourceLimit::VerificationRetainedBytesPerBatch);
+                status.root_quota_limit_durable_dependent_object_bytes
+                    = quota_limits.get(UDT::ResourceLimit::DurableDependentObjectBytesPerDatabase);
+                status.root_quota_limit_occurrence_paths_per_object = quota_limits.get(UDT::ResourceLimit::OccurrencePathsPerObject);
+                status.root_quota_limit_persisted_specializations_per_template
+                    = quota_limits.get(UDT::ResourceLimit::PersistedSpecializationsPerTemplate);
+                status.root_quota_limit_sidecar_bytes_per_object = quota_limits.get(UDT::ResourceLimit::SidecarBytesPerObject);
+                status.root_quota_maximum_occurrence_paths_per_object = indexed_usage.maximum_occurrence_paths_per_object;
+                status.root_quota_maximum_persisted_specializations_per_template
+                    = indexed_usage.maximum_persisted_specializations_per_template;
+                status.root_quota_maximum_sidecar_bytes_per_object = indexed_usage.maximum_sidecar_bytes_per_object;
+                status.root_usage_dependent_objects = indexed_usage.object_count;
+                status.root_usage_total_occurrence_paths = indexed_usage.total_occurrence_paths;
+                status.root_usage_unique_persisted_specializations = indexed_usage.unique_persisted_specializations;
+            }
+        }
+        if (udt_authority_shutdown)
+        {
+            status.runtime_fail_closed = true;
+            status.last_error_kind = UDT::AuthorityVerificationSchedulerLastErrorKind::RuntimeFailClosed;
+            status.last_error_code = 0;
+        }
+        return status;
+    }
+    catch (...)
+    {
+        auto status = UDT::AuthorityVerificationSchedulerStatus{};
+        status.runtime_fail_closed = true;
+        status.last_error_kind = UDT::AuthorityVerificationSchedulerLastErrorKind::RuntimeFailClosed;
+        return status;
+    }
+}
+
+void DatabaseAtomic::configureUDTAuthorityVerificationSchedulerForStartup(
+    const UDT::AuthorityVerificationSchedulerLimits & effective_limits)
+{
+    auto validated = UDT::AuthorityVerificationScheduler::validateEffectiveLimits(effective_limits);
+    std::lock_guard lock(udt_authority_mutex);
+    if (udt_authority_mode != AuthorityMode::Enabled)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} databases cannot configure durable UDT verification", getEngineName());
+    if (udt_authority || udt_verification_scheduler || udt_database_startup_complete.load(std::memory_order_acquire))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT verification limits must be configured before authority startup");
+    if (!udt_authority_configuration)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT authority configuration was not initialized");
+    udt_authority_configuration->global_verification_scheduler_limits = std::move(validated);
+    const auto & persisted = udt_authority_configuration->selected_persisted_configuration.verification_scheduler_override;
+    udt_authority_configuration->effective_verification_scheduler_limits = persisted
+        ? UDT::mergeAuthorityVerificationSchedulerLimits(
+              udt_authority_configuration->global_verification_scheduler_limits,
+              UDT::decodeAuthorityVerificationSchedulerOverrideV2(*persisted, db_uuid))
+        : udt_authority_configuration->global_verification_scheduler_limits;
+}
+
+UDT::PreparedAtomicDatabaseUDTConfigurationV2 DatabaseAtomic::prepareConfiguredUDTConfigurationForFirstActivationV2()
+{
+    std::lock_guard lock(udt_authority_mutex);
+    if (udt_authority_mode != AuthorityMode::Enabled || !udt_authority_configuration || !udt_mutation_storage || !udt_authority
+        || udt_authority_shutdown || active_udt_authority.load(std::memory_order_acquire))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Atomic UDT first-activation configuration requires one private initialized authority and storage");
+    }
+    return udt_mutation_storage->prepareUDTConfigurationForFirstActivationV2(
+        udt_authority_configuration->configured_persisted_configuration);
+}
+
+const UDT::EffectiveResourceLimits & DatabaseAtomic::getConfiguredUDTEffectiveDatabaseLimitsForFirstActivation() const
+{
+    if (udt_authority_mode != AuthorityMode::Enabled || !udt_authority_configuration)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT database resource limits were not initialized");
+    return udt_authority_configuration->effective_database_limits;
+}
+
+void DatabaseAtomic::applyConfiguredUDTVerificationLimitsForFirstActivation(UDT::AuthorityRootBuildLimits & root_limits) const
+{
+    if (udt_authority_mode != AuthorityMode::Enabled || !udt_authority_configuration)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT verification planning domain was not initialized");
+    const auto effective = applyEffectiveDatabaseVerificationLimits(
+        udt_authority_configuration->effective_verification_scheduler_limits, udt_authority_configuration->effective_database_limits);
+    root_limits.verification_policy = effective.policy;
+    root_limits.verification_maximum_targets_per_batch = effective.schedule.maximum_targets_per_batch;
+}
+
+std::shared_ptr<const UDT::AuthorityVerificationBatchReceipt> DatabaseAtomic::executeUDTAuthorityVerificationBatch(
+    const UDT::AuthorityVerificationBatchPlan & plan,
+    const UDT::AuthorityVerificationBatchExecutorLimits & limits,
+    bool wait_for_startup,
+    const UDT::AuthorityVerificationBatchReceipt * verified_prefix)
+{
+    using UDT::AtomicAuthority;
+    using UDT::AtomicDatabaseSchemaMutationStorage;
+    using UDT::AuthorityVerificationBatchExecutor;
+    using UDT::AuthorityVerificationRuntimeState;
+    using UDT::AuthorityVerificationScheduleCursor;
+    using UDT::AuthorityVerificationTrustedBatch;
+    using UDT::DatabaseSchemaMutationReplayConflictError;
+    using UDT::definition_authority_capability_mask;
+    using UDT::dependent_object_authority_capability_mask;
+
+    if (wait_for_startup)
+        waitDatabaseStarted();
+    std::unique_lock schema_lock(udt_schema_mutation_mutex);
+
+    AtomicAuthority * authority = nullptr;
+    AtomicDatabaseSchemaMutationStorage * storage = nullptr;
+    AuthorityVerificationRuntimeState * runtime = nullptr;
+    std::optional<AtomicAuthority::RootSnapshot> root;
+    {
+        std::lock_guard authority_lock(udt_authority_mutex);
+        if (udt_authority_mode != AuthorityMode::Enabled)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} databases cannot verify durable user-defined types", getEngineName());
+        if (udt_authority_shutdown)
+            throw Exception(ErrorCodes::ABORTED, "Cannot verify user-defined types after database shutdown");
+        if (udt_table_startup_state)
+            throw Exception(ErrorCodes::ABORTED, "Cannot verify user-defined types while mapped-table startup is pending");
+
+        authority = udt_authority.get();
+        storage = udt_mutation_storage.get();
+        runtime = udt_verification_runtime.get();
+        if (!authority || !storage || !runtime || active_udt_authority.load(std::memory_order_acquire) != authority
+            || active_udt_verification_runtime.load(std::memory_order_acquire) != runtime)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic user-defined type verification components are inconsistent");
+        root.emplace(authority->acquireCurrentRoot());
+    }
+
+    const UInt64 capability_mask = *root ? root->get().getPersistentCapabilityMask() : 0;
+    if (capability_mask != definition_authority_capability_mask && capability_mask != dependent_object_authority_capability_mask)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic user-defined type verification has no supported authority root");
+    const auto durable_state = storage->getCurrentAuthorityState();
+    if (!durable_state || *durable_state != root->get().getAuthorityState())
+        throw DatabaseSchemaMutationReplayConflictError("Atomic verification root differs from the durable authority head");
+    if (storage->getRecoveryRequiredTransactionID())
+        throw DatabaseSchemaMutationReplayConflictError("Atomic verification is fail-stopped by an incomplete schema mutation");
+
+    AuthorityVerificationTrustedBatch trusted_batch(*this, *storage, std::move(schema_lock));
+    auto receipt = AuthorityVerificationBatchExecutor::executeTrusted(*root, plan, trusted_batch, limits, verified_prefix);
+    static_cast<void>(runtime->consume(
+        root->get(),
+        plan,
+        *receipt,
+        [storage](const AuthorityVerificationScheduleCursor & advanced_cursor)
+        { storage->persistAuthorityVerificationCursor(advanced_cursor); }));
+    return receipt;
+}
+
+void DatabaseAtomic::assertUDTDatabaseAllowsDetach(std::string_view operation) const
+{
+    /// The database-level DETACH path prepares and shuts down every table
+    /// before it reaches the individual DatabaseAtomic::detachTable guards.
+    /// Inspect the database-owned inventory up front, using a nil selector to
+    /// mean "any mapped table". The inventory helper also validates that the
+    /// published authority and durable WAL head agree and fails closed while
+    /// recovery is pending.
+    if (!hasDatabaseOwnedTableExpectationForCrossDatabaseMove(UUIDHelpers::Nil))
+        return;
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot {} database {} while it contains mapped user-defined type tables; "
+        "database detach metadata transactions are not implemented",
+        operation,
+        backQuote(getDatabaseName()));
+}
+
+DatabaseAtomic::UDTDetachGuard DatabaseAtomic::acquireUDTDatabaseDetachGuard(std::string_view operation) const
+{
+    waitDatabaseStarted();
+    std::unique_lock schema_mutation_lock(udt_schema_mutation_mutex);
+    assertUDTDatabaseAllowsDetach(operation);
+    return UDTDetachGuard(std::move(schema_mutation_lock), UDTDetachGuard::Kind::Database, {});
+}
+
+bool DatabaseAtomic::empty() const
+{
+    std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
+    if (!DatabaseOrdinary::empty())
+        return false;
+
+    std::optional<UDT::AtomicAuthority::RootSnapshot> snapshot;
+    UDT::AtomicDatabaseSchemaMutationStorage * storage = nullptr;
+    {
+        std::lock_guard authority_lock(udt_authority_mutex);
+        if (udt_authority)
+            snapshot.emplace(udt_authority->acquireCurrentRoot());
+        storage = udt_mutation_storage.get();
+    }
+
+    if (snapshot && *snapshot)
+        return snapshot->get().getDefinitionRecords().empty();
+    return !storage || !storage->hasDurableAuthorityMarker();
+}
+
+bool DatabaseAtomic::emptyForDrop() const
+{
+    /// DROP removes the whole metadata directory, including the Atomic UDT
+    /// authority. Definitions must still block DETACH, but not DROP once all
+    /// tables have been removed under the database-exclusive DDL guard.
+    return DatabaseOrdinary::empty();
+}
+
+bool DatabaseAtomic::isReservedMetadataDirectory(const String & directory_name) const
+{
+    if (directory_name != "types" || udt_authority_mode != AuthorityMode::Enabled)
+        return false;
+    std::lock_guard lock(udt_authority_mutex);
+    return udt_table_startup_state || udt_degraded_startup_status || active_udt_authority.load(std::memory_order_acquire);
+}
+
+void DatabaseAtomic::reclaimRetiredUDTRootsNoThrow() noexcept
+{
+    /// Root reclamation may destroy the last owner of a complete authority
+    /// payload. Keep the authority alive, but never run that destruction while
+    /// the database schema-mutation mutex is held.
+    std::lock_guard authority_lock(udt_authority_mutex);
+    if (udt_authority_shutdown || !udt_authority)
+        return;
+    try
+    {
+        static_cast<void>(udt_authority->scanRetired());
+    }
+    catch (...)
+    {
+    }
+}
+
+void DatabaseAtomic::shutdown()
+{
+    UDT::AtomicAuthority * authority;
+    UDT::AuthorityVerificationRuntimeState * verification_runtime;
+    UDT::AuthorityVerificationScheduler * verification_scheduler = nullptr;
+    {
+        /// Publish the shutdown owner before borrowing any component pointer.
+        /// The pending-startup failure transition checks this latch under the
+        /// same authority mutex immediately before moving those components, so
+        /// whichever side wins that mutex owns their lifetime. The schema lock
+        /// below remains the final-operation fence.
+        std::lock_guard authority_lock(udt_authority_mutex);
+        udt_authority_shutdown = true;
+        verification_scheduler = udt_verification_scheduler.get();
+    }
+    if (verification_scheduler)
+        verification_scheduler->requestStop();
+    FailPointInjection::pauseFailPoint(FailPoints::udt_authority_shutdown_pause_before_fence);
+    std::unique_ptr<UDT::AtomicTableStartupState> pending_table_startup_state;
+    std::shared_ptr<const UDT::AtomicAuthorityStartupStatusSnapshot> degraded_startup_status;
+    {
+        std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
+        std::lock_guard authority_lock(udt_authority_mutex);
+        active_udt_authority.store(nullptr, std::memory_order_release);
+        active_udt_verification_runtime.store(nullptr, std::memory_order_release);
+        authority = udt_authority.get();
+        verification_runtime = udt_verification_runtime.get();
+        if (authority)
+            authority->setPublicationObserver(nullptr);
+        if (verification_scheduler != udt_verification_scheduler.get())
+            std::terminate();
+    }
+
+    if (verification_scheduler)
+        verification_scheduler->shutdownAndDrain();
+
+    std::exception_ptr first_error;
+    try
+    {
+        DatabaseOnDisk::shutdown();
+    }
+    catch (...)
+    {
+        first_error = std::current_exception();
+    }
+
+    {
+        std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
+        std::lock_guard authority_lock(udt_authority_mutex);
+        pending_table_startup_state = std::move(udt_table_startup_state);
+        degraded_startup_status = std::move(udt_degraded_startup_status);
+    }
+    pending_table_startup_state.reset();
+    degraded_startup_status.reset();
+    if (verification_runtime)
+        verification_runtime->shutdownAndDrain();
+    if (authority)
+        authority->shutdownAndDrain();
+    if (first_error)
+        std::rethrow_exception(first_error);
 }
 
 void DatabaseAtomic::createDirectories()
@@ -524,8 +1511,11 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
     }
     std::lock_guard lock(mutex);
     if (!detached_tables.empty())
-        throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "Database {} cannot be detached, because some tables are still in use. "
-                        "Retry later.", backQuoteIfNeed(database_name));
+        throw Exception(
+            ErrorCodes::DATABASE_NOT_EMPTY,
+            "Database {} cannot be detached, because some tables are still in use. "
+            "Retry later.",
+            backQuoteIfNeed(database_name));
 }
 
 DatabaseTablesIteratorPtr
@@ -546,18 +1536,250 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
 {
     auto db_disk = getDisk();
 
+    if (udt_authority_mode == AuthorityMode::Enabled)
+    {
+        std::vector<UDT::AtomicAuthorityRecoveredDroppedTable> recovered_dropped_tables;
+        {
+            std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
+            bool authority_is_initialized_or_shut_down;
+            {
+                std::lock_guard authority_lock(udt_authority_mutex);
+                authority_is_initialized_or_shut_down = udt_mutation_storage || udt_authority || udt_degraded_startup_status
+                    || udt_table_startup_state || udt_authority_shutdown;
+            }
+            if (!authority_is_initialized_or_shut_down)
+            {
+                const String current_database_name = getDatabaseName();
+                const UDT::AtomicDatabaseSchemaMutationPaths paths(metadata_path, db_uuid, current_database_name);
+                if (db_disk->existsFileOrDirectory(paths.typesDirectory()) || db_disk->existsFileOrDirectory(paths.activationMarkerPath())
+                    || db_disk->existsFileOrDirectory(paths.activationMarkerTemporaryPath())
+                    || db_disk->existsFileOrDirectory(paths.verificationCursorPath())
+                    || db_disk->existsFileOrDirectory(paths.verificationCursorTemporaryPath())
+                    || db_disk->existsFileOrDirectory(paths.udtConfigurationV2Path())
+                    || db_disk->existsFileOrDirectory(paths.udtConfigurationV2TemporaryPath())
+                    || db_disk->existsFileOrDirectory(paths.verificationSchedulerOverrideV2Path())
+                    || db_disk->existsFileOrDirectory(paths.verificationSchedulerOverrideV2TemporaryPath())
+                    || db_disk->existsFileOrDirectory(paths.resourceQuotaOverrideV2Path())
+                    || db_disk->existsFileOrDirectory(paths.resourceQuotaOverrideV2TemporaryPath()))
+                {
+                    auto recovery_storage = std::make_unique<UDT::AtomicDatabaseSchemaMutationStorage>(
+                        db_disk, db_uuid, metadata_path, current_database_name);
+                    UDT::AtomicAuthorityStartupLimits startup_limits;
+                    UDT::AtomicAuthorityStartupResult recovery;
+                    try
+                    {
+                        /// A temporary-only activation marker is an interrupted
+                        /// first publication. It must reach WAL recovery without
+                        /// being mistaken for an active configuration head.
+                        if (recovery_storage->hasCompleteDurableActivationMarker())
+                        {
+                            UDT::AtomicDatabaseUDTPersistedConfigurationV2 configured;
+                            UDT::ResourceLimitLayer server_layer(UDT::ResourceLimitLayerKind::Server);
+                            UDT::AuthorityVerificationSchedulerLimits global_scheduler_limits;
+                            {
+                                std::lock_guard authority_lock(udt_authority_mutex);
+                                if (!udt_authority_configuration)
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT startup lost its resolved configuration");
+                                configured = udt_authority_configuration->configured_persisted_configuration;
+                                server_layer = udt_authority_configuration->server_resource_limit_layer;
+                                global_scheduler_limits = udt_authority_configuration->global_verification_scheduler_limits;
+                            }
+
+                            const auto current_persisted = recovery_storage->readUDTConfigurationForActiveStartupV2();
+                            auto selected = current_persisted;
+                            if (configured.verification_scheduler_override)
+                                selected.verification_scheduler_override = configured.verification_scheduler_override;
+                            if (configured.resource_quota_override)
+                                selected.resource_quota_override = configured.resource_quota_override;
+
+                            const auto database_layer = selected.resource_quota_override
+                                ? UDT::decodeDatabaseResourceQuotaOverrideV2(*selected.resource_quota_override, db_uuid)
+                                : UDT::makeDatabaseDefaultResourceLimitLayer();
+                            auto effective_database_limits = UDT::calculateEffectiveDatabaseResourceLimits(
+                                server_layer, database_layer, UDT::atomicDatabaseAuthorityCapabilities().limits);
+                            auto effective_scheduler_limits = selected.verification_scheduler_override
+                                ? UDT::mergeAuthorityVerificationSchedulerLimits(
+                                      global_scheduler_limits,
+                                      UDT::decodeAuthorityVerificationSchedulerOverrideV2(
+                                          *selected.verification_scheduler_override, db_uuid))
+                                : UDT::AuthorityVerificationScheduler::validateEffectiveLimits(global_scheduler_limits);
+                            if (configured.verification_scheduler_override
+                                && selected.verification_scheduler_override != current_persisted.verification_scheduler_override)
+                            {
+                                const auto current_scheduler_limits = current_persisted.verification_scheduler_override
+                                    ? UDT::mergeAuthorityVerificationSchedulerLimits(
+                                          global_scheduler_limits,
+                                          UDT::decodeAuthorityVerificationSchedulerOverrideV2(
+                                              *current_persisted.verification_scheduler_override, db_uuid))
+                                    : UDT::AuthorityVerificationScheduler::validateEffectiveLimits(global_scheduler_limits);
+                                /// A persisted policy replacement is new
+                                /// admission, not an existing-root escape.
+                                if (current_scheduler_limits.policy != effective_scheduler_limits.policy
+                                    || current_scheduler_limits.schedule != effective_scheduler_limits.schedule)
+                                {
+                                    static_cast<void>(
+                                        applyEffectiveDatabaseVerificationLimits(effective_scheduler_limits, effective_database_limits));
+                                }
+                            }
+                            auto persisted = recovery_storage->reconcileUDTConfigurationForActiveStartupV2(configured);
+                            if (persisted != selected)
+                            {
+                                throw Exception(
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Atomic UDT configuration reconciliation differs from its admitted replacement");
+                            }
+                            startup_limits.recovery.effective_database_limits = effective_database_limits;
+                            {
+                                std::lock_guard authority_lock(udt_authority_mutex);
+                                if (!udt_authority_configuration)
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT startup lost its resolved configuration");
+                                udt_authority_configuration->selected_persisted_configuration = std::move(persisted);
+                                udt_authority_configuration->server_resource_limit_layer = std::move(server_layer);
+                                udt_authority_configuration->effective_database_limits = std::move(effective_database_limits);
+                                udt_authority_configuration->effective_verification_scheduler_limits
+                                    = std::move(effective_scheduler_limits);
+                                udt_lifecycle_adapter->configureEffectiveDatabaseResourceLimitsForStartup(
+                                    udt_authority_configuration->effective_database_limits);
+                            }
+                        }
+                        recovery = UDT::recoverAndActivateAtomicAuthorityAtStartup(*recovery_storage, startup_limits);
+                        if (recovery.authority_root && recovery.degraded_status)
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR, "Atomic UDT recovery returned both an executable root and degraded status");
+                        if (!recovery.authority_root && !recovery.degraded_status && recovery_storage->hasDurableAuthorityMarker())
+                        {
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Atomic UDT recovery retained a durable activation marker without an executable or degraded result");
+                        }
+                    }
+                    catch (const UDT::AtomicDatabaseSchemaMutationStorageError & error)
+                    {
+                        if (!UDT::isDegradableAtomicAuthorityStartupStorageError(error.code))
+                            throw;
+                        recovery = {};
+                        recovery.degraded_status = UDT::makeGlobalIncompleteAtomicAuthorityStartupStatus(
+                            db_uuid, "durable authority startup preflight cannot be read or reconciled safely");
+                    }
+                    recovered_dropped_tables = std::move(recovery.recovered_dropped_tables);
+                    if (recovery.authority_root)
+                    {
+                        std::unique_ptr<UDT::AtomicTableStartupState> pending_state;
+                        if (!recovery.pending_tables.empty())
+                        {
+                            std::vector<UDT::AtomicAuthorityStartupDependentObjectIdentity> pending_identities;
+                            pending_identities.reserve(recovery.pending_tables.size());
+                            for (const auto & pending : recovery.pending_tables)
+                            {
+                                pending_identities.push_back({
+                                    .object_uuid = pending.expectation.object.object_uuid,
+                                    .object_name = pending.object_name,
+                                });
+                            }
+                            auto unavailable_root_status = UDT::AtomicAuthorityStartupStatusSnapshot::createForUnavailableRoot(
+                                *recovery.authority_root, pending_identities, "mapped bind failed");
+                            pending_state = std::make_unique<UDT::AtomicTableStartupState>(
+                                db_uuid, std::move(recovery.pending_tables), std::move(unavailable_root_status));
+                        }
+                        std::lock_guard authority_lock(udt_authority_mutex);
+                        if (udt_mutation_storage || udt_authority || udt_degraded_startup_status || udt_table_startup_state
+                            || udt_authority_shutdown)
+                        {
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Atomic user-defined type storage was initialized "
+                                "twice or after shutdown");
+                        }
+                        udt_mutation_storage = std::move(recovery_storage);
+                        udt_table_startup_state = std::move(pending_state);
+                        try
+                        {
+                            initializeUDTAuthorityUnlocked(std::move(recovery.authority_root), !udt_table_startup_state);
+                        }
+                        catch (...)
+                        {
+                            active_udt_authority.store(nullptr, std::memory_order_release);
+                            active_udt_verification_runtime.store(nullptr, std::memory_order_release);
+                            if (udt_authority)
+                                udt_authority->setPublicationObserver(nullptr);
+                            udt_verification_runtime.reset();
+                            udt_verification_scheduler.reset();
+                            udt_last_exact_repair_provenance.reset();
+                            udt_authority.reset();
+                            udt_table_startup_state.reset();
+                            udt_mutation_storage.reset();
+                            throw;
+                        }
+                    }
+                    else if (recovery.degraded_status)
+                    {
+                        if (!recovery.pending_tables.empty())
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR, "Degraded Atomic UDT recovery retained executable mapped-object startup state");
+                        std::lock_guard authority_lock(udt_authority_mutex);
+                        if (udt_mutation_storage || udt_authority || udt_degraded_startup_status || udt_table_startup_state
+                            || udt_verification_runtime || udt_verification_scheduler || udt_authority_shutdown)
+                        {
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Atomic user-defined type degraded startup state was installed twice or after authority initialization");
+                        }
+                        udt_mutation_storage = std::move(recovery_storage);
+                        udt_degraded_startup_status = std::move(recovery.degraded_status);
+                    }
+                }
+            }
+        }
+
+        if (!recovered_dropped_tables.empty())
+        {
+            /// The server-wide metadata_dropped scan precedes Atomic authority
+            /// recovery. Check the exact terminal committed DROP: enqueue a
+            /// tombstone the earlier scan missed, but do not duplicate one it
+            /// already owns or recreate one consumed by completed cleanup.
+            const auto already_marked = DatabaseCatalog::instance().getTablesMarkedDropped();
+            for (const auto & recovered : recovered_dropped_tables)
+            {
+                const StorageID table_id{getDatabaseName(), recovered.table_name, recovered.table_uuid};
+                const String dropped_metadata_path = DatabaseCatalog::instance().getPathForDroppedMetadata(table_id);
+                const auto existing = std::find_if(
+                    already_marked.begin(),
+                    already_marked.end(),
+                    [&](const auto & marked) { return marked.table_id.uuid == recovered.table_uuid; });
+                if (existing != already_marked.end())
+                {
+                    if (existing->table_id != table_id || existing->metadata_path != dropped_metadata_path || existing->db_disk != db_disk)
+                        throw Exception(ErrorCodes::ABORTED, "Recovered Atomic mapped DROP conflicts with queued dropped-table identity");
+                    continue;
+                }
+                if (!db_disk->existsFile(dropped_metadata_path))
+                {
+                    if (recovered.tombstone_replayed)
+                        throw Exception(ErrorCodes::ABORTED, "Recovered Atomic mapped DROP did not publish its durable tombstone");
+                    /// A CompleteCommitted marker proves that this tombstone was
+                    /// published durably. Its later absence means the ordinary
+                    /// background cleanup already consumed it.
+                    continue;
+                }
+                DatabaseCatalog::instance().enqueueDroppedTableCleanup(table_id, nullptr, db_disk, dropped_metadata_path, false);
+            }
+        }
+    }
+
     if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
         return;
 
     if (!db_disk->isSymlinkSupported())
         return;
 
-    // When `db_disk` is a `DiskLocal` object, `existsDirectory` will return false if the input path is a symlink.
-    // So we use `existsFileOrDirectory` here to check if the symlink exists.
+    // When `db_disk` is a `DiskLocal` object, `existsDirectory` will return false
+    // if the input path is a symlink. So we use `existsFileOrDirectory` here to
+    // check if the symlink exists.
     if (!db_disk->existsFileOrDirectory(path_to_table_symlinks))
         return;
 
-    /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
+    /// Recreate symlinks to table data dirs in case of force restore, because
+    /// some of them may be broken
     for (const auto it = db_disk->iterateDirectory(path_to_table_symlinks); it->isValid(); it->next())
     {
         auto table_path = fs::path(it->path());
@@ -566,7 +1788,10 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
         if (!db_disk->isSymlink(table_path))
         {
             throw Exception(
-                ErrorCodes::ABORTED, "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path));
+                ErrorCodes::ABORTED,
+                "'{}' is not a symlink. Atomic database should contains "
+                "only symlinks.",
+                std::string(table_path));
         }
 
         db_disk->removeFileIfExists(table_path);
@@ -584,6 +1809,18 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
         fmt::format("startup Atomic database {}", getDatabaseName()),
         [this, mode, db_disk](AsyncLoader &, const LoadJobPtr &)
         {
+            {
+                std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
+                activateUDTAuthorityAfterPendingTableStartup();
+            }
+            {
+                std::lock_guard authority_lock(udt_authority_mutex);
+                udt_database_startup_complete.store(true, std::memory_order_release);
+                if (!udt_authority_shutdown && udt_verification_scheduler
+                    && active_udt_authority.load(std::memory_order_acquire) == udt_authority.get()
+                    && active_udt_verification_runtime.load(std::memory_order_acquire) == udt_verification_runtime.get())
+                    udt_verification_scheduler->activateAfterDatabaseStartup();
+            }
             if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
                 return;
             NameToPathMap table_names;
@@ -699,8 +1936,8 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     if (!db_disk->isSymlinkSupported())
         return;
 
-    /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by ClickHouse,
-    /// it's needed only for convenient introspection.
+    /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by
+    /// ClickHouse, it's needed only for convenient introspection.
     chassert(path_to_metadata_symlink != metadata_path);
     if (db_disk->existsFileOrDirectory(path_to_metadata_symlink))
     {
@@ -717,7 +1954,8 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 
             LOG_DEBUG(
                 log,
-                "Creating directory symlink, path_to_metadata_symlink: {}, metadata_path: {}",
+                "Creating directory symlink, path_to_metadata_symlink: {}, "
+                "metadata_path: {}",
                 path_to_metadata_symlink,
                 metadata_path);
 
@@ -733,14 +1971,38 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::renameDatabase");
+    waitDatabaseStarted();
+    std::lock_guard schema_mutation_lock(udt_schema_mutation_mutex);
+    std::optional<UDT::AtomicAuthority::RootSnapshot> udt_snapshot;
+    UDT::AtomicDatabaseSchemaMutationStorage * udt_storage = nullptr;
+    {
+        std::lock_guard authority_lock(udt_authority_mutex);
+        if (udt_authority)
+            udt_snapshot.emplace(udt_authority->acquireCurrentRoot());
+        udt_storage = udt_mutation_storage.get();
+    }
+    /// The durable storage embeds the current database name in mapped-table
+    /// installation and dropped-metadata paths. Until a rename transaction can
+    /// rebuild those paths atomically, database rename must fail closed even
+    /// for an empty authority with definition-only or dependent-object capabilities.
+    const bool has_udt_authority = (udt_snapshot && *udt_snapshot) || udt_storage;
+    if (has_udt_authority)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "RENAME DATABASE is not supported while Atomic database {} "
+            "contains durable user-defined types or pending recovery",
+            getDatabaseName());
+    }
+
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
-    waitDatabaseStarted();
     std::lock_guard lock(mutex);
 
-    /// A longer database name leaves less room for the table name in the dropped-metadata file
-    /// name metadata_dropped/{db}.{table}.{uuid}.sql, so a rename can leave a table that cannot
-    /// be dropped. Detached tables are checked too, because ATTACH does not re-check the length.
+    /// A longer database name leaves less room for the table name in the
+    /// dropped-metadata file name metadata_dropped/{db}.{table}.{uuid}.sql, so a
+    /// rename can leave a table that cannot be dropped. Detached tables are
+    /// checked too, because ATTACH does not re-check the length.
     for (const auto & table : tables)
         checkTableNameLengthUnlocked(new_name, table.first, getContext());
     for (const auto & detached_table : snapshot_detached_tables)
@@ -753,7 +2015,6 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         for (auto & table : tables)
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
     }
-
 
     try
     {
@@ -899,7 +2160,8 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
             args.context->addOrUpdateWarningMessage(
                 Context::WarningType::MAYBE_BROKEN_TABLES,
                 PreformattedMessage::create(
-                    "The database {} is probably created during recovering a lost replica. If it has no tables, it can be deleted. If it "
+                    "The database {} is probably created during recovering a lost "
+                    "replica. If it has no tables, it can be deleted. If it "
                     "has tables, it worth to check why they were considered broken.",
                     backQuoteIfNeed(args.database_name)));
 
@@ -911,8 +2173,12 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         return make_shared<DatabaseAtomic>(
             args.database_name, args.metadata_path, args.uuid, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Atomic", create_fn, /*features=*/{.supports_settings = true}, Documentation{
-        .description = R"DOCS_MD(
+    factory.registerDatabase(
+        "Atomic",
+        create_fn,
+        /*features=*/{.supports_settings = true},
+        Documentation{
+            .description = R"DOCS_MD(
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 
 :::note
@@ -989,8 +2255,8 @@ If unspecified, the disk defined in `database_disk.disk` is used by default.
 
 - [system.databases](/reference/system-tables/databases) system table
 )DOCS_MD",
-        .syntax = "ENGINE = Atomic",
-        .related = {"Replicated", "Ordinary"}});
+            .syntax = "ENGINE = Atomic",
+            .related = {"Replicated", "Ordinary"}});
 }
 
-}
+} // namespace DB

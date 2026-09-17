@@ -4,7 +4,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Storages/IStorage_fwd.h>
@@ -311,14 +310,26 @@ DatabaseOverlay::getTablesForBackup(const FilterByNameFunction & filter, const C
 void DatabaseOverlay::createTableRestoredFromBackup(
     const ASTPtr & create_table_query,
     ContextMutablePtr local_context,
-    std::shared_ptr<IRestoreCoordination> /*restore_coordination*/,
-    UInt64 /*timeout_ms*/)
+    std::shared_ptr<IRestoreCoordination> restore_coordination,
+    UInt64 timeout_ms)
 {
-    /// Creates a tables by executing a "CREATE TABLE" query.
-    InterpreterCreateQuery interpreter{create_table_query, local_context};
-    interpreter.setInternal(true);
-    interpreter.setIsRestoreFromBackup(true);
-    interpreter.execute();
+    for (auto & db : databases)
+    {
+        if (!db->isReadOnly())
+        {
+            db->createTableRestoredFromBackup(
+                create_table_query, std::move(local_context), std::move(restore_coordination), timeout_ms);
+            return;
+        }
+    }
+
+    const auto & create = create_table_query->as<const ASTCreateQuery &>();
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases for RESTORE TABLE `{}` query in database `{}` (engine {})",
+        create.getTable(),
+        getDatabaseName(),
+        getEngineName());
 }
 
 bool DatabaseOverlay::empty() const

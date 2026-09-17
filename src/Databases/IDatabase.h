@@ -25,6 +25,12 @@
 namespace DB
 {
 
+namespace UDT
+{
+class IAuthorityAdapter;
+struct TypeAuthorityCapabilities;
+}
+
 
 struct Settings;
 struct ConstraintsDescription;
@@ -374,6 +380,10 @@ public:
     /// Is the database empty.
     virtual bool empty() const = 0;
 
+    /// Is the database empty of objects which must block DROP DATABASE.
+    /// Database-owned metadata removed by drop() may still block DETACH.
+    virtual bool emptyForDrop() const { return empty(); }
+
     virtual bool isReadOnly() const { return false; }
 
     /// Add the table to the database. Record its presence in the metadata.
@@ -486,6 +496,14 @@ public:
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
+
+    /// Reports the tier this engine can activate. This is distinct from the
+    /// active adapter so a never-enabled database keeps its pre-UDT state.
+    virtual const UDT::TypeAuthorityCapabilities & getSupportedUDTAuthorityCapabilities() const noexcept;
+
+    /// Returns the active authority, or the process-stable unsupported
+    /// adapter while this database has no activated authority state.
+    virtual const UDT::IAuthorityAdapter & getUDTAuthorityAdapter() const noexcept;
 
     virtual void renameDatabase(ContextPtr, const String & /*new_name*/);
 

@@ -40,6 +40,8 @@
     M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
     M(DistributedSend, "Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.") \
     M(QueryPreempted, "Number of running tasks which are paused and waiting due to 'priority' setting.") \
+    M(UDTAuthorityVerificationTask, "Number of active database-owned periodic UDT authority verification tasks.") \
+    M(UDTLiveCatalogAndCacheBytes, "Deterministic logical bytes charged to the process-wide UDT live catalog and cache quota.") \
     M(TCPConnection, "Number of connections to TCP server (clients with native interface), also included server-server distributed query connections") \
     M(MySQLConnection, "Number of client connections using MySQL protocol") \
     M(HTTPConnection, "Number of connections to HTTP server") \

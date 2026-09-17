@@ -540,8 +540,7 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
     else
         default_database_uuid = UUIDHelpers::generateV4();
 
-    fs::path default_database_metadata_path = fs::weakly_canonical(context->getPath()) /
-        DatabaseCatalog::getStoreDirPath(default_database_uuid);
+    fs::path default_database_metadata_path = DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
     /// The URL database handles local files, URLs and object storage uniformly: with the `file://`

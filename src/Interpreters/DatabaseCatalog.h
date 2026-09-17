@@ -8,8 +8,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -40,7 +40,6 @@ using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 using Databases = std::map<String, std::shared_ptr<IDatabase>, std::less<>>;
 using DiskPtr = std::shared_ptr<IDisk>;
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
-
 
 class FutureSetFromSubquery;
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
@@ -111,8 +110,14 @@ public:
 
     static fs::path getMetadataDirPath() { return fs::path("metadata"); }
     static fs::path getMetadataDirPath(const String & database_name) { return getMetadataDirPath() / escapeForFileName(database_name); }
-    static fs::path getMetadataFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql"); }
-    static fs::path getMetadataTmpFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql.tmp"); }
+    static fs::path getMetadataFilePath(const String & database_name)
+    {
+        return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql");
+    }
+    static fs::path getMetadataTmpFilePath(const String & database_name)
+    {
+        return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql.tmp");
+    }
 
     static fs::path getDataDirPath() { return fs::path("data"); }
     static fs::path getDataDirPath(const String & database_name) { return getDataDirPath() / escapeForFileName(database_name); }
@@ -129,16 +134,18 @@ public:
     void startupBackgroundTasks();
     void loadMarkedAsDroppedTables();
 
-    /// Get an object that protects the table from concurrently executing multiple DDL operations.
+    /// Get an object that protects the table from concurrently executing multiple
+    /// DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
-    /// Get an object that protects the database from concurrent DDL queries all tables in the database
+    /// Get an object that protects the database from concurrent DDL queries all
+    /// tables in the database
     std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 
-    /// We need special synchronization between DROP/DETACH DATABASE and SYSTEM RESTART REPLICA
-    /// because IStorage::flushAndPrepareForShutdown cannot be protected by DDLGuard (and a race with IStorage::startup is possible)
+    /// We need special synchronization between DROP/DETACH DATABASE and SYSTEM
+    /// RESTART REPLICA because IStorage::flushAndPrepareForShutdown cannot be
+    /// protected by DDLGuard (and a race with IStorage::startup is possible)
     std::unique_lock<SharedMutex> getLockForDropDatabase(const String & database);
     std::optional<std::shared_lock<SharedMutex>> tryGetLockForRestartReplica(const String & database);
-
 
     void assertDatabaseExists(const String & database_name) const;
     void assertDatabaseDoesntExist(const String & database_name) const;
@@ -157,17 +164,21 @@ public:
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
     /// Datalake catalogs are implemented at `IDatabase` level in ClickHouse.
-    /// In general case Datalake catalog is a remote service which contains iceberg/delta tables.
-    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourselves
-    /// to not accidentally query external non-free service for some trivial things like
-    /// autocompletion hints or `system.tables` / `system.columns` queries. We have a setting which allows showing
-    /// these databases everywhere, but user must explicitly specify it.
-    /// Remote databases such as `MySQL`/`PostgreSQL` are controlled separately by `GetDatabasesOptions::with_remote_databases`.
-    /// Note: `system.databases` always passes both flags as true because listing a database name
-    /// is purely local metadata and never requires calls to an external service.
+    /// In general case Datalake catalog is a remote service which contains
+    /// iceberg/delta tables. Sometimes this service charges money for requests.
+    /// With this flag we explicitly protect ourselves to not accidentally query
+    /// external non-free service for some trivial things like autocompletion
+    /// hints or `system.tables` / `system.columns` queries. We have a setting
+    /// which allows showing these databases everywhere, but user must explicitly
+    /// specify it. Remote databases such as `MySQL`/`PostgreSQL` are controlled
+    /// separately by `GetDatabasesOptions::with_remote_databases`. Note:
+    /// `system.databases` always passes both flags as true because listing a
+    /// database name is purely local metadata and never requires calls to an
+    /// external service.
     Databases getDatabases(GetDatabasesOptions options) const;
 
-    /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
+    /// Same as getDatabase(const String & database_name), but if database_name is
+    /// empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
@@ -192,9 +203,10 @@ public:
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
-    /// Detach all source-side view-dependency edges of a source table (the table is the source of one
-    /// or more materialized views) and return the list of dependent views. Used by `RENAME TABLE`
-    /// to re-key these edges under the new storage id via `addSourceViewDependencies`.
+    /// Detach all source-side view-dependency edges of a source table (the table
+    /// is the source of one or more materialized views) and return the list of
+    /// dependent views. Used by `RENAME TABLE` to re-key these edges under the
+    /// new storage id via `addSourceViewDependencies`.
     std::vector<StorageID> takeSourceViewDependencies(const StorageID & source_table_id);
     void addSourceViewDependencies(const StorageID & source_table_id, const std::vector<StorageID> & view_ids);
 
@@ -204,22 +216,31 @@ public:
     /// processing data before all MV dependencies are registered.
     std::vector<StorageID> getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const;
 
-    /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
-    /// removeUUIDMapping(...) must be called when it detached,
-    /// and removeUUIDMappingFinally(...) must be called when table is dropped and its data removed from disk.
-    /// Such tables can be accessed by persistent UUID instead of database and table name.
+    /// If table has UUID, addUUIDMapping(...) must be called when table attached
+    /// to some database removeUUIDMapping(...) must be called when it detached,
+    /// and removeUUIDMappingFinally(...) must be called when table is dropped and
+    /// its data removed from disk. Such tables can be accessed by persistent UUID
+    /// instead of database and table name.
     void addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table);
     void removeUUIDMapping(const UUID & uuid);
     void removeUUIDMappingFinally(const UUID & uuid);
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
-    /// This method adds empty mapping (with database and storage equal to nullptr).
-    /// It's required to "lock" some UUIDs and protect us from collision.
-    /// Collisions of random 122-bit integers are very unlikely to happen,
-    /// but we allow to explicitly specify UUID in CREATE query (in particular for testing).
-    /// If some UUID was already added and we are trying to add it again,
-    /// this method will throw an exception.
+    /// This method adds empty mapping (with database and storage equal to
+    /// nullptr). It's required to "lock" some UUIDs and protect us from
+    /// collision. Collisions of random 122-bit integers are very unlikely to
+    /// happen, but we allow to explicitly specify UUID in CREATE query (in
+    /// particular for testing). If some UUID was already added and we are trying
+    /// to add it again, this method will throw an exception.
     void addUUIDMapping(const UUID & uuid);
+
+    /// Completes an already-reserved empty UUID mapping after every fallible
+    /// table-publication step has succeeded. The caller must still own the
+    /// TemporaryLockForUUIDDirectory which created the exact empty entry. A
+    /// violated reservation invariant is unrecoverable at this publication
+    /// boundary, so this function terminates instead of exposing a partially
+    /// committed table or throwing after durable metadata commit.
+    void publishReservedUUIDMappingNoThrow(const UUID & uuid, DatabasePtr database, StoragePtr table) noexcept;
 
     bool hasUUIDMapping(const UUID & uuid);
 
@@ -239,17 +260,39 @@ public:
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
-    /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
-    /// Now we support this mode (see `check_table_referential_dependencies` in Setting.h) for compatibility.
-    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies, const std::vector<StorageID> & new_view_dependencies);
-    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
-    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies, const TablesDependencyGraph & new_view_dependencies);
-    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false, bool is_mv = false);
+    /// Loading dependencies were used to check whether a table can be removed
+    /// before we had those referential dependencies. Now we support this mode
+    /// (see `check_table_referential_dependencies` in Setting.h) for
+    /// compatibility.
+    void addDependencies(
+        const StorageID & table_id,
+        const std::vector<StorageID> & new_referential_dependencies,
+        const std::vector<StorageID> & new_loading_dependencies,
+        const std::vector<StorageID> & new_view_dependencies);
+    void addDependencies(
+        const QualifiedTableName & table_name,
+        const TableNamesSet & new_referential_dependencies,
+        const TableNamesSet & new_loading_dependencies,
+        const TableNamesSet & new_view_dependencies);
+    void addDependencies(
+        const TablesDependencyGraph & new_referential_dependencies,
+        const TablesDependencyGraph & new_loading_dependencies,
+        const TablesDependencyGraph & new_view_dependencies);
+    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(
+        const StorageID & table_id,
+        bool check_referential_dependencies,
+        bool check_loading_dependencies,
+        bool is_drop_database = false,
+        bool is_mv = false);
     std::vector<StorageID> getReferentialDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getReferentialDependents(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependents(const StorageID & table_id) const;
-    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
+    void updateDependencies(
+        const StorageID & table_id,
+        const TableNamesSet & new_referential_dependencies,
+        const TableNamesSet & new_loading_dependencies,
+        const TableNamesSet & new_view_dependencies);
 
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
@@ -307,10 +350,7 @@ private:
     static constexpr UInt64 bits_for_first_level = 4;
     using UUIDToStorageMap = std::array<UUIDToStorageMapPart, 1ull << bits_for_first_level>;
 
-    static size_t getFirstLevelIdx(const UUID & uuid)
-    {
-        return UUIDHelpers::getHighBytes(uuid) >> (64 - bits_for_first_level);
-    }
+    static size_t getFirstLevelIdx(const UUID & uuid) { return UUIDHelpers::getHighBytes(uuid) >> (64 - bits_for_first_level); }
 
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
@@ -339,7 +379,8 @@ private:
     /// if the table "B" is referenced in the definition of the table "A".
     TablesDependencyGraph referential_dependencies TSA_GUARDED_BY(databases_mutex);
 
-    /// Loading dependencies were used to check whether a table can be removed before we had referential dependencies.
+    /// Loading dependencies were used to check whether a table can be removed
+    /// before we had referential dependencies.
     TablesDependencyGraph loading_dependencies TSA_GUARDED_BY(databases_mutex);
 
     /// View dependencies between a source table and its view.
@@ -351,10 +392,11 @@ private:
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
     /// database name -> database guard -> (table name mutex, counter),
-    /// counter: how many threads are running a query on the table at the same time
-    /// For the duration of the operation, an element is placed here, and an object is returned,
-    /// which deletes the element in the destructor when counter becomes zero.
-    /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
+    /// counter: how many threads are running a query on the table at the same
+    /// time For the duration of the operation, an element is placed here, and an
+    /// object is returned, which deletes the element in the destructor when
+    /// counter becomes zero. In case the element already exists, waits when query
+    /// will be executed in other thread. See class DDLGuard below.
     struct DatabaseGuard
     {
         SharedMutex database_ddl_mutex;
@@ -366,7 +408,8 @@ private:
 
     using DDLGuards = std::map<String, DatabaseGuard>;
     DDLGuards ddl_guards TSA_GUARDED_BY(ddl_guards_mutex);
-    /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
+    /// If you capture mutex and ddl_guards_mutex, then you need to grab them
+    /// strictly in this order.
     mutable std::mutex ddl_guards_mutex;
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
@@ -388,24 +431,24 @@ private:
     std::atomic<bool> replicated_ddl_queries_enabled = false;
 };
 
-
 /// This class is useful when creating a table or database.
-/// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
-/// But such object may start using a directory in store/ since its creation.
-/// To avoid race with cleanupStoreDirectoryTask() we have to mark UUID as used first.
-/// Then we can either add DatabasePtr/StoragePtr to the created UUID mapping
-/// or remove the lock if creation failed.
-/// See also addUUIDMapping(...)
+/// Usually we create IStorage/IDatabase object first and then add it to
+/// IDatabase/DatabaseCatalog. But such object may start using a directory in
+/// store/ since its creation. To avoid race with cleanupStoreDirectoryTask() we
+/// have to mark UUID as used first. Then we can either add
+/// DatabasePtr/StoragePtr to the created UUID mapping or remove the lock if
+/// creation failed. See also addUUIDMapping(...)
 class TemporaryLockForUUIDDirectory : private boost::noncopyable
 {
     UUID uuid = UUIDHelpers::Nil;
+
 public:
     TemporaryLockForUUIDDirectory() = default;
     explicit TemporaryLockForUUIDDirectory(UUID uuid_);
     ~TemporaryLockForUUIDDirectory();
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;
-    TemporaryLockForUUIDDirectory & operator = (TemporaryLockForUUIDDirectory && rhs) noexcept;
+    TemporaryLockForUUIDDirectory & operator=(TemporaryLockForUUIDDirectory && rhs) noexcept;
 };
 
-}
+} // namespace DB

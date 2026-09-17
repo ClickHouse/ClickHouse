@@ -3,9 +3,40 @@
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 
+#include <Core/UUID.h>
+
+#include <exception>
+#include <string_view>
 
 namespace DB
 {
+
+/// Origin of a terminal asynchronous table load/startup failure. Execution
+/// failures are observed by the primary job itself; dependency failures cancel
+/// that primary before its body runs. Database engines consume this only from a
+/// regular executor continuation, never from AsyncLoader's dependency callback.
+enum class AsyncTableLoadingFailurePhase : UInt8
+{
+    LoadExecution = 1,
+    LoadDependency = 2,
+    StartupExecution = 3,
+    StartupDependency = 4,
+};
+
+enum class StoredObjectMetadataLoadAction : UInt8
+{
+    Load = 1,
+    SkipUnavailable = 2,
+};
+
+/// Database-engine decision made without filesystem probing or metadata
+/// payload access. `reserved_uuid` is trusted engine-owned identity, never a
+/// value inferred from metadata that the decision asks the loader to skip.
+struct StoredObjectMetadataLoadDecision
+{
+    StoredObjectMetadataLoadAction action = StoredObjectMetadataLoadAction::Load;
+    UUID reserved_uuid = UUIDHelpers::Nil;
+};
 
 /** Default engine of databases.
   * It stores tables list in filesystem using list of .sql files,
@@ -52,10 +83,7 @@ public:
         LoadingStrictnessLevel mode) override;
 
     LoadTaskPtr startupTableAsync(
-        AsyncLoader & async_loader,
-        LoadJobSet startup_after,
-        const QualifiedTableName & name,
-        LoadingStrictnessLevel mode) override;
+        AsyncLoader & async_loader, LoadJobSet startup_after, const QualifiedTableName & name, LoadingStrictnessLevel mode) override;
 
     void waitTableStarted(const String & name) const override;
 
@@ -64,7 +92,8 @@ public:
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(
+        ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
     DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
@@ -73,10 +102,7 @@ public:
     StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex) override;
 
     void alterTable(
-        ContextPtr context,
-        const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata,
-        bool validate_new_create_query) override;
+        ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, bool validate_new_create_query) override;
 
     Strings getNamesOfPermanentlyDetachedTables() const override
     {
@@ -104,6 +130,28 @@ protected:
         const String & statement,
         ContextPtr query_context);
 
+    /// Database-specific startup admission hooks. Ordinary keeps its existing
+    /// behavior; engines with metadata anchored outside the .sql file may
+    /// force eager construction or reject detach/rewrite before any mutation.
+    virtual StoredObjectMetadataLoadDecision
+    decideStoredObjectMetadataLoadBeforeParsing(std::string_view /* canonical_file_object_name */) const
+    {
+        return {};
+    }
+    virtual StoredObjectMetadataLoadDecision
+    decideStoredObjectMetadataLoadAfterParsing(std::string_view /* canonical_file_object_name */, const ASTCreateQuery & /* query */) const
+    {
+        return {};
+    }
+    virtual bool forceEagerTableLoadAtStartup(const ASTCreateQuery & /* query */) const { return false; }
+    virtual void validateTableMetadataForLoading(const ASTCreateQuery & /* query */, bool /* permanently_detached */) const { }
+    virtual void validateTableMetadataRewriteBeforeLoading(const ASTCreateQuery & /* query */) const { }
+    virtual void onAsyncTableLoadingFailed(
+        const QualifiedTableName & /* name */, AsyncTableLoadingFailurePhase /* phase */, std::exception_ptr /* failure */)
+    {
+    }
+    virtual void onTableStartupCompleted(const QualifiedTableName & /* name */, const StoragePtr & /* table */) { }
+
     Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
@@ -118,11 +166,7 @@ protected:
 
 private:
     bool shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const;
-    void loadTableLazy(
-        ContextMutablePtr local_context,
-        const QualifiedTableName & name,
-        const ASTPtr & ast,
-        LoadingStrictnessLevel mode);
+    void loadTableLazy(ContextMutablePtr local_context, const QualifiedTableName & name, const ASTPtr & ast, LoadingStrictnessLevel mode);
 
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);

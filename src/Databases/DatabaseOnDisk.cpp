@@ -3,9 +3,11 @@
 #include <filesystem>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <span>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/UDT/BoundObjectTypeReferences.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Disks/DiskLocal.h>
@@ -27,56 +29,58 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/Exception.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ErrnoException.h>
+#include <Common/Exception.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
 
 
 namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
-    extern const Metric DatabaseOnDiskThreads;
-    extern const Metric DatabaseOnDiskThreadsActive;
-    extern const Metric DatabaseOnDiskThreadsScheduled;
+extern const Metric DatabaseOnDiskThreads;
+extern const Metric DatabaseOnDiskThreadsActive;
+extern const Metric DatabaseOnDiskThreadsScheduled;
 }
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool force_remove_data_recursively_on_drop;
-    extern const SettingsBool fsync_metadata;
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
+extern const SettingsBool force_remove_data_recursively_on_drop;
+extern const SettingsBool fsync_metadata;
+extern const SettingsSeconds lock_acquire_timeout;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
 }
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int CANNOT_RMDIR;
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int INCORRECT_FILE_NAME;
-    extern const int SYNTAX_ERROR;
-    extern const int TABLE_ALREADY_EXISTS;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int DATABASE_NOT_EMPTY;
-    extern const int INCORRECT_QUERY;
-    extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+extern const int CANNOT_RMDIR;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
+extern const int FILE_DOESNT_EXIST;
+extern const int CANNOT_OPEN_FILE;
+extern const int INCORRECT_FILE_NAME;
+extern const int SYNTAX_ERROR;
+extern const int TABLE_ALREADY_EXISTS;
+extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+extern const int DATABASE_NOT_EMPTY;
+extern const int INCORRECT_QUERY;
+extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -142,8 +146,10 @@ std::pair<String, StoragePtr> createTableFromAST(
         if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
         {
             if (!ast_create_query.storage || !ast_create_query.storage->engine)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid storage definition in metadata file: "
-                                                           "it's a bug or result of manual intervention in metadata files");
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Invalid storage definition in metadata file: "
+                    "it's a bug or result of manual intervention in metadata files");
 
             if (!StorageFactory::instance().getStorageFeatures(ast_create_query.storage->engine->name).supports_schema_inference)
                 throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
@@ -201,7 +207,9 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
 DatabaseOnDisk::DatabaseOnDisk(
     const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr local_context)
-    : DatabaseWithOwnTablesBase(name, logger, local_context), metadata_path(metadata_path_), data_path(data_path_)
+    : DatabaseWithOwnTablesBase(name, logger, local_context)
+    , metadata_path(metadata_path_)
+    , data_path(data_path_)
 {
 }
 
@@ -227,11 +235,7 @@ void DatabaseOnDisk::shutdown()
 }
 
 
-void DatabaseOnDisk::createTable(
-    ContextPtr local_context,
-    const String & table_name,
-    const StoragePtr & table,
-    const ASTPtr & query)
+void DatabaseOnDisk::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
     ensurePopulated();
@@ -281,11 +285,13 @@ void DatabaseOnDisk::createTable(
         // either both should be Nil, either values should be equal
         if (create.uuid != create_detached.uuid)
             throw Exception(
-                    ErrorCodes::TABLE_ALREADY_EXISTS,
-                    "Table {}.{} already exist (detached or detached permanently). To attach it back "
-                    "you need to use short ATTACH syntax (ATTACH TABLE {}.{};)",
-                    backQuote(getDatabaseName()), backQuote(table_name),
-                    backQuote(getDatabaseName()), backQuote(table_name));
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exist (detached or detached permanently). To attach it back "
+                "you need to use short ATTACH syntax (ATTACH TABLE {}.{};)",
+                backQuote(getDatabaseName()),
+                backQuote(table_name),
+                backQuote(getDatabaseName()),
+                backQuote(table_name));
     }
 
     String table_metadata_tmp_path = table_metadata_path + create_suffix;
@@ -318,14 +324,21 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
     }
     catch (Exception & e)
     {
-        e.addMessage("while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        e.addMessage(
+            "while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be "
+            "reattached during server restart.",
+            backQuote(getDatabaseName()),
+            backQuote(table_name));
         throw;
     }
 }
 
-void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
-                                       const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                       ContextPtr query_context)
+void DatabaseOnDisk::commitCreateTable(
+    const ASTCreateQuery & query,
+    const StoragePtr & table,
+    const String & table_metadata_tmp_path,
+    const String & table_metadata_path,
+    ContextPtr query_context)
 {
     auto db_disk = getDisk();
     try
@@ -369,7 +382,10 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     }
     catch (Exception & e)
     {
-        e.addMessage("while trying to set permanently detached flag. Table {}.{} may be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
+        e.addMessage(
+            "while trying to set permanently detached flag. Table {}.{} may be reattached during server restart.",
+            backQuote(getDatabaseName()),
+            backQuote(table_name));
         throw;
     }
 }
@@ -417,7 +433,12 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         if (disk->isReadOnly() || !disk->existsDirectory(table_data_path_relative))
             continue;
 
-        LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
+        LOG_INFO(
+            log,
+            "Removing data directory from disk {} with path {} for dropped table {} ",
+            disk_name,
+            table_data_path_relative,
+            table_name);
         disk->removeRecursive(table_data_path_relative);
     }
     db_disk->removeFileIfExists(table_metadata_path_drop);
@@ -438,23 +459,27 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
         if (db_disk->existsFile(detached_permanently_flag))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                            "Table {}.{} already exists (detached permanently)",
-                            backQuote(database_name), backQuote(to_table_name));
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exists (detached permanently)",
+                backQuote(database_name),
+                backQuote(to_table_name));
         else
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                            "Table {}.{} already exists (detached)",
-                            backQuote(database_name), backQuote(to_table_name));
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exists (detached)",
+                backQuote(database_name),
+                backQuote(to_table_name));
     }
 }
 
 void DatabaseOnDisk::renameTable(
-        ContextPtr local_context,
-        const String & table_name,
-        IDatabase & to_database,
-        const String & to_table_name,
-        bool exchange,
-        bool dictionary)
+    ContextPtr local_context,
+    const String & table_name,
+    IDatabase & to_database,
+    const String & to_table_name,
+    bool exchange,
+    bool dictionary)
 {
     if (exchange)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tables can be exchanged only in Atomic databases");
@@ -466,9 +491,9 @@ void DatabaseOnDisk::renameTable(
     {
         if (typeid_cast<DatabaseOrdinary *>(this) && typeid_cast<DatabaseAtomic *>(&to_database))
             from_ordinary_to_atomic = true;
-        else if (typeid_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database))
-            from_atomic_to_ordinary = true;
-        else if (dynamic_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database) && getEngineName() == "Replicated")
+        else if (
+            dynamic_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database)
+            && (getEngineName() == "Atomic" || getEngineName() == "Replicated"))
             from_atomic_to_ordinary = true;
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
@@ -492,10 +517,97 @@ void DatabaseOnDisk::renameTable(
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    detachTable(local_context, table_name);
+    /// A bound UDT sidecar is a database-owned durable object. This generic
+    /// cross-database path cannot transfer its expectation, graph edges and
+    /// canonical sidecar in the same schema transaction. Validate only after
+    /// acquiring the table lock which also serializes metadata publication;
+    /// checking earlier would allow an ALTER to bind the table before detach.
+    if (this != &to_database && !from_atomic_to_ordinary)
+    {
+        const auto table_metadata = table->getInMemoryMetadataPtr(local_context, false);
+        table_metadata->validateBoundUDTReferences();
+        if (table_metadata->getBoundUDTReferences())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot move table {}.{} with bound user-defined column types to database {}; "
+                "cross-database UDT authority transfer is not implemented",
+                backQuote(getDatabaseName()),
+                backQuote(table_name),
+                backQuote(to_database.getDatabaseName()));
+        }
+    }
+
+    const auto * time_series = table->as<StorageTimeSeries>();
+    if ((from_ordinary_to_atomic || from_atomic_to_ordinary) && time_series && time_series->hasInnerTables())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move TimeSeries table with inner tables to other database");
+    }
+
+    UUID ordinary_to_atomic_uuid = UUIDHelpers::Nil;
+    UUID atomic_source_uuid = UUIDHelpers::Nil;
+    DatabaseAtomic * source_atomic_database = nullptr;
+    DatabaseAtomic * target_atomic_database = nullptr;
+    std::optional<DatabaseAtomic::CrossDatabaseMoveGuard> source_udt_guard;
+    std::optional<DatabaseAtomic::CrossDatabaseMoveGuard> target_udt_guard;
+    if (from_atomic_to_ordinary)
+    {
+        source_atomic_database = &dynamic_cast<DatabaseAtomic &>(*this);
+        atomic_source_uuid = table->getStorageID().uuid;
+        source_udt_guard.emplace(source_atomic_database->acquireUDTCrossDatabaseSourceGuard(
+            table_name, table, table_data_relative_path, local_context));
+    }
+    if (from_ordinary_to_atomic)
+    {
+        ordinary_to_atomic_uuid = UUIDHelpers::generateV4();
+        target_atomic_database = &dynamic_cast<DatabaseAtomic &>(to_database);
+        target_udt_guard.emplace(target_atomic_database->acquireUDTCrossDatabaseTargetGuard(
+            ordinary_to_atomic_uuid, table->getStorageID().getNameForLogs()));
+    }
+
+    if (source_udt_guard)
+        source_atomic_database->detachTableUnderUDTCrossDatabaseGuard(table_name, *source_udt_guard);
+    else
+        detachTable(local_context, table_name);
 
     UUID prev_uuid = UUIDHelpers::Nil;
     auto db_disk = getDisk();
+    bool udt_guard_released_for_nested_table = false;
+    bool udt_guard_revalidation_failed = false;
+    const auto before_nested_table_rename = [&]
+    {
+        if (udt_guard_released_for_nested_table)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested-table rename released its Atomic move guard twice");
+        if (source_udt_guard)
+            source_atomic_database->releaseUDTCrossDatabaseGuardForNestedTableRename(*source_udt_guard);
+        else if (target_udt_guard)
+            target_atomic_database->releaseUDTCrossDatabaseGuardForNestedTableRename(*target_udt_guard);
+        else
+            return;
+        udt_guard_released_for_nested_table = true;
+    };
+    const auto after_nested_table_rename = [&]
+    {
+        if (!udt_guard_released_for_nested_table)
+            return;
+        if (source_udt_guard)
+            source_atomic_database->reacquireUDTCrossDatabaseGuardAfterNestedTableRename(*source_udt_guard);
+        else
+            target_atomic_database->reacquireUDTCrossDatabaseGuardAfterNestedTableRename(*target_udt_guard);
+        udt_guard_released_for_nested_table = false;
+        try
+        {
+            if (source_udt_guard)
+                source_atomic_database->validateUDTCrossDatabaseGuardAfterNestedTableRename(*source_udt_guard, local_context);
+            else
+                target_atomic_database->validateUDTCrossDatabaseGuardAfterNestedTableRename(*target_udt_guard, local_context);
+        }
+        catch (...)
+        {
+            udt_guard_revalidation_failed = true;
+            throw;
+        }
+    };
     try
     {
         table_metadata_path = getObjectMetadataPath(table_name);
@@ -504,7 +616,7 @@ void DatabaseOnDisk::renameTable(
         create.setDatabase(to_database.getDatabaseName());
         create.setTable(to_table_name);
         if (from_ordinary_to_atomic)
-            create.uuid = UUIDHelpers::generateV4();
+            create.uuid = ordinary_to_atomic_uuid;
         if (from_atomic_to_ordinary)
             std::swap(create.uuid, prev_uuid);
 
@@ -523,19 +635,55 @@ void DatabaseOnDisk::renameTable(
                 LOG_INFO(log, "Moving table from {} to {}", table_data_relative_path, to_database.getTableDataPath(create));
         }
 
-        /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
-        table->rename(to_database.getTableDataPath(create), StorageID(create));
+        /// MaterializedView is always eagerly loaded by
+        /// DatabaseOrdinary::shouldLazyLoad because it owns an inner table.
+        /// Release the outer Atomic schema guard only around its recursive
+        /// inner-table DDL and reacquire it before publishing the outer
+        /// StorageID. Every other storage retains the original uninterrupted
+        /// cross-database guard.
+        const StorageID new_table_id(create);
+        if (auto * materialized_view = table->as<StorageMaterializedView>())
+        {
+            materialized_view->renameInMemoryWithNestedTableCallbacks(
+                new_table_id, before_nested_table_rename, after_nested_table_rename);
+        }
+        else
+            table->rename(to_database.getTableDataPath(create), new_table_id);
     }
     catch (const Exception &)
     {
-        setDetachedTableNotInUseForce(prev_uuid);
-        attachTable(local_context, table_name, table, table_data_relative_path);
+        after_nested_table_rename();
+        if (udt_guard_revalidation_failed)
+            throw;
+        if (source_udt_guard)
+        {
+            source_atomic_database->setDetachedTableNotInUseForce(atomic_source_uuid);
+            source_atomic_database->attachTableUnderUDTCrossDatabaseGuard(
+                table_name, table, table_data_relative_path, *source_udt_guard);
+        }
+        else
+        {
+            setDetachedTableNotInUseForce(prev_uuid);
+            attachTable(local_context, table_name, table, table_data_relative_path);
+        }
         throw;
     }
     catch (const Poco::Exception & e)
     {
-        setDetachedTableNotInUseForce(prev_uuid);
-        attachTable(local_context, table_name, table, table_data_relative_path);
+        after_nested_table_rename();
+        if (udt_guard_revalidation_failed)
+            throw;
+        if (source_udt_guard)
+        {
+            source_atomic_database->setDetachedTableNotInUseForce(atomic_source_uuid);
+            source_atomic_database->attachTableUnderUDTCrossDatabaseGuard(
+                table_name, table, table_data_relative_path, *source_udt_guard);
+        }
+        else
+        {
+            setDetachedTableNotInUseForce(prev_uuid);
+            attachTable(local_context, table_name, table, table_data_relative_path);
+        }
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};
     }
@@ -605,7 +753,13 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
         String query = "CREATE DATABASE " + backQuoteIfNeed(database_name) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
         ast = parseQuery(
-            parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            parser,
+            query.data(),
+            query.data() + query.size(),
+            "",
+            0,
+            settings[Setting::max_parser_depth],
+            settings[Setting::max_parser_backtracks]);
     }
 
     if (!comment.empty())
@@ -715,6 +869,9 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         if (!file_name.empty() && file_name.at(0) == '.')
             continue;
 
+        if (db_disk->existsDirectory(it->path()) && isReservedMetadataDirectory(file_name))
+            continue;
+
         /// There are .sql.bak files - skip them.
         if (endsWith(file_name, ".sql.bak"))
             continue;
@@ -746,14 +903,16 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
             metadata_files.emplace_back(file_name, true);
         }
         else
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
+            throw Exception(
+                ErrorCodes::INCORRECT_FILE_NAME, "Incorrect file extension: {} in metadata directory {}", file_name, getMetadataPath());
     }
 
     std::sort(metadata_files.begin(), metadata_files.end());
     metadata_files.erase(std::unique(metadata_files.begin(), metadata_files.end()), metadata_files.end());
 
     /// Read and parse metadata in parallel
-    ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive, CurrentMetrics::DatabaseOnDiskThreadsScheduled);
+    ThreadPool pool(
+        CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive, CurrentMetrics::DatabaseOnDiskThreadsScheduled);
     const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
     for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
@@ -811,11 +970,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
 }
 
 ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
-    LoggerPtr logger,
-    ContextPtr local_context,
-    const String & metadata_file_path,
-    const String & query,
-    bool throw_on_error /*= true*/)
+    LoggerPtr logger, ContextPtr local_context, const String & metadata_file_path, const String & query, bool throw_on_error /*= true*/)
 {
     const auto & settings = local_context->getSettingsRef();
     ParserCreateQuery parser;
@@ -878,8 +1033,11 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}",
-                            backQuote(getDatabaseName()), backQuote(table_name));
+            throw Exception(
+                ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
+                "Cannot get metadata of {}.{}",
+                backQuote(getDatabaseName()),
+                backQuote(table_name));
         return nullptr;
     }
 
@@ -900,8 +1058,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         throw_on_error,
         getContext());
 
-    create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            make_intrusive<ASTLiteral>(metadata_ptr->comment));
+    create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment, make_intrusive<ASTLiteral>(metadata_ptr->comment));
 
     return create_table_query;
 }
@@ -917,8 +1074,8 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
         auto & storage_settings = settings->changes;
         for (const auto & change : settings_changes)
         {
-            auto it = std::find_if(storage_settings.begin(), storage_settings.end(),
-                                   [&](const auto & prev){ return prev.name == change.name; });
+            auto it = std::find_if(
+                storage_settings.begin(), storage_settings.end(), [&](const auto & prev) { return prev.name == change.name; });
             if (it != storage_settings.end())
                 it->value = change.value;
             else
@@ -942,7 +1099,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
+    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name)); /// FIXME
     auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
 
     auto default_db_disk = getContext()->getDatabaseDisk();
@@ -967,9 +1124,12 @@ void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & database_name_,
     const size_t escaped_name_length = escapeForFileName(table_name).length();
     if (escaped_name_length > allowed_max_length)
     {
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+        throw Exception(
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "The max length of table name for database {} is {}, current length is {}",
-            database_name_, allowed_max_length, escaped_name_length);
+            database_name_,
+            allowed_max_length,
+            escaped_name_length);
     }
 }
 
