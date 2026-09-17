@@ -246,7 +246,7 @@ SELECT 'suffix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag LIKE '%Cloud');
 
 SELECT 'ilike prefix', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION ilike(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag ILIKE 'clickhouse%');
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE tag ILIKE 'clic%');
 
 DROP TABLE tab;
 
