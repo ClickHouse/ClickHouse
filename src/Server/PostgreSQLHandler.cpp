@@ -37,7 +37,6 @@
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
-#include <Common/StringUtils.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTCopyQuery.h>
