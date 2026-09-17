@@ -1424,8 +1424,13 @@ bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search
         if (!bind(BindMode::User))
             return false;
 
-        /// With a lookup identity configured neither the DN detection nor the role searches
-        /// may run as the user.
+        /// The detection and the re-bind as the lookup identity serve the role searches only (`{user_dn}` in
+        /// their templates; with a lookup identity neither may run as the user). A password-only login, as in
+        /// a synchronised directory, is complete here: the lookup identity is not involved, so a broken one
+        /// cannot lock the synchronised users out.
+        if (!role_search_params)
+            return true;
+
         if (params.hasLookupIdentity())
             bind(BindMode::Service);
 
