@@ -43,6 +43,7 @@ static struct InitFiu
     REGULAR(smt_blobs_list_split_file_writes_small) \
     REGULAR(smt_blobs_list_zero_byte_append) \
     REGULAR(merge_tree_sink_on_start_random_sleep) \
+    REGULAR(merge_tree_marks_load_sync_sleep) \
     REGULAR(merge_tree_sequential_source_sleep_before_read) \
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
@@ -83,8 +84,6 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
-    REGULAR(s3_copy_inject_etag_mismatch) \
-    REGULAR(s3_head_omit_etag) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
@@ -372,6 +371,7 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_readahead_serve_wait) \
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
+    PAUSEABLE(object_storage_source_pause_before_virtual_columns) \
     REGULAR(keeper_changelog_readahead_fill_exception) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_delay_root_cause_report) \
@@ -388,6 +388,7 @@ static struct InitFiu
     ONCE(aggregating_in_order_transform_cancel_mid_loop) \
     ONCE(mysql_output_format_cancel_mid_loop) \
     ONCE(postgresql_output_format_cancel_mid_loop) \
+    PAUSEABLE_ONCE(external_distinct_suppression_run_prepared_pause) \
     ONCE(hash_join_throw_after_data_release) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \

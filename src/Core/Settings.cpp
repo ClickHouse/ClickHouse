@@ -3467,6 +3467,26 @@ In case of ORDER BY with LIMIT, when memory usage is higher than specified thres
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
 )", 0) \
     \
+    DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
+Query memory threshold, in bytes, for spilling `DISTINCT` data to disk. Actual memory usage can exceed
+this threshold.
+
+`0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
+the smaller is used. Set both settings to `0` to disable spilling.
+
+See [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory).
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
+Fraction of available server or user memory used to calculate the external `DISTINCT` threshold at
+the start of execution. For example, `0.5` uses half of the available memory.
+
+Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
+server or user memory limit, the ratio has no effect.
+
+`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
+use `max_bytes_before_external_distinct`, leaving room for additional memory usage.
+)", 0) \
+    \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.
@@ -8277,6 +8297,11 @@ Use Iceberg partition pruning for Iceberg tables
 )", 0) \
     DECLARE(Bool, use_iceberg_manifest_list_partition_pruning, true, R"(
 Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
+)", 0) \
+    DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
+If enabled and the `schema` key of an Iceberg manifest file header carries a schema that differs from the schema already registered for the same schema-id from metadata.json, the metadata.json schema is used and the manifest header copy is ignored with a warning. If disabled, such a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
+
+The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 )", 0) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
