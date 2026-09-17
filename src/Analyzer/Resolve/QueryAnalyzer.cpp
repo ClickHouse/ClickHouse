@@ -108,6 +108,7 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
+    extern const SettingsBool validate_group_by_all_key_types;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
@@ -4076,7 +4077,7 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
 
 /** Resolve GROUP BY clause.
   */
-void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope, bool validate_key_types)
 {
     QueryTreeNodes nullable_group_by_keys;
 
@@ -4098,7 +4099,10 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         {
             for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
             {
-                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+                if (validate_key_types)
+                    validateGroupByKeyType(group_by_elem->getResultType(), scope);
+                /// Outside the guard: the promotion to Nullable is what `group_by_use_nulls` asks for,
+                /// independently of whether the key types are validated.
                 if (scope.group_by_use_nulls)
                     nullable_group_by_keys.push_back(group_by_elem);
             }
@@ -4117,7 +4121,9 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
         {
-            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+            if (validate_key_types)
+                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+            /// Outside the guard, for the same reason as in the grouping-sets branch above.
             if (scope.group_by_use_nulls)
                 nullable_group_by_keys.push_back(group_by_elem);
         }
@@ -6527,6 +6533,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
+    /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
+    /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
+    const bool query_is_group_by_all = query_node_typed.isGroupByAll();
+
     if (!scope.group_by_use_nulls)
     {
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
@@ -6582,7 +6592,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasGroupBy())
-        resolveGroupByNode(query_node_typed, scope);
+        resolveGroupByNode(
+            query_node_typed,
+            scope,
+            /* validate_key_types */ !query_is_group_by_all
+                || scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types]);
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -6742,8 +6756,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         expandTuplesInList(query_node_typed.getGroupBy().getNodes());
 
-        for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+        /// Only the acceptance check is optional; the tuple expansion above is not.
+        if (scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types])
+        {
+            for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+        }
     }
 
     tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
