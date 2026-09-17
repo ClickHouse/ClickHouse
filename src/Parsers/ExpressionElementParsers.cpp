@@ -2962,61 +2962,6 @@ SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
         .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
     });
 
-    factory.registerStatement("RENAME modifier",
-    {
-        .description = R"DOCS_MD(
-> Changes the output names of columns selected by a column matcher. The values, types, expressions, and order stay unchanged.
-
-## Syntax {#syntax}
-
-```sql
-SELECT * RENAME old_name AS new_name FROM [db.]table_name
-SELECT * RENAME (old_name AS new_name [, old_name AS new_name, ...]) FROM [db.]table_name
-```
-
-The source names refer to the original names of the selected columns. Each source name must match exactly one selected column. `RENAME` is the last modifier in a column-transformer chain. Target names must be unique within one `RENAME` modifier and can be used as query aliases, for example in `ORDER BY`.
-
-## Examples {#examples}
-
-```sql
-SELECT * RENAME i AS value_i FROM columns_transformers;
-```
-
-```response
-┌─value_i─┬──j─┬───k─┐
-│     100 │ 10 │ 324 │
-│     120 │  8 │  23 │
-└─────────┴────┴─────┘
-```
-
-```sql
-SELECT * APPLY(toString) RENAME i AS value_i FROM columns_transformers;
-```
-
-```response
-┌─value_i─┬─j─┬─k─┐
-│      100 │ 10 │ 324 │
-│      120 │  8 │  23 │
-└──────────┴───┴───┘
-```
-
-```sql
-SELECT * RENAME (i AS value_i, j AS value_j) FROM columns_transformers;
-```
-
-The source column must be selected by the matcher. An unknown source column is an error.
-
-**Part of:** `SELECT`
-
-**Related:** `SELECT`, `APPLY modifier`, `EXCEPT modifier`, `REPLACE modifier`
-)DOCS_MD",
-        .syntax = R"(
-SELECT * RENAME old_name AS new_name FROM [db.]table_name
-SELECT * RENAME (old_name AS new_name [, old_name AS new_name, ...]) FROM [db.]table_name
-)",
-        .parent = "SELECT",
-        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier", "REPLACE modifier"},
-    });
 }
 
 }

@@ -59,10 +59,10 @@ SELECT * RENAME missing AS x FROM t_columns_rename; -- { serverError NO_SUCH_COL
 SELECT * RENAME (a AS x, a AS y) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT * RENAME (a AS x, b AS x) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT * EXCEPT(a) RENAME a AS x FROM t_columns_rename; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
-SELECT * RENAME () FROM t_columns_rename; -- { serverError SYNTAX_ERROR }
-SELECT * RENAME a x FROM t_columns_rename; -- { serverError SYNTAX_ERROR }
-SELECT * RENAME a AS x APPLY(toString) FROM t_columns_rename; -- { serverError SYNTAX_ERROR }
-SELECT * RENAME a AS x RENAME x AS y FROM t_columns_rename; -- { serverError SYNTAX_ERROR }
-INSERT INTO t_columns_rename (* RENAME a AS x) SELECT 1, 2, 3, 4; -- { serverError SYNTAX_ERROR }
+SELECT * RENAME () FROM t_columns_rename; -- { clientError SYNTAX_ERROR }
+SELECT * RENAME a x FROM t_columns_rename; -- { clientError SYNTAX_ERROR }
+SELECT * RENAME a AS x APPLY(toString) FROM t_columns_rename; -- { clientError SYNTAX_ERROR }
+SELECT * RENAME a AS x RENAME x AS y FROM t_columns_rename; -- { clientError SYNTAX_ERROR }
+INSERT INTO t_columns_rename (* RENAME a AS x) SELECT 1, 2, 3, 4; -- { clientError SYNTAX_ERROR }
 
 DROP TABLE t_columns_rename;
