@@ -4382,6 +4382,53 @@ def test_kafka2_dead_letter_queue_commit_on_select(kafka_cluster):
     instance.query(f"DROP TABLE test.{kafka_table} SYNC")
 
 
+def test_kafka_consumers_with_assignment_after_rebalance(kafka_cluster):
+    suffix = k.random_string(6)
+    topic_name = f"consumers_with_assignment_{suffix}"
+    k.kafka_create_topic(k.get_admin_client(kafka_cluster), topic_name, num_partitions=2)
+
+    metric_query = (
+        "SELECT value FROM system.metrics WHERE metric = 'KafkaConsumersWithAssignment'"
+    )
+    before = int(instance.query(metric_query))
+
+    def create(table):
+        instance.query(
+            f"""
+            CREATE TABLE test.{table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
+                         kafka_format = 'JSONEachRow';
+            CREATE MATERIALIZED VIEW test.{table}_mv ENGINE = Memory AS SELECT * FROM test.{table};
+            """
+        )
+
+    # The first consumer takes both partitions.
+    create(f"kafka_a_{suffix}")
+    assert_eq_with_retry(instance, metric_query, str(before + 1))
+
+    # The second member joining the group revokes and reassigns the live assignment.
+    create(f"kafka_b_{suffix}")
+    assert_eq_with_retry(
+        instance,
+        f"""
+        SELECT num_rebalance_assignments
+        FROM system.kafka_consumers
+        WHERE database = 'test' AND table = 'kafka_b_{suffix}'
+        """,
+        "1",
+    )
+
+    for table in (f"kafka_a_{suffix}", f"kafka_b_{suffix}"):
+        instance.query(f"DROP TABLE test.{table}_mv SYNC")
+        instance.query(f"DROP TABLE test.{table} SYNC")
+
+    # Without the fix the revocation is counted twice, so the gauge ends one below where it started.
+    assert_eq_with_retry(instance, metric_query, str(before))
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
