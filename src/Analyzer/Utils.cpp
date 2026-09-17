@@ -168,6 +168,28 @@ bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & left_type, cons
     return isStringOrFixedString(left) && isStringOrFixedString(right) && !left->equals(*right);
 }
 
+bool containsFloat(const DataTypePtr & type)
+{
+    auto unwrapped = removeNullable(removeLowCardinality(type));
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            if (containsFloat(element))
+                return true;
+
+        return false;
+    }
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(unwrapped.get()))
+        return containsFloat(array->getNestedType());
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(unwrapped.get()))
+        return containsFloat(map->getKeyType()) || containsFloat(map->getValueType());
+
+    return isFloat(unwrapped);
+}
+
 bool isNameOfInFunction(const std::string & function_name)
 {
     bool is_special_function_in = function_name == "in" ||

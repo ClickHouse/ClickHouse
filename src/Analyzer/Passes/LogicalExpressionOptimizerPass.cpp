@@ -1124,6 +1124,12 @@ static void convertNotEqualsChainToNotIn(
                 all_constants_convert_losslessly = false;
         }
 
+        /// `notEquals` compares floats numerically while the set is keyed on the raw bits:
+        /// `-0.0 != 0.0` is false while `-0.0 NOT IN (0.0)` is true, and `nan != nan` is true
+        /// while `nan NOT IN (nan)` is false.
+        if (containsFloat(expr_type))
+            all_constants_convert_losslessly = false;
+
         if (!all_constants_convert_losslessly)
         {
             std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
@@ -2637,6 +2643,12 @@ private:
                 if (stringFamilyPairIsNotEqualityEquivalent(expr_type, literal->getResultType()))
                     all_constants_convert_losslessly = false;
             }
+
+            /// `equals` compares floats numerically while the set is keyed on the raw bits:
+            /// `-0.0 = 0.0` is true while `-0.0 IN (0.0)` is false, and `nan = nan` is false
+            /// while `nan IN (nan)` is true.
+            if (containsFloat(expr_type))
+                all_constants_convert_losslessly = false;
 
             if (!all_constants_convert_losslessly)
             {
