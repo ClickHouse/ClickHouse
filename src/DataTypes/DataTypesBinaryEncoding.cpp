@@ -426,7 +426,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::Interval:
         {
             const auto & interval_type = assert_cast<const DataTypeInterval &>(*type);
-            writeBinary(UInt8(interval_type.getKind().kind), buf);
+            writeBinary(interval_type.getKind().toBinary(), buf);
             break;
         }
         case BinaryTypeIndex::Nullable:

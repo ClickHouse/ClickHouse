@@ -29,8 +29,8 @@ TEST(IntervalKind, FromBinary)
     for (size_t i = 0; i < all_kinds.size(); ++i)
     {
         SCOPED_TRACE(i);
-        EXPECT_EQ(static_cast<size_t>(all_kinds[i]), i);
-        EXPECT_EQ(IntervalKind::fromBinary(static_cast<UInt8>(i)).kind, all_kinds[i]);
+        EXPECT_EQ(IntervalKind(all_kinds[i]).toBinary(), i);
+        EXPECT_EQ(IntervalKind::fromBinary(static_cast<UInt8>(i)), all_kinds[i]);
     }
 
     for (unsigned value = all_kinds.size(); value < 256; ++value)

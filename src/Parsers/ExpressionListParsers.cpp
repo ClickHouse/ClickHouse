@@ -2608,9 +2608,9 @@ static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
         return {group.begin() + from_idx, group.begin() + to_idx + 1};
     };
 
-    auto range = extract_range(year_month_group, from_kind.kind, to_kind.kind);
+    auto range = extract_range(year_month_group, from_kind, to_kind);
     if (range.empty())
-        range = extract_range(day_time_group, from_kind.kind, to_kind.kind);
+        range = extract_range(day_time_group, from_kind, to_kind);
     if (range.empty())
         return {};
 

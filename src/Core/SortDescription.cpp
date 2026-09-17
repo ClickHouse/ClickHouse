@@ -403,11 +403,11 @@ void serializeFillColumnDescription(const FillColumnDescription & fill, WriteBuf
 
     writeFieldBinary(fill.fill_step, out);
     if (fill.step_kind)
-        writeIntBinary(static_cast<UInt8>(fill.step_kind->kind), out);
+        writeIntBinary(fill.step_kind->toBinary(), out);
 
     writeFieldBinary(fill.fill_staleness, out);
     if (fill.staleness_kind)
-        writeIntBinary(static_cast<UInt8>(fill.staleness_kind->kind), out);
+        writeIntBinary(fill.staleness_kind->toBinary(), out);
 }
 
 void deserializeFillColumnDescription(FillColumnDescription & fill, ReadBuffer & in, size_t max_type_complexity)

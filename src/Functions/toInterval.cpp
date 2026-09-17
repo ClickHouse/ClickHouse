@@ -57,7 +57,7 @@ public:
         ColumnsWithTypeAndName temp_columns(1);
         temp_columns[0] = arguments[0];
 
-        const auto & to_interval_function = to_interval_functions[static_cast<size_t>(kind.kind)];
+        const auto & to_interval_function = to_interval_functions[kind.toBinary()];
         return to_interval_function->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry run = */ false);
     }
 

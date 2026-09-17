@@ -22,13 +22,14 @@ struct IntervalKind
         Quarter = 0x09,
         Year = 0x0A,
     };
-    Kind kind = Kind::Second;
 
     IntervalKind(Kind kind_ = Kind::Second) : kind(kind_) {} /// NOLINT
     operator Kind() const { return kind; } /// NOLINT
 
     /// Decodes the interval kind byte of the binary type encoding.
     static IntervalKind fromBinary(UInt8 value);
+
+    UInt8 toBinary() const { return static_cast<UInt8>(kind); }
 
     std::string_view toString() const;
 
@@ -81,6 +82,9 @@ struct IntervalKind
     static bool tryParseString(std::string_view name, IntervalKind & result);
 
     auto operator<=>(const IntervalKind & other) const { return kind <=> other.kind; }
+
+private:
+    Kind kind = Kind::Second;
 };
 
 /// NOLINTNEXTLINE
