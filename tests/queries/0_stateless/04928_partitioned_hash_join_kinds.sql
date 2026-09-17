@@ -7,8 +7,8 @@
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
--- The runner randomizes `max_bytes_before_external_join`; any non-zero spill budget would send the join
--- to `hash` at plan time.
+-- The runner randomizes `max_bytes_before_external_join`; any non-zero spill budget would wrap the join
+-- in `SpillingHashJoin`.
 SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
