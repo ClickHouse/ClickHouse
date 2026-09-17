@@ -5,8 +5,8 @@
 
 using namespace DB;
 
-/// `AggregatedDataVariants::init` passes a size hint to the types the trait accepts. That now
-/// includes the nullable two-level variants, which build on a bare `TwoLevelHashTable`.
+/// `AggregatedDataVariants::init` passes a size hint to the types the trait accepts.
+/// That includes the nullable two-level variants, which build on a bare `TwoLevelHashTable`.
 static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithUInt64KeyTwoLevel>::value);
 static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithUInt64KeyVoidTwoLevel>::value);
 static_assert(HasConstructorOfNumberOfElements<AggregatedDataWithNullableUInt64KeyVoidTwoLevel>::value);
