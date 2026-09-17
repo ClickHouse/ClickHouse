@@ -2139,6 +2139,20 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
         }
 
+        /// A transactional mutation rewrites only the lower-version parts its own snapshot sees. An
+        /// entry that never has this part in scope must not hide the later ones that do, or the part
+        /// stays unmutated for as long as that entry is kept.
+        while (mutations_begin_it != mutations_end_it
+               && getPartMutationScope(*part, static_cast<Int64>(mutations_begin_it->first), mutations_begin_it->second.tid)
+                   == PartMutationScope::Outside)
+            ++mutations_begin_it;
+
+        if (mutations_begin_it == mutations_end_it)
+        {
+            current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
+            continue;
+        }
+
         TransactionID first_mutation_tid = mutations_begin_it->second.tid;
         MergeTreeTransactionPtr txn;
 
@@ -2151,19 +2165,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
         if (!first_mutation_tid.isNonTransactional())
         {
-
-            /// Mutate visible parts only
-            /// NOTE Do not mutate visible parts in Outdated state, because it does not make sense:
-            /// mutation will fail anyway due to serialization error.
-
-            /// It's possible that both mutation and transaction are already finished,
-            /// because that part should not be mutated because it was not visible for that transaction.
-            if (!part->version->isVisible(first_mutation_tid.start_csn, first_mutation_tid))
-            {
-                current_parts_postpone_reasons[part->name] = PostponeReasons::VERSION_NOT_VISIBLE;
-                continue;
-            }
-
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
             {
