@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -183,9 +184,9 @@ private:
     /// Not nullptr only for single MaterializedPostgreSQL storage, because for MaterializedPostgreSQL
     /// database engine there is one replication handler for all tables.
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
-    /// The replication settings are consumed at construction, so the enumeration is taken there - after
-    /// `materialized_postgresql_tables_list` is set to the remote table, which is what the handler is given.
-    SettingDescriptions settings_descriptions;
+    /// What the handler was built from, kept so the table can report it. Null for a table of a
+    /// `MaterializedPostgreSQL` database, which is built by a constructor that receives no settings.
+    std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings;
 
     /// Distinguish between single MaterilizePostgreSQL table engine and MaterializedPostgreSQL database engine,
     /// because table with engine MaterilizePostgreSQL acts differently in each case.

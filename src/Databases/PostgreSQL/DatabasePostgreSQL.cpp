@@ -96,7 +96,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     const String & dbname_,
     const StoragePostgreSQL::Configuration & configuration_,
     postgres::PoolWithFailoverPtr pool_,
-    SettingDescriptions storage_settings_descriptions_,
+    PostgreSQLSettings storage_settings_,
     bool cache_tables_,
     UUID uuid)
     : DatabaseWithAltersOnDiskBase(dbname_)
@@ -105,7 +105,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , database_engine_define(database_engine_define_->clone())
     , configuration(configuration_)
     , pool(std::move(pool_))
-    , storage_settings_descriptions(std::move(storage_settings_descriptions_))
+    , storage_settings(std::move(storage_settings_))
     , cache_tables(cache_tables_)
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
     , db_uuid(uuid)
@@ -279,7 +279,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
         auto storage = std::make_shared<StoragePostgreSQL>(
                 StorageID(database_name, table_name), pool, TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
-                context_, storage_settings_descriptions, configuration.schema, configuration.on_conflict);
+                context_, storage_settings, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
         {
@@ -739,7 +739,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             args.database_name,
             configuration,
             pool,
-            postgresql_settings.enumerateSettings(),
+            std::move(postgresql_settings),
             use_table_cache,
             args.uuid);
     };

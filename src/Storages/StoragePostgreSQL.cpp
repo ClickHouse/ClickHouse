@@ -98,7 +98,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
-    SettingDescriptions settings_descriptions_,
+    PostgreSQLSettings settings_,
     const String & remote_table_schema_,
     const String & on_conflict_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -106,7 +106,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
-    , settings_descriptions(std::move(settings_descriptions_))
+    , settings(std::move(settings_))
     , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -130,9 +130,9 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr query_context
     /// A setting the definition does not state carries the value the creating session had for it: `default`
     /// where that is the compiled-in default and `other` where it is not - the rule `Join` and `Distributed`
     /// follow for server-backed values.
-    SettingDescriptions settings = settings_descriptions;
-    reportOriginByValue(settings);
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    SettingDescriptions descriptions = settings.enumerateSettings();
+    reportOriginByValue(descriptions);
+    return attributeSettingsStatedInDefinition(std::move(descriptions), query_context);
 }
 
 VirtualColumnsDescription StoragePostgreSQL::createVirtuals()
@@ -917,7 +917,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.getContext(),
-            postgresql_settings.enumerateSettings(),
+            std::move(postgresql_settings),
             configuration.schema,
             configuration.on_conflict);
     },

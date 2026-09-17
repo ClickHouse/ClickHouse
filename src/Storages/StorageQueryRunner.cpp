@@ -757,12 +757,12 @@ StorageQueryRunner::StorageQueryRunner(
     ConstraintsDescription constraints_,
     const String & comment,
     const ASTPtr & sql_security_,
-    const QueryRunnerSettings & settings,
+    QueryRunnerSettings settings_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , settings(std::move(settings_))
     , mode(settings[QueryRunnerSetting::mode])
-    , settings_descriptions(settings.enumerateSettings())
     , log(getLogger("StorageQueryRunner (" + table_id_.getFullTableName() + ")"))
 {
     const String & cluster_name = settings[QueryRunnerSetting::cluster];
@@ -804,9 +804,9 @@ SettingDescriptions StorageQueryRunner::getTableSettings(ContextPtr query_contex
 {
     /// The engine reads its settings from the definition alone, so what the definition does not state is at
     /// the compiled-in default.
-    SettingDescriptions settings = settings_descriptions;
-    reportOriginByValue(settings);
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    SettingDescriptions descriptions = settings.enumerateSettings();
+    reportOriginByValue(descriptions);
+    return attributeSettingsStatedInDefinition(std::move(descriptions), query_context);
 }
 
 void StorageQueryRunner::shutdown(bool /*is_drop*/)
@@ -986,7 +986,7 @@ void registerStorageQueryRunner(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.query.sql_security,
-            settings,
+            std::move(settings),
             args.getContext());
     },
     {

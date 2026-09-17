@@ -6,6 +6,7 @@
 #include <Core/PostgreSQL/ConnectionSSLParams.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/TableNameOrQuery.h>
 
@@ -37,7 +38,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        SettingDescriptions settings_descriptions_,
+        PostgreSQLSettings settings_,
         const String & remote_table_schema_ = "",
         const String & on_conflict = "");
 
@@ -112,10 +113,9 @@ private:
     String remote_table_schema;
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
-    /// The engine keeps no `PostgreSQLSettings`: its creator resolves them - the session's values overlaid with
-    /// the `SETTINGS` clause - into a connection pool and drops them. The enumeration is taken there instead, so
-    /// the table can still report what it was built with.
-    SettingDescriptions settings_descriptions;
+    /// The creator resolves these - the session's values overlaid with the `SETTINGS` clause - into the
+    /// connection pool above. Kept so the table can say what it was built with.
+    PostgreSQLSettings settings;
 
     LoggerPtr log;
 };

@@ -75,7 +75,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     const postgres::ConnectionInfo & connection_info,
     const StorageInMemoryMetadata & storage_metadata,
     ContextPtr context_,
-    std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings)
+    std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(remote_database_name, remote_table_name_) + ")"))
@@ -91,8 +91,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
     setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
 
+    replication_settings = std::move(replication_settings_);
     (*replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list] = remote_table_name_;
-    settings_descriptions = replication_settings->enumerateSettings();
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
@@ -153,11 +153,13 @@ SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr q
 {
     /// A table of a `MaterializedPostgreSQL` database is built by a constructor that receives no settings -
     /// there they belong to the database - and reports nothing, as before.
-    ///
+    if (!replication_settings)
+        return {};
+
     /// A setting the definition does not state carries the compiled-in default, except
     /// `materialized_postgresql_tables_list`, which the constructor sets to this table's remote name - the
     /// value the replication handler works with, reported as `other` since the definition did not state it.
-    SettingDescriptions settings = settings_descriptions;
+    SettingDescriptions settings = replication_settings->enumerateSettings();
     reportOriginByValue(settings);
     return attributeSettingsStatedInDefinition(std::move(settings), query_context);
 }

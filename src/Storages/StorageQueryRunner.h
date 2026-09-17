@@ -2,13 +2,13 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
+#include <Storages/QueryRunnerSettings.h>
 
 namespace DB
 {
 
 class QueryRunnerDispatcher;
 enum class QueryRunnerMode : uint8_t;
-struct QueryRunnerSettings;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
@@ -21,7 +21,7 @@ public:
         ConstraintsDescription constraints_,
         const String & comment,
         const ASTPtr & sql_security_,
-        const QueryRunnerSettings & settings,
+        QueryRunnerSettings settings_,
         ContextPtr context_);
 
     ~StorageQueryRunner() override;
@@ -41,10 +41,10 @@ public:
     bool supportsParallelInsert() const override { return true; }
 
 private:
+    /// The engine acts on its settings at construction - `mode` here, the rest inside the dispatcher - but
+    /// keeps them so it can say what they were. Declared first: `mode` is read out of it.
+    QueryRunnerSettings settings;
     QueryRunnerMode mode;
-    /// The engine consumes its settings at construction - `mode` here, the rest inside the dispatcher - so the
-    /// enumeration is taken while they are still at hand, and reported as it was then.
-    SettingDescriptions settings_descriptions;
     std::unique_ptr<QueryRunnerDispatcher> dispatcher;
     LoggerPtr log;
 };
