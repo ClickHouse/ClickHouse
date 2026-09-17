@@ -1,31 +1,33 @@
 #include <Interpreters/applyColumnsTransformer.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <algorithm>
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingSource.h>
 #include <Common/quoteString.h>
 
-#include <DataTypes/FieldToDataType.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
-#include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTWithElement.h>
-#include <Parsers/ASTColumnsTransformers.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Core/Streaming/CursorTree.h>
+#include <DataTypes/FieldToDataType.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTCastTarget.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
 
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTStreamSettings.h>
@@ -641,7 +643,39 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {
-        if (function->isLambdaFunction() || isASTLambdaFunction(*function))
+        const auto contains_cast_target = [](const ASTPtr & list)
+        {
+            const auto * expression_list = list ? list->as<ASTExpressionList>() : nullptr;
+            return expression_list
+                && std::any_of(
+                       expression_list->children.begin(),
+                       expression_list->children.end(),
+                       [](const ASTPtr & child) { return child && child->as<ASTCastTarget>(); });
+        };
+        const auto * structured_cast_target = function->tryGetStructuredCastTarget();
+        if (!structured_cast_target && (contains_cast_target(function->arguments) || contains_cast_target(function->parameters)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A structured UDT CAST has an invalid function shape");
+        if (structured_cast_target && !structured_cast_target->getType())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A structured UDT CAST has an empty target type");
+
+        if (structured_cast_target)
+        {
+            auto function_node = std::make_shared<FunctionNode>(function->name);
+            function_node->setNullsAction(function->getNullsAction());
+            function_node->markAsOperator(function->isOperator());
+            function_node->getArguments().getNodes().push_back(buildExpression(function->arguments->children.front(), context));
+
+            if (function->isWindowFunction())
+            {
+                if (function->window_definition)
+                    function_node->getWindowNode() = buildWindow(function->window_definition, context);
+                else
+                    function_node->getWindowNode() = std::make_shared<IdentifierNode>(Identifier(function->window_name));
+            }
+
+            result = std::move(function_node);
+        }
+        else if (function->isLambdaFunction() || isASTLambdaFunction(*function))
         {
             const auto & lambda_arguments_and_expression = function->arguments->as<ASTExpressionList &>().children;
             auto & lambda_arguments_tuple = lambda_arguments_and_expression.at(0)->as<ASTFunction &>();

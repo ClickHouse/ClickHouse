@@ -85,6 +85,20 @@ Temporary objects, `ALIAS` and `EPHEMERAL` table columns, defaults, constraints,
 
 Inferred logical output bindings require the analyzer and a fresh local create. Parameterized views are physical-only. An inferred mapped Materialized View must be non-refreshable. It may use an external target or its ordinary owned inner table. For an owned inner table, the analyzed output must exactly match the complete physical inner-table schema; the outer Materialized View owns the only logical sidecar and authority identity, while the inner table remains physical-only. While that mapped outer object is live, the guarded direct statement set on the owned inner table is rejected: `INSERT`; `UPDATE`, `DELETE`, and mutation commands; every `ALTER TABLE` command (including partition `ATTACH`, `FETCH`, `MOVE`, and `REPLACE`); `OPTIMIZE`; `TRUNCATE`; table `ATTACH`, `DETACH`, `DROP`, `UNDROP`, and `RENAME`; and cross-database moves. An explicitly addressed ordinary `SELECT` from the hidden inner name remains a physical-only read and exposes no logical UDT identity. Replicated database admission and `ON CLUSTER` are not supported.
 
+## Explicit CAST and semantic identity {#explicit-cast-and-semantic-identity}
+
+An explicitly qualified UDT can be used as a cast target:
+
+```sql
+SELECT CAST(1 AS app.UserId);
+SELECT 1::app.UserId;
+SELECT CAST(1, 'app.UserId');
+```
+
+The structured and constant-string spellings resolve the same database-owned definition, perform the same `USAGE TYPE` check, and execute the ordinary conversion to its physical expansion. The type name must be qualified. A pure alias does not add a runtime wrapper, so the result header and `toTypeName` remain physical.
+
+Query-local semantic-role analysis is demand driven. Exact identity can pass only through the registered projection, wrapper, unanimous branch/UNION, and safe-join rules needed by a supported semantic sink. Unregistered operations erase the role. Ordinary built-in queries and prebound UDT columns with no eligible semantic sink do not load the type catalog or allocate semantic-planner state.
+
 ## Physical runtime semantics {#physical-runtime-semantics}
 
 UDTs are schema aliases, not runtime wrappers. ClickHouse specializes the declaration once and passes only the physical type to storage, serializers, query planning, functions, and clients.

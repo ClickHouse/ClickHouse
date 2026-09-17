@@ -5,6 +5,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/UDTAccessTarget.h>
 #include <Access/UDTUsageAccess.h>
+#include <Analyzer/UDT/SelectedOutputTypeBindings.h>
 #include <Backups/BackupsWorker.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -26,6 +27,7 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/UDT/UDTExecutionBoundary.h>
 #include <Interpreters/UDTScalarAliasColumnBinder.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>

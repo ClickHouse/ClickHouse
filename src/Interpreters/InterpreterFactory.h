@@ -7,10 +7,18 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <memory>
+
 namespace DB
 {
 
 class Context;
+
+namespace UDT
+{
+class UDTExecutionBoundaryProof;
+class UDTStoredObjectDDLSelectBoundaryHandoff;
+}
 
 class InterpreterFactory : private boost::noncopyable
 {
@@ -23,13 +31,15 @@ public:
         ContextMutablePtr context;
         const SelectQueryOptions & options;
         bool allow_materialized = false;
+        std::shared_ptr<UDT::UDTStoredObjectDDLSelectBoundaryHandoff> udt_stored_object_ddl_select_boundary_handoff;
     };
 
     using InterpreterPtr = std::unique_ptr<IInterpreter>;
 
-     InterpreterPtr get(
-        ASTPtr & query,
+    InterpreterPtr
+    get(ASTPtr & query,
         ContextMutablePtr context,
+        UDT::UDTExecutionBoundaryProof udt_execution_boundary,
         const SelectQueryOptions & options = {});
 
     using CreatorFn = std::function<InterpreterPtr(const Arguments & arguments)>;

@@ -27,6 +27,11 @@ class QueryNode;
 class JoinNode;
 class ColumnNode;
 
+namespace UDT
+{
+struct QueryAnalysisState;
+}
+
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
 
@@ -126,6 +131,8 @@ public:
     void resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
 private:
+    void publishSelectedOutputTypeBindings(const QueryTreeNodePtr & node, const ContextPtr & context);
+
     /// Utility functions
 
     IdentifierResolveScope & createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope);
@@ -319,6 +326,13 @@ private:
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
+    /// Definitions already checked under the durable stored-object UDF policy
+    /// before their analyzer-local lambda image was reused.
+    std::unordered_set<std::string> stored_object_safe_user_defined_lambdas;
+    /// One aggregate fail-closed budget for global SQL UDF definition images
+    /// reached by this analyzer. It intentionally remains bounded even when
+    /// max_ast_elements=0 on the owning query.
+    size_t remaining_stored_object_udf_inspection_nodes = 1U << 20;
 
     /// Array join expressions counter
     size_t array_join_expressions_counter = 1;
@@ -347,6 +361,30 @@ private:
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
     /// by tree hash, so syntactically-identical calls fold to the same constant. See `resolveFunction`.
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
+
+    /// The ordinary analyzer path pays one null pointer and constructs no UDT
+    /// maps or ledger. The state is allocated only for an enabled explicit UDT
+    /// CAST and owns every per-database resolver used by this query.
+    std::unique_ptr<UDT::QueryAnalysisState> explicit_udt_state;
+
+    /// Set only at the normal table-expression initialization hook from an
+    /// immutable resolved storage snapshot.  It gives the DDL selected-output
+    /// collector a zero-prepass fast negative for all-built-in sources.
+    bool saw_bound_udt_source_snapshot = false;
+    bool owns_selected_output_binding_collector = false;
+    bool owns_query_result_cache_storage_dependency_resolution = false;
+    /// Recursive-CTE type inference resolves disposable QueryTree generations.
+    /// They may perform physical type/catalog resolution, but only the final
+    /// generation is allowed to retain semantic node registrations.
+    bool suppress_udt_query_tree_registrations = false;
+
+    /// Monotonic, allocation-free accounting for sparse projection discovery
+    /// that can begin before the first exact owning-authority limits are
+    /// known. Once an eligible sink activates its query budget, the complete
+    /// totals are charged before retained graph allocation continues.
+    UInt64 udt_semantic_discovery_node_path_states = 0;
+    UInt64 udt_semantic_discovery_inspected_edges = 0;
+    UInt64 udt_semantic_discovery_scratch_bytes = 0;
 
     const bool only_analyze;
 

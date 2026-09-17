@@ -1,5 +1,7 @@
 #include <Analyzer/Resolve/TableExpressionData.h>
 
+#include <DataTypes/hasNullable.h>
+
 namespace DB
 {
 
@@ -45,4 +47,27 @@ ColumnNameToColumnNodeMap & AnalysisTableExpressionData::emplaceColumnNodeMap() 
     return column_name_to_column_node.emplace();
 }
 
+std::optional<UInt32> AnalysisTableExpressionData::tryGetProjectionOrdinal(const ColumnNode & column) const noexcept
+{
+    if (!column_name_to_column_node)
+        return std::nullopt;
+    const auto found = column_name_to_column_node->find(column.getColumnName());
+    if (found == column_name_to_column_node->end() || !found->second.projection_ordinal || !found->second.node)
+        return std::nullopt;
+    if (found->second.node.get() != std::addressof(column))
+    {
+        const auto original_source = found->second.node->getColumnSourceOrNull();
+        const auto candidate_source = column.getColumnSourceOrNull();
+        const auto & original_column = found->second.node->getColumn();
+        const auto & candidate_column = column.getColumn();
+        const auto original_type = found->second.node->getResultType();
+        const auto candidate_type = column.getResultType();
+        if (!original_source || original_source.get() != candidate_source.get()
+            || original_column.getNameInStorage() != candidate_column.getNameInStorage() || !original_type || !candidate_type
+            || !isNullableOrLowCardinalityNullable(candidate_type)
+            || !removeNullableOrLowCardinalityNullable(candidate_type)->equals(*original_type))
+            return std::nullopt;
+    }
+    return found->second.projection_ordinal;
+}
 }

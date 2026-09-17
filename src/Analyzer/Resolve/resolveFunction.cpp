@@ -1,7 +1,16 @@
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/UDT/QueryAnalysisState.h>
+#include <Analyzer/UDT/SemanticSinkRegistry.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/UDT/Catalog.h>
+#include <DataTypes/UDT/IAuthorityAdapter.h>
+#include <DataTypes/UDT/QualifiedTypeReferenceCandidate.h>
+#include <DataTypes/UDT/ResourceAccounting.h>
+#include <DataTypes/UDT/ResourceLimitAdapters.h>
+#include <DataTypes/UDT/TypeResolver.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -25,35 +34,53 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
+#include <Columns/validateColumnType.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Functions/exists.h>
-#include <Columns/validateColumnType.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/misc.h>
-#include <Functions/IFunctionAdaptors.h>
+#include <DataTypes/hasNullable.h>
+#include <Databases/IDatabase.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/exists.h>
 #include <Functions/grouping.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/UDTScalarAliasColumnBinder.h>
+#include <Interpreters/misc.h>
 #include <Storages/StorageJoin.h>
+#include <Common/ProfileEvents.h>
 
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 
+#include <Parsers/ASTCastTarget.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTUDTReference.h>
+#include <Parsers/ParserDataType.h>
+#include <Parsers/parseQuery.h>
 
+#include <algorithm>
+#include <array>
+
+namespace ProfileEvents
+{
+extern const Event UDTCatalogLookups;
+extern const Event UDTCatalogRootLoads;
+}
 
 namespace DB
 {
@@ -62,6 +89,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_IDENTIFIER;
+    extern const int LIMIT_EXCEEDED;
     extern const int SYNTAX_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
@@ -74,6 +102,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_TYPE;
 }
 
 namespace Setting
@@ -89,6 +118,10 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_experimental_user_defined_types;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
 }
@@ -610,6 +643,249 @@ bool hasScopeDependentNodesForEarlyShortCircuit(
 
     return false;
 }
+
+DataTypeFamilyClassification classifyExplicitCastType(const void *, std::string_view, DataTypeFamilySyntaxKind syntax_kind) noexcept
+{
+    const bool is_qualified_reference = syntax_kind == DataTypeFamilySyntaxKind::QualifiedReference;
+    return {.is_built_in = !is_qualified_reference, .is_qualified_reference = is_qualified_reference};
+}
+
+bool isPublicStringCastShape(const ASTFunction & function) noexcept
+{
+    return Poco::icompare(function.name, "CAST") == 0 && !function.parameters && function.arguments
+        && function.arguments->children.size() == 2;
+}
+
+std::optional<String> tryGetExplicitUDTStringTargetCandidate(const ASTFunction & original_function, const FunctionNode & resolved_function)
+{
+    if (!isPublicStringCastShape(original_function))
+        return std::nullopt;
+
+    const auto & arguments = resolved_function.getArguments().getNodes();
+    const auto * constant = arguments.size() == 2 && arguments[1] ? arguments[1]->as<ConstantNode>() : nullptr;
+    if (!constant || !constant->getResultType() || constant->getResultType()->getTypeId() != TypeIndex::String
+        || constant->getValue().getType() != Field::Types::String)
+        return std::nullopt;
+
+    const auto & type_name = constant->getValue().safeGet<String>();
+    return UDT::hasQualifiedTypeReferenceCandidate(type_name) ? std::optional<String>{type_name} : std::nullopt;
+}
+
+ASTPtr tryParseExplicitUDTStringTarget(const String & type_name, const ContextPtr & context)
+{
+    DataTypeFamilyClassificationSummary summary;
+    ParserDataTypeWithFamilyClassification parser(
+        DataTypeFamilyClassifier{.context = nullptr, .callback = classifyExplicitCastType}, summary);
+    ASTPtr parsed = parseQuery(
+        parser,
+        type_name.data(),
+        type_name.data() + type_name.size(),
+        "CAST data type",
+        context->getSettingsRef()[Setting::max_query_size],
+        context->getSettingsRef()[Setting::max_parser_depth],
+        context->getSettingsRef()[Setting::max_parser_backtracks]);
+    return summary.hasQualifiedLogicalFamily() ? parsed : ASTPtr{};
+}
+
+const String & getExplicitUDTAuthorityDatabase(const ASTPtr & target)
+{
+    constexpr UDT::TypeResolverLimits limits;
+    struct Frame
+    {
+        const IAST * node = nullptr;
+        size_t next_child = 0;
+    };
+
+    std::array<Frame, limits.maximum_declaration_ast_depth> stack{};
+    size_t stack_size = 0;
+    UInt64 visited_nodes = 0;
+    UInt64 visited_edges = 0;
+
+    auto push = [&](const IAST * node)
+    {
+        if (!node)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Explicit UDT CAST target contains a null AST node");
+        if (visited_nodes >= limits.maximum_declaration_ast_nodes)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Explicit UDT CAST target exceeds its declaration AST node limit");
+        if (stack_size >= limits.maximum_declaration_ast_depth)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Explicit UDT CAST target exceeds its declaration AST depth limit");
+        ++visited_nodes;
+        stack[stack_size++] = {.node = node};
+    };
+
+    push(target.get());
+    while (stack_size)
+    {
+        auto & frame = stack[stack_size - 1];
+        if (const auto * reference = frame.node->as<ASTUDTReference>())
+        {
+            if (reference->database_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "An explicit UDT CAST target must use a qualified type name");
+            return reference->database_name;
+        }
+
+        if (frame.next_child >= frame.node->children.size())
+        {
+            --stack_size;
+            continue;
+        }
+
+        if (visited_edges >= limits.maximum_declaration_ast_edges)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Explicit UDT CAST target exceeds its declaration AST edge limit");
+        ++visited_edges;
+        push(frame.node->children[frame.next_child++].get());
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "A structured UDT CAST target contains no UDT reference");
+}
+
+[[noreturn]] void rethrowExplicitUDTResolutionError(const UDT::ScalarAliasColumnBinderError & error)
+{
+    using Code = UDT::ScalarAliasColumnBinderError::Code;
+    const int exception_code = [&]
+    {
+        switch (error.code)
+        {
+            case Code::UnknownDefinition: return ErrorCodes::UNKNOWN_TYPE;
+            case Code::InvalidInput:
+            case Code::CrossDatabaseReference:
+            case Code::UnsupportedColumnShape:
+            case Code::ParameterizedDefinition: return ErrorCodes::BAD_ARGUMENTS;
+            case Code::AuthorityMismatch:
+            case Code::QueryChanged:
+            case Code::NormalizedSchemaMismatch:
+            case Code::InvalidState: return ErrorCodes::LOGICAL_ERROR;
+        }
+        return ErrorCodes::LOGICAL_ERROR;
+    }();
+    throw Exception(exception_code, "{}", error.what());
+}
+
+[[noreturn]] void rethrowExplicitUDTResolutionError(const UDT::TemplateSpecializerError & error)
+{
+    using Code = UDT::TemplateSpecializerError::Code;
+    const int exception_code = [&]
+    {
+        switch (error.code)
+        {
+            case Code::DefinitionNotFound: return ErrorCodes::UNKNOWN_TYPE;
+            case Code::InvalidArguments:
+            case Code::ActiveCycle:
+            case Code::NonDecreasingRecursion: return ErrorCodes::BAD_ARGUMENTS;
+            case Code::LimitExceeded: return ErrorCodes::LIMIT_EXCEEDED;
+            case Code::MissingCapability: return ErrorCodes::NOT_IMPLEMENTED;
+            case Code::InvalidAttemptState:
+            case Code::AuthorityFailure:
+            case Code::InvalidIdentity:
+            case Code::DependencyMismatch:
+            case Code::InvalidTemplate: return ErrorCodes::LOGICAL_ERROR;
+        }
+        return ErrorCodes::LOGICAL_ERROR;
+    }();
+    throw Exception(exception_code, "{}", error.what());
+}
+
+[[noreturn]] void rethrowExplicitUDTResolutionError(const UDT::TypeResolverError & error)
+{
+    using Code = UDT::TypeResolverError::Code;
+    const int exception_code = [&]
+    {
+        switch (error.code)
+        {
+            case Code::InvalidRoot:
+            case Code::InvalidReference:
+            case Code::CanonicalArgumentMismatch:
+            case Code::InvalidASTShape:
+            case Code::VariantBranchDropped:
+            case Code::VariantBranchCollapsed: return ErrorCodes::BAD_ARGUMENTS;
+            case Code::LimitExceeded: return ErrorCodes::LIMIT_EXCEEDED;
+            case Code::DuplicateReference:
+            case Code::InvalidArgumentLineage:
+            case Code::DuplicateArgumentLineage:
+            case Code::ArgumentLineageCycle:
+            case Code::UnreachableArgumentLineage:
+            case Code::UnreachableReference:
+            case Code::UnsubstitutedReference:
+            case Code::PhysicalTopologyMismatch: return ErrorCodes::LOGICAL_ERROR;
+        }
+        return ErrorCodes::LOGICAL_ERROR;
+    }();
+    throw Exception(exception_code, "{}", error.what());
+}
+
+[[noreturn]] void rethrowExplicitUDTResolutionError(const UDT::DescriptorError & error)
+{
+    using Code = UDT::DescriptorError::Code;
+    const int exception_code = [&]
+    {
+        switch (error.code)
+        {
+            case Code::InvalidArguments: return ErrorCodes::BAD_ARGUMENTS;
+            case Code::LimitExceeded: return ErrorCodes::LIMIT_EXCEEDED;
+            case Code::InvalidDefinition:
+            case Code::InvalidPhysicalType:
+            case Code::InvalidPath:
+            case Code::ConflictingIdentity: return ErrorCodes::LOGICAL_ERROR;
+        }
+        return ErrorCodes::LOGICAL_ERROR;
+    }();
+    throw Exception(exception_code, "{}", error.what());
+}
+
+[[noreturn]] void rethrowExplicitUDTResolutionError(const UDT::ResourceLimitError & error)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid UDT resource limit configuration: {}", error.what());
+}
+
+[[noreturn]] void rethrowExplicitUDTResolutionError(const UDT::CatalogError & error)
+{
+    using Code = UDT::CatalogError::Code;
+    const int exception_code = [&]
+    {
+        switch (error.code)
+        {
+            case Code::MissingIdentity: return ErrorCodes::UNKNOWN_TYPE;
+            case Code::LimitExceeded:
+            case Code::HazardSlotsExhausted: return ErrorCodes::LIMIT_EXCEEDED;
+            case Code::InvalidConfiguration:
+            case Code::InvalidDefinition:
+            case Code::DuplicateIdentity:
+            case Code::DuplicateName:
+            case Code::GenerationMismatch:
+            case Code::Shutdown: return ErrorCodes::LOGICAL_ERROR;
+        }
+        return ErrorCodes::LOGICAL_ERROR;
+    }();
+    throw Exception(exception_code, "{}", error.what());
+}
+
+void reportUDTCatalogEvents(const UDT::UDTTypeExpressionResolutionStatistics & statistics, std::pair<UInt64, UInt64> & reported) noexcept
+{
+    if (statistics.catalog_root_loads > reported.first)
+        ProfileEvents::increment(ProfileEvents::UDTCatalogRootLoads, statistics.catalog_root_loads - reported.first);
+    if (statistics.catalog_name_lookups > reported.second)
+        ProfileEvents::increment(ProfileEvents::UDTCatalogLookups, statistics.catalog_name_lookups - reported.second);
+    reported = {statistics.catalog_root_loads, statistics.catalog_name_lookups};
+}
+
+UDT::EffectiveResourceLimits effectiveQueryLimitsForBoundReferences(const UDT::BoundObjectTypeReferences & references)
+{
+    const auto & object = references.getObject();
+    if (!object.isValid())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A bound UDT semantic endpoint has no stable object identity");
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(object.database_uuid);
+    if (!database)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A bound UDT semantic endpoint has no owning database");
+    const auto & authority = database->getUDTAuthorityAdapter();
+    if (authority.getDatabaseUUID() != object.database_uuid)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A bound UDT semantic endpoint disagrees with its owning authority identity");
+
+    auto session = authority.beginResolutionSession();
+    const auto * effective_database_limits = session.getEffectiveResourceLimits();
+    if (!effective_database_limits)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A bound persistent UDT semantic endpoint has no database resource-limit snapshot");
+    return UDT::makeQueryEffectiveResourceLimits(*effective_database_limits, authority.getCapabilities().limits);
+}
 }
 
 /// Checks if node is a NULL constant
@@ -1071,6 +1347,291 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
+    /// Some legacy rewrites resolve an expression only to decide whether the
+    /// original function can be replaced. Resolve a deep clone with semantic
+    /// registration disabled so a discarded probe cannot publish QueryTree
+    /// pointers, mutate the surviving argument in place, or make its later
+    /// ordinary resolve hit the global resolved-expression cache prematurely.
+    const auto resolve_speculative_clone = [&](const QueryTreeNodePtr & original, bool allow_lambda, bool allow_table)
+    {
+        auto probe = original->clone();
+        const bool previous_suppression = suppress_udt_query_tree_registrations;
+        suppress_udt_query_tree_registrations = true;
+        try
+        {
+            resolveExpressionNode(probe, scope, allow_lambda, allow_table, allow_niladic_functions);
+        }
+        catch (...)
+        {
+            suppress_udt_query_tree_registrations = previous_suppression;
+            throw;
+        }
+        suppress_udt_query_tree_registrations = previous_suppression;
+        return probe;
+    };
+
+    const ASTFunction * original_function = nullptr;
+    const ASTCastTarget * original_structured_cast_target = nullptr;
+    if (const auto & original_ast = function_node_ptr->getOriginalAST())
+    {
+        original_function = original_ast->as<ASTFunction>();
+        original_structured_cast_target = original_function ? original_function->tryGetStructuredCastTarget() : nullptr;
+    }
+
+    const bool is_stored_expression_cast = original_function && original_function->hasUDTStoredExpressionOrdinal();
+    if (is_stored_expression_cast
+        && (Poco::icompare(original_function->name, "CAST") != 0 || original_function->parameters || !original_function->arguments
+            || original_function->arguments->children.size() != 2))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A trusted stored-expression CAST ordinal is attached to an invalid function shape");
+
+    const auto stored_expression_references
+        = is_stored_expression_cast ? scope.context->getUDTStoredExpressionTypeReferences() : UDT::BoundObjectTypeReferences::Ptr{};
+    if (is_stored_expression_cast && scope.context->isViewInnerQuery() && !stored_expression_references)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A trusted View stored-expression CAST has no bound V2 sidecar snapshot");
+
+    UDT::BoundDeclaredTypeTree::Ptr semantic_stored_expression_cast_target;
+    std::optional<UDT::EffectiveResourceLimits> semantic_stored_expression_effective_limits;
+    if (stored_expression_references)
+    {
+        semantic_stored_expression_cast_target = UDT::QueryAnalysisState::inspectPreboundStoredExplicitCast(
+            stored_expression_references, original_function->getUDTStoredExpressionOrdinal());
+        if (semantic_stored_expression_cast_target)
+            semantic_stored_expression_effective_limits = effectiveQueryLimitsForBoundReferences(*stored_expression_references);
+        if (semantic_stored_expression_cast_target && !scope.context->getSettingsRef()[Setting::allow_experimental_user_defined_types])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "A stored View UDT CAST is disabled; enable allow_experimental_user_defined_types to execute it");
+        }
+    }
+
+    /// A physicalized stored structured target remains an ASTCastTarget so
+    /// SHOW CREATE can restore its logical spelling. It must not re-enter
+    /// transient catalog resolution: its exact role comes only from the bound
+    /// V2 sidecar above.
+    const ASTCastTarget * structured_cast_target = is_stored_expression_cast ? nullptr : original_structured_cast_target;
+
+    /// Ordinary public CAST accepts a resolved constant String, not only a
+    /// literal token. Resolve the complete argument list in its ordinary order
+    /// before UDT target classification when the original target is an
+    /// expression; the generic argument phase below then reuses this result.
+    std::optional<ProjectionNames> pre_resolved_public_cast_argument_names;
+    if (!structured_cast_target && !is_stored_expression_cast && original_function && isPublicStringCastShape(*original_function)
+        && original_function->arguments->children[1] && !original_function->arguments->children[1]->as<ASTLiteral>())
+    {
+        pre_resolved_public_cast_argument_names.emplace(resolveExpressionNodeList(
+            function_node_ptr->getArgumentsNode(),
+            scope,
+            true /*allow_lambda_expression*/,
+            false /*allow_table_expression*/,
+            allow_niladic_functions));
+    }
+
+    std::optional<String> string_cast_target;
+    if (!structured_cast_target && !is_stored_expression_cast && original_function)
+        string_cast_target = tryGetExplicitUDTStringTargetCandidate(*original_function, *function_node_ptr);
+
+    ASTPtr explicit_cast_target;
+    if (structured_cast_target)
+        explicit_cast_target = structured_cast_target->getType();
+    else if (string_cast_target)
+        explicit_cast_target = tryParseExplicitUDTStringTarget(*string_cast_target, scope.context);
+
+    UDT::BoundDeclaredTypeTree::Ptr semantic_explicit_cast_target;
+    UDT::BoundDeclaredTypeTree::Ptr resolved_explicit_udt_target;
+    UDT::TypeAuthorityLimits semantic_explicit_cast_authority_limits;
+    std::optional<UDT::EffectiveResourceLimits> semantic_explicit_cast_effective_limits;
+
+    if (is_stored_expression_cast && original_structured_cast_target)
+    {
+        auto & arguments = function_node_ptr->getArguments().getNodes();
+        if (arguments.size() != 1 || function_node_ptr->isWindowFunction())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A physicalized stored structured CAST has an invalid QueryTree shape");
+        DataTypePtr physical_type;
+        try
+        {
+            physical_type = DataTypeFactory::instance().get(original_structured_cast_target->getType());
+        }
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (...)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A physicalized stored structured CAST has an invalid target type");
+        }
+        if (!physical_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A physicalized stored structured CAST has no target type");
+        arguments.push_back(std::make_shared<ConstantNode>(physical_type->getName(), std::make_shared<DataTypeString>()));
+    }
+
+    if (explicit_cast_target)
+    {
+        if (DataTypeFactory::instance().hasQualifiedBuiltInCollision(*explicit_cast_target))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "A qualified user-defined type reference cannot use a registered built-in family or alias");
+        }
+
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_user_defined_types])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED, "CAST to a UDT is disabled; enable allow_experimental_user_defined_types to use it");
+        }
+
+        auto & arguments = function_node_ptr->getArguments().getNodes();
+        const size_t expected_argument_count = structured_cast_target ? 1 : 2;
+        if (Poco::icompare(function_name, "CAST") != 0 || arguments.size() != expected_argument_count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "An explicit UDT CAST reached analysis with an invalid function shape");
+        if (function_node_ptr->isWindowFunction())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "CAST to a UDT cannot be used with OVER");
+
+        const String database_name = scope.context->resolveDatabase(getExplicitUDTAuthorityDatabase(explicit_cast_target));
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        constexpr UDT::TypeAuthorityCapabilityMask required_capabilities
+            = UDT::typeAuthorityCapabilityBit(UDT::TypeAuthorityCapability::TransientResolution)
+            | UDT::typeAuthorityCapabilityBit(UDT::TypeAuthorityCapability::Limits)
+            | UDT::typeAuthorityCapabilityBit(UDT::TypeAuthorityCapability::Templates);
+        const auto & authority = database->getUDTAuthorityAdapter();
+        const auto & active_capabilities = authority.getCapabilities();
+        if (active_capabilities.adapter_abi != 1)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "Database {} exposes an unsupported UDT authority adapter ABI", backQuote(database_name));
+        }
+        if (!active_capabilities.containsAll(required_capabilities))
+        {
+            const auto & supported_capabilities = database->getSupportedUDTAuthorityCapabilities();
+            if (supported_capabilities.adapter_abi == 1 && supported_capabilities.containsAll(required_capabilities))
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Database {} has no active UDT authority", backQuote(database_name));
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database {} does not support UDT resolution", backQuote(database_name));
+        }
+
+        const UUID database_uuid = authority.getDatabaseUUID();
+        if (database_uuid == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} exposes a UDT authority with a nil identity", backQuote(database_name));
+
+        if (!explicit_udt_state)
+            explicit_udt_state = std::make_unique<UDT::QueryAnalysisState>();
+
+        const auto name_binding = explicit_udt_state->database_ids_by_name.find(database_name);
+        if (name_binding != explicit_udt_state->database_ids_by_name.end() && name_binding->second != database_uuid)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Database {} resolved to two UDT authority identities during one query",
+                backQuote(database_name));
+        }
+
+        auto database_it = explicit_udt_state->databases.find(database_uuid);
+        if (database_it != explicit_udt_state->databases.end())
+        {
+            if (database_it->second.diagnostic_name != database_name)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "One UDT authority cannot be referenced through multiple database names in the same query: {} and {}",
+                    backQuote(database_it->second.diagnostic_name),
+                    backQuote(database_name));
+            }
+            if (database_it->second.database.get() != database.get())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Database {} changed object identity during UDT analysis", backQuote(database_name));
+        }
+        else
+        {
+            UDT::QueryAnalysisState::DatabaseState new_database_state;
+            new_database_state.diagnostic_name = database_name;
+            new_database_state.database = database;
+            database_it = explicit_udt_state->databases.emplace(database_uuid, std::move(new_database_state)).first;
+        }
+        auto & database_state = database_it->second;
+
+        if (name_binding == explicit_udt_state->database_ids_by_name.end())
+            explicit_udt_state->database_ids_by_name.try_emplace(database_name, database_uuid);
+
+        std::shared_ptr<UDT::UDTTypeExpressionResolutionScope> pending_resolver;
+        auto report_catalog_events = [&]() noexcept
+        {
+            const auto * resolver = pending_resolver ? pending_resolver.get() : database_state.resolver.get();
+            if (resolver)
+                reportUDTCatalogEvents(resolver->getStatistics(), database_state.reported_catalog_events);
+        };
+        std::optional<UDT::BoundDeclaredTypeResult> resolved_target;
+
+        try
+        {
+            if (!database_state.resolver)
+            {
+                if (!explicit_udt_state->resource_ledger)
+                    explicit_udt_state->resource_ledger = std::make_shared<UDT::QueryResourceLedger>();
+                pending_resolver = std::make_shared<UDT::UDTTypeExpressionResolutionScope>(
+                    database_name, scope.context, authority, explicit_udt_state->resource_ledger);
+                database_state.resolver = pending_resolver;
+                pending_resolver.reset();
+            }
+
+            resolved_target.emplace(database_state.resolver->resolve(explicit_cast_target));
+            semantic_explicit_cast_effective_limits = database_state.resolver->getEffectiveQueryResourceLimits();
+        }
+        catch (const UDT::ScalarAliasColumnBinderError & error)
+        {
+            report_catalog_events();
+            rethrowExplicitUDTResolutionError(error);
+        }
+        catch (const UDT::TemplateSpecializerError & error)
+        {
+            report_catalog_events();
+            rethrowExplicitUDTResolutionError(error);
+        }
+        catch (const UDT::TypeResolverError & error)
+        {
+            report_catalog_events();
+            rethrowExplicitUDTResolutionError(error);
+        }
+        catch (const UDT::DescriptorError & error)
+        {
+            report_catalog_events();
+            rethrowExplicitUDTResolutionError(error);
+        }
+        catch (const UDT::ResourceLimitError & error)
+        {
+            report_catalog_events();
+            rethrowExplicitUDTResolutionError(error);
+        }
+        catch (const UDT::CatalogError & error)
+        {
+            report_catalog_events();
+            rethrowExplicitUDTResolutionError(error);
+        }
+        catch (...)
+        {
+            report_catalog_events();
+            throw;
+        }
+        report_catalog_events();
+
+        const auto & physical_type = resolved_target->getPhysicalType();
+        if (!physical_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "An explicit UDT CAST target has no physical type");
+
+        if (const auto & logical_tree = resolved_target->getLogicalTree(); logical_tree)
+        {
+            resolved_explicit_udt_target = logical_tree;
+            if (logical_tree->getSemanticCapabilities() != 0 && explicit_udt_state->isDirectExplicitCastEligible(*logical_tree))
+            {
+                semantic_explicit_cast_target = logical_tree;
+                semantic_explicit_cast_authority_limits = active_capabilities.limits;
+            }
+        }
+
+        auto physical_target = std::make_shared<ConstantNode>(physical_type->getName(), std::make_shared<DataTypeString>());
+        if (structured_cast_target)
+            arguments.push_back(std::move(physical_target));
+        else
+            arguments[1] = std::move(physical_target);
+    }
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -1330,8 +1891,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           * SELECT if(hasColumnInTable('system', 'numbers', 'not_existing_column'), not_existing_column, 5) FROM system.numbers;
           */
         auto & if_function_arguments = function_node_ptr->getArguments().getNodes();
-        auto if_function_condition = if_function_arguments[0];
-        resolveExpressionNode(if_function_condition, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, allow_niladic_functions);
+        auto if_function_condition
+            = resolve_speculative_clone(if_function_arguments[0], false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         auto constant_condition = tryExtractConstantFromConditionNode(if_function_condition);
 
@@ -1355,11 +1916,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             try
             {
-                resolveExpressionNode(possibly_invalid_argument_node,
-                    scope,
-                    false /*allow_lambda_expression*/,
-                    false /*allow_table_expression*/,
-                    allow_niladic_functions);
+                static_cast<void>(resolve_speculative_clone(
+                    possibly_invalid_argument_node, false /*allow_lambda_expression*/, false /*allow_table_expression*/));
             }
             catch (const Exception &)
             {
@@ -1412,13 +1970,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             for (size_t pair = 0; pair < num_pairs; ++pair)
             {
-                /// Snapshot, not reference: `resolveExpressionNode` rebinds matchers in place.
-                QueryTreeNodePtr cond_node = multi_if_args[2 * pair];
-                resolveExpressionNode(cond_node,
-                    scope,
-                    false /*allow_lambda_expression*/,
-                    false /*allow_table_expression*/,
-                    allow_niladic_functions);
+                auto cond_node = resolve_speculative_clone(
+                    multi_if_args[2 * pair], false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
                 auto constant_condition = tryExtractConstantFromConditionNode(cond_node);
                 if (!constant_condition.has_value())
@@ -1488,11 +2041,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     try
                     {
-                        resolveExpressionNode(dead_branch,
-                            scope,
-                            false /*allow_lambda_expression*/,
-                            false /*allow_table_expression*/,
-                            allow_niladic_functions);
+                        static_cast<void>(
+                            resolve_speculative_clone(dead_branch, false /*allow_lambda_expression*/, false /*allow_table_expression*/));
                     }
                     catch (const Exception &)
                     {
@@ -1540,31 +2090,17 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function_in_arguments_nodes.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
-        QueryTreeNodePtr in_first_argument = function_in_arguments_nodes[0]->clone();
-
         /// Resolve first argument of IN to determine if it is constant or not. In case of constant we will not do any rewriting
-        resolveExpressionNode(
-            in_first_argument,
-            scope,
-            true /*allow_lambda_expression*/,
-            true /*allow_table_expression*/,
-            allow_niladic_functions
-        );
+        auto in_first_argument
+            = resolve_speculative_clone(function_in_arguments_nodes[0], true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
         if (!in_first_argument->as<ConstantNode>())
         {
-            auto in_second_argument = function_in_arguments_nodes[1]->clone();
-
             /// Resolve second argument of IN to determine if it is a subquery.
-            resolveExpressionNode(
-                in_second_argument,
-                scope,
-                true /*allow_lambda_expression*/,
-                true /*allow_table_expression*/,
-                allow_niladic_functions
-            );
+            auto in_second_argument_probe = resolve_speculative_clone(
+                function_in_arguments_nodes[1], true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
-            if (in_second_argument->as<QueryNode>())
+            if (in_second_argument_probe->as<QueryNode>())
             {
                 /// The rewrite below produces a correlated subquery, so it requires the setting.
                 /// Checked here (not at the gate) so constant/tuple `IN` is never rejected.
@@ -1572,6 +2108,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     throw Exception(
                         ErrorCodes::SUPPORT_IS_DISABLED,
                         "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
+                /// The probe is intentionally registration-free and discarded.
+                /// Resolve a fresh clone for the surviving EXISTS generation.
+                auto in_second_argument = function_in_arguments_nodes[1]->clone();
+                resolveExpressionNode(
+                    in_second_argument, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/, allow_niladic_functions);
+                if (!in_second_argument->as<QueryNode>())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "IN-to-EXISTS subquery probe changed across deterministic resolution");
 
                 /// An array subquery on the right of IN is the set of its elements (see
                 /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
@@ -1600,7 +2144,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 else
                 {
                     /// It there are multiple columns, wrap them in a Tuple()
-                    auto projection = subquery_node->as<QueryNode>()->getProjection().clone();
+                    IQueryTreeNode::CloneNodeMapping clone_node_mapping;
+                    const IQueryTreeNode::ReplacementMap no_replacements;
+                    auto projection = subquery_node->as<QueryNode>()->getProjection().cloneAndReplace(no_replacements, &clone_node_mapping);
+                    if (explicit_udt_state)
+                        explicit_udt_state->remapSemanticGenerationAfterQueryTreeReplacement(clone_node_mapping);
 
                     QueryTreeNodePtr wrapper_tuple_node = std::make_shared<FunctionNode>("tuple");
                     wrapper_tuple_node->as<FunctionNode>()->getArguments().getNodes() = std::move(projection->as<ListNode>()->getNodes());
@@ -1961,12 +2509,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    auto arguments_projection_names = resolveExpressionNodeList(
-        function_node_ptr->getArgumentsNode(),
-        scope,
-        true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/,
-        allow_niladic_functions);
+    auto arguments_projection_names = pre_resolved_public_cast_argument_names ? std::move(*pre_resolved_public_cast_argument_names)
+                                                                              : resolveExpressionNodeList(
+                                                                                    function_node_ptr->getArgumentsNode(),
+                                                                                    scope,
+                                                                                    true /*allow_lambda_expression*/,
+                                                                                    allow_table_expressions /*allow_table_expression*/,
+                                                                                    allow_niladic_functions);
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
@@ -2053,6 +2602,768 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
 
     auto & function_node = *function_node_ptr;
+
+    /// Contextual UDT constants are discovered only while the closed function
+    /// boundary already visits its resolved arguments. The exact prebound
+    /// column lookup is O(log D) and a pure-alias miss allocates no query-local
+    /// semantic state.
+    struct ContextualColumnPath
+    {
+        ColumnNodePtr column;
+        std::vector<UInt64> type_child_path;
+    };
+    enum class ContextualJoinSafety : UInt8
+    {
+        Direct,
+        NullableLift,
+        Erase,
+    };
+    const auto charge_semantic_discovery_work = [&](UInt64 node_path_states, UInt64 inspected_edges, UInt64 scratch_bytes)
+    {
+        const auto charge_bounded = [](UInt64 & current, UInt64 addition, UInt64 maximum, std::string_view description)
+        {
+            if (addition > maximum - current)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "UDT semantic {} exceeds its implementation limit", description);
+            current += addition;
+        };
+        const auto & implementation_limits = UDT::getResourceImplementationLimits();
+        charge_bounded(
+            udt_semantic_discovery_node_path_states,
+            node_path_states,
+            implementation_limits.get(UDT::ResourceLimit::NodePathStatesPerQuery),
+            "discovery node work");
+        charge_bounded(
+            udt_semantic_discovery_inspected_edges,
+            inspected_edges,
+            implementation_limits.get(UDT::ResourceLimit::InspectedEdgesPerQuery),
+            "discovery edge work");
+        charge_bounded(
+            udt_semantic_discovery_scratch_bytes,
+            scratch_bytes,
+            implementation_limits.get(UDT::ResourceLimit::SemanticScratchBytesPerQuery),
+            "discovery scratch");
+
+        if (explicit_udt_state && explicit_udt_state->hasSemanticResourceBudget())
+        {
+            explicit_udt_state->chargeSemanticDiscoveryWork(
+                udt_semantic_discovery_node_path_states, udt_semantic_discovery_inspected_edges, udt_semantic_discovery_scratch_bytes);
+        }
+    };
+
+    const auto contextual_join_safety = [&](const ColumnNode & column)
+    {
+        const auto column_source = column.getColumnSourceOrNull();
+        if (!column_source)
+            return ContextualJoinSafety::Erase;
+
+        const IdentifierResolveScope * query_scope = &scope;
+        while (query_scope)
+        {
+            if (query_scope->scope_node && query_scope->scope_node->as<QueryNode>())
+            {
+                const auto source = query_scope->table_expression_node_to_data.find(column_source);
+                if (source != query_scope->table_expression_node_to_data.end())
+                {
+                    switch (source->second.join_column_output_kind)
+                    {
+                        case JoinColumnOutputKind::Direct: return ContextualJoinSafety::Direct;
+                        case JoinColumnOutputKind::NullableLift:
+                            return isNullableOrLowCardinalityNullable(column.getResultType()) ? ContextualJoinSafety::NullableLift
+                                                                                              : ContextualJoinSafety::Erase;
+                        case JoinColumnOutputKind::DefaultSynthesis:
+                        case JoinColumnOutputKind::Ambiguous: return ContextualJoinSafety::Erase;
+                    }
+                }
+            }
+            else if (query_scope->expression_join_tree_node.get() == column_source.get())
+                return ContextualJoinSafety::Direct;
+            query_scope = query_scope->parent_scope;
+        }
+        return ContextualJoinSafety::Erase;
+    };
+
+    /// Enumerates one demanded projection ordinal without constructing a
+    /// pending-node vector. This path can run before the first exact authority
+    /// is known, so finite query-wide implementation counters protect that
+    /// short prefix; an activated exact budget is charged prospectively before
+    /// each subsequent node/edge is inspected.
+    const auto visit_sparse_projection_inputs
+        = [&]<typename Visitor>(const TableExpressionNodePtr & source, UInt32 ordinal, bool require_single_output, Visitor && visitor)
+    {
+        constexpr UInt64 maximum_sparse_projection_depth = 256;
+        const auto visit = [&](const auto & self, const IQueryTreeNode * current, UInt64 depth) -> bool
+        {
+            if (!current)
+                return false;
+            if (depth > maximum_sparse_projection_depth)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "UDT semantic sparse projection exceeds its depth limit");
+
+            if (const auto * query = current->as<QueryNode>())
+            {
+                charge_semantic_discovery_work(1, 1, static_cast<UInt64>(sizeof(const IQueryTreeNode *) + sizeof(UInt64)));
+                const auto & projection = query->getProjection().getNodes();
+                if ((require_single_output && projection.size() != 1) || ordinal >= projection.size() || !projection[ordinal])
+                    return false;
+                return visitor(projection[ordinal]);
+            }
+
+            const auto * union_node = current->as<UnionNode>();
+            if (!union_node || union_node->isRecursiveCTE() || union_node->hasRecursiveCTETable()
+                || union_node->getUnionMode() > SelectUnionMode::UNION_DISTINCT)
+                return false;
+            const auto & queries = union_node->getQueries().getNodes();
+            charge_semantic_discovery_work(
+                1, static_cast<UInt64>(queries.size()), static_cast<UInt64>(sizeof(const IQueryTreeNode *) + sizeof(UInt64)));
+            for (const auto & query : queries)
+            {
+                if (!query || !self(self, query.get(), depth + 1))
+                    return false;
+            }
+            return true;
+        };
+        return source && visit(visit, source.get(), 0);
+    };
+
+    const auto capture_sparse_projection = [&](const TableExpressionNodePtr & source, UInt32 ordinal, bool require_single_output = false)
+        -> std::optional<UDT::QueryAnalysisState::SparseProjectionSource>
+    {
+        UDT::QueryAnalysisState::SparseProjectionSource result{
+            .ordinal = ordinal,
+            .unanimous_union = source && source->as<UnionNode>(),
+            .nullable_lift = false,
+            .inputs = {},
+        };
+        const bool complete = visit_sparse_projection_inputs(
+            source,
+            ordinal,
+            require_single_output,
+            [&](const QueryTreeNodePtr & input)
+            {
+                if (result.inputs.size() == result.inputs.capacity())
+                {
+                    const size_t current_capacity = result.inputs.capacity();
+                    const size_t next_capacity = current_capacity == 0 ? 1 : current_capacity * 2;
+                    if (next_capacity <= current_capacity || next_capacity > result.inputs.max_size())
+                        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "UDT semantic sparse-projection input capacity is exhausted");
+                    charge_semantic_discovery_work(0, 0, static_cast<UInt64>(next_capacity - current_capacity) * sizeof(QueryTreeNodePtr));
+                    result.inputs.reserve(next_capacity);
+                }
+                result.inputs.push_back(input);
+                return true;
+            });
+        return complete && !result.inputs.empty() ? std::optional<UDT::QueryAnalysisState::SparseProjectionSource>{std::move(result)}
+                                                  : std::nullopt;
+    };
+    const auto sparse_projection_source = [&](const ColumnNode & column) -> std::optional<UDT::QueryAnalysisState::SparseProjectionSource>
+    {
+        const auto source = column.getColumnSourceOrNull();
+        if (!source || (!source->as<QueryNode>() && !source->as<UnionNode>()))
+            return std::nullopt;
+        const IdentifierResolveScope * current_scope = &scope;
+        while (current_scope)
+        {
+            const auto found = current_scope->table_expression_node_to_data.find(source);
+            if (found != current_scope->table_expression_node_to_data.end())
+            {
+                const auto ordinal = found->second.tryGetProjectionOrdinal(column);
+                auto result = ordinal ? capture_sparse_projection(source, *ordinal) : std::nullopt;
+                if (result && !result->unanimous_union && result->inputs.size() == 1 && result->inputs.front()
+                    && result->inputs.front()->getResultType() && column.getResultType()
+                    && !column.getResultType()->equals(*result->inputs.front()->getResultType()))
+                {
+                    result->nullable_lift = isNullableOrLowCardinalityNullable(column.getResultType())
+                        && removeNullableOrLowCardinalityNullable(column.getResultType())->equals(*result->inputs.front()->getResultType());
+                    if (!result->nullable_lift)
+                        return std::nullopt;
+                }
+                return result;
+            }
+            current_scope = current_scope->parent_scope;
+        }
+        return std::nullopt;
+    };
+    const auto is_full_join_using_unanimous = [&](const FunctionNode & candidate)
+    {
+        if (!candidate.isResolved() || candidate.hasOriginalAST() || !candidate.hasAlias()
+            || !equalsCaseInsensitive(candidate.getFunctionName(), "firstNonDefault"))
+            return false;
+        const auto & arguments = candidate.getArguments().getNodes();
+        if (arguments.size() < 2
+            || std::ranges::any_of(
+                arguments,
+                [](const auto & argument)
+                {
+                    return !argument || !argument->template as<ColumnNode>()
+                        || !isNullableOrLowCardinalityNullable(argument->getResultType());
+                }))
+            return false;
+        const IdentifierResolveScope * current_scope = &scope;
+        while (current_scope)
+        {
+            if (current_scope->full_join_using_unanimous_projections.contains(std::addressof(candidate)))
+                return true;
+            current_scope = current_scope->parent_scope;
+        }
+        return false;
+    };
+    const auto physical_type_at_contextual_path = [](DataTypePtr type, std::span<const UInt64> path) -> DataTypePtr
+    {
+        for (const UInt64 ordinal : path)
+        {
+            if (!type)
+                return {};
+            switch (type->getTypeId())
+            {
+                case TypeIndex::Array:
+                    if (ordinal != 0)
+                        return {};
+                    type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+                    break;
+                case TypeIndex::Nullable:
+                    if (ordinal != 0)
+                        return {};
+                    type = assert_cast<const DataTypeNullable &>(*type).getNestedType();
+                    break;
+                case TypeIndex::LowCardinality:
+                    if (ordinal != 0)
+                        return {};
+                    type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+                    break;
+                case TypeIndex::Tuple: {
+                    const auto & elements = assert_cast<const DataTypeTuple &>(*type).getElements();
+                    if (ordinal >= elements.size())
+                        return {};
+                    type = elements[static_cast<size_t>(ordinal)];
+                    break;
+                }
+                default: return {};
+            }
+        }
+        return type;
+    };
+
+    std::function<std::optional<ContextualColumnPath>(const QueryTreeNodePtr &, UInt64)> resolve_static_contextual_column;
+    resolve_static_contextual_column = [&](const QueryTreeNodePtr & candidate_node, UInt64 depth) -> std::optional<ContextualColumnPath>
+    {
+        constexpr UInt64 maximum_static_contextual_depth = 256;
+        if (!candidate_node || depth > maximum_static_contextual_depth)
+            return std::nullopt;
+        if (const auto * column = candidate_node->as<ColumnNode>())
+        {
+            if (column->getColumn().isSubcolumn())
+                return std::nullopt;
+            return ContextualColumnPath{std::static_pointer_cast<ColumnNode>(candidate_node), {}};
+        }
+
+        const auto * function = candidate_node->as<FunctionNode>();
+        if (!function || !function->isResolved() || !equalsCaseInsensitive(function->getFunctionName(), "tupleElement"))
+            return std::nullopt;
+        const auto & arguments = function->getArguments().getNodes();
+        if (arguments.size() != 2)
+            return std::nullopt; /// The three-argument form can synthesize a default.
+        auto source = resolve_static_contextual_column(arguments[0], depth + 1);
+        const auto * selector = arguments[1] ? arguments[1]->as<ConstantNode>() : nullptr;
+        if (!source || !selector)
+            return std::nullopt;
+
+        auto current = physical_type_at_contextual_path(source->column->getColumn().getTypeInStorage(), source->type_child_path);
+        while (current && (current->getTypeId() == TypeIndex::Nullable || current->getTypeId() == TypeIndex::LowCardinality))
+        {
+            source->type_child_path.push_back(0);
+            current = current->getTypeId() == TypeIndex::Nullable
+                ? assert_cast<const DataTypeNullable &>(*current).getNestedType()
+                : assert_cast<const DataTypeLowCardinality &>(*current).getDictionaryType();
+        }
+        const auto * tuple = current ? typeid_cast<const DataTypeTuple *>(current.get()) : nullptr;
+        if (!tuple)
+            return std::nullopt;
+
+        const Field selector_value = selector->getValue();
+        std::optional<size_t> element;
+        if (selector_value.getType() == Field::Types::UInt64)
+        {
+            const UInt64 one_based = selector_value.safeGet<UInt64>();
+            if (one_based && one_based <= tuple->getElements().size())
+                element = static_cast<size_t>(one_based - 1);
+        }
+        else if (selector_value.getType() == Field::Types::Int64)
+        {
+            const Int64 one_based = selector_value.safeGet<Int64>();
+            if (one_based > 0 && static_cast<UInt64>(one_based) <= tuple->getElements().size())
+                element = static_cast<size_t>(one_based - 1);
+        }
+        else if (selector_value.getType() == Field::Types::String)
+            element = tuple->tryGetPositionByName(selector_value.safeGet<String>());
+        if (!element)
+            return std::nullopt;
+        source->type_child_path.push_back(static_cast<UInt64>(*element));
+        return source;
+    };
+
+    enum class ContextualExpectedKind : UInt8
+    {
+        None,
+        NullOnly,
+        Exact,
+        ConflictingRole,
+        IncompatibleNormalization,
+    };
+    enum class ContextualNormalizationStep : UInt8
+    {
+        Nullable,
+        LowCardinality,
+        ArrayElement,
+    };
+    struct ContextualNormalizationContract
+    {
+        std::array<ContextualNormalizationStep, 64> steps{};
+        size_t size = 0;
+
+        bool append(ContextualNormalizationStep step)
+        {
+            if (size == steps.size())
+                return false;
+            steps[size++] = step;
+            return true;
+        }
+
+        bool operator==(const ContextualNormalizationContract & rhs) const noexcept
+        {
+            return size == rhs.size && std::equal(steps.begin(), steps.begin() + size, rhs.steps.begin());
+        }
+    };
+    struct ContextualExpected
+    {
+        ContextualExpectedKind kind = ContextualExpectedKind::None;
+        ColumnNodePtr column;
+        UDT::QueryAnalysisState::PreboundContextualConstantCandidate candidate;
+        DataTypePtr normalized_logical_shape;
+        UDT::SemanticCapabilityMask selected_semantic_capabilities = 0;
+        ContextualNormalizationContract normalization;
+    };
+
+    const auto make_contextual_normalization_contract = [](DataTypePtr demanded_type,
+                                                           const DataTypePtr & normalized_logical_shape,
+                                                           UDT::SemanticSinkKind kind) -> std::optional<ContextualNormalizationContract>
+    {
+        if (!demanded_type || !normalized_logical_shape)
+            return std::nullopt;
+        const bool expects_array_element = kind == UDT::SemanticSinkKind::HasConstant || kind == UDT::SemanticSinkKind::HasAnyConstant;
+        bool crossed_array = false;
+        ContextualNormalizationContract result;
+        while (!demanded_type->equals(*normalized_logical_shape))
+        {
+            ContextualNormalizationStep step;
+            switch (demanded_type->getTypeId())
+            {
+                case TypeIndex::Nullable:
+                    step = ContextualNormalizationStep::Nullable;
+                    demanded_type = assert_cast<const DataTypeNullable &>(*demanded_type).getNestedType();
+                    break;
+                case TypeIndex::LowCardinality:
+                    step = ContextualNormalizationStep::LowCardinality;
+                    demanded_type = assert_cast<const DataTypeLowCardinality &>(*demanded_type).getDictionaryType();
+                    break;
+                case TypeIndex::Array:
+                    if (!expects_array_element || crossed_array)
+                        return std::nullopt;
+                    step = ContextualNormalizationStep::ArrayElement;
+                    demanded_type = assert_cast<const DataTypeArray &>(*demanded_type).getNestedType();
+                    crossed_array = true;
+                    break;
+                default: return std::nullopt;
+            }
+            if (!result.append(step))
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "UDT contextual normalization exceeds its path-depth limit");
+        }
+        if (expects_array_element != crossed_array)
+            return std::nullopt;
+        return result;
+    };
+
+    const auto merge_contextual_normalization_contracts
+        = [](const ContextualNormalizationContract & lhs,
+             const ContextualNormalizationContract & rhs) -> std::optional<ContextualNormalizationContract>
+    {
+        ContextualNormalizationContract result;
+        size_t lhs_begin = 0;
+        size_t rhs_begin = 0;
+        while (true)
+        {
+            size_t lhs_end = lhs_begin;
+            while (lhs_end < lhs.size && lhs.steps[lhs_end] != ContextualNormalizationStep::ArrayElement)
+                ++lhs_end;
+            size_t rhs_end = rhs_begin;
+            while (rhs_end < rhs.size && rhs.steps[rhs_end] != ContextualNormalizationStep::ArrayElement)
+                ++rhs_end;
+
+            const auto segment_is_suffix = [](const ContextualNormalizationContract & shorter,
+                                              size_t shorter_begin,
+                                              size_t shorter_end,
+                                              const ContextualNormalizationContract & longer,
+                                              size_t longer_begin,
+                                              size_t longer_end)
+            {
+                const size_t shorter_size = shorter_end - shorter_begin;
+                const size_t longer_size = longer_end - longer_begin;
+                return shorter_size <= longer_size
+                    && std::equal(
+                           shorter.steps.begin() + shorter_begin,
+                           shorter.steps.begin() + shorter_end,
+                           longer.steps.begin() + longer_end - shorter_size);
+            };
+
+            const ContextualNormalizationContract * selected = nullptr;
+            size_t selected_begin = 0;
+            size_t selected_end = 0;
+            if (segment_is_suffix(lhs, lhs_begin, lhs_end, rhs, rhs_begin, rhs_end))
+            {
+                selected = &rhs;
+                selected_begin = rhs_begin;
+                selected_end = rhs_end;
+            }
+            else if (segment_is_suffix(rhs, rhs_begin, rhs_end, lhs, lhs_begin, lhs_end))
+            {
+                selected = &lhs;
+                selected_begin = lhs_begin;
+                selected_end = lhs_end;
+            }
+            else
+                return std::nullopt;
+
+            for (size_t index = selected_begin; index < selected_end; ++index)
+                if (!result.append(selected->steps[index]))
+                    return std::nullopt;
+
+            const bool lhs_has_array = lhs_end < lhs.size;
+            const bool rhs_has_array = rhs_end < rhs.size;
+            if (lhs_has_array != rhs_has_array)
+                return std::nullopt;
+            if (!lhs_has_array)
+                return result;
+            if (!result.append(ContextualNormalizationStep::ArrayElement))
+                return std::nullopt;
+            lhs_begin = lhs_end + 1;
+            rhs_begin = rhs_end + 1;
+        }
+    };
+
+    const auto add_contextual_null_lift = [](ContextualNormalizationContract contract) -> std::optional<ContextualNormalizationContract>
+    {
+        size_t outer_end = 0;
+        while (outer_end < contract.size && contract.steps[outer_end] != ContextualNormalizationStep::ArrayElement)
+        {
+            if (contract.steps[outer_end] == ContextualNormalizationStep::Nullable)
+                return contract;
+            ++outer_end;
+        }
+        if (contract.size == contract.steps.size())
+            return std::nullopt;
+        /// A NULL-only branch lifts the complete value, not the innermost
+        /// logical leaf below an existing LowCardinality wrapper.
+        for (size_t index = contract.size; index > 0; --index)
+            contract.steps[index] = contract.steps[index - 1];
+        contract.steps[0] = ContextualNormalizationStep::Nullable;
+        ++contract.size;
+        return contract;
+    };
+
+    const auto same_contextual_role = [](const ContextualExpected & lhs, const ContextualExpected & rhs)
+    {
+        const auto * lhs_use = lhs.candidate.references ? lhs.candidate.references->findUse(lhs.candidate.use_path) : nullptr;
+        const auto * rhs_use = rhs.candidate.references ? rhs.candidate.references->findUse(rhs.candidate.use_path) : nullptr;
+        if (!lhs_use || !rhs_use || !lhs.normalized_logical_shape || !rhs.normalized_logical_shape
+            || !lhs.normalized_logical_shape->equals(*rhs.normalized_logical_shape))
+            return false;
+        const auto lhs_descriptors = lhs.candidate.references->getDescriptors();
+        const auto rhs_descriptors = rhs.candidate.references->getDescriptors();
+        return lhs_use->getDescriptorIndex() < lhs_descriptors.size() && rhs_use->getDescriptorIndex() < rhs_descriptors.size()
+            && lhs_descriptors[lhs_use->getDescriptorIndex()] && rhs_descriptors[rhs_use->getDescriptorIndex()]
+            && lhs_use->getSemanticCapabilities() == lhs.selected_semantic_capabilities
+            && rhs_use->getSemanticCapabilities() == rhs.selected_semantic_capabilities
+            && lhs_descriptors[lhs_use->getDescriptorIndex()]->getPersistedDescriptor().getCanonicalPhysicalType()
+            == rhs_descriptors[rhs_use->getDescriptorIndex()]->getPersistedDescriptor().getCanonicalPhysicalType()
+            && lhs_descriptors[lhs_use->getDescriptorIndex()]->getPersistedDescriptor().hasSameInstantiation(
+                rhs_descriptors[rhs_use->getDescriptorIndex()]->getPersistedDescriptor());
+    };
+
+    std::function<ContextualExpected(const QueryTreeNodePtr &, UDT::SemanticSinkKind, UInt64)> resolve_contextual_expected;
+    resolve_contextual_expected
+        = [&](const QueryTreeNodePtr & candidate_node, UDT::SemanticSinkKind kind, UInt64 depth) -> ContextualExpected
+    {
+        constexpr UInt64 maximum_contextual_branch_depth = 256;
+        if (!candidate_node || depth > maximum_contextual_branch_depth)
+            return {};
+        if (const auto * constant = candidate_node->as<ConstantNode>(); constant && constant->isNull())
+        {
+            return {
+                .kind = ContextualExpectedKind::NullOnly,
+                .column = {},
+                .candidate = {},
+                .normalized_logical_shape = {},
+                .normalization = {},
+            };
+        }
+
+        const auto merge_contextual_input = [&](ContextualExpected & unanimous, bool & saw_null, ContextualExpected candidate)
+        {
+            if (candidate.kind == ContextualExpectedKind::None)
+                return false;
+            if (candidate.kind == ContextualExpectedKind::NullOnly)
+            {
+                saw_null = true;
+                return true;
+            }
+            if (candidate.kind == ContextualExpectedKind::ConflictingRole
+                || candidate.kind == ContextualExpectedKind::IncompatibleNormalization)
+            {
+                /// Carry a complete inner conflict instead of throwing here:
+                /// an opaque sibling is NoRole and must erase the whole
+                /// unanimous proof independently of branch order.
+                if (unanimous.kind != ContextualExpectedKind::ConflictingRole)
+                    unanimous = std::move(candidate);
+                return true;
+            }
+            if (unanimous.kind == ContextualExpectedKind::None)
+            {
+                unanimous = std::move(candidate);
+                return true;
+            }
+            if (unanimous.kind == ContextualExpectedKind::ConflictingRole
+                || unanimous.kind == ContextualExpectedKind::IncompatibleNormalization)
+                return true;
+            if (!same_contextual_role(unanimous, candidate))
+            {
+                unanimous = ContextualExpected{
+                    .kind = ContextualExpectedKind::ConflictingRole,
+                    .column = {},
+                    .candidate = {},
+                    .normalized_logical_shape = {},
+                    .normalization = {},
+                };
+                return true;
+            }
+            auto merged = merge_contextual_normalization_contracts(unanimous.normalization, candidate.normalization);
+            if (!merged)
+            {
+                unanimous = ContextualExpected{
+                    .kind = ContextualExpectedKind::IncompatibleNormalization,
+                    .column = {},
+                    .candidate = {},
+                    .normalized_logical_shape = {},
+                    .normalization = {},
+                };
+                return true;
+            }
+            unanimous.normalization = std::move(*merged);
+            return true;
+        };
+
+        const auto finish_contextual_unanimity = [&](ContextualExpected unanimous, bool saw_null, const DataTypePtr & demanded_result_type)
+        {
+            if (unanimous.kind == ContextualExpectedKind::None)
+            {
+                return saw_null
+                    ? ContextualExpected{
+                        .kind = ContextualExpectedKind::NullOnly,
+                        .column = {},
+                        .candidate = {},
+                        .normalized_logical_shape = {},
+                        .normalization = {},
+                    }
+                    : ContextualExpected{};
+            }
+            if (unanimous.kind == ContextualExpectedKind::ConflictingRole
+                || unanimous.kind == ContextualExpectedKind::IncompatibleNormalization)
+                return unanimous;
+            if (saw_null)
+            {
+                auto lifted = add_contextual_null_lift(unanimous.normalization);
+                if (!lifted)
+                    throw Exception(ErrorCodes::LIMIT_EXCEEDED, "UDT contextual NULL lift exceeds its path-depth limit");
+                unanimous.normalization = std::move(*lifted);
+            }
+            if (demanded_result_type)
+            {
+                const auto exact_result_contract
+                    = make_contextual_normalization_contract(demanded_result_type, unanimous.normalized_logical_shape, kind);
+                if (!exact_result_contract || *exact_result_contract != unanimous.normalization)
+                    return ContextualExpected{};
+            }
+            return unanimous;
+        };
+
+        const auto resolve_unanimous_inputs = [&](const std::vector<QueryTreeNodePtr> & inputs, const DataTypePtr & demanded_result_type)
+        {
+            ContextualExpected unanimous;
+            bool saw_null = false;
+            for (const auto & input : inputs)
+            {
+                if (!merge_contextual_input(unanimous, saw_null, resolve_contextual_expected(input, kind, depth + 1)))
+                    return ContextualExpected{};
+            }
+            return finish_contextual_unanimity(std::move(unanimous), saw_null, demanded_result_type);
+        };
+
+        const auto resolve_sparse_contextual_projection =
+            [&](const TableExpressionNodePtr & source, UInt32 ordinal, bool require_single_output, const DataTypePtr & demanded_result_type)
+        {
+            ContextualExpected unanimous;
+            bool saw_null = false;
+            const bool complete = visit_sparse_projection_inputs(
+                source,
+                ordinal,
+                require_single_output,
+                [&](const QueryTreeNodePtr & input)
+                { return merge_contextual_input(unanimous, saw_null, resolve_contextual_expected(input, kind, depth + 1)); });
+            return complete ? finish_contextual_unanimity(std::move(unanimous), saw_null, demanded_result_type) : ContextualExpected{};
+        };
+
+        if (candidate_node->as<QueryNode>() || candidate_node->as<UnionNode>())
+        {
+            auto source = std::static_pointer_cast<ITableExpressionNode>(candidate_node);
+            DataTypePtr demanded_result_type;
+            if (const auto * query = candidate_node->as<QueryNode>())
+            {
+                const auto & projection = query->getProjection().getNodes();
+                if (projection.size() == 1 && projection.front())
+                    demanded_result_type = projection.front()->getResultType();
+            }
+            return resolve_sparse_contextual_projection(source, 0, true, demanded_result_type);
+        }
+
+        if (auto source = resolve_static_contextual_column(candidate_node, 0))
+        {
+            const auto keep_if_join_safe = [&](ContextualExpected result)
+            {
+                if (result.kind == ContextualExpectedKind::Exact && contextual_join_safety(*source->column) == ContextualJoinSafety::Erase)
+                    return ContextualExpected{};
+                return result;
+            };
+            auto candidate = UDT::QueryAnalysisState::inspectPreboundContextualConstant(*source->column, kind, source->type_child_path);
+            if (candidate)
+            {
+                const auto * use = candidate->references ? candidate->references->findUse(candidate->use_path) : nullptr;
+                if (!use || !use->getPhysicalType())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "UDT contextual expected role lost its exact physical shape");
+                auto normalization = make_contextual_normalization_contract(candidate_node->getResultType(), use->getPhysicalType(), kind);
+                if (!normalization)
+                    return {};
+                return keep_if_join_safe({
+                    .kind = ContextualExpectedKind::Exact,
+                    .column = std::move(source->column),
+                    .candidate = std::move(*candidate),
+                    .normalized_logical_shape = use->getPhysicalType(),
+                    .selected_semantic_capabilities = use->getSemanticCapabilities(),
+                    .normalization = std::move(*normalization),
+                });
+            }
+            if (source->type_child_path.empty())
+            {
+                const auto projection_source = source->column->getColumnSourceOrNull();
+                if (projection_source && (projection_source->as<QueryNode>() || projection_source->as<UnionNode>()))
+                {
+                    const IdentifierResolveScope * current_scope = &scope;
+                    while (current_scope)
+                    {
+                        const auto found = current_scope->table_expression_node_to_data.find(projection_source);
+                        if (found != current_scope->table_expression_node_to_data.end())
+                        {
+                            const auto ordinal = found->second.tryGetProjectionOrdinal(*source->column);
+                            if (ordinal)
+                            {
+                                return keep_if_join_safe(resolve_sparse_contextual_projection(
+                                    projection_source, *ordinal, false, candidate_node->getResultType()));
+                            }
+                            break;
+                        }
+                        current_scope = current_scope->parent_scope;
+                    }
+                }
+            }
+            if (const auto * column = candidate_node->as<ColumnNode>(); column && column->hasExpression())
+                return keep_if_join_safe(resolve_contextual_expected(column->getExpression(), kind, depth + 1));
+            return {};
+        }
+
+        const auto * branch = candidate_node->as<FunctionNode>();
+        if (!branch || !branch->isResolved())
+            return {};
+        const auto & name = branch->getFunctionName();
+        const auto & arguments = branch->getArguments().getNodes();
+        if (is_full_join_using_unanimous(*branch))
+            return resolve_unanimous_inputs(arguments, candidate_node->getResultType());
+        ContextualExpected unanimous;
+        bool saw_null = false;
+        const auto merge_value = [&](size_t index)
+        { return merge_contextual_input(unanimous, saw_null, resolve_contextual_expected(arguments[index], kind, depth + 1)); };
+        if (equalsCaseInsensitive(name, "if") && arguments.size() == 3)
+        {
+            if (!merge_value(1) || !merge_value(2))
+                return {};
+        }
+        else if (equalsCaseInsensitive(name, "multiIf") && arguments.size() >= 3 && arguments.size() % 2 == 1)
+        {
+            for (size_t index = 1; index + 1 < arguments.size(); index += 2)
+                if (!merge_value(index))
+                    return {};
+            if (!merge_value(arguments.size() - 1))
+                return {};
+        }
+        else if (equalsCaseInsensitive(name, "caseWithExpression") && arguments.size() >= 4 && arguments.size() % 2 == 0)
+        {
+            for (size_t index = 2; index + 1 < arguments.size(); index += 2)
+                if (!merge_value(index))
+                    return {};
+            if (!merge_value(arguments.size() - 1))
+                return {};
+        }
+        else
+            return {};
+        return finish_contextual_unanimity(std::move(unanimous), saw_null, candidate_node->getResultType());
+    };
+
+    const auto register_prebound_contextual_constant
+        = [&](const QueryTreeNodePtr & expected, const QueryTreeNodePtr & literal, UDT::SemanticSinkKind kind)
+    {
+        if (suppress_udt_query_tree_registrations)
+            return false;
+        const auto * constant = literal ? literal->as<ConstantNode>() : nullptr;
+        if (!constant)
+            return false;
+
+        auto resolved_expected = resolve_contextual_expected(expected, kind, 0);
+        if (resolved_expected.kind == ContextualExpectedKind::ConflictingRole)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "UDT contextual expected expression has conflicting logical roles");
+        if (resolved_expected.kind == ContextualExpectedKind::IncompatibleNormalization)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "UDT contextual expected expression has incompatible Nullable/LowCardinality normalization");
+        }
+        if (resolved_expected.kind != ContextualExpectedKind::Exact)
+            return false;
+        if (!explicit_udt_state)
+            explicit_udt_state = std::make_unique<UDT::QueryAnalysisState>();
+        resolved_expected.candidate.effective_query_limits
+            = effectiveQueryLimitsForBoundReferences(*resolved_expected.candidate.references);
+        explicit_udt_state->getOrCreateSemanticResourceBudget(*resolved_expected.candidate.effective_query_limits);
+        explicit_udt_state->chargeSemanticDiscoveryWork(
+            udt_semantic_discovery_node_path_states, udt_semantic_discovery_inspected_edges, udt_semantic_discovery_scratch_bytes);
+        if (!explicit_udt_state->registerPreboundContextualConstant(
+                std::move(resolved_expected.column),
+                std::static_pointer_cast<ConstantNode>(literal),
+                kind,
+                std::move(resolved_expected.candidate)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Eligible contextual UDT constant was not registered");
+        scope.context->setQueryResultCacheBlockedByUDT();
+        return true;
+    };
+
+    const auto & resolved_boundary_arguments = function_node.getArguments().getNodes();
+    const bool contextual_udt_boundaries_enabled = scope.context->getSettingsRef()[Setting::allow_experimental_user_defined_types];
+    const bool has_contextual_sink_syntax = function_node.hasOriginalAST();
+    const bool is_approved_contextual_in
+        = function_name == "in" || function_name == "notIn" || function_name == "globalIn" || function_name == "globalNotIn";
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
     if (is_special_function_in)
@@ -2179,9 +3490,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto replacement_table_expression_table_node = table_expression_table_node->clone();
                     replacement_table_expression_table_node->as<TableNode &>().updateStorage(storage, scope.context);
-                    in_second_argument = in_second_argument->cloneAndReplace(
-                        static_pointer_cast<ITableExpressionNode>(table_expression),
+                    IQueryTreeNode::ReplacementMap replacements;
+                    replacements.emplace(
+                        table_expression->asTableExpression(),
                         static_pointer_cast<ITableExpressionNode>(std::move(replacement_table_expression_table_node)));
+                    IQueryTreeNode::CloneNodeMapping clone_node_mapping;
+                    auto replaced_second_argument = in_second_argument->cloneAndReplace(replacements, &clone_node_mapping);
+                    if (explicit_udt_state)
+                        explicit_udt_state->remapSemanticGenerationAfterQueryTreeReplacement(clone_node_mapping);
+                    in_second_argument = std::move(replaced_second_argument);
                 }
             }
 
@@ -2477,7 +3794,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
     }
-
     /// Initialize function argument columns
 
     ColumnsWithTypeAndName argument_columns;
@@ -2559,6 +3875,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Calculate function projection name
     ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
+    if (explicit_cast_target && original_function)
+        result_projection_names.front() = original_function->getColumnName();
 
     ASTPtr user_defined_function = nullptr;
     /** Try to resolve function as
@@ -2590,6 +3908,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           */
         if (lambda_expression_untyped)
         {
+            if (semantic_explicit_cast_target || semantic_stored_expression_cast_target)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A semantic UDT CAST resolved as a lambda instead of public CAST");
+
             auto * lambda_expression = lambda_expression_untyped->as<LambdaNode>();
             if (!lambda_expression)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -2806,6 +4127,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     }
     else
     {
+        if (semantic_explicit_cast_target || semantic_stored_expression_cast_target)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A semantic UDT CAST did not resolve as public CAST");
+
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
             VectorWithMemoryTracking<std::string> possible_function_names;
@@ -3081,7 +4405,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         else
             function_base = function->build(argument_columns);
 
-        bool allow_constant_folding = true;
+        /// An eligible semantic CAST is an authoritative query boundary. Keep
+        /// the resolved FunctionNode alive until the sealed planner has
+        /// selected PreserveSourceRole or ApplyExpectedRole for it.
+        bool allow_constant_folding = !semantic_explicit_cast_target && !semantic_stored_expression_cast_target
+            && !(resolved_explicit_udt_target && scope.context->getUDTSelectedOutputTypeBindingCollector());
 
         auto * nearest_join_query_scope = scope.joins_count > 0 ? scope.getNearestQueryScope() : nullptr;
         auto * nearest_join_query_scope_query_node = nearest_join_query_scope ? nearest_join_query_scope->scope_node->as<QueryNode>() : nullptr;
@@ -3151,6 +4479,97 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         function_node.resolveAsFunction(std::move(function_base));
+
+        /// Register contextual sinks only after every analyzer rewrite and the
+        /// constant-folding decision. Replacement paths resolve their final
+        /// has/equality function recursively; a folded-away function has no
+        /// executable semantic boundary. This keeps every retained graph node
+        /// in the surviving QueryTree generation.
+        if (!constant_node && contextual_udt_boundaries_enabled && has_contextual_sink_syntax && resolved_boundary_arguments.size() == 2)
+        {
+            if (equalsCaseInsensitive(function_name, "equals") || equalsCaseInsensitive(function_name, "notEquals"))
+            {
+                static_cast<void>(register_prebound_contextual_constant(
+                    resolved_boundary_arguments[0], resolved_boundary_arguments[1], UDT::SemanticSinkKind::EqualityConstant));
+                static_cast<void>(register_prebound_contextual_constant(
+                    resolved_boundary_arguments[1], resolved_boundary_arguments[0], UDT::SemanticSinkKind::EqualityConstant));
+            }
+            else if (is_approved_contextual_in)
+            {
+                const auto kind
+                    = isNameOfGlobalInFunction(function_name) ? UDT::SemanticSinkKind::GlobalInConstant : UDT::SemanticSinkKind::InConstant;
+                static_cast<void>(
+                    register_prebound_contextual_constant(resolved_boundary_arguments[0], resolved_boundary_arguments[1], kind));
+                if (resolved_boundary_arguments[1]->as<QueryNode>() || resolved_boundary_arguments[1]->as<UnionNode>())
+                {
+                    static_cast<void>(
+                        register_prebound_contextual_constant(resolved_boundary_arguments[1], resolved_boundary_arguments[0], kind));
+                }
+            }
+            else if (equalsCaseInsensitive(function_name, "has") || equalsCaseInsensitive(function_name, "hasAny"))
+            {
+                const auto kind = equalsCaseInsensitive(function_name, "has") ? UDT::SemanticSinkKind::HasConstant
+                                                                              : UDT::SemanticSinkKind::HasAnyConstant;
+                static_cast<void>(
+                    register_prebound_contextual_constant(resolved_boundary_arguments[0], resolved_boundary_arguments[1], kind));
+            }
+        }
+
+        if (resolved_explicit_udt_target && !constant_node && !suppress_udt_query_tree_registrations
+            && scope.context->getUDTSelectedOutputTypeBindingCollector())
+            explicit_udt_state->rememberResolvedExplicitCastTarget(function_node_ptr.get(), resolved_explicit_udt_target);
+
+        if (semantic_explicit_cast_target && !suppress_udt_query_tree_registrations)
+        {
+            if (!explicit_udt_state)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Eligible explicit UDT CAST has no query analysis state");
+            if (semantic_explicit_cast_effective_limits)
+                explicit_udt_state->getOrCreateSemanticResourceBudget(*semantic_explicit_cast_effective_limits);
+            else
+                explicit_udt_state->getOrCreateSemanticResourceBudget(semantic_explicit_cast_authority_limits);
+            explicit_udt_state->chargeSemanticDiscoveryWork(
+                udt_semantic_discovery_node_path_states, udt_semantic_discovery_inspected_edges, udt_semantic_discovery_scratch_bytes);
+            if (!explicit_udt_state->registerResolvedDirectExplicitCast(
+                    function_node_ptr,
+                    semantic_explicit_cast_target,
+                    semantic_explicit_cast_authority_limits,
+                    semantic_explicit_cast_effective_limits ? std::addressof(*semantic_explicit_cast_effective_limits) : nullptr,
+                    [&](const ColumnNode & column) { return contextual_join_safety(column) != ContextualJoinSafety::Erase; },
+                    sparse_projection_source,
+                    is_full_join_using_unanimous))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Eligible explicit UDT CAST was not registered as a semantic boundary");
+            scope.context->setQueryResultCacheBlockedByUDT();
+        }
+        if (semantic_stored_expression_cast_target && !suppress_udt_query_tree_registrations)
+        {
+            if (!explicit_udt_state)
+                explicit_udt_state = std::make_unique<UDT::QueryAnalysisState>();
+            const auto & implementation_limits = UDT::getResourceImplementationLimits();
+            const UDT::TypeAuthorityLimits prebound_query_limits{
+                .maximum_definitions = implementation_limits.get(UDT::ResourceLimit::DefinitionsPerDatabase),
+                .maximum_definition_bytes = 1,
+                .maximum_template_nodes = implementation_limits.get(UDT::ResourceLimit::LogicalTemplateNodes),
+                .maximum_direct_dependencies = implementation_limits.get(UDT::ResourceLimit::DirectDependencies),
+                .maximum_transitive_dependencies = implementation_limits.get(UDT::ResourceLimit::TransitiveDependencies),
+                .maximum_checker_work = implementation_limits.get(UDT::ResourceLimit::CheckerExpansionWorkUnits),
+            };
+            if (semantic_stored_expression_effective_limits)
+                explicit_udt_state->getOrCreateSemanticResourceBudget(*semantic_stored_expression_effective_limits);
+            else
+                explicit_udt_state->getOrCreateSemanticResourceBudget(prebound_query_limits);
+            explicit_udt_state->chargeSemanticDiscoveryWork(
+                udt_semantic_discovery_node_path_states, udt_semantic_discovery_inspected_edges, udt_semantic_discovery_scratch_bytes);
+            if (!explicit_udt_state->registerResolvedDirectExplicitCast(
+                    function_node_ptr,
+                    semantic_stored_expression_cast_target,
+                    prebound_query_limits,
+                    semantic_stored_expression_effective_limits ? std::addressof(*semantic_stored_expression_effective_limits) : nullptr,
+                    [&](const ColumnNode & column) { return contextual_join_safety(column) != ContextualJoinSafety::Erase; },
+                    sparse_projection_source,
+                    is_full_join_using_unanimous))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Eligible stored View UDT CAST was not registered as a semantic boundary");
+            scope.context->setQueryResultCacheBlockedByUDT();
+        }
     }
     catch (Exception & e)
     {

@@ -68,14 +68,17 @@
 #include <Storages/StorageView.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UDT/SelectedOutputTypeBindings.h>
 
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -83,6 +86,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
+#include <Interpreters/UDT/UDTExecutionBoundary.h>
 #include <Interpreters/UDTScalarAliasColumnBinder.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>

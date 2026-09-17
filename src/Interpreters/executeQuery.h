@@ -124,7 +124,10 @@ void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_
 /// (`enable_analyzer`) setting to a value different from `context_value`: the analyzer cannot be
 /// switched in the middle of query processing. Applied to every query at the start of processing;
 /// also used for generated queries that bypass `executeQuery`, such as in the `eval` table function.
-void validateAnalyzerSettings(ASTPtr ast, bool context_value);
+/// Returns true when the same mandatory walk sees an explicit nested
+/// `use_query_cache = true`, allowing the execution boundary to perform its
+/// candidate scan even with an unlimited AST element setting.
+bool validateAnalyzerSettings(ASTPtr ast, bool context_value);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(

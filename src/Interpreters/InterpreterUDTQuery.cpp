@@ -13,7 +13,9 @@
 #include <Databases/UDT/ILifecycleAdapter.h>
 #include <Databases/UDT/PhysicalizationApplyCoordinator.h>
 #include <Databases/UDT/PhysicalizationTokenStore.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/UDTLifecycleIntrospection.h>
 #include <Interpreters/UDTLifecycleRequest.h>

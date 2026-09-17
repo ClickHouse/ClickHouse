@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Common/CacheBase.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/UDT/QueryResultCacheStorageDependencies.h>
 #include <Parsers/IASTHash.h>
+#include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
-#include <Parsers/IAST_fwd.h>
 #include <base/UUID.h>
+#include <Common/CacheBase.h>
+#include <Common/logger_useful.h>
 
 #include <optional>
 
@@ -100,18 +101,26 @@ public:
         /// Is it subquery entry? Displayed in SYSTEM.QUERY_CACHE.
         const bool is_subquery;
 
+        /// Non-hashed physical storage execution proof. A UDT-aware reader
+        /// validates the stored payload returned by getWithKey before serving
+        /// chunks, so a storage replacement or in-place UDT binding cannot
+        /// bypass analysis.
+        std::optional<UDT::QueryResultCacheStorageDependencyProof> udt_storage_dependency_proof;
+
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
             SharedHeader header_,
             const String & query_id_,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            std::optional<UUID> user_id_,
+            const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed,
-            bool is_subquery_);
+            bool is_subquery_,
+            std::optional<UDT::QueryResultCacheStorageDependencyProof> udt_storage_dependency_proof_ = std::nullopt);
 
         /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
@@ -155,7 +164,7 @@ public:
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
-    QueryResultCacheReader createReader(const Key & key);
+    QueryResultCacheReader createReader(const Key & key, const ContextPtr & context);
     QueryResultCacheWriter createWriter(
         const Key & key,
         std::chrono::milliseconds min_query_runtime,
@@ -267,7 +276,7 @@ public:
     std::unique_ptr<SourceFromChunks> getSourceTotals();
 
 private:
-    QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
+    QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const ContextPtr & context);
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
 
     std::unique_ptr<SourceFromChunks> source_from_chunks;

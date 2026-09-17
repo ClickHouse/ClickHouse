@@ -165,14 +165,14 @@ private:
 
 }
 
-void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
+bool inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
 {
     auto use_count = mergeDuplicateMaterializedCTEs(node, context);
 
     /// Fast exit: no materialized CTEs in the query -> nothing to register or inline,
     /// skip the second traversal and cloneAndReplace entirely.
     if (use_count.empty())
-        return;
+        return false;
 
     ReusedMaterializedCTEs reused_materialized_cte;
     for (const auto & [materialized_cte, count] : use_count)
@@ -200,7 +200,11 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
 
     const auto & replacement_map = visitor.getReplacementMap();
     if (!replacement_map.empty())
+    {
         node = node->cloneAndReplace(replacement_map);
+        return true;
+    }
+    return false;
 }
 
 }

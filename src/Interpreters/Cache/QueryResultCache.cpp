@@ -1,8 +1,13 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
+#include <Columns/IColumn.h>
+#include <Core/Settings.h>
+#include <DataTypes/UDT/isUDTResourceOrControlExceptionCode.h>
+#include <Databases/DatabaseAtomic.h>
+#include <Databases/UDT/AuthorityStorageOperationGate.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -10,10 +15,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithAlias.h>
@@ -21,15 +26,17 @@
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Columns/IColumn.h>
-#include <Common/ProfileEvents.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageSnapshot.h>
+#include <base/defines.h> /// chassert
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
-#include <Core/Settings.h>
-#include <base/defines.h> /// chassert
+
+#include <new>
 
 
 namespace ProfileEvents
@@ -70,6 +77,139 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool hasSameUDTStorageDependencyProof(const QueryResultCache::Key & lhs, const QueryResultCache::Key & rhs)
+{
+    return lhs.udt_storage_dependency_proof == rhs.udt_storage_dependency_proof;
+}
+
+bool validateUDTStorageDependencyProof(
+    const UDT::QueryResultCacheStorageDependencyProof & proof,
+    UDT::QueryResultCacheContextualSinkCandidateMask current_contextual_sink_candidates,
+    const ContextPtr & context)
+{
+    if (proof.contextual_sink_candidates != current_contextual_sink_candidates
+        || current_contextual_sink_candidates & ~UDT::all_query_result_cache_contextual_sink_candidates)
+        return false;
+
+    constexpr auto contextual_activation_capabilities
+        = UDT::semanticCapabilityBit(UDT::SemanticCapability::Input) | UDT::semanticCapabilityBit(UDT::SemanticCapability::ValueChecks);
+
+    for (const auto & dependency : proof.dependencies)
+    {
+        StoragePtr storage;
+        try
+        {
+            storage = DatabaseCatalog::instance().tryGetTable(dependency.storage_id, context);
+        }
+        catch (const std::bad_alloc &)
+        {
+            throw;
+        }
+        catch (const Exception & error)
+        {
+            if (UDT::isUDTResourceOrControlExceptionCode(error.code()))
+                throw;
+            return false;
+        }
+        catch (...)
+        {
+            return false;
+        }
+        if (!storage)
+            return false;
+
+        const auto current_id = storage->getStorageID();
+        if (std::tie(current_id.database_name, current_id.table_name, current_id.uuid)
+            != std::tie(dependency.storage_id.database_name, dependency.storage_id.table_name, dependency.storage_id.uuid))
+            return false;
+
+        const auto current_kind = storage->isView() ? UDT::QueryResultCacheStorageKind::View : UDT::QueryResultCacheStorageKind::Storage;
+        if (current_kind != dependency.kind || storage->getName() != dependency.engine_name)
+            return false;
+
+        try
+        {
+            const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+            if (!metadata)
+                return false;
+            /// Cache-hit validation must not reuse a query-context-pinned data
+            /// snapshot: it needs a fresh lightweight storage boundary whose
+            /// continuation evidence names the exact current authority root.
+            const auto storage_snapshot = std::make_shared<StorageSnapshot>(*storage, metadata);
+            storage_snapshot->metadata->validateBoundUDTReferences();
+            const auto & current_bound = storage_snapshot->metadata->getBoundUDTReferences();
+
+            const auto database = DatabaseCatalog::instance().tryGetDatabase(current_id.database_name);
+            const auto atomic_database = std::dynamic_pointer_cast<DatabaseAtomic>(database);
+            if (!dependency.udt_binding)
+            {
+                if (current_bound)
+                    return false;
+                /// The authority/root is published before a mapped ALTER
+                /// replaces storage-local metadata.  Close that exact seam for
+                /// a proof which was collected from a physical-only image.
+                if (atomic_database && atomic_database->hasDatabaseOwnedUDTObjectForQueryCache(current_id.uuid))
+                    return false;
+                continue;
+            }
+
+            if (!current_bound || !atomic_database)
+                return false;
+            UDT::QueryResultCacheUDTBindingIdentity current_binding{
+                .object = current_bound->getObject(),
+                .object_schema_revision = current_bound->getObjectSchemaRevision(),
+                .sidecar_hash = current_bound->getSidecarHash(),
+                .physical_schema_fingerprint = current_bound->getPhysicalSchemaFingerprint(),
+                .semantic_capabilities = current_bound->getSemanticCapabilities(),
+                .authority_root = {},
+            };
+            const auto unknown_capabilities = static_cast<UDT::SemanticCapabilityMask>(
+                current_binding.semantic_capabilities & static_cast<UDT::SemanticCapabilityMask>(~UDT::all_semantic_capabilities));
+            if (unknown_capabilities)
+                return false;
+
+            /// A contextual candidate with any object-level activation remains
+            /// analyzer-owned: only the selected immutable use can prove it is
+            /// physical.  Aggregate-negative mapped objects are a safe fast
+            /// negative and retain ordinary physical query-cache hits.
+            if (current_contextual_sink_candidates && (current_binding.semantic_capabilities & contextual_activation_capabilities) != 0)
+                return false;
+
+            const auto & continuation = storage_snapshot->udt_read_continuation_evidence;
+            if (!continuation)
+                return false;
+            current_binding.authority_root = continuation->getPinnedRoot();
+            const UDT::AuthorityObjectImageIdentity expected_image{
+                .object = current_binding.object,
+                .object_schema_revision = current_binding.object_schema_revision,
+                .sidecar_hash = current_binding.sidecar_hash,
+                .physical_schema_fingerprint = current_binding.physical_schema_fingerprint,
+            };
+            const auto & verification_stamp = continuation->getVerificationStamp();
+            if (continuation->getObjectImage() != expected_image || !verification_stamp
+                || verification_stamp->getVerifiedObject() != expected_image
+                || verification_stamp->getVerifiedRoot() != continuation->getPinnedRoot().authority_root
+                || current_binding != *dependency.udt_binding)
+                return false;
+        }
+        catch (const std::bad_alloc &)
+        {
+            throw;
+        }
+        catch (const Exception & error)
+        {
+            if (UDT::isUDTResourceOrControlExceptionCode(error.code()))
+                throw;
+            return false;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+    return true;
+}
 
 struct HasNonDeterministicFunctionsMatcher
 {
@@ -252,7 +392,14 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
 
         if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
+        {
+            if (context->isQueryResultCacheBlockedByUDT())
+                return false;
+            if (const auto collector = context->getUDTQueryResultCacheStorageDependencyCollector();
+                collector && !collector->snapshotIfComplete())
+                return false;
             return true;
+        }
     }
 
     return false;
@@ -522,7 +669,8 @@ QueryResultCache::Key::Key(
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_,
-    bool is_subquery_)
+    bool is_subquery_,
+    std::optional<UDT::QueryResultCacheStorageDependencyProof> udt_storage_dependency_proof_)
     : header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
@@ -533,6 +681,7 @@ QueryResultCache::Key::Key(
     , query_id(query_id_)
     , tag(settings[Setting::query_cache_tag])
     , is_subquery(is_subquery_)
+    , udt_storage_dependency_proof(std::move(udt_storage_dependency_proof_))
 {
     /// For subqueries, both hashing and display need a cloned AST with table aliases stripped.
     /// Compute both from a single clone via `calculateASTHashAndQueryString`.
@@ -610,7 +759,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key);
+        entry.has_value() && !QueryResultCache::IsStale()(entry->key) && hasSameUDTStorageDependencyProof(entry->key, key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -698,7 +848,8 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key);
+        entry.has_value() && !QueryResultCache::IsStale()(entry->key) && hasSameUDTStorageDependencyProof(entry->key, key))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -789,6 +940,9 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
+    /// CacheBase keeps the original non-hashed key object when set() replaces
+    /// an equal key. Remove first so the new dependency payload is retained.
+    cache.remove(key);
     cache.set(key, query_result);
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
@@ -825,7 +979,7 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
     }
 }
 
-QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
+QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const ContextPtr & context)
 {
     auto entry = cache_.getWithKey(key);
 
@@ -849,6 +1003,18 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
     if (QueryResultCache::IsStale()(entry_key))
     {
         LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
+        return;
+    }
+
+    const auto dependency_collector = context->getUDTQueryResultCacheStorageDependencyCollector();
+    const bool current_query_requires_udt_storage_dependency_proof = dependency_collector != nullptr;
+    if ((entry_key.udt_storage_dependency_proof && !current_query_requires_udt_storage_dependency_proof)
+        || (entry_key.udt_storage_dependency_proof
+            && !validateUDTStorageDependencyProof(
+                *entry_key.udt_storage_dependency_proof, dependency_collector->getContextualSinkCandidates(), context))
+        || (!entry_key.udt_storage_dependency_proof && current_query_requires_udt_storage_dependency_proof))
+    {
+        LOG_TRACE(logger, "Query result has no current exact UDT storage dependency proof");
         return;
     }
 
@@ -954,10 +1120,12 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryResultCacheReader QueryResultCache::createReader(const Key & key)
+QueryResultCacheReader QueryResultCache::createReader(const Key & key, const ContextPtr & context)
 {
-    std::lock_guard lock(mutex);
-    return QueryResultCacheReader(cache, key, lock);
+    /// Cache has its own synchronization and getWithKey() returns an owning
+    /// snapshot.  Do not hold the configuration/times-executed mutex while
+    /// validating catalog metadata or cloning/decompressing result chunks.
+    return QueryResultCacheReader(cache, key, context);
 }
 
 QueryResultCacheWriter QueryResultCache::createWriter(

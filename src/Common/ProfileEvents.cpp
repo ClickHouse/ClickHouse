@@ -1592,6 +1592,15 @@ The server successfully detected this situation and will download merged part fr
     M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable_pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionPoolWaitMicroseconds, "Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.", ValueType::Microseconds) \
+    M(UDTCatalogRootLoads, "Number of UDT catalog roots atomically loaded for explicit query syntax.", ValueType::Number) \
+    M(UDTCatalogLookups, "Number of distinct UDT catalog name probes performed for explicit query syntax.", ValueType::Number) \
+    M(UDTQueryDefinitionHandles, "Number of immutable UDT definition handles newly retained by query-local semantic state.", ValueType::Number) \
+    M(UDTSemanticAnalysisActivations, "Number of query-local UDT semantic-role planner instances activated by eligible sinks.", ValueType::Number) \
+    M(UDTSemanticAnalysisNodesVisited, "Number of unique UDT semantic-role node and logical-path states evaluated.", ValueType::Number) \
+    M(UDTSemanticAnalysisEdgesVisited, "Number of relevant UDT semantic-role query-graph edges inspected.", ValueType::Number) \
+    M(UDTSemanticRolesInterned, "Number of distinct exact UDT logical roles interned by query-local semantic analysis.", ValueType::Number) \
+    M(UDTSemanticRoleConflicts, "Number of bounded UDT semantic-role conflicts produced.", ValueType::Number) \
+    M(UDTSchemaBoundRoleUses, "Number of prebound schema UDT roles consumed by an eligible semantic sink.", ValueType::Number) \
     M(UDTAuthorityVerificationRuns, "Number of database-owned periodic UDT authority verification scheduler invocations, including bounded throttled probes.", ValueType::Number) \
     M(UDTAuthorityVerificationTargetsVerified, "Number of durable UDT authority inventory targets completed as verified.", ValueType::Number) \
     M(UDTAuthorityVerificationTargetsDamaged, "Number of durable UDT authority inventory targets completed as damaged.", ValueType::Number) \

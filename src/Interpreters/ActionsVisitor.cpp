@@ -39,6 +39,7 @@
 #include <Storages/StorageSharedSetJoin.h>
 #endif
 
+#include <Parsers/ASTCastTarget.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -86,6 +87,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int NOT_AN_AGGREGATE;
     extern const int UNEXPECTED_EXPRESSION;
@@ -991,6 +993,14 @@ void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
+    if (const auto * cast_target = node.tryGetStructuredCastTarget())
+    {
+        if (DataTypeFactory::instance().hasQualifiedBuiltInCollision(*cast_target->getType()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "A qualified user-defined type reference cannot use a registered built-in family or alias");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "CAST to a user-defined type cannot be resolved by this execution path");
+    }
+
     auto column_name = ast->getColumnName();
     if (data.hasColumn(column_name))
         return;

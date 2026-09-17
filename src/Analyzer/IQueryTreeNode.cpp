@@ -239,6 +239,11 @@ QueryTreeNodePtr IQueryTreeNode::clone() const
 
 QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacement_map) const
 {
+    return cloneAndReplace(replacement_map, nullptr);
+}
+
+QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacement_map, CloneNodeMapping * clone_node_mapping) const
+{
     /** Clone tree with this node as root.
       *
       * Algorithm
@@ -332,6 +337,9 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         column_node->setColumnSource(static_pointer_cast<ITableExpressionNode>(it->second));
     }
     result_cloned_node_place->original_ast = original_ast;
+
+    if (clone_node_mapping)
+        *clone_node_mapping = std::move(old_pointer_to_new_pointer);
 
     return result_cloned_node_place;
 }

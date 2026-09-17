@@ -5,6 +5,8 @@
 #include <Analyzer/Identifier.h>
 #include <DataTypes/NestedUtils.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -29,7 +31,29 @@ struct StringTransparentHash
     }
 };
 
-using ColumnNameToColumnNodeMap = std::unordered_map<std::string, ColumnNodePtr, StringTransparentHash, std::equal_to<>>;
+struct ResolvedTableExpressionColumn
+{
+    ColumnNodePtr node;
+    /// Present only for Query/Union projection columns and captured while the
+    /// mandatory projection map is already populated. Semantic analysis
+    /// allocates no separate dense ordinal index and retains only demanded
+    /// ordinals in its query-local graph.
+    std::optional<UInt32> projection_ordinal;
+};
+
+/// Physical value behavior accumulated along the mandatory path from one
+/// table expression to its enclosing JOIN root. It is deliberately not UDT
+/// provenance: the analyzer records only whether an outer JOIN can synthesize
+/// a value, so consumers do not need to rescan the complete JOIN tree.
+enum class JoinColumnOutputKind : UInt8
+{
+    Direct,
+    NullableLift,
+    DefaultSynthesis,
+    Ambiguous,
+};
+
+using ColumnNameToColumnNodeMap = std::unordered_map<std::string, ResolvedTableExpressionColumn, StringTransparentHash, std::equal_to<>>;
 
 struct AnalysisTableExpressionData
 {
@@ -39,6 +63,7 @@ struct AnalysisTableExpressionData
     std::string table_name;
     bool should_qualify_columns = true;
     bool supports_subcolumns = false;
+    JoinColumnOutputKind join_column_output_kind = JoinColumnOutputKind::Direct;
     NamesAndTypes column_names_and_types;
     /// Set of regular (non-subcolumn) column names. Lazily populated by
     /// `ensureColumnMembershipSetsArePopulated()`. Used for membership checks that don't need
@@ -71,6 +96,12 @@ struct AnalysisTableExpressionData
     /// it inline (used for subquery / union projection lists, which are typically small).
     ColumnNameToColumnNodeMap & emplaceColumnNodeMap() const;
 
+    /// O(1) exact reverse lookup for a ColumnNode already owned by this table
+    /// expression. The exact analyzer nullable clone produced for a safe outer
+    /// JOIN is accepted; arbitrary retyping and synthesized USING supertypes
+    /// are rejected. Base tables/table functions have no ordinal.
+    std::optional<UInt32> tryGetProjectionOrdinal(const ColumnNode & column) const noexcept;
+
     bool hasFullIdentifierName(IdentifierView identifier_view) const
     {
         ensureColumnMembershipSetsArePopulated();
@@ -102,14 +133,14 @@ struct AnalysisTableExpressionData
         buffer << "   Columns size " << node_map.size() << "\n";
         static constexpr size_t max_columns_to_dump = 10;
         size_t columns_dumped = 0;
-        for (const auto & [column_name, column_node] : node_map)
+        for (const auto & [column_name, binding] : node_map)
         {
             if (columns_dumped >= max_columns_to_dump)
             {
                 buffer << "    ... and " << (node_map.size() - max_columns_to_dump) << " more columns\n";
                 break;
             }
-            buffer << "    { " << column_name << " : " << column_node->dumpTree() << " }\n";
+            buffer << "    { " << column_name << " : " << binding.node->dumpTree() << " }\n";
             ++columns_dumped;
         }
     }
@@ -142,8 +173,8 @@ struct AnalysisTableExpressionData
             auto it = node_map.find(column_name);
             if (it != node_map.end())
             {
-                if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
-                    return SubcolumnInfo{it->second, subcolumn_name, subcolumn_type};
+                if (auto subcolumn_type = it->second.node->getResultType()->tryGetSubcolumnType(subcolumn_name))
+                    return SubcolumnInfo{it->second.node, subcolumn_name, subcolumn_type};
             }
         }
 
@@ -154,5 +185,4 @@ private:
     mutable std::optional<ColumnNameToColumnNodeMap> column_name_to_column_node;
     std::function<void(ColumnNameToColumnNodeMap &)> populate_column_node_map;
 };
-
 }

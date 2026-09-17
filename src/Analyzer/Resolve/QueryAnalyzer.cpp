@@ -35,6 +35,8 @@
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/TableFunctionsWithClusterAlternativesVisitor.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
+#include <Analyzer/UDT/QueryAnalysisState.h>
+#include <Analyzer/UDT/SelectedOutputTypeBindings.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
@@ -42,32 +44,36 @@
 
 #include <Core/Settings.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
+#include <Columns/IColumn.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Formats/FormatFactory.h>
-#include <Columns/IColumn.h>
 #include <Interpreters/JoinUtils.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Interpreters/UDT/QueryResultCacheStorageDependencies.h>
 #include <Interpreters/convertColumnToType.h>
-#include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
-#include <Storages/ColumnsDescription.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Access/EnabledRowPolicies.h>
 
@@ -75,9 +81,11 @@
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 
-#include <boost/algorithm/string/predicate.hpp>
 #include <memory>
 #include <ranges>
+#include <span>
+#include <utility>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -113,6 +121,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool allow_experimental_user_defined_types;
 }
 
 
@@ -136,6 +145,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
+    extern const int LIMIT_EXCEEDED;
     extern const int ALIAS_REQUIRED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
@@ -190,7 +200,17 @@ QueryAnalyzer::~QueryAnalyzer() = default;
 
 void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
-    IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+    const auto cache_dependency_collector = context->getUDTQueryResultCacheStorageDependencyCollector();
+    owns_query_result_cache_storage_dependency_resolution
+        = cache_dependency_collector && cache_dependency_collector->tryBeginResolution(this);
+    bool cache_dependency_analysis_completed = false;
+    SCOPE_EXIT({
+        if (cache_dependency_collector && !cache_dependency_analysis_completed)
+            cache_dependency_collector->abandonResolution(this);
+        owns_query_result_cache_storage_dependency_resolution = false;
+    });
+
+    IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/nullptr);
 
     if (!scope.context)
         scope.context = context;
@@ -199,37 +219,40 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         scope.disableIdentifierCachePermanently();
 
     auto node_type = node->getNodeType();
+    const auto selected_output_collector = context->getUDTSelectedOutputTypeBindingCollector();
+    if ((node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION) && selected_output_collector)
+    {
+        owns_selected_output_binding_collector = selected_output_collector->tryClaimPublisher(this);
+    }
+    SCOPE_EXIT({
+        if (owns_selected_output_binding_collector)
+        {
+            selected_output_collector->abandonPublisher(this);
+            owns_selected_output_binding_collector = false;
+        }
+    });
 
     switch (node_type)
     {
-        case QueryTreeNodeType::QUERY:
-        {
+        case QueryTreeNodeType::QUERY: {
             if (table_expression)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "For query analysis table expression must be empty");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "For query analysis table expression must be empty");
 
             resolveQuery(node, scope);
             break;
         }
-        case QueryTreeNodeType::UNION:
-        {
+        case QueryTreeNodeType::UNION: {
             if (table_expression)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "For union analysis table expression must be empty");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "For union analysis table expression must be empty");
 
             resolveUnion(node, scope);
             break;
         }
-        case QueryTreeNodeType::IDENTIFIER:
-            [[fallthrough]];
-        case QueryTreeNodeType::CONSTANT:
-            [[fallthrough]];
-        case QueryTreeNodeType::COLUMN:
-            [[fallthrough]];
-        case QueryTreeNodeType::FUNCTION:
-            [[fallthrough]];
-        case QueryTreeNodeType::LIST:
-        {
+        case QueryTreeNodeType::IDENTIFIER: [[fallthrough]];
+        case QueryTreeNodeType::CONSTANT: [[fallthrough]];
+        case QueryTreeNodeType::COLUMN: [[fallthrough]];
+        case QueryTreeNodeType::FUNCTION: [[fallthrough]];
+        case QueryTreeNodeType::LIST: {
             if (table_expression)
             {
                 scope.expression_join_tree_node = table_expression;
@@ -258,29 +281,55 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
 
             break;
         }
-        case QueryTreeNodeType::TABLE_FUNCTION:
-        {
+        case QueryTreeNodeType::TABLE_FUNCTION: {
             QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
-        default:
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Node {} with type {} is not supported by query analyzer. "
-                            "Supported nodes are query, union, identifier, constant, column, function, list.",
-                            node->formatASTForErrorMessage(),
-                            node->getNodeTypeName());
+        default: {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Node {} with type {} is not supported by query analyzer. "
+                "Supported nodes are query, union, identifier, constant, column, function, list.",
+                node->formatASTForErrorMessage(),
+                node->getNodeTypeName());
         }
     }
 
     validateCorrelatedSubqueries(node);
-    inlineMaterializedCTEIfNeeded(node, context);
+    if (owns_selected_output_binding_collector && (node->as<QueryNode>() || node->as<UnionNode>()))
+        publishSelectedOutputTypeBindings(node, context);
+
+    if (explicit_udt_state)
+    {
+        explicit_udt_state->finalizeSemanticAnalysis();
+        if (explicit_udt_state->hasQueryTreeRegistrations())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "UDT semantic analysis retained QueryTree nodes across its finalization barrier");
+    }
+
+    /// Semantic planning and selected-output publication consume the resolved
+    /// generation before materialized-CTE cloneAndReplace. Only ordinary
+    /// physical QueryTree nodes survive into executable planning.
+    static_cast<void>(inlineMaterializedCTEIfNeeded(node, context));
+
+    if (owns_selected_output_binding_collector)
+    {
+        if (!selected_output_collector->markPublisherComplete(this))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "UDT selected-output proof publication did not reach its complete analyzer barrier");
+        owns_selected_output_binding_collector = false;
+    }
+
+    if (owns_query_result_cache_storage_dependency_resolution)
+    {
+        cache_dependency_collector->markResolutionComplete(this);
+        owns_query_result_cache_storage_dependency_resolution = false;
+    }
+    cache_dependency_analysis_completed = true;
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
-    IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+    IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/nullptr);
     if (!scope.context)
         scope.context = context;
 
@@ -288,9 +337,26 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
         scope.disableIdentifierCachePermanently();
 
     auto node_type = node->getNodeType();
+    const auto cache_dependency_collector = context->getUDTQueryResultCacheStorageDependencyCollector();
+    owns_query_result_cache_storage_dependency_resolution
+        = cache_dependency_collector && cache_dependency_collector->tryBeginResolution(this);
+    bool cache_dependency_analysis_completed = false;
+    SCOPE_EXIT({
+        if (cache_dependency_collector && !cache_dependency_analysis_completed)
+            cache_dependency_collector->abandonResolution(this);
+        owns_query_result_cache_storage_dependency_resolution = false;
+    });
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
         evaluateScalarSubqueryIfNeeded(node, scope);
+        if (explicit_udt_state)
+            explicit_udt_state->finalizeSemanticAnalysis();
+        if (owns_query_result_cache_storage_dependency_resolution)
+        {
+            cache_dependency_collector->markResolutionComplete(this);
+            owns_query_result_cache_storage_dependency_resolution = false;
+        }
+        cache_dependency_analysis_completed = true;
         return;
     }
 
@@ -321,6 +387,303 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     validateCorrelatedSubqueries(node);
+
+    if (explicit_udt_state)
+        explicit_udt_state->finalizeSemanticAnalysis();
+
+    if (owns_query_result_cache_storage_dependency_resolution)
+    {
+        cache_dependency_collector->markResolutionComplete(this);
+        owns_query_result_cache_storage_dependency_resolution = false;
+    }
+    cache_dependency_analysis_completed = true;
+}
+
+void QueryAnalyzer::publishSelectedOutputTypeBindings(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    const auto collector = context->getUDTSelectedOutputTypeBindingCollector();
+    if (!collector)
+        return;
+
+    if (!explicit_udt_state && !saw_bound_udt_source_snapshot && !collector->requiresCompleteBindings())
+    {
+        if (!collector->publishNoLogicalSourceFastPath())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "UDT selected-output proof collector was published more than once");
+        return;
+    }
+
+    const auto physical_child = [](DataTypePtr type, UInt64 ordinal) -> DataTypePtr
+    {
+        if (!type)
+            return {};
+        switch (type->getTypeId())
+        {
+            case TypeIndex::Nullable: return ordinal == 0 ? assert_cast<const DataTypeNullable &>(*type).getNestedType() : DataTypePtr{};
+            case TypeIndex::LowCardinality:
+                return ordinal == 0 ? assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType() : DataTypePtr{};
+            case TypeIndex::Tuple: {
+                const auto & elements = assert_cast<const DataTypeTuple &>(*type).getElements();
+                return ordinal < elements.size() ? elements[static_cast<size_t>(ordinal)] : DataTypePtr{};
+            }
+            default: return {};
+        }
+    };
+    const auto physical_type_at_path = [&](DataTypePtr type, std::span<const UInt64> path) -> DataTypePtr
+    {
+        for (const UInt64 ordinal : path)
+        {
+            type = physical_child(std::move(type), ordinal);
+            if (!type)
+                return {};
+        }
+        return type;
+    };
+
+    /// Build once only for the explicit DDL collector. This is O(table
+    /// expressions/scopes), independent of output width, and replaces a
+    /// repeated scope scan for every demanded subquery column.
+    std::unordered_map<const IQueryTreeNode *, const AnalysisTableExpressionData *> projection_data_by_source;
+    for (auto & [scope_node, candidate_scope] : node_to_scope_map)
+    {
+        static_cast<void>(scope_node);
+        for (auto & [source, data] : candidate_scope.table_expression_node_to_data)
+        {
+            if (!source || (!source->as<QueryNode>() && !source->as<UnionNode>()))
+                continue;
+            projection_data_by_source.try_emplace(source.get(), std::addressof(data));
+        }
+    }
+
+    const auto projection_input_for_column = [&](const ColumnNode & column) -> QueryTreeNodePtr
+    {
+        const auto source = column.getColumnSourceOrNull();
+        if (!source || !source->as<QueryNode>())
+            return {};
+        const auto data = projection_data_by_source.find(source.get());
+        const auto selected_ordinal
+            = data == projection_data_by_source.end() ? std::optional<UInt32>{} : data->second->tryGetProjectionOrdinal(column);
+        const auto * query = source->as<QueryNode>();
+        if (!selected_ordinal || *selected_ordinal >= query->getProjection().getNodes().size())
+            return {};
+        return query->getProjection().getNodes()[*selected_ordinal];
+    };
+
+    std::function<std::optional<UDT::SelectedOutputTypeBinding>(const QueryTreeNodePtr &, std::vector<UInt64>, UInt64)> classify;
+    classify = [&](const QueryTreeNodePtr & expression,
+                   std::vector<UInt64> selected_path,
+                   UInt64 depth) -> std::optional<UDT::SelectedOutputTypeBinding>
+    {
+        constexpr UInt64 maximum_selected_output_depth = 512;
+        if (!expression)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "UDT selected-output direct proof reached an empty expression");
+        if (depth > maximum_selected_output_depth)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "UDT selected-output direct proof exceeds its bounded depth");
+
+        if (const auto * function = expression->as<FunctionNode>())
+        {
+            if (explicit_udt_state)
+            {
+                if (auto target = explicit_udt_state->findResolvedExplicitCastTarget(function))
+                {
+                    std::vector<UInt32> normalized_path;
+                    normalized_path.reserve(selected_path.size());
+                    for (const UInt64 ordinal : selected_path)
+                    {
+                        if (!std::in_range<UInt32>(ordinal))
+                            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "UDT selected-output path ordinal exceeds UInt32");
+                        normalized_path.push_back(static_cast<UInt32>(ordinal));
+                    }
+                    const auto selected_node = target->findNode(normalized_path);
+                    const auto selected_type = selected_node ? target->getNode(*selected_node).getPhysicalType() : DataTypePtr{};
+                    if (!selected_type)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Resolved UDT CAST selected-output path changed after binding");
+                    return UDT::SelectedOutputTypeBinding{
+                        .output_name = {},
+                        .physical_type = selected_type,
+                        .explicit_logical_tree = std::move(target),
+                        .explicit_type_child_prefix = std::move(selected_path),
+                        .prebound_references = {},
+                        .prebound_section = UDT::PersistedTypePathSection::ColumnType,
+                        .prebound_runtime_owner_key = {},
+                        .prebound_type_child_prefix = {},
+                    };
+                }
+            }
+
+            if (function->isResolved() && equalsCaseInsensitive(function->getFunctionName(), "tupleElement"))
+            {
+                const auto & arguments = function->getArguments().getNodes();
+                const auto * selector = arguments.size() == 2 && arguments[1] ? arguments[1]->as<ConstantNode>() : nullptr;
+                if (!selector || !arguments[0])
+                    return std::nullopt;
+                std::vector<UInt64> prefix;
+                auto source_type = arguments[0]->getResultType();
+                while (source_type
+                       && (source_type->getTypeId() == TypeIndex::Nullable || source_type->getTypeId() == TypeIndex::LowCardinality))
+                {
+                    prefix.push_back(0);
+                    source_type = physical_child(std::move(source_type), 0);
+                }
+                const auto * tuple = source_type ? typeid_cast<const DataTypeTuple *>(source_type.get()) : nullptr;
+                if (!tuple)
+                    return std::nullopt;
+                const Field selector_value = selector->getValue();
+                std::optional<size_t> element;
+                if (selector_value.getType() == Field::Types::UInt64)
+                {
+                    const UInt64 one_based = selector_value.safeGet<UInt64>();
+                    if (one_based && one_based <= tuple->getElements().size())
+                        element = static_cast<size_t>(one_based - 1);
+                }
+                else if (selector_value.getType() == Field::Types::Int64)
+                {
+                    const Int64 one_based = selector_value.safeGet<Int64>();
+                    if (one_based > 0 && static_cast<UInt64>(one_based) <= tuple->getElements().size())
+                        element = static_cast<size_t>(one_based - 1);
+                }
+                else if (selector_value.getType() == Field::Types::String)
+                    element = tuple->tryGetPositionByName(selector_value.safeGet<String>());
+                if (!element)
+                    return std::nullopt;
+                prefix.push_back(static_cast<UInt64>(*element));
+                prefix.insert(prefix.end(), selected_path.begin(), selected_path.end());
+                return classify(arguments[0], std::move(prefix), depth + 1);
+            }
+            return std::nullopt; /// Every unregistered function/operator erases selected-output provenance.
+        }
+
+        const auto * column = expression->as<ColumnNode>();
+        if (!column || column->getColumn().isSubcolumn())
+            return std::nullopt;
+        const auto source = column->getColumnSourceOrNull();
+        const auto * table = source ? source->as<TableNode>() : nullptr;
+        const auto * table_function = source ? source->as<TableFunctionNode>() : nullptr;
+        if (table || table_function)
+        {
+            const auto storage_type = column->getColumn().getTypeInStorage();
+            const auto selected_column_type = column->getResultType();
+            if (!storage_type || !selected_column_type || !storage_type->equals(*selected_column_type))
+            {
+                /// A JOIN/common-type/nullability rewrite changes the path
+                /// coordinate system.  This DDL classifier has no approved
+                /// wrapper-lift for it, so do not reinterpret result paths
+                /// against the storage tree merely because a leaf happens to
+                /// have the same IDataType.
+                return std::nullopt;
+            }
+            const auto snapshot = table ? table->getStorageSnapshot() : table_function->getStorageSnapshot();
+            const auto references = snapshot && snapshot->metadata ? snapshot->metadata->getBoundUDTReferences() : nullptr;
+            if (!references)
+                return std::nullopt;
+            const auto section = [&]() -> std::optional<UDT::PersistedTypePathSection>
+            {
+                switch (references->getObject().kind)
+                {
+                    case UDT::SchemaObjectKind::Table: return UDT::PersistedTypePathSection::ColumnType;
+                    case UDT::SchemaObjectKind::View: return UDT::PersistedTypePathSection::ViewExpression;
+                    default: return std::nullopt;
+                }
+            }();
+            if (!section)
+                return std::nullopt;
+            const auto owner_key = column->getColumn().getNameInStorage();
+            if (references->findRuntimeUsesByPrefix(*section, owner_key, selected_path).empty())
+                return std::nullopt;
+            const auto selected_type = physical_type_at_path(storage_type, selected_path);
+            if (!selected_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Prebound UDT selected-output path changed after storage binding");
+            return UDT::SelectedOutputTypeBinding{
+                .output_name = {},
+                .physical_type = selected_type,
+                .explicit_logical_tree = {},
+                .explicit_type_child_prefix = {},
+                .prebound_references = references,
+                .prebound_section = *section,
+                .prebound_runtime_owner_key = owner_key,
+                .prebound_type_child_prefix = std::move(selected_path),
+            };
+        }
+
+        if (source && source->as<UnionNode>())
+            return std::nullopt; /// Persisted metadata deliberately erases UNION provenance.
+        if (source && source->as<QueryNode>())
+        {
+            auto projection_input = projection_input_for_column(*column);
+            if (!projection_input || !projection_input->getResultType() || !column->getResultType()
+                || !projection_input->getResultType()->equals(*column->getResultType()))
+                return std::nullopt;
+            return classify(projection_input, std::move(selected_path), depth + 1);
+        }
+        if (column->hasExpression() && column->getExpression() && column->getResultType() && column->getExpression()->getResultType()
+            && column->getResultType()->equals(*column->getExpression()->getResultType()))
+            return classify(column->getExpression(), std::move(selected_path), depth + 1);
+        return std::nullopt;
+    };
+
+    UDT::SelectedOutputTypeBindings bindings;
+    if (const auto * query = node->as<QueryNode>())
+    {
+        const auto & projection = query->getProjection().getNodes();
+        const auto & columns = query->getProjectionColumns();
+        if (projection.size() != columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Resolved SELECT projection and output schema have different sizes");
+        bindings.reserve(columns.size());
+        for (size_t index = 0; index < columns.size(); ++index)
+        {
+            UDT::SelectedOutputTypeBinding binding{
+                .output_name = columns[index].name,
+                .physical_type = columns[index].type,
+                .explicit_logical_tree = {},
+                .explicit_type_child_prefix = {},
+                .prebound_references = {},
+                .prebound_section = UDT::PersistedTypePathSection::ColumnType,
+                .prebound_runtime_owner_key = {},
+                .prebound_type_child_prefix = {},
+            };
+            if (auto exact = classify(projection[index], {}, 0))
+            {
+                if (!exact->physical_type || !binding.physical_type || !exact->physical_type->equals(*binding.physical_type))
+                {
+                    /// A selected-output persistence proof currently admits
+                    /// direct/rename/static-child exact physical shape only.
+                    /// JOIN/common-type/wrapper synthesis is deliberately a
+                    /// physical result instead of inferring provenance.
+                    bindings.push_back(std::move(binding));
+                    continue;
+                }
+                exact->output_name = binding.output_name;
+                if (!exact->isValid())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Analyzer produced an invalid exact UDT selected-output proof");
+                binding = std::move(*exact);
+            }
+            if (!binding.isValid())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Analyzer produced an invalid physical selected-output classification");
+            bindings.push_back(std::move(binding));
+        }
+    }
+    else if (const auto * union_node = node->as<UnionNode>())
+    {
+        const auto columns = union_node->computeProjectionColumns();
+        bindings.reserve(columns.size());
+        for (const auto & column : columns)
+        {
+            bindings.push_back({
+                .output_name = column.name,
+                .physical_type = column.type,
+                .explicit_logical_tree = {},
+                .explicit_type_child_prefix = {},
+                .prebound_references = {},
+                .prebound_section = UDT::PersistedTypePathSection::ColumnType,
+                .prebound_runtime_owner_key = {},
+                .prebound_type_child_prefix = {},
+            });
+        }
+    }
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "UDT selected-output collector was installed for a non-SELECT query tree");
+
+    if (!collector->publish(std::move(bindings)))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "UDT selected-output proof collector was published more than once");
 }
 
 static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
@@ -599,7 +962,20 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromUserDefinedSQLFunctions(const AS
         return nullptr;
 
     const auto & function_name = create_function_query->getFunctionName();
+    if (context->isStoredObjectSQLUDFSubstitutionFrozen())
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "SQL UDF '{}' became visible after the stored-object DDL substitution snapshot was frozen",
+            function_name);
+    }
     auto it = function_name_to_user_defined_lambda.find(function_name);
+    if (context->shouldRejectStoredUDTSyntaxInSQLUDFBodies() && !stored_object_safe_user_defined_lambdas.contains(function_name))
+    {
+        UserDefinedSQLFunctionVisitor::assertNoStoredUDTSyntaxInFunctionDefinition(
+            create_function_ast, remaining_stored_object_udf_inspection_nodes);
+        stored_object_safe_user_defined_lambdas.emplace(function_name);
+    }
     if (it != function_name_to_user_defined_lambda.end())
         return it->second;
 
@@ -1807,7 +2183,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
             auto column_node_it = node_map.find(column_name);
             if (column_node_it != node_map.end())
             {
-                matched_column_nodes.emplace_back(column_node_it->second);
+                matched_column_nodes.emplace_back(column_node_it->second.node);
                 continue;
             }
         }
@@ -4406,9 +4782,16 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
 
     auto table_expression_data_it = scope.table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it != scope.table_expression_node_to_data.end())
+    {
+        /// A shared table-expression node occurring at more than one JOIN-tree
+        /// position has no single non-synthesizing path. QueryTree normally
+        /// clones such occurrences; fail closed for consumers if it does not.
+        table_expression_data_it->second.join_column_output_kind = JoinColumnOutputKind::Ambiguous;
         return;
+    }
 
     AnalysisTableExpressionData table_expression_data;
+    table_expression_data.join_column_output_kind = scope.current_join_column_output_kind;
 
     if (table_node)
     {
@@ -4444,6 +4827,8 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     if (table_node || table_function_node)
     {
         storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+        if (storage_snapshot && storage_snapshot->metadata && storage_snapshot->metadata->getBoundUDTReferences())
+            saw_bound_udt_source_snapshot = true;
 
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         if (storage_snapshot->storage.supportsSubcolumns())
@@ -4473,10 +4858,18 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
         /// lazy populator is never installed. Emplacing the optional marks the map populated.
         auto & node_map = table_expression_data.emplaceColumnNodeMap();
         node_map.reserve(table_expression_data.column_names_and_types.size());
-        for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
+        for (size_t projection_ordinal = 0; projection_ordinal < table_expression_data.column_names_and_types.size(); ++projection_ordinal)
         {
+            const auto & column_name_and_type = table_expression_data.column_names_and_types[projection_ordinal];
+            if (!std::in_range<UInt32>(projection_ordinal))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Subquery projection ordinal exceeds UInt32");
             auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
-            node_map.emplace(column_name_and_type.name, column_node);
+            node_map.emplace(
+                column_name_and_type.name,
+                ResolvedTableExpressionColumn{
+                    .node = std::move(column_node),
+                    .projection_ordinal = static_cast<UInt32>(projection_ordinal),
+                });
         }
     }
 
@@ -4531,13 +4924,16 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                 {
                     auto alias_expression = buildQueryTree(column_default->expression, scope.context);
                     auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);
-                    node_map.emplace(column_name_and_type.name, column_node);
+                    node_map.emplace(
+                        column_name_and_type.name, ResolvedTableExpressionColumn{.node = column_node, .projection_ordinal = std::nullopt});
                     alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);
                 }
                 else
                 {
                     auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
-                    node_map.emplace(column_name_and_type.name, column_node);
+                    node_map.emplace(
+                        column_name_and_type.name,
+                        ResolvedTableExpressionColumn{.node = std::move(column_node), .projection_ordinal = std::nullopt});
                 }
             }
 
@@ -4548,7 +4944,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                   *
                   * During resolve of alias_value_1, alias_value_2 column will be resolved.
                   */
-                alias_column_to_resolve = node_map[alias_column_to_resolve_name];
+                alias_column_to_resolve = node_map[alias_column_to_resolve_name].node;
 
                 IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
                 alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
@@ -4565,7 +4961,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                 auto & resolved_expression = alias_column_to_resolve->getExpression();
                 if (resolved_expression->getResultType()->getName() != alias_column_to_resolve->getResultType()->getName())
                     resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
-                node_map[alias_column_to_resolve_name] = alias_column_to_resolve;
+                node_map[alias_column_to_resolve_name].node = alias_column_to_resolve;
             }
         });
     }
@@ -4655,9 +5051,34 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
         if (parameterized_view_storage)
         {
+            auto invocation_ast = table_function_node_typed.getOriginalAST();
+            if (!invocation_ast)
+                invocation_ast = table_function_node_typed.toAST();
+            scope_context->observeUDTTableFunctionStorage(invocation_ast, parameterized_view_storage);
             VectorWithMemoryTracking<size_t> skip_analysis_arguments_indexes(table_function_node_typed.getArguments().getNodes().size());
             std::iota(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), 0);
             table_function_node_typed.resolve({}, parameterized_view_storage, scope_context, std::move(skip_analysis_arguments_indexes));
+            if (const auto collector = scope_context->getUDTQueryResultCacheStorageDependencyCollector())
+            {
+                const auto & storage = table_function_node_typed.getStorageOrThrow();
+                const auto & snapshot = table_function_node_typed.getStorageSnapshot();
+                const auto & storage_id = table_function_node_typed.getStorageID();
+                const auto & bound_references = snapshot->metadata->getBoundUDTReferences();
+                if (!storage_id.hasUUID() && !bound_references && !snapshot->udt_read_continuation_evidence)
+                {
+                    collector->recordResolvedTransientTableFunction(
+                        storage_id, storage->getName(), bound_references, snapshot->udt_read_continuation_evidence);
+                }
+                else
+                {
+                    collector->record(
+                        storage_id,
+                        storage->getName(),
+                        UDT::QueryResultCacheStorageKind::View,
+                        bound_references,
+                        snapshot->udt_read_continuation_evidence);
+                }
+            }
             return;
         }
 
@@ -4671,6 +5092,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     }
 
     QueryTreeNodes result_table_function_arguments;
+    std::vector<std::pair<size_t, ASTPtr>> exact_skipped_argument_asts;
 
     auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
 
@@ -4681,6 +5103,15 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments.size();
 
+    const ASTs * exact_original_table_function_arguments = nullptr;
+    if (const auto & original_ast = table_function_node_typed.getOriginalAST())
+    {
+        if (const auto * original_function = original_ast->as<ASTFunction>(); original_function
+            && equalsCaseInsensitive(original_function->name, table_function_name) && original_function->arguments
+            && original_function->arguments->children.size() == table_function_arguments_size)
+            exact_original_table_function_arguments = &original_function->arguments->children;
+    }
+
     for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
     {
         auto & table_function_argument = table_function_arguments[table_function_argument_index];
@@ -4690,6 +5121,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_function_argument_index);
         if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
         {
+            /// A skipped argument is owned and analyzed by the table function. QueryTree-to-AST
+            /// conversion can be lossy for parser-only nodes and wrapper nodes. Prefer the argument
+            /// from the original outer function to preserve both at the same argument ordinal.
+            if (exact_original_table_function_arguments)
+            {
+                exact_skipped_argument_asts.emplace_back(
+                    result_table_function_arguments.size(), (*exact_original_table_function_arguments)[table_function_argument_index]);
+            }
+            else if (const auto & original_ast = table_function_argument->getOriginalAST())
+            {
+                exact_skipped_argument_asts.emplace_back(result_table_function_arguments.size(), original_ast);
+            }
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }
@@ -4819,6 +5262,20 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     table_function_node_typed.getArguments().getNodes() = std::move(result_table_function_arguments);
 
     auto table_function_ast = table_function_node_typed.toAST();
+    if (!exact_skipped_argument_asts.empty())
+    {
+        auto * function = table_function_ast->as<ASTFunction>();
+        if (!function || !function->arguments)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A table function lost its argument list while preserving skipped arguments");
+
+        auto & ast_arguments = function->arguments->children;
+        for (const auto & [argument_index, original_ast] : exact_skipped_argument_asts)
+        {
+            if (argument_index >= ast_arguments.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A skipped table-function argument changed position during AST reconstruction");
+            ast_arguments[argument_index] = original_ast->clone();
+        }
+    }
     table_function_ptr->parseArguments(table_function_ast, scope_context);
 
     uint64_t use_structure_from_insertion_table_in_table_functions
@@ -5027,7 +5484,33 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
     }
     auto table_function_storage = scope_context->getQueryContext()->executeTableFunction(table_function_ast, table_function_ptr, execution_context);
+    auto exact_invocation_ast = table_function_node_typed.getOriginalAST();
+    if (!exact_invocation_ast)
+        exact_invocation_ast = table_function_ast;
+    scope_context->observeUDTTableFunctionStorage(exact_invocation_ast, table_function_storage);
     table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context, std::move(skip_analysis_arguments_indexes));
+    if (const auto collector = scope_context->getUDTQueryResultCacheStorageDependencyCollector())
+    {
+        const auto & storage = table_function_node_typed.getStorageOrThrow();
+        const auto & snapshot = table_function_node_typed.getStorageSnapshot();
+        const auto kind = storage->isView() ? UDT::QueryResultCacheStorageKind::View : UDT::QueryResultCacheStorageKind::Storage;
+        const auto & storage_id = table_function_node_typed.getStorageID();
+        const auto & bound_references = snapshot->metadata->getBoundUDTReferences();
+        if (!storage_id.hasUUID() && !bound_references && !snapshot->udt_read_continuation_evidence)
+        {
+            collector->recordResolvedTransientTableFunction(
+                storage_id, storage->getName(), bound_references, snapshot->udt_read_continuation_evidence);
+        }
+        else
+        {
+            collector->record(
+                storage_id,
+                storage->getName(),
+                kind,
+                bound_references,
+                snapshot->udt_read_continuation_evidence);
+        }
+    }
 }
 
 /// Resolve array join node in scope
@@ -5386,11 +5869,22 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     auto & join_node_typed = join_node->as<JoinNode &>();
 
-    resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpressionNode(), scope, expressions_visitor);
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpressionNode(), scope);
+    const auto resolve_side = [&](QueryTreeNodePtr & side, bool may_be_unmatched)
+    {
+        const auto previous_output_kind = scope.current_join_column_output_kind;
+        SCOPE_EXIT({ scope.current_join_column_output_kind = previous_output_kind; });
+        if (may_be_unmatched && previous_output_kind != JoinColumnOutputKind::DefaultSynthesis)
+        {
+            scope.current_join_column_output_kind
+                = scope.join_use_nulls ? JoinColumnOutputKind::NullableLift : JoinColumnOutputKind::DefaultSynthesis;
+        }
+        resolveQueryJoinTreeNode(side, scope, expressions_visitor);
+        validateJoinTableExpressionWithoutAlias(join_node, side, scope);
+    };
 
-    resolveQueryJoinTreeNode(join_node_typed.getRightTableExpressionNode(), scope, expressions_visitor);
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpressionNode(), scope);
+    const auto join_kind = join_node_typed.getKind();
+    resolve_side(join_node_typed.getLeftTableExpressionNode(), isFull(join_kind) || isRight(join_kind));
+    resolve_side(join_node_typed.getRightTableExpressionNode(), isFull(join_kind) || isLeft(join_kind));
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpressionNode()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -5776,6 +6270,15 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const
 {
     if (!scope.context->getSettingsRef()[Setting::analyzer_inline_views])
+        return;
+
+    /// A stored View is a semantic boundary: only its persisted, prebound
+    /// output contract may expose a logical role to the outer query. Inlining
+    /// would either bypass a physical View output and rediscover an inner
+    /// table role, or lose the View-output owner needed for exact prebound
+    /// lookup. Keep the ordinary optimization unchanged when UDT execution is
+    /// disabled.
+    if (scope.context->getSettingsRef()[Setting::allow_experimental_user_defined_types])
         return;
 
     auto * table_node = join_tree_node->as<TableNode>();
@@ -6582,9 +7085,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           * SELECT a + 1 as b FROM t1 JOIN t2 USING (id) PREWHERE b = 1
           * The expression `a + 1 as b` in the projection and in PREWHERE should have different `a`.
           */
-        prewhere_node = prewhere_node->clone();
-        ReplaceColumnsVisitor replace_visitor(scope.join_columns_with_changed_types, scope.context);
+        IQueryTreeNode::CloneNodeMapping clone_node_mapping;
+        const IQueryTreeNode::ReplacementMap no_replacements;
+        auto resolved_prewhere_clone = prewhere_node->cloneAndReplace(no_replacements, &clone_node_mapping);
+        if (explicit_udt_state)
+            explicit_udt_state->remapSemanticGenerationAfterQueryTreeReplacement(clone_node_mapping);
+        prewhere_node = std::move(resolved_prewhere_clone);
+        IQueryTreeNode::CloneNodeMapping prewhere_replacement_mapping;
+        ReplaceColumnsVisitor replace_visitor(
+            scope.join_columns_with_changed_types, scope.context, explicit_udt_state ? &prewhere_replacement_mapping : nullptr);
         replace_visitor.visit(prewhere_node);
+        if (explicit_udt_state && !prewhere_replacement_mapping.empty())
+            explicit_udt_state->remapSemanticGenerationAfterQueryTreeReplacement(prewhere_replacement_mapping);
 
         /// `prewhere_node` was registered for alias removal at line ~1135 when the
         /// identifier was resolved, but the registered pointer is the pre-clone tree
@@ -6951,6 +7463,11 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             for (size_t i = 1; i < queries_nodes.size(); ++i)
                 original_recursive_queries.push_back(queries_nodes[i]->clone());
 
+        const bool previous_suppress_udt_query_tree_registrations = suppress_udt_query_tree_registrations;
+        if (max_widening_steps > 0)
+            suppress_udt_query_tree_registrations = true;
+        SCOPE_EXIT({ suppress_udt_query_tree_registrations = previous_suppress_udt_query_tree_registrations; });
+
         TemporaryTableHolderPtr final_temporary_table_holder;
         StoragePtr final_temporary_table_storage;
 
@@ -7038,6 +7555,18 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             for (size_t i = 1; i < queries_nodes.size(); ++i)
                 queries_nodes[i] = original_recursive_queries[i - 1]->clone();
 
+            resolve_recursive_queries_with_current_types();
+        }
+
+        if (max_widening_steps > 0)
+        {
+            /// Discard every inference generation and resolve exactly once
+            /// with the stable widened schema while semantic registration is
+            /// enabled. No retained node pointer can therefore name a clone
+            /// that was replaced by a later inference step.
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+                queries_nodes[i] = original_recursive_queries[i - 1]->clone();
+            suppress_udt_query_tree_registrations = previous_suppress_udt_query_tree_registrations;
             resolve_recursive_queries_with_current_types();
         }
 

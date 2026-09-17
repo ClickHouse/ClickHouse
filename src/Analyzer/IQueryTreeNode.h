@@ -160,7 +160,9 @@ public:
       * use value node from replacement map.
       */
     using ReplacementMap = std::unordered_map<const ITableExpressionNode *, TableExpressionNodePtr>;
+    using CloneNodeMapping = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
     QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
+    QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map, CloneNodeMapping * clone_node_mapping) const;
 
     /** Get a deep copy of the query tree.
       * If node to clone is node to replace, then instead of clone it use replacement node.

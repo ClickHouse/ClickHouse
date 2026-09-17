@@ -2500,6 +2500,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             query_plan.addInterpreterContext(updated_context);
                         }
 
+                        effective_snapshot->assertUDTReadContinuationAllowed();
                         effective_storage->read(
                             query_plan,
                             columns_names,
@@ -2512,6 +2513,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                     else
                     {
+                        effective_snapshot->assertUDTReadContinuationAllowed();
                         effective_storage->read(
                             query_plan,
                             columns_names,
@@ -2647,6 +2649,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// local/remote boundary is done later, as an analysis of the whole plan
                                 /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
                                 QueryPlan query_plan_parallel_replicas;
+                                storage_snapshot->assertUDTReadContinuationAllowed();
                                 storage->read(
                                     query_plan_parallel_replicas,
                                     columns_names,
@@ -2662,6 +2665,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         else
                         {
                             QueryPlan query_plan_no_parallel_replicas;
+                            storage_snapshot->assertUDTReadContinuationAllowed();
                             storage->read(
                                 query_plan_no_parallel_replicas,
                                 columns_names,

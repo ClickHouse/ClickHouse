@@ -18,7 +18,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool cast_keep_nullable;
+extern const SettingsBool allow_experimental_user_defined_types;
+extern const SettingsBool cast_keep_nullable;
 }
 
 namespace ErrorCodes
@@ -151,6 +152,7 @@ static String getExplicitTimeZoneOfDateTimeArgument(const DataTypePtr & source)
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
+template <bool classify_type_families>
 class CastOverloadResolverImpl final : public IFunctionOverloadResolver
 {
 public:
@@ -182,16 +184,6 @@ public:
         , data_type_validation_settings(data_type_validation_settings_)
         , convert_settings(createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Ignore))
     {
-    }
-
-    static FunctionOverloadResolverPtr create(ContextPtr context_, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
-    {
-        if (internal)
-            return std::make_unique<CastOverloadResolverImpl>(context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
-
-        const auto & settings_ref = context_->getSettingsRef();
-        return std::make_unique<CastOverloadResolverImpl>(
-            context_, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
     }
 
     static FunctionBasePtr createInternalCast(
@@ -240,7 +232,11 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant string describing type. "
                 "Instead there is a column with the following structure: {}", getName(), column->dumpStructure());
 
-        DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        DataTypePtr type;
+        if constexpr (classify_type_families)
+            type = DataTypeFactory::instance().getWithFamilyClassification(type_col->getValue<String>());
+        else
+            type = DataTypeFactory::instance().get(type_col->getValue<String>());
         validateDataType(type, data_type_validation_settings);
 
         /// CAST to `DateTime` or `DateTime64` without an explicit time zone should preserve
@@ -292,15 +288,45 @@ private:
     FunctionConvertSettingsPtr convert_settings;
 };
 
+static FunctionOverloadResolverPtr
+createCastOverloadResolver(ContextPtr context, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
+{
+    if (internal)
+        return std::make_unique<CastOverloadResolverImpl<false>>(
+            context, cast_type, internal, std::move(diagnostic), false /*keep_nullable*/, DataTypeValidationSettings{});
+
+    const auto & settings_ref = context->getSettingsRef();
+    if (settings_ref[Setting::allow_experimental_user_defined_types])
+        return std::make_unique<CastOverloadResolverImpl<true>>(
+            context,
+            cast_type,
+            internal,
+            std::move(diagnostic),
+            settings_ref[Setting::cast_keep_nullable],
+            DataTypeValidationSettings(settings_ref));
+
+    return std::make_unique<CastOverloadResolverImpl<false>>(
+        context,
+        cast_type,
+        internal,
+        std::move(diagnostic),
+        settings_ref[Setting::cast_keep_nullable],
+        DataTypeValidationSettings(settings_ref));
+}
+
 
 FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
+    return CastOverloadResolverImpl<false>::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)
 {
-    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS, FunctionFactory::Case::Insensitive);
+    factory.registerFunction(
+        "_CAST",
+        [](ContextPtr context) { return createCastOverloadResolver(context, CastType::nonAccurate, true, {}); },
+        FunctionDocumentation::INTERNAL_FUNCTION_DOCS,
+        FunctionFactory::Case::Insensitive);
     /// Note: "internal" (not affected by null preserving setting) versions of accurate cast functions are unneeded.
 
     /// CAST documentation
@@ -439,14 +465,24 @@ SELECT accurateCastOrNull('abc', 'UInt32')
     FunctionDocumentation::Category accurateCastOrNull_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation accurateCastOrNull_documentation = {accurateCastOrNull_description, accurateCastOrNull_syntax, accurateCastOrNull_arguments, {}, accurateCastOrNull_returned_value, accurateCastOrNull_examples, accurateCastOrNull_introduced_in, accurateCastOrNull_category};
 
-    factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, CAST_documentation, FunctionFactory::Case::Insensitive);
-    factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, accurateCast_documentation);
-    factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, accurateCastOrNull_documentation);
+    factory.registerFunction(
+        "CAST",
+        [](ContextPtr context) { return createCastOverloadResolver(context, CastType::nonAccurate, false, {}); },
+        CAST_documentation,
+        FunctionFactory::Case::Insensitive);
+    factory.registerFunction(
+        "accurateCast",
+        [](ContextPtr context) { return createCastOverloadResolver(context, CastType::accurate, false, {}); },
+        accurateCast_documentation);
+    factory.registerFunction(
+        "accurateCastOrNull",
+        [](ContextPtr context) { return createCastOverloadResolver(context, CastType::accurateOrNull, false, {}); },
+        accurateCastOrNull_documentation);
 }
 
 FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
 {
-    return CastOverloadResolverImpl::create(context, cast_type, false, std::move(diagnostic));
+    return createCastOverloadResolver(context, cast_type, false, std::move(diagnostic));
 }
 
 }

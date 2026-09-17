@@ -17,6 +17,7 @@
 #include <DataTypes/UDT/CanonicalTypeArguments.h>
 #include <Databases/IDatabase.h>
 #include <Databases/UDT/ILifecycleAdapter.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/UDTTableIntrospection.h>
@@ -30,7 +31,6 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 

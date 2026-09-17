@@ -16,9 +16,13 @@ namespace ErrorCodes
 class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
 {
 public:
-    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
+    explicit ReplaceColumnsVisitor(
+        const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_,
+        const ContextPtr & context_,
+        IQueryTreeNode::CloneNodeMapping * applied_replacements_ = nullptr)
         : replacement_map(replacement_map_)
         , context(context_)
+        , applied_replacements(applied_replacements_)
     {}
 
     /// Apply replacement transitively, because column may change it's type twice, one to have a supertype and then because of `joun_use_nulls`
@@ -46,7 +50,15 @@ public:
     void visitImpl(QueryTreeNodePtr & node)
     {
         if (auto replacement_node = findTransitiveReplacement(node, replacement_map))
+        {
+            if (applied_replacements && replacement_node.get() != node.get())
+            {
+                const auto [existing, inserted] = applied_replacements->emplace(node.get(), replacement_node);
+                if (!inserted && existing->second.get() != replacement_node.get())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "One PREWHERE node maps to conflicting exact replacements");
+            }
             node = replacement_node;
+        }
 
         if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
             rerunFunctionResolve(function_node, context);
@@ -67,6 +79,7 @@ public:
 private:
     const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
     const ContextPtr & context;
+    IQueryTreeNode::CloneNodeMapping * applied_replacements = nullptr;
 };
 
 }

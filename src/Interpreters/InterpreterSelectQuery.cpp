@@ -2999,6 +2999,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
 
+        storage_snapshot->assertUDTReadContinuationAllowed();
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
 
         if (context->hasQueryContext() && !options.is_internal)

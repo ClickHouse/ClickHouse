@@ -205,10 +205,19 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> join_columns_with_changed_types;
 
+    /** Exact analyzer-generated FULL JOIN USING projections for which every
+      * input is nullable.  `firstNonDefault` is a semantic role transfer only
+      * for these nodes: a user-written call with the same function name has no
+      * such provenance, and `join_use_nulls = 0` can synthesize defaults. */
+    std::unordered_set<const IQueryTreeNode *> full_join_using_unanimous_projections;
+
     /// Apply nullability to aggregation keys
     bool group_by_use_nulls = false;
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
+    /// Inherited while the mandatory JOIN tree resolver descends to a table
+    /// expression, then copied into its AnalysisTableExpressionData.
+    JoinColumnOutputKind current_join_column_output_kind = JoinColumnOutputKind::Direct;
     bool allow_resolve_from_using = true;
 
     /** True while the `PREWHERE` expression of this query is being resolved.

@@ -1,58 +1,68 @@
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTBackupQuery.h>
-#include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCheckDatabaseQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateWorkloadQuery.h>
-#include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
+#include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
-#include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
-#include <Parsers/ASTDropWorkloadQuery.h>
-#include <Parsers/ASTDropResourceQuery.h>
+#include <Parsers/ASTDropHandlerQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTUndropQuery.h>
+#include <Parsers/ASTDropResourceQuery.h>
+#include <Parsers/ASTDropWorkloadQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTHypotheticalIndexQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowEngineQuery.h>
 #include <Parsers/ASTShowFunctionsQuery.h>
-#include <Parsers/ASTShowProcesslistQuery.h>
-#include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowSettingQuery.h>
-#include <Parsers/ASTUseQuery.h>
-#include <Parsers/ASTCreateNamedCollectionQuery.h>
-#include <Parsers/ASTDropNamedCollectionQuery.h>
-#include <Parsers/ASTAlterNamedCollectionQuery.h>
-#include <Parsers/ASTCreateHandlerQuery.h>
-#include <Parsers/ASTDropHandlerQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
+#include <Parsers/ASTUseQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
+#include <Parsers/ASTAlterTypeCommentQuery.h>
+#include <Parsers/ASTCreateTypeQuery.h>
+#include <Parsers/ASTDescribeCacheQuery.h>
+#include <Parsers/ASTDescribeTypeQuery.h>
+#include <Parsers/ASTDropTypeQuery.h>
+#include <Parsers/ASTPhysicalizeTypeReferencesQuery.h>
+#include <Parsers/ASTRenameTypeQuery.h>
+#include <Parsers/ASTShowCreateTypeQuery.h>
+#include <Parsers/ASTShowTypesQuery.h>
+#include <Parsers/Access/ASTCheckGrantQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
-#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
-#include <Parsers/Access/ASTCheckGrantQuery.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
@@ -60,30 +70,29 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
-#include <Parsers/Access/ASTExecuteAsQuery.h>
-#include <Parsers/ASTDescribeCacheQuery.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/UDT/UDTExecutionBoundary.h>
 
+#include <Core/Settings.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 
 namespace ProfileEvents
 {
-    extern const Event Query;
-    extern const Event InitialQuery;
-    extern const Event InitialSelectQuery;
-    extern const Event QueriesWithSubqueries;
-    extern const Event SelectQuery;
-    extern const Event InsertQuery;
+extern const Event Query;
+extern const Event InitialQuery;
+extern const Event InitialSelectQuery;
+extern const Event QueriesWithSubqueries;
+extern const Event SelectQuery;
+extern const Event InsertQuery;
 }
 
 
@@ -91,14 +100,17 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool insert_allow_materialized_columns;
+extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsBool allow_experimental_user_defined_types;
+extern const SettingsBool insert_allow_materialized_columns;
+extern const SettingsBool query_cache_for_subqueries;
+extern const SettingsBool use_query_cache;
 }
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TYPE_OF_QUERY;
-    extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_TYPE_OF_QUERY;
+extern const int LOGICAL_ERROR;
 }
 
 InterpreterFactory & InterpreterFactory::instance()
@@ -113,29 +125,41 @@ void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn
         throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
 }
 
-InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
+InterpreterFactory::InterpreterPtr InterpreterFactory::get(
+    ASTPtr & query, ContextMutablePtr context, UDT::UDTExecutionBoundaryProof udt_execution_boundary, const SelectQueryOptions & options)
 {
+    if (!query || !context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory requires a query and context");
+
+    const auto & settings = context->getSettingsRef();
+    auto udt_stored_object_ddl_select_boundary_handoff = udt_execution_boundary.consumeForDispatch(
+        *query,
+        {
+            .allow_experimental_analyzer = static_cast<bool>(settings[Setting::allow_experimental_analyzer]),
+            .allow_experimental_user_defined_types = static_cast<bool>(settings[Setting::allow_experimental_user_defined_types]),
+            .inspect_query_result_cache_candidates
+            = static_cast<bool>(settings[Setting::use_query_cache]) || static_cast<bool>(settings[Setting::query_cache_for_subqueries]),
+        });
+
     ProfileEvents::increment(ProfileEvents::Query);
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         ProfileEvents::increment(ProfileEvents::InitialQuery);
-         if (!query || query->as<ASTSelectQuery>() || query->as<ASTSelectWithUnionQuery>())
+        if (!query || query->as<ASTSelectQuery>() || query->as<ASTSelectWithUnionQuery>())
             ProfileEvents::increment(ProfileEvents::InitialSelectQuery);
     }
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
-    if (!(query->as<ASTSelectQuery>() ||
-        query->as<ASTSelectWithUnionQuery>() ||
-        query->as<ASTSelectIntersectExceptQuery>() ||
-        query->as<ASTInsertQuery>()))
+    if (!(query->as<ASTSelectQuery>() || query->as<ASTSelectWithUnionQuery>() || query->as<ASTSelectIntersectExceptQuery>()
+          || query->as<ASTInsertQuery>()))
     {
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
     }
 
-    Arguments arguments
-    {
+    Arguments arguments{
         .query = query,
         .context = context,
-        .options = options
+        .options = options,
+        .udt_stored_object_ddl_select_boundary_handoff = std::move(udt_stored_object_ddl_select_boundary_handoff),
     };
 
     String interpreter_name;
@@ -168,6 +192,14 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
         bool allow_materialized = static_cast<bool>(context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
         arguments.allow_materialized = allow_materialized;
         interpreter_name = "InterpreterInsertQuery";
+    }
+    else if (
+        query->as<ASTCreateTypeQuery>() || query->as<ASTDropTypeQuery>() || query->as<ASTRenameTypeQuery>()
+        || query->as<ASTAlterTypeCommentQuery>() || query->as<ASTShowTypesQuery>() || query->as<ASTShowCreateTypeQuery>()
+        || query->as<ASTDescribeTypeQuery>() || query->as<ASTPhysicalizeTypeReferencesQuery>()
+        || query->as<ASTApplyPhysicalizeTypeReferencesQuery>())
+    {
+        interpreter_name = "InterpreterUDTQuery";
     }
     else if (query->as<ASTCreateQuery>())
     {
@@ -226,11 +258,15 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterOptimizeQuery";
     }
-    else if (query->as<ASTExistsDatabaseQuery>() || query->as<ASTExistsTableQuery>() || query->as<ASTExistsViewQuery>() || query->as<ASTExistsDictionaryQuery>())
+    else if (
+        query->as<ASTExistsDatabaseQuery>() || query->as<ASTExistsTableQuery>() || query->as<ASTExistsViewQuery>()
+        || query->as<ASTExistsDictionaryQuery>())
     {
         interpreter_name = "InterpreterExistsQuery";
     }
-    else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
+    else if (
+        query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>()
+        || query->as<ASTShowCreateDictionaryQuery>())
     {
         interpreter_name = "InterpreterShowCreateQuery";
     }
@@ -332,7 +368,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTShowAccessQuery>())
     {
-        interpreter_name= "InterpreterShowAccessQuery";
+        interpreter_name = "InterpreterShowAccessQuery";
     }
     else if (query->as<ASTShowPrivilegesQuery>())
     {
@@ -342,7 +378,8 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterTransactionControlQuery";
     }
-    else if (query->as<ASTCreateSQLFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>() || query->as<ASTCreateFunctionWithDriverQuery>())
+    else if (
+        query->as<ASTCreateSQLFunctionQuery>() || query->as<ASTCreateWasmFunctionQuery>() || query->as<ASTCreateFunctionWithDriverQuery>())
     {
         interpreter_name = "InterpreterCreateFunctionQuery";
     }

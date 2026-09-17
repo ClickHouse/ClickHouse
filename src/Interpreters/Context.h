@@ -1,35 +1,36 @@
 #pragma once
 
-#include <base/types.h>
+#include <Backups/BackupsInMemoryHolder.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
+#include <Core/UUID.h>
+#include <Disks/IO/getThreadPoolReader.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/StorageID.h>
+#include <Parsers/IAST_fwd.h>
+#include <Server/HTTP/HTTPContext.h>
+#include <Storages/IStorage_fwd.h>
+#include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/MultiVersion.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Common/IThrottler.h>
+#include <Common/MultiVersion.h>
 #include <Common/SettingSource.h>
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
-#include <Core/UUID.h>
-#include <IO/ReadSettings.h>
-#include <IO/WriteSettings.h>
-#include <Disks/IO/getThreadPoolReader.h>
-#include <Formats/FormatSettings.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/StorageID.h>
-#include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Parsers/IAST_fwd.h>
-#include <Server/HTTP/HTTPContext.h>
-#include <Storages/IStorage_fwd.h>
-#include <Backups/BackupsInMemoryHolder.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <Poco/AutoPtr.h>
 
 #include "config.h"
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -63,6 +64,12 @@ struct OvercommitTracker;
 
 namespace DB
 {
+
+namespace UDT
+{
+class BoundObjectTypeReferences;
+class QueryResultCacheStorageDependencyCollector
+}
 
 class ASTSelectQuery;
 
@@ -307,6 +314,10 @@ struct ServerSettings;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
+namespace UDT
+{
+}
+
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
@@ -389,7 +400,37 @@ protected:
     /// The SQL-defined HTTP handler name and the HTTP request URL are stored in `client_info` (see
     /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
     /// fan-out and remain visible to `currentHandler()` / `currentRequestURL()` on remote shards.
-    bool can_use_query_result_cache = false;
+    mutable std::atomic_bool can_use_query_result_cache = false;
+    /// Query-local fail-closed marker. Explicit UDT syntax must reach analyzer
+    /// access checks, and an activated semantic boundary has a dependency not
+    /// represented by the physical query-result-cache key.
+    mutable std::atomic_bool query_result_cache_blocked_by_udt = false;
+    /// Optional DDL-owned sink for one stable analyzer selected-output proof.
+    /// Null for every ordinary query and built-in-only inference fast path.
+    std::shared_ptr<UDT::SelectedOutputTypeBindingCollector> udt_selected_output_binding_collector;
+    /// Query-scoped handoff of exact table-function storages produced during
+    /// inferred-schema analysis. Copies share the observer so nested and
+    /// SQL-security-overridden analysis cannot lose an invocation.
+    std::shared_ptr<UDT::TableFunctionStorageObserver> udt_table_function_storage_observer;
+    /// Query-scoped handoff of exact target identity and metadata observed
+    /// while Alias resolves its virtual schema. Context copies share the
+    /// callback so nested analysis preserves the same observation stream.
+    std::shared_ptr<UDT::AliasResolutionObserver> udt_alias_resolution_observer;
+    /// Exact immutable V2 sidecar for one trusted View inner-query generation.
+    /// ASTFunction runtime ordinals select StoredExpression endpoints without
+    /// reopening the catalog or scanning the stored query during analysis.
+    std::shared_ptr<const UDT::BoundObjectTypeReferences> udt_stored_expression_type_references;
+    /// Durable stored-object DDL cannot acquire semantic/type-string syntax
+    /// from a mutable global SQL UDF definition after its execution-boundary
+    /// proof. Copied into every analyzer subcontext for that DDL.
+    bool reject_stored_udt_syntax_in_sql_udf_bodies = false;
+    /// CREATE/ALTER expands every SQL UDF definition image before any DDL
+    /// dispatch, then freezes that snapshot. A definition which becomes visible
+    /// later must not cross the already-consumed stored-object boundary.
+    bool stored_object_sql_udf_substitution_frozen = false;
+    /// Optional cache-safety proof shared by the root analyzer and every
+    /// trusted nested View context. Null on the ordinary no-boundary path.
+    std::shared_ptr<UDT::QueryResultCacheStorageDependencyCollector> udt_query_result_cache_storage_dependency_collector;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -1190,6 +1231,11 @@ public:
         const TableFunctionPtr & table_function_ptr,
         const ContextPtr & execution_context);
 
+    /// Returns a table-function storage already materialized in the
+    /// bare-AST analyzer cache, without executing it on a miss. Post-analysis
+    /// validators use this instead of repeating external side effects.
+    StoragePtr tryGetCachedASTTableFunctionResult(const ASTPtr & table_expression) const;
+
     StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
 
     void addViewSource(const StoragePtr & storage);
@@ -1640,6 +1686,32 @@ public:
     void clearQueryResultCache(const std::optional<String> & tag) const;
     bool getCanUseQueryResultCache() const;
     void setCanUseQueryResultCache(bool can_use_query_result_cache_);
+    bool isQueryResultCacheBlockedByUDT() const;
+    void setQueryResultCacheBlockedByUDT() const;
+    void setUDTSelectedOutputTypeBindingCollector(std::shared_ptr<UDT::SelectedOutputTypeBindingCollector> collector);
+    std::shared_ptr<UDT::SelectedOutputTypeBindingCollector> getUDTSelectedOutputTypeBindingCollector() const;
+    void setUDTTableFunctionStorageObserver(std::shared_ptr<UDT::TableFunctionStorageObserver> observer);
+    std::shared_ptr<UDT::TableFunctionStorageObserver> getUDTTableFunctionStorageObserver() const;
+    void observeUDTTableFunctionStorage(const ASTPtr & invocation, const StoragePtr & storage) const
+    {
+        if (udt_table_function_storage_observer)
+            (*udt_table_function_storage_observer)(invocation, storage, getCurrentDatabase());
+    }
+    void setUDTAliasResolutionObserver(std::shared_ptr<UDT::AliasResolutionObserver> observer);
+    std::shared_ptr<UDT::AliasResolutionObserver> getUDTAliasResolutionObserver() const;
+
+    void setUDTStoredExpressionTypeReferences(std::shared_ptr<const UDT::BoundObjectTypeReferences> references);
+    std::shared_ptr<const UDT::BoundObjectTypeReferences> getUDTStoredExpressionTypeReferences() const;
+    void setRejectStoredUDTSyntaxInSQLUDFBodies(bool reject = true);
+    bool shouldRejectStoredUDTSyntaxInSQLUDFBodies() const;
+    void setStoredObjectSQLUDFSubstitutionFrozen(bool frozen = true);
+    bool isStoredObjectSQLUDFSubstitutionFrozen() const;
+
+    void initializeUDTQueryResultCacheStorageDependencyCollector(bool boundary_saw_storage_reference, UInt8 contextual_sink_candidates = 0);
+    void setUDTQueryResultCacheStorageDependencyCollector(std::shared_ptr<UDT::QueryResultCacheStorageDependencyCollector> collector);
+    std::shared_ptr<UDT::QueryResultCacheStorageDependencyCollector> getUDTQueryResultCacheStorageDependencyCollector() const;
+    bool tryBeginUDTQueryResultCacheStorageDependencyResolution(const void * owner) const;
+    void markUDTQueryResultCacheStorageDependencyResolutionComplete(const void * owner) const;
 
 #if USE_AVRO
     void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
@@ -1883,7 +1955,12 @@ public:
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
-    void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
+    void setIsViewInnerQuery(bool value)
+    {
+        is_view_inner_query = value;
+        if (value)
+            reject_stored_udt_syntax_in_sql_udf_bodies = true;
+    }
 
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }

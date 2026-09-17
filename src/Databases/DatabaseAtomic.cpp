@@ -37,6 +37,7 @@
 #include <Databases/UDT/ResourceLimitAdapters.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>

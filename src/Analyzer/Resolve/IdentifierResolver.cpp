@@ -11,10 +11,11 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TableNameHints.h>
+#include <Interpreters/UDT/QueryResultCacheStorageDependencies.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/IdentifierNode.h>
@@ -237,7 +238,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (column_node_it == node_map.end())
             continue;
 
-        const auto & column_node = column_node_it->second;
+        const auto & column_node = column_node_it->second.node;
         auto column_type = column_node->getColumnType();
 
         for (size_t i = 0; i < prefix_size; ++i)
@@ -363,6 +364,16 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     storage->updateExternalDynamicMetadataIfExists(context);
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+    if (const auto collector = context->getUDTQueryResultCacheStorageDependencyCollector())
+    {
+        const auto kind = storage->isView() ? UDT::QueryResultCacheStorageKind::View : UDT::QueryResultCacheStorageKind::Storage;
+        collector->record(
+            storage_id,
+            storage->getName(),
+            kind,
+            metadata_snapshot->getBoundUDTReferences(),
+            storage_snapshot->udt_read_continuation_evidence);
+    }
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by
     /// a concurrent renameInMemory between tryGetTable and this point.
@@ -554,7 +565,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
     auto it = node_map.find(identifier_full_name);
     if (it != node_map.end())
-        return it->second;
+        return it->second.node;
 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
@@ -713,7 +724,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const auto & node_map = table_expression_data.getColumnNodeMap();
     if (auto it = node_map.find(identifier_full_name); it != node_map.end())
     {
-        result_expression = it->second;
+        result_expression = it->second.node;
     }
     /// Check if it's a subcolumn
     else
@@ -1294,6 +1305,16 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     auto merge_function = FunctionFactory::instance().get(function_name, scope.context);
     function_node->resolveAsFunction(merge_function->build(function_node->getArgumentColumns()));
     function_node->setAlias(using_column_node.getColumnName());
+
+    /// With join_use_nulls every unmatched key is represented by NULL and
+    /// firstNonDefault is therefore a pure coalesce of the exact USING inputs.
+    /// Keep query-local provenance so UDT analysis cannot mistake an ordinary
+    /// user-written firstNonDefault call for this closed analyzer adapter.
+    if (scope.join_use_nulls
+        && std::ranges::all_of(
+            function_node->getArguments().getNodes(),
+            [](const auto & argument) { return argument && isNullableOrLowCardinalityNullable(argument->getResultType()); }))
+        scope.full_join_using_unanimous_projections.insert(function_node.get());
 
     return function_node;
 }
