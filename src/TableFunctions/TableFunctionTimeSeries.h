@@ -8,8 +8,8 @@
 namespace DB
 {
 
-/// Table functions timeSeriesSamples('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'), timeSeriesMetrics('mydb', 'my_ts_table')
-/// return the "samples" table, the "tags" table, and the "metrics" table respectively associated with any TimeSeries table mydb.my_ts_table
+/// Table functions timeSeriesSamples('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'), timeSeriesMetricFamilies('mydb', 'my_ts_table')
+/// return the "samples" table, the "tags" table, and the "metric families" table respectively associated with any TimeSeries table mydb.my_ts_table
 template <ViewTarget::Kind target_kind>
 class TableFunctionTimeSeriesTarget : public ITableFunction
 {
@@ -18,12 +18,15 @@ public:
         ? "timeSeriesSamples"
         : ((target_kind == ViewTarget::Tags)
                ? "timeSeriesTags"
-               : ((target_kind == ViewTarget::Metrics) ? "timeSeriesMetrics" : "timeSeriesHistograms"));
+               : ((target_kind == ViewTarget::MetricFamilies) ? "timeSeriesMetricFamilies" : "timeSeriesHistograms"));
 
     String getName() const override { return name; }
 
 private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    /// The returned storage is the target table itself, so a persisted table would rename a live table in memory.
+    bool canBeUsedToCreateTable() const override { return false; }
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,

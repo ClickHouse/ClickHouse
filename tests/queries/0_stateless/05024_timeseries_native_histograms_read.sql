@@ -12,7 +12,7 @@ CREATE TABLE ts_dst ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
 
 INSERT INTO ts_src (metric_name, tags, histograms) VALUES
     ('test_histogram_seconds', map('job', 'test'), [('2024-01-01 00:00:01.000', 0, 3, 0.001, 10, 25.5, 2, [(0, 2), (1, 1)], [3, 2, 3], [], [], [], 10, 2, [3, 2, 3], [2]), ('2024-01-01 00:00:02.000', 1, -53, 0, 6.5, 12.25, 0, [(0, 2)], [4.5, 2], [], [], [0.1, 0.5], 0, 0, [], [])]);
-INSERT INTO ts_src (metric_name, tags, time_series) VALUES
+INSERT INTO ts_src (metric_name, tags, samples) VALUES
     ('test_gauge', map('job', 'test'), [('2024-01-01 00:00:01.000', 1.5)]);
 
 -- The order of the elements within an array is not guaranteed, so the arrays are normalized with arraySort().
@@ -24,16 +24,16 @@ SELECT '-- a mixed read joins the histograms with metric_name and tags by the se
 SELECT metric_name, tags, arraySort(histograms) FROM ts_src ORDER BY metric_name;
 SELECT metric_name, tags['job'], length(histograms) FROM ts_src ORDER BY metric_name;
 
-SELECT '-- time_series and histograms together: a series gets an empty array for the kind of samples it does not have';
-SELECT metric_name, arraySort(time_series), arraySort(histograms) FROM ts_src ORDER BY metric_name;
+SELECT '-- samples and histograms together: a series gets an empty array for the kind of samples it does not have';
+SELECT metric_name, arraySort(samples), arraySort(histograms) FROM ts_src ORDER BY metric_name;
 
 SELECT '-- SELECT * includes the histograms column';
-SELECT metric_name, tags, arraySort(time_series), arraySort(histograms), (metric_family, type, unit, help)
+SELECT metric_name, tags, arraySort(samples), arraySort(histograms), (metric_family, type, unit, help)
     FROM (SELECT * FROM ts_src) ORDER BY metric_name;
 
 SELECT '-- INSERT ... SELECT * round-trips the histograms into another histogram-enabled table';
 INSERT INTO ts_dst SELECT * FROM ts_src;
-SELECT metric_name, tags, arraySort(time_series), arraySort(histograms) FROM ts_dst ORDER BY metric_name;
+SELECT metric_name, tags, arraySort(samples), arraySort(histograms) FROM ts_dst ORDER BY metric_name;
 SELECT timestamp, flags, schema, zero_threshold, count, sum, zero_count, positive_spans, positive_values, negative_spans, negative_values, custom_values,
     count_int, zero_count_int, positive_values_int, negative_values_int
     FROM timeSeriesHistograms(ts_dst) ORDER BY timestamp;

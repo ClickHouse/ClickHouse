@@ -9,7 +9,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 
 namespace DB
@@ -49,9 +51,10 @@ namespace
         {
             return ViewTarget::Tags;
         }
-        else if (str == "metrics")
+        /// "Metrics" is the old name of the `MetricFamilies` kind (see toString()).
+        else if ((str == "metrics") || (str == "Metrics"))
         {
-            return ViewTarget::Metrics;
+            return ViewTarget::MetricFamilies;
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
@@ -61,6 +64,9 @@ namespace
 
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool for_restore)
 {
+    if (query.is_time_series_table)
+        time_series_version = getTimeSeriesSettingVersion(query);
+
     if (!generate_random || !for_restore)
     {
         uuid = query.uuid;
@@ -94,7 +100,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             /// If destination table (to_table_id) is not specified for materialized view,
             /// then MV will create inner table. We should generate UUID of inner table here.
             /// An exception is refreshable MV that replaces inner table by renaming, changing UUID on each refresh.
-            if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->append))
+            if (query.is_materialized_view && !(query.refresh_strategy && !query.refresh_strategy->isAppend()))
                 generate_target_uuid(ViewTarget::To);
 
 
@@ -111,7 +117,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             {
                 generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
-                generate_target_uuid(ViewTarget::Metrics);
+                generate_target_uuid(ViewTarget::MetricFamilies);
 
                 bool recent_samples_enabled = getTimeSeriesSettingRecentSamplesTTL(query) != 0;
                 if (for_restore && !hasExplicitTimeSeriesSettingRecentSamplesTTL(query))
@@ -162,7 +168,11 @@ String CreateQueryUUIDs::toString() const
         add_name_and_uuid_to_string("uuid", uuid);
     for (const auto & [kind, inner_uuid] : targets_inner_uuids)
     {
-        if (inner_uuid != UUIDHelpers::Nil)
+        if (inner_uuid == UUIDHelpers::Nil)
+            continue;
+        if ((kind == ViewTarget::MetricFamilies) && time_series_version && (*time_series_version < TimeSeriesVersion::MIN_WITH_METRIC_FAMILIES_TARGET_NAME))
+            add_name_and_uuid_to_string("Metrics", inner_uuid);
+        else
             add_name_and_uuid_to_string(magic_enum::enum_name(kind), inner_uuid);
     }
     out << "}";

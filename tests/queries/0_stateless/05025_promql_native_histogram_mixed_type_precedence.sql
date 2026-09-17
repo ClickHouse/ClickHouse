@@ -16,7 +16,7 @@ SET session_timezone = 'UTC';
 DROP TABLE IF EXISTS ts_nh;
 CREATE TABLE ts_nh ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
 
-INSERT INTO ts_nh (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh (metric_name, tags, samples) VALUES
     ('pure_float', map('job', 'a'), [(toDateTime64(100, 3), 1.5), (toDateTime64(110, 3), 2.5)]),
     ('mixed_float_newer', map('job', 'c'), [(toDateTime64(110, 3), 42)]),
     ('mixed_hist_newer', map('job', 'd'), [(toDateTime64(100, 3), 3.25)]);
@@ -64,6 +64,6 @@ SELECT tags, timestamp, value, tupleElement(histogram, 'flags') AS histogram_fla
     FROM prometheusQuery('ts_nh', 'stale_hist', 120);
 
 SELECT '-- range query over a mixed series: both arms are still emitted (SampleStream semantics)';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh', 'mixed_hist_newer', 100, 120, 10);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh', 'mixed_hist_newer', 100, 120, 10);
 
 DROP TABLE ts_nh;
