@@ -415,17 +415,14 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
 
 void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index)
 {
-    /// The checks below are for the user who runs the query, so a shard of a distributed query may run it only as the
-    /// initiating user: authenticated by the interserver secret, or reached by `remote(...)` as the same user, which the
-    /// initiator confirms by pushing its roles (it does not when it rewrote the initial user to the connection user).
+    /// The checks below are for the user who runs the query. A shard reached through an ordinary connection runs a
+    /// distributed query as the user of that connection and does not know who initiated it; only through an
+    /// interserver connection does the shard authenticate the initiating user itself.
     const auto & client_info = context->getClientInfo();
-    const bool same_user = client_info.initial_user == client_info.current_user && client_info.current_roles.has_value();
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER && !same_user)
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Table function `mergeTreeTextIndex` checks the access of the user who runs the query, so a shard of a "
-            "distributed query can execute it only as the initiating user: through a cluster with an interserver secret, "
-            "or through `remote` with the credentials of that user");
+            "distributed query can execute it only when the cluster uses an interserver secret");
 
     context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
 
