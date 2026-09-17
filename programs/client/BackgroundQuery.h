@@ -96,6 +96,8 @@ public:
         {
             ProgressValues progress;
             double cpu_usage = 0;
+            bool cpu_usage_available = false;
+            bool cpu_usage_is_average = false;
             UInt64 memory_usage = 0;
             UInt64 max_host_memory_usage = 0;
             Int64 peak_memory_usage = -1;

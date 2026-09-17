@@ -214,7 +214,7 @@ Use the server setting for work such as `INSERT ... SELECT` that must survive a 
 | `\fg <job_id>`      | Print and remove a finished job; if it is still running, return to the prompt                          |
 | `\cancel <job_id>`  | Request cancellation of a running job, or remove a finished job and discard its spooled output       |
 
-`\jobs` includes the latest server-reported read rows and bytes, throughput, estimated completion percentage, writes, CPU, memory, and temporary-disk usage when those metrics are available. Metrics continue updating for both queries started with `\bg` and foreground queries detached with `Ctrl+B`.
+`\jobs` includes the latest server-reported read rows and bytes, throughput, estimated completion percentage, writes, CPU, memory, and temporary-disk usage when those metrics are available. CPU is shown as a recent rate while a job runs and as an average after it becomes terminal. Metrics continue updating for both queries started with `\bg` and foreground queries detached with `Ctrl+B`.
 
 To move a foreground query into the background, press `Ctrl+B` while it is running. The client prints the assigned job ID and returns to a prompt. Output already written to the terminal remains there; `\fg` later replays only the bytes produced after detachment. Start the query with `\bg` when you need its complete output to be replayed as one unit.
 

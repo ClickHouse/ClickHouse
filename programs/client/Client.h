@@ -5,6 +5,7 @@
 #include <Common/QueryScope.h>
 
 #include <atomic>
+#include <span>
 
 
 namespace BuzzHouse
@@ -59,6 +60,11 @@ protected:
     void processConfig() override;
 
     bool tryProcessInteractiveClientCommand(std::string_view input) override;
+    std::span<const std::string_view> getInteractiveClientCommandNames() const override
+    {
+        static constexpr std::string_view names[]{"\\bg", "\\cancel", "\\fg", "\\jobs"};
+        return names;
+    }
 
     bool tryExecuteDetachableQuery(std::string_view query, const ASTPtr & parsed_query, size_t insert_query_without_data_length) override;
     bool supportsQueryDetachment() const override { return true; }

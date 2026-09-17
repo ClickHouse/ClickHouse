@@ -4883,7 +4883,10 @@ void ClientBase::runInteractive()
     {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
-            highlight(query, colors, *client_context, pos, rainbow_parentheses);
+            if (highlightClientCommand(query, colors, getInteractiveClientCommandNames()))
+                ReplxxLineReader::setLastIsDelimiter(true);
+            else
+                highlight(query, colors, *client_context, pos, rainbow_parentheses);
         };
     }
 

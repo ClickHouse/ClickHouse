@@ -344,6 +344,8 @@ struct BackgroundQueryMetrics
 {
     Progress progress;
     std::atomic<double> cpu_usage{0};
+    std::atomic<double> average_cpu_usage{0};
+    std::atomic_bool cpu_usage_available{false};
     std::atomic<UInt64> memory_usage{0};
     std::atomic<UInt64> max_host_memory_usage{0};
     std::atomic<Int64> peak_memory_usage{-1};
@@ -511,6 +513,7 @@ public:
     bool needsResynchronization() const { return connection_needs_resynchronization; }
     ServerConnectionPtr releaseConnection() { return std::move(connection); }
     void flushResultOutput() { std_out->next(); }
+    void snapshotFinalMetrics() { snapshotMetrics(); }
     std::unique_ptr<Exception> cloneServerException() const
     {
         return server_exception ? std::unique_ptr<Exception>(server_exception->clone()) : nullptr;
@@ -584,9 +587,15 @@ private:
     void onQueryProgress(const Progress & value) override { metrics.progress.incrementPiecewiseAtomically(value); }
     void onQueryProfileEvents() override
     {
+        snapshotMetrics();
+        metrics.cpu_usage_available.store(true, std::memory_order_release);
+    }
+    void snapshotMetrics()
+    {
         const auto memory = progress_indication.getMemoryUsage();
         const auto temporary_data = progress_indication.getTempDataOnDiskUsage();
         metrics.cpu_usage.store(progress_indication.getCPUUsage(), std::memory_order_relaxed);
+        metrics.average_cpu_usage.store(progress_indication.getAverageCPUUsage(), std::memory_order_relaxed);
         metrics.memory_usage.store(memory.total, std::memory_order_relaxed);
         metrics.max_host_memory_usage.store(memory.max, std::memory_order_relaxed);
         metrics.peak_memory_usage.store(memory.peak, std::memory_order_relaxed);
@@ -805,7 +814,10 @@ struct BackgroundQueryManager::Impl
         result.elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - job.started_at);
         result.spool_bytes = job.output.size() + job.diagnostics.size();
         result.metrics.progress = job.metrics.progress.getValues();
-        result.metrics.cpu_usage = job.metrics.cpu_usage.load(std::memory_order_relaxed);
+        result.metrics.cpu_usage_available = job.metrics.cpu_usage_available.load(std::memory_order_acquire);
+        result.metrics.cpu_usage_is_average = isTerminal(result.state);
+        result.metrics.cpu_usage = result.metrics.cpu_usage_is_average ? job.metrics.average_cpu_usage.load(std::memory_order_relaxed)
+                                                                       : job.metrics.cpu_usage.load(std::memory_order_relaxed);
         result.metrics.memory_usage = job.metrics.memory_usage.load(std::memory_order_relaxed);
         result.metrics.max_host_memory_usage = job.metrics.max_host_memory_usage.load(std::memory_order_relaxed);
         result.metrics.peak_memory_usage = job.metrics.peak_memory_usage.load(std::memory_order_relaxed);
@@ -830,6 +842,7 @@ struct BackgroundQueryManager::Impl
 
     static void harvestClient(const std::shared_ptr<Job> & job, BackgroundClient & client)
     {
+        client.snapshotFinalMetrics();
         job->output_format = client.resultFormat();
         job->output_is_tty_friendly = client.resultIsTTYFriendly();
         job->cancellation_was_observed = client.cancellationWasObserved();

@@ -256,9 +256,10 @@ String formatBackgroundJobMetrics(const BackgroundQueryManager::JobInfo & job)
     }
 
     const auto & metrics = job.metrics;
-    if (metrics.cpu_usage > 0 || metrics.memory_usage > 0 || metrics.temporary_data_on_disk > 0)
+    if (metrics.cpu_usage_available || metrics.memory_usage > 0 || metrics.temporary_data_on_disk > 0)
     {
-        result += fmt::format("  ({:.1f} CPU", std::max(metrics.cpu_usage, 0.0));
+        result += metrics.cpu_usage_is_average ? fmt::format("  (avg CPU: {:.1f}", std::max(metrics.cpu_usage, 0.0))
+                                               : fmt::format("  ({:.1f} CPU", std::max(metrics.cpu_usage, 0.0));
         if (metrics.memory_usage)
             result += ", " + formatReadableSizeWithDecimalSuffix(metrics.memory_usage) + " RAM";
         if (metrics.max_host_memory_usage < metrics.memory_usage)

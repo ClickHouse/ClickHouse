@@ -25,8 +25,9 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
-#include <string_view>
+#include <span>
 #include <string>
+#include <string_view>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -260,6 +261,7 @@ protected:
 
     /// Lets a concrete interactive client consume remote-only meta-commands before SQL parsing.
     virtual bool tryProcessInteractiveClientCommand(std::string_view) { return false; }
+    virtual std::span<const std::string_view> getInteractiveClientCommandNames() const { return {}; }
 
     /// A client whose query is owned by another thread can use this to close the
     /// race between publishing itself and arming the per-query interrupt handler.

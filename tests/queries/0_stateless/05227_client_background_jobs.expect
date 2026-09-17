@@ -87,7 +87,7 @@ set succeeded 0
 for {set attempt 0} {$attempt < 200 && !$succeeded} {incr attempt} {
     submit {\jobs}
     expect {
-        -re {(?i)\[1\][^\r\n]*(succeeded|completed)[^\r\n]*spooled:[[:space:]]+[0-9]+\.[0-9]+[[:space:]]+([KMGTPE]i)?B} {
+        -re {(?i)\[1\][^\r\n]*(succeeded|completed)[^\r\n]*avg CPU:[[:space:]]+[0-9]+\.[0-9]+[^\r\n]*spooled:[[:space:]]+[0-9]+\.[0-9]+[[:space:]]+([KMGTPE]i)?B} {
             set succeeded 1
             expect ":) "
         }
