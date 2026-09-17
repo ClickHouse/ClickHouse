@@ -1,0 +1,9 @@
+-- comma join with a view, keys in WHERE
+25	12000	600
+25	12000	600
+-- comma join with a subquery that could stay local
+25	12000	600
+25	12000	600
+-- CROSS JOIN with a subquery
+500	247500
+500	247500

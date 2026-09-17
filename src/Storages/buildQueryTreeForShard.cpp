@@ -91,7 +91,7 @@ QueryTreeNodePtr & getMaterializedTableExpressionNode(JoinNode & join_node, bool
 }
 
 /// Return a clone of the defining expression of an inlineable `ALIAS` column node, or nullptr otherwise.
-/// A JOIN / CROSS_JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
+/// A JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
 /// which is not an alias body. The expression is cloned so each occurrence gets its own copy: that lets
 /// one occurrence be aliased (a projection output) without mutating another (a reference in ORDER BY).
 QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node)
@@ -102,7 +102,6 @@ QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & nod
 
     const auto & column_source = column_node->getColumnSourceOrNull();
     if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                       || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
                        || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
         return nullptr;
 
@@ -839,11 +838,6 @@ bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
             nodes_to_process.push_back(join_node->getLeftTableExpressionNode());
             nodes_to_process.push_back(join_node->getRightTableExpressionNode());
         }
-        else if (const auto * cross_join_node = current->as<CrossJoinNode>())
-        {
-            for (const auto & table_expression : cross_join_node->getTableExpressions())
-                nodes_to_process.push_back(table_expression);
-        }
         else if (const auto * array_join_node = current->as<ArrayJoinNode>())
         {
             nodes_to_process.push_back(array_join_node->getTableExpressionNode());
@@ -946,7 +940,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         {
             TableExpressionNodePtr join_table_expression;
             const auto join_kind = join_node->getKind();
-            if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner)
+            /// A comma cannot carry `GLOBAL` in the query text; the join is a cross join with the same meaning.
+            if (join_kind == JoinKind::Comma)
+                join_node->setKind(JoinKind::Cross);
+            if (!allow_global_join_for_right_table || join_kind == JoinKind::Left || join_kind == JoinKind::Inner || isCrossOrComma(join_kind))
             {
                 join_table_expression = join_node->getRightTableExpressionNodeTyped();
             }

@@ -25,17 +25,18 @@ DPJoinEntryPtr evaluateJoin(
     std::vector<JoinActionRef *> & predicates,
     LoggerPtr log)
 {
+    /// Transitively connected pairs are inner joins; their predicate is synthesized later.
+    bool connected = !predicates.empty()
+        || query_graph.areTransitivelyConnected(left->relations, right->relations);
+
     auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations);
-    auto new_cost = computeJoinCost(left, right, selectivity);
+    auto new_cost = computeJoinCost(left, right, selectivity, connected);
 
     const BitSet combined_rels = left->relations | right->relations;
     auto current_best = dp_table.find(combined_rels);
     if (current_best != dp_table.end() && new_cost >= current_best->second->cost)
         return nullptr;
 
-    /// Transitively connected pairs are inner joins; their predicate is synthesized later.
-    bool connected = !predicates.empty()
-        || query_graph.areTransitivelyConnected(left->relations, right->relations);
     auto effective_kind = (connected && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
     auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
     JoinOperator join_operator(

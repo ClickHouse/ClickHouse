@@ -9,7 +9,6 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_join_transitive_predicates = 0;
 SET query_plan_merge_filter_into_join_condition = 1;
-SET cross_to_inner_join_rewrite = 0;
 SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE dpsub_state_a (k UInt32, x UInt32 STATISTICS(uniq), one UInt8 STATISTICS(uniq)) ENGINE = MergeTree ORDER BY k;

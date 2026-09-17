@@ -596,8 +596,8 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
             "ASTTableJoin must not have both 'using_expression_list' and 'on_expression' during AST JSON deserialization");
 
     /// Mirror the parser-impossible join shapes that `ParserTablesInSelectQuery` rejects, so malformed
-    /// `clickhouse_json` cannot build a join the analyzer would mis-handle (e.g. a `CROSS JOIN ... ON ...`
-    /// whose predicate `QueryTreeBuilder` silently drops when it builds a `CrossJoinNode`):
+    /// `clickhouse_json` cannot build a join the analyzer would otherwise accept (e.g. a `CROSS JOIN ... ON ...`
+    /// with a predicate the grammar does not allow):
     const bool has_predicate = using_expression_list || on_expression;
     const bool predicate_disallowed_kind = kind == JoinKind::Cross || kind == JoinKind::Comma || kind == JoinKind::Paste;
     /// `ON`/`USING` are parsed only for non-`CROSS`/non-comma/non-`PASTE` joins.

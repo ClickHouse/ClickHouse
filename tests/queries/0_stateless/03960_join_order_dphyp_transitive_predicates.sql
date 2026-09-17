@@ -11,7 +11,6 @@ SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET enable_join_transitive_predicates = 1;
-SET cross_to_inner_join_rewrite = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_hash_table_stats_for_join_reordering = 0;
