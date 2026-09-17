@@ -8,7 +8,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 [ ! -z "$CLICKHOUSE_CLIENT_REDEFINED" ] && CLICKHOUSE_CLIENT=$CLICKHOUSE_CLIENT_REDEFINED
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
+# This test checks which `DISTINCT` variant the in-order optimization picks; disable external `DISTINCT` so
+# that the final `DISTINCT` stays a plain `DistinctTransform` instead of `ExternalDistinctTransform`.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy --max_bytes_ratio_before_external_distinct=0"
 
 # This test inspects EXPLAIN output for read-in-order optimization paths; the
 # small synthetic table used here selects all granules, which would otherwise
