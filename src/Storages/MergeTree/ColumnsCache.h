@@ -2,46 +2,45 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include <Common/CacheBase.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/IMemoryReleasableCache.h>
-#include <Common/SipHash.h>
 #include <Columns/IColumn.h>
 #include <Core/UUID.h>
 
 namespace DB
 {
 
-/// Key of a cached deserialized column: the rows of one granule of one column of one data part.
+class MergeTreeIndexGranularity;
+
+/// Key of a cached deserialized column: one stripe of consecutive granules of one column of one
+/// data part.
 ///
-/// An entry covers exactly one granule (the rows between two adjacent marks), so the entries
-/// of a part never overlap, and every read of the part finds the same entries no matter how
-/// it cuts the part into ranges: the ranges of a read task depend on the number of threads,
-/// on the primary key analysis, on the query condition cache and on `PREWHERE` skipping rows,
-/// and they differ between queries and even between two runs of the same query. Entries
-/// bound to those ranges would only ever be found again by a read with the very same ranges,
-/// while the entries of the other reads of the same data would displace them.
+/// The stripes of a part are fixed - `ColumnsCacheStripes` cuts the marks of the part into
+/// stripes of about `ColumnsCacheStripes::TARGET_ROWS` rows - so every read of the part finds the
+/// same entries no matter how it cuts the part into ranges: the ranges of a read task depend on
+/// the number of threads, on the primary key analysis, on the query condition cache and on
+/// `PREWHERE` skipping rows, and they differ between queries and even between two runs of the
+/// same query. An entry holds a contiguous run of granules of its stripe (the whole stripe after
+/// a full scan, a part of it after a read that touched only some of its granules), so reads that
+/// touch a few granules of a part still cache what they read, and adjacent runs written by
+/// different reads are merged into one.
 ///
-/// Uses the table UUID so that `RENAME TABLE` keeps the entries and does not mix tables.
+/// A stripe rather than a granule, because every entry costs a lookup and a copy per read, and
+/// for a narrow column a granule is a few KiB: the fixed cost per entry then exceeds the cost of
+/// decompressing the granule, and with many threads the lookups contend on the cache.
+///
+/// The column is identified by a hash of the table UUID, the part name, the column name and the
+/// identity of the schema it was read with, computed once per reader, so that a lookup neither
+/// copies strings nor hashes them. The table UUID keeps the entries across `RENAME TABLE` and
+/// does not mix tables.
 struct ColumnsCacheKey
 {
-    UUID table_uuid;
-    String part_name;
-    String column_name;
-    /// The granule: the index of the mark the rows of the entry start at.
-    size_t mark = 0;
-    /// Identity of the schema the column was read with: a hash of the table's column list
-    /// (names, types, defaults) taken from the very metadata snapshot the reader uses, see
-    /// `getColumnsCacheSchemaIdentity`. Cache data of an earlier schema must not be served
-    /// after an `ALTER` makes the same column name refer to a different column, as in
-    /// `RENAME a TO b, ADD COLUMN a`: the column list changes, so the entries written before
-    /// the `ALTER` are no longer reachable. Because the identity is a function of the
-    /// metadata snapshot itself and not of a separately maintained counter, it needs no
-    /// coordination with the moment the new metadata is published: a reader can never hold
-    /// the new schema together with the identity of the old one. It is stable across reads
-    /// of an unchanged table, so repeated reads find their entries.
-    UInt64 schema_identity = 0;
+    UInt128 column_identity;
+    size_t stripe = 0;
 
     bool operator==(const ColumnsCacheKey & other) const = default;
 };
@@ -50,28 +49,71 @@ struct ColumnsCacheKeyHash
 {
     size_t operator()(const ColumnsCacheKey & key) const
     {
-        SipHash hash;
-        hash.update(key.table_uuid);
-        hash.update(key.part_name);
-        hash.update(key.column_name);
-        hash.update(key.mark);
-        hash.update(key.schema_identity);
-        return hash.get64();
+        return intHash64(key.column_identity.items[UInt128::_impl::little(0)] ^ (key.stripe * 0x9E3779B97F4A7C15ULL));
     }
 };
 
-/// Cached deserialized column data of one granule.
+/// The identity of a column of a part for the cache, see `ColumnsCacheKey`.
+///
+/// `schema_identity` is a hash of the table's column list (names, types, defaults) taken from the
+/// very metadata snapshot the reader uses, see `getColumnsCacheSchemaIdentity`. Cache data of an
+/// earlier schema must not be served after an `ALTER` makes the same column name refer to a
+/// different column, as in `RENAME a TO b, ADD COLUMN a`: the column list changes, so the entries
+/// written before the `ALTER` are no longer reachable. Because the identity is a function of the
+/// metadata snapshot itself and not of a separately maintained counter, it needs no coordination
+/// with the moment the new metadata is published: a reader can never hold the new schema together
+/// with the identity of the old one. It is stable across reads of an unchanged table, so repeated
+/// reads find their entries.
+UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity);
+
+/// How the marks of a part are cut into stripes: `stripe_marks` consecutive granules each, the
+/// last stripe shorter. The same for every reader of the part, since it depends only on the
+/// average size of a granule of the part.
+struct ColumnsCacheStripes
+{
+    /// A stripe is about this many rows: one block of a read with the default `max_block_size`,
+    /// so that a block served from the cache is one copy per column.
+    static constexpr size_t TARGET_ROWS = 65536;
+    static constexpr size_t MAX_STRIPE_MARKS = 256;
+
+    size_t stripe_marks = 1;
+
+    ColumnsCacheStripes() = default;
+    explicit ColumnsCacheStripes(size_t avg_rows_per_mark);
+
+    /// The stripes of a part, from the average size of its granules.
+    static ColumnsCacheStripes forPart(const MergeTreeIndexGranularity & index_granularity);
+
+    size_t stripeOf(size_t mark) const { return mark / stripe_marks; }
+    size_t firstMark(size_t stripe) const { return stripe * stripe_marks; }
+    size_t endMark(size_t stripe, size_t marks_in_part) const { return std::min((stripe + 1) * stripe_marks, marks_in_part); }
+};
+
+/// Cached deserialized column data: a contiguous run of granules of one stripe.
 struct ColumnsCacheEntry
 {
     ColumnPtr column;
-    /// The first row of the granule in the part, and the number of rows in it.
+
+    /// What the key was made of, for `system.columns_cache` and for the per-part index.
+    UUID table_uuid;
+    String part_name;
+    String column_name;
+    UInt64 schema_identity = 0;
+
+    /// The granules the entry holds, [first_mark, end_mark), and their rows.
+    size_t first_mark = 0;
+    size_t end_mark = 0;
     size_t row_begin = 0;
     size_t rows = 0;
+
     /// The key the entry is stored under. The eviction callback of the cache does not receive
-    /// the key, and the cache has to know which granules of a part it holds, see `removePart`.
+    /// the key, and the cache has to know which entries of a part it holds, see `removePart`.
     ColumnsCacheKey key;
+
     /// Whether a read has found the entry since it was written, see `ColumnsCache::shouldAdmit`.
     mutable std::atomic<bool> used{false};
+
+    bool coversMarks(size_t from_mark, size_t to_mark) const { return first_mark <= from_mark && to_mark <= end_mark; }
 };
 
 struct ColumnsCacheWeightFunction
@@ -83,8 +125,8 @@ struct ColumnsCacheWeightFunction
     {
         /// The memory the entry retains, not the logical size of the rows in it. `PODArray`
         /// rounds an allocation up to a power of two elements, so the capacity a column holds
-        /// can exceed `byteSize` by up to two times; the accumulated copy is shrunk to its rows
-        /// before it is admitted, but the allocator still rounds to its size classes.
+        /// can exceed `byteSize` by up to two times; the copy is shrunk to its rows before it is
+        /// admitted, but the allocator still rounds to its size classes.
         /// `columns_cache_size` is documented as a bound on the memory the cache keeps, so the
         /// bound has to be enforced - and reported by `system.columns_cache`,
         /// `CurrentMetrics::ColumnsCacheBytes` and `ProfileEvents::ColumnsCacheEvictedBytes` -
@@ -100,20 +142,164 @@ struct ColumnsCacheWeightFunction
     }
 };
 
-extern template class CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
-
 /// Cache of deserialized columns for MergeTree tables.
 /// Eliminates the need to read compressed data, decompress, and deserialize
 /// for frequently accessed data parts and columns.
 ///
-/// The entries are looked up by exact key, one per granule (see `ColumnsCacheKey`), and the
-/// reader asks for all the granules of a column of a range at once, so a range that is only
-/// partly cached is served from the cache for the granules that are there and read from disk
-/// for the others.
-class ColumnsCache : public CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>, public IMemoryReleasableCache
+/// Sharded by key, like the userspace page cache, so that the threads of a query - and of the
+/// queries running next to it - do not contend on one mutex: a read looks up one entry per
+/// column per stripe (see `ColumnsCacheKey`), and these lookups go to different shards.
+class ColumnsCache : public IMemoryReleasableCache
 {
+public:
+    using Key = ColumnsCacheKey;
+    using Mapped = ColumnsCacheEntry;
+    using MappedPtr = std::shared_ptr<Mapped>;
+
+    static constexpr size_t NUM_SHARDS = 16;
+
+    ColumnsCache(
+        const String & cache_policy,
+        CurrentMetrics::Metric size_in_bytes_metric,
+        CurrentMetrics::Metric count_metric,
+        size_t max_size_in_bytes,
+        size_t max_count,
+        double size_ratio);
+
+    ~ColumnsCache() override;
+
+    /// The entries of the stripes [first_stripe, end_stripe) of a column: the entry of every
+    /// stripe that is in the cache at its position, nullptr for the others. Each shard is locked
+    /// once for all its keys.
+    /// Does not update hit/miss profile events; the reader counts them per granule it reads.
+    std::vector<MappedPtr> getMany(const UInt128 & column_identity, size_t first_stripe, size_t end_stripe);
+
+    /// Insert the entries of several stripes. The key of every entry is `entry->key`.
+    ///
+    /// An entry that holds a part of a stripe is merged with the entry the cache holds for the
+    /// stripe when the two overlap or touch, so that the runs of granules written by different
+    /// reads add up to the whole stripe; an entry contained in the one the cache holds is
+    /// dropped, and one that is disjoint from it replaces it only when it is larger.
+    ///
+    /// Returns the total weight of the entries that are in the cache afterwards and were not
+    /// there before, for the per-query write budget.
+    ///
+    /// The expected generation is captured through getInvalidationGeneration
+    /// when the reader starts. A mismatch means the table or the whole cache
+    /// was invalidated after the read began, so the deferred write is dropped.
+    size_t setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation);
+
+    /// Whether a stripe that is not in the cache should be written to it. Nothing is written
+    /// while the cache is shrunk to nothing by `autoResize`: the copy would be rejected anyway.
+    ///
+    /// A cache smaller than the working set of the queries is worse than no cache: with the
+    /// entries of one pass evicted before the next pass reaches them, every read pays for
+    /// copying its rows into the cache and none is served from it. The protected segment of
+    /// the SLRU policy keeps what was found at least once, but the probationary segment churns.
+    /// So the entries evicted before any read found them are counted against the entries
+    /// admitted: while most of the admitted entries go unused, the admission probability is
+    /// halved (down to 1/64), and while most of them are used, or nothing is evicted, it is
+    /// doubled back. A cache that holds its working set is not affected: nothing is evicted.
+    bool shouldAdmit();
+
+    /// Current invalidation token for a table. Advances each time removeTable is
+    /// called (a metadata change that can remap column names) and each time
+    /// clearAll is called (`SYSTEM DROP COLUMNS CACHE`). A reader captures this at
+    /// the start of a read and passes it back to `setMany`, so a deferred write issued
+    /// by a reader that started before the invalidation cannot repopulate the
+    /// cache with stale data, and cannot resurrect entries an explicit drop
+    /// removed.
+    UInt64 getInvalidationGeneration(const UUID & table_uuid);
+
+    /// Remove all cached entries for a specific data part.
+    /// Called when the part leaves the table for good: from the destructor of the part, and for
+    /// outdated parts that nobody else holds any more (`isSharedPtrUnique`). A reader holds the
+    /// part through its `data_part_info_for_read` for as long as its deferred write is pending,
+    /// so no reader can still write entries for the part after this call, and unlike removeTable
+    /// this needs no invalidation stamp: nothing per part is retained once the entries are gone.
+    /// Part names are not reused within a table, so a later part cannot find these entries either.
+    void removePart(const UUID & table_uuid, const String & part_name);
+
+    /// Remove all cached entries for a specific table.
+    /// Should be called on column metadata changes such as `RENAME COLUMN` that
+    /// affect existing cache entries without rewriting parts. Cache keys identify
+    /// columns by name, so a `RENAME a TO b; ADD COLUMN a` sequence could otherwise
+    /// serve stale data for the freshly added `a`.
+    void removeTable(const UUID & table_uuid);
+
+    /// Drop every entry. Used by SYSTEM DROP COLUMNS CACHE.
+    /// Advances the cache-wide invalidation generation first, so the drop is
+    /// sticky: a reader that started before it cannot write its deferred entries
+    /// back into the cache afterwards.
+    void clearAll();
+
+    /// Set the size of the cache from the configuration. Takes effect at once: the entries
+    /// beyond the new size are evicted.
+    void setConfiguredMaxSizeInBytes(size_t max_size_in_bytes);
+
+    /// How `autoResize` behaves: the fraction of the memory limit that is kept free of the
+    /// cache, and the length of the window the memory usage of the rest of the server is
+    /// averaged (as a peak) over.
+    void setAutoResizeSettings(double free_memory_ratio_, Int64 history_window_ms_);
+
+    /// Give memory back to the queries when the server is short of it.
+    ///
+    /// The cache is bounded by `columns_cache_size`, but the bound counts against the same
+    /// `max_server_memory_usage` as the queries do: on a server whose queries use most of its
+    /// memory, a cache of a tenth of it pushes them over the limit, and they fail where they
+    /// succeeded with the cache off. So the size in effect is lowered to what fits next to the
+    /// peak memory usage of everything else - like the userspace page cache does - and raised
+    /// again towards the configured size once that usage subsides:
+    ///
+    ///     target = min(configured size, memory_limit * (1 - free_memory_ratio) - peak usage excluding the cache)
+    ///
+    /// Called periodically by `MemoryWorker`, and by `MemoryTracker` when an allocation is about
+    /// to exceed the limit, before it resorts to stopping a query. Returns true if the memory
+    /// usage fits the limit after the resize.
+    bool autoResize(Int64 memory_usage, size_t memory_limit) override;
+
+    /// The size in effect, see `autoResize`; the configured size while the server has memory to spare.
+    size_t maxSizeInBytes() const { return effective_max_size_in_bytes.load(std::memory_order_relaxed); }
+    size_t sizeInBytes() const;
+    size_t count() const;
+
+    /// Metadata for a cache entry, used by system.columns_cache.
+    /// Does not hold a shared_ptr to column data, so it does not pin cached columns in memory.
+    struct EntryMetadata
+    {
+        UUID table_uuid;
+        String part_name;
+        String column_name;
+        size_t row_begin = 0;
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+
+    /// Get metadata for all cache entries for introspection (system.columns_cache table).
+    /// Returns lightweight metadata without holding shared_ptrs to column data.
+    std::vector<EntryMetadata> getAllEntriesMetadata();
+
 private:
     using Base = CacheBase<ColumnsCacheKey, ColumnsCacheEntry, ColumnsCacheKeyHash, ColumnsCacheWeightFunction>;
+
+    class Shard : public Base
+    {
+    public:
+        Shard(ColumnsCache & parent_, const String & cache_policy, CurrentMetrics::Metric size_in_bytes_metric, CurrentMetrics::Metric count_metric, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+            : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio), parent(parent_)
+        {
+        }
+
+        void onEntryRemoval(size_t weight_loss, const MappedPtr & mapped) override;
+
+    private:
+        ColumnsCache & parent;
+    };
+
+    std::vector<std::unique_ptr<Shard>> shards;
+
+    static size_t shardIndex(const Key & key) { return ColumnsCacheKeyHash{}(key) % NUM_SHARDS; }
+    Shard & shardOf(const Key & key) { return *shards[shardIndex(key)]; }
 
     struct PartIdentifier
     {
@@ -125,46 +311,21 @@ private:
 
     struct PartIdentifierHash
     {
-        size_t operator()(const PartIdentifier & id) const
-        {
-            SipHash hash;
-            hash.update(id.table_uuid);
-            hash.update(id.part_name);
-            return hash.get64();
-        }
+        size_t operator()(const PartIdentifier & id) const;
     };
 
-    struct ColumnIdentifier
-    {
-        String column_name;
-        UInt64 schema_identity = 0;
-
-        bool operator==(const ColumnIdentifier & other) const = default;
-    };
-
-    struct ColumnIdentifierHash
-    {
-        size_t operator()(const ColumnIdentifier & id) const
-        {
-            SipHash hash;
-            hash.update(id.column_name);
-            hash.update(id.schema_identity);
-            return hash.get64();
-        }
-    };
-
-    /// The granules of a column of a part that are in the cache: a bit per mark.
-    using CachedMarks = std::vector<bool>;
-    using PartIndex = std::unordered_map<ColumnIdentifier, CachedMarks, ColumnIdentifierHash>;
+    /// The stripes of a column of a part that are in the cache: a bit per stripe.
+    using CachedStripes = std::vector<bool>;
+    using PartIndex = std::unordered_map<UInt128, CachedStripes, UInt128TrivialHash>;
 
     /// Which entries the cache holds, by part: what `removePart` and `removeTable` have to
-    /// find quickly, and what the base cache cannot answer without a scan of all its entries.
-    /// A bit is set by `set` before the entry is inserted into the base cache and reset by
+    /// find quickly, and what the shards cannot answer without a scan of all their entries.
+    /// A bit is set by `setMany` before the entry is inserted into its shard and reset by
     /// `onEntryRemoval` when the entry is evicted. Guarded by `index_mutex`.
     ///
-    /// Lock order: the base cache's mutex is taken first and `index_mutex` second, because the
+    /// Lock order: a shard's mutex is taken first and `index_mutex` second, because the
     /// eviction callback runs under the former and takes the latter. So nothing here ever
-    /// calls into the base cache while holding `index_mutex`.
+    /// calls into a shard while holding `index_mutex`.
     std::unordered_map<PartIdentifier, PartIndex, PartIdentifierHash> part_index;
     mutable std::mutex index_mutex;
 
@@ -197,9 +358,8 @@ private:
         return std::max(global_generation, it == table_generations.end() ? UInt64(0) : it->second);
     }
 
-    /// The size of the cache as configured, and the size in effect (also `Base::maxSizeInBytes`,
-    /// mirrored here to be read without the lock), which `autoResize` lowers while the server is
-    /// short of memory.
+    /// The size of the cache as configured, and the size in effect, which `autoResize` lowers
+    /// while the server is short of memory. Every shard gets a `NUM_SHARDS`-th of it.
     std::atomic<size_t> configured_max_size_in_bytes;
     std::atomic<size_t> effective_max_size_in_bytes;
 
@@ -215,13 +375,10 @@ private:
     Int64 current_history_bucket = 0;
     size_t peak_memory_buckets[2] = {0, 0};
 
-    /// Remove the given entries from the base cache. Must be called without `index_mutex`.
-    void removeFromBase(const PartIdentifier & part_id, const PartIndex & index);
-
     /// Admission control, see `shouldAdmit`: the entries admitted and the entries evicted before
     /// any read found them, since the last adjustment, and the current admission probability as
     /// 2^-admission_log2.
-    static constexpr size_t ADMISSION_WINDOW = 4096;
+    static constexpr size_t ADMISSION_WINDOW = 1024;
     static constexpr UInt64 MAX_ADMISSION_LOG2 = 6;
     std::atomic<size_t> recent_admitted{0};
     std::atomic<size_t> recent_evicted_unused{0};
@@ -229,130 +386,15 @@ private:
 
     void accountAdmitted(size_t admitted);
 
-    void onEntryRemoval(size_t weight_loss, const MappedPtr & mapped) override;
+    void setShardsMaxSize(size_t total_max_size_in_bytes);
 
-public:
-    ColumnsCache(
-        const String & cache_policy,
-        CurrentMetrics::Metric size_in_bytes_metric,
-        CurrentMetrics::Metric count_metric,
-        size_t max_size_in_bytes,
-        size_t max_count,
-        double size_ratio);
+    /// Remove the given entries from the shards. Must be called without `index_mutex`.
+    void removeFromShards(const std::vector<Key> & keys);
 
-    /// The entries of the granules [first_mark, end_mark) of a column: the entry of every
-    /// granule that is in the cache at its position, nullptr for the others. One lookup under
-    /// the lock for the whole range, so that a read of many granules does not contend on the
-    /// cache for each of them.
-    /// Does not update hit/miss profile events; the reader counts them per granule it reads.
-    std::vector<MappedPtr> getMany(
-        const UUID & table_uuid,
-        const String & part_name,
-        const String & column_name,
-        UInt64 schema_identity,
-        size_t first_mark,
-        size_t end_mark);
-
-    /// Insert the column of one granule into the cache. The key is `mapped->key`.
-    /// Returns true if the entry is in the cache afterwards, false if the write was dropped:
-    /// it was rejected as stale (see below) or the entry could not stay resident, e.g. its
-    /// weight exceeds the size limit. Callers use the return value to avoid charging the
-    /// per-query write budget for writes that never landed in the cache.
-    ///
-    /// The expected generation is captured through getInvalidationGeneration
-    /// when the reader starts. A mismatch means the table or the whole cache
-    /// was invalidated after the read began, so the deferred write is dropped.
-    bool set(const MappedPtr & mapped, UInt64 expected_table_generation);
-
-    /// Insert the entries of several granules at once - one pass under the locks for all of them,
-    /// so that a read of many small granules does not contend on the cache for each of them.
-    /// Returns the total weight of the entries that are in the cache afterwards, for the per-query
-    /// write budget. The generation check is the same as in `set`, for all entries together.
-    size_t setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation);
-
-    /// Whether a granule that is not in the cache should be written to it. Nothing is written
-    /// while the cache is shrunk to nothing by `autoResize`: the copy would be rejected anyway.
-    ///
-    /// A cache smaller than the working set of the queries is worse than no cache: with the
-    /// entries of one pass evicted before the next pass reaches them, every read pays for
-    /// copying its rows into the cache and none is served from it. The protected segment of
-    /// the SLRU policy keeps what was found at least once, but the probationary segment churns.
-    /// So the entries evicted before any read found them are counted against the entries
-    /// admitted: while most of the admitted entries go unused, the admission probability is
-    /// halved (down to 1/64), and while most of them are used, or nothing is evicted, it is
-    /// doubled back. A cache that holds its working set is not affected: nothing is evicted.
-    bool shouldAdmit();
-
-    /// Current invalidation token for a table. Advances each time removeTable is
-    /// called (a metadata change that can remap column names) and each time
-    /// clearAll is called (`SYSTEM DROP COLUMNS CACHE`). A reader captures this at
-    /// the start of a read and passes it back to `set`, so a deferred write issued
-    /// by a reader that started before the invalidation cannot repopulate the
-    /// cache with stale data, and cannot resurrect entries an explicit drop
-    /// removed.
-    UInt64 getInvalidationGeneration(const UUID & table_uuid);
-
-    /// Remove all cached entries for a specific data part.
-    /// Called when the part leaves the table for good: from the destructor of the part, and for
-    /// outdated parts that nobody else holds any more (`isSharedPtrUnique`). A reader holds the
-    /// part through its `data_part_info_for_read` for as long as its deferred write is pending,
-    /// so no reader can still write entries for the part after this call, and unlike removeTable
-    /// this needs no invalidation stamp: nothing per part is retained once the entries are gone.
-    /// Part names are not reused within a table, so a later part cannot find these entries either.
-    void removePart(const UUID & table_uuid, const String & part_name);
-
-    /// Remove all cached entries for a specific table.
-    /// Should be called on column metadata changes such as `RENAME COLUMN` that
-    /// affect existing cache entries without rewriting parts. Cache keys identify
-    /// columns by name, so a `RENAME a TO b; ADD COLUMN a` sequence could otherwise
-    /// serve stale data for the freshly added `a`.
-    void removeTable(const UUID & table_uuid);
-
-    /// Clear both the base cache and the part index.
-    /// Used by SYSTEM DROP COLUMNS CACHE.
-    /// Advances the cache-wide invalidation generation first, so the drop is
-    /// sticky: a reader that started before it cannot write its deferred entries
-    /// back into the cache afterwards.
-    void clearAll();
-
-    /// Set the size of the cache from the configuration. Takes effect at once: the entries
-    /// beyond the new size are evicted.
-    void setConfiguredMaxSizeInBytes(size_t max_size_in_bytes);
-
-    /// How `autoResize` behaves: the fraction of the memory limit that is kept free of the
-    /// cache, and the length of the window the memory usage of the rest of the server is
-    /// averaged (as a peak) over.
-    void setAutoResizeSettings(double free_memory_ratio_, Int64 history_window_ms_);
-
-    /// Give memory back to the queries when the server is short of it.
-    ///
-    /// The cache is bounded by `columns_cache_size`, but the bound counts against the same
-    /// `max_server_memory_usage` as the queries do: on a server whose queries use most of its
-    /// memory, a cache of a tenth of it pushes them over the limit, and they fail where they
-    /// succeeded with the cache off. So the size in effect is lowered to what fits next to the
-    /// peak memory usage of everything else - like the userspace page cache does - and raised
-    /// again towards the configured size once that usage subsides:
-    ///
-    ///     target = min(configured size, memory_limit * (1 - free_memory_ratio) - peak usage excluding the cache)
-    ///
-    /// Called periodically by `MemoryWorker`, and by `MemoryTracker` when an allocation is about
-    /// to exceed the limit, before it resorts to stopping a query. Returns true if the memory
-    /// usage fits the limit after the resize.
-    bool autoResize(Int64 memory_usage, size_t memory_limit) override;
-
-    /// Metadata for a cache entry, used by system.columns_cache.
-    /// Does not hold a shared_ptr to column data, so it does not pin cached columns in memory.
-    struct EntryMetadata
-    {
-        Key key;
-        size_t row_begin = 0;
-        size_t rows = 0;
-        size_t bytes = 0;
-    };
-
-    /// Get metadata for all cache entries for introspection (system.columns_cache table).
-    /// Returns lightweight metadata without holding shared_ptrs to column data.
-    std::vector<EntryMetadata> getAllEntriesMetadata();
+    /// The entry to store for a stripe given what the cache holds for it: the new entry itself,
+    /// the union of the two when they overlap or touch, or nothing when the new entry adds no
+    /// granule. See `setMany`.
+    static MappedPtr mergeEntries(const MappedPtr & existing, const MappedPtr & incoming);
 };
 
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;

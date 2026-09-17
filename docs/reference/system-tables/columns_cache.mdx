@@ -14,10 +14,13 @@ The cache keeps previously read and deserialized columns of `MergeTree` data
 parts in memory, so repeated reads of the same row range do not pay for
 decompression and deserialization again.
 
-Each entry corresponds to one granule (the rows between two adjacent marks,
-`[row_begin, row_end)`) of a single column of a single data part. Reads are
-served from the cache granule by granule, so the entries do not depend on how a
-query splits the part into mark ranges.
+Each entry corresponds to a contiguous range of granules `[row_begin, row_end)`
+of a single column of a single data part, within a fixed stripe of the part of
+about 65536 rows. Reads are served from the cache granule by granule, and the
+stripes are the same for every read of the part, so the entries do not depend
+on how a query splits the part into mark ranges: a read that touches only some
+granules of a stripe caches those, and adjacent ranges written by different
+reads are merged.
 
 The cache identifies entries by table UUID, so it is only active for tables in
 databases that assign UUIDs (`Atomic` and `Replicated`). Tables in databases
@@ -41,9 +44,9 @@ be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/sys
 - `table_uuid` ([UUID](/reference/data-types/uuid)) — UUID of the table. Stable across renames.
 - `part` ([String](/reference/data-types/string)) — Name of the data part.
 - `column` ([String](/reference/data-types/string)) — Name of the column.
-- `row_begin` ([UInt64](/reference/data-types/int-uint)) — Starting row index of the cached granule (inclusive).
-- `row_end` ([UInt64](/reference/data-types/int-uint)) — Ending row index of the cached granule (exclusive).
-- `rows` ([UInt64](/reference/data-types/int-uint)) — Number of rows in the cached granule (`row_end - row_begin`).
+- `row_begin` ([UInt64](/reference/data-types/int-uint)) — Starting row index of the cached range (inclusive).
+- `row_end` ([UInt64](/reference/data-types/int-uint)) — Ending row index of the cached range (exclusive).
+- `rows` ([UInt64](/reference/data-types/int-uint)) — Number of rows in the cached range (`row_end - row_begin`).
 - `bytes` ([UInt64](/reference/data-types/int-uint)) — Memory the entry retains, in bytes: the allocated size of the cached column plus a small per-entry overhead. This is the quantity the cache is bounded by, so the sum of this column over all entries stays within `columns_cache_size`. It can be larger than the logical size of the rows, because a column keeps the capacity it was allocated with.
 
 ## Example {#example}

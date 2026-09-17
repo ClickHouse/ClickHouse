@@ -17,265 +17,315 @@ using namespace DB;
 namespace
 {
 
-ColumnsCache::MappedPtr makeEntry(const ColumnsCacheKey & key, size_t rows)
+constexpr size_t ROWS_PER_MARK = 100;
+
+struct TestColumn
+{
+    UUID table_uuid;
+    String part;
+    String column;
+    UInt128 identity;
+
+    TestColumn(const UUID & table_uuid_, const String & part_, const String & column_, UInt64 schema_identity = 0)
+        : table_uuid(table_uuid_), part(part_), column(column_)
+        , identity(getColumnsCacheColumnIdentity(table_uuid_, part_, column_, schema_identity))
+    {
+    }
+};
+
+/// An entry of the granules [first_mark, end_mark) of a stripe of 8 granules, filled with the mark numbers.
+ColumnsCache::MappedPtr makeEntry(const TestColumn & c, size_t stripe, size_t first_mark, size_t end_mark)
 {
     auto column = ColumnUInt64::create();
-    column->getData().resize_fill(rows, 0);
+    for (size_t mark = first_mark; mark < end_mark; ++mark)
+        column->getData().resize_fill(column->size() + ROWS_PER_MARK, mark);
+
     auto entry = std::make_shared<ColumnsCacheEntry>();
     entry->column = std::move(column);
-    entry->row_begin = key.mark * rows;
-    entry->rows = rows;
-    entry->key = key;
+    entry->table_uuid = c.table_uuid;
+    entry->part_name = c.part;
+    entry->column_name = c.column;
+    entry->first_mark = first_mark;
+    entry->end_mark = end_mark;
+    entry->row_begin = first_mark * ROWS_PER_MARK;
+    entry->rows = (end_mark - first_mark) * ROWS_PER_MARK;
+    entry->key = ColumnsCacheKey{c.identity, stripe};
     return entry;
 }
 
-size_t countPresent(ColumnsCache & cache, const UUID & table_uuid, const String & part, const String & column, size_t first_mark, size_t end_mark, UInt64 schema_identity = 0)
+ColumnsCache::MappedPtr getOne(ColumnsCache & cache, const TestColumn & c, size_t stripe)
 {
-    auto entries = cache.getMany(table_uuid, part, column, schema_identity, first_mark, end_mark);
+    auto entries = cache.getMany(c.identity, stripe, stripe + 1);
+    return entries.at(0);
+}
+
+size_t countPresent(ColumnsCache & cache, const TestColumn & c, size_t first_stripe, size_t end_stripe)
+{
+    auto entries = cache.getMany(c.identity, first_stripe, end_stripe);
     return std::count_if(entries.begin(), entries.end(), [](const auto & e) { return e != nullptr; });
 }
 
+ColumnsCache makeCache(size_t max_size_in_bytes = 1 << 24)
+{
+    return ColumnsCache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries, max_size_in_bytes, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+}
+
+}
+
+TEST(ColumnsCache, Stripes)
+{
+    /// 100 rows per mark: a stripe is 655 marks; clamped to 256.
+    EXPECT_EQ(ColumnsCacheStripes(100).stripe_marks, 256u);
+    /// 8192 rows per mark: 8 marks per stripe.
+    EXPECT_EQ(ColumnsCacheStripes(8192).stripe_marks, 8u);
+    /// Huge granules: one mark per stripe.
+    EXPECT_EQ(ColumnsCacheStripes(500000).stripe_marks, 1u);
+
+    ColumnsCacheStripes stripes(8192);
+    EXPECT_EQ(stripes.stripeOf(0), 0u);
+    EXPECT_EQ(stripes.stripeOf(7), 0u);
+    EXPECT_EQ(stripes.stripeOf(8), 1u);
+    EXPECT_EQ(stripes.firstMark(3), 24u);
+    EXPECT_EQ(stripes.endMark(12, 100), 100u);
 }
 
 TEST(ColumnsCache, SetAndGetMany)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
-    /// Granules 0, 1 and 3 of the column are written; 2 is not.
-    for (size_t mark : {0, 1, 3})
-        EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", mark}, 100), table_generation));
+    /// Stripes 0, 1 and 3 are written; 2 is not.
+    std::vector<ColumnsCache::MappedPtr> entries;
+    for (size_t stripe : {0, 1, 3})
+        entries.push_back(makeEntry(c, stripe, stripe * 8, stripe * 8 + 8));
+    EXPECT_GT(cache.setMany(entries, generation), 0u);
 
-    auto entries = cache.getMany(table_uuid, "part_1", "col", 0, 0, 5);
-    ASSERT_EQ(entries.size(), 5u);
-    EXPECT_TRUE(entries[0] && entries[1] && entries[3]);
-    EXPECT_FALSE(entries[2] || entries[4]);
-    EXPECT_EQ(entries[3]->key.mark, 3u);
-
-    /// Writing a granule again replaces the entry and keeps the count.
-    EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", 1}, 100), table_generation));
+    auto found = cache.getMany(c.identity, 0, 5);
+    ASSERT_EQ(found.size(), 5u);
+    EXPECT_TRUE(found[0] && found[1] && found[3]);
+    EXPECT_FALSE(found[2] || found[4]);
+    EXPECT_EQ(found[3]->key.stripe, 3u);
     EXPECT_EQ(cache.count(), 3u);
+
+    /// Another column of the same part does not find them.
+    TestColumn other(c.table_uuid, "part_1", "other");
+    EXPECT_EQ(countPresent(cache, other, 0, 5), 0u);
 }
 
-TEST(ColumnsCache, SetManyChargesOnlyAdmittedEntries)
+TEST(ColumnsCache, PartialStripesAreMerged)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
-    std::vector<ColumnsCache::MappedPtr> entries;
-    for (size_t mark = 0; mark < 4; ++mark)
-        entries.push_back(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", mark}, 100));
-    /// An entry that cannot fit into the cache at all is not charged.
-    entries.push_back(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", 4}, 1 << 20));
+    /// The first read touched granules [2, 5) of stripe 0.
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 2, 5)}, generation), 0u);
+    auto entry = getOne(cache, c, 0);
+    ASSERT_TRUE(entry);
+    EXPECT_TRUE(entry->coversMarks(2, 5));
+    EXPECT_FALSE(entry->coversMarks(1, 5));
 
-    size_t expected_bytes = 0;
-    for (size_t i = 0; i < 4; ++i)
-        expected_bytes += ColumnsCacheWeightFunction{}(*entries[i]);
+    /// A read within it adds nothing and is not charged.
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 3, 4)}, generation), 0u);
+    EXPECT_EQ(cache.count(), 1u);
 
-    EXPECT_EQ(cache.setMany(entries, table_generation), expected_bytes);
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 5), 4u);
+    /// An adjacent read on the right extends it.
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 5, 8)}, generation), 0u);
+    entry = getOne(cache, c, 0);
+    ASSERT_TRUE(entry);
+    EXPECT_EQ(entry->first_mark, 2u);
+    EXPECT_EQ(entry->end_mark, 8u);
+    EXPECT_EQ(entry->rows, 6 * ROWS_PER_MARK);
 
-    /// A stale generation admits nothing.
-    cache.removeTable(table_uuid);
-    EXPECT_EQ(cache.setMany(entries, table_generation), 0u);
-    EXPECT_EQ(cache.count(), 0u);
+    /// An overlapping read on the left extends it too, and the rows come out in order.
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 0, 3)}, generation), 0u);
+    entry = getOne(cache, c, 0);
+    ASSERT_TRUE(entry);
+    EXPECT_EQ(entry->first_mark, 0u);
+    EXPECT_EQ(entry->end_mark, 8u);
+    ASSERT_EQ(entry->column->size(), 8 * ROWS_PER_MARK);
+    for (size_t mark = 0; mark < 8; ++mark)
+        EXPECT_EQ(entry->column->getUInt(mark * ROWS_PER_MARK + 1), mark);
+    EXPECT_EQ(cache.count(), 1u);
+}
+
+TEST(ColumnsCache, DisjointPartialStripesKeepTheLarger)
+{
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 0, 3)}, generation), 0u);
+    /// Smaller and disjoint: dropped.
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 6, 8)}, generation), 0u);
+    EXPECT_TRUE(getOne(cache, c, 0)->coversMarks(0, 3));
+    /// Larger and disjoint: replaces.
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 4, 8)}, generation), 0u);
+    EXPECT_TRUE(getOne(cache, c, 0)->coversMarks(4, 8));
+    EXPECT_FALSE(getOne(cache, c, 0)->coversMarks(0, 3));
 }
 
 TEST(ColumnsCache, RemovePartDropsOnlyItsEntries)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    auto cache = makeCache();
     const UUID table_uuid = UUIDHelpers::generateV4();
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
+    TestColumn a1(table_uuid, "part_1", "a");
+    TestColumn b1(table_uuid, "part_1", "b");
+    TestColumn a2(table_uuid, "part_2", "a");
+    const auto generation = cache.getInvalidationGeneration(table_uuid);
 
-    for (size_t mark = 0; mark < 3; ++mark)
-    {
-        EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "a", mark}, 10), table_generation));
-        EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "b", mark}, 10), table_generation));
-        EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_2", "a", mark}, 10), table_generation));
-    }
+    for (size_t stripe = 0; stripe < 3; ++stripe)
+        for (const auto * c : {&a1, &b1, &a2})
+            EXPECT_GT(cache.setMany({makeEntry(*c, stripe, stripe * 8, stripe * 8 + 8)}, generation), 0u);
     ASSERT_EQ(cache.count(), 9u);
 
     cache.removePart(table_uuid, "part_1");
     EXPECT_EQ(cache.count(), 3u);
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "a", 0, 3), 0u);
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "b", 0, 3), 0u);
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_2", "a", 0, 3), 3u);
+    EXPECT_EQ(countPresent(cache, a1, 0, 3), 0u);
+    EXPECT_EQ(countPresent(cache, b1, 0, 3), 0u);
+    EXPECT_EQ(countPresent(cache, a2, 0, 3), 3u);
 
     /// The stamp of the table is not advanced by removing a part: a reader that started before
     /// still writes.
-    EXPECT_EQ(cache.getInvalidationGeneration(table_uuid), table_generation);
+    EXPECT_EQ(cache.getInvalidationGeneration(table_uuid), generation);
 }
 
 TEST(ColumnsCache, EvictedEntriesLeaveNoIndexBehind)
 {
-    /// Room for about two entries of 100 rows.
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 3000, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
+    /// Room for a few entries of 800 rows of UInt64 in every shard.
+    auto cache = makeCache(ColumnsCache::NUM_SHARDS * 20000);
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
-    for (size_t mark = 0; mark < 10; ++mark)
-        cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", mark}, 100), table_generation);
+    for (size_t stripe = 0; stripe < 100; ++stripe)
+        cache.setMany({makeEntry(c, stripe, stripe * 8, stripe * 8 + 8)}, generation);
 
     const size_t resident = cache.count();
     EXPECT_GT(resident, 0u);
-    EXPECT_LT(resident, 10u);
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 10), resident);
+    EXPECT_LT(resident, 100u);
+    EXPECT_EQ(countPresent(cache, c, 0, 100), resident);
 
     /// Removing the part removes exactly what is left and nothing breaks on the evicted keys.
-    cache.removePart(table_uuid, "part_1");
+    cache.removePart(c.table_uuid, "part_1");
     EXPECT_EQ(cache.count(), 0u);
 }
 
 TEST(ColumnsCache, ClearAllIsStickyAgainstInFlightReaders)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
 
     /// A reader captures the generation when it starts reading.
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
     /// `SYSTEM DROP COLUMNS CACHE` happens while that reader is still running.
     cache.clearAll();
 
     /// The reader's deferred write must not resurrect entries after the drop.
-    ColumnsCacheKey key{table_uuid, "part_1", "col", 0};
-    EXPECT_FALSE(cache.set(makeEntry(key, 100), table_generation));
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 1), 0u);
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 0, 8)}, generation), 0u);
+    EXPECT_EQ(countPresent(cache, c, 0, 1), 0u);
 
     /// A reader that starts after the drop caches normally again.
-    const auto new_table_generation = cache.getInvalidationGeneration(table_uuid);
-    EXPECT_TRUE(cache.set(makeEntry(key, 100), new_table_generation));
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 1), 1u);
+    const auto new_generation = cache.getInvalidationGeneration(c.table_uuid);
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 0, 8)}, new_generation), 0u);
+    EXPECT_EQ(countPresent(cache, c, 0, 1), 1u);
 }
 
 TEST(ColumnsCache, ClearAllAndRemoveTableGenerationsDoNotCancelOut)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
-
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
     /// Both kinds of invalidation happen while a reader is in flight. Every stamp comes from
     /// a single monotonically increasing counter and the token is the later of the two, so no
     /// combination of bumps can bring it back to a previously observed value.
     cache.clearAll();
-    cache.removeTable(table_uuid);
-    EXPECT_NE(cache.getInvalidationGeneration(table_uuid), table_generation);
+    cache.removeTable(c.table_uuid);
+    EXPECT_NE(cache.getInvalidationGeneration(c.table_uuid), generation);
 
-    ColumnsCacheKey key{table_uuid, "part_1", "col", 0};
-    EXPECT_FALSE(cache.set(makeEntry(key, 100), table_generation));
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 1), 0u);
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 0, 8)}, generation), 0u);
+    EXPECT_EQ(countPresent(cache, c, 0, 1), 0u);
 }
 
 TEST(ColumnsCache, OversizedEntryRejected)
 {
-    /// 10 rows of UInt64 plus the per-entry overhead fit into 2048 bytes,
-    /// 1000 rows do not.
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 2048, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
+    /// Every shard holds 2 KiB: one granule of 100 rows of UInt64 fits, eight do not.
+    auto cache = makeCache(ColumnsCache::NUM_SHARDS * 2048);
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
-    EXPECT_FALSE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", 0}, 1000), 0));
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 1), 0u);
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 0, 8)}, generation), 0u);
+    EXPECT_EQ(countPresent(cache, c, 0, 1), 0u);
 
-    EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", 1}, 10), 0));
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 2), 1u);
+    EXPECT_GT(cache.setMany({makeEntry(c, 1, 8, 9)}, generation), 0u);
+    EXPECT_EQ(countPresent(cache, c, 0, 2), 1u);
 }
 
 TEST(ColumnsCache, RemoveTableInvalidatesEntriesAndInFlightWrites)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
-    const UUID other_table_uuid = UUIDHelpers::generateV4();
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    TestColumn other(UUIDHelpers::generateV4(), "part_1", "col");
 
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
-    const auto other_generation = cache.getInvalidationGeneration(other_table_uuid);
-    EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", 0}, 10), table_generation));
-    EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{other_table_uuid, "part_1", "col", 0}, 10), other_generation));
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+    const auto other_generation = cache.getInvalidationGeneration(other.table_uuid);
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 0, 8)}, generation), 0u);
+    EXPECT_GT(cache.setMany({makeEntry(other, 0, 0, 8)}, other_generation), 0u);
 
-    cache.removeTable(table_uuid);
+    cache.removeTable(c.table_uuid);
 
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 1), 0u);
-    EXPECT_EQ(countPresent(cache, other_table_uuid, "part_1", "col", 0, 1), 1u);
+    EXPECT_EQ(countPresent(cache, c, 0, 1), 0u);
+    EXPECT_EQ(countPresent(cache, other, 0, 1), 1u);
 
     /// The deferred write of a reader that started before the invalidation is dropped.
-    EXPECT_FALSE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", 1}, 10), table_generation));
+    EXPECT_EQ(cache.setMany({makeEntry(c, 1, 8, 16)}, generation), 0u);
     /// The other table is not affected.
-    EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{other_table_uuid, "part_1", "col", 1}, 10), other_generation));
-}
-
-TEST(ColumnsCache, ClearAllStampExceedsEveryTableStamp)
-{
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
-
-    /// `clearAll` forgets the per-table stamps, so its own stamp must be greater than every
-    /// table stamp handed out before it, no matter how many times the table was invalidated.
-    cache.removeTable(table_uuid);
-    const auto stale_table_generation = cache.getInvalidationGeneration(table_uuid);
-    cache.removeTable(table_uuid);
-    cache.clearAll();
-
-    EXPECT_NE(cache.getInvalidationGeneration(table_uuid), stale_table_generation);
-
-    ColumnsCacheKey key{table_uuid, "part_1", "col", 0, stale_table_generation};
-    EXPECT_FALSE(cache.set(makeEntry(key, 100), stale_table_generation));
+    EXPECT_GT(cache.setMany({makeEntry(other, 1, 8, 16)}, other_generation), 0u);
 }
 
 TEST(ColumnsCache, EntriesAreNotVisibleAcrossSchemaIdentities)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    auto cache = makeCache();
     const UUID table_uuid = UUIDHelpers::generateV4();
+    TestColumn before(table_uuid, "part_1", "col", /*schema_identity=*/ 7);
+    TestColumn after(table_uuid, "part_1", "col", /*schema_identity=*/ 8);
+    const auto generation = cache.getInvalidationGeneration(table_uuid);
 
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
-    ColumnsCacheKey key{table_uuid, "part_1", "col", 0, /*schema_identity=*/ 7};
-    EXPECT_TRUE(cache.set(makeEntry(key, 100), table_generation));
+    EXPECT_GT(cache.setMany({makeEntry(before, 0, 0, 8)}, generation), 0u);
 
     /// The same reader repeating the read finds its entry.
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 1, 7), 1u);
+    EXPECT_EQ(countPresent(cache, before, 0, 1), 1u);
     /// A reader with another schema identity does not.
-    EXPECT_EQ(countPresent(cache, table_uuid, "part_1", "col", 0, 1, 8), 0u);
+    EXPECT_EQ(countPresent(cache, after, 0, 1), 0u);
 }
 
 TEST(ColumnsCache, DisabledCacheStillInvalidatesInFlightReaders)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
-    const UUID table_uuid = UUIDHelpers::generateV4();
+    auto cache = makeCache();
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
 
     /// A reader that started while the cache was enabled holds a token.
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
     /// The cache is disabled by a config reload, the table is altered, and the cache is
     /// enabled again before the reader gets to its deferred write. The invalidation happened
     /// while the cache was disabled, but it still has to reject that write.
     cache.setConfiguredMaxSizeInBytes(0);
-    cache.removeTable(table_uuid);
-    cache.setConfiguredMaxSizeInBytes(1 << 20);
+    cache.removeTable(c.table_uuid);
+    cache.setConfiguredMaxSizeInBytes(1 << 24);
 
-    ColumnsCacheKey key{table_uuid, "part_1", "col", 0};
-    EXPECT_FALSE(cache.set(makeEntry(key, 100), table_generation));
+    EXPECT_EQ(cache.setMany({makeEntry(c, 0, 0, 8)}, generation), 0u);
 
     /// A reader that starts after all of it can write again.
-    const auto fresh_table_generation = cache.getInvalidationGeneration(table_uuid);
-    EXPECT_TRUE(cache.set(makeEntry(key, 100), fresh_table_generation));
+    const auto fresh_generation = cache.getInvalidationGeneration(c.table_uuid);
+    EXPECT_GT(cache.setMany({makeEntry(c, 0, 0, 8)}, fresh_generation), 0u);
 }
 
 TEST(ColumnsCache, DisabledCacheDoesNotAccumulatePerTableInvalidationMetadata)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 0, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    auto cache = makeCache(0);
 
     /// A cache that admits nothing must not accumulate invalidation metadata for every table
     /// of the server: the invalidations are folded into the single cache-wide stamp,
@@ -290,14 +340,13 @@ TEST(ColumnsCache, DisabledCacheDoesNotAccumulatePerTableInvalidationMetadata)
 
 TEST(ColumnsCache, AutoResizeYieldsMemoryAndGrowsBack)
 {
-    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
-        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    auto cache = makeCache();
     cache.setAutoResizeSettings(/*free_memory_ratio=*/ 0.0, /*history_window_ms=*/ 0);
-    const UUID table_uuid = UUIDHelpers::generateV4();
-    const auto table_generation = cache.getInvalidationGeneration(table_uuid);
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
-    for (size_t mark = 0; mark < 100; ++mark)
-        EXPECT_TRUE(cache.set(makeEntry(ColumnsCacheKey{table_uuid, "part_1", "col", mark}, 100), table_generation));
+    for (size_t stripe = 0; stripe < 100; ++stripe)
+        EXPECT_GT(cache.setMany({makeEntry(c, stripe, stripe * 8, stripe * 8 + 8)}, generation), 0u);
     const size_t full_size = cache.sizeInBytes();
     ASSERT_EQ(cache.count(), 100u);
 
@@ -307,18 +356,17 @@ TEST(ColumnsCache, AutoResizeYieldsMemoryAndGrowsBack)
     const size_t others = 3 * full_size;
     EXPECT_TRUE(cache.autoResize(static_cast<Int64>(others + full_size), limit));
     EXPECT_EQ(cache.maxSizeInBytes(), full_size);
-    EXPECT_EQ(cache.count(), 100u);
 
     /// The usage of the rest grows past what the limit leaves: entries are evicted.
     EXPECT_TRUE(cache.autoResize(static_cast<Int64>(limit - full_size / 2 + cache.sizeInBytes()), limit));
-    EXPECT_LE(cache.sizeInBytes(), full_size / 2);
+    EXPECT_LE(cache.sizeInBytes(), full_size / 2 + ColumnsCache::NUM_SHARDS * 16);
     EXPECT_LT(cache.count(), 100u);
     EXPECT_GT(cache.count(), 0u);
 
     /// Nothing else uses memory any more: the cache may grow back, but not beyond its
     /// configured size.
     EXPECT_TRUE(cache.autoResize(static_cast<Int64>(cache.sizeInBytes()), 100 << 20));
-    EXPECT_EQ(cache.maxSizeInBytes(), 1u << 20);
+    EXPECT_EQ(cache.maxSizeInBytes(), 1u << 24);
 
     /// The usage of the rest exceeds the limit by itself: the cache gives up everything and
     /// reports that it is not enough.

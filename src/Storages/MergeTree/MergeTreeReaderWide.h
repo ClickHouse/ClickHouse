@@ -192,14 +192,14 @@ private:
 
     /// The columns cache.
     ///
-    /// The cache holds one entry per granule of a column of a part (see `ColumnsCacheKey`), and a
-    /// read goes granule by granule and column by column: a column whose entry for the granule is
-    /// in the cache is served from it, the others are read from the part, whatever the ranges of
-    /// the read task are. The
-    /// rows read from the part are copied, granule by granule, into an entry of their own, which
-    /// is written once the granule has been read to its end - so the cache never shares column
-    /// data with a read still in progress, and a granule that is not read in full (skipped by
-    /// `PREWHERE`, or cut short by `LIMIT` or a cancelled query) is not cached.
+    /// The cache holds one entry per stripe of granules of a column of a part (see `ColumnsCacheKey`
+    /// and `ColumnsCacheStripes`), covering a contiguous run of the granules of the stripe, and a
+    /// read goes granule by granule and column by column: a column whose entry covers the granule
+    /// is served from it, the others are read from the part, whatever the ranges of the read task
+    /// are. The rows read from the part are copied into an entry of their own, which is written
+    /// once the run of granules has been read to its end - so the cache never shares column data
+    /// with a read still in progress, and a granule that is not read in full (skipped by `PREWHERE`,
+    /// or cut short by `LIMIT` or a cancelled query) is not cached.
     ///
     /// Serving a granule from the cache does not move the file streams, so before the next
     /// granule is read from the part its streams are positioned at that granule again. Streams
@@ -211,16 +211,22 @@ private:
     bool columns_cache_reads_possible = false;
     bool columns_cache_writes_possible = false;
 
+    /// How the marks of the part are cut into stripes, and the identity of every result column
+    /// for the cache. See `ColumnsCacheKey`.
+    ColumnsCacheStripes stripes;
+    std::vector<UInt128> column_identities;
+
     /// Invalidation generation captured when the read of the range started.
-    /// Passed to ColumnsCache::set so a deferred write is dropped if the table was
+    /// Passed to ColumnsCache::setMany so a deferred write is dropped if the table was
     /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
     /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
     UInt64 cache_table_generation = 0;
 
-    /// The contiguous mark range being read, [range_first_mark, range_end_mark), and the position
-    /// of the next row to produce in it: the granule and the offset within the granule.
+    /// The contiguous mark range being read, [range_first_mark, range_end_mark), the stripe it
+    /// starts in, and the position of the next row to produce: the granule and the offset in it.
     size_t range_first_mark = 0;
     size_t range_end_mark = 0;
+    size_t range_first_stripe = 0;
     size_t cursor_mark = 0;
     size_t cursor_offset = 0;
 
@@ -228,33 +234,40 @@ private:
     /// segment of it was read from the part, false after one was served from the cache. A column
     /// is served or read granule by granule independently of the other columns.
     std::vector<bool> disk_positioned;
-    /// Whether the partially read columns have been read in this range yet. They are read from the
-    /// part for every segment, served or not, so their streams always continue.
+    /// Whether the columns read only from the part have been read in this range yet. They are
+    /// read from the part for every segment, served or not, so their streams always continue.
     bool partial_columns_started = false;
 
-    /// The entries of the range, per result column, per granule of the range (nullptr when the
-    /// granule is not cached), and per granule whether every regular column of it is cached.
+    /// The entries of the range, per result column, per stripe of the range (nullptr when the
+    /// stripe has no entry), and per granule whether every regular column of it is cached.
     std::vector<std::vector<ColumnsCache::MappedPtr>> cached_entries;
     std::vector<bool> granule_served_from_cache;
 
-    bool isGranuleColumnCached(size_t pos, size_t granule_index) const;
+    const ColumnsCache::MappedPtr & cachedEntryFor(size_t pos, size_t mark) const;
+    bool isGranuleColumnCached(size_t pos, size_t mark) const;
 
-    /// The granule the previous block ended in, if it is to be cached: its rows read so far, per
-    /// result column (nullptr for the columns that are not read from the part).
+    /// The run of granules being copied for the cache, if any: consecutive granules of one
+    /// stripe, read from the part for the same columns, from the first row of the first one.
+    /// `accumulated_next_mark` is the granule whose rows are being appended and
+    /// `accumulated_offset` how many of them are there; the columns hold the rows so far
+    /// (nullptr for the columns that are not read from the part).
     bool accumulating = false;
-    size_t accumulated_mark = 0;
-    size_t accumulated_rows = 0;
+    size_t accumulated_stripe = 0;
+    size_t accumulated_first_mark = 0;
+    size_t accumulated_next_mark = 0;
+    size_t accumulated_offset = 0;
+    std::vector<bool> accumulated_from_disk;
     MutableColumns accumulated_columns;
 
-    /// Entries of the granules read to their end, written together at the end of the call.
+    /// Entries ready to be written, written together at the end of the call.
     std::vector<ColumnsCache::MappedPtr> pending_entries;
 
-    /// Begin a new contiguous mark range at `from_mark`: look its granules up in the cache and reset
-    /// the state of the previous range.
+    /// Begin a new contiguous mark range at `from_mark`: write what the previous range left,
+    /// look the stripes of the new one up in the cache and reset the state.
     void startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns);
 
     /// Look the granules [first_mark, end_mark) up in the cache for every regular column. Returns
-    /// the entries per column, and per granule whether it can be served as a whole.
+    /// the entries per column and per stripe, and per granule whether it can be served as a whole.
     void lookupColumnsCache(
         size_t first_mark, size_t end_mark, size_t num_columns,
         std::vector<std::vector<ColumnsCache::MappedPtr>> & entries, std::vector<bool> & servable);
@@ -267,20 +280,20 @@ private:
     /// Read up to `max_rows_to_read` rows granule by granule, from the cache or from the part.
     size_t readRowsWithColumnsCache(size_t max_rows_to_read, MutableColumns & res_columns);
 
-    /// Append `rows` rows starting at `offset` of the cached granule at `granule_index` to the
-    /// regular result columns whose entry for the granule is in the cache.
-    void serveRowsFromColumnsCache(size_t granule_index, size_t offset, size_t rows, MutableColumns & res_columns);
+    /// Append the `rows` rows starting at row `row_begin` of the part - which lie in the stripe of
+    /// granule `first_mark` - to the regular result columns whose entry covers them.
+    void serveRowsFromColumnsCache(size_t first_mark, size_t row_begin, size_t rows, MutableColumns & res_columns);
 
     /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
     bool canWriteToColumnsCache() const;
 
-    void resetAccumulatedGranule();
+    void resetAccumulation();
 
-    /// Make the rows of granule `mark` just read from the part into cache entries: the rows
-    /// [offset, offset + rows) of the granule are at `sizes_before_reading[pos] + row_in_run` of
-    /// every result column read from the part (`from_disk`). A granule read in full becomes
-    /// entries at once; a granule the block ends in is kept until the next block completes it.
-    void cacheGranuleRowsFromResult(
+    /// Copy the rows [offset, offset + rows) of granule `mark`, just read from the part, for the
+    /// cache: they are at `sizes_before_reading[pos] + row_in_run` of every result column read
+    /// from the part (`from_disk`). A run of granules read to their end becomes an entry when
+    /// its stripe ends, when the range ends, or when the run is broken.
+    void accumulateRowsForColumnsCache(
         size_t mark,
         size_t offset,
         size_t rows,
@@ -290,8 +303,11 @@ private:
         const std::vector<size_t> & sizes_before_reading,
         const MutableColumns & res_columns);
 
-    /// Queue an entry for granule `mark` of the result column at `pos`.
-    void addPendingColumnsCacheEntry(size_t pos, size_t mark, MutableColumnPtr column);
+    /// Turn the granules of the accumulated run that were read to their end into entries.
+    void finishAccumulatedGranules();
+
+    /// Queue an entry for the granules [first_mark, end_mark) of the result column at `pos`.
+    void addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, MutableColumnPtr column);
 
     /// Write the pending entries to the cache.
     void flushPendingColumnsCacheWrites();

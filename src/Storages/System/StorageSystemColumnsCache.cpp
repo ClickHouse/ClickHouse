@@ -120,7 +120,7 @@ protected:
             /// Look up database and table names from UUID
             String database_name;
             String table_name;
-            auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(meta.key.table_uuid);
+            auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(meta.table_uuid);
             if (database && table)
             {
                 database_name = database->getDatabaseName();
@@ -139,7 +139,7 @@ protected:
                 /// visibility of those entries.
                 if (!database || !table
                     || !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name)
-                    || !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, meta.key.column_name))
+                    || !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, meta.column_name))
                 {
                     ++current_index;
                     continue;
@@ -148,9 +148,9 @@ protected:
 
             col_database->insert(database_name);
             col_table->insert(table_name);
-            col_table_uuid->insert(meta.key.table_uuid);
-            col_part->insert(meta.key.part_name);
-            col_column->insert(meta.key.column_name);
+            col_table_uuid->insert(meta.table_uuid);
+            col_part->insert(meta.part_name);
+            col_column->insert(meta.column_name);
             col_row_begin->insert(meta.row_begin);
             col_row_end->insert(meta.row_begin + meta.rows);
             col_rows->insert(meta.rows);
@@ -207,7 +207,7 @@ StorageSystemColumnsCache::StorageSystemColumnsCache(const StorageID & table_id_
         {"column", std::make_shared<DataTypeString>(), "Column name"},
         {"row_begin", std::make_shared<DataTypeUInt64>(), "Starting row index (inclusive)"},
         {"row_end", std::make_shared<DataTypeUInt64>(), "Ending row index (exclusive)"},
-        {"rows", std::make_shared<DataTypeUInt64>(), "Number of rows in cached block"},
+        {"rows", std::make_shared<DataTypeUInt64>(), "Number of rows in the cached range of granules"},
         {"bytes", std::make_shared<DataTypeUInt64>(), "Memory the cached column retains in bytes, capacity included"}
     };
 

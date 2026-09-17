@@ -2,10 +2,14 @@
 #include <chrono>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Defines.h>
-#include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/ColumnsCache.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 
 namespace ProfileEvents
 {
@@ -26,6 +30,43 @@ size_t getDefaultColumnsCacheSize(size_t physical_server_memory, double size_to_
     return static_cast<size_t>(static_cast<double>(physical_server_memory) * size_to_ram_ratio);
 }
 
+UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity)
+{
+    SipHash hash;
+    hash.update(table_uuid);
+    hash.update(part_name);
+    hash.update(column_name);
+    hash.update(schema_identity);
+    return hash.get128();
+}
+
+ColumnsCacheStripes::ColumnsCacheStripes(size_t avg_rows_per_mark)
+{
+    /// The average granule of the part decides how many granules make a stripe of about
+    /// `TARGET_ROWS` rows. With a fixed `index_granularity` this is exact; with an adaptive one
+    /// the stripes come out around the target.
+    avg_rows_per_mark = std::max<size_t>(1, avg_rows_per_mark);
+    stripe_marks = std::clamp<size_t>((TARGET_ROWS + avg_rows_per_mark / 2) / avg_rows_per_mark, 1, MAX_STRIPE_MARKS);
+}
+
+ColumnsCacheStripes ColumnsCacheStripes::forPart(const MergeTreeIndexGranularity & index_granularity)
+{
+    /// The last granule is usually short, so it is left out of the average.
+    const size_t marks = index_granularity.getMarksCountWithoutFinal();
+    const size_t rows = index_granularity.getTotalRows();
+    if (marks <= 1)
+        return ColumnsCacheStripes(rows);
+    return ColumnsCacheStripes((rows - index_granularity.getMarkRows(marks - 1)) / (marks - 1));
+}
+
+size_t ColumnsCache::PartIdentifierHash::operator()(const PartIdentifier & id) const
+{
+    SipHash hash;
+    hash.update(id.table_uuid);
+    hash.update(id.part_name);
+    return hash.get64();
+}
+
 ColumnsCache::ColumnsCache(
     const String & cache_policy,
     CurrentMetrics::Metric size_in_bytes_metric,
@@ -33,30 +74,49 @@ ColumnsCache::ColumnsCache(
     size_t max_size_in_bytes,
     size_t max_count,
     double size_ratio)
-    : Base(cache_policy, size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio)
-    , configured_max_size_in_bytes(max_size_in_bytes)
+    : configured_max_size_in_bytes(max_size_in_bytes)
     , effective_max_size_in_bytes(max_size_in_bytes)
 {
+    const size_t shard_max_size = (max_size_in_bytes + NUM_SHARDS - 1) / NUM_SHARDS;
+    const size_t shard_max_count = max_count ? (max_count + NUM_SHARDS - 1) / NUM_SHARDS : 0;
+    shards.reserve(NUM_SHARDS);
+    for (size_t i = 0; i < NUM_SHARDS; ++i)
+        shards.push_back(std::make_unique<Shard>(*this, cache_policy, size_in_bytes_metric, count_metric, shard_max_size, shard_max_count, size_ratio));
 }
 
-std::vector<ColumnsCache::MappedPtr> ColumnsCache::getMany(
-    const UUID & table_uuid,
-    const String & part_name,
-    const String & column_name,
-    UInt64 schema_identity,
-    size_t first_mark,
-    size_t end_mark)
-{
-    std::vector<Key> keys;
-    keys.reserve(end_mark - first_mark);
-    for (size_t mark = first_mark; mark < end_mark; ++mark)
-        keys.push_back(Key{table_uuid, part_name, column_name, mark, schema_identity});
+ColumnsCache::~ColumnsCache() = default;
 
-    auto entries = Base::getMany(keys);
-    for (const auto & entry : entries)
-        if (entry)
-            entry->used.store(true, std::memory_order_relaxed);
-    return entries;
+std::vector<ColumnsCache::MappedPtr> ColumnsCache::getMany(const UInt128 & column_identity, size_t first_stripe, size_t end_stripe)
+{
+    const size_t num_keys = end_stripe - first_stripe;
+    std::vector<MappedPtr> result(num_keys);
+
+    /// The keys of a column spread over the shards; each shard is locked once for its keys.
+    std::vector<std::vector<size_t>> positions_by_shard(NUM_SHARDS);
+    for (size_t i = 0; i < num_keys; ++i)
+        positions_by_shard[shardIndex(Key{column_identity, first_stripe + i})].push_back(i);
+
+    std::vector<Key> keys;
+    for (size_t shard = 0; shard < NUM_SHARDS; ++shard)
+    {
+        const auto & positions = positions_by_shard[shard];
+        if (positions.empty())
+            continue;
+
+        keys.clear();
+        for (size_t i : positions)
+            keys.push_back(Key{column_identity, first_stripe + i});
+
+        auto entries = shards[shard]->getMany(keys);
+        for (size_t j = 0; j < positions.size(); ++j)
+        {
+            if (entries[j])
+                entries[j]->used.store(true, std::memory_order_relaxed);
+            result[positions[j]] = std::move(entries[j]);
+        }
+    }
+
+    return result;
 }
 
 bool ColumnsCache::shouldAdmit()
@@ -98,75 +158,52 @@ UInt64 ColumnsCache::getInvalidationGeneration(const UUID & table_uuid)
     return currentGeneration(table_uuid);
 }
 
-bool ColumnsCache::set(const MappedPtr & mapped, UInt64 expected_table_generation)
+ColumnsCache::MappedPtr ColumnsCache::mergeEntries(const MappedPtr & existing, const MappedPtr & incoming)
 {
-    const Key & key = mapped->key;
+    if (!existing)
+        return incoming;
 
-    /// An entry whose weight exceeds the cache size limit would be evicted by
-    /// Base::set immediately after insertion. Reject it up front.
-    if (ColumnsCacheWeightFunction{}(*mapped) > Base::maxSizeInBytes())
-        return false;
+    /// Nothing new: the cache holds these granules already.
+    if (existing->coversMarks(incoming->first_mark, incoming->end_mark))
+        return nullptr;
 
-    const PartIdentifier part_id{key.table_uuid, key.part_name};
-    const ColumnIdentifier column_id{key.column_name, key.schema_identity};
+    /// The new entry holds everything the existing one does, and more.
+    if (incoming->coversMarks(existing->first_mark, existing->end_mark))
+        return incoming;
 
-    {
-        std::lock_guard lock(index_mutex);
+    /// Disjoint with a gap between them: only one of them can be kept. The larger wins, and the
+    /// existing one is kept on a tie, so that two reads writing the halves of a stripe in turns
+    /// do not evict each other's entry.
+    if (incoming->end_mark < existing->first_mark || existing->end_mark < incoming->first_mark)
+        return incoming->rows > existing->rows ? incoming : nullptr;
 
-        /// Reject the write if the table was invalidated (removeTable) or the whole
-        /// cache was dropped (clearAll) after the reader captured the generation.
-        /// Otherwise a deferred write from a reader that started before a `RENAME
-        /// COLUMN` could repopulate the cache with stale data the invalidation was
-        /// meant to drop, and a reader that started before a `SYSTEM DROP COLUMNS
-        /// CACHE` could resurrect entries the drop removed. Checked under the same
-        /// lock removeTable and clearAll use, so the comparison cannot race with a
-        /// concurrent bump.
-        if (currentGeneration(key.table_uuid) != expected_table_generation)
-            return false;
+    /// Overlapping or adjacent: the union, made of the rows of the existing entry and the rows
+    /// of the new one beyond it on either side. The same part, the same column and the same
+    /// schema, so the rows agree where the two overlap.
+    auto merged = std::make_shared<ColumnsCacheEntry>();
+    merged->table_uuid = existing->table_uuid;
+    merged->part_name = existing->part_name;
+    merged->column_name = existing->column_name;
+    merged->schema_identity = existing->schema_identity;
+    merged->key = existing->key;
+    merged->first_mark = std::min(existing->first_mark, incoming->first_mark);
+    merged->end_mark = std::max(existing->end_mark, incoming->end_mark);
+    merged->row_begin = std::min(existing->row_begin, incoming->row_begin);
+    const size_t row_end = std::max(existing->row_begin + existing->rows, incoming->row_begin + incoming->rows);
+    merged->rows = row_end - merged->row_begin;
 
-        /// Record the granule before the entry is inserted, so that the eviction callback,
-        /// which may run inside `Base::set` itself, always finds the bit to reset.
-        auto & marks = part_index[part_id][column_id];
-        if (marks.size() <= key.mark)
-            marks.resize(key.mark + 1);
-        marks[key.mark] = true;
-    }
+    auto column = existing->column->cloneEmpty();
+    column->reserve(merged->rows);
+    if (incoming->row_begin < existing->row_begin)
+        column->insertRangeFrom(*incoming->column, 0, existing->row_begin - incoming->row_begin);
+    column->insertRangeFrom(*existing->column, 0, existing->rows);
+    const size_t existing_row_end = existing->row_begin + existing->rows;
+    if (row_end > existing_row_end)
+        column->insertRangeFrom(*incoming->column, existing_row_end - incoming->row_begin, row_end - existing_row_end);
+    column->shrinkToFit();
+    merged->column = std::move(column);
 
-    Base::set(key, mapped);
-
-    /// The entry can fail admission: SLRU does not keep a probationary entry that does not fit
-    /// the space left by the protected segment, even when it is within the overall size limit.
-    /// In that case the eviction callback has already reset the bit.
-    if (!Base::contains(key))
-        return false;
-
-    /// An invalidation can have happened between the check above and the insertion. The entry
-    /// is then stale and nobody will look it up under this schema identity, but it would hold
-    /// its memory until the eviction reaches it, so take it out right away.
-    bool stale = false;
-    {
-        std::lock_guard lock(index_mutex);
-        if (currentGeneration(key.table_uuid) != expected_table_generation)
-        {
-            stale = true;
-            auto part_it = part_index.find(part_id);
-            if (part_it != part_index.end())
-            {
-                auto column_it = part_it->second.find(column_id);
-                if (column_it != part_it->second.end() && key.mark < column_it->second.size())
-                    column_it->second[key.mark] = false;
-            }
-        }
-    }
-
-    if (stale)
-    {
-        Base::remove(key);
-        return false;
-    }
-
-    accountAdmitted(1);
-    return true;
+    return merged;
 }
 
 size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation)
@@ -174,70 +211,119 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     if (entries.empty())
         return 0;
 
-    /// Entries whose weight exceeds the cache size limit would be evicted right after insertion.
-    const size_t max_size = Base::maxSizeInBytes();
+    const UUID & table_uuid = entries.front()->table_uuid;
+
+    /// Reject the write if the table was invalidated (removeTable) or the whole
+    /// cache was dropped (clearAll) after the reader captured the generation.
+    /// Otherwise a deferred write from a reader that started before a `RENAME
+    /// COLUMN` could repopulate the cache with stale data the invalidation was
+    /// meant to drop, and a reader that started before a `SYSTEM DROP COLUMNS
+    /// CACHE` could resurrect entries the drop removed. Checked under the same
+    /// lock removeTable and clearAll use, so the comparison cannot race with a
+    /// concurrent bump.
+    {
+        std::lock_guard lock(index_mutex);
+        if (currentGeneration(table_uuid) != expected_table_generation)
+            return 0;
+    }
+
+    /// Merge with what the cache holds for the stripes, see `mergeEntries`. The merge happens
+    /// outside the locks; two readers writing the same stripe at once can lose one of the two
+    /// writes, and the next read of the lost granules writes them again.
     std::vector<Key> keys;
-    std::vector<MappedPtr> admitted;
+    std::vector<MappedPtr> to_store;
     std::vector<size_t> weights;
     keys.reserve(entries.size());
-    admitted.reserve(entries.size());
+    to_store.reserve(entries.size());
     weights.reserve(entries.size());
+
+    /// Two runs of the same stripe in one batch - a read that found the middle of the stripe in
+    /// the cache and read the granules on both sides of it - merge with each other as well.
+    std::unordered_map<Key, size_t, ColumnsCacheKeyHash> position_by_key;
+
+    const size_t shard_max_size = shards.front()->maxSizeInBytes();
     for (const auto & entry : entries)
     {
-        const size_t weight = ColumnsCacheWeightFunction{}(*entry);
-        if (weight > max_size)
+        auto position = position_by_key.find(entry->key);
+        const MappedPtr existing = position == position_by_key.end() ? shardOf(entry->key).get(entry->key) : to_store[position->second];
+        auto merged = mergeEntries(existing, entry);
+        if (!merged)
             continue;
-        keys.push_back(entry->key);
-        admitted.push_back(entry);
+
+        /// An entry whose weight exceeds the size limit of its shard would be evicted right after
+        /// insertion. Reject it up front.
+        const size_t weight = ColumnsCacheWeightFunction{}(*merged);
+        if (weight > shard_max_size)
+            continue;
+
+        if (position != position_by_key.end())
+        {
+            to_store[position->second] = std::move(merged);
+            weights[position->second] = weight;
+            continue;
+        }
+
+        position_by_key.emplace(merged->key, keys.size());
+        keys.push_back(merged->key);
+        to_store.push_back(std::move(merged));
         weights.push_back(weight);
     }
 
-    if (admitted.empty())
+    if (to_store.empty())
         return 0;
 
-    const UUID table_uuid = keys.front().table_uuid;
-
-    /// See `set` for the reasoning behind every step; this is the same sequence for many entries.
+    /// Record the stripes before the entries are inserted, so that the eviction callback, which
+    /// may run inside the insertion itself, always finds the bit to reset.
     {
         std::lock_guard lock(index_mutex);
         if (currentGeneration(table_uuid) != expected_table_generation)
             return 0;
 
-        for (const auto & key : keys)
+        for (size_t i = 0; i < keys.size(); ++i)
         {
-            auto & marks = part_index[PartIdentifier{key.table_uuid, key.part_name}][ColumnIdentifier{key.column_name, key.schema_identity}];
-            if (marks.size() <= key.mark)
-                marks.resize(key.mark + 1);
-            marks[key.mark] = true;
+            const auto & entry = *to_store[i];
+            auto & stripes = part_index[PartIdentifier{entry.table_uuid, entry.part_name}][keys[i].column_identity];
+            if (stripes.size() <= keys[i].stripe)
+                stripes.resize(keys[i].stripe + 1);
+            stripes[keys[i].stripe] = true;
         }
     }
 
-    Base::setMany(keys, admitted);
-    const auto resident = Base::containsMany(keys);
+    for (size_t i = 0; i < keys.size(); ++i)
+        shardOf(keys[i]).set(keys[i], to_store[i]);
 
+    /// An entry can fail admission: SLRU does not keep a probationary entry that does not fit
+    /// the space left by the protected segment, even when it is within the overall size limit.
+    /// In that case the eviction callback has already reset the bit.
+    std::vector<bool> resident(keys.size());
+    for (size_t i = 0; i < keys.size(); ++i)
+        resident[i] = shardOf(keys[i]).contains(keys[i]);
+
+    /// An invalidation can have happened between the check above and the insertion. The entries
+    /// are then stale and nobody will look them up under this schema identity, but they would
+    /// hold their memory until the eviction reaches them, so take them out right away.
     bool stale = false;
     {
         std::lock_guard lock(index_mutex);
         stale = currentGeneration(table_uuid) != expected_table_generation;
-        for (size_t i = 0; i < keys.size(); ++i)
+        if (stale)
         {
-            if (resident[i] && !stale)
-                continue;
-
-            const auto & key = keys[i];
-            auto part_it = part_index.find(PartIdentifier{key.table_uuid, key.part_name});
-            if (part_it == part_index.end())
-                continue;
-            auto column_it = part_it->second.find(ColumnIdentifier{key.column_name, key.schema_identity});
-            if (column_it != part_it->second.end() && key.mark < column_it->second.size())
-                column_it->second[key.mark] = false;
+            for (size_t i = 0; i < keys.size(); ++i)
+            {
+                const auto & entry = *to_store[i];
+                auto part_it = part_index.find(PartIdentifier{entry.table_uuid, entry.part_name});
+                if (part_it == part_index.end())
+                    continue;
+                auto column_it = part_it->second.find(keys[i].column_identity);
+                if (column_it != part_it->second.end() && keys[i].stripe < column_it->second.size())
+                    column_it->second[keys[i].stripe] = false;
+            }
         }
     }
 
     if (stale)
     {
-        for (const auto & key : keys)
-            Base::remove(key);
+        removeFromShards(keys);
         return 0;
     }
 
@@ -255,7 +341,7 @@ size_t ColumnsCache::setMany(const std::vector<MappedPtr> & entries, UInt64 expe
     return bytes_admitted;
 }
 
-void ColumnsCache::onEntryRemoval(size_t weight_loss, const MappedPtr & mapped)
+void ColumnsCache::Shard::onEntryRemoval(size_t weight_loss, const MappedPtr & mapped)
 {
     ProfileEvents::increment(ProfileEvents::ColumnsCacheEvictedEntries);
     ProfileEvents::increment(ProfileEvents::ColumnsCacheEvictedBytes, weight_loss);
@@ -264,43 +350,36 @@ void ColumnsCache::onEntryRemoval(size_t weight_loss, const MappedPtr & mapped)
         return;
 
     if (!mapped->used.load(std::memory_order_relaxed))
-        recent_evicted_unused.fetch_add(1, std::memory_order_relaxed);
+        parent.recent_evicted_unused.fetch_add(1, std::memory_order_relaxed);
 
-    /// Runs under the mutex of the base cache; `index_mutex` is taken second, see `part_index`.
-    const Key & key = mapped->key;
-    std::lock_guard lock(index_mutex);
+    /// Runs under the mutex of the shard; `index_mutex` is taken second, see `part_index`.
+    std::lock_guard lock(parent.index_mutex);
 
-    auto part_it = part_index.find(PartIdentifier{key.table_uuid, key.part_name});
-    if (part_it == part_index.end())
+    auto part_it = parent.part_index.find(PartIdentifier{mapped->table_uuid, mapped->part_name});
+    if (part_it == parent.part_index.end())
         return;
 
-    auto column_it = part_it->second.find(ColumnIdentifier{key.column_name, key.schema_identity});
+    auto column_it = part_it->second.find(mapped->key.column_identity);
     if (column_it == part_it->second.end())
         return;
 
-    auto & marks = column_it->second;
-    if (key.mark < marks.size())
-        marks[key.mark] = false;
+    auto & stripes = column_it->second;
+    if (mapped->key.stripe < stripes.size())
+        stripes[mapped->key.stripe] = false;
 }
 
-void ColumnsCache::removeFromBase(const PartIdentifier & part_id, const PartIndex & index)
+void ColumnsCache::removeFromShards(const std::vector<Key> & keys)
 {
-    for (const auto & [column_id, marks] : index)
-    {
-        for (size_t mark = 0; mark < marks.size(); ++mark)
-        {
-            if (marks[mark])
-                Base::remove(Key{part_id.table_uuid, part_id.part_name, column_id.column_name, mark, column_id.schema_identity});
-        }
-    }
+    for (const auto & key : keys)
+        shardOf(key).remove(key);
 }
 
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
-    /// Not under `index_mutex`: it takes the mutex of the base cache, see `part_index`.
-    const bool disabled = Base::maxSizeInBytes() == 0;
+    /// Not under `index_mutex`: `maxSizeInBytes` of a shard takes the mutex of the shard.
+    const bool disabled = shards.front()->maxSizeInBytes() == 0;
 
-    std::vector<std::pair<PartIdentifier, PartIndex>> parts_to_remove;
+    std::vector<Key> keys_to_remove;
     {
         std::lock_guard lock(index_mutex);
 
@@ -317,44 +396,50 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
         }
 
         /// Advance the table's invalidation generation before clearing entries, so a
-        /// deferred set() from a reader that captured an older generation is rejected
+        /// deferred write from a reader that captured an older generation is rejected
         /// and cannot repopulate the cache with stale data after this invalidation.
         table_generations[table_uuid] = nextGeneration();
 
         for (auto it = part_index.begin(); it != part_index.end();)
         {
-            if (it->first.table_uuid == table_uuid)
+            if (it->first.table_uuid != table_uuid)
             {
-                parts_to_remove.emplace_back(it->first, std::move(it->second));
-                it = part_index.erase(it);
-            }
-            else
                 ++it;
+                continue;
+            }
+
+            for (const auto & [column_identity, stripes] : it->second)
+                for (size_t stripe = 0; stripe < stripes.size(); ++stripe)
+                    if (stripes[stripe])
+                        keys_to_remove.push_back(Key{column_identity, stripe});
+
+            it = part_index.erase(it);
         }
     }
 
-    for (const auto & [part_id, index] : parts_to_remove)
-        removeFromBase(part_id, index);
+    removeFromShards(keys_to_remove);
 }
 
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
     /// No invalidation stamp is advanced here, see the declaration: the part is removed from
     /// the cache only once no reader can hold it, so there is no deferred write to reject.
-    const PartIdentifier part_id{table_uuid, part_name};
-
-    PartIndex index;
+    std::vector<Key> keys_to_remove;
     {
         std::lock_guard lock(index_mutex);
-        auto part_it = part_index.find(part_id);
+        auto part_it = part_index.find(PartIdentifier{table_uuid, part_name});
         if (part_it == part_index.end())
             return;
 
-        index = std::move(part_it->second);
+        for (const auto & [column_identity, stripes] : part_it->second)
+            for (size_t stripe = 0; stripe < stripes.size(); ++stripe)
+                if (stripes[stripe])
+                    keys_to_remove.push_back(Key{column_identity, stripe});
+
         part_index.erase(part_it);
     }
 
-    removeFromBase(part_id, index);
+    removeFromShards(keys_to_remove);
 }
 
 void ColumnsCache::clearAll()
@@ -372,16 +457,24 @@ void ColumnsCache::clearAll()
     recent_evicted_unused.store(0, std::memory_order_relaxed);
     admission_log2.store(0, std::memory_order_relaxed);
 
-    /// A write that started before the stamp was advanced cannot land after this point: `set`
-    /// checks the stamp again once its entry is in and removes the entry if it changed.
-    Base::clear();
+    /// A write that started before the stamp was advanced cannot land after this point:
+    /// `setMany` checks the stamp again once its entries are in and removes them if it changed.
+    for (auto & shard : shards)
+        shard->clear();
+}
+
+void ColumnsCache::setShardsMaxSize(size_t total_max_size_in_bytes)
+{
+    const size_t shard_max_size = (total_max_size_in_bytes + NUM_SHARDS - 1) / NUM_SHARDS;
+    for (auto & shard : shards)
+        shard->setMaxSizeInBytes(shard_max_size);
 }
 
 void ColumnsCache::setConfiguredMaxSizeInBytes(size_t max_size_in_bytes)
 {
     configured_max_size_in_bytes.store(max_size_in_bytes, std::memory_order_relaxed);
     effective_max_size_in_bytes.store(max_size_in_bytes, std::memory_order_relaxed);
-    Base::setMaxSizeInBytes(max_size_in_bytes);
+    setShardsMaxSize(max_size_in_bytes);
 }
 
 void ColumnsCache::setAutoResizeSettings(double free_memory_ratio_, Int64 history_window_ms_)
@@ -389,6 +482,22 @@ void ColumnsCache::setAutoResizeSettings(double free_memory_ratio_, Int64 histor
     free_memory_ratio.store(free_memory_ratio_, std::memory_order_relaxed);
     std::lock_guard lock(resize_mutex);
     history_window_ms = history_window_ms_;
+}
+
+size_t ColumnsCache::sizeInBytes() const
+{
+    size_t sum = 0;
+    for (const auto & shard : shards)
+        sum += shard->sizeInBytes();
+    return sum;
+}
+
+size_t ColumnsCache::count() const
+{
+    size_t sum = 0;
+    for (const auto & shard : shards)
+        sum += shard->count();
+    return sum;
 }
 
 bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
@@ -406,9 +515,20 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
         return false;
 
     const size_t configured_max_size = configured_max_size_in_bytes.load(std::memory_order_relaxed);
-    const size_t cache_size = Base::sizeInBytes();
+    const size_t cache_size = sizeInBytes();
     const size_t memory_usage = static_cast<size_t>(std::max<Int64>(memory_usage_signed, 0));
     const size_t usage_excluding_cache = memory_usage - std::min(cache_size, memory_usage);
+
+    /// No limit: nothing to give memory back to.
+    if (memory_limit == 0)
+    {
+        if (effective_max_size_in_bytes.load(std::memory_order_relaxed) != configured_max_size)
+        {
+            effective_max_size_in_bytes.store(configured_max_size, std::memory_order_relaxed);
+            setShardsMaxSize(configured_max_size);
+        }
+        return true;
+    }
 
     size_t peak = 0;
     if (history_window_ms <= 0)
@@ -438,35 +558,43 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
     const size_t reduced_limit = static_cast<size_t>(static_cast<double>(memory_limit) * (1.0 - ratio));
     const size_t target_size = std::min(configured_max_size, reduced_limit - std::min(peak, reduced_limit));
 
-    if (target_size != Base::maxSizeInBytes())
+    const size_t previous_size = effective_max_size_in_bytes.load(std::memory_order_relaxed);
+    if (target_size != previous_size)
     {
+        LOG_TRACE(getLogger("ColumnsCache"),
+            "Resizing the columns cache from {} to {} (configured {}): the server uses {} ({} without the cache, peak {}) of the limit {}",
+            formatReadableSizeWithBinarySuffix(previous_size), formatReadableSizeWithBinarySuffix(target_size),
+            formatReadableSizeWithBinarySuffix(configured_max_size), formatReadableSizeWithBinarySuffix(memory_usage),
+            formatReadableSizeWithBinarySuffix(usage_excluding_cache), formatReadableSizeWithBinarySuffix(peak),
+            formatReadableSizeWithBinarySuffix(memory_limit));
         effective_max_size_in_bytes.store(target_size, std::memory_order_relaxed);
-        Base::setMaxSizeInBytes(target_size);
+        setShardsMaxSize(target_size);
     }
 
-    const size_t new_cache_size = Base::sizeInBytes();
+    const size_t new_cache_size = sizeInBytes();
     return memory_usage - std::min(cache_size, memory_usage) + new_cache_size <= memory_limit;
 }
 
-std::vector<ColumnsCache::EntryMetadata>
-ColumnsCache::getAllEntriesMetadata()
+std::vector<ColumnsCache::EntryMetadata> ColumnsCache::getAllEntriesMetadata()
 {
-    /// `Base::dump()` returns a snapshot without changing the priorities of the entries,
-    /// so the diagnostic query does not perturb the eviction order.
-    /// Note: entries returned by dump() briefly hold a MappedPtr; we extract the
-    /// metadata and drop the shared_ptr immediately so column data
-    /// is not pinned beyond the lifetime of this vector.
-    auto snapshot = Base::dump();
-
     std::vector<EntryMetadata> result;
-    result.reserve(snapshot.size());
-    for (const auto & entry : snapshot)
+    for (auto & shard : shards)
     {
-        /// `bytes` reports the memory the entry retains, the same quantity the cache is bounded
-        /// by, so that the sum over `system.columns_cache` can be compared with
-        /// `columns_cache_size`. See `ColumnsCacheWeightFunction`.
-        if (entry.mapped)
-            result.push_back(EntryMetadata{entry.key, entry.mapped->row_begin, entry.mapped->rows, ColumnsCacheWeightFunction{}(*entry.mapped)});
+        /// `dump()` returns a snapshot without changing the priorities of the entries, so the
+        /// diagnostic query does not perturb the eviction order. The snapshot briefly holds the
+        /// entries; only their metadata is kept.
+        auto snapshot = shard->dump();
+        result.reserve(result.size() + snapshot.size());
+        for (const auto & item : snapshot)
+        {
+            if (!item.mapped)
+                continue;
+            const auto & entry = *item.mapped;
+            /// `bytes` reports the memory the entry retains, the same quantity the cache is bounded
+            /// by, so that the sum over `system.columns_cache` can be compared with
+            /// `columns_cache_size`. See `ColumnsCacheWeightFunction`.
+            result.push_back(EntryMetadata{entry.table_uuid, entry.part_name, entry.column_name, entry.row_begin, entry.rows, ColumnsCacheWeightFunction{}(entry)});
+        }
     }
     return result;
 }

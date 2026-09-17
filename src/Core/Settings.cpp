@@ -881,13 +881,13 @@ For queries that read at least a somewhat large volume of data (one million rows
 )", 0) \
     DECLARE(Bool, use_columns_cache, false, R"(
 Whether to use the columns cache. Accepts 0 or 1. By default, 0 (disabled).
-The columns cache stores deserialized columns from `MergeTree` tables, eliminating repeated decompression and deserialization for hot data. This can significantly reduce latency for repeated queries on the same data. The cache is keyed by table UUID, data part name, column name, and granule.
+The columns cache stores deserialized columns from `MergeTree` tables, eliminating repeated decompression and deserialization for hot data. This can significantly reduce latency for repeated queries on the same data. The cache is keyed by table UUID, data part name, column name, and a stripe of consecutive granules of about 65536 rows.
 
 Because entries are keyed by table UUID, the cache is only active for tables in databases that assign UUIDs (`Atomic` and `Replicated`); `MergeTree` tables in databases without UUIDs — legacy `Ordinary` databases, and `Shared` databases (the default database engine in ClickHouse Cloud) — have a nil UUID and silently ignore this setting.
 
 The cache currently applies to wide parts only: data in compact parts is not read from or written to the columns cache, so whether a read is accelerated depends on the part format.
 
-Entries cover whole granules: a granule enters the cache only after it has been read from its first row to its last, and a read is served from the cache granule by granule, so reads that cut a part into different mark ranges share the entries.
+An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
 Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).

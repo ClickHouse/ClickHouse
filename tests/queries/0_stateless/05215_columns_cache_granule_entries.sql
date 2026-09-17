@@ -1,5 +1,6 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
--- The columns cache holds one entry per granule of a column, so reads that cut the part into
+-- The columns cache holds one entry per stripe of granules of a column (a fixed cut of the part
+-- into stripes of about 65536 rows), served granule by granule, so reads that cut the part into
 -- different mark ranges find each other's entries: a query with a condition, whose reader skips
 -- rows and reads its ranges piecewise, is served from the entries of a full scan and does not
 -- displace them, and a read whose ranges the query condition cache prunes on its second run
@@ -23,7 +24,7 @@ SYSTEM DROP QUERY CONDITION CACHE;
 SELECT sum(v), sum(g), sum(length(s)) FROM t_cc_granules
 SETTINGS use_columns_cache = 1, log_comment = 'cc_granules_full';
 
--- One entry per granule per column.
+-- 13 granules of 8192 rows make 2 stripes: one entry per stripe per column.
 SELECT count(), uniqExact(row_begin), min(rows), max(rows) FROM system.columns_cache WHERE table = 't_cc_granules' AND database = currentDatabase();
 
 -- A query with a condition reads `s` only for the rows that pass, in pieces of the granules:
@@ -36,7 +37,7 @@ SELECT sum(v), sum(g), sum(length(s)) FROM t_cc_granules
 SETTINGS use_columns_cache = 1, log_comment = 'cc_granules_full_again';
 
 -- The query condition cache remembers that only one granule holds `g = 7`, so the second run
--- reads only that granule; the entries are per granule, so it is served from the cache too.
+-- reads only that granule; it is served from the entry of its stripe too.
 SELECT count() FROM t_cc_granules WHERE g = 7
 SETTINGS use_columns_cache = 1, use_query_condition_cache = 1, log_comment = 'cc_granules_qcc_1';
 

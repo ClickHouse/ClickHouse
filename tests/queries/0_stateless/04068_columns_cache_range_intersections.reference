@@ -62,7 +62,7 @@ Test 10: Adjacent ranges
 04068_probe_disjoint_warm	0	1
 04068_probe_disjoint_read	0	1
 04068_probe_disjoint_warm_again	1	0
-04068_probe_disjoint_read_again	1	0
+04068_probe_disjoint_read_again	0	1
 04068_probe_spanning_read	1	1
 04068_probe_spanning_read_again	1	0
 04068_probe_subcolumn_size_warm	0	1

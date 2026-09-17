@@ -95,8 +95,9 @@ SETTINGS log_comment = '04068_probe_left_overlap_warm';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 1000 AND id < 5000
 SETTINGS log_comment = '04068_probe_left_overlap_read';
 
--- The entries are per granule, so both ranges are cached now and neither of the
--- reads displaced the entries of the other: both are served from the cache.
+-- The entries hold runs of granules of a stripe and adjacent runs are merged, so both
+-- ranges are cached now and neither of the reads displaced the entries of the other:
+-- both are served from the cache.
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 1000 AND id < 5000
 SETTINGS log_comment = '04068_probe_left_overlap_read_again';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 3000 AND id < 7000
@@ -120,8 +121,8 @@ SETTINGS log_comment = '04068_probe_right_overlap_warm';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 4000 AND id < 8000
 SETTINGS log_comment = '04068_probe_right_overlap_read';
 
--- Both ranges are cached at this point, granule by granule, and both of these
--- reads are served from the cache.
+-- Both ranges are cached at this point, merged into one run of granules, and both of
+-- these reads are served from the cache.
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 2000 AND id < 5000
 SETTINGS log_comment = '04068_probe_right_overlap_warm_again';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 4000 AND id < 8000
@@ -146,7 +147,10 @@ SETTINGS log_comment = '04068_probe_disjoint_warm';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 7000 AND id < 9000
 SETTINGS log_comment = '04068_probe_disjoint_read';
 
--- Verify both ranges are cached independently
+-- The two ranges lie in the same stripe (the table is small enough for one stripe) with a gap
+-- between them, and an entry holds one contiguous run of granules: only one of the two is kept,
+-- the larger one, or the existing one when they are equal. The first range stays cached, the
+-- second is read from disk again.
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 1000 AND id < 3000
 SETTINGS log_comment = '04068_probe_disjoint_warm_again';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 7000 AND id < 9000
@@ -270,8 +274,8 @@ SETTINGS log_comment = '04068_probe_adjacent_left';
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 5000 AND id < 7000
 SETTINGS log_comment = '04068_probe_adjacent_right';
 
--- Third read: spans both cached ranges. The entries are per granule, so the read is
--- served from the entries of both of the previous reads.
+-- Third read: spans both cached ranges, which were merged into one entry, so the read
+-- is served from the cache.
 SELECT count(), sum(number) FROM t_cache_ranges WHERE id >= 3000 AND id < 7000
 SETTINGS log_comment = '04068_probe_adjacent_spanning';
 
@@ -286,12 +290,12 @@ DROP TABLE t_cache_ranges;
 -- events: `has_hits` tells that at least one granule of a column was served from the
 -- cache, `has_misses` that at least one had to be read from disk.
 --
--- The entries are per granule of a column, so a read is served from the cache for the
--- granules that are there and reads the others from disk: a partially overlapping or a
--- spanning read both hits and misses, and no read ever displaces the entries of another
--- one - which is why re-reading the older range hits in the left-overlap and
--- right-overlap cases, and only a read of granules nobody read before misses without
--- a hit.
+-- An entry holds one contiguous run of granules of a stripe, and a read is served from the
+-- cache for the granules that are there and reads the others from disk: a partially
+-- overlapping or a spanning read both hits and misses, and the runs written by different reads
+-- are merged when they overlap or touch rather than displacing each other - which is why
+-- re-reading the older range hits in the left-overlap and right-overlap cases. Two runs with a
+-- gap between them cannot both be kept, which is why the second disjoint range misses again.
 -- =============================================================================
 
 SYSTEM FLUSH LOGS query_log;
