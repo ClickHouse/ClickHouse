@@ -74,8 +74,8 @@ CREATE TABLE tab_time_ref ENGINE = Log AS SELECT * FROM tab_time;
 SELECT 'nullable_time_equals', (SELECT count() FROM tab_time WHERE toString(t) = '100:00:00')
     = (SELECT count() FROM tab_time_ref WHERE toString(t) = '100:00:00');
 
--- Where `toString` is monotonic on the wrapped type, a `Nullable` key is now pruned like a plain one; the
--- range reaches the granule that holds the `NULL`.
+-- Where `toString` is monotonic on the wrapped type, a `Nullable` key is now pruned like a plain one, except
+-- for the granule that holds the `NULL`: `CAST` to `String` still throws on it.
 CREATE TABLE tab_str (s Nullable(String)) ENGINE = MergeTree ORDER BY s
     SETTINGS allow_nullable_key = 1, index_granularity = 2;
 INSERT INTO tab_str VALUES ('aa'), ('bb'), ('cc'), ('dd'), ('ee'), (NULL);
@@ -86,8 +86,9 @@ SELECT 'nullable_string_range', (SELECT count() FROM tab_str WHERE toString(s) >
 SELECT 'nullable_string_prunes', (SELECT sum(granules_read) < sum(granules_total)
     FROM (SELECT toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) AS granules_read,
                  toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')) AS granules_total
-          FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_str WHERE toString(s) = 'cc'
+          FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_str WHERE toString(s) = 'aa'
                 SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)));
+SELECT count() FROM tab_str WHERE CAST(s AS String) = 'cc'; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 
 -- Controls: a monotonic `toString` still prunes a `Nullable` key, and a bare `Enum` still does not.
 CREATE TABLE tab_uint (n Nullable(UInt64)) ENGINE = MergeTree ORDER BY n
