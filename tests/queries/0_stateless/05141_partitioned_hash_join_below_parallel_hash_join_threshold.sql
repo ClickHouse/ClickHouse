@@ -1,8 +1,10 @@
 -- When the planner estimates the right table below `parallel_hash_join_threshold` rows,
 -- `partitioned_hash` builds it on one thread. The pipeline then has the `hash` shape: one
 -- `FillingRightJoinSide` transform and no squashing after the join. The hash table starts at the
--- estimated size and grows as `hash`'s does. A spill hands the kept build blocks to `GraceHashJoin`.
--- Results must match `hash` for every join kind.
+-- distinct-key count a previous run left in the hash table statistics cache, and grows as `hash`'s
+-- does when there is none. A spill hands the kept build blocks to `GraceHashJoin`. Results must
+-- match `hash` for every join kind. Every `partitioned_hash` build here follows the `hash` build of
+-- the same query, which publishes the same statistics entry, so it starts at the exact size.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -170,7 +172,10 @@ SYSTEM FLUSH LOGS query_log;
 
 -- The spill queries switched to grace, whose buckets are partitioned builds too; their bucket count follows the byte
 -- predictions, so for them only the presence of partitioned builds is asserted.
-SELECT '-- one partition, rows inserted, table growth for the low hint and for the one-stream spills, the spill queries switched to grace';
+-- The `hash` subquery of each pair publishes the distinct-key count under the statistics key the `partitioned_hash`
+-- subquery reads, so the partitioned builds start at the exact size and do not grow. Only the builds without a cached
+-- count grow from the smallest table: the low hint (statistics collection off) and the one-stream grace buckets.
+SELECT '-- one partition, rows inserted, table growth only without a cached count, the spill queries switched to grace';
 SELECT
     log_comment,
     if(log_comment LIKE '% spill%', toUInt64(ProfileEvents['HashJoinPartitions'] > 0), ProfileEvents['HashJoinPartitions']),

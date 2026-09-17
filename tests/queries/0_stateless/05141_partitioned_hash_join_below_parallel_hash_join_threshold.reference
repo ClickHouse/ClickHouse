@@ -32,7 +32,7 @@ low hint	50000	1
 -- inner and spill again with the threshold off (parallel build, one partition per thread)
 parallel inner	38000	1
 parallel spill	50000	1
--- one partition, rows inserted, table growth for the low hint and for the one-stream spills, the spill queries switched to grace
+-- one partition, rows inserted, table growth only without a cached count, the spill queries switched to grace
 05141 50k	1	1	0	0
 05141 50k full	1	1	0	0
 05141 anti	1	1	0	0
