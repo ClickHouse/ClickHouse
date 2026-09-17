@@ -373,6 +373,9 @@ void DatabaseDataLake::initialize() const
                 break;
             }
 
+            /// Also covers the lazy path after ATTACH, so persisted unsupported settings fail on first use.
+            validateUnityV2Settings(settings);
+
             /// Databricks OIDC expects `all-apis`; the default `auth_scope` value targets Iceberg REST catalogs.
             const std::string unity_auth_scope = settings[DatabaseDataLakeSetting::auth_scope].changed
                 ? settings[DatabaseDataLakeSetting::auth_scope].value
@@ -1708,9 +1711,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "DataLake database with Unity catalog catalog is beta. "
                                     "To allow its usage, enable setting allow_database_unity_catalog");
                 }
-
-                if (!args.create_query.attach && database_settings[DatabaseDataLakeSetting::use_unity_catalog_v2])
-                    validateUnityV2Settings(database_settings);
 
                 break;
             }
