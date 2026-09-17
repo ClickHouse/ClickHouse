@@ -40,3 +40,10 @@ the same through a LowCardinality(Nullable(...)) probe
 -1	0
 1	1
 \N	0
+a Nullable subquery set with the default transform_null_in = 0
+0
+1
+1
+-1	0	1
+0	1	0
+\N	\N	\N

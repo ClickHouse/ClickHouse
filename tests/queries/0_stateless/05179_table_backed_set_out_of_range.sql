@@ -85,5 +85,15 @@ SELECT v, nullIn(v, t_set_engine) FROM t_probe_lc ORDER BY v NULLS LAST;
 DROP TABLE t_probe_lc;
 DROP TABLE t_set_nullable2;
 
+SELECT 'a Nullable subquery set with the default transform_null_in = 0';
+-- Here the set's key type drops its `Nullable` when the set is built, so the probe goes through the
+-- accurate-or-null conversion and the value that does not fit is a non-member; the set's own NULL
+-- matches nothing.
+SELECT -1 IN (SELECT CAST(NULL AS Nullable(UInt64)) UNION ALL SELECT toUInt64(0));
+SELECT -1 NOT IN (SELECT CAST(NULL AS Nullable(UInt64)) UNION ALL SELECT toUInt64(0));
+SELECT 0 IN (SELECT CAST(NULL AS Nullable(UInt64)) UNION ALL SELECT toUInt64(0));
+SELECT v, v IN (SELECT CAST(NULL AS Nullable(UInt64)) UNION ALL SELECT toUInt64(0)), v NOT IN (SELECT CAST(NULL AS Nullable(UInt64)) UNION ALL SELECT toUInt64(0))
+FROM (SELECT arrayJoin(CAST([-1, 0, NULL], 'Array(Nullable(Int64))')) AS v) ORDER BY v NULLS LAST;
+
 DROP TABLE t_set_engine;
 DROP TABLE t_set_probe;
