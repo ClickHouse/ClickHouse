@@ -67,7 +67,8 @@ DROP TABLE ts_t64;
 
 -- `CREATE TABLE AS` recognizes both current and historical generated timestamp codecs.
 CREATE TABLE ts_t64_source ENGINE = TimeSeries;
-CREATE TABLE ts_t64 (samples Array(Tuple(DateTime64(6), Float64))) AS ts_t64_source ENGINE = TimeSeries;
+CREATE TABLE ts_t64 AS ts_t64_source ENGINE = TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(T64, ZSTD(3)));
 DROP TABLE ts_t64_source;
 SELECT type, compression_codec, count()
 FROM system.columns
@@ -79,7 +80,8 @@ DROP TABLE ts_t64;
 CREATE TABLE ts_t64_source ENGINE = TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(1)))
 RECENT SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(1)));
-CREATE TABLE ts_t64 (samples Array(Tuple(DateTime64(6), Float64))) AS ts_t64_source ENGINE = TimeSeries;
+CREATE TABLE ts_t64 AS ts_t64_source ENGINE = TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(T64, ZSTD(3)));
 DROP TABLE ts_t64_source;
 SELECT type, compression_codec, count()
 FROM system.columns
