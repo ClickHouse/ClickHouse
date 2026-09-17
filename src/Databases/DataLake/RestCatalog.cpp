@@ -1990,7 +1990,16 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, {});
+        /// `HTTP_CONFLICT` is the expected outcome of losing an optimistic-concurrency race
+        /// (the `assert-ref-snapshot-id` requirement failed), so don't let the HTTP layer retry it:
+        /// the caller re-reads the latest metadata tip and retries the whole commit itself.
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /* ignore_result */ false,
+            {Poco::Net::HTTPResponse::HTTP_CONFLICT});
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2064,7 +2073,15 @@ bool RestCatalog::updateSchema(
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, {});
+        /// Same as in `updateMetadata`: a failed `assert-current-schema-id` requirement is reported
+        /// as `HTTP_CONFLICT`, and the caller handles it by retrying with the current schema.
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /* ignore_result */ false,
+            {Poco::Net::HTTPResponse::HTTP_CONFLICT});
     }
     catch (const DB::HTTPException & ex)
     {
