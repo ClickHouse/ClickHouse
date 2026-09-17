@@ -46,7 +46,7 @@ public:
         MutableColumns & res_columns) override;
 
     /// The virtual columns are resolved from per-mark posting lists addressed by absolute row number,
-    /// so this reader can serve a read that starts or stops inside a mark whenever the main reader can.
+    /// so a read may start or stop inside a mark.
     bool canReadIncompleteGranules() const override { return main_reader_can_read_incomplete_granules; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
 

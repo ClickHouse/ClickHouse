@@ -488,9 +488,8 @@ size_t MergeTreeReaderTextIndex::readRows(
 
     while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
-        /// Postings are addressed per mark, and `from_row` is not necessarily the first row of
-        /// `from_mark`: a previous read can stop inside a mark. Rows past this mark's last row
-        /// belong to the next mark and would resolve against the wrong posting lists.
+        /// Postings are addressed per mark: rows past a mark's last row belong to the next mark
+        /// and would resolve against the wrong posting lists.
         size_t mark_end_row = index_granularity.getMarkStartingRow(from_mark) + index_granularity.getMarkRows(from_mark);
         size_t rows_left_in_mark = mark_end_row > from_row ? mark_end_row - from_row : 0;
         if (rows_left_in_mark == 0)
@@ -544,13 +543,11 @@ size_t MergeTreeReaderTextIndex::readRows(
         fallback_offset += rows_to_read;
         last_processed_mark = from_mark;
 
-        /// An unfinished mark stays current: its remaining rows resolve against its own postings.
         if (from_row == mark_end_row)
             ++from_mark;
     }
 
-    /// Remove blocks that are no longer needed. The retained blocks must still cover the mark the
-    /// next read continues in, which is the last mark processed here.
+    /// Remove blocks that are no longer needed; those covering the mark the next read continues in are kept.
     if (last_processed_mark)
     {
         if (auto rows_range = getRowsRangeForMark(*last_processed_mark))
