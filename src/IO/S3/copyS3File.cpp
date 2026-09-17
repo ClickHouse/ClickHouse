@@ -19,7 +19,6 @@
 #include <IO/ReadBufferFromS3.h>
 
 #include <IO/S3/Requests.h>
-#include <Common/FailPoint.h>
 #include <aws/core/http/HttpResponse.h>
 
 #include <aws/core/utils/StringUtils.h>
@@ -59,11 +58,6 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
     extern const int S3_OBJECT_CHANGED_DURING_READ;
-}
-
-namespace FailPoints
-{
-    extern const char s3_copy_inject_etag_mismatch[];
 }
 
 namespace S3RequestSetting
@@ -146,14 +140,7 @@ namespace
 
         virtual ~UploadHelper() = default;
 
-        /// The `ETag` of the generation the upload or copy created at `dest_key`, as the response
-        /// to the request that created it reported it; empty until then, and when the endpoint
-        /// reported none.
-        const String & createdETag() const { return created_etag; }
-
     protected:
-        String created_etag;
-
         std::shared_ptr<const S3::Client> client_ptr;
         const String & dest_bucket;
         const String & dest_key;
@@ -317,7 +304,6 @@ namespace
 
                 if (outcome.IsSuccess())
                 {
-                    created_etag = outcome.GetResult().GetETag();
                     LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     break;
                 }
@@ -658,7 +644,6 @@ namespace
 
                 if (outcome.IsSuccess())
                 {
-                    created_etag = outcome.GetResult().GetETag();
                     Int64 object_size = request.GetContentLength();
                     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, object_size);
                     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, elapsed);
@@ -769,8 +754,6 @@ namespace
             size_t src_offset_,
             size_t src_size_,
             size_t src_object_size_,
-            const String & src_etag_,
-            const String & src_version_id_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
@@ -778,7 +761,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<String()> fallback_method_,
+            std::function<void()> fallback_method_,
             bool is_ranged_copy_,
             const S3CopyFileSettings & copy_settings_)
             : UploadHelper(
@@ -797,8 +780,6 @@ namespace
             , offset(src_offset_)
             , size(src_size_)
             , src_object_size(src_object_size_)
-            , src_etag(src_etag_)
-            , src_version_id(src_version_id_)
             /// Native multipart copy is disabled for `S3Express` buckets: there `Client::doRequest` forces
             /// `CreateMultipartUpload` to use a flexible checksum, but the copy path does not propagate the per-part
             /// checksums returned by `UploadPartCopy` into `CompleteMultipartUpload`, which then fails. Large objects
@@ -808,21 +789,13 @@ namespace
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
         {
-            /// Makes the pinned copy carry a generation the source never had, which is what a source
-            /// replaced in place between the `HeadObject` of the caller and the copy looks like to
-            /// the endpoint: it answers `412`, and the copy must be refused, not retried by another
-            /// route and not fallen back to an unpinned read.
-            fiu_do_on(FailPoints::s3_copy_inject_etag_mismatch, {
-                if (!src_etag.empty())
-                    src_etag = "\"injected-etag-mismatch\"";
-            });
         }
 
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy{}{}", src_key, dest_key,
-                src_version_id.empty() ? "" : fmt::format(" of version {}", src_version_id),
-                src_etag.empty() ? "" : fmt::format(", pinned to the generation with `ETag` {}", src_etag));
+                copy_settings.source_version_id.empty() ? "" : fmt::format(" of version {}", copy_settings.source_version_id),
+                copy_settings.source_if_match.empty() ? "" : fmt::format(", pinned to the generation with `ETag` {}", copy_settings.source_if_match));
 
             /// A ranged copy carries a byte range that whole-object CopyObject ignores, so it must not take
             /// the single-operation path -- doing so would copy the entire source object. It can only use
@@ -833,7 +806,7 @@ namespace
             bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
             if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
             {
-                created_etag = fallback_method();
+                fallback_method();
                 return;
             }
 
@@ -846,7 +819,7 @@ namespace
             /// `CopyObject` ignores destination preconditions, so guarded copies must re-upload.
             if (use_single_operation_copy && !copy_settings.if_none_match.empty())
             {
-                created_etag = fallback_method();
+                fallback_method();
                 return;
             }
 
@@ -865,26 +838,37 @@ namespace
         size_t offset;
         size_t size;
         size_t src_object_size;
-        /// The generation of the source that is copied, or empty for a copy by key alone.
-        String src_etag;
-        /// The version of the source that is copied, or empty for the current one.
-        const String & src_version_id;
         bool supports_multipart_copy;
         bool is_ranged_copy;
         const ReadSettings read_settings;
-        /// The read-and-write copy; returns the `ETag` of the generation it created, like this class does.
-        std::function<String()> fallback_method;
+        std::function<void()> fallback_method;
 
         /// What `CopyObject` and `UploadPartCopy` name as the source: `bucket/key`, with the version
         /// appended as `?versionId=...` when one is selected, which is the form the SDK documents for
-        /// `SetCopySource` (the SDK percent-encodes the whole value into `x-amz-copy-source`, and the
-        /// endpoint decodes it back). Without the version, a copy of a source that the caller reads by
-        /// version would copy the latest version of the key instead.
+        /// `SetCopySource`. Without the version, a copy of a source that the caller reads by version
+        /// would copy the latest version of the key instead.
         String copySource() const
         {
-            if (src_version_id.empty())
+            if (copy_settings.source_version_id.empty())
                 return src_bucket + "/" + src_key;
-            return src_bucket + "/" + src_key + "?versionId=" + src_version_id;
+            return src_bucket + "/" + src_key + "?versionId=" + copy_settings.source_version_id;
+        }
+
+        /// Whether the endpoint refused the copy because the source is not the generation the copy is
+        /// pinned to. The SDK has no typed model error for `PreconditionFailed`, so the raw code is kept
+        /// in the exception name; the HTTP status is checked as well, for a marshaller that keeps it.
+        bool sourceIsNotThePinnedGeneration(const Aws::S3::S3Error & error) const
+        {
+            return !copy_settings.source_if_match.empty() && isPreconditionFailed(error);
+        }
+
+        [[noreturn]] void throwSourceChanged() const
+        {
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "S3 object {}/{} was not copied to {}/{}: it was replaced after it was selected for the copy "
+                "(`x-amz-copy-source-if-match` on `ETag` {} failed)",
+                src_bucket, src_key, dest_bucket, dest_key, copy_settings.source_if_match);
         }
 
         void performSingleOperationCopy()
@@ -894,30 +878,11 @@ namespace
             processCopyRequest(request);
         }
 
-        /// Whether the endpoint refused the copy because the source is not the generation the copy is
-        /// pinned to. The SDK has no typed model error for `PreconditionFailed`, so the raw code is kept
-        /// in the exception name; the HTTP status is checked as well, for a marshaller that keeps it.
-        bool sourceIsNotThePinnedGeneration(const Aws::Client::AWSError<Aws::S3::S3Errors> & error) const
-        {
-            return !src_etag.empty()
-                && (error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED
-                    || error.GetExceptionName() == "PreconditionFailed");
-        }
-
-        [[noreturn]] void throwSourceChanged() const
-        {
-            throw Exception(
-                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
-                "S3 object {}/{} was not copied to {}/{}: it was replaced after it was selected for the copy "
-                "(`x-amz-copy-source-if-match` on `ETag` {} failed)",
-                src_bucket, src_key, dest_bucket, dest_key, src_etag);
-        }
-
         void fillCopyRequest(S3::CopyObjectRequest & request)
         {
             request.SetCopySource(copySource());
-            if (!src_etag.empty())
-                request.SetCopySourceIfMatch(src_etag);
+            if (!copy_settings.source_if_match.empty())
+                request.SetCopySourceIfMatch(copy_settings.source_if_match);
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
 
@@ -949,7 +914,6 @@ namespace
                 auto outcome = client_ptr->CopyObject(request);
                 if (outcome.IsSuccess())
                 {
-                    created_etag = outcome.GetResult().GetCopyObjectResultDetails().GetETag();
                     LOG_TRACE(
                         log,
                         "Single operation copy has completed. Bucket: {}, Key: {}, Object size: {}",
@@ -979,7 +943,7 @@ namespace
                             dest_bucket,
                             dest_key,
                             size);
-                        created_etag = fallback_method();
+                        fallback_method();
                         break;
                     }
 
@@ -1032,7 +996,7 @@ namespace
                     throw;
 
                 tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
-                created_etag = fallback_method();
+                fallback_method();
             }
         }
 
@@ -1044,8 +1008,8 @@ namespace
             request->SetCopySource(copySource());
             /// Every part is pinned to the same generation, so a source replaced in place between two
             /// parts cannot make the destination a splice of two generations.
-            if (!src_etag.empty())
-                request->SetCopySourceIfMatch(src_etag);
+            if (!copy_settings.source_if_match.empty())
+                request->SetCopySourceIfMatch(copy_settings.source_if_match);
             request->SetBucket(dest_bucket);
             request->SetKey(dest_key);
             request->SetUploadId(multipart_upload_id);
@@ -1095,7 +1059,7 @@ std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
 }
 
 
-String copyDataToS3File(
+void copyDataToS3File(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
@@ -1121,7 +1085,6 @@ String copyDataToS3File(
         blob_storage_log,
         copy_settings};
     helper.performCopy();
-    return helper.createdETag();
 }
 
 
@@ -1129,15 +1092,13 @@ namespace
 {
     /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
     /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    String copyS3FileImpl(
+    void copyS3FileImpl(
         std::shared_ptr<const S3::Client> src_s3_client,
         const String & src_bucket,
         const String & src_key,
         size_t src_offset,
         size_t src_size,
         size_t src_object_size,
-        const String & src_etag,
-        const String & src_version_id,
         std::shared_ptr<const S3::Client> dest_s3_client,
         const String & dest_bucket,
         const String & dest_key,
@@ -1153,9 +1114,9 @@ namespace
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
 
-        std::function<String()> fallback_method = [&] mutable
+        std::function<void()> fallback_method = [&] mutable
         {
-            return copyDataToS3File(
+            copyDataToS3File(
                 fallback_file_reader,
                 src_offset,
                 src_size,
@@ -1172,7 +1133,8 @@ namespace
         if (!settings[S3RequestSetting::allow_native_copy])
         {
             LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            return fallback_method();
+            fallback_method();
+            return;
         }
 
         CopyFileHelper helper{
@@ -1182,8 +1144,6 @@ namespace
             src_offset,
             src_size,
             src_object_size,
-            src_etag,
-            src_version_id,
             dest_bucket,
             dest_key,
             settings,
@@ -1195,17 +1155,14 @@ namespace
             is_ranged_copy,
             copy_settings};
         helper.performCopy();
-        return helper.createdETag();
     }
 }
 
-String copyS3File(
+void copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_size,
-    const String & src_etag,
-    const String & src_version_id,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1217,15 +1174,13 @@ String copyS3File(
     const std::optional<ObjectAttributes> & object_metadata,
     const S3CopyFileSettings & copy_settings)
 {
-    return copyS3FileImpl(
+    copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,
         /* src_offset= */ 0,
         src_size,
         /* src_object_size= */ src_size,
-        src_etag,
-        src_version_id,
         std::move(dest_s3_client),
         dest_bucket,
         dest_key,
@@ -1239,15 +1194,13 @@ String copyS3File(
         copy_settings);
 }
 
-String copyS3FileRange(
+void copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
     size_t src_size,
     size_t src_object_size,
-    const String & src_etag,
-    const String & src_version_id,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1258,15 +1211,13 @@ String copyS3FileRange(
     const CreateReadBuffer & fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    return copyS3FileImpl(
+    copyS3FileImpl(
         std::move(src_s3_client),
         src_bucket,
         src_key,
         src_offset,
         src_size,
         src_object_size,
-        src_etag,
-        src_version_id,
         std::move(dest_s3_client),
         dest_bucket,
         dest_key,

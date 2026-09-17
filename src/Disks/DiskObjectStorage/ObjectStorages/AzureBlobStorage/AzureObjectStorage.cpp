@@ -263,18 +263,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         restrict_seek,
         /* read_until_position */0,
         std::move(blob_storage_log),
-        connection_params.getContainer(),
-        /// `bytes_size` may be the `StoredObject::UnknownSize` sentinel for an object whose size
-        /// was never determined; it is not a real size, so it must not become an end-of-file bound.
-        /// Any other value, zero included, is a real size: it was obtained from the `LIST` or `HEAD`
-        /// that produced the `StoredObject` before the read started (every Azure carrier reports the
-        /// `BlobSize` of the listing or of the properties). It is the length of the file for every
-        /// layer above the buffer, so the read ends there - see
-        /// `ReadBufferFromAzureBlobStorage::known_object_size`.
-        object.bytes_size != StoredObject::UnknownSize ? std::optional<size_t>(object.bytes_size) : std::nullopt,
-        /// Pin every request of this read to the generation of the blob seen at read setup, so an
-        /// in-place overwrite cannot splice two generations into one logical read.
-        object.etag);
+        connection_params.getContainer());
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -367,11 +356,9 @@ void AzureObjectStorage::removeObjectImpl(
     const auto & path = object.remote_path;
     LOG_TEST(log, "Removing single object: {}", path);
 
-    /// A `StoredObject` that carries an `ETag` names one generation of the blob, not just a path:
-    /// the delete is then pinned to that generation with `If-Match`, so a blob that was overwritten
-    /// after the caller looked at it (a `MOVE` copies the generation it selected, then deletes)
-    /// is left in place instead of being deleted without the newer generation having been seen.
-    /// The header wants the quoted entity-tag form, while a tag from a listing is bare.
+    /// A `StoredObject` that carries an `ETag` names one generation of the blob, not just a path: the
+    /// delete is pinned to that generation with `If-Match`, so a blob overwritten after the caller
+    /// looked at it is left in place instead of being deleted. The header wants the quoted form.
     const bool pinned_to_etag = !object.etag.empty();
     const Azure::ETag if_match = pinned_to_etag ? Azure::ETag(AzureBlobStorage::toQuotedETag(object.etag)) : Azure::ETag();
 
@@ -593,7 +580,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                     if (!throw_at_end)
                     {
                         /// The precondition did not hold: the blob is not the generation the caller
-                        /// selected, and it stays in place. Reported the same way as by `removeObjectImpl`.
+                        /// selected, and it stays in place. Reported as by `removeObjectImpl`.
                         if (!object.etag.empty() && e.StatusCode == Azure::Core::Http::HttpStatusCode::PreconditionFailed)
                             throw_at_end = std::make_exception_ptr(Exception(
                                 ErrorCodes::FILE_CHANGED_DURING_READ,
@@ -725,7 +712,7 @@ catch (const Azure::Storage::StorageException & e)
     throw;
 }
 
-String AzureObjectStorage::copyObject( /// NOLINT
+void AzureObjectStorage::copyObject( /// NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -739,21 +726,15 @@ String AzureObjectStorage::copyObject( /// NOLINT
     /// generation it ingested); the copy is pinned to it and transfers that generation or fails.
     /// Its size normally comes from the same listing entry. When the caller knows neither, or
     /// knows the generation but not its size, one `HEAD` supplies what is missing, and the size
-    /// and the generation then come from that same `HEAD`, so a read-and-write fallback copies
-    /// exactly one generation or fails.
+    /// and the generation then come from that same `HEAD`.
     String src_etag = object_from.etag;
     size_t src_size = object_from.bytes_size;
     if (src_etag.empty() || src_size == StoredObject::UnknownSize)
     {
         auto object_metadata = getObjectMetadata(object_from.remote_path, false);
-        /// The `HEAD` was made in order to pin the copy (or to size it, which only means something
-        /// for the generation it was measured on), so a `HEAD` that names no generation cannot
-        /// deliver what it was made for: the copy would proceed without `If-Match`, and the
-        /// read-and-write fallback would be free to stitch two generations of the source together.
-        /// An endpoint that omits the header is refused here, the same way the backup and the
-        /// `ObjectStorageQueue` paths refuse it, instead of copying an unknown generation. This is
-        /// decided before the comparison with a generation the caller carries: an endpoint that
-        /// reports nothing has not reported a change either.
+        /// The `HEAD` was made in order to pin the copy, so a `HEAD` that names no generation cannot
+        /// deliver what it was made for: the copy would proceed without `If-Match`. This is decided
+        /// before the comparison below: an endpoint that reports nothing has not reported a change.
         if (object_metadata.etag.empty())
             throw Exception(
                 ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
@@ -781,14 +762,12 @@ String AzureObjectStorage::copyObject( /// NOLINT
 
     try
     {
-        /// The generation the copy created is the one the response to the write names; see `copyObject`.
-        return copyAzureBlobStorageFile(
+        copyAzureBlobStorageFile(
             client_ptr,
             client_ptr,
             connection_params.getContainer(),
             object_from.remote_path,
             src_size,
-            src_etag,
             connection_params.getContainer(),
             object_to.remote_path,
             settings_ptr,
@@ -796,7 +775,8 @@ String AzureObjectStorage::copyObject( /// NOLINT
             object_to_attributes,
             scheduler,
             /*blob_storage_log=*/nullptr,
-            if_none_match);
+            if_none_match,
+            src_etag);
     }
     catch (const Azure::Core::RequestFailedException & e)
     {

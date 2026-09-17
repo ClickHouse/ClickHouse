@@ -117,6 +117,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
+    size_t processing_state_cache_ttl_seconds_,
     size_t keeper_multiread_batch_size_,
     size_t metadata_cache_size_bytes_,
     size_t metadata_cache_size_elements_)
@@ -135,6 +136,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
+    , processing_state_cache_ttl_seconds(processing_state_cache_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
@@ -270,6 +272,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 bucketing_mode,
                 partitioning_mode,
@@ -283,6 +286,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
         case ObjectStorageQueueMode::EXCLUSIVE:
@@ -292,6 +296,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 *this,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
     }
@@ -663,6 +668,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
+                    noop,
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
@@ -1555,6 +1561,8 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
             use_persistent_processing_nodes = change.value.safeGet<bool>();
         if (change.name == "persistent_processing_node_ttl_seconds")
             persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
+        if (change.name == "processing_state_cache_ttl_seconds")
+            processing_state_cache_ttl_seconds = change.value.safeGet<UInt64>();
     }
 }
 

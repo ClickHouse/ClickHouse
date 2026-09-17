@@ -757,8 +757,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 /*src_bucket=*/src_bucket,
                                 /*src_key=*/object_from.remote_path,
                                 /*src_size=*/source_info.size,
-                                /*src_etag=*/object_from.etag,
-                                /*src_version_id=*/source_version_id,
                                 /*dest_s3_client=*/dst_client,
                                 /*dest_bucket=*/dst_uri.bucket,
                                 /*dest_key=*/object_to.remote_path,
@@ -785,7 +783,9 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                     .if_none_match = move_if_none_match,
                                     .source_headers = move_if_none_match.empty() ? std::optional<S3::ObjectHeaders>{}
                                                                                  : std::optional<S3::ObjectHeaders>{source_info.headers},
-                                    .source_tags = std::move(source_tags)});
+                                    .source_tags = std::move(source_tags),
+                                    .source_if_match = object_from.etag,
+                                    .source_version_id = source_version_id});
                         }
                         catch (const Exception & e)
                         {
@@ -935,7 +935,6 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                 connection_params.getContainer(),
                                 /* src_blob */ object_from.remote_path,
                                 blob_size,
-                                src_etag,
                                 move_container,
                                 /* dest_blob */ object_to.remote_path,
                                 request_settings,
@@ -943,7 +942,8 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                                 provenance,
                                 scheduler,
                                 /* blob_storage_log */ {},
-                                /* dest_if_none_match */ move_if_none_match);
+                                /* dest_if_none_match */ move_if_none_match,
+                                /* src_etag */ src_etag);
                         }
                         catch (const Azure::Core::RequestFailedException & e)
                         {
