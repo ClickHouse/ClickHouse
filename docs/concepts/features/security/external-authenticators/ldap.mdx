@@ -24,9 +24,9 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
 
 ```xml
 <clickhouse>
-    <!- ... -->
+    <!-- ... -->
     <ldap_servers>
-        <!- Typical LDAP server. -->
+        <!-- Typical LDAP server. -->
         <my_ldap_server>
             <host>localhost</host>
             <port>636</port>
@@ -46,7 +46,7 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
         </my_ldap_server>
 
-        <!- Typical Active Directory: a service account locates the user and performs the role mapping searches,
+        <!-- Typical Active Directory: a service account locates the user and performs the role mapping searches,
              the user's password is verified by binding as the DN that was found (search and bind). -->
         <my_ad_server>
             <host>ldap.example.com</host>
@@ -194,11 +194,11 @@ At each login attempt, ClickHouse verifies the provided password with an LDAP "s
 
 ```xml
 <clickhouse>
-    <!- ... -->
+    <!-- ... -->
     <users>
-        <!- ... -->
+        <!-- ... -->
         <my_user>
-            <!- ... -->
+            <!-- ... -->
             <ldap>
                 <server>my_ldap_server</server>
             </ldap>
@@ -227,9 +227,9 @@ Goes into `config.xml`.
 
 ```xml
 <clickhouse>
-    <!- ... -->
+    <!-- ... -->
     <user_directories>
-        <!- Typical LDAP server. -->
+        <!-- Typical LDAP server. -->
         <ldap>
             <server>my_ldap_server</server>
             <roles>
@@ -245,7 +245,7 @@ Goes into `config.xml`.
             </role_mapping>
         </ldap>
 
-        <!- Typical Active Directory: the user's own `memberOf` attribute lists the DNs of the groups,
+        <!-- Typical Active Directory: the user's own `memberOf` attribute lists the DNs of the groups,
              the CN of each allow-listed group becomes the role name. Relies on the detected user DN. -->
         <ldap>
             <server>my_ad_server</server>
@@ -256,9 +256,9 @@ Goes into `config.xml`.
                 <attribute>memberOf</attribute>
                 <rdn_attribute>cn</rdn_attribute>
                 <groups>
-                    <!- DN form: pins the container (recommended for Active Directory). -->
+                    <!-- DN form: pins the container (recommended for Active Directory). -->
                     <group>CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com</group>
-                    <!- Plain form: matched against the extracted CN in any container. -->
+                    <!-- Plain form: matched against the extracted CN in any container. -->
                     <group>clickhouse_admins</group>
                 </groups>
                 <prefix>clickhouse_</prefix>
@@ -339,7 +339,7 @@ An LDAP user directory serves every name the LDAP server can authenticate. This 
 
 ```xml
 <clickhouse>
-    <!- ... -->
+    <!-- ... -->
     <user_directories>
         <ldap>
             <server>my_ldap_server</server>
@@ -348,7 +348,7 @@ An LDAP user directory serves every name the LDAP server can authenticate. This 
                 <user>app_user2</user>
             </exclude_users>
             <role_mapping>
-                <!- ... -->
+                <!-- ... -->
             </role_mapping>
         </ldap>
         <users_xml>
@@ -370,7 +370,7 @@ Without a `sync` section the directory is lazy: a user exists in ClickHouse only
 
 ```xml
 <clickhouse>
-    <!- ... -->
+    <!-- ... -->
     <user_directories>
         <users_xml>
             <path>users.xml</path>
@@ -378,7 +378,7 @@ Without a `sync` section the directory is lazy: a user exists in ClickHouse only
         <replicated>
             <zookeeper_path>/clickhouse/access/</zookeeper_path>
         </replicated>
-        <!- The only ldap directory, declared last: see the layout rule below. -->
+        <!-- The only ldap directory, declared last: see the layout rule below. -->
         <ldap>
             <server>my_ad_server</server>
             <exclude_users>
