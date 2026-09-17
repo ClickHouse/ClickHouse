@@ -64,10 +64,11 @@
   <query>SELECT count() FROM tab WHERE startsWith(message, 'toxx12')</query>
   <query>SELECT count() FROM tab WHERE endsWith(message, 'toxx12')</query>
 
-  <!-- This literal occurs in all 500008 tokens, so no token is filtered out and the scan pays the filter on
-       top of the matcher calls it still makes. One part keeps the query inside the harness's window. Each
-       token here has a single posting, hence an embedded one, which never charges the postings budget; the
-       budget is raised anyway so the query keeps measuring the whole scan rather than an early bypass. -->
+  <!-- This literal occurs in 500000 of the 500008 tokens, the other eight being the words every message
+       shares, so almost no token is filtered out and the scan pays the filter on top of the matcher calls it
+       still makes. One part keeps the query inside the harness's window. Each matching token has a single
+       posting, hence an embedded one, which never charges the postings budget; the budget is raised anyway so
+       the query keeps measuring the whole scan rather than an early bypass. -->
   <create_query>
     CREATE TABLE tab_dense
     (
