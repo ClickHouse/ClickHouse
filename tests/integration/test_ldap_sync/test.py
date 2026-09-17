@@ -41,6 +41,7 @@ import time
 
 import pytest
 
+from helpers.fake_ldap import start_fake_ldap_server
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain_with_retry
@@ -68,6 +69,7 @@ BULK_USERS = 1200
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 CONFIGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
 CONFIG_D = "/etc/clickhouse-server/config.d"
+USERS_D = "/etc/clickhouse-server/users.d"
 ERR_LOG = "clickhouse-server.err.log"
 
 cluster = ClickHouseCluster(__file__)
@@ -1157,14 +1159,39 @@ def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
         )
 
         # Reload propagation: the failing `ldap` directory comes first, the error is returned, and
-        # `users_xml` was still reloaded.
+        # `users_xml`, declared after it, was still reloaded: a user added to its file right before
+        # the command is there afterwards. (The periodic reload of `users_xml` would pick the file up
+        # within a couple of seconds as well; the command runs right after the write.)
+        users_config = read_config("users_stale.xml")
+        users_config_with_one_more = users_config.replace(
+            "    </users>",
+            "        <local_reloaded>\n            <password>reloaded</password>\n"
+            "        </local_reloaded>\n    </users>",
+        )
+        assert users_config_with_one_more != users_config
+        node_stale.replace_config(
+            f"{USERS_D}/users_stale.xml", users_config_with_one_more
+        )
         error = admin_error(node_stale, "SYSTEM RELOAD USERS")
         assert "LDAP lookup bind as" in error, error
         assert node_stale.contains_in_log("Failed to reload access storage .ldap.")
         assert not node_stale.contains_in_log(
             "Failed to reload access storage .users_xml."
         )
+        assert login(node_stale, "local_reloaded", "reloaded") == TSV(
+            [["local_reloaded"]]
+        )
+        assert (
+            admin(
+                node_stale,
+                "SELECT storage FROM system.users WHERE name = 'local_reloaded'",
+            )
+            == "users_xml\n"
+        )
     finally:
+        node_stale.replace_config(
+            f"{USERS_D}/users_stale.xml", read_config("users_stale.xml")
+        )
         reload_config(node_stale, "ldap_server.xml", original_config)
 
     admin(node_stale, "SYSTEM RELOAD USERS")
@@ -1408,6 +1435,63 @@ def test_only_synced_users_false_serves_lazy_logins(janedoe_in_role_a):
         ldap_delete(user_dn("lazylogin"), ignore_missing=True)
         restore_node_bad()
         admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
+LDAP_SERVER_STALLED_SEARCH = """<clickhouse>
+    <ldap_servers>
+        <openldap_strict>
+            <!-- `fake_ldap_server.py` in `search` mode inside the node: it answers every bind with
+                 success and never a search, so only `search_timeout` can end an enumeration. -->
+            <host>127.0.0.1</host>
+            <port>3892</port>
+            <enable_tls>no</enable_tls>
+            <lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>svcsecret</lookup_password>
+            <bind_dn>{user_dn}</bind_dn>
+            <user_dn_detection>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=inetOrgPerson)(uid={user_name}))</search_filter>
+            </user_dn_detection>
+            <operation_timeout>20</operation_timeout>
+            <network_timeout>20</network_timeout>
+            <search_timeout>1</search_timeout>
+        </openldap_strict>
+    </ldap_servers>
+</clickhouse>
+"""
+
+
+def test_stalled_page_fails_the_run_within_search_timeout(janedoe_in_role_a):
+    """The paged enumeration (`LDAPSyncClient::enumerate`, `searchEntries`) is bounded by
+    `search_timeout` like the ordinary searches: the fake server answers the service bind and never
+    the search that follows, so the run can only end through that timeout (1 second here, the other
+    two timeouts are 20 seconds), fails with it and applies nothing, the snapshot of the previous
+    run stays."""
+    try:
+        restart_node_bad_with(
+            directories_bad_config(), server_config=read_config("ldap_server.xml")
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+        base_users = int(admin(node_bad, ldap_users_query()).strip())
+        assert base_users > 0
+
+        start_fake_ldap_server(node_bad, 3892, "search")
+        node_bad.replace_config(
+            f"{CONFIG_D}/ldap_server_bad_lookup.xml", LDAP_SERVER_STALLED_SEARCH
+        )
+        admin(node_bad, "SYSTEM RELOAD CONFIG")
+
+        failures_before = event_value(node_bad, "LDAPSyncFailures")
+        start = time.monotonic()
+        error = admin_error(node_bad, "SYSTEM RELOAD USERS")
+        elapsed = time.monotonic() - start
+        assert "Timed out" in error, error
+        assert elapsed < 15, f"the run took {elapsed:.1f}s"
+        assert admin(node_bad, ldap_users_query()) == f"{base_users}\n"
+        assert event_value(node_bad, "LDAPSyncFailures") == failures_before + 1
+    finally:
+        restore_node_bad()
 
 
 def with_second_ldap_directory(name, sync=None, after=False):
