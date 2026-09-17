@@ -45,6 +45,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
+            {"allow_experimental_query_plan_cache", false, false, "New experimental setting for the query plan cache"},
+            {"enable_query_plan_cache", false, false, "New setting for the query plan cache"},
+            {"query_plan_cache_allow_scalar_subqueries", false, false, "New setting for the query plan cache"},
+            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for the query plan cache"},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -113,10 +117,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
-            {"allow_experimental_query_plan_cache", false, false, "New experimental setting for the query plan cache"},
-            {"enable_query_plan_cache", false, false, "New setting for the query plan cache"},
-            {"query_plan_cache_allow_scalar_subqueries", false, false, "New setting for the query plan cache"},
-            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for the query plan cache"},
             {"enable_json_lazy_type_hints", false, false, "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."},
             {"s3_upload_checksum_algorithm", "", "", "New setting to choose the checksum algorithm for S3 uploads."},
             {"network_compression_method", "LZ4", "ZSTD", "Switched the default compression method for client/server and server/server communication from `LZ4` to `ZSTD` to reduce network traffic."},
