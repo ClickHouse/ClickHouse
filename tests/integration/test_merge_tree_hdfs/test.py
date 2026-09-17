@@ -1,11 +1,14 @@
 import logging
 import os
+import signal
 import time
+import uuid
 
 import pytest
 from pyhdfs import HdfsClient
 
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.test_tools import assert_eq_with_retry
 from helpers.utility import generate_values
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
@@ -85,7 +88,12 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node", main_configs=["configs/config.d/storage_conf.xml"], with_hdfs=True
+            "node",
+            main_configs=[
+                "configs/config.d/storage_conf.xml",
+                "configs/config.d/blob_log.xml",
+            ],
+            with_hdfs=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
@@ -181,6 +189,68 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
 
     assert (
         node.query("SELECT count(*) FROM hdfs_test where id = 1 FORMAT Values") == "(2)"
+    )
+
+
+@pytest.mark.parametrize("read_method", ["read", "threadpool"])
+def test_remote_read_stops_after_partial_result_cancel(cluster, read_method):
+    node = cluster.instances["node"]
+    query_id = uuid.uuid4().hex
+    read_failpoint = "hdfs_read_before_read"
+    pool_cancel_failpoint = "merge_tree_read_pool_pause_after_cancel"
+
+    create_table(cluster, "hdfs_test", additional_settings="min_rows_for_wide_part=0")
+    node.query(
+        "INSERT INTO hdfs_test SELECT toDate('2020-01-01'), number, "
+        "repeat('x', 1024) FROM numbers(4096)"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {read_failpoint}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {pool_cancel_failpoint}")
+    query_request = node.get_query_request(
+        "SELECT sum(id) FROM hdfs_test SETTINGS max_threads=1, "
+        f"remote_filesystem_read_method='{read_method}', "
+        "remote_filesystem_read_prefetch=0, enable_hdfs_pread=0, "
+        "enable_filesystem_cache=0, use_uncompressed_cache=0, "
+        "enable_blob_storage_log_for_read_operations=1, "
+        "partial_result_on_first_cancel=1, optimize_trivial_count_query=0",
+        query_id=query_id,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {read_failpoint} PAUSE", timeout=60)
+        query_request.process.send_signal(signal.SIGINT)
+        node.query(
+            f"SYSTEM WAIT FAILPOINT {pool_cancel_failpoint} PAUSE", timeout=60
+        )
+
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "0",
+        )
+
+        node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+
+        answer, error = query_request.get_answer_and_error()
+        assert answer.strip() == "0", answer
+        assert error == "", error
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {read_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {pool_cancel_failpoint}")
+        if query_request.process.poll() is None:
+            query_request.process.kill()
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        node.query(
+            "SELECT count() FROM system.blob_storage_log "
+            f"WHERE query_id='{query_id}' AND event_type='Read'"
+        ).strip()
+        == "0"
     )
 
 

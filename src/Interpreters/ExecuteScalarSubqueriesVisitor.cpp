@@ -19,6 +19,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
 
@@ -31,6 +32,11 @@ extern const Event ScalarSubqueriesCacheMiss;
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char scalar_subquery_before_cardinality_check[];
+}
+
 namespace Setting
 {
     extern const SettingsBool enable_scalar_subquery_optimization;
@@ -215,8 +221,11 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
-            if (auto cancel_cb = data.getContext()->hasQueryContext() ? data.getContext()->getQueryContext()->getInteractiveCancelCallback() : nullptr)
-                executor.setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
+            auto query_context = data.getContext()->hasQueryContext() ? data.getContext()->getQueryContext() : nullptr;
+            if (auto cancel_cb = query_context ? query_context->getInteractiveCancelCallback() : nullptr)
+                executor.setCancelCallback(
+                    ExecutorCancellation::cancelQuery(std::move(cancel_cb), std::move(query_context)),
+                    std::max(UInt64(100), data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
 
             while (block.rows() == 0 && executor.pull(block))
             {
@@ -255,6 +264,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             if (block.rows() != 1)
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+            if (data.getContext()->getCurrentQueryId().starts_with("scalar_subquery_cardinality_cancel_"))
+                FailPointInjection::pauseFailPoint(FailPoints::scalar_subquery_before_cardinality_check);
 
             Block tmp_block;
             while (tmp_block.rows() == 0 && executor.pull(tmp_block))

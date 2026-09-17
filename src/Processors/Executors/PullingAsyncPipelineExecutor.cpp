@@ -93,6 +93,11 @@ static void threadFunction(
 
 void PullingAsyncPipelineExecutor::setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_)
 {
+    setCancelCallback(ExecutorCancellation::cancelExecution(std::move(callback)), interactive_timeout_ms_);
+}
+
+void PullingAsyncPipelineExecutor::setCancelCallback(ExecutorCancellation callback, uint64_t interactive_timeout_ms_)
+{
     cancel_callback = std::move(callback);
     interactive_timeout_ms = interactive_timeout_ms_;
 }
@@ -105,6 +110,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         data->lazy_format = lazy_format.get();
+        cancel_callback.check(*data->executor);
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
         {
@@ -136,8 +142,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     chunk = lazy_format->getChunk(effective_timeout);
 
-    if (cancel_callback)
-        cancel_callback();
+    cancel_callback.check(*data->executor);
 
     data->rethrowExceptionIfHas();
     return true;
