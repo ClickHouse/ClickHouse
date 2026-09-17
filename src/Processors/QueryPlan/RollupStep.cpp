@@ -129,10 +129,10 @@ void RollupStep::serialize(Serialization & ctx) const
     /// `serializeAggregateDescriptions` rejects.
     serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
 
-    /// A peer too old for the positions would expand from the deduplicated key list and answer a
-    /// repeated-key CUBE or ROLLUP with the grouping sets this change exists to correct. Dropping
-    /// them silently is a wrong result on a mixed-version cluster, so fail instead - and only when
-    /// the query actually repeats a key, which leaves every other plan shippable as before.
+    /// Positions were added in Rollup step serialization v1. Pre-v1 nodes omit these positions
+    /// (writing at v0). On mixed-version clusters, silently dropping them produces wrong results for
+    /// queries with duplicate ROLLUP keys. To prevent silent bugs, fail explicitly if a query
+    /// repeats a key; all other queries run as normal.
     if (!key_positions.empty() && ctx.step_version < 1)
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
@@ -207,14 +207,11 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
             if (value >= keys.size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Grouping key position {} is out of range", value);
 
-            /// The planner walks the GROUP BY list and assigns a new key index to each expression
-            /// the first time it sees it, so in any payload the sender can build, first appearances
-            /// arrive as 0, 1, 2, ... and, below, every key ends up referenced. Together the two
-            /// checks characterise the valid payloads exactly - any sequence passing both is
-            /// realisable from some GROUP BY list, anything else is not. Executing an out-of-order
-            /// payload would miscompute `GROUPING()`: `RollupTransform`'s `__grouping_set` numbering
-            /// relies on the drop order being the reverse of the key order, which only holds under
-            /// first-occurrence ordering.
+            /// The planner processes the GROUP BY list in order, assigning new key indices
+            /// sequentially (0, 1, 2...) on first occurrence. These two checks validate that payload:
+            /// every key must be referenced, and indices must appear in order. Out-of-order payloads
+            /// break `GROUPING` because `RollupTransform`'s `__grouping_set` logic assumes key drop order
+            /// is the exact reverse of first-occurrence order.
             if (value > keys_referenced)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
@@ -243,9 +240,9 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
 void registerRollupStep(QueryPlanStepRegistry & registry);
 void registerRollupStep(QueryPlanStepRegistry & registry)
 {
-    /// "Rollup" step serialization version 1 appends the GROUP BY positions of repeated keys. It is
-    /// written from the first global plan version that carries per-step versions; an older peer
-    /// reads version 0, only the deduplicated key list, as it did before the positions existed.
+    /// Rollup step serialization v1 appends GROUP BY positions for repeated keys. This version is
+    /// used whenever per-step versioning is enabled. Older peers read this as version 0 (deduplicated
+    /// keys only), preserving legacy behavior.
     registry.registerStep(
         "Rollup",
         RollupStep::deserialize,
