@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
+#include <base/scope_guard.h>
 
 #include <optional>
 
 #include <Storages/MemorySettings.h>
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserSelectQuery.h>
@@ -588,6 +591,35 @@ TEST(TransformQueryForExternalDatabase, Limit)
     check(state, 1, {"column"},
         "SELECT column + 1 FROM table LIMIT 10",
         R"(SELECT "column" FROM "test"."table" LIMIT 10)");
+
+    /// `arrayJoin` hidden inside the body of a SQL UDF. The UDF is inlined before the query reaches
+    /// this code, but the verdict must not depend on that: the body is inspected as well.
+    {
+        const String udf_name = "test_transform_external_udf_array_join";
+        ParserCreateFunctionQuery udf_parser;
+        ASTPtr create_udf = parseQuery(udf_parser,
+            "CREATE FUNCTION " + udf_name + " AS x -> arrayJoin(x)", 1000, 1000, 1000000);
+        UserDefinedSQLFunctionFactory::instance().registerFunction(state.context, udf_name, create_udf, true, false);
+        SCOPE_EXIT({ UserDefinedSQLFunctionFactory::instance().unregisterFunction(state.context, udf_name, true); });
+
+        check(state, 1, {"column"},
+            "SELECT " + udf_name + "(range(column)) FROM table LIMIT 10",
+            R"(SELECT "column" FROM "test"."table")");
+
+        /// The query AST as it is when the UDF has not been inlined into it.
+        ParserSelectQuery parser;
+        ASTPtr ast = parseQuery(parser, "SELECT " + udf_name + "(range(column)) FROM table LIMIT 10", 1000, 1000, 1000000);
+        ASTPtr analyzed_ast = ast->clone();
+        SelectQueryInfo query_info;
+        query_info.syntax_analyzer_result = TreeRewriter(state.context).analyzeSelect(
+            analyzed_ast, DB::TreeRewriterResult(state.getColumns(0)), SelectQueryOptions{}, state.getTables(1));
+        query_info.query = ast;
+        EXPECT_EQ(
+            transformQueryForExternalDatabase(
+                query_info, query_info.syntax_analyzer_result->requiredSourceColumns(), state.getColumns(0),
+                IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::Regular, "test", "table", state.context, {}, true),
+            R"(SELECT "column" FROM "test"."table")");
+    }
 
     /// When the WHERE clause is copied to the external query only partially,
     /// the rest of it is applied locally, so the LIMIT must not be pushed down either.

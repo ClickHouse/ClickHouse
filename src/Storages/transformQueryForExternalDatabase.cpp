@@ -1,6 +1,7 @@
 #include <base/arithmeticOverflow.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -11,6 +12,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -607,11 +609,11 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
 /// multiplies the rows) all break this, so they disable the push-down. Note that a subquery in the
 /// SELECT list is scalar and could not change the number of rows, but it is traversed as well -
 /// rejecting such a query merely loses the optimization.
-bool isRowPreservingExpression(const ASTPtr & node)
+bool isRowPreservingExpressionImpl(const IAST & node, UnorderedSetWithMemoryTracking<String> & visited_udfs)
 {
     checkStackSize();
 
-    if (const auto * function = node->as<ASTFunction>())
+    if (const auto * function = node.as<ASTFunction>())
     {
         if (function->isWindowFunction() || function->window_definition || !function->window_name.empty())
             return false;
@@ -625,15 +627,33 @@ bool isRowPreservingExpression(const ASTPtr & node)
 
         if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
             return false;
+
+        /// A SQL UDF is inlined into the query before it is executed, so whatever its body does
+        /// to the number of rows, the query does as well. The verdict must not depend on whether
+        /// the inlining has already happened for the AST at hand, so the body is inspected here.
+        /// Each body is walked at most once, so that a cycle among them cannot recurse forever.
+        auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+        if (udf_body && visited_udfs.insert(function->name).second
+            && !isRowPreservingExpressionImpl(*udf_body, visited_udfs))
+            return false;
     }
 
-    for (const auto & child : node->children)
+    for (const auto & child : node.children)
     {
-        if (!isRowPreservingExpression(child))
+        if (!isRowPreservingExpressionImpl(*child, visited_udfs))
             return false;
     }
 
     return true;
+}
+
+/// Whether evaluating the expression keeps the number of rows: it contains no `arrayJoin` (under
+/// any spelling, and also not inside the body of a SQL UDF it calls), no aggregate function and
+/// no window function.
+bool isRowPreservingExpression(const ASTPtr & node)
+{
+    UnorderedSetWithMemoryTracking<String> visited_udfs;
+    return isRowPreservingExpressionImpl(*node, visited_udfs);
 }
 
 /// Returns the value of a `UInt64` literal, if the expression is one.

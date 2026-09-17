@@ -903,6 +903,17 @@ def test_limit_pushdown(started_cluster):
     assert result == "5"
     assert len(queries) == 1 and "LIMIT" not in queries[0]
 
+    # `arrayJoin` multiplies the rows after they have been read, so the LIMIT must stay local. The
+    # same holds when it is hidden inside a SQL UDF that is inlined into the query later.
+    node1.query("DROP FUNCTION IF EXISTS pg_limit_pushdown_array_join")
+    node1.query("CREATE FUNCTION pg_limit_pushdown_array_join AS x -> arrayJoin(x)")
+    result, queries = run(
+        "SELECT count() FROM (SELECT pg_limit_pushdown_array_join(if(id <= 3, [], [id])) FROM pg_limit_pushdown LIMIT 3)"
+    )
+    assert result == "3"
+    assert len(queries) == 1 and "LIMIT" not in queries[0]
+    node1.query("DROP FUNCTION pg_limit_pushdown_array_join")
+
     cursor.execute("DROP TABLE test_limit_pushdown")
     node1.query("DROP TABLE pg_limit_pushdown")
 
