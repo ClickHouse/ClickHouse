@@ -50,3 +50,17 @@ CREATE TABLE t_still_usable
 INSERT INTO t_still_usable VALUES ('AbC'), ('dEf');
 SELECT count() FROM t_still_usable WHERE tok = toFixedString('abc', 3);
 DROP TABLE t_still_usable;
+
+-- A declared type that differs from the expression only by a `LowCardinality` wrapper is not a
+-- mistype: the index conditions strip `LowCardinality` before matching, so the index still works.
+-- `k * 2` produces `UInt64`; `k` is `LowCardinality(UInt64)`, so declaring `lc` that way matches.
+CREATE TABLE t_low_cardinality
+(
+    k UInt64,
+    lc LowCardinality(UInt64) ALIAS k,
+    doubled UInt64 ALIAS lc * 2,
+    INDEX i_bloom doubled TYPE bloom_filter GRANULARITY 1
+) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_suspicious_low_cardinality_types = 1;
+INSERT INTO t_low_cardinality VALUES (3), (4);
+SELECT count() FROM t_low_cardinality WHERE doubled = 6;
+DROP TABLE t_low_cardinality;

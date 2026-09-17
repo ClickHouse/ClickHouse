@@ -1183,7 +1183,16 @@ std::map<String, DataTypePtr> findMistypedAliasColumnsOfIndex(
             continue;
 
         auto expression_type = tryGetAliasExpressionType(name, columns, context);
-        if (expression_type && !column_description->type->equals(*expression_type))
+        if (!expression_type)
+            continue;
+
+        /// A difference that is only a `LowCardinality` wrapper does not make the index dead: the
+        /// index conditions strip `LowCardinality` before matching (`removeLowCardinality` in
+        /// `MergeTreeIndexBloomFilterText` and the `KeyCondition` chain), so the `CAST` the column
+        /// is read through still matches the indexed expression. Compare with it removed, so a
+        /// `LowCardinality(T)` ALIAS over a `T` expression is not wrongly rejected, while a real
+        /// type change (`String` vs `Array(String)`) still is.
+        if (!recursiveRemoveLowCardinality(column_description->type)->equals(*recursiveRemoveLowCardinality(expression_type)))
             mistyped.emplace(name, expression_type);
     }
 
