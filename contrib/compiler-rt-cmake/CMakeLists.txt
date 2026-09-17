@@ -641,6 +641,9 @@ if (ENABLE_XRAY)
     # runtime's init lives in a preinit_array entry nothing references), so
     # bundling a mode would run its static initializers in every executable;
     # xray_fdr_logging's initializer crashes at startup on musl.
+    #
+    # xray_reject_modes.cpp (ours) makes a request for one of the dropped modes
+    # through XRAY_OPTIONS fail at startup instead of silently doing nothing.
     set(_xray_arch_cpp "")
     set(_xray_arch_asm "")
     if     (ARCH_AMD64)
@@ -670,6 +673,7 @@ if (ENABLE_XRAY)
     foreach (s ${SANITIZER_COMMON_SOURCES} ${SANITIZER_COMMON_LIBC_SOURCES})
         list(APPEND _xray_combined_full "${SANCOMMON_DIR}/${s}")
     endforeach()
+    list(APPEND _xray_combined_full "${CMAKE_CURRENT_SOURCE_DIR}/xray_reject_modes.cpp")
 
     add_library(clang_rt_xray STATIC ${_xray_combined_full})
     target_include_directories(clang_rt_xray PRIVATE ${SANITIZER_INCLUDE_DIRS})
