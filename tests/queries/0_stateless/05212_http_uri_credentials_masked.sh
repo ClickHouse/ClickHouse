@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A password embedded in an HTTP URI must never appear in an error message, in SHOW CREATE output,
-# or in system.query_log. Only the masked form scheme://user:[HIDDEN]@host may be shown.
+# or in system.query_log. Only the masked form scheme://[HIDDEN]@host may be shown.
 
 PW="pwleakprobe9f2a"
 URI="http://leakuser:${PW}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping"
@@ -29,6 +29,13 @@ assert_masked() {
 #    the user's own submitted query, which legitimately contains what the user typed.
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('${URI}', 'CSV', 'id UInt64, val String')" 2>&1 \
     | grep -F 'in file/uri' | assert_masked "url_function"
+
+# 1b. An HTTP status failure (non-2xx) is reported by assertResponseIsOk as "Received error from
+#     remote server <uri>", a different code path than the CSV-parse suffix above. A request to an
+#     unknown path returns 404, so the URI in that exception must also be masked.
+URI_404="http://leakuser:${PW}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/no_such_handler_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('${URI_404}', 'CSV', 'id UInt64, val String')" 2>&1 \
+    | grep -F 'Received error from remote server' | assert_masked "url_status_failure"
 
 # 2. A dictionary whose HTTP source URL carries credentials.
 ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY IF EXISTS dict_uri_leak"
