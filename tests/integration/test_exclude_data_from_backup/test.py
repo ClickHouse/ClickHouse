@@ -1,4 +1,5 @@
 import pytest
+import re
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
