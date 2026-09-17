@@ -627,6 +627,48 @@ def test_search_and_bind_requires_dn_attribute(ldap_cluster):
         reload_config(instance_parse_error, "ldap_parse_error.xml", original_config)
 
 
+def test_lookup_identity_requires_dn_attribute(ldap_cluster):
+    """With a `bind_dn` template next to `lookup_bind_dn` the value `user_dn_detection` returns is
+    not bound, but it is stored as the user DN and consumed as such by every `{user_dn}` placeholder,
+    so an `attribute` other than `dn` is rejected at parse time as well."""
+    original_config = read_config("ldap_parse_error.xml")
+    uid_attribute_config = (
+        original_config.replace(
+            "<lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>",
+            "<lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>\n"
+            "            <lookup_password>svcsecret</lookup_password>",
+        )
+        .replace(
+            "<bind_dn>{user_dn}</bind_dn>",
+            "<bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>",
+        )
+        .replace(
+            "<base_dn>dc=example,dc=org</base_dn>",
+            "<base_dn>dc=example,dc=org</base_dn>\n                <attribute>uid</attribute>",
+        )
+    )
+    assert uid_attribute_config != original_config
+    try:
+        reload_config(
+            instance_parse_error, "ldap_parse_error.xml", uid_attribute_config
+        )
+        assert_logs_contain_with_retry(
+            instance_parse_error,
+            "'user_dn_detection.attribute' must be 'dn' when 'lookup_bind_dn' is set, got 'uid'",
+        )
+
+        error = instance_parse_error.query_and_get_error(
+            "SELECT currentUser()", user="johndoe", password="qwertz"
+        )
+        assert "Authentication failed" in error, error
+        assert_logs_contain_with_retry(
+            instance_parse_error,
+            "LDAP server 'broken' is misconfigured: 'user_dn_detection.attribute' must be 'dn' when 'lookup_bind_dn' is set",
+        )
+    finally:
+        reload_config(instance_parse_error, "ldap_parse_error.xml", original_config)
+
+
 def test_search_and_bind_requires_user_name_in_detection(ldap_cluster):
     """With `bind_dn` = `{user_dn}` a static `user_dn_detection` would bind every login as
     the same entry; the rejection must carry the search-and-bind message, not the generic

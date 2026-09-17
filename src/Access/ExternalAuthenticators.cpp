@@ -268,6 +268,15 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
                 "'lookup_bind_dn' requires 'user_dn_detection' to depend on the requested user name; "
                 "use '{{user_name}}' in 'user_dn_detection.base_dn' or '.search_filter', "
                 "or use '{{bind_dn}}'/'{{user_dn}}' with a 'bind_dn' template that contains '{{user_name}}'");
+
+        /// Whatever `attribute` returns is stored as the user DN and consumed as such wherever `{user_dn}` appears
+        /// (role mappings, the synchronisation, `EXECUTE AS`); any other attribute would silently turn a mapping such
+        /// as `(member={user_dn})` into a search over a plain value and strip the mapped roles. Search-and-bind
+        /// reports the same for the DN that is bound (below); this covers the `bind_dn` template with a lookup identity.
+        if (!params.bindsAsDetectedUserDN() && !boost::iequals(params.user_dn_detection->attribute, "dn"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'user_dn_detection.attribute' must be 'dn' when 'lookup_bind_dn' is set, got '{}'",
+                params.user_dn_detection->attribute);
     }
 
     if (has_verification_cooldown)
