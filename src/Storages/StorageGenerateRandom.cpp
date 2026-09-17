@@ -1006,10 +1006,13 @@ ColumnPtr fillColumnWithRandomData(
             auto shared_data_col = DataTypeObject::getTypeOfSharedData()->createColumn();
             shared_data_col->insertManyDefaults(limit);
 
+            /// max_dynamic_paths, max_dynamic_paths_upper_bound and global_max_dynamic_paths are all set
+            /// to the type's limit, the same way the DataTypeObject::createColumn path initializes them.
             return ColumnObject::create(
                 std::move(typed_path_columns),
                 std::move(dynamic_path_columns),
                 std::move(shared_data_col),
+                object_type.getMaxDynamicPaths(),
                 object_type.getMaxDynamicPaths(),
                 object_type.getMaxDynamicPaths(),
                 object_type.getMaxDynamicTypes());
