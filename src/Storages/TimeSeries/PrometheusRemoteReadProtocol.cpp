@@ -77,7 +77,7 @@ namespace
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS time_series
+    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
     /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
     /// GROUP BY timeSeriesIdToGroup(id) AS group
     ASTPtr buildSelectQueryForReadingTimeSeries(
@@ -89,7 +89,7 @@ namespace
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         {
-            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS time_series
+            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
             auto select_list_exp = make_intrusive<ASTExpressionList>();
 
             select_list_exp->children.push_back(
@@ -102,7 +102,7 @@ namespace
                 make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
                 make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
 
-            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
+            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
         }
@@ -166,7 +166,7 @@ namespace
         /// The second column contains tuples (timestamp, value).
         /// These tuples are already sorted by timestamp.
         /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
-        const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::TimeSeries).column);
+        const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::Samples).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
         const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());
         const auto & timestamps = timestamp_value_tuples.getColumn(0);
@@ -174,7 +174,7 @@ namespace
 
         auto timestamp_data_type
             = typeid_cast<const DataTypeTuple &>(
-                  *typeid_cast<const DataTypeArray &>(*block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+                  *typeid_cast<const DataTypeArray &>(*block.getByName(TimeSeriesColumnNames::Samples).type).getNestedType())
                   .getElement(0);
 
         UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);

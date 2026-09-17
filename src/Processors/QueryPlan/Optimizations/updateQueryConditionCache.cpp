@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <boost/functional/hash.hpp>
@@ -108,7 +110,9 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
 
     /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
     /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-    size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
+    size_t condition_hash = queryConditionCacheHash(
+        filter_actions_dag->getOutputs()[0]->getHash(),
+        queryConditionCacheSettingsSalt(read_from_merge_tree->getContext()->getSettingsRef()));
 
     /// `ORDER BY ... LIMIT N` may drop granules during reading, so the result of the WHERE
     /// filter is no longer "applies to every granule of every part" — it applies only to

@@ -433,7 +433,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
                             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
                             /// `unsigned long long`).
-                            size_t condition_hash = output->getHash();
+                            size_t condition_hash = queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt);
                             if (!VirtualColumnUtils::isDeterministic(output))
                             {
                                 /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the

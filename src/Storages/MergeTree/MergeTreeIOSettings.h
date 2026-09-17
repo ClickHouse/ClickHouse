@@ -64,6 +64,8 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
+    UInt64 query_condition_cache_settings_salt = 0;
     /// Set for a TopK (`ORDER BY ... LIMIT n`) read whose granule drops may depend on the running
     /// `__topKFilter` threshold: the TopK plan salt (`TopKFilterInfo::condition_hash`) and the
     /// post-PREWHERE filter hash to fold into the query condition cache key when recording
@@ -149,6 +151,7 @@ struct MergeTreeWriterSettings
     MergeTreeObjectSerializationVersion object_serialization_version{};
     MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version{};
     size_t object_shared_data_buckets = 1;
+    size_t object_shared_data_target_chunk_rows = 8192;
     size_t max_buckets_in_map = 1;
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;

@@ -25,8 +25,8 @@ struct NormOp
     Category category = Category::Join;
     UInt32 left = 0;
     UInt32 right = 0;
-    /// Relations the ON predicate rejects nulls on (swap-invariant: it is a set of relation ids,
-    /// unaffected by the left/right normalisation). Used to resolve the footnoted matrix entries.
+    /// Relations the ON predicate rejects nulls on (swap-invariant: a set of relation ids, unaffected
+    /// by left/right normalisation). Resolves the conditional, null-rejection-dependent matrix entries.
     UInt32 nr_rels = 0;
     JoinKind kind = JoinKind::Inner;
     JoinStrictness strictness = JoinStrictness::All;
@@ -60,17 +60,18 @@ NormOp normalize(const ConflictOpMask & op)
     }
 }
 
-/// The property matrices of the paper (Tables 1-3), transcribed directly. Rows and columns are
-/// indexed by `Category` in the order {Join, LeftOuter, FullOuter, Semi, Anti}.
+/// The reorderability property matrices, indexed by `Category` in the order
+/// {Join, LeftOuter, FullOuter, Semi, Anti}.
 using PropRow = UInt8[NUM_CATEGORIES];
 
-/// Table 1: comm(op). Commutative operators (inner/cross and full outer).
+/// comm(op): is the operator commutative? Only inner/cross and full outer are.
 constexpr UInt8 COMM[NUM_CATEGORIES] =
 {
     /* Join */ 1, /* LeftOuter */ 0, /* FullOuter */ 1, /* Semi */ 0, /* Anti */ 0,
 };
 
-/// Table 2: assoc(op_a, op_b). Not symmetric -- op_a selects the row, op_b the column.
+/// assoc(op_a, op_b): does `(e1 op_a e2) op_b e3` equal `e1 op_a (e2 op_b e3)`? Not symmetric --
+/// op_a selects the row, op_b the column.
 constexpr PropRow ASSOC[NUM_CATEGORIES] =
 {
     /*                  Join LeftOuter FullOuter Semi Anti */
@@ -81,7 +82,7 @@ constexpr PropRow ASSOC[NUM_CATEGORIES] =
     /* Anti      */ {    0,      0,        0,      0,   0 },
 };
 
-/// Table 3, left component: l-asscom(op_a, op_b). Symmetric.
+/// l-asscom(op_a, op_b): does `(e1 op_a e2) op_b e3` equal `(e1 op_b e3) op_a e2`? Symmetric.
 constexpr PropRow L_ASSCOM[NUM_CATEGORIES] =
 {
     /*                  Join LeftOuter FullOuter Semi Anti */
@@ -92,7 +93,7 @@ constexpr PropRow L_ASSCOM[NUM_CATEGORIES] =
     /* Anti      */ {    1,      1,        0,      1,   1 },
 };
 
-/// Table 3, right component: r-asscom(op_a, op_b). Symmetric.
+/// r-asscom(op_a, op_b): does `e1 op_a (e2 op_b e3)` equal `e2 op_b (e1 op_a e3)`? Symmetric.
 constexpr PropRow R_ASSCOM[NUM_CATEGORIES] =
 {
     /*                  Join LeftOuter FullOuter Semi Anti */
@@ -113,16 +114,13 @@ bool isFreelyReorderable(Category c)
     return comm(c) && assoc(c, c) && lAsscom(c, c) && rAsscom(c, c);
 }
 
-/// Aware variants of assoc / l-asscom / r-asscom. When the base matrix entry is a
-/// conflict, the null-rejection-dependent (footnoted) entries of Tables 2-3 may still upgrade it to
-/// "holds". Each footnote asks whether one or both operators' predicates reject nulls on a specific
-/// operand of the transformation (`nr(op) & operand != 0`). The caller passes the exact operand
-/// mask because it depends on the nesting geometry (which operand is shared), which differs between
-/// the left-subtree and right-subtree traversals -- see the call sites for the mapping.
+/// Null-rejection-aware variants of assoc / l-asscom / r-asscom. When the plain matrix entry is a
+/// conflict, some entries still hold if one or both operators reject nulls on a specific shared
+/// operand. The caller passes that operand mask, since which operand is shared depends on the nesting.
 
-/// assoc(row, col) with `shared` = A(E2), the operand shared by the two operators in Eqv. 1.
-/// Footnoted cells (Table 2): (LeftOuter|FullOuter, LeftOuter) needs col's predicate null-rejecting
-/// on `shared`. (FullOuter, FullOuter) needs both operators' predicates null-rejecting on `shared`.
+/// assoc(row, col) with `shared` = the operand common to both operators. Conditional entries:
+/// (LeftOuter|FullOuter, LeftOuter) holds if col rejects nulls on `shared`; (FullOuter, FullOuter)
+/// holds if both do.
 bool assocHolds(const NormOp & row, const NormOp & col, UInt32 shared)
 {
     if (assoc(row.category, col.category))
@@ -136,10 +134,9 @@ bool assocHolds(const NormOp & row, const NormOp & col, UInt32 shared)
     return false;
 }
 
-/// l-asscom(row, col) for Eqv. 2, where `e1` is the shared operand (left of `row`) and `e3` is the
-/// operand `col` brings in. Footnoted cells (Table 3, left component): (LeftOuter, FullOuter) needs
-/// row's predicate null-rejecting on `e1`; (FullOuter, LeftOuter) needs col's predicate on `e3`;
-/// (FullOuter, FullOuter) needs both predicates on `e1`.
+/// l-asscom(row, col); `e1` is row's left (shared) operand, `e3` the operand col brings in.
+/// Conditional entries: (LeftOuter, FullOuter) needs row null-rejecting on `e1`; (FullOuter,
+/// LeftOuter) needs col on `e3`; (FullOuter, FullOuter) needs both on `e1`.
 bool lAsscomHolds(const NormOp & row, const NormOp & col, UInt32 e1, UInt32 e3)
 {
     if (lAsscom(row.category, col.category))
@@ -153,9 +150,8 @@ bool lAsscomHolds(const NormOp & row, const NormOp & col, UInt32 e1, UInt32 e3)
     return false;
 }
 
-/// r-asscom(row, col) for Eqv. 3, where `e3` is the shared operand (right of `col`). The only
-/// footnoted cell (Table 3, right component) is (FullOuter, FullOuter): both predicates must reject
-/// nulls on `e3`.
+/// r-asscom(row, col); `e3` is col's right (shared) operand. The only conditional entry,
+/// (FullOuter, FullOuter), needs both predicates null-rejecting on `e3`.
 bool rAsscomHolds(const NormOp & row, const NormOp & col, UInt32 e3)
 {
     if (rAsscom(row.category, col.category))
@@ -183,13 +179,10 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
 
     /// For each operator b we walk every operator a in b's subtrees and consult the reorderability
     /// matrices. CD-A and CD-C differ only in how a detected conflict is recorded:
-    ///   - CD-A (Section 5.2): widen b's TES by the offending relations (an unconditioned
-    ///     containment) -- coarse but simple.
-    ///   - CD-C (Section 5.4): keep b's required set at SES and instead emit a conflict rule
-    ///     T1 -> T2 (a conditioned containment), narrowed to the predicate-referenced tables. This
-    ///     keeps valid reorderings CD-A's widening would forbid, making CD-C complete.
-    /// Both read only static subtree relation sets and the property matrices, so operators may be
-    /// processed in any order (no bottom-up traversal is needed).
+    ///   - CD-A: widen b's required set by the offending relations (unconditioned) -- coarse but simple.
+    ///   - CD-C: keep b's required set minimal and emit a conflict rule T1 -> T2 (conditioned),
+    ///     narrowed to the predicate-referenced tables, keeping valid reorderings CD-A would forbid.
+    /// Both read only static subtree relation sets and the matrices, so operators go in any order.
     for (size_t j = 0; j < n; ++j)
     {
         const NormOp & b = norm[j];
@@ -198,11 +191,10 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
         const UInt32 b_rel = b_left | b_right;
         const UInt32 nel = ops[j].nel;
 
-        /// CalcSES for a non-degenerate predicate with no dependent operators: the ON-clause
-        /// relations, restricted to this operator's own relations. CD-C keeps `required` == SES.
+        /// Base required set: the ON-clause relations restricted to this operator's own relations.
         const UInt32 ses = nel & b_rel;
-        UInt32 tes = ses;                  /// CD-A widens this
-        std::vector<ConflictRule> rules;   /// CD-C fills this
+        UInt32 tes = ses;                  /// CD-A widens this; CD-C leaves it
+        std::vector<ConflictRule> rules;   /// CD-C fills this; CD-A leaves it empty
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -210,16 +202,15 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
                 continue;
             const NormOp & a = norm[i];
             const UInt32 a_rel = a.left | a.right;
-            const UInt32 fta = ops[i].nel;  /// FT(a): tables referenced by a's predicate
+            const UInt32 fta = ops[i].nel;  /// tables referenced by a's predicate
 
-            /// a is in STO(left(b)) iff all of a's relations lie in b's left subtree, and in
-            /// STO(right(b)) iff they lie in b's right subtree. In a tree the two subtrees are
-            /// disjoint, so at most one holds; ancestors and disjoint operators satisfy neither.
+            /// a lies entirely in b's left subtree iff all its relations are in b_left, and in the
+            /// right subtree iff in b_right. The two subtrees are disjoint, so at most one holds;
+            /// ancestors and disjoint operators satisfy neither.
             if ((a_rel & ~b_left) == 0)
             {
-                /// Left-nesting (Eqv. 1/2 with a below-left of b). For assoc the shared operand is
-                /// A(E2) = right(a); for l-asscom the shared operand is e1 = left(a) and the operand
-                /// b brings in is e3 = right(b).
+                /// a nested in b's left subtree. For assoc the shared operand is a's right; for
+                /// l-asscom the shared operand is a's left and b brings in b's right.
                 if (!assocHolds(a, b, a.right))
                 {
                     if (cdc) rules.push_back({a.right, (a.left & fta) ? (a.left & fta) : a.left});
@@ -233,8 +224,8 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
             }
             else if ((a_rel & ~b_right) == 0)
             {
-                /// Right-nesting (Eqv. 1/3 with a below-right of b). For assoc(b, a) the shared
-                /// operand is A(E2) = left(a); for r-asscom(b, a) the shared operand is e3 = right(a).
+                /// a nested in b's right subtree. For assoc(b, a) the shared operand is a's left;
+                /// for r-asscom(b, a) it is a's right.
                 if (!assocHolds(b, a, a.left))
                 {
                     if (cdc) rules.push_back({a.left, (a.right & fta) ? (a.right & fta) : a.right});
@@ -248,8 +239,8 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
             }
         }
 
-        /// The required set is the split of TES (CD-A) or SES (CD-C) over the operator's
-        /// (left-canonical) input sides, which is what the validity test compares against S1 and S2.
+        /// Split the required set over the operator's (left-canonical) input sides -- what the
+        /// validity test compares against S1 and S2.
         const UInt32 required = cdc ? ses : tes;
         ConflictOperator desc;
         desc.relations = b_rel;
@@ -259,6 +250,9 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
         desc.nel = nel;
         desc.kind = b.kind;
         desc.strictness = b.strictness;
+        /// The predicate references at most one input side (a one-sided predicate, or none at all
+        /// for a cross product), so the required sets alone cannot orient the operator.
+        desc.degenerate = ((nel & b_left) == 0) || ((nel & b_right) == 0);
         desc.freely_reorderable = isFreelyReorderable(b.category);
         desc.rules = std::move(rules);
 

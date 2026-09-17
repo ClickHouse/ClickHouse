@@ -12,6 +12,7 @@
 #include <Interpreters/SetSerialization.h>
 #include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -30,6 +31,11 @@
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
+
+namespace DB
+{
+void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
+}
 
 namespace DB::ErrorCodes
 {
@@ -177,12 +183,37 @@ struct TableFixture
     }
 };
 
+constexpr auto step_name = "ReadFromMergeTree";
+
+/// A registry holding just the step under test, registered the way `registerPlanSteps` registers it,
+/// so the version list is the production one. Not the process-wide instance: other tests in this
+/// binary populate that one, and a step cannot be registered twice.
+QueryPlanStepRegistry & stepRegistry()
+{
+    static QueryPlanStepRegistry registry;
+    static const bool registered = []
+    {
+        registerReadFromMergeTreeStep(registry);
+        return true;
+    }();
+    (void)registered;
+    return registry;
+}
+
+/// The `ReadFromMergeTree` step version a stream at global plan `version` is written with, chosen the
+/// way `QueryPlan::serialize` chooses it: through the registry.
+UInt64 stepVersionFor(UInt64 version)
+{
+    return stepRegistry().versionToWrite(step_name, version);
+}
+
 String serializeRead(const ReadFromMergeTree & read, UInt64 version)
 {
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{out, registry};
     ctx.version = version;
+    ctx.step_version = stepVersionFor(version);
     read.serialize(ctx);
     return out.str();
 }
@@ -197,8 +228,10 @@ std::unique_ptr<ReadFromMergeTree> deserializeRead(const String & bytes, const T
         Block{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>()->createColumn(), std::make_shared<DataTypeUInt64>(), "k")});
     ContextPtr context = fixture.context;
 
+    const UInt64 step_version = stepVersionFor(version);
+    stepRegistry().checkVersionReadable(step_name, step_version);
     IQueryPlanStep::Deserialization ctx{
-        in, registry, {}, context, input_headers, output_header, settings, 0, version, false};
+        in, registry, {}, context, input_headers, output_header, settings, 0, version, step_version, false};
 
     auto step = ReadFromMergeTree::deserialize(ctx);
     auto * read = typeid_cast<ReadFromMergeTree *>(step.get());
@@ -214,11 +247,11 @@ constexpr UInt64 too_old_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WIT
 }
 
 /// The optimizer disables the query condition cache of a read for *correctness*, not performance
-/// (lazy `FINAL`, vector search, hand-built lookup filters). That decision travels as flag bit 64,
-/// which only a peer at
-/// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG` or above understands:
-/// an older peer would ignore the bit and rebuild the read with the cache enabled. Such a read must
-/// therefore fail closed rather than be shipped.
+/// (lazy `FINAL`, vector search, hand-built lookup filters). That decision travels as flag bit 64 of
+/// `ReadFromMergeTree` step version 1, which only a peer at
+/// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG` or above writes and
+/// reads: an older peer gets step version 0, ignores the bit and would rebuild the read with the
+/// cache enabled. Such a read must therefore fail closed rather than be shipped.
 TEST(ReadFromMergeTreeQueryConditionCacheFlag, SerializationRejectsOlderPeerWhenCacheIsDisabled)
 {
     TableFixture fixture;
