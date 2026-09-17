@@ -1,10 +1,13 @@
 """
 Delta Lake writes against tables with writer features (Spark-created): every INSERT is either
 rejected before anything is committed or commits data Spark reads back consistently. Plus a
-failpoint matrix over the stages of a write on S3.
+failpoint matrix over the stages of a write on S3, and S3 faults injected by the broken_s3 mock
+(in proxy mode, in front of MinIO) at the data-file and the commit upload.
 """
 
 import logging
+import os
+import threading
 
 import pyarrow as pa
 import pyspark
@@ -12,6 +15,8 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
+from helpers.mock_servers import start_mock_servers
+from helpers.s3_mocks.broken_s3 import MockControl
 from helpers.s3_tools import LocalDownloader, LocalUploader
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 from test_storage_delta.test import (
@@ -21,6 +26,7 @@ from test_storage_delta.test import (
 )
 
 USER_FILES = "/var/lib/clickhouse/user_files"
+MOCK_PORT = "8083"
 
 cluster = ClickHouseCluster(__file__, with_spark=True)
 
@@ -50,7 +56,8 @@ def started_cluster():
     try:
         cluster.add_instance(
             "node1",
-            main_configs=[],
+            # No S3 retries on ClickHouse's own client: persistent faults fail within the test budget.
+            main_configs=["configs/config.d/disable_s3_retries.xml"],
             user_configs=["configs/users.d/users.xml", "configs/users.d/enable_writes.xml"],
             with_minio=True,
             stay_alive=True,
@@ -59,6 +66,14 @@ def started_cluster():
         cluster.start()
         if int(cluster.instances["node1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
             pytest.skip("DeltaLake engine is not available")
+        # broken_s3 as a forwarding proxy in front of MinIO (a redirecting mock would make the
+        # kernel's SigV4 signature invalid at the upstream).
+        start_mock_servers(
+            cluster,
+            os.path.join(os.path.dirname(start_mock_servers.__code__.co_filename), "s3_mocks"),
+            [("broken_s3.py", "resolver", MOCK_PORT, ["minio1", "9001", "proxy"])],
+        )
+        cluster.broken_s3 = MockControl(cluster, "resolver", MOCK_PORT)
         cluster.spark_session = ResilientSparkSession(lambda: get_spark(cluster))
         yield cluster
     finally:
@@ -216,4 +231,98 @@ def test_failpoint_matrix_on_s3(started_cluster, stage, partitioned):
         assert versions == [0], versions
         assert data_files == [], data_files
         assert node.query(f"SELECT count() FROM {path}").strip() == "0"
+    node.query(f"DROP TABLE {path}")
+
+
+# ---------------------------------------------------------------------------------------------
+# S3 faults at the data-file upload and at the commit upload
+# ---------------------------------------------------------------------------------------------
+
+
+def mock_engine_definition(started_cluster, path):
+    return f"DeltaLake('http://resolver:{MOCK_PORT}/{started_cluster.minio_bucket}/{path}/', 'minio', '{minio_secret_key}')"
+
+
+def _new_mock_table(started_cluster, node, name):
+    path = randomize_table_name(name)
+    create_empty_delta_table(started_cluster, "s3", path, pa.schema([("id", pa.int32(), False)]))
+    node.query(f"CREATE TABLE {path} (id Int32) ENGINE = {mock_engine_definition(started_cluster, path)}")
+    node.query(f"INSERT INTO {path} SELECT number AS id FROM numbers(5)")
+    assert node.query(f"SELECT count() FROM {path}").strip() == "5"
+    assert log_versions(started_cluster, path) == [0, 1]
+    return path
+
+
+def _insert_through_fault(started_cluster, node, path, stage, action, count, settings=""):
+    broken_s3 = started_cluster.broken_s3
+    broken_s3.reset()
+    # The data file is the first single-object PUT of an INSERT, the commit JSON the second.
+    broken_s3.setup_at_object_upload(count=count, after=0 if stage == "data_file" else 1, action=action)
+    try:
+        _, error = node.query_and_get_answer_with_error(f"INSERT INTO {path} SELECT number + 100 AS id FROM numbers(5) {settings}")
+    finally:
+        broken_s3.reset()
+    logging.info("%s/%s/%s: %s", stage, action, count, (error or "no error").splitlines()[0][:200])
+    return error
+
+
+def _assert_consistent(started_cluster, node, path, committed_inserts):
+    assert log_versions(started_cluster, path) == list(range(committed_inserts + 1))
+    assert len(list_delta_data_files(started_cluster, "s3", path)) == committed_inserts
+    assert node.query(f"SELECT count() FROM {path}").strip() == str(committed_inserts * 5)
+
+
+@pytest.mark.parametrize("stage", ["data_file", "commit"])
+@pytest.mark.parametrize("action", ["connection_reset_by_peer", "slow_down"])
+def test_transient_s3_fault(started_cluster, stage, action):
+    node = started_cluster.instances["node1"]
+    path = _new_mock_table(started_cluster, node, f"test_transient_{stage}_{action}")
+    error = _insert_through_fault(started_cluster, node, path, stage, action, count=1)
+    # Retried past the fault, or failed closed: never a half-committed table.
+    _assert_consistent(started_cluster, node, path, 1 if error else 2)
+    node.query(f"DROP TABLE {path}")
+
+
+@pytest.mark.parametrize("stage", ["data_file", "commit"])
+def test_persistent_s3_fault_fails_closed(started_cluster, stage):
+    node = started_cluster.instances["node1"]
+    path = _new_mock_table(started_cluster, node, f"test_persistent_{stage}")
+    error = _insert_through_fault(started_cluster, node, path, stage, "connection_reset_by_peer", count=100000)
+    assert error, "the INSERT succeeded although every upload was reset"
+    _assert_consistent(started_cluster, node, path, 1)
+    # The table keeps working once the fault is gone.
+    node.query(f"INSERT INTO {path} SELECT number + 200 AS id FROM numbers(5)")
+    _assert_consistent(started_cluster, node, path, 2)
+    node.query(f"DROP TABLE {path}")
+
+
+def test_concurrent_writers_through_slow_s3(started_cluster):
+    node = started_cluster.instances["node1"]
+    broken_s3 = started_cluster.broken_s3
+    path = _new_mock_table(started_cluster, node, "test_slow_concurrent")
+    broken_s3.reset()
+    broken_s3.setup_slow_answers(minimal_length=0, timeout=1, probability=0.3)
+    writers = 5
+    barrier = threading.Barrier(writers)
+    outcomes = [None] * writers
+
+    def writer(i):
+        barrier.wait()
+        try:
+            node.query(f"INSERT INTO {path} SELECT number + {(i + 1) * 100} AS id FROM numbers(5)")
+            outcomes[i] = "ok"
+        except Exception as e:  # pylint: disable=broad-except
+            outcomes[i] = str(e)
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(writers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    broken_s3.reset()
+    for o in outcomes:
+        if o != "ok":
+            assert "commit conflict at version" in o, o
+    successes = sum(1 for o in outcomes if o == "ok")
+    _assert_consistent(started_cluster, node, path, 1 + successes)
     node.query(f"DROP TABLE {path}")
