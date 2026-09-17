@@ -2746,7 +2746,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             {
                 if (const auto * target_name = rename_transformer->findRenameTarget(column_name))
                 {
-                    rename_transformer_to_used_column_names[rename_transformer].insert(column_name);
+                    auto [_, inserted] = rename_transformer_to_used_column_names[rename_transformer].insert(column_name);
+                    if (!inserted)
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "RENAME source column '{}' matches more than one column in the matcher. Qualify the matcher to disambiguate. In scope {}",
+                            column_name,
+                            scope.scope_node->formatASTForErrorMessage());
+
                     result_projection_names.back() = *target_name;
                     rename_target = *target_name;
                 }
@@ -4318,6 +4324,39 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
+    /// RENAME target names behave like regular SELECT aliases. Matchers are expanded while resolving
+    /// the projection, so resolve top-level matchers with RENAME first and register their aliases
+    /// before resolving the other projection expressions. This keeps alias visibility independent
+    /// of the order of SELECT items without changing the resolution order of other matchers.
+    for (auto & projection_node : projection_node_list->as<ListNode &>().getNodes())
+    {
+        const auto * matcher_node = projection_node->as<MatcherNode>();
+        bool has_rename_transformer = false;
+        if (matcher_node)
+        {
+            for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
+            {
+                if (transformer->as<RenameColumnTransformerNode>())
+                {
+                    has_rename_transformer = true;
+                    break;
+                }
+            }
+        }
+
+        if (has_rename_transformer)
+        {
+            resolveExpressionNode(
+                projection_node,
+                scope,
+                false /*allow_lambda_expression*/,
+                false /*allow_table_expression*/,
+                false /*ignore_alias*/,
+                true /*allow_niladic_functions*/,
+                true /*is_top_level_projection*/);
+        }
+    }
+
     ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
 
     auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();

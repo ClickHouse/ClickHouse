@@ -257,8 +257,12 @@ void applyColumnsRenameTransformer(const ASTColumnsRenameTransformer & transform
         auto rename_it = rename_map.find(state.root_names[i]);
         if (rename_it != rename_map.end())
         {
+            if (!matched_columns.emplace(rename_it->first).second)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Columns transformer RENAME source column '{}' matches more than one column. Qualify the matcher to disambiguate",
+                    rename_it->first);
+
             state.nodes[i]->setAlias(rename_it->second);
-            matched_columns.insert(rename_it->first);
         }
     }
 

@@ -11,6 +11,19 @@ ENGINE = Memory;
 
 INSERT INTO t_columns_rename VALUES (1, 2, 3, 4);
 
+-- RENAME must reject an unqualified source name that matches more than one joined column.
+SET enable_analyzer = 0;
+SELECT * RENAME id AS renamed_id
+FROM (SELECT toUInt8(1) AS id) AS left_table
+CROSS JOIN (SELECT toUInt8(2) AS id) AS right_table; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Qualified matchers must keep working through multiple joins.
+SELECT l.* RENAME UserID AS user_id
+FROM (SELECT number AS UserID FROM numbers(1)) AS l
+LEFT JOIN (SELECT number AS id FROM numbers(1)) AS r ON r.id = l.UserID
+LEFT JOIN (SELECT number AS id FROM numbers(1)) AS s ON s.id = l.UserID
+FORMAT TSVWithNames;
+
 -- The legacy analyzer must keep the same root names through a transformer chain.
 SET enable_analyzer = 0;
 
@@ -26,6 +39,10 @@ SELECT * RENAME (a AS b, b AS c) FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME (a AS b, b AS c) FROM t_columns_rename ORDER BY b, c FORMAT TSVWithNames;
 SELECT * RENAME a AS a FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME (a AS x, b AS x) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- A RENAME alias is available regardless of the SELECT item order.
+SELECT x + 1 AS y, * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME a AS x, x + 1 AS y FROM t_columns_rename FORMAT TSVWithNames;
 
 -- RENAME is local to each matcher and does not leak through shared matcher nodes.
 SELECT * RENAME a AS x, * FROM t_columns_rename FORMAT TSVWithNames;
@@ -47,10 +64,25 @@ SELECT * APPLY(toString) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames
 SELECT * REPLACE(a + 1 AS a) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * EXCEPT(b) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME (a AS b, b AS c) FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME (a AS b, b AS c) FROM t_columns_rename ORDER BY b, c FORMAT TSVWithNames;
+SELECT * RENAME a AS a FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME a AS x, * FROM t_columns_rename FORMAT TSVWithNames;
 SELECT *, * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME a AS x, *, * RENAME b AS y FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME `a` AS `new name` FROM t_columns_rename FORMAT TSVWithNames;
+
+SELECT * RENAME id AS renamed_id
+FROM (SELECT toUInt8(1) AS id) AS left_table
+CROSS JOIN (SELECT toUInt8(2) AS id) AS right_table; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT l.* RENAME UserID AS user_id
+FROM (SELECT number AS UserID FROM numbers(1)) AS l
+LEFT JOIN (SELECT number AS id FROM numbers(1)) AS r ON r.id = l.UserID
+LEFT JOIN (SELECT number AS id FROM numbers(1)) AS s ON s.id = l.UserID
+FORMAT TSVWithNames;
+
+SELECT x + 1 AS y, * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME a AS x, x + 1 AS y FROM t_columns_rename FORMAT TSVWithNames;
 
 SELECT * RENAME missing AS x FROM t_columns_rename; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 SELECT * RENAME (a AS x, a AS y) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

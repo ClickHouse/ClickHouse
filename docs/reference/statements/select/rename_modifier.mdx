@@ -17,7 +17,7 @@ SELECT * RENAME old_name AS new_name FROM [db.]table_name
 SELECT * RENAME (old_name AS new_name [, old_name AS new_name, ...]) FROM [db.]table_name
 ```
 
-The source names refer to the original names of the selected columns. `RENAME` is the last modifier in a column-transformer chain. Target names must be unique within one `RENAME` modifier and can be used as query aliases, for example in `ORDER BY`.
+The source names refer to the original names of the selected columns. Each source name must match exactly one selected column. `RENAME` is the last modifier in a column-transformer chain. Target names must be unique within one `RENAME` modifier and can be used as query aliases, for example in `ORDER BY`.
 
 ## Examples {#examples}
 
