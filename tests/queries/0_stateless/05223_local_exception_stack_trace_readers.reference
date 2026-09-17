@@ -3,3 +3,5 @@ query_log reader: 1
 no reader, error still reported: 1
 no reader, no stack trace: 0
 client --stacktrace: 1
+console logger reader: 1
+before start, client log reader: 1

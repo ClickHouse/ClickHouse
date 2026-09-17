@@ -56,3 +56,13 @@ $CLICKHOUSE_LOCAL -q "SELECT throwIf(1)" 2>&1 \
 echo -n 'client --stacktrace: '
 $CLICKHOUSE_LOCAL --stacktrace -q "SELECT throwIf(1)" 2>&1 \
     | grep -qF "$TRACE_MARKER" && echo 1 || echo 0
+
+# The logger alone is a reader: no `query_log`, and the client asked for no server logs.
+echo -n 'console logger reader: '
+$CLICKHOUSE_LOCAL --logger.console --log-level=error --send_logs_level=none -q "SELECT throwIf(1)" 2>&1 \
+    | grep -qF "$TRACE_MARKER" && echo 1 || echo 0
+
+# The same predicate guards the error-before-start site, which no other arm reaches.
+echo -n 'before start, client log reader: '
+$CLICKHOUSE_LOCAL --send_logs_level=error -q "SELECT * FROM does_not_exist_05223" 2>&1 \
+    | grep -qF "$TRACE_MARKER" && echo 1 || echo 0
