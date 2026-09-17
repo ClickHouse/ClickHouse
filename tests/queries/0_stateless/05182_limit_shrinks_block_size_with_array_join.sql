@@ -1,13 +1,16 @@
 -- LIMIT still shrinks the block size with arrayJoin, only the source-side limit stays off (#82279)
 DROP TABLE IF EXISTS t_aj_limit;
 CREATE TABLE t_aj_limit (k UInt64, a Array(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
-INSERT INTO t_aj_limit SELECT number, [number] FROM numbers(20000);
+INSERT INTO t_aj_limit SELECT number, [number] FROM numbers(200000);
 
 SELECT arrayJoin(a) FROM t_aj_limit LIMIT 1 FORMAT Null SETTINGS max_threads = 8, log_comment = '05182_limit';
 
 SYSTEM FLUSH LOGS query_log;
-SELECT argMax(read_rows, event_time_microseconds) < 100 FROM system.query_log
+SELECT argMax(read_rows, event_time_microseconds) < 5000 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05182_limit';
+
+-- the block does not shrink below a few hundred rows, so a long run of empty arrays is not streamed one row at a time
+SELECT DISTINCT bs FROM (SELECT arrayJoin(a), blockSize() AS bs FROM t_aj_limit LIMIT 3 SETTINGS max_threads = 1, enable_parallel_replicas = 0);
 
 -- the prefetched pool sizes its reads by marks, not by the block size, so a small LIMIT keeps it off
 SELECT countIf(explain LIKE '%PrefetchedReadPool%') FROM (EXPLAIN PIPELINE SELECT arrayJoin(a) FROM t_aj_limit LIMIT 1 SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool', max_threads = 8, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1);

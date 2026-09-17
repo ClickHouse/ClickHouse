@@ -1752,12 +1752,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
             {
+                const bool has_array_join = hasFunctionNode(select_query_info.query_tree->as<QueryNode &>().getProjectionNode(), "arrayJoin");
                 const bool shrink_block = max_block_size_limited < max_block_size;
                 if (shrink_block)
-                    max_block_size = std::max<UInt64>(1, max_block_size_limited);
+                {
+                    /// With `arrayJoin` the source cannot stop at the LIMIT, so over a long run of empty arrays it streams
+                    /// every row anyway, and one-row blocks make that hundreds of times slower than the default block.
+                    /// Keep a few hundred rows per block: still a small read, and the empty prefix stays cheap.
+                    constexpr UInt64 min_block_size_above_array_join = 256;
+                    if (has_array_join)
+                        max_block_size = std::min(max_block_size, std::max(max_block_size_limited, min_block_size_above_array_join));
+                    else
+                        max_block_size = std::max<UInt64>(1, max_block_size_limited);
+                }
 
                 /// With `arrayJoin` the LIMIT does not bound the source rows, so only the block size shrinks (#82279).
-                if (!hasFunctionNode(select_query_info.query_tree->as<QueryNode &>().getProjectionNode(), "arrayJoin"))
+                if (!has_array_join)
                 {
                     max_source_rows = max_block_size_limited;
                     if (shrink_block)
