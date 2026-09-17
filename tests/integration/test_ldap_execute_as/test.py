@@ -694,7 +694,7 @@ def test_execute_as_hands_a_refused_cached_entry_over_to_a_later_storage(
             user="admin",
             password="qwerty",
         )
-        assert storages == TSV([["ldap"], ["users_xml"]]), storages
+        assert storages == "ldap\nusers_xml\n", storages
 
         assert (
             shard_ldap_first.query(
