@@ -18,7 +18,11 @@ import yaml
 from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.dataset_download import (
+    ICEBERG_DATASETS,
+    download_and_extract_datasets,
+    iceberg_database_ddl_commands,
+)
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -122,6 +126,10 @@ FROM input(
      changed_threshold Float64,
      unstable_threshold Float64'
 ) FORMAT TSV"""
+
+# Praktika expands exactly this sub-result into per-test-case CIDB rows: it is the
+# `result_name_for_cidb` of both performance jobs (ci/defs/job_configs.py).
+CIDB_TEST_CASES_RESULT_NAME = "Tests"
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
 
@@ -1717,14 +1725,14 @@ def read_ci_checks_results(path):
     return results, malformed, True
 
 
-def import_ci_checks_results(path, results):
-    """Import `ci-checks.tsv` rows into the previous subtask's results.
+def import_ci_checks_results(path, results, target_name=CIDB_TEST_CASES_RESULT_NAME):
+    """Import `ci-checks.tsv` rows into the `target_name` sub-result.
 
     Returns True when the file was importable. A file with no data row at all -
     empty, or only the header lines - is reported and left unimported. That
-    distinction is a diagnostic one, not a data-preserving one: every subtask
-    `main()` appends before this call is built without a `results=` argument, so
-    the assignment target's row list is empty either way and there is nothing an
+    distinction is a diagnostic one, not a data-preserving one: the target
+    is built by `Result.from_commands_run`, which takes no `results=`
+    argument, so its row list is empty either way and there is nothing an
     empty assignment could destroy. A file that lost individual rows still
     imports the intact ones and reports how many it skipped, because degrading
     beats dying. An absent file is the atomic publish's own failure signal -
@@ -1742,8 +1750,11 @@ def import_ci_checks_results(path, results):
         return False
     if malformed:
         print(f"WARNING: ci-checks.tsv had {malformed} malformed row(s) - skipped")
-    # results[-2] is a previuos subtask
-    results[-2].results = test_results
+    target = next((r for r in results if r.name == target_name), None)
+    if target is None:
+        print(f"WARNING: no [{target_name}] sub-result to import ci-checks.tsv into")
+        return False
+    target.results = test_results
     return True
 
 
@@ -1793,6 +1804,9 @@ def rebuild_table(port, source, destination):
 
 
 POPULATE_DONE_MARKER = "test._populate_done"
+
+# Derived, not hand-maintained: adding a dataset to ICEBERG_DATASETS is enough to protect it from the between-tests user_files wipe.
+PERSISTENT_USER_FILES = {directory for directory, _ in ICEBERG_DATASETS.values()}
 
 
 def populate_data(port):
@@ -2084,6 +2098,7 @@ def main():
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
+                "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
             stop_watch = Utils.Stopwatch()
@@ -2143,6 +2158,9 @@ def main():
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
+        # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
+        commands += iceberg_database_ddl_commands(perf_left)
+        commands += iceberg_database_ddl_commands(perf_right)
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
@@ -2237,6 +2255,9 @@ def main():
                 if not user_files.is_dir():
                     continue
                 for entry in user_files.iterdir():
+                    # Dataset directories must outlive the tests; they are real directories, so the is_symlink() check below does not cover them.
+                    if entry.name in PERSISTENT_USER_FILES:
+                        continue
                     if entry.is_symlink():
                         continue
                     if entry.is_dir():
@@ -2258,7 +2279,9 @@ def main():
         commands = [
             run_tests,
         ]
-        results.append(Result.from_commands_run(name="Tests", command=commands))
+        results.append(
+            Result.from_commands_run(name=CIDB_TEST_CASES_RESULT_NAME, command=commands)
+        )
         res = results[-1].is_ok()
 
     if JobStages.EXPORT_LOGS in stages and not info.is_local_run:
@@ -2566,7 +2589,7 @@ def main():
         # Find the "Tests" sub-result that holds per-query results
         tests_result = None
         for r in results:
-            if r.name == "Tests" and r.results:
+            if r.name == CIDB_TEST_CASES_RESULT_NAME and r.results:
                 tests_result = r
                 break
         if tests_result:

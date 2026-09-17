@@ -2,8 +2,8 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinEstimation.h>
 #include <Core/Joins.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -14,8 +14,9 @@ using JoinPtr = std::shared_ptr<IJoin>;
 struct LogicalJoinInfo
 {
     String readable_relation_name;
-    std::optional<UInt64> result_rows_estimation;
+    JoinEstimation estimation;
     JoinLocality locality{};
+    UInt64 cluster_id = 0;
 };
 
 /// Join two data streams.
@@ -84,11 +85,6 @@ public:
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
-    /// The per-shard join clones created when the join is sharded by primary-key ranges.
-    /// All data goes through them and the original `join` stays empty, so `EXPLAIN ANALYZE`
-    /// aggregates the statistics over the clones.
-    void setShardJoins(VectorWithMemoryTracking<JoinPtr> shard_joins_) { shard_joins = std::move(shard_joins_); }
-
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
 
@@ -96,6 +92,9 @@ public:
     String getStepGroupName(size_t group) const override;
 
     StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+
+    const JoinEstimation & getEstimation() const { return estimation; }
+    UInt64 getClusterId() const { return cluster_id; }
 
 private:
     bool optimized = false;
@@ -108,9 +107,8 @@ private:
     String join_readable_relation_name;
 
     JoinPtr join;
-    /// Per-shard clones from `QueryPipelineBuilder::joinPipelinesByShards`, see `setShardJoins`.
-    VectorWithMemoryTracking<JoinPtr> shard_joins;
-    std::optional<size_t> result_rows_estimation;
+    JoinEstimation estimation;
+    UInt64 cluster_id = 0;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;

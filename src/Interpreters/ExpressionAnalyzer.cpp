@@ -1,4 +1,5 @@
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/WindowFunction.h>
@@ -1867,7 +1868,7 @@ bool SelectQueryExpressionAnalyzer::appendLimitRange(ExpressionActionsChain & ch
     {
         if (!expr)
             return;
-        if (astContainsArrayJoinFunction(expr))
+        if (expressionContainsArrayJoin(expr))
             throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
         getRootActionsForHaving(expr, only_types, step.actions()->dag);
         const auto & column_name = expr->getColumnName();

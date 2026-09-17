@@ -853,9 +853,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
         left->pipe.processors->emplace_back(std::move(joining));
     }
 
-    if (auto * typed_join_step = typeid_cast<JoinStep *>(join_step))
-        typed_join_step->setShardJoins(std::move(joins));
-
     assignToJoinStage(collected_processors, join_step, JoinStep::JoinStage::Probe);
 
     /// Move the collected processors to the last step in the right pipeline.
@@ -875,7 +872,8 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
     SharedHeader res_header,
     SetAndKeyPtr set_and_key,
     const SizeLimits & limits,
-    PreparedSetsCachePtr prepared_sets_cache)
+    PreparedSetsCachePtr prepared_sets_cache,
+    bool recoverable_build)
 {
     dropTotalsAndExtremes();
     resize(1);
@@ -885,7 +883,8 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             res_header,
             std::move(set_and_key),
             limits,
-            std::move(prepared_sets_cache));
+            std::move(prepared_sets_cache),
+            recoverable_build);
 
     pipe.addTransform(std::move(transform));
 }
