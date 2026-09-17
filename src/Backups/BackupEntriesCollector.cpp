@@ -100,19 +100,6 @@ namespace
         return std::min(sleep_time, max_sleep);
     }
 
-    /// An inner table is never named by the BACKUP query: it is backed up through its outer table (a
-    /// materialized view, a TimeSeries table, a standalone `MaterializedPostgreSQL` table), which is also
-    /// where `EXCEPT DATA FROM TABLE/TABLES` has to be written.
-    [[noreturn]] void throwInnerTableNamedByExceptDataClause(const String & database_name, const String & table_name)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
-            "Table: {}.{}. Use the outer table name instead.",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(table_name));
-    }
-
     /// Checks that a table named by EXCEPT DATA FROM TABLE/TABLES is a table whose data can be excluded at all.
     void checkTableCanHaveDataExcluded(const String & database_name, const String & table_name)
     {
