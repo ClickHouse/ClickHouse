@@ -1619,15 +1619,17 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
     if (!current_query_parsed_as_json_dialect)
     {
         /// The text is sent exactly as the client accepted it. A query-local `SETTINGS dialect = ...`
-        /// (or `SETTINGS enable_json_ast_dialect = ...`) has already been folded into the client context
-        /// by `InterpreterSetQuery::applySettingsFromQuery`, but it must not change how this very query
-        /// text is parsed on the other side - it only applies to the statements that follow it.
-        /// Only a value the query itself changed is restored, so settings the user never touched are
-        /// not forced onto the server.
+        /// (or `SETTINGS enable_json_ast_dialect = ...`, `SETTINGS enable_trino_dialect = ...`) has already
+        /// been folded into the client context by `InterpreterSetQuery::applySettingsFromQuery`, but it must
+        /// not change how this very query text is parsed on the other side - it only applies to the
+        /// statements that follow it. Only a value the query itself changed is restored, so settings the
+        /// user never touched are not forced onto the server.
         if (client_context->getSettingsRef().get("dialect") != current_query_parse_dialect)
             client_context->setSetting("dialect", current_query_parse_dialect);
         if (client_context->getSettingsRef().get("enable_json_ast_dialect") != current_query_parse_json_ast_gate)
             client_context->setSetting("enable_json_ast_dialect", current_query_parse_json_ast_gate);
+        if (client_context->getSettingsRef().get("enable_trino_dialect") != current_query_parse_trino_gate)
+            client_context->setSetting("enable_trino_dialect", current_query_parse_trino_gate);
         return;
     }
 
@@ -2974,6 +2976,7 @@ void ClientBase::processParsedSingleQuery(
             && parsed_query->as<ASTSetQuery>();
         current_query_parse_dialect = client_context->getSettingsRef().get("dialect");
         current_query_parse_json_ast_gate = client_context->getSettingsRef().get("enable_json_ast_dialect");
+        current_query_parse_trino_gate = client_context->getSettingsRef().get("enable_trino_dialect");
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 
