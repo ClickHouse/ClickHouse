@@ -389,10 +389,11 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
     /// synchronisation throws (the directory is unreachable, a safety guard refused the run) must
     /// not leave the storages declared after it stale. Every failure is logged, and the first one
     /// is rethrown afterwards so that `SYSTEM RELOAD USERS` still reports it to the caller.
+    /// A storage whose reload consults or writes the other storages (`reloadsAfterOtherStorages`) goes last, so
+    /// that a role a later storage loads in the same command is seen instead of being created a second time.
     std::exception_ptr first_exception;
 
-    auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
+    auto reload_one = [&](const StoragePtr & storage)
     {
         try
         {
@@ -404,6 +405,18 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
             if (!first_exception)
                 first_exception = std::current_exception();
         }
+    };
+
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (!storage->reloadsAfterOtherStorages())
+            reload_one(storage);
+    }
+    for (const auto & storage : *storages)
+    {
+        if (storage->reloadsAfterOtherStorages())
+            reload_one(storage);
     }
 
     if (first_exception)

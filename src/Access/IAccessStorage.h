@@ -95,6 +95,12 @@ public:
     /// Makes this storage to reload and update access entities right now.
     virtual void reload(ReloadMode /* reload_mode */) {}
 
+    /// Whether `MultipleAccessStorage::reload` reloads this storage after every storage that returns false:
+    /// for a storage whose reload consults or writes the other storages (the synchronisation of an `ldap`
+    /// directory creates roles and asks the others whether they define a name), so that it sees them as
+    /// reloaded rather than as they were before the command.
+    virtual bool reloadsAfterOtherStorages() const { return false; }
+
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
 

@@ -96,6 +96,7 @@ public:
     void stopSyncThread();
     void shutdown() override;
     void reload(ReloadMode reload_mode) override;
+    bool reloadsAfterOtherStorages() const override { return sync_params.has_value(); }
 
     /// Whether the directory has a `<sync>` section. `sync_params` is set by the constructor and never changes.
     bool hasSync() const { return sync_params.has_value(); }
