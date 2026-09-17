@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
@@ -14,6 +15,8 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 
+#include <chrono>
+#include <thread>
 #include <utility>
 
 namespace ProfileEvents
@@ -41,6 +44,11 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ASYNC_LOAD_CANCELED;
+}
+
+namespace FailPoints
+{
+    extern const char marks_loader_hold_task_until_canceled[];
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -348,6 +356,17 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         [this]() -> MarkCache::MappedPtr
         {
             auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
+
+            /// Test-only: hold the task until the loader is destroyed, so a test can make the destructor win
+            /// the race against the thread pool deterministically. The wait is bounded so that a query which
+            /// does need these marks (and blocks in `loadMarks` on the future) cannot hang forever if the
+            /// fail point is left enabled by mistake.
+            fiu_do_on(FailPoints::marks_loader_hold_task_until_canceled,
+            {
+                for (size_t i = 0; i < 600 && !is_canceled; ++i)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            });
+
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
