@@ -127,10 +127,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     Block scalar_block;
 
-    /// Identifies this subquery within the query, for `system.query_log.query_plan`. Set only on
-    /// the cache miss below, which is the branch that actually runs it; on a hit nothing executes,
-    /// so there is nothing to report and nothing to link. Declared out here because the constant
-    /// the value is folded into is built further down, outside that branch.
+    /// Identifies this subquery within the query, for `system.query_log.query_plan`. Assigned on
+    /// the cache miss below -- the branch that actually runs it -- and handed back on a hit, so a
+    /// value computed once and used twice links both readers to the one sub-plan that produced it.
+    /// Stays unset only when the value came from somewhere this analysis never ran, in which case
+    /// there is no local plan to point at. Declared out here because the constant the value is
+    /// folded into is built further down, outside those branches.
     std::optional<size_t> scalar_subquery_id;
 
     auto node_without_alias = node->clone();
@@ -153,6 +155,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
 
         scalar_block = scalars_cache.at(node_with_hash);
+
+        /// Nothing runs here, but the value is this query's own and was captured under an id when
+        /// it was computed; reusing it is what makes the sub-plan list every step that reads it.
+        if (const auto it = scalar_subquery_to_subquery_id.find(node_with_hash); it != scalar_subquery_to_subquery_id.end())
+            scalar_subquery_id = it->second;
     }
     else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
     {
@@ -414,6 +421,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         }
 
         scalars_cache.emplace(node_with_hash, scalar_block);
+        if (scalar_subquery_id)
+            scalar_subquery_to_subquery_id.emplace(node_with_hash, *scalar_subquery_id);
         if (can_use_global_scalars && context->hasQueryContext())
             context->getQueryContext()->addScalar(str_hash, scalar_block);
     }
@@ -449,8 +458,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
         /// The subquery is gone from here on -- only its value remains -- so the id it was captured
-        /// under travels on the constant, for the planner to hand to the step that reads it. Unset
-        /// on a cache hit, where an earlier evaluation already reported the subquery.
+        /// under travels on the constant, for the planner to hand to the step that reads it. On a
+        /// cache hit this is the id of the evaluation that did run, so both readers point at it.
         if (scalar_subquery_id)
             constant_node->addScalarSubqueryId(*scalar_subquery_id);
 
