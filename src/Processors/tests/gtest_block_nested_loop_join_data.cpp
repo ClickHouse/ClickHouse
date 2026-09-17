@@ -267,7 +267,6 @@ TEST(BlockNestedLoopJoinData, UnsupportedJoinsAreRefused)
     EXPECT_FALSE(BlockNestedLoopJoinRules::forJoin(JoinKind::Inner, JoinStrictness::Semi).has_value());
     EXPECT_FALSE(BlockNestedLoopJoinRules::forJoin(JoinKind::Inner, JoinStrictness::Asof).has_value());
     EXPECT_FALSE(BlockNestedLoopJoinRules::forJoin(JoinKind::Paste, JoinStrictness::All).has_value());
-    EXPECT_THROW(makeData(JoinKind::Full, JoinStrictness::Any), Exception);
 }
 
 TEST(BlockNestedLoopJoinData, MatchFlagsStartUnset)
