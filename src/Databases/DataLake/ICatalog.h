@@ -217,11 +217,7 @@ public:
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
     virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
-
-    /// Format of a table of this catalog.
     virtual DataLakeTableFormat getTableFormat(const TableMetadata & table_metadata) const = 0;
-
-    /// Name of the table engine which reads this table.
     std::string_view getTableEngineName(const TableMetadata & table_metadata) const;
 
     virtual ~ICatalog() = default;
