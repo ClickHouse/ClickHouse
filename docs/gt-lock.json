@@ -7,36 +7,36 @@
       "versionId": "912d4ea7eb14eab5911f88b95a8e5be0b8dcba7e7a59e4a3c8c83c0f5df33be0",
       "translations": {
         "ru": {
-          "updatedAt": "2026-09-17T01:04:56.763Z",
+          "updatedAt": "2026-09-17T07:25:25.075Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-17T01:04:57.060Z",
+          "updatedAt": "2026-09-17T07:25:25.395Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-17T01:04:57.213Z",
+          "updatedAt": "2026-09-17T07:25:25.553Z",
           "fileName": "docs.json",
           "postProcessHash": "cd5aab4f6cf6bdaa8b0daa99e85e29e2ac1c8d2d1fda538c1848b5fc88564c13"
         },
         "ko": {
-          "updatedAt": "2026-09-17T01:04:56.461Z",
+          "updatedAt": "2026-09-17T07:25:24.745Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-17T01:04:56.119Z",
+          "updatedAt": "2026-09-17T07:25:24.347Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-17T01:04:56.307Z",
+          "updatedAt": "2026-09-17T07:25:24.529Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-17T01:04:56.612Z",
+          "updatedAt": "2026-09-17T07:25:24.911Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-17T01:04:56.910Z",
+          "updatedAt": "2026-09-17T07:25:25.239Z",
           "fileName": "docs.json"
         }
       },
@@ -104106,47 +104106,47 @@
     },
     {
       "fileId": "07cd4a38108529d24c1f99edaaf93f8252a56f9ddfc25bda1ed761b1a82e72a0",
-      "versionId": "57609b2ea44b4a3a8619c23efea8d5fab4e1e2d10048962db9326148ed0a9cca",
+      "versionId": "9de1da9d3270cbce31241b9cc2e4eb7d9b28785f6db88d3bb5ef1d14d48fc4ff",
       "translations": {
         "es": {
-          "updatedAt": "2026-09-15T11:36:44.239Z",
+          "updatedAt": "2026-09-17T07:25:29.420Z",
           "fileName": "snippets/es/components/QuickStartsGrid/QuickStartsGrid.jsx",
-          "postProcessHash": "dc3e20cd1f67589e89789c30beb79b7f3a7c6237db4727e5f0b7bf63bd97c4b5"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:44.239Z",
-          "fileName": "snippets/ja/components/QuickStartsGrid/QuickStartsGrid.jsx",
-          "postProcessHash": "9086624951f2f50af8219d9f6728807c19cf3b2f39725d8156cf4d66ca5d18d7"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:44.239Z",
-          "fileName": "snippets/ko/components/QuickStartsGrid/QuickStartsGrid.jsx",
-          "postProcessHash": "e093bbc42ea5c089f263b98169ee711d940faee3aed2dd4e2f5311c4ca234d09"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:44.240Z",
-          "fileName": "snippets/pt-BR/components/QuickStartsGrid/QuickStartsGrid.jsx",
-          "postProcessHash": "9f56f8768897ad12eea4163ffdebb30ae6aeef5061f27b9f55a446ef269b8272"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:44.240Z",
-          "fileName": "snippets/ru/components/QuickStartsGrid/QuickStartsGrid.jsx",
-          "postProcessHash": "c9ee5a8e644d797b10312dbdf8d21a9084d29e0921816fcd4f1aedf8da1b457a"
+          "postProcessHash": "431b11ef15ad30c075ca8483453bb6c112a81fd5bdd68693d73c8799f5258638"
         },
         "zh": {
-          "updatedAt": "2026-09-15T11:36:44.240Z",
+          "updatedAt": "2026-09-17T07:25:29.421Z",
           "fileName": "snippets/zh/components/QuickStartsGrid/QuickStartsGrid.jsx",
-          "postProcessHash": "1412701736222b4bd1e8d08b9efc233058d78a49ea97462fa6a259547f92ee5d"
-        },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:44.241Z",
-          "fileName": "snippets/ar/components/QuickStartsGrid/QuickStartsGrid.jsx",
-          "postProcessHash": "7f82afbed90c439218ad3bf82c6f7bc9deed34ef3111d8f8d7b11f07dad00127"
+          "postProcessHash": "81beb5de1d9b776df7ef7822a4d73eff6f8100fc58dc889a62e6f5b04d41b1d6"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:44.241Z",
+          "updatedAt": "2026-09-17T07:25:29.422Z",
           "fileName": "snippets/fr/components/QuickStartsGrid/QuickStartsGrid.jsx",
-          "postProcessHash": "0c0a50d80857bd5c51e4c60716c48a4557358ce2467e3574bca71726845c9613"
+          "postProcessHash": "eb5b687471a45381368b71d29fa4d492ffefc80abb6c805449b94ac69d98a770"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-17T07:25:29.423Z",
+          "fileName": "snippets/pt-BR/components/QuickStartsGrid/QuickStartsGrid.jsx",
+          "postProcessHash": "1c8f6b5997582fe65a3eac1401e12d0705bc9b94b134b46cc6788d02b4e6ffd3"
+        },
+        "ru": {
+          "updatedAt": "2026-09-17T07:25:29.424Z",
+          "fileName": "snippets/ru/components/QuickStartsGrid/QuickStartsGrid.jsx",
+          "postProcessHash": "11c86c087c600d91735cd63166dc748580ee39aff8a8a1e3ec09b23bb5da36de"
+        },
+        "ko": {
+          "updatedAt": "2026-09-17T07:25:29.425Z",
+          "fileName": "snippets/ko/components/QuickStartsGrid/QuickStartsGrid.jsx",
+          "postProcessHash": "4d5f23a56c2334605a81875a52da499c53130440b3a2445849380ad8f9b0c809"
+        },
+        "ar": {
+          "updatedAt": "2026-09-17T07:25:29.425Z",
+          "fileName": "snippets/ar/components/QuickStartsGrid/QuickStartsGrid.jsx",
+          "postProcessHash": "b91593744e31c103f354fdea0d9e2c86e21d4f15b93a6762530cf30a2daffd17"
+        },
+        "ja": {
+          "updatedAt": "2026-09-17T07:25:29.426Z",
+          "fileName": "snippets/ja/components/QuickStartsGrid/QuickStartsGrid.jsx",
+          "postProcessHash": "8970a1d6023828bf0a5485b1a9a6919ca4493ddb2805bb5252044770fbe16fe5"
         }
       },
       "fileName": "snippets/components/QuickStartsGrid/QuickStartsGrid.jsx"
@@ -104247,47 +104247,47 @@
     },
     {
       "fileId": "bbb580ad66b5be5ce5ee23ddf061659a660c0e992a9469b7260b88551f4b03d3",
-      "versionId": "fd7b0f7e459438f999068939fb7c586aba2c6eb90662da9d3096056acaeb2da2",
+      "versionId": "bc1f86104e34d4efdcb087d484edc69a2108555aaf31032c9e9308756173010c",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:44.247Z",
-          "fileName": "snippets/es/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
-          "postProcessHash": "703df1b1d47f52eaabe42c925ac581bd39ea567ddb4f370e225dc4e764fd3812"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:44.247Z",
-          "fileName": "snippets/ja/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
-          "postProcessHash": "ce1eebd7e6aa8edb62114b9b3b43f55c5795bed5a6554ad242a5294e8f51a2de"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:44.248Z",
-          "fileName": "snippets/ko/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
-          "postProcessHash": "2ebd7296d37c77b9672580a1d175ec16db8383e87569f65561263fd6ec0dce6f"
-        },
         "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:44.248Z",
+          "updatedAt": "2026-09-17T07:25:29.427Z",
           "fileName": "snippets/pt-BR/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
-          "postProcessHash": "cf2f8857330fa73c9a87ac46f7edaed4d11d887ef0444071ece3f5e298468ebf"
+          "postProcessHash": "875d878de2bcec9bca81430dcba62d429b04ef2fde82ac065959be8a5c8092ca"
         },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:44.248Z",
-          "fileName": "snippets/ru/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
-          "postProcessHash": "bd49cd2ef10c912990219b675a397944954eae05802ca8d9a4a9010c628b3b84"
+        "es": {
+          "updatedAt": "2026-09-17T07:25:29.427Z",
+          "fileName": "snippets/es/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
+          "postProcessHash": "6c0bb8fd9a36c2cde913b675b357a2266b86001f3c2082caffee9a71809eb15e"
         },
         "zh": {
-          "updatedAt": "2026-09-15T11:36:44.249Z",
+          "updatedAt": "2026-09-17T07:25:29.428Z",
           "fileName": "snippets/zh/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
-          "postProcessHash": "f946142afd85bc416751f77a99108b0e1c6bf864eaff80aead8bef290e263b06"
-        },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:44.249Z",
-          "fileName": "snippets/ar/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
-          "postProcessHash": "945612b4e9329a3d375bbaf20b7e199c6fce1b979ab1e7a6cd8ff97f5bf9281a"
+          "postProcessHash": "7a80cf775125bf5da451cf856d3455f060829ac6d1f81903324e443deb51ee47"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:44.249Z",
+          "updatedAt": "2026-09-17T07:25:29.428Z",
           "fileName": "snippets/fr/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
-          "postProcessHash": "c6cfad0864e9668ea6431eba28482fa70dd1eb8d1ba488b26744399fa54287a2"
+          "postProcessHash": "327b35224eac217eca45ce4e1c19b3df2caf763ad4ade9b9f56c766c7f38b237"
+        },
+        "ru": {
+          "updatedAt": "2026-09-17T07:25:29.428Z",
+          "fileName": "snippets/ru/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
+          "postProcessHash": "08d303ddca7e083f68c43676df0b5dff6a657b79716966d5411c9a5415a8788d"
+        },
+        "ko": {
+          "updatedAt": "2026-09-17T07:25:29.429Z",
+          "fileName": "snippets/ko/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
+          "postProcessHash": "75fc4c3308ee7fec48cf477ef86d497f45d27ea8e4e038ce6898c634ea6dcb51"
+        },
+        "ar": {
+          "updatedAt": "2026-09-17T07:25:29.429Z",
+          "fileName": "snippets/ar/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
+          "postProcessHash": "dca4d82c2c359fc798c4bfddb1eacc7ecf2d1c22a9779c383d053c6c445b8a55"
+        },
+        "ja": {
+          "updatedAt": "2026-09-17T07:25:29.430Z",
+          "fileName": "snippets/ja/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx",
+          "postProcessHash": "409a29ec1a3be1cc857b052f51912b964f94be496fe50d34736087ca4b1b9f22"
         }
       },
       "fileName": "snippets/components/SampleDatasetExplorer/SampleDatasetExplorer.jsx"
