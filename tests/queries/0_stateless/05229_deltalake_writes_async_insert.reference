@@ -1,0 +1,10 @@
+-- async inserts, each waited for: acknowledged rows are committed and readable
+3	6
+versions: 3
+-- async insert with the writes setting off is rejected and commits nothing
+SUPPORT_IS_DISABLED
+3
+versions: 3
+-- two concurrent async inserts with identical settings are flushed together: one commit
+5	27
+versions: 4
