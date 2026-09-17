@@ -52,18 +52,18 @@ Distinct (DISTINCT)
 Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)
 Strictness: semi
-Join conditions: a <=> a AND tuple(b) <=> tuple(b)
+Join conditions: a <=> a AND b IS NULL = b IS NULL AND CAST(if(b IS NULL, \'\', b) AS String) = CAST(if(b IS NULL, \'\', b) AS String)
 Distinct (DISTINCT)
 Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)
 Strictness: anti
-Join conditions: a <=> a AND tuple(b) <=> tuple(b)
+Join conditions: a <=> a AND b IS NULL = b IS NULL AND CAST(if(b IS NULL, \'\', b) AS String) = CAST(if(b IS NULL, \'\', b) AS String)
 Distinct
 IntersectOrExcept
 Join (JOIN FillRightFirst)
 Strictness: semi
 Multiset: 1
-Join conditions: a <=> a AND tuple(b) <=> tuple(b)
+Join conditions: a <=> a AND b IS NULL = b IS NULL AND CAST(if(b IS NULL, \'\', b) AS String) = CAST(if(b IS NULL, \'\', b) AS String)
 Distinct (DISTINCT)
 Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)

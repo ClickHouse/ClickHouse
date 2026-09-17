@@ -26,7 +26,9 @@
 #include <Functions/ComparisonNames.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/if.h>
 #include <Functions/isNotDistinctFrom.h>
+#include <Functions/isNull.h>
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
@@ -900,6 +902,29 @@ static void preferNullableRightKey(
     }
 }
 
+/// A null-safe key `a` as two plain keys: `isNull(a)` and `CAST(if(isNull(a), d, a), T)`, with `d` the default value of
+/// the nested type `T`. NULL matches NULL through the first key, and the second one never holds a NULL, so the join
+/// skips no row for it. Fixed-width keys stay fixed-width this way, where wrapping the key into a tuple sends it down
+/// the generic serialized-key path.
+static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
+{
+    const auto value_type = removeNullable(removeLowCardinality(key.getType()));
+    auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(std::make_shared<FunctionIsNull>(/*use_analyzer_=*/ true)));
+    auto value = JoinActionRef::transform(
+        {is_null, key},
+        [&value_type](ActionsDAG & dag, std::vector<JoinExpressionActions::NodeRawPtr> nodes)
+        {
+            const auto & default_value = dag.addColumn(
+                value_type->createColumnConst(1, value_type->getDefault()), value_type, "__null_safe_key_default_" + value_type->getName());
+            const auto & if_null = dag.addFunction(
+                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false),
+                {nodes[0], &default_value, nodes[1]},
+                {});
+            return &dag.addCast(if_null, value_type, {}, nullptr);
+        });
+    return {std::move(is_null), std::move(value)};
+}
+
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
     std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
@@ -925,6 +950,19 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             /* allow_conversion_to_subtype= */ !null_safe_comparison);
         if (!null_safe_comparison)
             preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
+        if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType())
+            && !isNothing(removeNullable(removeLowCardinality(lhs.getType()))) && !planning_context.is_storage_join)
+        {
+            auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
+            auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
+            table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
+            table_join_clause.addKey(lhs_value.getColumnName(), rhs_value.getColumnName(), /*null_safe_comparison=*/ false);
+            has_join_predicates = true;
+            used_expressions.insert(used_expressions.end(), {lhs_null, lhs_value, rhs_null, rhs_value});
+            new_predicates.pop_back();
+            continue;
+        }
+
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
             /**
