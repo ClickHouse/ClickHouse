@@ -2,13 +2,18 @@
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/UUID.h>
 #include <Storages/IStorage.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <Poco/Event.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <atomic>
+#include <memory>
 #include <mutex>
+#include <optional>
+#include <vector>
 
 
 namespace Poco { class Logger; }
@@ -16,6 +21,8 @@ namespace Poco { class Logger; }
 
 namespace DB
 {
+
+class AccessRightsElements;
 
 
 /** During insertion, buffers the data in the RAM until certain thresholds are exceeded.
@@ -39,6 +46,10 @@ namespace DB
   *
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
+  *
+  * A flush runs with the identity of the user whose INSERT put the rows into the buffer (see `Writer`), so it has
+  * exactly the rights of that user, also on the remote shards of a `Distributed` subordinate table. Rows of different
+  * writers are never mixed in one buffer.
   */
 class StorageBuffer final : public IStorage, WithContext
 {
@@ -151,10 +162,44 @@ public:
 
 
 private:
+    /// The identity under which the rows of a buffer are flushed into the subordinate table.
+    ///
+    /// It is captured from the context of the `INSERT` that put the rows into the buffer, so the flush
+    /// has exactly the rights of the writer: locally, and on the remote shards of a `Distributed`
+    /// subordinate table. Those authenticate `initial_user` behind the interserver secret, and run a
+    /// query that arrives without one with full access. Rows of different writers are never mixed in
+    /// one buffer; an `INSERT` by another writer flushes the buffer first.
+    ///
+    /// A writer without a user, i.e. a server-initiated insert such as a system log flush or a push
+    /// from a materialized view without SQL security, keeps the identity-less flush of the buffer
+    /// context.
+    struct Writer
+    {
+        std::optional<UUID> user_id;
+        /// Sorted, so that two sessions of the same user with the same roles compare equal.
+        std::vector<UUID> current_roles;
+        std::vector<UUID> external_roles;
+        std::shared_ptr<const AccessRightsElements> authentication_grants;
+        time_t authentication_valid_until = 0;
+        String current_user;
+        String initial_user;
+        String authenticated_user;
+        std::optional<Poco::Net::SocketAddress> current_address;
+        std::optional<Poco::Net::SocketAddress> initial_address;
+
+        static Writer fromContext(const ContextPtr & context);
+
+        /// Whether the rows of the two writers may share a buffer, i.e. would be flushed with the same
+        /// rights. The addresses are not part of the identity.
+        bool sameIdentity(const Writer & other) const;
+    };
+
     struct Buffer
     {
         time_t first_write_time = 0;
         Block data;
+        /// The writer of `data`. Meaningless while the buffer is empty.
+        Writer writer;
 
         /// Schema version, checked to avoid mixing blocks with different sets of columns, from
         /// before and after an ALTER. There are some remaining mild problems if an ALTER happens
@@ -206,7 +251,11 @@ private:
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
-    void writeBlockToDestination(const Block & block, StoragePtr table);
+    void writeBlockToDestination(const Block & block, StoragePtr table, const Writer & writer);
+
+    /// A query context for flushing into the subordinate table under the identity of `writer`, with
+    /// the settings of the buffer context (the `buffer_profile` server setting) in force.
+    ContextMutablePtr createFlushContext(const Writer & writer) const;
 
     void backgroundFlush();
     void reschedule(size_t min_delay);
