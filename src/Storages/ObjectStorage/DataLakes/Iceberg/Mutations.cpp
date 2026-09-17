@@ -417,7 +417,7 @@ static bool writeMetadataFiles(
     auto manifest_entries_in_storage = std::make_shared<Strings>();
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
-
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
     auto cleanup = [object_storage, &delete_filenames, &path_resolver, manifest_entries_in_storage, storage_manifest_list_name, storage_metadata_name]()
     {
         try
@@ -443,6 +443,17 @@ static bool writeMetadataFiles(
             auto manifest_entry_path = filename_generator.generateManifestEntryName();
             manifest_entries_in_storage->push_back(path_resolver.resolve(manifest_entry_path));
             manifest_entries.push_back(manifest_entry_path);
+
+            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
+            if (chunk_partitioner)
+            {
+                const auto & partition_types = chunk_partitioner->getResultTypes();
+                std::vector<std::pair<Field, DataTypePtr>> partition_summary;
+                partition_summary.reserve(partition_key.size());
+                for (size_t i = 0; i < partition_key.size(); ++i)
+                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                entry_partition_summaries.push_back(std::move(partition_summary));
+            }
 
             auto buffer_manifest_entry = object_storage->writeObject(
                 StoredObject(path_resolver.resolve(manifest_entry_path)),
@@ -502,7 +513,9 @@ static bool writeMetadataFiles(
                     new_snapshot,
                     manifest_entry_sizes,
                     *buffer_manifest_list,
-                    content_type);
+                    content_type,
+                    /* use_previous_snapshots */ true,
+                    entry_partition_summaries);
                 buffer_manifest_list->finalize();
             }
             catch (...)
