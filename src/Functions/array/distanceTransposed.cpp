@@ -2,6 +2,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnQBit.h>
 
+#include <Core/Settings.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
@@ -38,6 +40,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsBool qbit_one_bit_symmetric_distance;
+}
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -75,8 +82,12 @@ ALWAYS_INLINE size_t hammingDistance(const UInt8 * __restrict a, const UInt8 * _
 ///   - static constexpr simsimd_metric_kind_t metric_kind (under USE_SIMSIMD): SimSIMD metric to resolve and call
 ///   - static void distance<T>(...): scalar distance, used when no SimSIMD kernel is available
 ///   - static void distanceScalar<InputType, AccumulatorType>(...): fallback scalar implementation
+///   - static Float64 fromSignedSum(signed_sum, squared_norm, dims, scale): the distance between a sign vector with elements
+///     +-scale and a full-precision reference y, given sum s_i * y_i and sum y_i^2, for the default one-bit path
+///     (executeOneBitAsymmetricDistanceCalculation)
 ///   - static Float64 fromHammingDistance(hamming, dims, scale): the distance between two sign vectors with elements +-scale
-///     that differ in sign in `hamming` of their `dims` dimensions, for the one-bit path (executeOneBitDistanceCalculation)
+///     that differ in sign in `hamming` of their `dims` dimensions, for the symmetric one-bit path
+///     (executeOneBitSymmetricDistanceCalculation)
 
 struct L2DistanceTransposed
 {
@@ -119,6 +130,12 @@ struct L2DistanceTransposed
     static Float64 fromHammingDistance(size_t hamming, size_t /*dims*/, Float64 scale)
     {
         return 2.0 * scale * std::sqrt(static_cast<Float64>(hamming));
+    }
+
+    /// sum (scale * s_i - y_i)^2 = dims * scale^2 - 2 * scale * signed_sum + squared_norm; clamped because rounding may make it negative.
+    static Float64 fromSignedSum(Float64 signed_sum, Float64 squared_norm, size_t dims, Float64 scale)
+    {
+        return std::sqrt(std::max(0.0, static_cast<Float64>(dims) * scale * scale - 2.0 * scale * signed_sum + squared_norm));
     }
 };
 
@@ -181,6 +198,16 @@ struct CosineDistanceTransposed
     {
         return 2.0 * static_cast<Float64>(hamming) / static_cast<Float64>(dims);
     }
+
+    /// The sign vector has the norm scale * sqrt(dims) and the dot product scale * signed_sum, so the scale cancels. The corner
+    /// cases follow distanceScalar: a zero reference (or a zero dot product) gives 1, and the result is clipped at 0.
+    static Float64 fromSignedSum(Float64 signed_sum, Float64 squared_norm, size_t dims, Float64 /*scale*/)
+    {
+        if (squared_norm == 0 || signed_sum == 0)
+            return 1;
+        const Float64 unclipped = 1.0 - signed_sum / std::sqrt(static_cast<Float64>(dims) * squared_norm);
+        return unclipped > 0 ? unclipped : 0;
+    }
 };
 
 struct DotProductTransposed
@@ -234,6 +261,11 @@ struct DotProductTransposed
     {
         return scale * scale * (static_cast<Float64>(dims) - 2.0 * static_cast<Float64>(hamming));
     }
+
+    static Float64 fromSignedSum(Float64 signed_sum, Float64 /*squared_norm*/, size_t /*dims*/, Float64 scale)
+    {
+        return scale * signed_sum;
+    }
 };
 
 /** Each [L2/cosine/...]DistanceTransposed has two calling conventions:
@@ -272,7 +304,13 @@ public:
         else
             return Kernel::name;
     }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionArrayDistance>(context && context->getSettingsRef()[Setting::qbit_one_bit_symmetric_distance]);
+    }
+
+    explicit FunctionArrayDistance(bool one_bit_symmetric_) : one_bit_symmetric(one_bit_symmetric_) { }
+
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
@@ -550,22 +588,47 @@ public:
         {
             const bool ref_is_const = arguments.back().column->isConst();
 
-            /// A single bit plane reconstructs every code to the symmetric +-m prefix centroid of row 1 of the Lloyd-Max LUT, and
-            /// the sign bit of an Int8 reference code is the sign of the value it encodes, so the one-bit Hamming path applies
-            /// with the scale m. See executeOneBitDistanceCalculation.
+            /// A single bit plane reconstructs every code to the symmetric +-m prefix centroid of row 1 of the Lloyd-Max LUT, so the
+            /// one-bit paths apply with the scale m. The Float32 reference is used verbatim and an Int8 reference of codes is
+            /// dequantized at full precision, exactly as executeQuantizedDistanceCalculation does (for the symmetric path only the
+            /// signs of the dequantized values matter, and they are the sign bits of the codes).
             if (precision == 1)
             {
                 const Float64 scale = static_cast<Float64>(LloydMax::transposedDequantLUT()[1][0]);
-                auto execute_one_bit = [&]<typename RefT>() -> ColumnPtr
+                if (one_bit_symmetric)
                 {
-                    return ref_is_const
-                        ? executeOneBitDistanceCalculation<RefT, true>(
-                              reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale)
-                        : executeOneBitDistanceCalculation<RefT, false>(
-                              reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale);
-                };
-                return type_y == TypeIndex::Int8 ? execute_one_bit.template operator()<Int8>()
-                                                 : execute_one_bit.template operator()<Float32>();
+                    auto execute_symmetric = [&]<typename RefT>() -> ColumnPtr
+                    {
+                        return ref_is_const
+                            ? executeOneBitSymmetricDistanceCalculation<RefT, true>(
+                                  reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale)
+                            : executeOneBitSymmetricDistanceCalculation<RefT, false>(
+                                  reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale);
+                    };
+                    return type_y == TypeIndex::Int8 ? execute_symmetric.template operator()<Int8>()
+                                                     : execute_symmetric.template operator()<Float32>();
+                }
+
+                PaddedPODArray<Float32> ref_dequantized;
+                const PaddedPODArray<Float32> * ref_values = nullptr;
+                if (type_y == TypeIndex::Int8)
+                {
+                    const auto & ref_codes = assert_cast<const ColumnVector<Int8> &>(reference_vector.getData()).getData();
+                    const std::array<Float32, 256> & dequant_ref = LloydMax::transposedDequantLUT()[8];
+                    ref_dequantized.resize(ref_codes.size());
+                    for (size_t i = 0; i < ref_codes.size(); ++i)
+                        ref_dequantized[i] = dequant_ref[static_cast<uint8_t>(ref_codes[i])];
+                    ref_values = &ref_dequantized;
+                }
+                else
+                {
+                    ref_values = &assert_cast<const ColumnVector<Float32> &>(reference_vector.getData()).getData();
+                }
+                return ref_is_const
+                    ? executeOneBitAsymmetricDistanceCalculation<Float32, true>(
+                          *ref_values, reference_vector.getOffsets(), expanded_planes, stride, used_dims, input_rows_count, scale)
+                    : executeOneBitAsymmetricDistanceCalculation<Float32, false>(
+                          *ref_values, reference_vector.getOffsets(), expanded_planes, stride, used_dims, input_rows_count, scale);
             }
 
             /// The QBit is Int8 (Lloyd-Max codes) and the reference vector is Float32. Reconstruct each code with the
@@ -615,16 +678,24 @@ public:
         auto execute_with_type = [&]<typename T>() -> ColumnPtr
         {
             /// A single bit plane keeps only the sign, and the general path would reconstruct every element to the `centre_fill`
-            /// of its sign cell: +-64 (0x40) for a raw Int8 and +-2.0 (the top exponent bit) for a float. The one-bit Hamming
-            /// path reproduces these magnitudes. See executeOneBitDistanceCalculation.
+            /// of its sign cell: +-64 (0x40) for a raw Int8 and +-2.0 (the top exponent bit) for a float. The one-bit paths
+            /// reproduce these magnitudes without untransposing the plane.
             if (precision == 1)
             {
                 constexpr Float64 scale = std::is_same_v<T, Int8> ? 64.0 : 2.0;
+                if (one_bit_symmetric)
+                    return ref_is_const
+                        ? executeOneBitSymmetricDistanceCalculation<T, true>(
+                              reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale)
+                        : executeOneBitSymmetricDistanceCalculation<T, false>(
+                              reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale);
+
+                const auto & ref_values = assert_cast<const ColumnVector<T> &>(reference_vector.getData()).getData();
                 return ref_is_const
-                    ? executeOneBitDistanceCalculation<T, true>(
-                          reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale)
-                    : executeOneBitDistanceCalculation<T, false>(
-                          reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale);
+                    ? executeOneBitAsymmetricDistanceCalculation<T, true>(
+                          ref_values, reference_vector.getOffsets(), expanded_planes, stride, used_dims, input_rows_count, scale)
+                    : executeOneBitAsymmetricDistanceCalculation<T, false>(
+                          ref_values, reference_vector.getOffsets(), expanded_planes, stride, used_dims, input_rows_count, scale);
             }
 
             return dispatch_by_accum_type.template operator()<T>(
@@ -656,6 +727,9 @@ public:
 
 
 private:
+    /// The setting `qbit_one_bit_symmetric_distance`: at precision 1, reduce the reference vector to its signs as well.
+    const bool one_bit_symmetric;
+
     static ColumnPtr extractFromConst(const ColumnPtr & column)
     {
         return column->isConst() ? assert_cast<const ColumnConst *>(column.get())->getDataColumnPtr() : column;
@@ -764,7 +838,126 @@ private:
     }
 #endif
 
-    /// One-bit (`precision == 1`) path, shared by the plain and the quantized functions.
+    /// Default one-bit (`precision == 1`) path: the reference vector keeps its full precision (asymmetric distance), so the
+    /// results are those of the general path for the sign-only reconstruction, computed without untransposing anything.
+    ///
+    /// Every stored element is known only as a sign s_i and reconstructed as scale * s_i, so all three kernels are functions of
+    /// the signed sum S = sum s_i * y_i, of the squared norm of the reference and of the dimension (`Kernel::fromSignedSum`).
+    /// S is computed straight from the packed sign plane: for a constant reference, a 256-entry table per plane byte holds the
+    /// partial sum of +-y over the 8 dimensions of that byte for every bit pattern, so a row costs one table lookup per byte of
+    /// its sign plane instead of an untranspose of the plane into `used_dims` words followed by a distance kernel.
+    template <typename YT, bool ref_is_const>
+    ColumnPtr executeOneBitAsymmetricDistanceCalculation(
+        const PaddedPODArray<YT> & ref_values,
+        const IColumn::Offsets & ref_offsets,
+        const ColumnsWithTypeAndName & planes,
+        const size_t stride,
+        const size_t used_dims,
+        const size_t input_rows_count,
+        const Float64 scale) const
+    {
+        const size_t num_groups = used_dims / stride;
+        const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
+        const size_t plane_bytes = num_groups * bytes_per_group;
+
+        /// Sums of Int8 elements stay exact in integers; float sums use the width of the reference element.
+        using TableT = std::conditional_t<std::is_same_v<YT, Int8>, Int32, std::conditional_t<std::is_same_v<YT, Float64>, Float64, Float32>>;
+        using AccT = std::conditional_t<std::is_same_v<YT, Int8>, Int64, TableT>;
+
+        auto stored_plane = [&](size_t group) -> const UInt8 *
+        {
+            return reinterpret_cast<const UInt8 *>(assert_cast<const ColumnFixedString &>(*planes[group].column).getChars().data());
+        };
+
+        /// Dimension `d` of a group lives in bit `d % 8` of byte `bytes_per_group - 1 - d / 8` (see SerializationQBit::transposeBits);
+        /// bits above `stride % 8` of byte 0 are padding and get a zero weight.
+        auto dimension_of = [&](size_t byte, size_t bit) -> std::optional<size_t>
+        {
+            const size_t d = 8 * (bytes_per_group - 1 - byte) + bit;
+            return d < stride ? std::optional<size_t>(d) : std::nullopt;
+        };
+
+        auto squared_norm = [&](const YT * y) -> Float64
+        {
+            AccT sum = 0;
+            for (size_t d = 0; d < used_dims; ++d)
+                sum += static_cast<AccT>(y[d]) * static_cast<AccT>(y[d]);
+            return static_cast<Float64>(sum);
+        };
+
+        auto col_res = ColumnVector<Float64>::create(input_rows_count);
+        auto & result_data = col_res->getData();
+
+        if constexpr (ref_is_const)
+        {
+            const YT * y = ref_values.data();
+            const Float64 y2 = squared_norm(y);
+
+            /// table[(group * bytes_per_group + byte) * 256 + pattern] = sum over the 8 dimensions of that byte of +-y_d, where the
+            /// sign is negative for the dimensions whose bit is set in `pattern`.
+            PODArray<TableT> table(plane_bytes * 256);
+            for (size_t group = 0; group < num_groups; ++group)
+            {
+                for (size_t byte = 0; byte < bytes_per_group; ++byte)
+                {
+                    TableT weights[8];
+                    for (size_t bit = 0; bit < 8; ++bit)
+                    {
+                        const auto d = dimension_of(byte, bit);
+                        weights[bit] = d ? static_cast<TableT>(y[group * stride + *d]) : TableT(0);
+                    }
+                    TableT * entries = table.data() + (group * bytes_per_group + byte) * 256;
+                    for (size_t pattern = 0; pattern < 256; ++pattern)
+                    {
+                        TableT sum = 0;
+                        for (size_t bit = 0; bit < 8; ++bit)
+                            sum += ((pattern >> bit) & 1) ? -weights[bit] : weights[bit];
+                        entries[pattern] = sum;
+                    }
+                }
+            }
+
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                /// Independent partial sums, so the lookups are not one dependent add chain.
+                AccT partial[4]{};
+                for (size_t group = 0; group < num_groups; ++group)
+                {
+                    const UInt8 * stored = stored_plane(group) + row * bytes_per_group;
+                    const TableT * entries = table.data() + group * bytes_per_group * 256;
+                    for (size_t byte = 0; byte < bytes_per_group; ++byte)
+                        partial[byte % 4] += entries[byte * 256 + stored[byte]];
+                }
+                const Float64 signed_sum = static_cast<Float64>(partial[0] + partial[1] + partial[2] + partial[3]);
+                result_data[row] = Kernel::fromSignedSum(signed_sum, y2, used_dims, scale);
+            }
+        }
+        else
+        {
+            /// One reference vector per row: no table pays off, so add the +-y_d up directly from the bits.
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                const YT * y = ref_values.data() + (row == 0 ? 0 : ref_offsets[row - 1]);
+                AccT sum = 0;
+                for (size_t group = 0; group < num_groups; ++group)
+                {
+                    const UInt8 * stored = stored_plane(group) + row * bytes_per_group;
+                    for (size_t byte = 0; byte < bytes_per_group; ++byte)
+                        for (size_t bit = 0; bit < 8; ++bit)
+                            if (const auto d = dimension_of(byte, bit))
+                            {
+                                const AccT value = static_cast<AccT>(y[group * stride + *d]);
+                                sum += ((stored[byte] >> bit) & 1) ? -value : value;
+                            }
+                }
+                result_data[row] = Kernel::fromSignedSum(static_cast<Float64>(sum), squared_norm(y), used_dims, scale);
+            }
+        }
+
+        return col_res;
+    }
+
+    /// Symmetric one-bit (`precision == 1`) path, enabled by the setting `qbit_one_bit_symmetric_distance`.
     ///
     /// With a single bit plane only the sign of every stored element is known, and the general path would reconstruct each
     /// element as +-scale (`centre_fill` gives +-2.0 for a float and +-64 for a raw Int8; the Lloyd-Max path gives the +-m prefix
@@ -774,13 +967,14 @@ private:
     /// on the packed plane bytes, without untransposing anything, and the kernel's distance for every possible Hamming
     /// distance in `[0, used_dims]` is precomputed once into a lookup table (`Kernel::fromHammingDistance`).
     ///
-    /// This is a symmetric binary distance: unlike the general path, which compares the sign-only reconstruction against the
-    /// reference at full precision, the magnitudes of the reference elements take no part. With one bit per stored element only
-    /// the ranking by sign agreement carries information anyway, and this path is an order of magnitude cheaper.
+    /// This is a symmetric binary distance: unlike the default path, which compares the sign-only reconstruction against the
+    /// reference at full precision, the magnitudes of the reference elements take no part, so it is not the same function; it is
+    /// several times cheaper still, since popcount handles 64 dimensions per instruction where the default path needs a table
+    /// lookup per 8 dimensions.
     ///
     /// `planes` holds one sign bit plane per stride group: `num_groups` FixedString columns of `bytes_per_group` bytes per row.
     template <typename RefT, bool ref_is_const>
-    ColumnPtr executeOneBitDistanceCalculation(
+    ColumnPtr executeOneBitSymmetricDistanceCalculation(
         const ColumnArray & col_y,
         const ColumnsWithTypeAndName & planes,
         const size_t stride,

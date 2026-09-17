@@ -729,6 +729,7 @@ class ClickHouseCluster:
         self.minio_bucket_db_disk = "root-db-disk"
         self.minio_s3_port = 9000
         self.minio_port = 9001
+        self.hms_catalog_port = 9083
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
@@ -746,7 +747,6 @@ class ClickHouseCluster:
         self.with_glue_catalog = False
         self._glue_catalog_port = None
         self.with_hms_catalog = False
-        self._hms_catalog_port = None
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1086,13 +1086,6 @@ class ClickHouseCluster:
             return self._glue_catalog_port
         self._glue_catalog_port = self.port_pool.get_port()
         return self._glue_catalog_port
-
-    @property
-    def hms_catalog_port(self):
-        if self._hms_catalog_port:
-            return self._hms_catalog_port
-        self._hms_catalog_port = self.port_pool.get_port()
-        return self._hms_catalog_port
 
     @property
     def redis_port(self):
@@ -1873,7 +1866,6 @@ class ClickHouseCluster:
 
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
-        env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
         env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
             docker_compose_yml_dir, "hms_core_site_minio1.xml"
         )

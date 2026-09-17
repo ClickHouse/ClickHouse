@@ -1,13 +1,13 @@
--- At precision 1 only the sign bit plane of a QBit is read. The transposed distance functions then reduce the reference
--- vector to its signs as well and derive the result from the Hamming distance between the two sign vectors (computed with
--- XOR and popcount on the packed bit plane, then mapped through a lookup table) instead of untransposing the plane and
--- running the full distance kernel. Both sides are sign vectors whose elements have a fixed magnitude c (2.0 for a float
--- QBit, 64 for a raw Int8 QBit, the Lloyd-Max prefix centroid for the ...Quantized functions), so for a Hamming distance h
--- over n dimensions:
---   L2DistanceTransposed     = 2 * c * sqrt(h)
---   cosineDistanceTransposed = 2 * h / n
---   dotProductTransposed     = c^2 * (n - 2 * h)
--- The tests below cross-check the functions against the plain distance functions applied to the two explicit sign vectors.
+-- At precision 1 only the sign bit plane of a QBit is read, so every stored element is known as a sign s and reconstructed as
+-- s * c with a fixed magnitude c (2.0 for a float QBit, 64 for a raw Int8 QBit, the Lloyd-Max prefix centroid sqrt(2 / pi) for
+-- the ...Quantized functions). The transposed distance functions compute this without untransposing the plane:
+--   * by default the reference vector keeps its full precision (asymmetric distance): the signed sum of +-y over the plane
+--     bytes is taken from a 256-entry table per byte, and the result equals the plain distance between the reconstructed
+--     vector and the reference;
+--   * with `qbit_one_bit_symmetric_distance = 1` the reference vector is reduced to its signs as well and the result is derived
+--     from the Hamming distance h between the two sign vectors (XOR + popcount + lookup table), so it equals the plain
+--     distance between the two sign vectors of magnitude c: L2 = 2 * c * sqrt(h), cosine = 2 * h / n, dot = c^2 * (n - 2 * h).
+-- Both are cross-checked below against the plain distance functions on the explicit vectors.
 
 DROP TABLE IF EXISTS qbit_one_bit;
 CREATE TABLE qbit_one_bit
@@ -29,8 +29,57 @@ SELECT number,
        arrayMap(i -> toInt8((i + 1) * 5 * if(bitTest(number, i), -1, 1)), range(12))
 FROM numbers(0, 4096, 337);
 
--- A reference vector with arbitrary magnitudes, including an exact zero (whose sign is positive).
-SELECT '-- Float QBits against the explicit sign vectors (c = 2.0)';
+SELECT '-- Default (asymmetric): float QBits reconstructed to +-2.0 against the full-precision reference';
+WITH
+    [3.5, -1, 0.001, -0.75, 2, -2, 0, 100, -0.5, 7, -7, 0.003]::Array(Float32) AS ref,
+    arrayMap(x -> if(x < 0, -2., 2.), CAST(f32, 'Array(Float32)')) AS recon
+SELECT id,
+       round(L2DistanceTransposed(bf, ref, 1), 4) AS bf_l2,
+       round(L2DistanceTransposed(f32, ref, 1), 4) AS f32_l2,
+       round(L2DistanceTransposed(f64, ref, 1), 4) AS f64_l2,
+       round(L2Distance(recon, ref), 4) AS expected_l2,
+       round(cosineDistanceTransposed(f32, ref, 1), 4) AS f32_cos,
+       round(cosineDistanceTransposed(f64, ref, 1), 4) AS f64_cos,
+       round(cosineDistance(recon, ref), 4) AS expected_cos,
+       round(dotProductTransposed(bf, ref, 1), 4) AS bf_dot,
+       round(dotProductTransposed(f32, ref, 1), 4) AS f32_dot,
+       round(dotProductTransposed(f64, ref, 1), 4) AS f64_dot,
+       round(dotProduct(recon, ref), 4) AS expected_dot
+FROM qbit_one_bit ORDER BY id;
+
+SELECT '-- Default (asymmetric): Int8 QBit reconstructed to +-64 against the full-precision reference';
+WITH
+    [3, -1, 1, -75, 2, -2, 0, 100, -50, 7, -7, 3]::Array(Int8) AS ref,
+    arrayMap(x -> if(x < 0, -64, 64), CAST(i8, 'Array(Int8)')) AS recon
+SELECT id,
+       round(L2DistanceTransposed(i8, ref, 1), 4) AS i8_l2,
+       round(L2Distance(recon, ref), 4) AS expected_l2,
+       round(cosineDistanceTransposed(i8, ref, 1), 4) AS i8_cos,
+       round(cosineDistance(recon, ref), 4) AS expected_cos,
+       dotProductTransposed(i8, ref, 1) AS i8_dot,
+       dotProduct(recon, ref) AS expected_dot
+FROM qbit_one_bit ORDER BY id;
+
+SELECT '-- Default (asymmetric): non-constant reference, one per row';
+WITH
+    arrayMap(i -> toFloat32(if(bitTest(id + 1, i), -1, 1) * (i + 1)), range(12)) AS ref,
+    arrayMap(x -> if(x < 0, -2., 2.), CAST(f32, 'Array(Float32)')) AS recon
+SELECT id,
+       round(L2DistanceTransposed(f32, ref, 1), 4) AS l2,
+       round(L2Distance(recon, ref), 4) AS expected_l2,
+       round(dotProductTransposed(f64, ref, 1), 4) AS dot,
+       round(dotProduct(recon, ref), 4) AS expected_dot
+FROM qbit_one_bit ORDER BY id;
+
+SELECT '-- Default (asymmetric): the corner cases of cosineDistanceTransposed follow the general path';
+WITH [1, -1, 1, -1]::QBit(Float32, 4) AS v
+SELECT cosineDistanceTransposed(v, [0, 0, 0, 0]::Array(Float32), 1) AS zero_reference,
+       cosineDistanceTransposed(v, [1, 1, 1, 1]::Array(Float32), 1) AS orthogonal,
+       cosineDistanceTransposed(v, [1, -1, 1, -1]::Array(Float32), 1) AS same_direction,
+       cosineDistanceTransposed(v, [-3, 3, -3, 3]::Array(Float32), 1) AS opposite_direction;
+
+SELECT '-- Symmetric: float QBits against the explicit sign vectors (c = 2.0)';
+SET qbit_one_bit_symmetric_distance = 1;
 WITH
     [3.5, -1, 0.001, -0.75, 2, -2, 0, 100, -0.5, 7, -7, 0.003]::Array(Float32) AS ref,
     arrayMap(x -> if(x < 0, -2., 2.), ref) AS ref_signs,
@@ -50,7 +99,7 @@ SELECT id, h,
        dotProduct(vec_signs, ref_signs) AS expected_dot
 FROM qbit_one_bit ORDER BY id;
 
-SELECT '-- Int8 QBit against the explicit sign vectors (c = 64)';
+SELECT '-- Symmetric: Int8 QBit against the explicit sign vectors (c = 64)';
 WITH
     [3, -1, 1, -75, 2, -2, 0, 100, -50, 7, -7, 3]::Array(Int8) AS ref,
     arrayMap(x -> if(x < 0, -64., 64.), ref) AS ref_signs,
@@ -64,7 +113,7 @@ SELECT id,
        dotProduct(vec_signs, ref_signs) AS expected_dot
 FROM qbit_one_bit ORDER BY id;
 
-SELECT '-- The same through the partial-reads optimisation (only the sign plane is read from the table)';
+SELECT '-- Symmetric: the same through the partial-reads optimisation (only the sign plane is read from the table)';
 SET optimize_qbit_distance_function_reads = 1;
 WITH [3.5, -1, 0.001, -0.75, 2, -2, 0, 100, -0.5, 7, -7, 0.003]::Array(Float32) AS ref
 SELECT id,
@@ -74,7 +123,7 @@ SELECT id,
 FROM qbit_one_bit ORDER BY id;
 SET optimize_qbit_distance_function_reads = 0;
 
-SELECT '-- Non-constant reference: one reference vector per row';
+SELECT '-- Symmetric: non-constant reference, one per row';
 WITH
     arrayMap(i -> toFloat32(if(bitTest(id + 1, i), -1, 1) * (i + 1)), range(12)) AS ref,
     arrayMap(x -> if(x < 0, -2., 2.), ref) AS ref_signs,
@@ -88,14 +137,21 @@ FROM qbit_one_bit ORDER BY id;
 
 DROP TABLE qbit_one_bit;
 
-SELECT '-- Strided QBit: whole vector and a reduced number of dimensions';
+SELECT '-- Strided QBit, both modes: whole vector and a reduced number of dimensions';
 WITH
     [1, -1, 1, -1, 1, -1, 1, -1, 1, 1, 1, 1, -1, -1, -1, -1]::QBit(Float32, 16, 8) AS v,
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]::Array(Float32) AS ref
 SELECT round(L2DistanceTransposed(v, ref, 1), 6) AS l2_16, round(cosineDistanceTransposed(v, ref, 1), 6) AS cos_16, dotProductTransposed(v, ref, 1) AS dot_16,
-       round(L2DistanceTransposed(v, ref, 1, 8), 6) AS l2_8, round(cosineDistanceTransposed(v, ref, 1, 8), 6) AS cos_8, dotProductTransposed(v, ref, 1, 8) AS dot_8;
+       round(L2DistanceTransposed(v, ref, 1, 8), 6) AS l2_8, round(cosineDistanceTransposed(v, ref, 1, 8), 6) AS cos_8, dotProductTransposed(v, ref, 1, 8) AS dot_8
+SETTINGS qbit_one_bit_symmetric_distance = 1;
+WITH
+    [1, -1, 1, -1, 1, -1, 1, -1, 1, 1, 1, 1, -1, -1, -1, -1]::QBit(Float32, 16, 8) AS v,
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]::Array(Float32) AS ref
+SELECT round(L2DistanceTransposed(v, ref, 1), 6) AS l2_16, round(cosineDistanceTransposed(v, ref, 1), 6) AS cos_16, dotProductTransposed(v, ref, 1) AS dot_16,
+       round(L2DistanceTransposed(v, ref, 1, 8), 6) AS l2_8, round(cosineDistanceTransposed(v, ref, 1, 8), 6) AS cos_8, dotProductTransposed(v, ref, 1, 8) AS dot_8
+SETTINGS qbit_one_bit_symmetric_distance = 0;
 
-SELECT '-- Signs of zero: -0.0 is negative and +0.0 is positive, on both sides';
+SELECT '-- Symmetric: signs of zero, -0.0 is negative and +0.0 is positive, on both sides';
 WITH [-0.0, 0.0, -0.0, 0.0]::QBit(Float32, 4) AS v
 SELECT dotProductTransposed(v, [-0.0, 0.0, -0.0, 0.0]::Array(Float32), 1) AS all_agree,
        dotProductTransposed(v, [0.0, 0.0, 0.0, 0.0]::Array(Float32), 1) AS two_differ,
@@ -105,13 +161,13 @@ SELECT dotProductTransposed(v, [-1.0, 1.0]::Array(BFloat16), 1) AS bf16_agree, d
 WITH [-0.0, 0.0]::QBit(Float64, 2) AS v
 SELECT dotProductTransposed(v, [-1.0, 1.0]::Array(Float64), 1) AS f64_agree, dotProductTransposed(v, [1.0, -1.0]::Array(Float64), 1) AS f64_differ;
 
-SELECT '-- Magnitudes of the reference do not matter, only its signs';
+SELECT '-- Symmetric: magnitudes of the reference do not matter, only its signs';
 WITH [1, -1, 1, -1]::QBit(Float32, 4) AS v
 SELECT L2DistanceTransposed(v, [1, -1, 1, -1]::Array(Float32), 1) AS same_signs_unit,
        L2DistanceTransposed(v, [1000, -0.001, 5, -1e10]::Array(Float32), 1) AS same_signs_any,
        L2DistanceTransposed(v, [-1, 1, -1, 1]::Array(Float32), 1) AS opposite_signs;
 
-SELECT '-- Quantized functions: c is the Lloyd-Max 1-bit prefix centroid sqrt(2 / pi), so c^2 = 2 / pi';
+SELECT '-- Symmetric quantized functions: c is the Lloyd-Max 1-bit prefix centroid sqrt(2 / pi), so c^2 = 2 / pi';
 WITH
     arrayMap(x -> quantizeBFloat16ToInt8(x), [0.3, -0.2, 0.1, -1, 0.7, -0.05, 2, -0.5]::Array(BFloat16))::QBit(Int8, 8) AS v,
     [1, 1, 1, 1, 1, -1, -1, -1]::Array(Float32) AS ref -- signs differ in 3 of the 8 dimensions
@@ -123,7 +179,7 @@ SELECT round(cosineDistanceTransposedQuantized(v, ref, 1), 6) AS cos,
        round(L2DistanceTransposedQuantized(v, ref, 1) / (2 * sqrt(3)), 6) AS c_from_l2,
        round(sqrt(2 / pi()), 6) AS sqrt_two_over_pi;
 
-SELECT '-- Quantized functions: an Array(Int8) reference of codes contributes its signs exactly like a Float32 reference';
+SELECT '-- Symmetric quantized functions: an Array(Int8) reference of codes contributes its signs exactly like a Float32 reference';
 WITH
     arrayMap(x -> quantizeBFloat16ToInt8(x), [0.3, -0.2, 0.1, -1, 0.7, -0.05, 2, -0.5]::Array(BFloat16))::QBit(Int8, 8) AS v,
     [1, 1, 1, 1, -1, -1, -1, -1]::Array(Float32) AS ref_f32,
@@ -131,3 +187,20 @@ WITH
 SELECT round(cosineDistanceTransposedQuantized(v, ref_f32, 1), 6) = round(cosineDistanceTransposedQuantized(v, ref_i8, 1), 6),
        dotProductTransposedQuantized(v, ref_f32, 1) = dotProductTransposedQuantized(v, ref_i8, 1),
        L2DistanceTransposedQuantized(v, ref_f32, 1) = L2DistanceTransposedQuantized(v, ref_i8, 1);
+SET qbit_one_bit_symmetric_distance = 0;
+
+SELECT '-- Default (asymmetric) quantized functions: codes reconstructed to +-sqrt(2 / pi) against the full-precision reference';
+WITH
+    arrayMap(x -> quantizeBFloat16ToInt8(x), [0.3, -0.2, 0.1, -1, 0.7, -0.05, 2, -0.5]::Array(BFloat16))::QBit(Int8, 8) AS v,
+    [0.5, 0.25, -1, 2, 0.1, -0.1, 3, -0.7]::Array(Float32) AS ref,
+    arrayMap(x -> if(x < 0, -1, 1) * sqrt(2 / pi()), [0.3, -0.2, 0.1, -1, 0.7, -0.05, 2, -0.5]) AS recon
+SELECT round(L2DistanceTransposedQuantized(v, ref, 1), 4) AS l2, round(L2Distance(recon, ref), 4) AS expected_l2,
+       round(cosineDistanceTransposedQuantized(v, ref, 1), 4) AS cos, round(cosineDistance(recon, ref), 4) AS expected_cos,
+       round(dotProductTransposedQuantized(v, ref, 1), 4) AS dot, round(dotProduct(recon, ref), 4) AS expected_dot;
+-- An Array(Int8) reference is dequantized at full precision before the comparison.
+WITH
+    arrayMap(x -> quantizeBFloat16ToInt8(x), [0.3, -0.2, 0.1, -1, 0.7, -0.05, 2, -0.5]::Array(BFloat16))::QBit(Int8, 8) AS v,
+    arrayMap(x -> quantizeBFloat16ToInt8(x), [0.9, 0.001, 0.2, 3, -0.4, -1, -0.01, -2]::Array(BFloat16)) AS ref_i8,
+    arrayMap(x -> toFloat32(dequantizeInt8ToBFloat16(x)), ref_i8) AS ref_dequantized,
+    arrayMap(x -> if(x < 0, -1, 1) * sqrt(2 / pi()), [0.3, -0.2, 0.1, -1, 0.7, -0.05, 2, -0.5]) AS recon
+SELECT round(dotProductTransposedQuantized(v, ref_i8, 1), 4) AS dot, round(dotProduct(recon, ref_dequantized), 4) AS expected_dot;
