@@ -195,10 +195,6 @@ private:
     /// The value is divided by 2 ^ skip_degree
     bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
 
-    static UInt64 fullHash(Value key) { return static_cast<UInt64>(Hash()(key)); }
-
-    HashValue hash(Value key) const { return static_cast<HashValue>(Hash()(key)); }
-
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
     {
@@ -611,14 +607,29 @@ public:
         freeWide();
     }
 
+    /// The full 64-bit hash: its low 32 bits feed the main set, and the whole value the wide set.
+    static UInt64 fullHash(Value key) { return static_cast<UInt64>(Hash()(key)); }
+    static HashValue hash(Value key) { return static_cast<HashValue>(fullHash(key)); }
+
+    void ALWAYS_INLINE prefetch(UInt64 full_hash) const
+    {
+        __builtin_prefetch(&buf[place(static_cast<HashValue>(full_hash))]);
+    }
+
     void ALWAYS_INLINE insert(Value x)
     {
-        const HashValue hash_value = hash(x);
+        insertHash(fullHash(x));
+    }
+
+    /// Insert an element by its full 64-bit hash (see `fullHash`), computed by the caller in advance.
+    void ALWAYS_INLINE insertHash(UInt64 full_hash)
+    {
+        const HashValue hash_value = static_cast<HashValue>(full_hash);
         if (!good(hash_value))
             return;
 
         if (unlikely((hash_value & widePrefilterMask()) == 0))
-            wideInsert(fullHash(x));
+            wideInsert(full_hash);
 
         insertImpl(hash_value);
         shrinkIfNeed();
