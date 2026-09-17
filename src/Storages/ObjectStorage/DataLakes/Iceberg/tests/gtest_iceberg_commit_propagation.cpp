@@ -78,8 +78,10 @@ public:
         unexpected("readObject");
     }
     void removeObjectIfExists(const StoredObject &) override { unexpected("removeObjectIfExists"); }
-    void removeObjectsIfExist(const StoredObjects &) override { unexpected("removeObjectsIfExist"); }
-    void copyObject( /// NOLINT
+    void removeObjectsIfExist(
+        const StoredObjects &,
+        StoredObjects *) override { unexpected("removeObjectsIfExist"); }
+    String copyObject( /// NOLINT
         const StoredObject &,
         const StoredObject &,
         const ReadSettings &,
