@@ -262,8 +262,6 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
         throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");
     });
 
-    /// A commit error does not mean the commit is absent: the log write may have taken effect and
-    /// only its response been lost, and the kernel cannot distinguish that from a rejection.
     commit_outcome_unknown = true;
     try
     {
@@ -283,8 +281,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
     catch (...)
     {
-        /// `file_name` carries the URI-encoded `add.path` form, which for partitioned tables is not
-        /// the object key; one `unescapeForFileName` is its exact inverse.
+        /// `file_name` is the URI-encoded `add.path`, not the object key for partitioned tables.
         LOG_WARNING(
             log,
             "DeltaLake commit outcome is unknown, keeping the {} data file(s) written for it under {}: {}",

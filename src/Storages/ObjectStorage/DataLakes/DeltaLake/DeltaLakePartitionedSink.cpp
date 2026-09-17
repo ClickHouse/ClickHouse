@@ -449,8 +449,7 @@ void DeltaLakePartitionedSink::onFinish()
     {
         if (delta_transaction->isCommitOutcomeUnknown())
         {
-            /// `onException` -> `cancelBuffers()` and the destructor unlink whatever is still
-            /// tracked here, so clearing the list is what keeps the files on every path.
+            /// `cancelBuffers()` and the destructor also unlink whatever is still tracked here.
             partitions_data.clear();
             throw;
         }

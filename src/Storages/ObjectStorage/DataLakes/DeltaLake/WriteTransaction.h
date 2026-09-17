@@ -34,9 +34,8 @@ public:
     /// Commit written files to DeltaLake.
     void commit(const std::vector<CommitFile> & files);
 
-    /// True when `commit` failed inside the kernel commit call. The kernel validates before it
-    /// publishes, so the log entry may or may not exist, and the files it listed must not be
-    /// deleted.
+    /// True after a failed kernel commit call: the kernel validates before it publishes, so the
+    /// log entry may or may not exist and the files it listed must not be deleted.
     bool isCommitOutcomeUnknown() const { return commit_outcome_unknown; }
 
     /// Validate if schema is consistent with the write schema of the transaction.
