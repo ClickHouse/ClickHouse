@@ -222,6 +222,9 @@ public:
     const PathToDynamicColumnPtrMap & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
     PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
 
+    /// Dynamic path names in sorted order, so that all paths under a prefix form one range.
+    const SetWithMemoryTracking<std::string_view> & getSortedDynamicPaths() const { return sorted_dynamic_paths; }
+
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
     bool hasStatistics() const override { return true; }
