@@ -91,7 +91,6 @@ namespace Setting
     extern const SettingsBool explain_syntax_single_record;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
 }
@@ -881,12 +880,10 @@ bool InterpreterExplainQuery::isExecutableAnalyze() const
     if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
         return false;
 
-    /// Distributed EXPLAIN ANALYZE is rejected before execution, so do not plan it here (e.g. while
-    /// charging quota in executeQuery). The quota is charged as for a generic query and the error follows.
-    if (getContext()->getSettingsRef()[Setting::make_distributed_plan])
-        return false;
-
-    return true;
+    /// A plan that stays distributed is rejected in executeImpl and never runs its inner SELECT, so it
+    /// must not be charged as one. Planning here is not extra work: `ignoreQuota` plans the same
+    /// inner query at the same moment.
+    return !getAnalyzedInnerQuery().plan.staysDistributed();
 }
 
 InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyzedInnerQuery() const
@@ -918,6 +915,9 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
+        /// A query that falls back to local execution is analyzable, and the
+        /// decision must land on the interpreter context
+        interpreter.applyDistributedPlanFallbackIfNeeded();
         result->context = interpreter.getContext();
         result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
         /// Force planning so the effective ignore flags settle before we read them.
@@ -931,6 +931,11 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), planning_context, inner_options);
         interpreter.buildQueryPlan(result->plan);
         result->context = interpreter.getContext();
+        /// Match execution, a query that falls back to local execution needs
+        /// to have make_distributed_plan=0
+        QueryPlanOptimizationSettings probe_settings(planning_context);
+        if (result->plan.applyDistributedPlanFallbackToLocal(probe_settings))
+            planning_context->setSetting("make_distributed_plan", false);
         result->ignore_quota = interpreter.ignoreQuota();
         result->ignore_limits = interpreter.ignoreLimits();
     }
@@ -1086,14 +1091,27 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                /// Decide the distributed-to-local fallback the same way execution does, so the
+                /// explained plan and the interpreter context match a real run. Skipped without
+                /// `optimize`: the raw plan is shown and no distributed decision is ever made.
+                if (settings.optimize)
+                    interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                /// A mutable copy to include fallback decision for make_distribut
+                auto old_analyzer_context = Context::createCopy(query_context);
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), old_analyzer_context, options);
                 interpreter.buildQueryPlan(plan);
-                context = interpreter.getContext();
+                if (settings.optimize)
+                {
+                    QueryPlanOptimizationSettings probe_settings(old_analyzer_context);
+                    if (plan.applyDistributedPlanFallbackToLocal(probe_settings))
+                        old_analyzer_context->setSetting("make_distributed_plan", false);
+                }
+                context = old_analyzer_context;
             }
 
             if (settings.optimize)
@@ -1145,6 +1163,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                    /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
+                    /// distributed-to-local fallback must be decided on the contexts first.
+                    interpreter.applyDistributedPlanFallbackIfNeeded();
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }
@@ -1215,6 +1236,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
+                /// Match execution: `buildQueryPipeline` below optimizes the plan, so the
+                /// distributed-to-local fallback must be decided on the contexts first.
+                interpreter.applyDistributedPlanFallbackIfNeeded();
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
@@ -1281,12 +1305,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only SELECT is currently supported for EXPLAIN ANALYZE query");
 
-            /// Distributed query planning rewrites the plan into exchange/remote steps, which EXPLAIN ANALYZE cannot execute here.
-            if (query_context->getSettingsRef()[Setting::make_distributed_plan])
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
-
             /// Plan the inner SELECT. This is cached when ignoreQuota / ignoreLimits already triggered
             /// it during quota charging in executeQuery, so the inner query is never planned twice.
             /// getAnalyzedInnerQuery also validates the EXPLAIN ANALYZE settings (the same check that was
@@ -1295,6 +1313,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// rules as running that SELECT directly; the inner interpreter resolves the effective
             /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
             auto & analyzed = getAnalyzedInnerQuery();
+
+            /// A query that fell back to local execution is a plain local query and is analyzable.
+            /// Only a plan that stays distributed is rejected: its rewrite into exchange and remote
+            /// steps cannot be executed here. The decision was recorded on the plan by
+            /// `getAnalyzedInnerQuery` for both analyzers.
+            if (analyzed.plan.staysDistributed())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
             QueryPlan plan = std::move(analyzed.plan);
             ContextPtr context = analyzed.context;
             auto parallel_replicas_builder = analyzed.parallel_replicas_builder;
