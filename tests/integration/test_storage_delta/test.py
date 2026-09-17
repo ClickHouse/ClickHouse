@@ -3628,11 +3628,32 @@ def test_count_from_cache(started_cluster):
         instance.query(f"SELECT count() FROM {table_function}", query_id=query_id)
     )
     instance.query("SYSTEM FLUSH LOGS")
-    assert 3 == int(
+    # Every `add` action carries `stats.numRecords`, so the delta kernel reports the total row
+    # count from the log itself and count() is answered without opening any data file.
+    assert 0 == int(
         instance.query(
             f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+
+    # The legacy Delta metadata never reports a total row count, so on the very same table
+    # count() falls back to per-file row counts, which is what the row count cache holds.
+    legacy_instance = started_cluster.instances["node_with_disabled_delta_kernel"]
+    legacy_instance.query(f"SELECT count() FROM {table_function}")
+    legacy_instance.query(f"SELECT count() FROM {table_function}")
+    legacy_query_id = f"{TABLE_NAME}_legacy_query"
+    assert 3 == int(
+        legacy_instance.query(
+            f"SELECT count() FROM {table_function}", query_id=legacy_query_id
+        )
+    )
+    legacy_instance.query("SYSTEM FLUSH LOGS")
+    assert 3 == int(
+        legacy_instance.query(
+            f"SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] FROM system.query_log WHERE query_id = '{legacy_query_id}' and type = 'QueryFinish'"
+        )
+    )
+
     assert (
         "3\t3"
         == instance.query(f"SELECT count(), count() FROM {table_function}").strip()
