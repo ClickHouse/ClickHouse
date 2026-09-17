@@ -22,14 +22,16 @@ INSERT INTO t_agg_in_order_limit_prefix SELECT 1, number, 1 FROM numbers(4, 17);
 -- returned group carries its complete aggregate value. The check is done in the
 -- projection on purpose: wrapping the query into a subquery changes the plan
 -- (the aggregation is no longer executed in order), which hides the bug. The block
--- settings are pinned because tiny blocks also hide it.
+-- settings are pinned because tiny blocks also hide it, and `max_threads` because with a
+-- single thread and `read_in_order_two_level_merge_threshold` at most the number of parts
+-- the parts are merged into one stream before the aggregation, where the bug cannot occur.
 SELECT sum(x) = if(b <= 3, 10, 11)
 FROM t_agg_in_order_limit_prefix
 GROUP BY a, b
 ORDER BY a
 LIMIT 3
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
-         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+         max_threads = 2, max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
 
 -- Same with OFFSET.
 SELECT sum(x) = if(b <= 3, 10, 11)
@@ -38,7 +40,7 @@ GROUP BY a, b
 ORDER BY a
 LIMIT 3 OFFSET 2
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
-         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+         max_threads = 2, max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
 
 -- The full-key `ORDER BY` still admits the push-down and stays correct.
 SELECT a, b, sum(x)
@@ -72,7 +74,7 @@ GROUP BY a, b
 ORDER BY a
 LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
-         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+         max_threads = 2, max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
 
 SELECT sum(x) = 3
 FROM t_agg_in_order_limit_prefix_reads
@@ -80,18 +82,19 @@ GROUP BY a, b
 ORDER BY a
 LIMIT 5 OFFSET 7
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
-         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+         max_threads = 2, max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
 
 -- The push-down is observed through `read_rows`. The small-block settings expose the
 -- effect on a 2000-row table; `enable_parallel_replicas = 0` is required because
--- `read_rows` is accounted per reading node.
+-- `read_rows` is accounted per reading node, and `read_in_order_two_level_merge_threshold`
+-- keeps the two parts in separate streams instead of merging them before the aggregation.
 SELECT sum(x) = 3
 FROM t_agg_in_order_limit_prefix_reads
 GROUP BY a, b
 ORDER BY a
 LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
-         max_threads = 1, max_block_size = 16,
+         max_threads = 1, max_block_size = 16, read_in_order_two_level_merge_threshold = 100,
          merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0,
          merge_tree_min_rows_for_seek = 0,
          enable_parallel_replicas = 0,
@@ -103,7 +106,7 @@ GROUP BY a, b
 ORDER BY a
 LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0,
-         max_threads = 1, max_block_size = 16,
+         max_threads = 1, max_block_size = 16, read_in_order_two_level_merge_threshold = 100,
          merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0,
          merge_tree_min_rows_for_seek = 0,
          enable_parallel_replicas = 0,
@@ -150,7 +153,7 @@ GROUP BY a, b
 ORDER BY a
 LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
-         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+         max_threads = 2, max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
 
 SELECT sum(x) = 3
 FROM t_agg_in_order_limit_partial_key
@@ -158,7 +161,7 @@ GROUP BY a, b
 ORDER BY a, b
 LIMIT 5 OFFSET 7
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
-         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+         max_threads = 2, max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
 
 SELECT sum(x) = 3
 FROM t_agg_in_order_limit_partial_key
@@ -166,7 +169,7 @@ GROUP BY a, b
 ORDER BY a
 LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
-         max_threads = 1, max_block_size = 16,
+         max_threads = 1, max_block_size = 16, read_in_order_two_level_merge_threshold = 100,
          merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0,
          merge_tree_min_rows_for_seek = 0,
          enable_parallel_replicas = 0,
@@ -178,7 +181,7 @@ GROUP BY a, b
 ORDER BY a
 LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0,
-         max_threads = 1, max_block_size = 16,
+         max_threads = 1, max_block_size = 16, read_in_order_two_level_merge_threshold = 100,
          merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0,
          merge_tree_min_rows_for_seek = 0,
          enable_parallel_replicas = 0,
