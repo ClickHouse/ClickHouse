@@ -4,6 +4,10 @@
 -- produced by `getExtremes`, which skips `NaN`. A part or granule holding `NaN` next to finite values
 -- got a `NaN`-free range and was pruned even though the rows match.
 
+-- clickhouse-test randomizes `use_statistics` and `materialize_statistics_on_insert`; without materialized statistics
+-- the parts carry no min/max to prune with, and the `EXPLAIN` checks below would find no `Statistics` entry.
+SET use_statistics = 1, materialize_statistics_on_insert = 1;
+
 SELECT nan IN (nan), nan = nan;
 
 SELECT 'statistics part pruning';
