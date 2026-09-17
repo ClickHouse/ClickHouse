@@ -62,7 +62,7 @@ namespace ErrorCodes
     extern const int CANNOT_BACKUP_TABLE;
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
-    extern const int INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -106,7 +106,7 @@ namespace
     [[noreturn]] void throwInnerTableNamedByExceptDataClause(const String & database_name, const String & table_name)
     {
         throw Exception(
-            ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
+            ErrorCodes::BAD_ARGUMENTS,
             "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
             "Table: {}.{}. Use the outer table name instead.",
             backQuoteIfNeed(database_name),
@@ -121,7 +121,7 @@ namespace
         if (BackupUtils::isInnerTable(database_name, table_name))
         {
             throw Exception(
-                ErrorCodes::INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION,
+                ErrorCodes::BAD_ARGUMENTS,
                 "Inner table names cannot be specified directly in EXCEPT DATA FROM TABLE clause. "
                 "Table: {}.{}. Use the outer table name instead.",
                 backQuoteIfNeed(database_name),

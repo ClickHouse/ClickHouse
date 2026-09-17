@@ -68,12 +68,11 @@ public:
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
 
-    /// Returns true if the table's data is excluded via EXCEPT DATA FROM TABLE.
-    /// Used by delegated storages (MaterializedView, TimeSeries, MaterializedPostgreSQL) to check
-    /// the OUTER table's exclusion state before delegating backupData() to inner/nested tables.
+private:
+    /// Returns true if the table's data is excluded via EXCEPT DATA FROM TABLE. Used internally
+    /// while gathering metadata, to decide whether a table's data entries should be collected.
     bool isTableDataExcluded(const QualifiedTableName & table_name) const;
 
-private:
     void calculateRootPathInBackup();
 
     void gatherMetadataAndCheckConsistency();

@@ -294,7 +294,7 @@ def test_except_data_rejects_inner_table_name():
     # Should throw error when trying to use inner table name directly
     # The error can be either:
     # 1. SYNTAX_ERROR (62) - parser rejects dot-prefixed identifier
-    # 2. INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION - our validation
+    # 2. BAD_ARGUMENTS - our validation
     try:
         # Try with backticks to bypass parser's identifier check
         instance.query(f"BACKUP DATABASE test EXCEPT DATA FROM TABLE `{inner_table}` TO {backup_name}")
@@ -303,8 +303,8 @@ def test_except_data_rejects_inner_table_name():
         error_message = str(e)
         # Backtick-quoting bypasses the parser, so this must be rejected by our
         # explicit validation layer specifically - not by parser SYNTAX_ERROR.
-        assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in error_message, \
-            f"Expected INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION, got: {error_message}"
+        assert "BAD_ARGUMENTS" in error_message, \
+            f"Expected BAD_ARGUMENTS, got: {error_message}"
 
     instance.query("DROP DATABASE test")
 
@@ -861,7 +861,7 @@ def test_except_data_from_materialized_postgresql_nested_table():
             f"BACKUP DATABASE default EXCEPT DATA FROM TABLE `{nested_table}` "
             "TO Disk('backups', 'mpg_rejected/')"
         )
-    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+    assert "BAD_ARGUMENTS" in str(exc_info.value), str(
         exc_info.value
     )
 
@@ -1138,7 +1138,7 @@ def test_nested_table_named_by_its_own_element_beside_a_database_element_is_back
             f"BACKUP DATABASE default, TABLE default.`{nested_table}` "
             f"EXCEPT DATA FROM TABLE default.`{nested_table}` TO {new_backup_name()}"
         )
-    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+    assert "BAD_ARGUMENTS" in str(exc_info.value), str(
         exc_info.value
     )
 
@@ -1205,7 +1205,7 @@ def test_except_data_on_a_nested_table_named_by_its_own_element_is_rejected():
             f"BACKUP TABLE default.`{nested_table}` "
             f"EXCEPT DATA FROM TABLE default.`{nested_table}` TO {new_backup_name()}"
         )
-    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+    assert "BAD_ARGUMENTS" in str(exc_info.value), str(
         exc_info.value
     )
 
@@ -1217,7 +1217,7 @@ def test_except_data_on_a_nested_table_named_by_its_own_element_is_rejected():
             f"BACKUP TABLE default.{pg_table}, TABLE default.`{nested_table}` "
             f"EXCEPT DATA FROM TABLE default.`{nested_table}` TO {new_backup_name()}"
         )
-    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+    assert "BAD_ARGUMENTS" in str(exc_info.value), str(
         exc_info.value
     )
 
@@ -2046,7 +2046,7 @@ def test_except_data_on_a_nested_table_is_rejected_when_the_outer_table_is_exclu
     `EXCEPT TABLES` used to take the outer table out of the enumeration before the classification, so
     the nested table was not recognised as inner and the clause naming it was silently accepted -
     which is the same escape as the leak above, seen from the validation side. It has to be refused
-    with `INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION`, as it is when the outer table is not excluded.
+    with `BAD_ARGUMENTS`, as it is when the outer table is not excluded.
     """
     pg_table = "mpg_ex_tbl_rej"
     nested_table = create_materialized_postgresql_table(pg_table, 30)
@@ -2056,7 +2056,7 @@ def test_except_data_on_a_nested_table_is_rejected_when_the_outer_table_is_exclu
             f"BACKUP DATABASE default EXCEPT TABLES {pg_table} "
             f"EXCEPT DATA FROM TABLE `{nested_table}` TO {new_backup_name()}"
         )
-    assert "INNER_TABLE_NOT_ALLOWED_IN_BACKUP_EXCLUSION" in str(exc_info.value), str(
+    assert "BAD_ARGUMENTS" in str(exc_info.value), str(
         exc_info.value
     )
 

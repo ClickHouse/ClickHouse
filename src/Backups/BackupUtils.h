@@ -2,10 +2,6 @@
 
 #include <Parsers/ASTBackupQuery.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage_fwd.h>
-
-#include <unordered_set>
-#include <vector>
 
 
 namespace DB
@@ -31,7 +27,6 @@ bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, con
 /// Returns true if this table should be skipped while making a backup because it's an inner table.
 bool isInnerTable(const QualifiedTableName & table_name);
 bool isInnerTable(const String & database_name, const String & table_name);
-
 
 }
 
