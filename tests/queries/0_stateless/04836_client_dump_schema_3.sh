@@ -1,0 +1,322 @@
+#!/usr/bin/env bash
+# Tags: long, no-darwin
+# Third of three 04836_client_dump_schema files; uses many local instances.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+ERR_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_err.txt"
+
+DB="${CLICKHOUSE_DATABASE}"
+DB2="${CLICKHOUSE_DATABASE}_second"
+
+echo '--- a database-less TimeSeries target keeps the session database it was created under ---'
+# A TimeSeries target created under USE ${DB2} must retain that qualified external edge.
+TS_UNQUAL_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ts_unqual"
+rm -rf "$TS_UNQUAL_PATH"
+$CLICKHOUSE_LOCAL --path "$TS_UNQUAL_PATH" --multiquery "
+    CREATE DATABASE ${DB};
+    CREATE DATABASE ${DB2};
+    USE ${DB2};
+    SET allow_experimental_time_series_table = 1;
+    CREATE TABLE zzz_ts_metrics (metric_family_name String, type String, unit String, help String)
+        ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+    CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries METRICS zzz_ts_metrics;
+"
+TS_UNQUAL_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_ts_unqual_dump.sql"
+$CLICKHOUSE_LOCAL --path "$TS_UNQUAL_PATH" --dump-schema="${DB}" > "$TS_UNQUAL_DUMP_FILE" 2>"$ERR_FILE"
+echo "target named in the creator's database: $(grep -c "${DB}\.aaa_ts depends on ${DB2}\.zzz_ts_metrics" "$ERR_FILE")"
+echo "target rebound to the object's own database: $(grep -c "depends on ${DB}\.zzz_ts_metrics" "$ERR_FILE")"
+# Dumping both databases makes the cross-database edge orderable, so the target must come first.
+$CLICKHOUSE_LOCAL --path "$TS_UNQUAL_PATH" --dump-schema="${DB},${DB2}" > "$TS_UNQUAL_DUMP_FILE" 2>"$ERR_FILE"
+TS_U_TARGET_LINE=$(grep -n "CREATE TABLE ${DB2}\.zzz_ts_metrics" "$TS_UNQUAL_DUMP_FILE" | head -1 | cut -d: -f1)
+TS_U_LINE=$(grep -n "CREATE TABLE ${DB}\.aaa_ts " "$TS_UNQUAL_DUMP_FILE" | head -1 | cut -d: -f1)
+if [ -n "$TS_U_TARGET_LINE" ] && [ -n "$TS_U_LINE" ] && [ "$TS_U_TARGET_LINE" -lt "$TS_U_LINE" ]; then
+    echo 'OK: cross-database TimeSeries target still ordered first'
+else
+    echo "FAIL: cross-database TimeSeries target ordering (target=$TS_U_TARGET_LINE ts=$TS_U_LINE)"
+fi
+rm -rf "$TS_UNQUAL_PATH" "$TS_UNQUAL_DUMP_FILE"
+
+
+echo '--- merge(REGEXP(...)) reaching an omitted database is reported ---'
+# The regexp can match databases the dump leaves out, and `merge()` still infers its structure from
+# them on replay, so that omission has to be reported the way an explicitly named one already is.
+MERGE_RE_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_merge_re"
+rm -rf "$MERGE_RE_PATH"
+$CLICKHOUSE_LOCAL --path "$MERGE_RE_PATH" --multiquery "
+    CREATE DATABASE ${DB};
+    CREATE DATABASE ${DB2};
+    CREATE TABLE ${DB2}.zzz_source (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE TABLE ${DB}.yyy_local (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE MATERIALIZED VIEW ${DB}.aaa_mv ENGINE = MergeTree ORDER BY id AS
+        SELECT s.id FROM ${DB}.yyy_local AS s
+        LEFT JOIN merge(REGEXP('^${DB2}\$'), '^zzz_source\$') AS m ON s.id = m.id;
+"
+$CLICKHOUSE_LOCAL --path "$MERGE_RE_PATH" --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"
+echo "omitted regexp-matched dependency named: $(grep -c "${DB}\.aaa_mv depends on ${DB2}\." "$ERR_FILE")"
+# Dumping both leaves nothing outside the set, so the same schema reports nothing.
+$CLICKHOUSE_LOCAL --path "$MERGE_RE_PATH" --dump-schema="${DB},${DB2}" > /dev/null 2>"$ERR_FILE"
+echo "no warning when the regexp stays inside the dump: $(grep -c 'will not be created by this dump' "$ERR_FILE")"
+rm -rf "$MERGE_RE_PATH"
+
+echo '--- IN right-hand sides: literals and aliases are not dependencies, qualified tables are ---'
+IN_REF_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_in_ref"
+rm -rf "$IN_REF_PATH"
+$CLICKHOUSE_LOCAL --path "$IN_REF_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.zzz_in_source (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE ${DB}.zzz_in_set (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW ${DB}.aaa_in_literal AS SELECT * FROM ${DB}.zzz_in_source WHERE val IN ('abc');
+CREATE VIEW ${DB}.aaa_in_alias AS WITH tuple(1, 2, 3) AS ev SELECT * FROM ${DB}.zzz_in_source WHERE id IN ev;
+CREATE VIEW ${DB}.aaa_in_table AS SELECT * FROM ${DB}.zzz_in_source WHERE id IN ${DB}.zzz_in_set;
+"
+IN_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_in_dump.sql"
+$CLICKHOUSE_LOCAL --path "$IN_REF_PATH" --dump-schema="${DB}" > "$IN_DUMP_FILE" 2>"$ERR_FILE"
+rc=$?
+[[ $rc -eq 0 ]] && echo 'OK: zero exit code' || echo 'FAIL: expected zero exit code'
+echo "stderr lines: $(wc -l < "$ERR_FILE" | tr -d ' ')"
+in_set_line=$(grep -n "CREATE TABLE ${DB}\.zzz_in_set " "$IN_DUMP_FILE" | cut -d: -f1)
+in_view_line=$(grep -n "CREATE VIEW ${DB}\.aaa_in_table " "$IN_DUMP_FILE" | cut -d: -f1)
+if [[ -n "$in_set_line" && -n "$in_view_line" && "$in_set_line" -lt "$in_view_line" ]]; then
+    echo 'OK: qualified IN table precedes its reader'
+else
+    echo 'FAIL: qualified IN dependency not ordered'
+fi
+rm -rf "$IN_REF_PATH" "$IN_DUMP_FILE"
+
+echo '--- a view reading a name-based helper table replays through the owning object ---'
+# In an Ordinary database the MV's inner table keeps the deterministic `.inner.<mv name>` name, so
+# the reference replays; the edge must be remapped onto the MV or the view is emitted first.
+HELPER_REF_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_helper_ref"
+rm -rf "$HELPER_REF_PATH"
+$CLICKHOUSE_LOCAL --path "$HELPER_REF_PATH" --multiquery --query "
+SET allow_deprecated_database_ordinary = 1;
+CREATE DATABASE ${DB} ENGINE = Ordinary;
+CREATE TABLE ${DB}.src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW ${DB}.zzz_mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM ${DB}.src;
+CREATE VIEW ${DB}.aaa_view AS SELECT * FROM ${DB}.\`.inner.zzz_mv\`;
+"
+HELPER_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_helper_dump.sql"
+$CLICKHOUSE_LOCAL --path "$HELPER_REF_PATH" --dump-schema="${DB}" > "$HELPER_DUMP_FILE" 2>"$ERR_FILE"
+helper_mv_line=$(grep -n "CREATE MATERIALIZED VIEW ${DB}\.zzz_mv " "$HELPER_DUMP_FILE" | cut -d: -f1)
+helper_view_line=$(grep -n "CREATE VIEW ${DB}\.aaa_view " "$HELPER_DUMP_FILE" | cut -d: -f1)
+if [[ -n "$helper_mv_line" && -n "$helper_view_line" && "$helper_mv_line" -lt "$helper_view_line" ]]; then
+    echo 'OK: helper-table reader ordered after the owning materialized view'
+else
+    echo "FAIL: helper-table reader misordered (mv=$helper_mv_line view=$helper_view_line)"
+fi
+HELPER_REPLAY_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_helper_replay"
+rm -rf "$HELPER_REPLAY_PATH"
+$CLICKHOUSE_LOCAL --path "$HELPER_REPLAY_PATH" --allow_deprecated_database_ordinary=1 --queries-file "$HELPER_DUMP_FILE"
+echo "replayed view resolves the helper: $($CLICKHOUSE_LOCAL --path "$HELPER_REPLAY_PATH" --query "SELECT count() FROM ${DB}.aaa_view")"
+echo "helper emitted as a standalone table: $(grep -c "CREATE TABLE ${DB}\.\`\.inner\.zzz_mv\`" "$HELPER_DUMP_FILE")"
+rm -rf "$HELPER_REF_PATH" "$HELPER_REPLAY_PATH" "$HELPER_DUMP_FILE"
+
+echo '--- a view reading a UUID-named helper table is refused ---'
+# `.inner_id.<uuid>` embeds a UUID the replayed materialized view will not reuse, so no ordering
+# makes that reference replayable; the dump must refuse instead of emitting a broken schema.
+HELPER_UUID_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_helper_uuid"
+rm -rf "$HELPER_UUID_PATH"
+$CLICKHOUSE_LOCAL --path "$HELPER_UUID_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW ${DB}.zzz_mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM ${DB}.src;
+"
+INNER_NAME=$($CLICKHOUSE_LOCAL --path "$HELPER_UUID_PATH" --query "SELECT target_table FROM system.tables WHERE database = '${DB}' AND name = 'zzz_mv'")
+$CLICKHOUSE_LOCAL --path "$HELPER_UUID_PATH" --query "CREATE VIEW ${DB}.aaa_view AS SELECT * FROM ${DB}.\`${INNER_NAME}\`"
+$CLICKHOUSE_LOCAL --path "$HELPER_UUID_PATH" --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"
+rc=$?
+[[ $rc -ne 0 ]] && echo 'OK: nonzero exit code' || echo 'FAIL: expected nonzero exit code'
+echo "refusal names the owning object: $(grep -c "generated inner storage of ${DB}\.zzz_mv" "$ERR_FILE")"
+rm -rf "$HELPER_UUID_PATH"
+
+echo '--- a user table named like a nil-UUID tmp helper is kept ---'
+# In a database without UUIDs every materialized view reports the nil UUID, which proves nothing:
+# a table literally named .tmp.inner_id.<nil> must not be classified as leftover MV storage.
+NILUUID_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_niluuid"
+rm -rf "$NILUUID_PATH"
+$CLICKHOUSE_LOCAL --path "$NILUUID_PATH" --multiquery --query "
+SET allow_deprecated_database_ordinary = 1;
+CREATE DATABASE ${DB} ENGINE = Ordinary;
+CREATE TABLE ${DB}.src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW ${DB}.zzz_mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM ${DB}.src;
+CREATE TABLE ${DB}.\`.tmp.inner_id.00000000-0000-0000-0000-000000000000\` (id UInt64) ENGINE = MergeTree ORDER BY id;
+"
+NILUUID_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_niluuid_dump.sql"
+$CLICKHOUSE_LOCAL --path "$NILUUID_PATH" --dump-schema="${DB}" > "$NILUUID_DUMP_FILE" 2>"$ERR_FILE"
+echo "nil-uuid-named user table present: $(grep -c "CREATE TABLE ${DB}\.\`\.tmp\.inner_id\.00000000-0000-0000-0000-000000000000\` " "$NILUUID_DUMP_FILE")"
+rm -rf "$NILUUID_PATH" "$NILUUID_DUMP_FILE"
+
+echo '--- a lookalike table of an explicitly targeted kind is kept ---'
+# With METRICS named explicitly the engine generates no metrics helper, so `.inner.metrics.<name>`
+# is an ordinary user table; only the kinds left implicit (samples, tags) are engine-owned.
+EXPLICIT_KIND_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_explicit_kind"
+rm -rf "$EXPLICIT_KIND_PATH"
+$CLICKHOUSE_LOCAL --path "$EXPLICIT_KIND_PATH" --multiquery --query "
+SET allow_deprecated_database_ordinary = 1;
+CREATE DATABASE ${DB} ENGINE = Ordinary;
+SET allow_experimental_time_series_table = 1;
+CREATE TABLE ${DB}.real_metrics (metric_family_name String, type String, unit String, help String)
+    ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+CREATE TABLE ${DB}.aaa_ts ENGINE = TimeSeries METRICS ${DB}.real_metrics;
+CREATE TABLE ${DB}.\`.inner.metrics.aaa_ts\` (x UInt8) ENGINE = Memory;
+"
+EXPLICIT_KIND_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_explicit_kind_dump.sql"
+$CLICKHOUSE_LOCAL --path "$EXPLICIT_KIND_PATH" --dump-schema="${DB}" > "$EXPLICIT_KIND_DUMP_FILE" 2>"$ERR_FILE"
+echo "lookalike of the explicit kind present: $(grep -c "CREATE TABLE ${DB}\.\`\.inner\.metrics\.aaa_ts\` " "$EXPLICIT_KIND_DUMP_FILE")"
+echo "engine-owned helpers of the implicit kinds in dump: $(grep -c "CREATE TABLE ${DB}\.\`\.inner\.\(samples\|tags\)\.aaa_ts\`" "$EXPLICIT_KIND_DUMP_FILE")"
+rm -rf "$EXPLICIT_KIND_PATH" "$EXPLICIT_KIND_DUMP_FILE"
+
+echo '--- a merge() reader over a helper table is ordered after its owner ---'
+# merge() resolves its regexp against every table on the server, helper tables included, so the
+# edge must be recorded and then remapped onto the materialized view that recreates the helper.
+MERGE_HELPER_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_merge_helper"
+rm -rf "$MERGE_HELPER_PATH"
+$CLICKHOUSE_LOCAL --path "$MERGE_HELPER_PATH" --multiquery --query "
+SET allow_deprecated_database_ordinary = 1;
+CREATE DATABASE ${DB} ENGINE = Ordinary;
+CREATE TABLE ${DB}.src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW ${DB}.zzz_mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM ${DB}.src;
+CREATE VIEW ${DB}.aaa_merge AS SELECT * FROM merge('${DB}', '^[.]inner[.]zzz_mv\$');
+"
+MERGE_HELPER_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_merge_helper_dump.sql"
+$CLICKHOUSE_LOCAL --path "$MERGE_HELPER_PATH" --dump-schema="${DB}" > "$MERGE_HELPER_DUMP_FILE" 2>"$ERR_FILE"
+mh_mv_line=$(grep -n "CREATE MATERIALIZED VIEW ${DB}\.zzz_mv " "$MERGE_HELPER_DUMP_FILE" | cut -d: -f1)
+mh_view_line=$(grep -n "CREATE VIEW ${DB}\.aaa_merge " "$MERGE_HELPER_DUMP_FILE" | cut -d: -f1)
+if [[ -n "$mh_mv_line" && -n "$mh_view_line" && "$mh_mv_line" -lt "$mh_view_line" ]]; then
+    echo 'OK: merge() helper reader ordered after the owning materialized view'
+else
+    echo "FAIL: merge() helper ordering (mv=$mh_mv_line view=$mh_view_line)"
+fi
+rm -rf "$MERGE_HELPER_PATH" "$MERGE_HELPER_DUMP_FILE"
+
+echo '--- a database-less reference outside the dump warns instead of dropping silently ---'
+# Missing qualified and unqualified references must produce equivalent warnings.
+DBLESS_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_dbless"
+rm -rf "$DBLESS_PATH"
+$CLICKHOUSE_LOCAL --path "$DBLESS_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE DATABASE ${DB2};
+CREATE TABLE ${DB2}.jj (id UInt64, v UInt64) ENGINE = Join(ANY, LEFT, id);
+CREATE TABLE ${DB}.src (id UInt64) ENGINE = MergeTree ORDER BY id;
+USE ${DB2};
+CREATE MATERIALIZED VIEW ${DB}.mv ENGINE = MergeTree ORDER BY id AS SELECT id, joinGet('jj', 'v', id) AS v FROM ${DB}.src;
+"
+DBLESS_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_dbless_dump.sql"
+$CLICKHOUSE_LOCAL --path "$DBLESS_PATH" --dump-schema="${DB}" > "$DBLESS_DUMP_FILE" 2>"$ERR_FILE"
+echo "dump still emits the view: $(grep -c "CREATE MATERIALIZED VIEW ${DB}\.mv " "$DBLESS_DUMP_FILE")"
+grep -o -m1 'without a database; no dumped database contains it' "$ERR_FILE"
+rm -rf "$DBLESS_PATH" "$DBLESS_DUMP_FILE"
+
+echo '--- an object whose credentials came back masked is reported, not silently emitted ---'
+# Masked CREATE credentials replay as literal [HIDDEN] values, so the dump must report them.
+MASKED_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_masked"
+MASKED_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_masked.sql"
+rm -rf "$MASKED_PATH"
+$CLICKHOUSE_LOCAL --path "$MASKED_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.s3t (a Int64) ENGINE = S3('http://example.com/f.csv', 'AKIAEXAMPLEKEY', 'SuperSecret123', 'CSV');
+"
+$CLICKHOUSE_LOCAL --path "$MASKED_PATH" --dump-schema="${DB}" > "$MASKED_DUMP_FILE" 2>"$ERR_FILE"
+rc=$?
+[[ $rc -eq 0 ]] && echo 'OK: zero exit code' || echo 'FAIL: expected zero exit code'
+echo "masked table still dumped: $(grep -c "CREATE TABLE ${DB}\.s3t" "$MASKED_DUMP_FILE")"
+echo "masked credential reported: $(grep -c 'credentials masked as \[HIDDEN\]' "$ERR_FILE")"
+echo "secret in the dump: $(grep -c 'SuperSecret123' "$MASKED_DUMP_FILE")"
+rm -rf "$MASKED_PATH" "$MASKED_DUMP_FILE"
+
+echo '--- a materialized view accepted under a relaxed check replays through the prelude ---'
+# Materialized-view target compatibility is rechecked from stored CREATE text on replay.
+BADSEL_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_badsel"
+BADSEL_DST="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_badsel_dst"
+BADSEL_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_badsel.sql"
+rm -rf "$BADSEL_PATH" "$BADSEL_DST"
+$CLICKHOUSE_LOCAL --path "$BADSEL_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.src (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE ${DB}.dst (x Int64, z Int64) ENGINE = MergeTree ORDER BY tuple();
+SET allow_materialized_view_with_bad_select = 1;
+CREATE MATERIALIZED VIEW ${DB}.mv TO ${DB}.dst AS SELECT x, y FROM ${DB}.src;
+"
+$CLICKHOUSE_LOCAL --path "$BADSEL_PATH" --dump-schema="${DB}" > "$BADSEL_DUMP_FILE" 2>"$ERR_FILE"
+$CLICKHOUSE_LOCAL --path "$BADSEL_DST" --multiquery --queries-file "$BADSEL_DUMP_FILE" > /dev/null 2>"$ERR_FILE"
+echo "bad-select view replayed: $($CLICKHOUSE_LOCAL --path "$BADSEL_DST" --query "SELECT count() FROM system.tables WHERE database = '${DB}' AND name = 'mv'")"
+rm -rf "$BADSEL_PATH" "$BADSEL_DST" "$BADSEL_DUMP_FILE"
+
+echo '--- the prelude is scoped to what the dumped statements can reach ---'
+# A schema without a materialized view must omit its compatibility gate.
+NOMV_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nomv"
+NOMV_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nomv.sql"
+rm -rf "$NOMV_PATH"
+$CLICKHOUSE_LOCAL --path "$NOMV_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.plain (x Int64) ENGINE = MergeTree ORDER BY tuple();
+"
+$CLICKHOUSE_LOCAL --path "$NOMV_PATH" --dump-schema="${DB}" > "$NOMV_DUMP_FILE" 2>"$ERR_FILE"
+echo "no-mv schema, mv gate emitted: $(grep -c 'SET allow_materialized_view_with_bad_select' "$NOMV_DUMP_FILE")"
+echo "no-mv schema, ungated gate emitted: $(grep -c 'SET allow_experimental_time_series_table' "$NOMV_DUMP_FILE")"
+# Shared experimental settings are emitted unconditionally because CREATE replay re-enters
+# many of them (view/projection analysis, default-expression validation, suspicious-type checks).
+echo "no-mv schema, analyzer gate emitted: $(grep -c 'SET allow_suspicious_types_in_group_by' "$NOMV_DUMP_FILE")"
+# Excluding every non-predefined database - clickhouse-local also carries `default` - leaves no
+# statement to replay, so there is nothing for a gate to guard and the prelude is dropped whole.
+$CLICKHOUSE_LOCAL --path "$NOMV_PATH" --dump-schema --dump-schema-exclude="${DB},default" > "$NOMV_DUMP_FILE" 2>"$ERR_FILE"
+echo "empty dump, any SET emitted: $(grep -c '^SET ' "$NOMV_DUMP_FILE")"
+rm -rf "$NOMV_PATH" "$NOMV_DUMP_FILE"
+
+# A projection is analyzable query text with no view anywhere: its SELECT is resolved at
+# description time, so the analyzer-side gates must come back for it.
+PROJ_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_proj"
+PROJ_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_proj.sql"
+rm -rf "$PROJ_PATH"
+$CLICKHOUSE_LOCAL --path "$PROJ_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.with_proj (x Int64, PROJECTION p (SELECT x, count() GROUP BY x)) ENGINE = MergeTree ORDER BY tuple();
+"
+$CLICKHOUSE_LOCAL --path "$PROJ_PATH" --dump-schema="${DB}" > "$PROJ_DUMP_FILE" 2>"$ERR_FILE"
+echo "projection schema, analyzer gate emitted: $(grep -c 'SET allow_suspicious_types_in_group_by' "$PROJ_DUMP_FILE")"
+echo "projection schema, dead gates emitted: $(grep -cE 'SET (allow_experimental_window_functions|allow_experimental_hash_functions|allow_simdjson) = ' "$PROJ_DUMP_FILE")"
+rm -rf "$PROJ_PATH" "$PROJ_DUMP_FILE"
+
+echo '--- the prelude carries all shared experimental settings unconditionally ---'
+# Shared experimental settings are emitted for every dump because CREATE replay re-enters
+# many of them. Verify a plain table dump still carries representative gates from the shared list.
+SHARED_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_shared"
+SHARED_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_shared.sql"
+rm -rf "$SHARED_PATH"
+$CLICKHOUSE_LOCAL --path "$SHARED_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.plain (x Int64) ENGINE = MergeTree ORDER BY tuple();
+"
+$CLICKHOUSE_LOCAL --path "$SHARED_PATH" --dump-schema="${DB}" > "$SHARED_DUMP_FILE" 2>"$ERR_FILE"
+# A stored-DDL gate from the shared list — always emitted.
+echo "unique-key gate present: $(grep -c 'SET allow_experimental_unique_key = 1;' "$SHARED_DUMP_FILE")"
+# A suspicious-type gate from the shared list — always emitted.
+echo "suspicious-primary-key gate present: $(grep -c 'SET allow_suspicious_primary_key = 1;' "$SHARED_DUMP_FILE")"
+# A default-expression / function gate from the shared list — always emitted.
+echo "fuzz-functions gate present: $(grep -c 'SET allow_fuzz_query_functions = 1;' "$SHARED_DUMP_FILE")"
+# A deprecated-syntax gate from the shared list — always emitted.
+echo "deprecated-mt-syntax gate present: $(grep -c 'SET allow_deprecated_syntax_for_merge_tree = 1;' "$SHARED_DUMP_FILE")"
+rm -rf "$SHARED_PATH" "$SHARED_DUMP_FILE"
+
+echo '--- a dump with a MATERIALIZED expression replays through the prelude ---'
+# A MATERIALIZED expression re-validates function gates at replay; the prelude carries them.
+MATDEF_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_matdef"
+MATDEF_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_matdef.sql"
+rm -rf "$MATDEF_PATH"
+$CLICKHOUSE_LOCAL --path "$MATDEF_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE TABLE ${DB}.with_mat (id UInt64, created_at DateTime MATERIALIZED now()) ENGINE = MergeTree ORDER BY id;
+"
+$CLICKHOUSE_LOCAL --path "$MATDEF_PATH" --dump-schema="${DB}" > "$MATDEF_DUMP_FILE" 2>"$ERR_FILE"
+MATDEF_REPLAY_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_matdef_replay"
+rm -rf "$MATDEF_REPLAY_PATH"
+$CLICKHOUSE_LOCAL --path "$MATDEF_REPLAY_PATH" --queries-file "$MATDEF_DUMP_FILE" 2>"$ERR_FILE"
+rc=$?
+[[ $rc -eq 0 ]] && echo 'OK: replayed into a default session' || echo 'FAIL: replay needed settings the dump did not carry'
+echo "replayed MATERIALIZED table present: $($CLICKHOUSE_LOCAL --path "$MATDEF_REPLAY_PATH" --query "SELECT count() FROM system.tables WHERE database = '${DB}' AND name = 'with_mat'")"
+rm -rf "$MATDEF_PATH" "$MATDEF_REPLAY_PATH" "$MATDEF_DUMP_FILE"
+
+rm -f "$ERR_FILE"

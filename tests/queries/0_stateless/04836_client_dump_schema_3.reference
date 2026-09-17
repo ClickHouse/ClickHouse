@@ -1,0 +1,50 @@
+--- a database-less TimeSeries target keeps the session database it was created under ---
+target named in the creator's database: 1
+target rebound to the object's own database: 0
+OK: cross-database TimeSeries target still ordered first
+--- merge(REGEXP(...)) reaching an omitted database is reported ---
+omitted regexp-matched dependency named: 1
+no warning when the regexp stays inside the dump: 0
+--- IN right-hand sides: literals and aliases are not dependencies, qualified tables are ---
+OK: zero exit code
+stderr lines: 0
+OK: qualified IN table precedes its reader
+--- a view reading a name-based helper table replays through the owning object ---
+OK: helper-table reader ordered after the owning materialized view
+replayed view resolves the helper: 0
+helper emitted as a standalone table: 0
+--- a view reading a UUID-named helper table is refused ---
+OK: nonzero exit code
+refusal names the owning object: 1
+--- a user table named like a nil-UUID tmp helper is kept ---
+nil-uuid-named user table present: 1
+--- a lookalike table of an explicitly targeted kind is kept ---
+lookalike of the explicit kind present: 1
+engine-owned helpers of the implicit kinds in dump: 0
+--- a merge() reader over a helper table is ordered after its owner ---
+OK: merge() helper reader ordered after the owning materialized view
+--- a database-less reference outside the dump warns instead of dropping silently ---
+dump still emits the view: 1
+without a database; no dumped database contains it
+--- an object whose credentials came back masked is reported, not silently emitted ---
+OK: zero exit code
+masked table still dumped: 1
+masked credential reported: 1
+secret in the dump: 0
+--- a materialized view accepted under a relaxed check replays through the prelude ---
+bad-select view replayed: 1
+--- the prelude is scoped to what the dumped statements can reach ---
+no-mv schema, mv gate emitted: 0
+no-mv schema, ungated gate emitted: 0
+no-mv schema, analyzer gate emitted: 1
+empty dump, any SET emitted: 0
+projection schema, analyzer gate emitted: 1
+projection schema, dead gates emitted: 0
+--- the prelude carries all shared experimental settings unconditionally ---
+unique-key gate present: 1
+suspicious-primary-key gate present: 1
+fuzz-functions gate present: 1
+deprecated-mt-syntax gate present: 1
+--- a dump with a MATERIALIZED expression replays through the prelude ---
+OK: replayed into a default session
+replayed MATERIALIZED table present: 1
