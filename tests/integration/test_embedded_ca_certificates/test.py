@@ -53,13 +53,14 @@ def started_cluster():
         cluster.shutdown()
 
 
-def default_ca_file():
+def default_ca_file(instance=None):
     # `SSL_CERT_FILE` overrides the compiled-in default CA file (`/etc/ssl/cert.pem`,
     # as `OPENSSLDIR` of the bundled OpenSSL is `/etc/ssl`). Some cluster flavors
     # (e.g. "db disk") bring up minio, whose setup injects `SSL_CERT_FILE` into every
     # container of the cluster, so the effective path is read from the environment of
     # the container instead of being hardcoded.
-    return node.exec_in_container(
+    instance = instance or node
+    return instance.exec_in_container(
         ["bash", "-c", 'echo -n "${SSL_CERT_FILE:-/etc/ssl/cert.pem}"']
     )
 
@@ -75,8 +76,17 @@ def https_ping(instance=None):
 
 
 def remove_ca_locations(instance):
+    # The default CA file is removed explicitly as well: when `SSL_CERT_FILE` points outside
+    # of the probed locations (see `default_ca_file`), a file created there by an earlier
+    # test would otherwise survive and count as certificates being present.
     instance.exec_in_container(
-        ["bash", "-c", "rm -rf " + " ".join(CA_LOCATIONS)], privileged=True, user="root"
+        [
+            "bash",
+            "-c",
+            "rm -rf " + " ".join(CA_LOCATIONS) + f" {default_ca_file(instance)}",
+        ],
+        privileged=True,
+        user="root",
     )
 
 
