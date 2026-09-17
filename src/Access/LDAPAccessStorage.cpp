@@ -1156,12 +1156,13 @@ void LDAPAccessStorage::sync()
         const auto diff = computeSyncDiffNoLock(plan);
         checkRemovalGuard(diff);
         result = applySyncPlanNoLock(plan, diff);
+        /// Stamped before the lock is released: a login that finds a user of this run must not be refused
+        /// by `checkNotStale` on the age of the previous one while the subscribers are still being notified.
+        last_sync_success_time_s.store(steadyNowSeconds());
     }
-    access_control.getChangesNotifier().sendNotifications();
-
-    /// The run is applied and accounted for from here on, whatever the cleanup below does.
-    last_sync_success_time_s.store(steadyNowSeconds());
+    /// The run is applied and accounted for from here on, whatever the notifications and the cleanup below do.
     succeeded = true;
+    access_control.getChangesNotifier().sendNotifications();
 
     ProfileEvents::increment(ProfileEvents::LDAPSyncUsersAdded, result.added);
     ProfileEvents::increment(ProfileEvents::LDAPSyncUsersUpdated, result.updated);
