@@ -92,7 +92,7 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         }
         else
         {
-            display.showProgress("⚠️  No SQL query was generated");
+            display.showProgress("⚠️ No SQL query was generated");
         }
 
         return sql;
