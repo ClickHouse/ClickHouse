@@ -265,6 +265,7 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
+        enable_gh_auth=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
