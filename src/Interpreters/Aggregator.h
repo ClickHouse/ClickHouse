@@ -1048,6 +1048,22 @@ private:
     /// Used for single level merge.
     void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
+    /// A no-argument `count()`'s state is a bare UInt64, so a group's fate under the recorded
+    /// bound is decided without finalizing its cell.
+    bool havingPrefilterKeeps(UInt64 count) const
+    {
+        switch (params.having_prefilter_op)
+        {
+            case Params::HavingPrefilterOp::Greater: return count > params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::GreaterOrEqual: return count >= params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Less: return count < params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::LessOrEqual: return count <= params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Equal: return count == params.having_prefilter_threshold;
+            case Params::HavingPrefilterOp::Disabled: return true;
+        }
+        return true;
+    }
+
     /// `allow_having_prefilter` defaults to false: honouring the bound is sound only on a final
     /// single-chunk conversion of a complete bucket, which each call site has to establish itself.
     template <typename Method, typename Table>

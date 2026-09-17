@@ -325,6 +325,45 @@ SELECT count(), sum(cnt) FROM (
     SELECT a, cnt FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt > 3) WHERE a != 'x'
 ) SETTINGS query_plan_aggregation_having_prefilter = 1;
 
+SELECT '--- the skipped-group count is exact for every operator, in both conversion paths ---';
+
+-- A lone count() takes the inline `is_simple_count` conversion.
+SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt >= 4)
+    SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218hp_ge_simple_off';
+SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt >= 4)
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218hp_ge_simple_on';
+SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt < 4)
+    SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218hp_lt_simple_off';
+SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt < 4)
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218hp_lt_simple_on';
+
+-- An aggregate that owns memory, listed before the count, so the general conversion runs, the count's
+-- offset inside the cell is not zero, and the rejected groups' states are destroyed on the skip path.
+SELECT count(), sum(cnt), sum(u) FROM (
+    SELECT a, uniqExact(b) AS u, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt <= 3)
+    SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218hp_le_general_off';
+SELECT count(), sum(cnt), sum(u) FROM (
+    SELECT a, uniqExact(b) AS u, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt <= 3)
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218hp_le_general_on';
+-- `groupArray`'s state begins with the number of values it has collected, which equals the group's
+-- count here, so it may not be the aggregate the count's offset is measured from.
+SELECT count(), sum(cnt), sum(u), sum(length(g)) FROM (
+    SELECT a, uniqExact(b) AS u, groupArray(c) AS g, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt = 4)
+    SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218hp_eq_general_off';
+SELECT count(), sum(cnt), sum(u), sum(length(g)) FROM (
+    SELECT a, uniqExact(b) AS u, groupArray(c) AS g, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt = 4)
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218hp_eq_general_on';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- `tests/clickhouse-test` gives every query of this file its own `log_comment` of
+-- `<test file name>-<database>`, so a `05218_` prefix here would also select those.
+SELECT log_comment, ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] AS groups_skipped
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND startsWith(log_comment, '05218hp_')
+ORDER BY log_comment;
+
 SELECT '--- block boundaries above the filter are unchanged ---';
 
 -- `convertOneBucketToChunk` emits exactly one chunk per bucket however many groups survive, so a

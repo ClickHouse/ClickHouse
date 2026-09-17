@@ -61,6 +61,23 @@ serialized plan	0
 10000	40000
 10000	40000
 10000	40000
+--- the skipped-group count is exact for every operator, in both conversion paths ---
+10000	40000
+10000	40000
+20000	60000
+20000	60000
+20000	60000	20000
+20000	60000	20000
+10000	40000	10000	40000
+10000	40000	10000	40000
+05218hp_eq_general_off	0
+05218hp_eq_general_on	20000
+05218hp_ge_simple_off	0
+05218hp_ge_simple_on	20000
+05218hp_le_general_off	0
+05218hp_le_general_on	10000
+05218hp_lt_simple_off	0
+05218hp_lt_simple_on	10000
 --- block boundaries above the filter are unchanged ---
 10000	256	44	191004
 10000	256	44	191004

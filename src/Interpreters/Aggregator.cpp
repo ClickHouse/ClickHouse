@@ -3465,25 +3465,12 @@ Aggregator::convertToBlockImpl(
         /// `is_simple_count` means the lone aggregate is a `count()` whose state is the mapped value
         /// itself, so there is nothing to destroy for a group the bound rejects.
         size_t skipped = 0;
-        const auto keeps = [&](UInt64 count)
-        {
-            switch (params.having_prefilter_op)
-            {
-                case Params::HavingPrefilterOp::Greater: return count > params.having_prefilter_threshold;
-                case Params::HavingPrefilterOp::GreaterOrEqual: return count >= params.having_prefilter_threshold;
-                case Params::HavingPrefilterOp::Less: return count < params.having_prefilter_threshold;
-                case Params::HavingPrefilterOp::LessOrEqual: return count <= params.having_prefilter_threshold;
-                case Params::HavingPrefilterOp::Equal: return count == params.having_prefilter_threshold;
-                case Params::HavingPrefilterOp::Disabled: return true;
-            }
-            return true;
-        };
 
         auto fill_blocks = [&]<bool is_final, bool prefilter>(const auto & key, auto & mapped)
         {
             if constexpr (prefilter)
             {
-                if (!keeps(getInlineCountState(mapped)))
+                if (!havingPrefilterKeeps(getInlineCountState(mapped)))
                 {
                     ++skipped;
                     return;
@@ -3528,7 +3515,8 @@ Aggregator::convertToBlockImpl(
         else
             data.forEachValue([&](const auto & key, auto & mapped) { fill_blocks.template operator()<false, false>(key, mapped); });
 
-        ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
+        if (skipped)
+            ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
 
         if (return_single_block)
         {
@@ -3853,27 +3841,11 @@ Chunks Aggregator::convertToBlockImplFinal(
                 nontrivial_destructors.push_back(i);
     }
 
-    /// A no-argument count()'s state is a bare UInt64, so the bound is decided without finalizing the cell.
-    const auto keeps = [&](const AggregateDataPtr & mapped)
-    {
-        const UInt64 count = *reinterpret_cast<const UInt64 *>(mapped + count_offset);
-        switch (params.having_prefilter_op)
-        {
-            case Params::HavingPrefilterOp::Greater: return count > params.having_prefilter_threshold;
-            case Params::HavingPrefilterOp::GreaterOrEqual: return count >= params.having_prefilter_threshold;
-            case Params::HavingPrefilterOp::Less: return count < params.having_prefilter_threshold;
-            case Params::HavingPrefilterOp::LessOrEqual: return count <= params.having_prefilter_threshold;
-            case Params::HavingPrefilterOp::Equal: return count == params.having_prefilter_threshold;
-            case Params::HavingPrefilterOp::Disabled: return true;
-        }
-        return true;
-    };
-
     auto fill_block = [&]<bool prefilter>(const auto & key, auto & mapped)
     {
         if constexpr (prefilter)
         {
-            if (!keeps(mapped))
+            if (!havingPrefilterKeeps(*reinterpret_cast<const UInt64 *>(mapped + count_offset)))
             {
                 ++skipped;
                 /// The bucket is not cleared after the conversion, so a rejected cell that kept its
@@ -3912,7 +3884,8 @@ Chunks Aggregator::convertToBlockImplFinal(
     else
         data.forEachValue([&](const auto & key, auto & mapped) { fill_block.template operator()<false>(key, mapped); });
 
-    ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
+    if (skipped)
+        ProfileEvents::increment(ProfileEvents::AggregationHavingPrefilterGroupsSkipped, skipped);
 
     if (return_single_block)
     {
