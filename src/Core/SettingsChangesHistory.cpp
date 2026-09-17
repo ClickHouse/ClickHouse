@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
+            {"query_plan_window_top_k_prefilter", false, true, "New setting that lets each stream below a window drop rows whose `rank()`/`row_number()` already exceeds a bound the query filters on, before the window's sort sees them."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {

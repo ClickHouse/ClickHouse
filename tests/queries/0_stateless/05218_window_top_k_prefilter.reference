@@ -1,0 +1,333 @@
+-- 1,2 ties at and past the bound
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+-- fires
+1
+-- 3 equals, strict less and the mirrored form
+[10]
+[8,8,8,9,10]
+[8,8,8,9,10]
+-- 4 row_number dedup idiom, and 5 the smallest of two bounds
+1	10
+2	10
+3	10
+1	2
+2	2
+3	2
+-- 3b/4b/5b the plan really carries each bound form, with the bound it computed
+3b rk = 1	1
+3c rk < 4	1
+3d 4 >= rk	1
+4b row_number() <= 1	1
+5b the smaller of two bounds	1
+-- no PARTITION BY: the whole input is one partition
+10
+10
+10
+-- 9,10 NULL partition and order keys, NULLS FIRST and NULLS LAST
+0	18	2
+0	21	1
+1	16	2
+1	22	1
+\N	17	2
+\N	20	1
+0	\N	1
+0	\N	1
+1	\N	1
+1	\N	1
+\N	\N	1
+\N	\N	1
+-- WITH ROLLUP, reproducing the NULL group of TPC-DS query_67
+0	27	2
+0	135	1
+1	28	2
+1	145	1
+2	29	2
+2	155	1
+\N	435	1
+-- 11 LowCardinality partition key, LowCardinality(Nullable) order key
+0	3	2
+0	6	1
+1	16	2
+1	7	1
+2	5	2
+2	8	1
+-- 12 float keys: -0.0 vs 0.0 compare equal but hash differently, NaN, all-NaN partition, Const
+0	3	2
+-0	4	1
+1	7	1
+1	nan	2
+nan	5	1
+nan	nan	2
+3	6
+-- Sparse serialization
+0	20	2
+0	30	1
+1	25	2
+1	35	1
+-- 26 String partition key and Array order key
+0	[2,6]	2
+0	[3,3]	1
+1	[2,10]	2
+1	[3,7]	1
+2	[2,14]	2
+2	[3,11]	1
+-- 29 chunk boundaries: a tie block straddling a chunk edge must not lose rows
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+0	4	4
+1	4	4
+2	4	4
+3	4	4
+4	4	4
+5	4	4
+6	7	19
+-- 23 several streams: one partition split across streams
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+23b more than one prefilter instance	1
+-- 22 MergeTree whose PARTITION BY matches the window, so the per-partition window fires too
+0	3	6
+1	3	6
+2	3	6
+3	3	6
+-- fires
+1
+-- 25 idempotence: a plan optimized more than once carries exactly one hint
+1
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+-- 27 a bounded window subplan used as an IN set returns the same rows
+3
+-- (C) still optimized: now() is constant within the query and folded before the filter is built
+1
+-- a conjunct on the PARTITION BY columns is pushed below the window, which leaves a step
+-- between the window and its sort, so the prefilter declines: correct, only slower
+0
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+-- (B) the pass must DECLINE below: every count is 0
+6 dense_rank	0
+7 sibling aggregate	0
+8 non-default frame	0
+8b rank with a non-default frame	0
+13 stacked windows	0
+17 rowNumberInAllBlocks	0
+18 rowNumberInBlock	0
+-- 19b with expression merging off, six Expression steps separate the filter from the window and
+--     one of them computes rowNumberInAllBlocks(): the window must be the DIRECT child
+19b not the direct child	0
+1	1	0
+1	2	1
+1	3	2
+1	3	3
+1	3	4
+19 computing step between	0
+20 lambda body, rand, sleepEachRow	0
+20b deterministic lambda body	0
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+20c a conjunct computing o + 1	0
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+20 rand	0
+20 sleepEachRow	0
+24 bound above the limit	0
+24b bound one past the hard cap	0
+24c bound exactly at the hard cap	1
+30 a throwing conjunct beside the bound	0
+31 the setting itself declines	0
+31b a serialized plan declines	0
+-- 30b the rows the prefilter would drop are the ones `throwIf` throws on, so the exception
+--     the query raises today must survive the optimization
+-- 33 a conjunct the filter evaluates on a row the prefilter would remove keeps alive the
+--     exception that row raises, because a filter that computes anything but the bound is
+--     refused. `IPv4StringToNum` is the cheap-and-still-throwing case.
+33 a cheap throwing conjunct beside the bound	0
+-- 34 the same for a comparison whose result is resolved per row inside a composite type:
+--     refused, so the `NO_COMMON_TYPE` a removed row raises still fires.
+34 a composite comparison resolved per row	0
+-- 21 an ARRAY JOIN above the window: filter push-down moves the WHERE below it, so the
+--    prefilter is admitted and the expanded rows must be unchanged
+1	1	1
+1	1	2
+1	2	1
+1	2	2
+1	3	1
+1	3	1
+1	3	1
+1	3	2
+1	3	2
+1	3	2
+2	1	1
+2	1	2
+2	2	1
+2	2	2
+2	3	1
+2	3	1
+2	3	2
+2	3	2
+3	1	1
+3	1	2
+3	2	1
+3	2	2
+3	3	1
+3	3	2
+-- 15b WITH FILL inside the window ORDER BY: declines
+15b with fill	0
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+-- 16 both sort size limits count the rows that reach the sort, so the pass declines and the error
+--     stays. The window ORDER BY ascends with the input, the shape where pruning does bite, and 16e
+--     measures on the same query that what the prefilter forwards is under both limits while the
+--     raw input is over them: that is what makes these four errors statements about the decline.
+16e both limits sit between what the prefilter forwards and the raw input	1
+-- the pipeline really carries the transform
+1
+-- 32 the transform really drops rows, it does not just carry them. The chunk size and the stream
+--     count decide how much is dropped, so both are pinned on this cell alone, and `o` descends so
+--     that each partition meets its three best rows first and every later row of the chunk is
+--     droppable (ascending `o` under a DESC window is the shape where nothing can be dropped).
+32 rows dropped	1
+-- 36 both window functions are registered case-insensitively and keep the query spelling, and
+--     TPC-DS writes them in upper case, so the spelling must not decide whether the pass fires
+36 RANK	1
+36b ROW_NUMBER	1
+36c DENSE_RANK still declines	0
+1	8	3
+1	8	3
+1	8	3
+1	9	2
+1	10	1
+2	7	3
+2	7	3
+2	9	2
+2	10	1
+3	8	3
+3	9	2
+3	10	1
+-- 35 exact_rows_before_limit promises an exact `rows_before_limit_at_least`, and the counter is
+--     attached to the partial sort this prefilter feeds, so the pass must decline and the count
+--     must stay the whole input. The window ORDER BY ascends with the input, the shape where
+--     pruning does bite, so an admitted pass would report 9 instead of 20000.
+35 declines in exact mode	0
+35b control, exact mode off	1
+{
+	"meta":
+	[
+		{
+			"name": "one",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		[1],
+		[1],
+		[1],
+		[1],
+		[1]
+	],
+
+	"rows": 5,
+
+	"rows_before_limit_at_least": 20000
+}
+-- 37 with the storage ordering reused, the window sort is a FinishSorting (a `Prefix sort
+--     description` in the plan) rather than the full sort this prefilter can bound, so the pass
+--     declines and describeActions must not advertise a hint. Read-in-order is what makes that
+--     sort, so it and parallel replicas are pinned; 37b asserts it did, 37c differs in one setting.
+37 finish sorting declines	0
+37b the sort really is a FinishSorting	1
+37c control, ordering not reused	1
+1	7	1
+1	8	2
+1	8	2
+1	8	2
+2	7	1
+2	7	1
+2	9	3
+3	6	1
+3	6	1
+3	6	1

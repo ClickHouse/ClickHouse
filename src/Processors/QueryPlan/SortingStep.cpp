@@ -16,6 +16,7 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/WindowTopKPrefilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/scatterByPartition.h>
 #include <Common/JSONBuilder.h>
@@ -306,6 +307,36 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
         });
 }
 
+void SortingStep::setWindowTopKPrefilter(
+    SortDescription window_partition_description_,
+    SortDescription window_order_description_,
+    UInt64 window_top_k_)
+{
+    /// The same plan can be optimized twice (StorageMerge child plans, set subplans), so only tighten.
+    if (window_top_k != 0 && window_top_k_ >= window_top_k)
+        return;
+
+    window_partition_description = std::move(window_partition_description_);
+    window_order_description = std::move(window_order_description_);
+    window_top_k = window_top_k_;
+    transform_traits.preserves_number_of_rows = false;
+}
+
+void SortingStep::addWindowTopKPrefilterIfNeeded(QueryPipelineBuilder & pipeline)
+{
+    if (window_top_k == 0)
+        return;
+
+    pipeline.addSimpleTransform(
+        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+            return std::make_shared<WindowTopKPrefilterTransform>(
+                header, window_partition_description, window_order_description, window_top_k);
+        });
+}
+
 void SortingStep::updateLimit(size_t limit_)
 {
     if (limit_ && (limit == 0 || limit_ < limit))
@@ -544,6 +575,8 @@ void SortingStep::fullSortStreams(
 
 void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
 {
+    addWindowTopKPrefilterIfNeeded(pipeline);
+
     scatterByPartitionIfNeeded(pipeline);
     scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
 
@@ -703,6 +736,10 @@ void SortingStep::describeActions(FormatSettings & settings) const
 
         settings.out << prefix << "Per-stream LIMIT BY length " << limit_by_group_length << '\n';
     }
+
+    /// Only `fullSort` inserts the prefilter, so a sort converted to another type must not advertise it.
+    if (window_top_k && type == Type::Full)
+        settings.out << prefix << "Window top-K prefilter " << window_top_k << '\n';
 }
 
 void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -730,6 +767,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Per-stream LIMIT BY Columns", std::move(columns_array));
         map.add("Per-stream LIMIT BY Length", limit_by_group_length);
     }
+
+    if (window_top_k && type == Type::Full)
+        map.add("Window top-K prefilter", window_top_k);
 }
 
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
@@ -851,6 +891,8 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
     cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
+    if (window_top_k)
+        cloned->setWindowTopKPrefilter(window_partition_description, window_order_description, window_top_k);
     return cloned;
 }
 

@@ -874,6 +874,13 @@ void optimizeTreeSecondPass(
     {
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
     }
+
+    /// `applyOrder` can still convert a window's full sort to `FinishSorting` and `applyStreamDisjointness`
+    /// can still rewrite its scatter, so the shape this pass recognizes is only final here.
+    if (optimization_settings.window_top_k_prefilter)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { windowTopKPrefilter(frame_node, nodes, optimization_settings); });
+    }
 }
 
 void addStepsToBuildSets(
