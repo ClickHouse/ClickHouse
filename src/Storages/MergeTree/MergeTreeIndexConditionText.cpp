@@ -1065,6 +1065,19 @@ static bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
+/// Whether the terms of `field` stay the terms of the padded value it was stripped from. A value stopping inside a
+/// declared UTF-8 sequence is the case where they do not.
+static bool keepsTermsOfWhatFollows(ITokenizer::Type tokenizer_type, const Field & field)
+{
+    if (field.getType() == Field::Types::String)
+        return tokensSurviveTrailingNuls(tokenizer_type, field.safeGet<String>());
+    if (field.getType() == Field::Types::Array)
+        return std::ranges::all_of(
+            field.safeGet<Array>(),
+            [&](const auto & element) { return keepsTermsOfWhatFollows(tokenizer_type, element); });
+    return true;
+}
+
 /// A `FixedString` indexed column stores the padding, and so do its terms. Stripping the constant is
 /// only sound there when the tokenizer keeps the terms of the unpadded value, otherwise the search
 /// would look for a term the index never stored and prune a granule holding matching rows.
@@ -1170,7 +1183,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return false;
 
     if (functionIgnoresFixedStringPadding(function_name) && canStripFixedStringPadding(tokenizer->getType(), header))
-        value_field = stripFixedStringPaddingForTerms(value_field, value_type);
+    {
+        auto stripped_value = stripFixedStringPaddingForTerms(value_field, value_type);
+        if (stripped_value != value_field && !keepsTermsOfWhatFollows(tokenizer->getType(), stripped_value))
+            return false;
+        value_field = std::move(stripped_value);
+    }
 
     const auto & settings = getContext()->getSettingsRef();
 
