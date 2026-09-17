@@ -292,58 +292,27 @@ void LimitRangeTransform::transform(Chunk & chunk)
     const BoundaryColumnView end_view(end_col);
 
     size_t output_start = 0;
-    size_t output_end = num_rows;
-    /// The first `UNTIL` match of the chunk, once it has been looked for.
-    std::optional<size_t> first_end;
-
     if (!started)
     {
         if (start_col)
         {
-            const size_t first_start = start_view.findTrue(0, num_rows);
-
-            if (end_col)
-            {
-                first_end = end_view.findTrue(0, num_rows);
-                /// UNTIL fired at or before AFTER (covers: AFTER not found, UNTIL at same row,
-                /// UNTIL precedes AFTER).  The window is permanently closed.
-                if (*first_end <= first_start)
-                {
-                    if (*first_end < num_rows)
-                        setDone();
-                    chunk.clear();
-                    return;
-                }
-            }
-
-            if (first_start >= num_rows)
+            output_start = start_view.findTrue(0, num_rows);
+            if (output_start == num_rows)
             {
                 chunk.clear();
                 return;
             }
-
-            started = true;
-            output_start = first_start;
         }
-        else
-        {
-            started = true;
-        }
+        started = true;
     }
 
-    if (end_col && output_end > output_start)
+    /// `UNTIL` closes the range at its first match at or after the starting row.
+    /// Matches before the range opens have no effect, including those in earlier chunks.
+    size_t output_end = end_view.findTrue(output_start, num_rows);
+    if (output_end == output_start)
     {
-        if (!first_end)
-            first_end = end_view.findTrue(0, num_rows);
-        if (*first_end < num_rows)
-            output_end = *first_end;
-    }
-
-    if (output_end <= output_start)
-    {
-        if (end_col && output_end < num_rows)
+        if (output_end < num_rows)
             setDone();
-
         chunk.clear();
         return;
     }

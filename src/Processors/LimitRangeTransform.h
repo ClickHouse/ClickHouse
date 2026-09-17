@@ -18,7 +18,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /** Implements LIMIT [n] AFTER expr [ALL] [UNTIL expr].
  * Without ALL, outputs rows starting from the first row where start condition is true,
- * until the first row where end condition is true (exclusive) or limit is reached.
+ * until the first row at or after that start where the end condition is true (exclusive),
+ * or until the limit is reached. End matches before the start have no effect.
  * With ALL, outputs the union of all matching windows without duplicating rows.
  * If no start condition: output from first row.
  * If no end condition: output until limit or stream end.
