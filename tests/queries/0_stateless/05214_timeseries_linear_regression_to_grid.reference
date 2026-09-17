@@ -1,0 +1,17 @@
+-- result type and values
+Array(Tuple(intercept Nullable(Float64), slope Nullable(Float64)))
+[(NULL,NULL),(20,1),(30,1)]
+-- the same samples passed as rows and as an array of tuples
+[(NULL,NULL),(20,1),(30,1)]
+[(NULL,NULL),(20,1),(30,1)]
+-- the slope is per second regardless of the timestamp precision, and the result follows the value type
+[(NULL,NULL),(20,1),(30,1)]	Array(Tuple(intercept Nullable(Float32), slope Nullable(Float32)))
+-- intercept + slope * offset is timeSeriesPredictLinearToGrid, slope is timeSeriesDerivToGrid
+[NULL,80,90]	[NULL,80,90]	[NULL,1,1]	[NULL,1,1]
+-- a different offset for every grid point
+[NULL,25,40]
+-- partial states merge
+[(NULL,NULL),(20,1),(30,1)]
+-- a grid without samples
+[(NULL,NULL),(NULL,NULL),(NULL,NULL)]
+-- invalid arguments
