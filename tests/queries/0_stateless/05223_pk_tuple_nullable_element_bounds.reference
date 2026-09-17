@@ -10,3 +10,11 @@ without the primary key
 a NULL in the first granule
 3
 2
+the key column in the partition key
+2
+2
+1
+the key column in the partition key, not loaded in memory
+2
+2
+1

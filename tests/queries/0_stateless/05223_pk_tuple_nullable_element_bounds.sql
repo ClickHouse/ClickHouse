@@ -36,3 +36,36 @@ SELECT count() FROM t_pk_tuple_nullable_element WHERE t >= (2., 1);
 SELECT count() FROM t_pk_tuple_nullable_element WHERE t IN ((10., 1), (500., 7));
 
 DROP TABLE t_pk_tuple_nullable_element;
+
+-- The same key column also feeds the partition key, so the part's partition-minmax bound of `t` is
+-- consulted by the analysis too. The bound is built per element with the NULLs filtered out, so it is
+-- ordered and holds every value without a NULL: it can prune nothing that a comparison matches.
+SELECT 'the key column in the partition key';
+
+CREATE TABLE t_pk_tuple_nullable_element (t Tuple(Nullable(Float64), Int32), x Int32) ENGINE = MergeTree
+PARTITION BY t.2 >= 0 ORDER BY t
+SETTINGS index_granularity = 4, allow_nullable_key = 1;
+
+INSERT INTO t_pk_tuple_nullable_element VALUES ((1.,1),0),((2.,1),0),((10.,1),1),((500.,7),1),((NULL,2),0),((NULL,3),0),((NULL,4),0),((NULL,5),0);
+
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t >= (5., 3) SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t <= (5., 3) SETTINGS use_partition_minmax_for_primary_key_pruning = 1, optimize_use_implicit_projections = 0;
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t = (10., 1) SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
+
+DROP TABLE t_pk_tuple_nullable_element;
+
+-- Here `t` is a suffix key column that the in-memory index drops, so its partition-minmax bound is the
+-- only information the analysis has about it.
+SELECT 'the key column in the partition key, not loaded in memory';
+
+CREATE TABLE t_pk_tuple_nullable_element (id UInt64, t Tuple(Nullable(Float64), Int32), x Int32) ENGINE = MergeTree
+PARTITION BY t.2 >= 0 ORDER BY (id, t)
+SETTINGS index_granularity = 4, allow_nullable_key = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.5;
+
+INSERT INTO t_pk_tuple_nullable_element VALUES (1,(1.,1),0),(2,(2.,1),0),(3,(10.,1),1),(4,(500.,7),1),(5,(NULL,2),0),(6,(NULL,3),0),(7,(NULL,4),0),(8,(NULL,5),0);
+
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t >= (5., 3) SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t <= (5., 3) SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
+SELECT count() FROM t_pk_tuple_nullable_element WHERE t = (10., 1) SETTINGS use_partition_minmax_for_primary_key_pruning = 1;
+
+DROP TABLE t_pk_tuple_nullable_element;
