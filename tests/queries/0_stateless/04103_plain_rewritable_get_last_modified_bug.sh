@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-object-storage, no-replicated-database, no-shared-merge-tree
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
