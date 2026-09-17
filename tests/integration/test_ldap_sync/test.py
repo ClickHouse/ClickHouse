@@ -1179,7 +1179,8 @@ def test_max_users_guard(janedoe_in_role_a):
     before the plan, and applies nothing: the users of the earlier runs stay, and no role is created,
     not even one that was dropped. `node_bad` is restarted with the limit set to the live count
     (`permanent`, `janedoe` and `johndoe`, whom it does not exclude) and with the roles created in
-    `local_directory`; one more member of `clickhouse-role_a` takes the search over the limit."""
+    `local_directory`; one more member of `clickhouse-role_a` takes the search over the limit.
+    """
     live_entries = ldap_count_synced_entries()
     try:
         restart_node_bad_with(
@@ -1193,7 +1194,10 @@ def test_max_users_guard(janedoe_in_role_a):
         admin(node_bad, "SYSTEM RELOAD USERS")
         assert admin(node_bad, ldap_users_query()) == f"{live_entries}\n"
         assert (
-            admin(node_bad, "SELECT count() FROM system.roles WHERE name IN ('role_a', 'role_b')")
+            admin(
+                node_bad,
+                "SELECT count() FROM system.roles WHERE name IN ('role_a', 'role_b')",
+            )
             == "2\n"
         )
 
@@ -1208,7 +1212,10 @@ def test_max_users_guard(janedoe_in_role_a):
         ), error
         assert admin(node_bad, ldap_users_query()) == f"{live_entries}\n"
         assert admin(node_bad, ldap_users_query("overflow")) == "0\n"
-        assert admin(node_bad, "SELECT count() FROM system.roles WHERE name = 'role_b'") == "0\n"
+        assert (
+            admin(node_bad, "SELECT count() FROM system.roles WHERE name = 'role_b'")
+            == "0\n"
+        )
         assert event_value(node_bad, "LDAPSyncFailures") > failures_before
 
         # Back under the limit, the next run succeeds and creates the dropped role again.
@@ -1217,7 +1224,10 @@ def test_max_users_guard(janedoe_in_role_a):
         wait_ldap_synced_entries(live_entries)
         admin(node_bad, "SYSTEM RELOAD USERS")
         assert admin(node_bad, ldap_users_query()) == f"{live_entries}\n"
-        assert admin(node_bad, "SELECT count() FROM system.roles WHERE name = 'role_b'") == "1\n"
+        assert (
+            admin(node_bad, "SELECT count() FROM system.roles WHERE name = 'role_b'")
+            == "1\n"
+        )
     finally:
         ldap_set_memberships("overflow", set())
         ldap_delete(user_dn("overflow"), ignore_missing=True)
