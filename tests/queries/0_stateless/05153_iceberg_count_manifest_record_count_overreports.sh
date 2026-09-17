@@ -175,25 +175,26 @@ with open(latest, 'w') as f:
 PY
 }
 
-# One row per data file, so the number of data files does not depend on randomized block sizes.
+# One row per data file: each row is a separate INSERT, so the number of data files depends
+# neither on randomized block sizes nor on the test runner batching the inserts asynchronously
+# (`async_insert` collapses the rows of consecutive inserts into a single data file).
 create_table()
 {
     rm -rf "$2"
-    ${CLICKHOUSE_CLIENT} --query "
+    ${CLICKHOUSE_CLIENT} --async_insert=0 --query "
         DROP TABLE IF EXISTS $1;
         SET allow_experimental_insert_into_iceberg = 1;
-        SET iceberg_insert_max_rows_in_data_file = 1;
-        SET max_insert_threads = 1, max_block_size = 1, max_insert_block_size = 1;
-        SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
         CREATE TABLE $1 (x Int32) ENGINE = IcebergLocal('$2/');
-        INSERT INTO $1 VALUES (1), (2), (3);
+        INSERT INTO $1 VALUES (1);
+        INSERT INTO $1 VALUES (2);
+        INSERT INTO $1 VALUES (3);
     "
 }
 
 # count() with the metadata-only optimization enabled and disabled (pinned: the test runner
-# randomizes the setting), the row count the manifest files describe, and whether the
-# optimization was applied. The Iceberg metadata caches are disabled because the metadata files
-# are patched behind the server's back, and they are immutable per the specification.
+# randomizes the setting), the row count the manifest files describe, whether the optimization
+# was applied. The Iceberg metadata caches are disabled because the metadata files are patched
+# behind the server's back, and they are immutable per the specification.
 report()
 {
     ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --use_iceberg_metadata_files_cache=0 --query "
