@@ -106,8 +106,8 @@ int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
     {
         if (changelog.entry_at(i)->get_val_type() == nuraft::log_val_type::app_log)
         {
-            state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
-            state_machine->commit(i, changelog.entry_at(i)->get_buf());
+            state_machine->preCommitEntry(i, changelog.entry_at(i));
+            state_machine->commitEntry(i, changelog.entry_at(i));
         }
     }
 
