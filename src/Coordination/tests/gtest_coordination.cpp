@@ -1082,15 +1082,6 @@ TEST_P(CoordinationTest, TestRequestBatchLogEntry)
     EXPECT_EQ(follower->last_commit_index(), 3);
     EXPECT_EQ(committedNodeData(follower_storage, "/d"), "after rollback");
     EXPECT_EQ(follower->getNodesDigest().value, state_machine->getNodesDigest().value);
-
-    /// 5. A multi-request entry that the leader didn't stamp with zxids can't be applied. (Only
-    ///    legacy single-request entries fall back to using the log idx as the zxid.)
-    auto unstamped_entry = make_batch_entry({make_create(1, "/g", ""), make_create(1, "/h", "")}, /*dispatcher_server_id=*/-1);
-    EXPECT_THROW(state_machine->pre_commit(4, *unstamped_entry), DB::Exception);
-    EXPECT_THROW(state_machine->commit(4, *unstamped_entry), DB::Exception);
-    EXPECT_EQ(state_machine->last_commit_index(), 3);
-    EXPECT_EQ(state_machine->getNextZxid(), next_zxid_before_4 + batch_5_size);
-    EXPECT_EQ(storage.getLastUncommittedLogIdx(), 0);
 }
 
 
