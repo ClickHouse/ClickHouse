@@ -20,13 +20,4 @@ Chunk WatermarkMarker::create(const Block & header, Field watermark_)
     return chunk;
 }
 
-bool isMarkerChunk(const Chunk & chunk)
-{
-    if (chunk.getNumRows() > 0)
-        return false;
-
-    return chunk.getChunkInfos().has<IdleMarker>()
-        || chunk.getChunkInfos().has<WatermarkMarker>();
-}
-
 }

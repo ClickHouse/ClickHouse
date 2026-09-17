@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <Columns/IColumn.h>
@@ -52,6 +53,12 @@ PartitionCursor chunkRowCursor(const Chunk & chunk, size_t row, size_t block_num
     return {columns[block_number_pos]->getInt(row), columns[block_offset_pos]->getInt(row)};
 }
 
+bool isWatermarkChunk(const Chunk & chunk)
+{
+    return chunk.getChunkInfos().has<WatermarkMarker>()
+        || chunk.getChunkInfos().has<PartitionWatermarkInfo>();
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct ChunkBoundaries : public ChunkInfoCloneable<ChunkBoundaries>
 {
@@ -101,7 +108,7 @@ private:
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 class AlignStreamsProcessor final : public IProcessor
 {
-    struct HeldMarker
+    struct HeldWatermark
     {
         Chunk chunk;
         PartitionCursor boundary;
@@ -114,15 +121,15 @@ class AlignStreamsProcessor final : public IProcessor
         PartitionCursor right_cursor;
     };
 
-    bool canReleaseMarker(const HeldMarker & marker) const
+    bool canReleaseWatermark(const HeldWatermark & watermark) const
     {
         if (data_input.isFinished() && !held_data.has_value())
             return true;
 
         if (held_data.has_value())
-            return held_data->left_cursor > marker.boundary;
+            return held_data->left_cursor > watermark.boundary;
 
-        return data_progress > marker.boundary;
+        return data_progress > watermark.boundary;
     }
 
     bool canReleaseData(const HeldData & data) const
@@ -130,7 +137,7 @@ class AlignStreamsProcessor final : public IProcessor
         if (metadata_input.isFinished())
             return true;
 
-        return !held_markers.empty() && held_markers.back().boundary >= data.right_cursor;
+        return !held_watermarks.empty() && held_watermarks.back().boundary >= data.right_cursor;
     }
 
     void releaseData()
@@ -140,19 +147,19 @@ class AlignStreamsProcessor final : public IProcessor
         held_data.reset();
     }
 
-    void releaseMarker()
+    void releaseWatermark()
     {
-        ready_chunks.push(std::move(held_markers.front().chunk));
-        held_markers.pop();
+        ready_chunks.push(std::move(held_watermarks.front().chunk));
+        held_watermarks.pop();
     }
 
     void releaseChunks()
     {
         while (true)
         {
-            if (!held_markers.empty() && canReleaseMarker(held_markers.front()))
+            if (!held_watermarks.empty() && canReleaseWatermark(held_watermarks.front()))
             {
-                releaseMarker();
+                releaseWatermark();
                 continue;
             }
 
@@ -171,11 +178,11 @@ class AlignStreamsProcessor final : public IProcessor
         if (auto boundaries = chunk.getChunkInfos().extract<ChunkBoundaries>())
             metadata_progress = boundaries->right_cursor;
 
-        if (isMarkerChunk(chunk))
+        if (isWatermarkChunk(chunk))
         {
-            Chunk marker_chunk(output.getHeader().cloneEmptyColumns(), 0);
-            marker_chunk.setChunkInfos(std::move(chunk.getChunkInfos()));
-            held_markers.push(HeldMarker{std::move(marker_chunk), metadata_progress});
+            Chunk watermark_chunk(output.getHeader().cloneEmptyColumns(), 0);
+            watermark_chunk.setChunkInfos(std::move(chunk.getChunkInfos()));
+            held_watermarks.push(HeldWatermark{std::move(watermark_chunk), metadata_progress});
         }
     }
 
@@ -249,7 +256,7 @@ private:
     OutputPort & output;
 
     PartitionCursor metadata_progress;
-    std::queue<HeldMarker> held_markers;
+    std::queue<HeldWatermark> held_watermarks;
 
     PartitionCursor data_progress;
     std::optional<HeldData> held_data;
