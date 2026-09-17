@@ -1221,14 +1221,15 @@ public:
                 Int32 cycles = 0;
                 const ExtendedDayNum shifted = shiftIntoLUTRange(toDayNum(v), cycles);
                 YearWeek yw = toYearWeek(shifted, week_mode);
-                /// The ISO week-year can fall just outside the representable [0000, 9999] range at the
-                /// boundaries (e.g. 0000-01-01 is a Saturday belonging to week-year -1, and 9999-12-31 can
-                /// belong to week-year 10000); clamp it so the UInt16 YYYYWW result does not wrap around.
-                Int32 adjusted_year = static_cast<Int32>(yw.first) - cycles * 400;
+                /// The week-year can fall just outside the representable [0000, 9999] range at the boundaries,
+                /// and `toYearWeek` promises to be monotonic, so the result must not fall back when that
+                /// happens. The last days of 9999 can belong to week-year 10000, which fits both the UInt16
+                /// year and the UInt32 YYYYWW result, so it is kept as is. 0000-01-01 is a Saturday belonging
+                /// to week-year -1, which cannot be represented: it saturates to week 0 of the year 0, the
+                /// number of the days preceding the first week of a year, which sorts before every other value.
+                const Int32 adjusted_year = static_cast<Int32>(yw.first) - cycles * 400;
                 if (adjusted_year < DATE_LUT_MIN_REPRESENTABLE_YEAR)
-                    adjusted_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
-                else if (adjusted_year > DATE_LUT_MAX_REPRESENTABLE_YEAR)
-                    adjusted_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+                    return YearWeek(DATE_LUT_MIN_REPRESENTABLE_YEAR, 0);
                 yw.first = static_cast<UInt16>(adjusted_year);
                 return yw;
             }
