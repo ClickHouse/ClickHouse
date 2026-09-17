@@ -218,7 +218,11 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /// afterwards.
     /// `!= ALL` is not handled here: it returns early above as a plain `notIn`, which already yields TRUE on
     /// an empty right-hand side for a non-NULL left-hand side. `NULL != ALL (empty set)` keeps returning NULL,
-    /// following the NULL semantics of `notIn` (and mirroring `NULL = ANY (empty set)`), instead of TRUE.
+    /// following the NULL semantics of `notIn` (and mirroring `NULL = ANY (empty set)`), instead of TRUE: under
+    /// the default `transform_null_in = 0` a NULL left-hand side - a literal NULL or a NULL value in a Nullable
+    /// column - makes `notIn` return NULL before the emptiness of the set is looked at, and only with
+    /// `transform_null_in = 1` an empty set gives TRUE for NULL as well. `05045_notequals_all_single_evaluation`
+    /// pins this.
     const bool vacuous_truth = type == SubqueryFunctionType::ALL;
 
     ASTPtr projection = aggregate_function;
@@ -260,9 +264,8 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     ///  x op ALL subquery --> tupleElement(subquery, 1) = 0 OR x op tupleElement(subquery, 2)
     ///
     /// Both occurrences of the scalar subquery are textually identical, and scalar subqueries are cached by the
-    /// hash of the subquery (`ExecuteScalarSubqueriesVisitor` for the old analyzer and `evaluateScalarSubqueryIfNeeded`
-    /// for the new one), so the right-hand side is evaluated exactly once - even if it is non-deterministic,
-    /// both `tupleElement` calls observe the same evaluation.
+    /// hash of the subquery (`evaluateScalarSubqueryIfNeeded` in the analyzer), so the right-hand side is evaluated
+    /// exactly once - even if it is non-deterministic, both `tupleElement` calls observe the same evaluation.
     auto is_empty = makeASTFunction("equals",
         makeASTFunction("tupleElement", new_subquery->clone(), make_intrusive<ASTLiteral>(UInt64{1})),
         make_intrusive<ASTLiteral>(UInt64{0}));
