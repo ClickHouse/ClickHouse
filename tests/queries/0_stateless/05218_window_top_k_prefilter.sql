@@ -29,11 +29,13 @@ SELECT p, o FROM (SELECT p, o, row_number() OVER (PARTITION BY p ORDER BY o DESC
 SELECT p, count() FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rk <= 5 AND rn <= 2 GROUP BY p ORDER BY p;
 
 SELECT '-- 3b/4b/5b the plan really carries each bound form, with the bound it computed';
-SELECT '3b rk = 1', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk = 1) WHERE explain ILIKE '%Window top-K prefilter 1%';
-SELECT '3c rk < 4', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk < 4) WHERE explain ILIKE '%Window top-K prefilter 3%';
-SELECT '3d 4 >= rk', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE 4 >= rk) WHERE explain ILIKE '%Window top-K prefilter 4%';
-SELECT '4b row_number() <= 1', count() FROM (EXPLAIN actions=1 SELECT p, rn FROM (SELECT p, o, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rn <= 1) WHERE explain ILIKE '%Window top-K prefilter 1%';
-SELECT '5b the smaller of two bounds', count() FROM (EXPLAIN actions=1 SELECT p, rk, rn FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rk <= 5 AND rn <= 2) WHERE explain ILIKE '%Window top-K prefilter 2%';
+-- `extract` returns the first capture group, so the comparison is on the whole number: an unanchored
+-- `ILIKE '%prefilter 1%'` also matches a bound of `10`.
+SELECT '3b rk = 1', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk = 1) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '1';
+SELECT '3c rk < 4', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk < 4) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '3';
+SELECT '3d 4 >= rk', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE 4 >= rk) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '4';
+SELECT '4b row_number() <= 1', count() FROM (EXPLAIN actions=1 SELECT p, rn FROM (SELECT p, o, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rn <= 1) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '1';
+SELECT '5b the smaller of two bounds', count() FROM (EXPLAIN actions=1 SELECT p, rk, rn FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk, row_number() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rk <= 5 AND rn <= 2) WHERE extract(explain, 'Window top-K prefilter ([0-9]+)') = '2';
 
 SELECT '-- no PARTITION BY: the whole input is one partition';
 SELECT o FROM (SELECT o, rank() OVER (ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 2 ORDER BY o;
@@ -63,8 +65,26 @@ SELECT '-- 29 chunk boundaries: a tie block straddling a chunk edge must not los
 SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 ORDER BY p, o, rk SETTINGS max_block_size = 2;
 SELECT p, count(), sum(rk) FROM (SELECT number % 7 AS p, rank() OVER (PARTITION BY number % 7 ORDER BY number % 11 DESC) AS rk FROM numbers(300)) WHERE rk <= 4 GROUP BY p ORDER BY p SETTINGS max_block_size = 8;
 
+DROP TABLE IF EXISTS t_wtkp_ms;
+-- `ReadFromMemoryStorage` clamps the stream count by the number of stored blocks, so a table filled by one
+-- INSERT runs one stream whatever `max_threads` says. Four INSERTs, holding the same 16 rows as `t_wtkp` in
+-- the same order, so the reference block below is the one a single stream produces.
+CREATE TABLE t_wtkp_ms (p UInt8, o UInt8) ENGINE = Memory;
+INSERT INTO t_wtkp_ms VALUES (1,10),(1,9),(1,8),(1,8);
+INSERT INTO t_wtkp_ms VALUES (1,8),(1,7),(2,10),(2,9);
+INSERT INTO t_wtkp_ms VALUES (2,7),(2,7),(3,10),(3,9);
+INSERT INTO t_wtkp_ms VALUES (3,8),(3,6),(3,6),(3,6);
 SELECT '-- 23 several streams: one partition split across streams';
-SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 ORDER BY p, o, rk SETTINGS max_threads = 4, max_block_size = 2;
+SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp_ms) WHERE rk <= 3 ORDER BY p, o, rk
+SETTINGS max_threads = 4, max_block_size = 2, log_processors_profiles = 1, log_queries = 1, log_comment = '05218_window_top_k_prefilter_streams';
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+SELECT '23b more than one prefilter instance', count() > 1 FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND log_comment = '05218_window_top_k_prefilter_streams' AND type = 'QueryFinish'
+);
 
 SELECT '-- 22 MergeTree whose PARTITION BY matches the window, so the per-partition window fires too';
 DROP TABLE IF EXISTS t_wtkp_mt;
@@ -116,8 +136,14 @@ SELECT p, o, rk FROM (SELECT p, o, o + 1 AS x, rank() OVER (PARTITION BY p ORDER
 SELECT '20 rand', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND rand() > 0) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '20 sleepEachRow', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 AND sleepEachRow(0) = 0) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '24 bound above the limit', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3) WHERE explain ILIKE '%Window top-K prefilter%' SETTINGS query_plan_max_limit_for_top_k_optimization = 2;
+-- The configurable limit is off in both, so the hard cap is the only thing deciding, and the two bounds are
+-- one apart across it: neither can go vacuous without the other failing.
+SELECT '24b bound one past the hard cap', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 100001) WHERE explain ILIKE '%Window top-K prefilter%' SETTINGS query_plan_max_limit_for_top_k_optimization = 0;
+SELECT '24c bound exactly at the hard cap', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 100000) WHERE explain ILIKE '%Window top-K prefilter%' SETTINGS query_plan_max_limit_for_top_k_optimization = 0;
 SELECT '30 a throwing conjunct beside the bound', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE throwIf(rk > 1) = 0 AND rk <= 1) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT '31 the setting itself declines', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 SETTINGS query_plan_window_top_k_prefilter = 0) WHERE explain ILIKE '%Window top-K prefilter%';
+-- The positive control is cell 1's `-- fires` line, which asserts 1 for this query without the setting.
+SELECT '31b a serialized plan declines', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 SETTINGS serialize_query_plan = 1) WHERE explain ILIKE '%Window top-K prefilter%';
 
 SELECT '-- 30b the rows the prefilter would drop are the ones `throwIf` throws on, so the exception';
 SELECT '--     the query raises today must survive the optimization';
@@ -187,5 +213,6 @@ DROP TABLE t_wtkp_var;
 DROP TABLE t_wtkp_ip;
 DROP TABLE t_wtkp_merge;
 DROP TABLE t_wtkp_mt;
+DROP TABLE t_wtkp_ms;
 DROP TABLE t_wtkp_sparse;
 DROP TABLE t_wtkp;

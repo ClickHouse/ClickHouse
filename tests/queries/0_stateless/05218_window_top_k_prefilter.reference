@@ -115,6 +115,7 @@ nan	nan	2
 3	8	3
 3	9	2
 3	10	1
+23b more than one prefilter instance	1
 -- 22 MergeTree whose PARTITION BY matches the window, so the per-partition window fires too
 0	3	6
 1	3	6
@@ -203,8 +204,11 @@ nan	nan	2
 20 rand	0
 20 sleepEachRow	0
 24 bound above the limit	0
+24b bound one past the hard cap	0
+24c bound exactly at the hard cap	1
 30 a throwing conjunct beside the bound	0
 31 the setting itself declines	0
+31b a serialized plan declines	0
 -- 30b the rows the prefilter would drop are the ones `throwIf` throws on, so the exception
 --     the query raises today must survive the optimization
 -- 33 a conjunct the filter evaluates on a row the prefilter would remove keeps alive the
