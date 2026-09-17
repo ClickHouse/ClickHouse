@@ -162,7 +162,6 @@ nan	nan	2
 8 non-default frame	0
 8b rank with a non-default frame	0
 13 stacked windows	0
-15 collation	0
 17 rowNumberInAllBlocks	0
 18 rowNumberInBlock	0
 -- 19b with expression merging off, six Expression steps separate the filter from the window and

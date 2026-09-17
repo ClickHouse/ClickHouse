@@ -112,7 +112,7 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
         for (const auto * column : partition_columns)
             column->updateHashWithValue(row, hash);
 
-        PartitionMap::LookupResult bucket;
+        PartitionMap::LookupResult bucket = nullptr;
         bool inserted = false;
         partition_to_heap.emplace(hash.get128(), bucket, inserted);
         if (inserted)
