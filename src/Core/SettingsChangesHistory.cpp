@@ -41,6 +41,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.10",
+        {
+            {"join_algorithm", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."},
+            {"parallel_hash_join_threshold", 100'000, 100'000, "The threshold no longer chooses between the `hash` and `parallel_hash` algorithms. When a hash join is used, it decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1. The default is unchanged."},
+            {"parallel_non_joined_rows_processing", true, true, "Applies to RIGHT/FULL hash joins, not specifically `parallel_hash`. The default is unchanged. Setting it to 0 does not restore serial unmatched-row order; use `ORDER BY`."},
+        });
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
@@ -93,9 +99,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"enable_trino_dialect", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."},
-            {"join_algorithm", "direct,parallel_hash,hash,ie_join", "direct,hash,ie_join", "`parallel_hash` is an obsolete alias of `hash` and was dropped from the default list; it is still accepted. Listing `hash` or `parallel_hash` does not control how parallel the join is."},
-            {"parallel_hash_join_threshold", 100'000, 100'000, "The threshold no longer chooses between the `hash` and `parallel_hash` algorithms. When a hash join is used, it decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1. The default is unchanged."},
-            {"parallel_non_joined_rows_processing", true, true, "Applies to RIGHT/FULL hash joins, not specifically `parallel_hash`. The default is unchanged. Setting it to 0 does not restore serial unmatched-row order; use `ORDER BY`."},
             {"enable_join_key_only_hash_tables", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."},
             {"distributed_plan_read_in_order", false, false, "New setting to allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the table's sorting key can skip the sort and stop early. Off by default: only shapes where no exchange survives between the read and the sort are safe today."},
             {"distributed_cache_client_id", "", "", "New setting (CI tests only) to override the distributed cache client id per query."},
