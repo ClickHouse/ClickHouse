@@ -16,9 +16,10 @@
 #include <vector>
 
 
-/** `TwoLevelHashTable` beyond its default shape: a bucket count other than 256, a bucket hash that
-  * differs from the cell hash, and the table-wide cell numbering of `offsetInternal`. The 256-bucket
-  * shape that aggregation uses is the same class with the default arguments.
+/** Covers `TwoLevelHashTable` beyond its default shape.
+  * That includes a bucket count other than 256, a bucket hash that differs from the cell hash,
+  * and the table-wide cell numbering of `offsetInternal`.
+  * The 256-bucket shape that aggregation uses is the same class with the default arguments.
   */
 
 namespace
@@ -88,17 +89,17 @@ size_t countNonEmptyBuckets(const Map & map)
 }
 
 template <typename Map>
-size_t countByIteration(Map & map)
+size_t countByIteration(const Map & map)
 {
     size_t res = 0;
-    for (auto it = map.begin(); it != map.end(); ++it)
+    for (typename Map::const_iterator it = map.begin(); it != map.end(); ++it)
         ++res;
     return res;
 }
 
 /// Every populated cell must get its own number, and none may exceed the array size a caller would allocate.
 template <typename Map>
-void assertOffsetsAreUnique(Map & map, UInt64 first_key, UInt64 last_key)
+void assertOffsetsAreUnique(const Map & map, UInt64 first_key, UInt64 last_key)
 {
     std::unordered_set<size_t> offsets;
     for (UInt64 key = first_key; key <= last_key; ++key)
@@ -217,8 +218,8 @@ TEST(TwoLevelHashTableBuckets, SizeHintAndReserveSizeEveryBucket)
 
 TEST(TwoLevelHashTableBuckets, BucketIsTakenFromTheHighEndOfTheLow32Bits)
 {
-    /// A caller that routes keys before it has a table computes the bucket itself, so the formula is
-    /// part of the interface: the top `bits` of the low 32 bits of the hash.
+    /// A caller that routes keys before it has a table computes the bucket itself.
+    /// The formula is part of the interface: the top `bits` of the low 32 bits of the hash.
     const auto check = []<Int32 bits>()
     {
         using Map = MapWithBits<bits>;

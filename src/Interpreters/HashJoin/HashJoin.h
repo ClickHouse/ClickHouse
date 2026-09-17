@@ -93,9 +93,9 @@ struct BuildResult
     size_t new_keys = 0;
 };
 
-/// A join whose result never contains a value taken from a right row - see `MapGetter` - does not
-/// need the mapped part of a cell at all: the table only has to answer whether a key is present.
-/// Such a join instantiates the maps with `VoidMapped`, and every alias below then selects the set
+/// A join whose result never contains a value taken from a right row (see `MapGetter`)
+/// does not need the mapped part of a cell. The table only has to answer whether a key is present.
+/// Such a join instantiates the maps with `VoidMapped`. Every alias below then selects the set
 /// counterpart of the same partitioned table, so a cell holds the key alone.
 template <typename Mapped>
 constexpr bool is_join_set_mapped = std::is_same_v<Mapped, VoidMapped>;
@@ -297,7 +297,6 @@ public:
       * Could be called from different threads in parallel.
       */
     JoinResultPtr joinBlock(Block block) override;
-    JoinResultPtr joinScatteredBlock(ScatteredBlock block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -307,13 +306,13 @@ public:
 
     bool isFilled() const override { return from_storage_join; }
 
-    /// Only the parallel layout has the slots that make a concurrent fill safe. A serial-layout join
-    /// keeps `hash`'s single lane, so its output row order stays reproducible.
+    /// Only the parallel layout has the slots that make a concurrent fill safe.
+    /// A serial-layout join uses one slot, so its output row order stays reproducible.
     bool supportParallelJoin() const override { return use_parallel_layout && max_threads > 1; }
     size_t getMaxBuildThreads() const override { return max_threads; }
 
     bool supportParallelNonJoinedBlocksProcessing() const override;
-    /// `FilledJoinStep`, which probes a StorageJoin, has no `NonJoinedBlocksTransform` to run.
+    /// `FilledJoinStep` probes a StorageJoin and has no `NonJoinedBlocksTransform` to run.
     bool isParallelNonJoinedProcessingEnabled() const override
     {
         return !from_storage_join && supportParallelNonJoinedBlocksProcessing();
@@ -642,8 +641,8 @@ public:
             }
         }
 
-        /// A map numbers its cells across buckets and needs the prefix sums of the bucket sizes for
-        /// that; a single-bucket map has nothing to sum.
+        /// Runs `computeBucketPrefix` on two-level maps. A map numbers its cells across buckets and
+        /// needs the prefix sums of the bucket sizes for that. A single-bucket map has nothing to sum.
         void computeBucketPrefix(Type which) const
         {
             switch (which)
@@ -709,7 +708,7 @@ public:
         Initialized,
     };
 
-    /// Owned by exactly one build thread, which is why these lists need no mutex; the maps are
+    /// Owned by exactly one build thread, so these lists need no mutex. The maps are
     /// shared and go through `bucket_locks`.
     struct WorkerStoredData
     {
@@ -746,10 +745,9 @@ public:
 
         std::vector<WorkerStoredData> workers;
 
-        /// A resumable worker-major walk over one of `WorkerStoredData`'s lists: workers in index
-        /// order, each list in insertion order. `started` is what tells "not begun" from
-        /// "exhausted" - both leave `position` empty, and an emitter that confuses them restarts at
-        /// worker 0 and emits forever.
+        /// A resumable walk of each worker's list in insertion order, workers in index order.
+        /// `started` tells "not begun" from "exhausted"; both leave `position` empty.
+        /// An emitter that confuses them restarts at worker 0 and emits forever.
         template <typename List, List WorkerStoredData::* member>
         struct WorkerListCursor
         {
@@ -781,9 +779,9 @@ public:
 
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
-        /// Additional data - strings for string keys and continuation elements of single-linked
-        /// lists of references to rows. One per slot, because `Arena` is unsynchronized; splitting
-        /// is sound because neither allocation kind needs contiguity or rollback.
+        /// Strings for string keys, and continuation nodes of single-linked lists of row refs.
+        /// One arena per slot, because `Arena` is unsynchronized. Splitting is sound because
+        /// neither allocation kind needs contiguity or rollback.
         std::vector<std::unique_ptr<Arena>> pools;
 
         Arena & poolForBucket(size_t bucket) { return *pools[slotForBucket(bucket, num_slots)]; }
@@ -807,7 +805,7 @@ public:
         std::atomic<size_t> bucket_bytes = 0;
 
         /// Exact `allocated_size + nullmaps_allocated_size + bucket_bytes`. The three parts are
-        /// independent atomics, so a concurrent sum can miss one worker's update and under-count
+        /// independent atomics. A concurrent sum can miss one worker's update and under-count
         /// `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
         std::atomic<size_t> total_bytes = 0;
 
@@ -1051,7 +1049,7 @@ private:
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
-    /// Unchecked as in without `doDebugAsserts`, which cannot run while build threads append.
+    /// Unchecked as in without `doDebugAsserts`. That walk cannot run while build threads append.
     size_t getTotalByteCountUnchecked() const;
 
     void recomputeBucketBytes();

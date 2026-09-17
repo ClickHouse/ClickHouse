@@ -221,8 +221,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
-        /// Do not squash past `max_joined_block_size_rows` / `max_joined_block_size_bytes`: those
-        /// bounds are why `joined_block_split_single_row` split the result in the first place.
+        /// Do not squash past `max_joined_block_size_rows` / `max_joined_block_size_bytes`.
+        /// Those bounds are why `joined_block_split_single_row` split the result in the first place.
         size_t squash_rows = min_block_size_rows;
         size_t squash_bytes = min_block_size_bytes;
         const auto & table_join = join->getTableJoin();

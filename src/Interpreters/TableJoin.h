@@ -520,7 +520,7 @@ bool allowHashJoinCacheKeys(
     bool is_special_storage,
     bool one_disjunct);
 
-/// Unlike `allowHashJoinCacheKeys` this ignores the algorithm list and special storages: whether
-/// the layout is usable is a correctness question, not a user choice.
+/// Unlike `allowHashJoinCacheKeys`, this ignores the algorithm list and special storages.
+/// Whether the layout is usable is a correctness question, not a user choice.
 bool preferParallelHashLayout(JoinKind kind, std::optional<UInt64> rhs_size_estimation, UInt64 parallel_hash_join_threshold);
 }

@@ -27,8 +27,8 @@ extern const char join_switcher_throw_after_hash_release[];
 namespace
 {
 
-/// `MergeJoin::joinBlock` is not concurrent. `supportParallelJoin` is decided at plan time,
-/// so after a drain the pipeline may still probe from several `JoiningTransform`s.
+/// `MergeJoin::joinBlock` is not concurrent. `supportParallelJoin` is decided at plan time.
+/// After a drain the pipeline may still probe from several `JoiningTransform`s.
 class ExclusiveJoinResult : public IJoinResult
 {
 public:
