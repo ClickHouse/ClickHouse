@@ -39,7 +39,6 @@ namespace GPU
 {
 namespace
 {
-/// Room for a message coming back over the boundary. cuDF's are a line or two.
 constexpr size_t error_buffer_size = 1024;
 }
 
@@ -206,9 +205,7 @@ size_t elementSizeOf(int element_type)
 
 namespace
 {
-/// What ClickHouse's own `sum` returns for such an argument: `UInt64` for any unsigned integer,
-/// `Int64` for any signed one, `Float64` for both floats. The device is asked for exactly that
-/// type, so a batch's sum needs no conversion on the way back.
+
 std::optional<int> sumTypeFor(int element_type)
 {
     switch (element_type)
@@ -307,7 +304,8 @@ SumAccumulator::SumAccumulator(
     , batch_bytes(std::clamp(batch_bytes_, element_size, max_batch_rows * element_size))
     , codec(codec_)
 {
-    staged.reserve(batch_bytes);
+    if (!codec)
+        staged.reserve(batch_bytes);
 }
 
 void SumAccumulator::flushIfBatchWouldOverflow(size_t incoming_rows, size_t incoming_bytes)
