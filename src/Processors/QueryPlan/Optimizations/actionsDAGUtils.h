@@ -55,7 +55,9 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
 /// * Input nodes are mapped by name.
-/// * Function is mapped to function if all children are mapped and function names are same.
+/// * Function is mapped to function if all children are mapped, function names are same, and
+///   result types are equal. The two DAGs can be built under different settings, and the same
+///   expression can then have different result types in each.
 /// * Alias is mapped to it's children mapping.
 /// * Monotonic function can be mapped to it's children mapping if direct mapping does not exist.
 ///   In this case, information about monotonicity is filled.
