@@ -581,6 +581,17 @@ public:
                 row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
+    void addBatchWithNonNullPlaces(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+    {
+        if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>)
+            addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+        else
+            /// Only this Data has a batched insert; the rest are faster on the base's non-null loop.
+            IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
     void ALWAYS_INLINE addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
         const override
