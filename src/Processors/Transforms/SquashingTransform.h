@@ -55,13 +55,12 @@ private:
     Chunk squashed_chunk;
 };
 
-/// The squashing after a join whose inputs were widened per slot (`IJoin::supportParallelJoin`). Such a
+/// Squashes the output of a join whose inputs were widened per slot (`IJoin::supportParallelJoin`). Such a
 /// join emits one slot's fragment of every probe block, and downstream wants full blocks back. A join
-/// that already caps its output at `max_joined_block_size_*` gains nothing from it and would pay one
-/// more copy of every output row, so its chunks pass through. The join answers at run time
-/// (`IJoin::emitsSizedOutputBlocks`): the spilling wrapper only knows after the build whether it kept
-/// the in-memory join or switched to grace, whose per-bucket output does need the squashing.
-/// Keeps the name of the transform it replaces so pipeline dumps do not change.
+/// that already caps its output at `max_joined_block_size_*` would only pay one more copy per row, so its
+/// chunks pass through. The join answers on the first chunk (`IJoin::emitsSizedOutputBlocks`), because the
+/// spilling wrapper knows only after the build whether it kept the in-memory join or switched to grace.
+/// The transform keeps the name of the one it replaces, so pipeline dumps do not change.
 class JoinOutputSquashingTransform final : public IInflatingTransform
 {
 public:

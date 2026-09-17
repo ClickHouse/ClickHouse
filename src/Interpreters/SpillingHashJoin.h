@@ -34,13 +34,11 @@ struct PartitionedCollectingTag
 /// into a new GraceHashJoin. If they all fit in memory, the in-memory join becomes chosen_join with
 /// no rework at all.
 ///
-/// Partitioned mode (`PartitionedCollectingTag`): the in-memory join is a PartitionedHashJoin. During
-/// the build it stores blocks but has not built its hash table yet, so `getTotalByteCount` undercounts;
-/// the overflow check uses `predictedResidentBytes`, the join's estimate of its memory once the table
-/// exists. On overflow the join frees its build-time scratch and hands its stored blocks to
-/// GraceHashJoin one block at a time (`tryConvertFillLanes`). When the build ends without overflow,
-/// `onBuildPhaseFinish` asks the join whether the finished table fits (`planPostBuild`): if not, it
-/// still switches to GraceHashJoin; otherwise the PartitionedHashJoin is promoted.
+/// Partitioned mode (`PartitionedCollectingTag`): the in-memory join is a PartitionedHashJoin. It builds
+/// its table only at the barrier, so the overflow check reads `predictedResidentBytes` instead of
+/// `getTotalByteCount`. On overflow the fill lanes are handed to GraceHashJoin one block at a time
+/// (`tryConvertFillLanes`). A build that stays under the threshold runs its barrier and asks
+/// `planPostBuild`: a `MustSpill` verdict still switches, otherwise the PartitionedHashJoin is promoted.
 ///
 /// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition.
 /// `addBlockToJoin` takes a shared lock; `switchToGraceHashJoin` takes an exclusive lock.

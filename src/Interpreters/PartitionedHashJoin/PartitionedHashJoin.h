@@ -100,18 +100,15 @@ public:
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
 
-    /// The peak this build is heading for if every accumulated row ends up in the table: the row
-    /// store and routes that are already allocated, plus the table and arena that are not yet.
-    /// `SpillingHashJoin` compares this against the external-join threshold. `getTotalByteCount` is
-    /// different: it is the currently allocated amount and feeds `max_bytes_in_join` and `EXPLAIN`.
-    /// With `at_barrier` the fill is complete, so a single fill thread's table has a doubling ahead of
-    /// it only when the claimed count already exceeds the maximum fill.
+    /// The peak this build is heading for: the row store and routes already allocated, plus the table
+    /// and arena still to come. `SpillingHashJoin` compares it with the external-join threshold, while
+    /// `getTotalByteCount` reports what is allocated now. With `at_barrier` the fill is complete, so a
+    /// single fill thread's table has a doubling ahead only when the claimed count exceeds the maximum fill.
     size_t predictedResidentBytes(bool at_barrier = false) const;
 
-    /// Bytes the stored rows would take once loaded into a single in-memory join: the row store as it
-    /// stands plus the ungrouped table and arena prediction from the barrier's exact totals. On the
-    /// `MustSpill` path `SpillingHashJoin` divides this by the grace per-bucket cap to pick the initial
-    /// bucket count, instead of letting `GraceHashJoin` discover it through 1 -> 2 -> 4 rehashes.
+    /// Bytes the stored rows would take in one in-memory join: the row store as it stands, plus the table
+    /// and arena predicted without grouping from the barrier's exact totals. On the `MustSpill` path
+    /// `SpillingHashJoin` divides it by the grace per-bucket capacity to size the initial bucket count.
     size_t graceInMemoryEstimateBytes() const;
 
     StepAnalysisReport getAnalysisReport() const override;

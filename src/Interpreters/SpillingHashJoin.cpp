@@ -202,10 +202,8 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, size
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
     ///
-    /// PartitionedHashJoin does not build its hash table while blocks arrive, so nothing doubles in
-    /// place and the `* 2` factor does not apply. `predictedResidentBytes` already includes the table
-    /// it will build later; applying both would count that table twice and spill earlier than
-    /// `hash` does.
+    /// `PartitionedHashJoin` builds its table after the fill, so nothing doubles in place.
+    /// `predictedResidentBytes` already counts the table to come; the `* 2` would count it twice.
     const bool over_threshold = partitioned_join
         ? partitioned_join->predictedResidentBytes() >= max_bytes_before_external_join
         : collectingJoin().getTotalByteCount() * 2 >= max_bytes_before_external_join;
@@ -266,13 +264,10 @@ void SpillingHashJoin::switchToGraceHashJoin(size_t worker_id)
         /// the in-memory join. Freeing here also drops the maps before the conversion peak.
         if (partitioned_join)
         {
-            /// The per-block key hashes, prepared key columns and skip masks of the build are
-            /// useless to GraceHashJoin. Free them before draining so they do not add to the peak.
             partitioned_join->dropFillAuxiliary();
 
-            /// A single fill thread has no lanes: its rows are in the stored blocks and the table, and
-            /// this thread is the only one filling, so the blocks are handed over here. A build that
-            /// has not stored anything yet keeps its join data.
+            /// A single fill thread has no lanes: its rows sit in the stored blocks. This thread is the
+            /// only one filling, so it hands them over here. A build that stored nothing keeps its data.
             if (partitioned_join->isSingleLaneBuild())
             {
                 partitioned_join->beginStoredBlockDrain();
@@ -296,10 +291,8 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
         ///
-        /// Partitioned mode uses the same predicted-bytes check as `addBlockToJoin`. The hash mode
-        /// keeps the unfactored `getTotalByteCount` check it has always used at this terminal point
-        /// (the `* 2` lives only on the per-block path, where a subsequent insert could still double
-        /// the buffer).
+        /// The partitioned mode reuses the prediction of `addBlockToJoin`; the hash mode keeps its
+        /// unfactored check, since no insert follows that could still double the buffer.
         const bool over_threshold = partitioned_join
             ? partitioned_join->predictedResidentBytes(/*at_barrier=*/true) >= max_bytes_before_external_join
             : collectingJoin().getTotalByteCount() >= max_bytes_before_external_join;
@@ -309,20 +302,18 @@ void SpillingHashJoin::onBuildPhaseFinish()
         }
         else if (partitioned_join)
         {
-            /// `onBuildPhaseFinish` merges the per-thread stored blocks and chooses the partition layout.
-            /// It also reserves the memory for duplicate-key rows now, so the in-memory path does not
-            /// allocate it later; `beginStoredBlockDrain` releases it when the plan is `MustSpill`.
+            /// The barrier concatenates the lanes, numbers the row-store blocks and merges the sketches;
+            /// `planPostBuild` then judges the resident set against the budget.
             partitioned_join->onBuildPhaseFinish();
             const auto plan = partitioned_join->planPostBuild();
             if (plan == PartitionedHashJoin::PostBuildPlan::MustSpill)
             {
                 ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
 
-                /// `GraceHashJoin` spills a bucket once its in-memory join reaches half the threshold
-                /// (`hasMemoryOverflow`), so that is the per-bucket capacity. The barrier knows the
-                /// exact row and distinct-key totals; sizing the bucket count from them up front
-                /// avoids the rehash cascade that would otherwise release and re-scatter the same
-                /// rows once per doubling.
+                /// `GraceHashJoin` spills a bucket at half the threshold (`hasMemoryOverflow`), so that is
+                /// the per-bucket capacity. The bucket count comes from the barrier's exact totals; otherwise
+                /// the grace join would double its buckets step by step and re-scatter the same rows once
+                /// per doubling.
                 const size_t in_memory_estimate = partitioned_join->graceInMemoryEstimateBytes();
                 const size_t bucket_capacity = max_bytes_before_external_join / 2;
                 const size_t buckets_hint = bucket_capacity ? (in_memory_estimate + bucket_capacity - 1) / bucket_capacity : 0;
