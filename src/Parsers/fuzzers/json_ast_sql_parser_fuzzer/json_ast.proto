@@ -1,0 +1,1279 @@
+syntax = "proto3";
+
+// Structure-aware fuzzing schema for `json_ast_sql_parser_fuzzer`.
+//
+// A `Node` mirrors one object of the native ClickHouse JSON AST representation
+// (`IAST::writeJSON` / `IAST::createFromJSON`): the `type` discriminator, the
+// generic `children` array and an open list of named properties. Property keys
+// and enumeration-like string values are protobuf enums, so libprotobuf-mutator
+// only ever produces names that the `readJSON` implementations know about,
+// while the value kind of every property is chosen independently through a
+// `oneof` (the same JSON key has different value kinds in different node types,
+// e.g. `value`, `cluster`, `settings`, `database`, `table`).
+//
+// Text mapping (see `JSONASTProtoConverter.cpp`):
+// - `Key` identifiers are the JSON key with a `K_` prefix (`K_alias` -> `alias`).
+// - `NodeType`, `FieldType` and `KnownString` values carry the exact JSON text in
+//   the `(json_text)` option, because several of them differ only in case or
+//   contain spaces, which protobuf enum identifiers cannot express.
+//
+// When a `readJSON` implementation starts reading a new key or accepting a new
+// string constant, append it here (never renumber existing values, the binary
+// corpus depends on the numbers). `json_ast_seed_converter` fails loudly on a
+// JSON key or node type that is missing from this schema.
+
+package json_ast_fuzzer;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.EnumValueOptions
+{
+    string json_text = 50000;
+}
+
+message Node
+{
+    NodeType type = 1;
+    repeated Node children = 2;
+    repeated Property props = 3;
+}
+
+message Property
+{
+    Key key = 1;
+    oneof value
+    {
+        bool bool_value = 2;
+        int64 int_value = 3;
+        uint64 uint_value = 4;
+        double double_value = 5;
+        string string_value = 6;
+        KnownString known_string = 7;
+        Node node_value = 8;
+        NodeList node_list = 9;
+        FieldValue field_value = 10;
+        StringList string_list = 11;
+        Object object_value = 12;
+        ObjectList object_list = 13;
+        bool null_value = 14;
+    }
+}
+
+// A JSON object that is not an AST node (it has no `type`), e.g. `server_type`
+// and the elements of `changes`, `targets`, `elements`, `values`, `query_parameters`.
+message Object
+{
+    repeated Property props = 1;
+}
+
+message ObjectList
+{
+    repeated Object items = 1;
+}
+
+message NodeList
+{
+    repeated Node items = 1;
+}
+
+message StringItem
+{
+    oneof value
+    {
+        string raw = 1;
+        KnownString known = 2;
+    }
+}
+
+message StringList
+{
+    repeated StringItem items = 1;
+}
+
+// `{"field_type": ..., "value": ...}` - the JSON encoding of a `Field`
+// (see `JSONObjectWriter::writeFieldValue` and `JSONObjectReader::readFieldFromObject`).
+message FieldValue
+{
+    FieldType field_type = 1;
+    oneof value
+    {
+        bool null_value = 2;
+        bool bool_value = 3;
+        int64 int_value = 4;
+        uint64 uint_value = 5;
+        double double_value = 6;
+        string string_value = 7;
+        FieldList elements = 8;
+    }
+}
+
+message FieldList
+{
+    repeated FieldValue items = 1;
+}
+// Node type names registered in `getASTFactory` (`src/Parsers/ASTFromJSON.cpp`).
+enum NodeType
+{
+    T_UNSET = 0;
+    T_ExpressionList = 1 [(json_text) = "ExpressionList"];
+    T_Literal = 2 [(json_text) = "Literal"];
+    T_Identifier = 3 [(json_text) = "Identifier"];
+    T_TableIdentifier = 4 [(json_text) = "TableIdentifier"];
+    T_Function = 5 [(json_text) = "Function"];
+    T_Subquery = 6 [(json_text) = "Subquery"];
+    T_QueryParameter = 7 [(json_text) = "QueryParameter"];
+    T_Asterisk = 8 [(json_text) = "Asterisk"];
+    T_QualifiedAsterisk = 9 [(json_text) = "QualifiedAsterisk"];
+    T_SelectQuery = 10 [(json_text) = "SelectQuery"];
+    T_SelectWithUnionQuery = 11 [(json_text) = "SelectWithUnionQuery"];
+    T_SelectIntersectExceptQuery = 12 [(json_text) = "SelectIntersectExceptQuery"];
+    T_ProjectionSelectQuery = 13 [(json_text) = "ProjectionSelectQuery"];
+    T_SetQuery = 14 [(json_text) = "SetQuery"];
+    T_ExplainQuery = 15 [(json_text) = "ExplainQuery"];
+    T_WithElement = 16 [(json_text) = "WithElement"];
+    T_TablesInSelectQuery = 17 [(json_text) = "TablesInSelectQuery"];
+    T_TablesInSelectQueryElement = 18 [(json_text) = "TablesInSelectQueryElement"];
+    T_TableExpression = 19 [(json_text) = "TableExpression"];
+    T_TableJoin = 20 [(json_text) = "TableJoin"];
+    T_ArrayJoin = 21 [(json_text) = "ArrayJoin"];
+    T_OrderByElement = 22 [(json_text) = "OrderByElement"];
+    T_StorageOrderByElement = 23 [(json_text) = "StorageOrderByElement"];
+    T_WindowDefinition = 24 [(json_text) = "WindowDefinition"];
+    T_WindowListElement = 25 [(json_text) = "WindowListElement"];
+    T_SampleRatio = 26 [(json_text) = "SampleRatio"];
+    T_InterpolateElement = 27 [(json_text) = "InterpolateElement"];
+    T_Collation = 28 [(json_text) = "Collation"];
+    T_ColumnsRegexpMatcher = 29 [(json_text) = "ColumnsRegexpMatcher"];
+    T_ColumnsListMatcher = 30 [(json_text) = "ColumnsListMatcher"];
+    T_QualifiedColumnsRegexpMatcher = 31 [(json_text) = "QualifiedColumnsRegexpMatcher"];
+    T_QualifiedColumnsListMatcher = 32 [(json_text) = "QualifiedColumnsListMatcher"];
+    T_ColumnsTransformerList = 33 [(json_text) = "ColumnsTransformerList"];
+    T_ColumnsApplyTransformer = 34 [(json_text) = "ColumnsApplyTransformer"];
+    T_ColumnsExceptTransformer = 35 [(json_text) = "ColumnsExceptTransformer"];
+    T_ColumnsReplaceTransformer = 36 [(json_text) = "ColumnsReplaceTransformer"];
+    T_ColumnsReplaceTransformerReplacement = 37 [(json_text) = "ColumnsReplaceTransformerReplacement"];
+    T_ColumnDeclaration = 38 [(json_text) = "ColumnDeclaration"];
+    T_IndexDeclaration = 39 [(json_text) = "IndexDeclaration"];
+    T_ConstraintDeclaration = 40 [(json_text) = "ConstraintDeclaration"];
+    T_ProjectionDeclaration = 41 [(json_text) = "ProjectionDeclaration"];
+    T_StatisticsDeclaration = 42 [(json_text) = "StatisticsDeclaration"];
+    T_Columns_definition = 43 [(json_text) = "Columns definition"];
+    T_Storage = 44 [(json_text) = "Storage"];
+    T_CreateQuery = 45 [(json_text) = "CreateQuery"];
+    T_CreateIndexQuery = 46 [(json_text) = "CreateIndexQuery"];
+    T_DropIndexQuery = 47 [(json_text) = "DropIndexQuery"];
+    T_CreateSQLFunctionQuery = 48 [(json_text) = "CreateSQLFunctionQuery"];
+    T_CreateWasmFunctionQuery = 49 [(json_text) = "CreateWasmFunctionQuery"];
+    T_DropQuery = 50 [(json_text) = "DropQuery"];
+    T_InsertQuery = 51 [(json_text) = "InsertQuery"];
+    T_AlterCommand = 52 [(json_text) = "AlterCommand"];
+    T_AlterQuery = 53 [(json_text) = "AlterQuery"];
+    T_RenameQuery = 54 [(json_text) = "RenameQuery"];
+    T_NameTypePair = 55 [(json_text) = "NameTypePair"];
+    T_DataType = 56 [(json_text) = "DataType"];
+    T_EnumDataType = 57 [(json_text) = "EnumDataType"];
+    T_TupleDataType = 58 [(json_text) = "TupleDataType"];
+    T_FunctionWithKeyValueArguments = 59 [(json_text) = "FunctionWithKeyValueArguments"];
+    T_Pair = 60 [(json_text) = "Pair"];
+    T_TTLElement = 61 [(json_text) = "TTLElement"];
+    T_Partition = 62 [(json_text) = "Partition"];
+    T_DictionaryRange = 63 [(json_text) = "DictionaryRange"];
+    T_DictionaryLifetime = 64 [(json_text) = "DictionaryLifetime"];
+    T_DictionaryLayout = 65 [(json_text) = "DictionaryLayout"];
+    T_DictionarySettings = 66 [(json_text) = "DictionarySettings"];
+    T_Dictionary = 67 [(json_text) = "Dictionary"];
+    T_DictionaryAttributeDeclaration = 68 [(json_text) = "DictionaryAttributeDeclaration"];
+    T_SystemQuery = 69 [(json_text) = "SystemQuery"];
+    T_ShowTablesQuery = 70 [(json_text) = "ShowTablesQuery"];
+    T_ShowColumnsQuery = 71 [(json_text) = "ShowColumnsQuery"];
+    T_ShowIndexesQuery = 72 [(json_text) = "ShowIndexesQuery"];
+    T_KillQueryQuery = 73 [(json_text) = "KillQueryQuery"];
+    T_OptimizeQuery = 74 [(json_text) = "OptimizeQuery"];
+    T_DeleteQuery = 75 [(json_text) = "DeleteQuery"];
+    T_UpdateQuery = 76 [(json_text) = "UpdateQuery"];
+    T_UseQuery = 77 [(json_text) = "UseQuery"];
+    T_TransactionControl = 78 [(json_text) = "TransactionControl"];
+    T_CheckTableQuery = 79 [(json_text) = "CheckTableQuery"];
+    T_CheckAllTablesQuery = 80 [(json_text) = "CheckAllTablesQuery"];
+    T_BackupQuery = 81 [(json_text) = "BackupQuery"];
+    T_ViewTargets = 82 [(json_text) = "ViewTargets"];
+    T_SQLSecurity = 83 [(json_text) = "SQLSecurity"];
+    T_UserNameWithHost = 84 [(json_text) = "UserNameWithHost"];
+    T_UserNamesWithHost = 85 [(json_text) = "UserNamesWithHost"];
+    T_StreamSettings = 86 [(json_text) = "StreamSettings"];
+    T_RefreshStrategy = 87 [(json_text) = "RefreshStrategy"];
+    T_TimeInterval = 88 [(json_text) = "TimeInterval"];
+    T_Assignment = 89 [(json_text) = "Assignment"];
+    T_TableOverride = 90 [(json_text) = "TableOverride"];
+    T_TableOverrideList = 91 [(json_text) = "TableOverrideList"];
+    T_ForeignKeyDeclaration = 92 [(json_text) = "ForeignKeyDeclaration"];
+    T_IdentifierTypePair = 93 [(json_text) = "IdentifierTypePair"];
+}
+
+// `field_type` names (`Field::getTypeName`).
+enum FieldType
+{
+    F_UNSET = 0;
+    F_Null = 1 [(json_text) = "Null"];
+    F_Array = 2 [(json_text) = "Array"];
+    F_Tuple = 3 [(json_text) = "Tuple"];
+    F_Map = 4 [(json_text) = "Map"];
+    F_Object = 5 [(json_text) = "Object"];
+    F_AggregateFunctionState = 6 [(json_text) = "AggregateFunctionState"];
+    F_Bool = 7 [(json_text) = "Bool"];
+    F_String = 8 [(json_text) = "String"];
+    F_Decimal32 = 9 [(json_text) = "Decimal32"];
+    F_Decimal64 = 10 [(json_text) = "Decimal64"];
+    F_Decimal128 = 11 [(json_text) = "Decimal128"];
+    F_Decimal256 = 12 [(json_text) = "Decimal256"];
+    F_Float64 = 13 [(json_text) = "Float64"];
+    F_Int64 = 14 [(json_text) = "Int64"];
+    F_Int128 = 15 [(json_text) = "Int128"];
+    F_Int256 = 16 [(json_text) = "Int256"];
+    F_UInt64 = 17 [(json_text) = "UInt64"];
+    F_UInt128 = 18 [(json_text) = "UInt128"];
+    F_UInt256 = 19 [(json_text) = "UInt256"];
+    F_UUID = 20 [(json_text) = "UUID"];
+    F_IPv4 = 21 [(json_text) = "IPv4"];
+    F_IPv6 = 22 [(json_text) = "IPv6"];
+    F_CustomType = 23 [(json_text) = "CustomType"];
+}
+
+// Every JSON property key read by some `readJSON` implementation.
+// The JSON text is the identifier without the `K_` prefix.
+enum Key
+{
+    K_UNSET = 0;
+    K_abi = 1;
+    K_action = 2;
+    K_add_enum_values = 3;
+    K_alias = 4;
+    K_aliases = 5;
+    K_aliases_list = 6;
+    K_all = 7;
+    K_allowed_lateness = 8;
+    K_alter_object = 9;
+    K_append = 10;
+    K_arguments = 11;
+    K_array_join = 12;
+    K_as_database = 13;
+    K_as_table = 14;
+    K_as_table_function = 15;
+    K_assignments = 16;
+    K_async_insert_flush = 17;
+    K_attach = 18;
+    K_attach_as_replicated = 19;
+    K_attach_from_path = 20;
+    K_attach_short_syntax = 21;
+    K_attr_type = 22;
+    K_backup_name = 23;
+    K_backup_source = 24;
+    K_base_backup_name = 25;
+    K_base_snapshot_name = 26;
+    K_bidirectional = 27;
+    K_caches = 28;
+    K_case_insensitive_like = 29;
+    K_changed = 30;
+    K_changes = 31;
+    K_cleanup = 32;
+    K_clear_column = 33;
+    K_clear_index = 34;
+    K_clear_projection = 35;
+    K_clear_statistics = 36;
+    K_cluster = 37;
+    K_cluster_host_ids = 38;
+    K_cluster_str = 39;
+    K_clusters = 40;
+    K_codec = 41;
+    K_col_decl = 42;
+    K_collation = 43;
+    K_column = 44;
+    K_column_aliases = 45;
+    K_column_list = 46;
+    K_column_name = 47;
+    K_column_name_prefix = 48;
+    K_columns = 49;
+    K_columns_list = 50;
+    K_command_list = 51;
+    K_command_type = 52;
+    K_comment = 53;
+    K_compression = 54;
+    K_compression_level = 55;
+    K_compute_after_window_functions = 56;
+    K_constraint = 57;
+    K_constraint_decl = 58;
+    K_constraint_type = 59;
+    K_constraints = 60;
+    K_coverage_test_name = 61;
+    K_create_or_replace = 62;
+    K_cte_aliases = 63;
+    K_cte_name = 64;
+    K_cursor_tree = 65;
+    K_custom_name = 66;
+    K_data_type = 67;
+    K_database = 68;
+    K_database_and_table_name = 69;
+    K_database_and_tables = 70;
+    K_database_ast = 71;
+    K_database_name = 72;
+    K_databases = 73;
+    K_deduplicate = 74;
+    K_deduplicate_by_columns = 75;
+    K_default_expression = 76;
+    K_default_settings = 77;
+    K_default_specifier = 78;
+    K_default_value = 79;
+    K_definer = 80;
+    K_definition = 81;
+    K_delta_kernel_tracing_level = 82;
+    K_denominator = 83;
+    K_dependencies = 84;
+    K_destination_name = 85;
+    K_destination_type = 86;
+    K_detach = 87;
+    K_dict_settings = 88;
+    K_dictionaries = 89;
+    K_dictionary = 90;
+    K_dictionary_attributes_list = 91;
+    K_direction = 92;
+    K_disk = 93;
+    K_distinct = 94;
+    K_distributed_cache_drop_connections = 95;
+    K_distributed_cache_server_id = 96;
+    K_dry_run = 97;
+    K_element_names = 98;
+    K_elements = 99;
+    K_engine = 100;
+    K_ephemeral_default = 101;
+    K_except_databases = 102;
+    K_except_tables = 103;
+    K_exchange = 104;
+    K_exclude_custom_names = 105;
+    K_exclude_types = 106;
+    K_execute_args = 107;
+    K_execute_command_name = 108;
+    K_expr = 109;
+    K_expression = 110;
+    K_expression_list = 111;
+    K_extended = 112;
+    K_fail_point_action = 113;
+    K_fail_point_name = 114;
+    K_fake_time_for_view = 115;
+    K_fields_count = 116;
+    K_filesystem_cache_name = 117;
+    K_fill_from = 118;
+    K_fill_staleness = 119;
+    K_fill_step = 120;
+    K_fill_to = 121;
+    K_final = 122;
+    K_final_operator = 123;
+    K_first = 124;
+    K_format = 125;
+    K_format_ast = 126;
+    K_frame_begin_offset = 127;
+    K_frame_begin_preceding = 128;
+    K_frame_begin_type = 129;
+    K_frame_end_offset = 130;
+    K_frame_end_preceding = 131;
+    K_frame_end_type = 132;
+    K_frame_is_default = 133;
+    K_frame_type = 134;
+    K_from = 135;
+    K_from_database = 136;
+    K_from_database_ast = 137;
+    K_from_table = 138;
+    K_from_table_ast = 139;
+    K_full = 140;
+    K_full_replica_zk_path = 141;
+    K_func_name = 142;
+    K_function_core = 143;
+    K_function_name = 144;
+    K_function_settings = 145;
+    K_granularity = 146;
+    K_group_by = 147;
+    K_group_by_all = 148;
+    K_group_by_assignments = 149;
+    K_group_by_key = 150;
+    K_group_by_with_cube = 151;
+    K_group_by_with_grouping_sets = 152;
+    K_group_by_with_rollup = 153;
+    K_group_by_with_totals = 154;
+    K_has_all = 155;
+    K_has_attach_from_path = 156;
+    K_has_brackets = 157;
+    K_has_inner_uuid_clause = 158;
+    K_has_tables = 159;
+    K_has_uuid = 160;
+    K_has_uuid_clause = 161;
+    K_having = 162;
+    K_hierarchical = 163;
+    K_host_pattern = 164;
+    K_id = 165;
+    K_identifier = 166;
+    K_if_empty = 167;
+    K_if_exists = 168;
+    K_if_not_exists = 169;
+    K_incremental = 170;
+    K_index = 171;
+    K_index_decl = 172;
+    K_index_name = 173;
+    K_index_type = 174;
+    K_indices = 175;
+    K_infile = 176;
+    K_injective = 177;
+    K_inner_columns = 178;
+    K_inner_engine = 179;
+    K_inner_uuid = 180;
+    K_interpolate = 181;
+    K_is_clone_as = 182;
+    K_is_compound_name = 183;
+    K_is_create_empty = 184;
+    K_is_definer_current_user = 185;
+    K_is_deterministic = 186;
+    K_is_dictionary = 187;
+    K_is_drop_whole_replica = 188;
+    K_is_into_outfile_with_stdout = 189;
+    K_is_lambda_function = 190;
+    K_is_materialized = 191;
+    K_is_materialized_view = 192;
+    K_is_natural = 193;
+    K_is_object_id = 194;
+    K_is_operator = 195;
+    K_is_ordinary_view = 196;
+    K_is_outfile_append = 197;
+    K_is_outfile_truncate = 198;
+    K_is_populate = 199;
+    K_is_standalone = 200;
+    K_is_strict = 201;
+    K_is_temporary = 202;
+    K_is_time_series_table = 203;
+    K_is_view = 204;
+    K_is_watermark_ascending = 205;
+    K_is_watermark_bounded = 206;
+    K_is_watermark_strictly_ascending = 207;
+    K_is_window_function = 208;
+    K_is_window_view = 209;
+    K_key_to_drop = 210;
+    K_kill_type = 211;
+    K_kind = 212;
+    K_lambda = 213;
+    K_lambda_arg = 214;
+    K_lateness_function = 215;
+    K_layout = 216;
+    K_layout_type = 217;
+    K_lifetime = 218;
+    K_like = 219;
+    K_limit_after = 220;
+    K_limit_after_all = 221;
+    K_limit_by = 222;
+    K_limit_by_all = 223;
+    K_limit_by_length = 224;
+    K_limit_by_offset = 225;
+    K_limit_length = 226;
+    K_limit_offset = 227;
+    K_limit_until = 228;
+    K_limit_with_ties = 229;
+    K_list_of_modes = 230;
+    K_list_of_selects = 231;
+    K_locality = 232;
+    K_manifest = 233;
+    K_max_attr_name = 234;
+    K_max_sec = 235;
+    K_merges = 236;
+    K_min_attr_name = 237;
+    K_min_sec = 238;
+    K_mode = 239;
+    K_module_hash = 240;
+    K_module_name = 241;
+    K_months = 242;
+    K_move_destination_name = 243;
+    K_move_destination_type = 244;
+    K_name = 245;
+    K_name_parts = 246;
+    K_name_type = 247;
+    K_new_database_name = 248;
+    K_new_table_name = 249;
+    K_no_ddl_lock = 250;
+    K_no_empty_args = 251;
+    K_not_like = 252;
+    K_null_modifier = 253;
+    K_nulls_action = 254;
+    K_nulls_direction = 255;
+    K_nulls_direction_was_explicitly_specified = 256;
+    K_numerator = 257;
+    K_offset = 258;
+    K_offset_to_drop = 259;
+    K_on_expression = 260;
+    K_or_replace = 261;
+    K_order_by = 262;
+    K_order_by_all = 263;
+    K_out_file = 264;
+    K_param_type = 265;
+    K_parameters = 266;
+    K_parametrised_alias = 267;
+    K_parent_window_name = 268;
+    K_part = 269;
+    K_part_name = 270;
+    K_part_of_create_index_query = 271;
+    K_partition = 272;
+    K_partition_by = 273;
+    K_partitions = 274;
+    K_parts_list = 275;
+    K_pattern = 276;
+    K_period = 277;
+    K_permanently = 278;
+    K_predicate = 279;
+    K_prefer_alias_to_column_name = 280;
+    K_prefer_subquery_to_function_formatting = 281;
+    K_prewhere = 282;
+    K_primary_key = 283;
+    K_primary_key_from_columns = 284;
+    K_primary_key_specifier = 285;
+    K_projection = 286;
+    K_projection_decl = 287;
+    K_projection_type = 288;
+    K_projections = 289;
+    K_qualifier = 290;
+    K_qualify = 291;
+    K_query = 292;
+    K_query_parameters = 293;
+    K_query_result_cache_tag = 294;
+    K_query_settings = 295;
+    K_query_type = 296;
+    K_queue_path = 297;
+    K_range = 298;
+    K_recompression_codec = 299;
+    K_recursive_with = 300;
+    K_refresh = 301;
+    K_refresh_strategy = 302;
+    K_remove_property = 303;
+    K_rename_if_cannot_exchange = 304;
+    K_rename_to = 305;
+    K_replace = 306;
+    K_replace_table = 307;
+    K_replace_view = 308;
+    K_replica = 309;
+    K_replica_zk_path = 310;
+    K_result_type = 311;
+    K_sample_by = 312;
+    K_sample_offset = 313;
+    K_sample_size = 314;
+    K_schedule_kind = 315;
+    K_scheduled_merge_parts = 316;
+    K_schema_cache_format = 317;
+    K_schema_cache_storage = 318;
+    K_second = 319;
+    K_second_with_brackets = 320;
+    K_seconds = 321;
+    K_security_type = 322;
+    K_select = 323;
+    K_separator = 324;
+    K_server_type = 325;
+    K_settings = 326;
+    K_settings_ast = 327;
+    K_settings_changes = 328;
+    K_settings_resets = 329;
+    K_shard = 330;
+    K_shorthand = 331;
+    K_snapshot = 332;
+    K_snapshot_desc = 333;
+    K_snapshot_name = 334;
+    K_source = 335;
+    K_source_function_name = 336;
+    K_spread = 337;
+    K_sql_security = 338;
+    K_src_replicas = 339;
+    K_statistics_decl = 340;
+    K_statistics_desc = 341;
+    K_storage = 342;
+    K_storage_policy = 343;
+    K_stream_settings = 344;
+    K_strictness = 345;
+    K_subquery = 346;
+    K_subscribe_for_updates = 347;
+    K_sync = 348;
+    K_sync_replica_mode = 349;
+    K_table = 350;
+    K_table_ast = 351;
+    K_table_database = 352;
+    K_table_expression = 353;
+    K_table_function = 354;
+    K_table_join = 355;
+    K_table_name = 356;
+    K_table_override = 357;
+    K_table_overrides = 358;
+    K_table_uuid = 359;
+    K_tables = 360;
+    K_target_function = 361;
+    K_targets = 362;
+    K_temporary = 363;
+    K_test = 364;
+    K_to_database = 365;
+    K_to_database_ast = 366;
+    K_to_table = 367;
+    K_to_table_ast = 368;
+    K_transformers = 369;
+    K_ttl = 370;
+    K_ttl_expr = 371;
+    K_ttl_table = 372;
+    K_type = 373;
+    K_types = 374;
+    K_union_mode = 375;
+    K_unique = 376;
+    K_unique_key = 377;
+    K_unordered = 378;
+    K_untracked_memory_size = 379;
+    K_update_assignments = 380;
+    K_username = 381;
+    K_using_expression_list = 382;
+    K_uuid = 383;
+    K_value = 384;
+    K_values = 385;
+    K_volume = 386;
+    K_watermark_column = 387;
+    K_watermark_expression = 388;
+    K_watermark_function = 389;
+    K_watermark_idle_timeout_ms = 390;
+    K_where = 391;
+    K_where_expr = 392;
+    K_where_expression = 393;
+    K_window = 394;
+    K_window_definition = 395;
+    K_window_name = 396;
+    K_with = 397;
+    K_with_fill = 398;
+    K_with_name = 399;
+    K_with_settings = 400;
+    K_with_tables = 401;
+    K_zk_name = 402;
+}
+
+// String constants accepted by `readJSON` implementations for enumeration-like
+// properties, plus a small vocabulary of common identifiers, function, type,
+// engine and format names. Grouped by the property that accepts them; a text
+// that is accepted by several properties appears once.
+enum KnownString
+{
+    S_UNSET = 0;
+
+    // `union_mode`, `list_of_modes` (`parseSelectUnionMode`)
+    S_UNION_DEFAULT = 1 [(json_text) = "UNION_DEFAULT"];
+    S_UNION_ALL = 2 [(json_text) = "UNION_ALL"];
+    S_UNION_DISTINCT = 3 [(json_text) = "UNION_DISTINCT"];
+    S_EXCEPT_DEFAULT = 4 [(json_text) = "EXCEPT_DEFAULT"];
+    S_EXCEPT_ALL = 5 [(json_text) = "EXCEPT_ALL"];
+    S_EXCEPT_DISTINCT = 6 [(json_text) = "EXCEPT_DISTINCT"];
+    S_INTERSECT_DEFAULT = 7 [(json_text) = "INTERSECT_DEFAULT"];
+    S_INTERSECT_ALL = 8 [(json_text) = "INTERSECT_ALL"];
+    S_INTERSECT_DISTINCT = 9 [(json_text) = "INTERSECT_DISTINCT"];
+
+    // `TableJoin.kind` (`parseJoinKind`)
+    S_INNER = 10 [(json_text) = "INNER"];
+    S_LEFT = 11 [(json_text) = "LEFT"];
+    S_RIGHT = 12 [(json_text) = "RIGHT"];
+    S_FULL = 13 [(json_text) = "FULL"];
+    S_CROSS = 14 [(json_text) = "CROSS"];
+    S_COMMA = 15 [(json_text) = "COMMA"];
+    S_PASTE = 16 [(json_text) = "PASTE"];
+
+    // `TableJoin.strictness` (`parseJoinStrictness`)
+    S_RIGHT_ANY = 17 [(json_text) = "RIGHT_ANY"];
+    S_ANY = 18 [(json_text) = "ANY"];
+    S_ALL = 19 [(json_text) = "ALL"];
+    S_ASOF = 20 [(json_text) = "ASOF"];
+    S_SEMI = 21 [(json_text) = "SEMI"];
+    S_ANTI = 22 [(json_text) = "ANTI"];
+
+    // `TableJoin.locality` (`parseJoinLocality`)
+    S_LOCAL = 23 [(json_text) = "LOCAL"];
+    S_GLOBAL = 24 [(json_text) = "GLOBAL"];
+
+    // `ArrayJoin.kind`
+    S_Left_2 = 25 [(json_text) = "Left"];
+    S_Inner_2 = 26 [(json_text) = "Inner"];
+
+    // `Function.kind` (`ORDINARY_FUNCTION` is the implicit default)
+    S_WINDOW_FUNCTION = 27 [(json_text) = "WINDOW_FUNCTION"];
+    S_LAMBDA_FUNCTION = 28 [(json_text) = "LAMBDA_FUNCTION"];
+    S_TABLE_ENGINE = 29 [(json_text) = "TABLE_ENGINE"];
+    S_DATABASE_ENGINE = 30 [(json_text) = "DATABASE_ENGINE"];
+    S_BACKUP_NAME = 31 [(json_text) = "BACKUP_NAME"];
+    S_CODEC = 32 [(json_text) = "CODEC"];
+    S_STATISTICS = 33 [(json_text) = "STATISTICS"];
+
+    // `Function.nulls_action`
+    S_RESPECT_NULLS = 34 [(json_text) = "RESPECT_NULLS"];
+    S_IGNORE_NULLS = 35 [(json_text) = "IGNORE_NULLS"];
+
+    // `ExplainQuery.kind` (`ASTExplainQuery::fromString`)
+    S_EXPLAIN_AST = 36 [(json_text) = "EXPLAIN AST"];
+    S_EXPLAIN_SYNTAX = 37 [(json_text) = "EXPLAIN SYNTAX"];
+    S_EXPLAIN_QUERY_TREE = 38 [(json_text) = "EXPLAIN QUERY TREE"];
+    S_EXPLAIN = 39 [(json_text) = "EXPLAIN"];
+    S_EXPLAIN_PLAN = 40 [(json_text) = "EXPLAIN PLAN"];
+    S_EXPLAIN_PIPELINE = 41 [(json_text) = "EXPLAIN PIPELINE"];
+    S_EXPLAIN_ESTIMATE = 42 [(json_text) = "EXPLAIN ESTIMATE"];
+    S_EXPLAIN_TABLE_OVERRIDE = 43 [(json_text) = "EXPLAIN TABLE OVERRIDE"];
+    S_EXPLAIN_CURRENT_TRANSACTION = 44 [(json_text) = "EXPLAIN CURRENT TRANSACTION"];
+    S_EXPLAIN_ANALYZE = 45 [(json_text) = "EXPLAIN ANALYZE"];
+    S_EXPLAIN_WHATIF = 46 [(json_text) = "EXPLAIN WHATIF"];
+
+    // `DropQuery.kind`
+    S_Drop = 47 [(json_text) = "Drop"];
+    S_Detach = 48 [(json_text) = "Detach"];
+    S_Truncate = 49 [(json_text) = "Truncate"];
+
+    // `AlterQuery.alter_object`
+    S_TABLE = 50 [(json_text) = "TABLE"];
+    S_DATABASE = 51 [(json_text) = "DATABASE"];
+
+    // `ConstraintDeclaration.constraint_type`
+    S_CHECK = 52 [(json_text) = "CHECK"];
+    S_ASSUME = 53 [(json_text) = "ASSUME"];
+
+    // `SelectIntersectExceptQuery.final_operator`
+    S_EXCEPT_ALL_2 = 54 [(json_text) = "EXCEPT ALL"];
+    S_EXCEPT_DISTINCT_2 = 55 [(json_text) = "EXCEPT DISTINCT"];
+    S_INTERSECT_ALL_2 = 56 [(json_text) = "INTERSECT ALL"];
+    S_INTERSECT_DISTINCT_2 = 57 [(json_text) = "INTERSECT DISTINCT"];
+
+    // `WindowDefinition.frame_type`
+    S_ROWS = 58 [(json_text) = "ROWS"];
+    S_GROUPS = 59 [(json_text) = "GROUPS"];
+    S_RANGE = 60 [(json_text) = "RANGE"];
+
+    // `WindowDefinition.frame_begin_type` / `frame_end_type`
+    S_Unbounded = 61 [(json_text) = "Unbounded"];
+    S_Current = 62 [(json_text) = "Current"];
+    S_Offset = 63 [(json_text) = "Offset"];
+
+    // `ColumnDeclaration.default_specifier`
+    S_DEFAULT = 64 [(json_text) = "DEFAULT"];
+    S_MATERIALIZED = 65 [(json_text) = "MATERIALIZED"];
+    S_ALIAS = 66 [(json_text) = "ALIAS"];
+    S_EPHEMERAL = 67 [(json_text) = "EPHEMERAL"];
+    S_AUTO_INCREMENT = 68 [(json_text) = "AUTO_INCREMENT"];
+
+    // `DataDestinationType` (`move_destination_type`, `TTLElement.destination_type`)
+    S_DISK = 69 [(json_text) = "DISK"];
+    S_VOLUME = 70 [(json_text) = "VOLUME"];
+    S_SHARD = 71 [(json_text) = "SHARD"];
+
+    // `TTLElement.mode` (`TTLMode`)
+    S_DELETE = 72 [(json_text) = "DELETE"];
+    S_MOVE = 73 [(json_text) = "MOVE"];
+    S_GROUP_BY = 74 [(json_text) = "GROUP_BY"];
+    S_RECOMPRESS = 75 [(json_text) = "RECOMPRESS"];
+
+    // `SystemQuery.fail_point_action`
+    S_UNSPECIFIED = 76 [(json_text) = "UNSPECIFIED"];
+    S_PAUSE = 77 [(json_text) = "PAUSE"];
+    S_RESUME = 78 [(json_text) = "RESUME"];
+
+    // `SystemQuery.sync_replica_mode` (`SyncReplicaMode`)
+    S_STRICT = 79 [(json_text) = "STRICT"];
+    S_LIGHTWEIGHT = 80 [(json_text) = "LIGHTWEIGHT"];
+    S_PULL = 81 [(json_text) = "PULL"];
+
+    // `TransactionControl.action`
+    S_BEGIN = 82 [(json_text) = "BEGIN"];
+    S_COMMIT = 83 [(json_text) = "COMMIT"];
+    S_ROLLBACK = 84 [(json_text) = "ROLLBACK"];
+    S_SET_SNAPSHOT = 85 [(json_text) = "SET_SNAPSHOT"];
+
+    // `KillQueryQuery.kill_type`
+    S_Query = 86 [(json_text) = "Query"];
+    S_Mutation = 87 [(json_text) = "Mutation"];
+    S_PartMoveToShard = 88 [(json_text) = "PartMoveToShard"];
+    S_Transaction = 89 [(json_text) = "Transaction"];
+
+    // `BackupQuery.elements[].type` (`ElementType`)
+    S_TEMPORARY_TABLE = 90 [(json_text) = "TEMPORARY_TABLE"];
+
+    // `BackupQuery.kind`
+    S_BACKUP = 91 [(json_text) = "BACKUP"];
+    S_RESTORE = 92 [(json_text) = "RESTORE"];
+
+    // `RefreshStrategy.schedule_kind` (`RefreshScheduleKind`)
+    S_UNKNOWN = 93 [(json_text) = "UNKNOWN"];
+    S_AFTER = 94 [(json_text) = "AFTER"];
+    S_EVERY = 95 [(json_text) = "EVERY"];
+
+    // `ViewTargets.targets[].kind` (`ViewTarget::Kind`, `Metrics` is a legacy alias)
+    S_To = 96 [(json_text) = "To"];
+    S_Samples = 97 [(json_text) = "Samples"];
+    S_RecentSamples = 98 [(json_text) = "RecentSamples"];
+    S_Tags = 99 [(json_text) = "Tags"];
+    S_MetricFamilies = 100 [(json_text) = "MetricFamilies"];
+    S_Metrics = 101 [(json_text) = "Metrics"];
+
+    // `SQLSecurity.security_type` (`SQLSecurityType`)
+    S_INVOKER = 102 [(json_text) = "INVOKER"];
+    S_DEFINER = 103 [(json_text) = "DEFINER"];
+    S_NONE = 104 [(json_text) = "NONE"];
+
+    // `SystemQuery.server_type.type` (`ServerType::Type`)
+    S_TCP_WITH_PROXY = 105 [(json_text) = "TCP_WITH_PROXY"];
+    S_TCP_SECURE = 106 [(json_text) = "TCP_SECURE"];
+    S_TCP_SSH = 107 [(json_text) = "TCP_SSH"];
+    S_TCP = 108 [(json_text) = "TCP"];
+    S_HTTP = 109 [(json_text) = "HTTP"];
+    S_HTTPS = 110 [(json_text) = "HTTPS"];
+    S_MYSQL = 111 [(json_text) = "MYSQL"];
+    S_GRPC = 112 [(json_text) = "GRPC"];
+    S_ARROW_FLIGHT = 113 [(json_text) = "ARROW_FLIGHT"];
+    S_POSTGRESQL = 114 [(json_text) = "POSTGRESQL"];
+    S_PROMETHEUS = 115 [(json_text) = "PROMETHEUS"];
+    S_CUSTOM = 116 [(json_text) = "CUSTOM"];
+    S_INTERSERVER_HTTP = 117 [(json_text) = "INTERSERVER_HTTP"];
+    S_INTERSERVER_HTTPS = 118 [(json_text) = "INTERSERVER_HTTPS"];
+    S_QUERIES_ALL = 119 [(json_text) = "QUERIES_ALL"];
+    S_QUERIES_DEFAULT = 120 [(json_text) = "QUERIES_DEFAULT"];
+    S_QUERIES_CUSTOM = 121 [(json_text) = "QUERIES_CUSTOM"];
+    S_CLOUD = 122 [(json_text) = "CLOUD"];
+
+    // `AlterCommand.command_type` (`ASTAlterCommand::Type`)
+    S_ADD_COLUMN = 123 [(json_text) = "ADD_COLUMN"];
+    S_DROP_COLUMN = 124 [(json_text) = "DROP_COLUMN"];
+    S_MODIFY_COLUMN = 125 [(json_text) = "MODIFY_COLUMN"];
+    S_COMMENT_COLUMN = 126 [(json_text) = "COMMENT_COLUMN"];
+    S_RENAME_COLUMN = 127 [(json_text) = "RENAME_COLUMN"];
+    S_MATERIALIZE_COLUMN = 128 [(json_text) = "MATERIALIZE_COLUMN"];
+    S_MODIFY_ORDER_BY = 129 [(json_text) = "MODIFY_ORDER_BY"];
+    S_MODIFY_PROJECTION = 130 [(json_text) = "MODIFY_PROJECTION"];
+    S_MODIFY_SAMPLE_BY = 131 [(json_text) = "MODIFY_SAMPLE_BY"];
+    S_MODIFY_TTL = 132 [(json_text) = "MODIFY_TTL"];
+    S_REWRITE_PARTS = 133 [(json_text) = "REWRITE_PARTS"];
+    S_MATERIALIZE_TTL = 134 [(json_text) = "MATERIALIZE_TTL"];
+    S_MODIFY_SETTING = 135 [(json_text) = "MODIFY_SETTING"];
+    S_RESET_SETTING = 136 [(json_text) = "RESET_SETTING"];
+    S_MODIFY_QUERY = 137 [(json_text) = "MODIFY_QUERY"];
+    S_MODIFY_REFRESH = 138 [(json_text) = "MODIFY_REFRESH"];
+    S_REMOVE_TTL = 139 [(json_text) = "REMOVE_TTL"];
+    S_REMOVE_SAMPLE_BY = 140 [(json_text) = "REMOVE_SAMPLE_BY"];
+    S_ADD_INDEX = 141 [(json_text) = "ADD_INDEX"];
+    S_DROP_INDEX = 142 [(json_text) = "DROP_INDEX"];
+    S_MATERIALIZE_INDEX = 143 [(json_text) = "MATERIALIZE_INDEX"];
+    S_ADD_CONSTRAINT = 144 [(json_text) = "ADD_CONSTRAINT"];
+    S_DROP_CONSTRAINT = 145 [(json_text) = "DROP_CONSTRAINT"];
+    S_MODIFY_CONSTRAINT = 146 [(json_text) = "MODIFY_CONSTRAINT"];
+    S_ADD_PROJECTION = 147 [(json_text) = "ADD_PROJECTION"];
+    S_DROP_PROJECTION = 148 [(json_text) = "DROP_PROJECTION"];
+    S_MATERIALIZE_PROJECTION = 149 [(json_text) = "MATERIALIZE_PROJECTION"];
+    S_ADD_STATISTICS = 150 [(json_text) = "ADD_STATISTICS"];
+    S_DROP_STATISTICS = 151 [(json_text) = "DROP_STATISTICS"];
+    S_MODIFY_STATISTICS = 152 [(json_text) = "MODIFY_STATISTICS"];
+    S_MATERIALIZE_STATISTICS = 153 [(json_text) = "MATERIALIZE_STATISTICS"];
+    S_DROP_PARTITION = 154 [(json_text) = "DROP_PARTITION"];
+    S_DROP_DETACHED_PARTITION = 155 [(json_text) = "DROP_DETACHED_PARTITION"];
+    S_FORGET_PARTITION = 156 [(json_text) = "FORGET_PARTITION"];
+    S_ATTACH_PARTITION = 157 [(json_text) = "ATTACH_PARTITION"];
+    S_MOVE_PARTITION = 158 [(json_text) = "MOVE_PARTITION"];
+    S_REPLACE_PARTITION = 159 [(json_text) = "REPLACE_PARTITION"];
+    S_FETCH_PARTITION = 160 [(json_text) = "FETCH_PARTITION"];
+    S_FREEZE_PARTITION = 161 [(json_text) = "FREEZE_PARTITION"];
+    S_FREEZE_ALL = 162 [(json_text) = "FREEZE_ALL"];
+    S_UNFREEZE_PARTITION = 163 [(json_text) = "UNFREEZE_PARTITION"];
+    S_UNFREEZE_ALL = 164 [(json_text) = "UNFREEZE_ALL"];
+    S_UPDATE = 165 [(json_text) = "UPDATE"];
+    S_APPLY_DELETED_MASK = 166 [(json_text) = "APPLY_DELETED_MASK"];
+    S_APPLY_PATCHES = 167 [(json_text) = "APPLY_PATCHES"];
+    S_NO_TYPE = 168 [(json_text) = "NO_TYPE"];
+    S_MODIFY_DATABASE_SETTING = 169 [(json_text) = "MODIFY_DATABASE_SETTING"];
+    S_MODIFY_DATABASE_COMMENT = 170 [(json_text) = "MODIFY_DATABASE_COMMENT"];
+    S_MODIFY_COMMENT = 171 [(json_text) = "MODIFY_COMMENT"];
+    S_MODIFY_SQL_SECURITY = 172 [(json_text) = "MODIFY_SQL_SECURITY"];
+    S_UNLOCK_SNAPSHOT = 173 [(json_text) = "UNLOCK_SNAPSHOT"];
+    S_EXECUTE_COMMAND = 174 [(json_text) = "EXECUTE_COMMAND"];
+
+    // `SystemQuery.query_type` (`ASTSystemQuery::Type`)
+    S_SHUTDOWN = 175 [(json_text) = "SHUTDOWN"];
+    S_KILL = 176 [(json_text) = "KILL"];
+    S_SUSPEND = 177 [(json_text) = "SUSPEND"];
+    S_CLEAR_DNS_CACHE = 178 [(json_text) = "CLEAR_DNS_CACHE"];
+    S_CLEAR_CONNECTIONS_CACHE = 179 [(json_text) = "CLEAR_CONNECTIONS_CACHE"];
+    S_PREWARM_MARK_CACHE = 180 [(json_text) = "PREWARM_MARK_CACHE"];
+    S_PREWARM_PRIMARY_INDEX_CACHE = 181 [(json_text) = "PREWARM_PRIMARY_INDEX_CACHE"];
+    S_CLEAR_MARK_CACHE = 182 [(json_text) = "CLEAR_MARK_CACHE"];
+    S_CLEAR_PRIMARY_INDEX_CACHE = 183 [(json_text) = "CLEAR_PRIMARY_INDEX_CACHE"];
+    S_CLEAR_UNCOMPRESSED_CACHE = 184 [(json_text) = "CLEAR_UNCOMPRESSED_CACHE"];
+    S_CLEAR_INDEX_MARK_CACHE = 185 [(json_text) = "CLEAR_INDEX_MARK_CACHE"];
+    S_CLEAR_INDEX_UNCOMPRESSED_CACHE = 186 [(json_text) = "CLEAR_INDEX_UNCOMPRESSED_CACHE"];
+    S_CLEAR_VECTOR_SIMILARITY_INDEX_CACHE = 187 [(json_text) = "CLEAR_VECTOR_SIMILARITY_INDEX_CACHE"];
+    S_CLEAR_TEXT_INDEX_TOKENS_CACHE = 188 [(json_text) = "CLEAR_TEXT_INDEX_TOKENS_CACHE"];
+    S_CLEAR_TEXT_INDEX_HEADER_CACHE = 189 [(json_text) = "CLEAR_TEXT_INDEX_HEADER_CACHE"];
+    S_CLEAR_TEXT_INDEX_POSTINGS_CACHE = 190 [(json_text) = "CLEAR_TEXT_INDEX_POSTINGS_CACHE"];
+    S_CLEAR_TEXT_INDEX_CACHES = 191 [(json_text) = "CLEAR_TEXT_INDEX_CACHES"];
+    S_CLEAR_MMAP_CACHE = 192 [(json_text) = "CLEAR_MMAP_CACHE"];
+    S_CLEAR_QUERY_CONDITION_CACHE = 193 [(json_text) = "CLEAR_QUERY_CONDITION_CACHE"];
+    S_CLEAR_ENCRYPTION_HEADERS_CACHE = 194 [(json_text) = "CLEAR_ENCRYPTION_HEADERS_CACHE"];
+    S_CLEAR_QUERY_CACHE = 195 [(json_text) = "CLEAR_QUERY_CACHE"];
+    S_CLEAR_COMPILED_EXPRESSION_CACHE = 196 [(json_text) = "CLEAR_COMPILED_EXPRESSION_CACHE"];
+    S_CLEAR_ICEBERG_METADATA_CACHE = 197 [(json_text) = "CLEAR_ICEBERG_METADATA_CACHE"];
+    S_CLEAR_PAIMON_METADATA_CACHE = 198 [(json_text) = "CLEAR_PAIMON_METADATA_CACHE"];
+    S_CLEAR_PARQUET_METADATA_CACHE = 199 [(json_text) = "CLEAR_PARQUET_METADATA_CACHE"];
+    S_CLEAR_POINT_IN_POLYGON_CACHE = 200 [(json_text) = "CLEAR_POINT_IN_POLYGON_CACHE"];
+    S_CLEAR_FILESYSTEM_CACHE = 201 [(json_text) = "CLEAR_FILESYSTEM_CACHE"];
+    S_CLEAR_DISTRIBUTED_CACHE = 202 [(json_text) = "CLEAR_DISTRIBUTED_CACHE"];
+    S_CLEAR_DISK_METADATA_CACHE = 203 [(json_text) = "CLEAR_DISK_METADATA_CACHE"];
+    S_CLEAR_PAGE_CACHE = 204 [(json_text) = "CLEAR_PAGE_CACHE"];
+    S_CLEAR_SCHEMA_CACHE = 205 [(json_text) = "CLEAR_SCHEMA_CACHE"];
+    S_CLEAR_FORMAT_SCHEMA_CACHE = 206 [(json_text) = "CLEAR_FORMAT_SCHEMA_CACHE"];
+    S_CLEAR_AVRO_SCHEMA_CACHE = 207 [(json_text) = "CLEAR_AVRO_SCHEMA_CACHE"];
+    S_CLEAR_S3_CLIENT_CACHE = 208 [(json_text) = "CLEAR_S3_CLIENT_CACHE"];
+    S_STOP_LISTEN = 209 [(json_text) = "STOP_LISTEN"];
+    S_START_LISTEN = 210 [(json_text) = "START_LISTEN"];
+    S_RESTART_REPLICAS = 211 [(json_text) = "RESTART_REPLICAS"];
+    S_RESTART_REPLICA = 212 [(json_text) = "RESTART_REPLICA"];
+    S_RESTORE_REPLICA = 213 [(json_text) = "RESTORE_REPLICA"];
+    S_RESTORE_DATABASE_REPLICA = 214 [(json_text) = "RESTORE_DATABASE_REPLICA"];
+    S_WAIT_LOADING_PARTS = 215 [(json_text) = "WAIT_LOADING_PARTS"];
+    S_WAIT_QUERY_RUNNER = 216 [(json_text) = "WAIT_QUERY_RUNNER"];
+    S_DROP_REPLICA = 217 [(json_text) = "DROP_REPLICA"];
+    S_DROP_DATABASE_REPLICA = 218 [(json_text) = "DROP_DATABASE_REPLICA"];
+    S_DROP_CATALOG_REPLICA = 219 [(json_text) = "DROP_CATALOG_REPLICA"];
+    S_JEMALLOC_PURGE = 220 [(json_text) = "JEMALLOC_PURGE"];
+    S_JEMALLOC_ENABLE_PROFILE = 221 [(json_text) = "JEMALLOC_ENABLE_PROFILE"];
+    S_JEMALLOC_DISABLE_PROFILE = 222 [(json_text) = "JEMALLOC_DISABLE_PROFILE"];
+    S_JEMALLOC_FLUSH_PROFILE = 223 [(json_text) = "JEMALLOC_FLUSH_PROFILE"];
+    S_SYNC_REPLICA = 224 [(json_text) = "SYNC_REPLICA"];
+    S_SYNC_DATABASE_REPLICA = 225 [(json_text) = "SYNC_DATABASE_REPLICA"];
+    S_SYNC_TRANSACTION_LOG = 226 [(json_text) = "SYNC_TRANSACTION_LOG"];
+    S_SYNC_FILE_CACHE = 227 [(json_text) = "SYNC_FILE_CACHE"];
+    S_REPLICA_READY = 228 [(json_text) = "REPLICA_READY"];
+    S_REPLICA_UNREADY = 229 [(json_text) = "REPLICA_UNREADY"];
+    S_RELOAD_DICTIONARY = 230 [(json_text) = "RELOAD_DICTIONARY"];
+    S_RELOAD_DICTIONARIES = 231 [(json_text) = "RELOAD_DICTIONARIES"];
+    S_UNLOAD_DICTIONARY = 232 [(json_text) = "UNLOAD_DICTIONARY"];
+    S_UNLOAD_DICTIONARIES = 233 [(json_text) = "UNLOAD_DICTIONARIES"];
+    S_RELOAD_FUNCTION = 234 [(json_text) = "RELOAD_FUNCTION"];
+    S_RELOAD_FUNCTIONS = 235 [(json_text) = "RELOAD_FUNCTIONS"];
+    S_RELOAD_EMBEDDED_DICTIONARIES = 236 [(json_text) = "RELOAD_EMBEDDED_DICTIONARIES"];
+    S_RELOAD_CONFIG = 237 [(json_text) = "RELOAD_CONFIG"];
+    S_RELOAD_USERS = 238 [(json_text) = "RELOAD_USERS"];
+    S_RELOAD_ASYNCHRONOUS_METRICS = 239 [(json_text) = "RELOAD_ASYNCHRONOUS_METRICS"];
+    S_RELOAD_DELTA_KERNEL_TRACING = 240 [(json_text) = "RELOAD_DELTA_KERNEL_TRACING"];
+    S_RESTART_DISK = 241 [(json_text) = "RESTART_DISK"];
+    S_STOP_MERGES = 242 [(json_text) = "STOP_MERGES"];
+    S_START_MERGES = 243 [(json_text) = "START_MERGES"];
+    S_STOP_TTL_MERGES = 244 [(json_text) = "STOP_TTL_MERGES"];
+    S_START_TTL_MERGES = 245 [(json_text) = "START_TTL_MERGES"];
+    S_STOP_FETCHES = 246 [(json_text) = "STOP_FETCHES"];
+    S_START_FETCHES = 247 [(json_text) = "START_FETCHES"];
+    S_STOP_MOVES = 248 [(json_text) = "STOP_MOVES"];
+    S_START_MOVES = 249 [(json_text) = "START_MOVES"];
+    S_STOP_REPLICATED_SENDS = 250 [(json_text) = "STOP_REPLICATED_SENDS"];
+    S_START_REPLICATED_SENDS = 251 [(json_text) = "START_REPLICATED_SENDS"];
+    S_STOP_REPLICATION_QUEUES = 252 [(json_text) = "STOP_REPLICATION_QUEUES"];
+    S_START_REPLICATION_QUEUES = 253 [(json_text) = "START_REPLICATION_QUEUES"];
+    S_STOP_REPLICATED_DDL_QUERIES = 254 [(json_text) = "STOP_REPLICATED_DDL_QUERIES"];
+    S_START_REPLICATED_DDL_QUERIES = 255 [(json_text) = "START_REPLICATED_DDL_QUERIES"];
+    S_FLUSH_LOGS = 256 [(json_text) = "FLUSH_LOGS"];
+    S_FLUSH_DISTRIBUTED = 257 [(json_text) = "FLUSH_DISTRIBUTED"];
+    S_FLUSH_ASYNC_INSERT_QUEUE = 258 [(json_text) = "FLUSH_ASYNC_INSERT_QUEUE"];
+    S_FLUSH_OBJECT_STORAGE_QUEUE = 259 [(json_text) = "FLUSH_OBJECT_STORAGE_QUEUE"];
+    S_STOP_DISTRIBUTED_SENDS = 260 [(json_text) = "STOP_DISTRIBUTED_SENDS"];
+    S_START_DISTRIBUTED_SENDS = 261 [(json_text) = "START_DISTRIBUTED_SENDS"];
+    S_START_THREAD_FUZZER = 262 [(json_text) = "START_THREAD_FUZZER"];
+    S_STOP_THREAD_FUZZER = 263 [(json_text) = "STOP_THREAD_FUZZER"];
+    S_UNFREEZE = 264 [(json_text) = "UNFREEZE"];
+    S_ENABLE_FAILPOINT = 265 [(json_text) = "ENABLE_FAILPOINT"];
+    S_DISABLE_FAILPOINT = 266 [(json_text) = "DISABLE_FAILPOINT"];
+    S_ALLOCATE_MEMORY = 267 [(json_text) = "ALLOCATE_MEMORY"];
+    S_FREE_MEMORY = 268 [(json_text) = "FREE_MEMORY"];
+    S_WAIT_FAILPOINT = 269 [(json_text) = "WAIT_FAILPOINT"];
+    S_NOTIFY_FAILPOINT = 270 [(json_text) = "NOTIFY_FAILPOINT"];
+    S_SYNC_FILESYSTEM_CACHE = 271 [(json_text) = "SYNC_FILESYSTEM_CACHE"];
+    S_STOP_PULLING_REPLICATION_LOG = 272 [(json_text) = "STOP_PULLING_REPLICATION_LOG"];
+    S_START_PULLING_REPLICATION_LOG = 273 [(json_text) = "START_PULLING_REPLICATION_LOG"];
+    S_STOP_CLEANUP = 274 [(json_text) = "STOP_CLEANUP"];
+    S_START_CLEANUP = 275 [(json_text) = "START_CLEANUP"];
+    S_SCHEDULE_MERGE = 276 [(json_text) = "SCHEDULE_MERGE"];
+    S_SYNC_MERGES = 277 [(json_text) = "SYNC_MERGES"];
+    S_RESET_COVERAGE = 278 [(json_text) = "RESET_COVERAGE"];
+    S_SET_COVERAGE_TEST = 279 [(json_text) = "SET_COVERAGE_TEST"];
+    S_REFRESH_VIEW = 280 [(json_text) = "REFRESH_VIEW"];
+    S_WAIT_VIEW = 281 [(json_text) = "WAIT_VIEW"];
+    S_START_VIEW = 282 [(json_text) = "START_VIEW"];
+    S_START_VIEWS = 283 [(json_text) = "START_VIEWS"];
+    S_START_REPLICATED_VIEW = 284 [(json_text) = "START_REPLICATED_VIEW"];
+    S_STOP_VIEW = 285 [(json_text) = "STOP_VIEW"];
+    S_STOP_VIEWS = 286 [(json_text) = "STOP_VIEWS"];
+    S_STOP_REPLICATED_VIEW = 287 [(json_text) = "STOP_REPLICATED_VIEW"];
+    S_PAUSE_VIEW = 288 [(json_text) = "PAUSE_VIEW"];
+    S_PAUSE_VIEWS = 289 [(json_text) = "PAUSE_VIEWS"];
+    S_CANCEL_VIEW = 290 [(json_text) = "CANCEL_VIEW"];
+    S_TEST_VIEW = 291 [(json_text) = "TEST_VIEW"];
+    S_LOAD_PRIMARY_KEY = 292 [(json_text) = "LOAD_PRIMARY_KEY"];
+    S_UNLOAD_PRIMARY_KEY = 293 [(json_text) = "UNLOAD_PRIMARY_KEY"];
+    S_STOP_VIRTUAL_PARTS_UPDATE = 294 [(json_text) = "STOP_VIRTUAL_PARTS_UPDATE"];
+    S_START_VIRTUAL_PARTS_UPDATE = 295 [(json_text) = "START_VIRTUAL_PARTS_UPDATE"];
+    S_STOP_REDUCE_BLOCKING_PARTS = 296 [(json_text) = "STOP_REDUCE_BLOCKING_PARTS"];
+    S_START_REDUCE_BLOCKING_PARTS = 297 [(json_text) = "START_REDUCE_BLOCKING_PARTS"];
+    S_RECONNECT_ZOOKEEPER = 298 [(json_text) = "RECONNECT_ZOOKEEPER"];
+    S_WAIT_BLOBS_CLEANUP = 299 [(json_text) = "WAIT_BLOBS_CLEANUP"];
+    S_INSTRUMENT_ADD = 300 [(json_text) = "INSTRUMENT_ADD"];
+    S_INSTRUMENT_REMOVE = 301 [(json_text) = "INSTRUMENT_REMOVE"];
+    S_RESET_DDL_WORKER = 302 [(json_text) = "RESET_DDL_WORKER"];
+    S_STOP_ALL_BACKGROUND = 303 [(json_text) = "STOP_ALL_BACKGROUND"];
+    S_START_ALL_BACKGROUND = 304 [(json_text) = "START_ALL_BACKGROUND"];
+    S_PAUSE_ALL_BACKGROUND = 305 [(json_text) = "PAUSE_ALL_BACKGROUND"];
+    S_CANCEL_ALL_BACKGROUND = 306 [(json_text) = "CANCEL_ALL_BACKGROUND"];
+    S_REFRESH_ALL_BACKGROUND = 307 [(json_text) = "REFRESH_ALL_BACKGROUND"];
+    S_STOP = 308 [(json_text) = "STOP"];
+    S_START = 309 [(json_text) = "START"];
+    S_CANCEL = 310 [(json_text) = "CANCEL"];
+    S_REFRESH = 311 [(json_text) = "REFRESH"];
+
+    // Common data type names (for `DataType.name`, `Function.name` and similar)
+    S_UInt8 = 312 [(json_text) = "UInt8"];
+    S_UInt16 = 313 [(json_text) = "UInt16"];
+    S_UInt32 = 314 [(json_text) = "UInt32"];
+    S_UInt64 = 315 [(json_text) = "UInt64"];
+    S_UInt128 = 316 [(json_text) = "UInt128"];
+    S_UInt256 = 317 [(json_text) = "UInt256"];
+    S_Int8 = 318 [(json_text) = "Int8"];
+    S_Int16 = 319 [(json_text) = "Int16"];
+    S_Int32 = 320 [(json_text) = "Int32"];
+    S_Int64 = 321 [(json_text) = "Int64"];
+    S_Int128 = 322 [(json_text) = "Int128"];
+    S_Int256 = 323 [(json_text) = "Int256"];
+    S_Float32 = 324 [(json_text) = "Float32"];
+    S_Float64 = 325 [(json_text) = "Float64"];
+    S_Decimal = 326 [(json_text) = "Decimal"];
+    S_Decimal32 = 327 [(json_text) = "Decimal32"];
+    S_Decimal64 = 328 [(json_text) = "Decimal64"];
+    S_Decimal128 = 329 [(json_text) = "Decimal128"];
+    S_Decimal256 = 330 [(json_text) = "Decimal256"];
+    S_String = 331 [(json_text) = "String"];
+    S_FixedString = 332 [(json_text) = "FixedString"];
+    S_Date = 333 [(json_text) = "Date"];
+    S_Date32 = 334 [(json_text) = "Date32"];
+    S_DateTime = 335 [(json_text) = "DateTime"];
+    S_DateTime64 = 336 [(json_text) = "DateTime64"];
+    S_Time = 337 [(json_text) = "Time"];
+    S_Time64 = 338 [(json_text) = "Time64"];
+    S_Nullable = 339 [(json_text) = "Nullable"];
+    S_LowCardinality = 340 [(json_text) = "LowCardinality"];
+    S_Array = 341 [(json_text) = "Array"];
+    S_Tuple = 342 [(json_text) = "Tuple"];
+    S_Map = 343 [(json_text) = "Map"];
+    S_Enum = 344 [(json_text) = "Enum"];
+    S_Enum8 = 345 [(json_text) = "Enum8"];
+    S_Enum16 = 346 [(json_text) = "Enum16"];
+    S_UUID = 347 [(json_text) = "UUID"];
+    S_IPv4 = 348 [(json_text) = "IPv4"];
+    S_IPv6 = 349 [(json_text) = "IPv6"];
+    S_Bool = 350 [(json_text) = "Bool"];
+    S_Variant = 351 [(json_text) = "Variant"];
+    S_Dynamic = 352 [(json_text) = "Dynamic"];
+    S_JSON = 353 [(json_text) = "JSON"];
+    S_Object = 354 [(json_text) = "Object"];
+    S_Nothing = 355 [(json_text) = "Nothing"];
+    S_Nested = 356 [(json_text) = "Nested"];
+    S_AggregateFunction = 357 [(json_text) = "AggregateFunction"];
+    S_SimpleAggregateFunction = 358 [(json_text) = "SimpleAggregateFunction"];
+    S_Interval = 359 [(json_text) = "Interval"];
+    S_Point = 360 [(json_text) = "Point"];
+    S_Ring = 361 [(json_text) = "Ring"];
+    S_Polygon = 362 [(json_text) = "Polygon"];
+
+    // Common function, engine and format names (`Function.name`, `Storage.engine`)
+    S_plus = 363 [(json_text) = "plus"];
+    S_minus = 364 [(json_text) = "minus"];
+    S_multiply = 365 [(json_text) = "multiply"];
+    S_divide = 366 [(json_text) = "divide"];
+    S_modulo = 367 [(json_text) = "modulo"];
+    S_negate = 368 [(json_text) = "negate"];
+    S_equals = 369 [(json_text) = "equals"];
+    S_notEquals = 370 [(json_text) = "notEquals"];
+    S_less = 371 [(json_text) = "less"];
+    S_greater = 372 [(json_text) = "greater"];
+    S_lessOrEquals = 373 [(json_text) = "lessOrEquals"];
+    S_greaterOrEquals = 374 [(json_text) = "greaterOrEquals"];
+    S_and = 375 [(json_text) = "and"];
+    S_or = 376 [(json_text) = "or"];
+    S_not = 377 [(json_text) = "not"];
+    S_xor = 378 [(json_text) = "xor"];
+    S_in = 379 [(json_text) = "in"];
+    S_notIn = 380 [(json_text) = "notIn"];
+    S_globalIn = 381 [(json_text) = "globalIn"];
+    S_like = 382 [(json_text) = "like"];
+    S_notLike = 383 [(json_text) = "notLike"];
+    S_ilike = 384 [(json_text) = "ilike"];
+    S_tuple_2 = 385 [(json_text) = "tuple"];
+    S_array_2 = 386 [(json_text) = "array"];
+    S_map_2 = 387 [(json_text) = "map"];
+    S_lambda = 388 [(json_text) = "lambda"];
+    S_count = 389 [(json_text) = "count"];
+    S_sum = 390 [(json_text) = "sum"];
+    S_avg = 391 [(json_text) = "avg"];
+    S_min = 392 [(json_text) = "min"];
+    S_max = 393 [(json_text) = "max"];
+    S_any_2 = 394 [(json_text) = "any"];
+    S_anyLast = 395 [(json_text) = "anyLast"];
+    S_uniq = 396 [(json_text) = "uniq"];
+    S_uniqExact = 397 [(json_text) = "uniqExact"];
+    S_groupArray = 398 [(json_text) = "groupArray"];
+    S_groupUniqArray = 399 [(json_text) = "groupUniqArray"];
+    S_argMax = 400 [(json_text) = "argMax"];
+    S_argMin = 401 [(json_text) = "argMin"];
+    S_quantile = 402 [(json_text) = "quantile"];
+    S_median = 403 [(json_text) = "median"];
+    S_toString = 404 [(json_text) = "toString"];
+    S_toInt32 = 405 [(json_text) = "toInt32"];
+    S_toUInt64 = 406 [(json_text) = "toUInt64"];
+    S_toFloat64 = 407 [(json_text) = "toFloat64"];
+    S_toDateTime = 408 [(json_text) = "toDateTime"];
+    S_toDate = 409 [(json_text) = "toDate"];
+    S_toDateTime64 = 410 [(json_text) = "toDateTime64"];
+    S_toDecimal32 = 411 [(json_text) = "toDecimal32"];
+    S_CAST = 412 [(json_text) = "CAST"];
+    S_accurateCast = 413 [(json_text) = "accurateCast"];
+    S_if = 414 [(json_text) = "if"];
+    S_multiIf = 415 [(json_text) = "multiIf"];
+    S_coalesce = 416 [(json_text) = "coalesce"];
+    S_ifNull = 417 [(json_text) = "ifNull"];
+    S_nullIf = 418 [(json_text) = "nullIf"];
+    S_isNull = 419 [(json_text) = "isNull"];
+    S_isNotNull = 420 [(json_text) = "isNotNull"];
+    S_assumeNotNull = 421 [(json_text) = "assumeNotNull"];
+    S_arrayMap = 422 [(json_text) = "arrayMap"];
+    S_arrayFilter = 423 [(json_text) = "arrayFilter"];
+    S_arrayJoin = 424 [(json_text) = "arrayJoin"];
+    S_arraySort = 425 [(json_text) = "arraySort"];
+    S_arrayReduce = 426 [(json_text) = "arrayReduce"];
+    S_arrayElement = 427 [(json_text) = "arrayElement"];
+    S_tupleElement = 428 [(json_text) = "tupleElement"];
+    S_mapKeys = 429 [(json_text) = "mapKeys"];
+    S_mapValues = 430 [(json_text) = "mapValues"];
+    S_concat = 431 [(json_text) = "concat"];
+    S_substring = 432 [(json_text) = "substring"];
+    S_lower = 433 [(json_text) = "lower"];
+    S_upper = 434 [(json_text) = "upper"];
+    S_length = 435 [(json_text) = "length"];
+    S_position = 436 [(json_text) = "position"];
+    S_splitByChar = 437 [(json_text) = "splitByChar"];
+    S_JSONExtract = 438 [(json_text) = "JSONExtract"];
+    S_now = 439 [(json_text) = "now"];
+    S_today = 440 [(json_text) = "today"];
+    S_rand = 441 [(json_text) = "rand"];
+    S_randConstant = 442 [(json_text) = "randConstant"];
+    S_number = 443 [(json_text) = "number"];
+    S_numbers = 444 [(json_text) = "numbers"];
+    S_zeros = 445 [(json_text) = "zeros"];
+    S_one = 446 [(json_text) = "one"];
+    S_generateRandom = 447 [(json_text) = "generateRandom"];
+    S_values = 448 [(json_text) = "values"];
+    S_remote = 449 [(json_text) = "remote"];
+    S_cluster = 450 [(json_text) = "cluster"];
+    S_merge = 451 [(json_text) = "merge"];
+    S_view = 452 [(json_text) = "view"];
+    S_input = 453 [(json_text) = "input"];
+    S_file = 454 [(json_text) = "file"];
+    S_url = 455 [(json_text) = "url"];
+    S_s3 = 456 [(json_text) = "s3"];
+    S_executable = 457 [(json_text) = "executable"];
+    S_dictionary = 458 [(json_text) = "dictionary"];
+    S_hasAll = 459 [(json_text) = "hasAll"];
+    S_hasAny = 460 [(json_text) = "hasAny"];
+    S_extract = 461 [(json_text) = "extract"];
+    S_rowNumberInAllBlocks = 462 [(json_text) = "rowNumberInAllBlocks"];
+    S_row_number = 463 [(json_text) = "row_number"];
+    S_rank = 464 [(json_text) = "rank"];
+    S_dense_rank = 465 [(json_text) = "dense_rank"];
+    S_lag = 466 [(json_text) = "lag"];
+    S_lead = 467 [(json_text) = "lead"];
+    S_first_value = 468 [(json_text) = "first_value"];
+    S_last_value = 469 [(json_text) = "last_value"];
+    S_nth_value = 470 [(json_text) = "nth_value"];
+    S_sumIf = 471 [(json_text) = "sumIf"];
+    S_countIf = 472 [(json_text) = "countIf"];
+    S_avgIf = 473 [(json_text) = "avgIf"];
+    S_MergeTree = 474 [(json_text) = "MergeTree"];
+    S_ReplacingMergeTree = 475 [(json_text) = "ReplacingMergeTree"];
+    S_SummingMergeTree = 476 [(json_text) = "SummingMergeTree"];
+    S_AggregatingMergeTree = 477 [(json_text) = "AggregatingMergeTree"];
+    S_CollapsingMergeTree = 478 [(json_text) = "CollapsingMergeTree"];
+    S_VersionedCollapsingMergeTree = 479 [(json_text) = "VersionedCollapsingMergeTree"];
+    S_GraphiteMergeTree = 480 [(json_text) = "GraphiteMergeTree"];
+    S_ReplicatedMergeTree = 481 [(json_text) = "ReplicatedMergeTree"];
+    S_Memory = 482 [(json_text) = "Memory"];
+    S_Log = 483 [(json_text) = "Log"];
+    S_TinyLog = 484 [(json_text) = "TinyLog"];
+    S_StripeLog = 485 [(json_text) = "StripeLog"];
+    S_Null = 486 [(json_text) = "Null"];
+    S_Set = 487 [(json_text) = "Set"];
+    S_Join = 488 [(json_text) = "Join"];
+    S_Distributed = 489 [(json_text) = "Distributed"];
+    S_Merge_2 = 490 [(json_text) = "Merge"];
+    S_Buffer = 491 [(json_text) = "Buffer"];
+    S_File_2 = 492 [(json_text) = "File"];
+    S_URL_2 = 493 [(json_text) = "URL"];
+    S_Kafka = 494 [(json_text) = "Kafka"];
+    S_RabbitMQ = 495 [(json_text) = "RabbitMQ"];
+    S_S3_2 = 496 [(json_text) = "S3"];
+    S_Dictionary_2 = 497 [(json_text) = "Dictionary"];
+    S_View_2 = 498 [(json_text) = "View"];
+    S_MaterializedView = 499 [(json_text) = "MaterializedView"];
+    S_LiveView = 500 [(json_text) = "LiveView"];
+    S_Atomic = 501 [(json_text) = "Atomic"];
+    S_Ordinary = 502 [(json_text) = "Ordinary"];
+    S_Replicated = 503 [(json_text) = "Replicated"];
+    S_Lazy = 504 [(json_text) = "Lazy"];
+    S_TSV = 505 [(json_text) = "TSV"];
+    S_CSV = 506 [(json_text) = "CSV"];
+    S_TSVWithNames = 507 [(json_text) = "TSVWithNames"];
+    S_CSVWithNames = 508 [(json_text) = "CSVWithNames"];
+    S_JSONEachRow = 509 [(json_text) = "JSONEachRow"];
+    S_JSONCompact = 510 [(json_text) = "JSONCompact"];
+    S_Native = 511 [(json_text) = "Native"];
+    S_Parquet = 512 [(json_text) = "Parquet"];
+    S_ORC = 513 [(json_text) = "ORC"];
+    S_Arrow = 514 [(json_text) = "Arrow"];
+    S_Avro = 515 [(json_text) = "Avro"];
+    S_Values_2 = 516 [(json_text) = "Values"];
+    S_Pretty = 517 [(json_text) = "Pretty"];
+    S_PrettyCompact = 518 [(json_text) = "PrettyCompact"];
+    S_Vertical = 519 [(json_text) = "Vertical"];
+    S_RowBinary = 520 [(json_text) = "RowBinary"];
+    S_TabSeparated = 521 [(json_text) = "TabSeparated"];
+
+    // Identifier-like vocabulary (`Identifier.name`, aliases, `name_parts`)
+    S_a = 522 [(json_text) = "a"];
+    S_b = 523 [(json_text) = "b"];
+    S_c = 524 [(json_text) = "c"];
+    S_x = 525 [(json_text) = "x"];
+    S_y = 526 [(json_text) = "y"];
+    S_z = 527 [(json_text) = "z"];
+    S_t = 528 [(json_text) = "t"];
+    S_t1 = 529 [(json_text) = "t1"];
+    S_t2 = 530 [(json_text) = "t2"];
+    S_id = 531 [(json_text) = "id"];
+    S_key = 532 [(json_text) = "key"];
+    S_value = 533 [(json_text) = "value"];
+    S_col = 534 [(json_text) = "col"];
+    S_col1 = 535 [(json_text) = "col1"];
+    S_col2 = 536 [(json_text) = "col2"];
+    S_db = 537 [(json_text) = "db"];
+    S_default_2 = 538 [(json_text) = "default"];
+    S_system = 539 [(json_text) = "system"];
+    S_test = 540 [(json_text) = "test"];
+    S_table1 = 541 [(json_text) = "table1"];
+    S_table2 = 542 [(json_text) = "table2"];
+    S_v = 543 [(json_text) = "v"];
+    S_mv = 544 [(json_text) = "mv"];
+    S_dict = 545 [(json_text) = "dict"];
+    S_f = 546 [(json_text) = "f"];
+    S_fn = 547 [(json_text) = "fn"];
+    S_s = 548 [(json_text) = "s"];
+    S_n = 549 [(json_text) = "n"];
+    S_arr = 550 [(json_text) = "arr"];
+    S_m = 551 [(json_text) = "m"];
+    S_tup = 552 [(json_text) = "tup"];
+    S_w = 553 [(json_text) = "w"];
+    S_cte = 554 [(json_text) = "cte"];
+    S_sub = 555 [(json_text) = "sub"];
+    S_result = 556 [(json_text) = "result"];
+    S_total = 557 [(json_text) = "total"];
+}

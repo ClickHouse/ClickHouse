@@ -1,0 +1,8 @@
+[libfuzzer]
+timeout = 60
+# The input is a binary protobuf message (src/Parsers/fuzzers/json_ast_sql_parser_fuzzer/json_ast.proto),
+# mutated structurally by libprotobuf-mutator, so a byte dictionary would be useless. The seed corpus
+# consists of a few hundred bytes to a few kilobytes per input; larger messages only make the rendered
+# JSON exceed the AST limits of the target.
+max_len = 65536
+rss_limit_mb = 8192
