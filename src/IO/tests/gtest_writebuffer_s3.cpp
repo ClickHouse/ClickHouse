@@ -908,12 +908,16 @@ inline Aws::Client::AWSError<Aws::Client::CoreErrors> makePreconditionFailedErro
 
 /// Replays the lost-response scenario for a conditional (`If-None-Match: *`) PutObject: the first
 /// attempt lands the object server-side but its response is lost, reported as the bogus MinIO
-/// NO_SUCH_KEY that WriteBufferFromS3 retries; the replay then sees the object it just wrote and gets
-/// 412. Records the metadata of every request so a test can assert what was stamped.
+/// NO_SUCH_KEY that WriteBufferFromS3 retries; the replay then sees the object it just wrote and is
+/// refused by the name AWS uses, or -- when `replay_status` is set -- by HTTP status alone, the way an
+/// endpoint with no AWS name for the code answers. Records the metadata of every request so a test can
+/// assert what was stamped.
 struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
 {
-    PutObjectLostResponseThenPreconditionFailed(std::shared_ptr<S3MemStrore> store_, bool store_first_attempt_)
-        : store(std::move(store_)), store_first_attempt(store_first_attempt_) {}
+    PutObjectLostResponseThenPreconditionFailed(
+        std::shared_ptr<S3MemStrore> store_, bool store_first_attempt_,
+        std::optional<Aws::Http::HttpResponseCode> replay_status_ = {})
+        : store(std::move(store_)), store_first_attempt(store_first_attempt_), replay_status(replay_status_) {}
 
     std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
     {
@@ -925,7 +929,15 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
         seen_metadata.push_back(metadata);
 
         if (calls++ > 0)
-            return makePreconditionFailedError();
+        {
+            if (!replay_status)
+                return makePreconditionFailedError();
+
+            auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
+                Aws::Client::CoreErrors::UNKNOWN, "conditionNotMet", "The condition was not met", false);
+            error.SetResponseCode(*replay_status);
+            return error;
+        }
 
         if (store_first_attempt)
         {
@@ -939,46 +951,11 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
 
     std::shared_ptr<S3MemStrore> store;
     bool store_first_attempt;
+    std::optional<Aws::Http::HttpResponseCode> replay_status;
     size_t calls = 0;
     std::vector<BucketMemStore::Metadata> seen_metadata;
 };
 
-/// The same lost-response replay, refused by an endpoint that reports the refusal by HTTP status while
-/// spelling `<Code>` its own way: Google documents the `412` status of `x-goog-if-generation-match` but
-/// not the code. `replay_status` selects the status the replay is refused with, so a test can show that
-/// the status is what identifies the refusal.
-struct PutObjectLostResponseThenStatusOnlyRefusal : InjectionModel
-{
-    PutObjectLostResponseThenStatusOnlyRefusal(std::shared_ptr<S3MemStrore> store_, Aws::Http::HttpResponseCode replay_status_)
-        : store(std::move(store_)), replay_status(replay_status_) {}
-
-    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
-    {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
-
-        BucketMemStore::Metadata metadata;
-        for (const auto & [name, value] : request.GetMetadata())
-            metadata[name] = value;
-
-        if (calls++ > 0)
-        {
-            auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
-                Aws::Client::CoreErrors::UNKNOWN, "conditionNotMet", "The condition was not met", false);
-            error.SetResponseCode(replay_status);
-            return error;
-        }
-
-        const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
-        store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), data, metadata);
-
-        return Aws::Client::AWSError<Aws::S3::S3Errors>(
-            Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey", "The specified key does not exist.", false);
-    }
-
-    std::shared_ptr<S3MemStrore> store;
-    Aws::Http::HttpResponseCode replay_status;
-    size_t calls = 0;
-};
 
 /// Refuses every conditional PutObject by HTTP status alone, spelling `<Code>` its own way so the
 /// refusal never reaches the exception name AWS uses. `refusal_status` selects that status.
@@ -2335,8 +2312,8 @@ TEST_P(SyncAsync, ConditionalMultipartOnNonGCSStillSucceeds) {
 /// conditional write whose response was lost is not reported as a lost race by an endpoint that spells
 /// the code its own way.
 TEST_P(SyncAsync, SinglepartConditionalPutRecognisesRefusalByStatus) {
-    setInjectionModel(std::make_shared<MockS3::PutObjectLostResponseThenStatusOnlyRefusal>(
-        client->store, Aws::Http::HttpResponseCode::PRECONDITION_FAILED));
+    setInjectionModel(std::make_shared<MockS3::PutObjectLostResponseThenPreconditionFailed>(
+        client->store, /* store_first_attempt= */ true, Aws::Http::HttpResponseCode::PRECONDITION_FAILED));
 
     auto buffer = getWriteBuffer("conditional_put_status_only_412", conditionalCreateWriteSettings());
     buffer->write('A');
@@ -2379,8 +2356,8 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRecognisesRefusalByStatus) {
 /// The status is what identifies the refusal, and nothing else is: the same unrecognised code on a
 /// status that is not `412` must still throw, even though the object at the key does carry our token.
 TEST_P(SyncAsync, SinglepartConditionalPutStillThrowsOnAnotherStatus) {
-    setInjectionModel(std::make_shared<MockS3::PutObjectLostResponseThenStatusOnlyRefusal>(
-        client->store, Aws::Http::HttpResponseCode::CONFLICT));
+    setInjectionModel(std::make_shared<MockS3::PutObjectLostResponseThenPreconditionFailed>(
+        client->store, /* store_first_attempt= */ true, Aws::Http::HttpResponseCode::CONFLICT));
 
     EXPECT_THROW({
         try {
