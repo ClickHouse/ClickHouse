@@ -32,6 +32,21 @@ node_ca_config = cluster.add_instance(
     ],
     stay_alive=True,
 )
+# A node whose `SSL_CERT_DIR` names several directories: OpenSSL accepts a `:`-separated list
+# there, and every existing entry of it has to be loaded.
+CERT_DIR_LIST = ["/etc/ssl/missing-certs", "/etc/ssl/extra-certs"]
+node_cert_dir_list = cluster.add_instance(
+    "node_cert_dir_list",
+    main_configs=[
+        "configs/ssl_config.xml",
+        "configs/server-cert.pem",
+        "configs/server-key.pem",
+    ],
+    env_variables={"SSL_CERT_DIR": ":".join(CERT_DIR_LIST)},
+    # Without this, the variable would be shared with every node of the cluster.
+    instance_env_variables=True,
+    stay_alive=True,
+)
 
 # The locations probed by Poco::Net::Context for default CA certificates.
 CA_LOCATIONS = [
@@ -291,3 +306,81 @@ def test_ca_config_is_not_widened_by_embedded_certificates(started_cluster):
     )
     assert "Cannot load default CA certificates" not in error
     assert answer.strip() == "Ok." or "certificate" in error.lower()
+
+
+def test_default_ca_dir_list_is_loaded_entirely(started_cluster):
+    # `SSL_CERT_DIR` can legally be a `:`-separated list of directories, and OpenSSL's own
+    # `SSL_CTX_set_default_verify_paths` loads roots from every entry of it. A valid default
+    # CA file plus a root that exists only in the second entry of the list (the first one is
+    # missing) must therefore yield a trust store with both: the list must neither be treated
+    # as a single, non-existent directory nor be cut short by the missing entry.
+    assert node_cert_dir_list.exec_in_container(
+        ["bash", "-c", 'echo -n "$SSL_CERT_DIR"']
+    ) == ":".join(CERT_DIR_LIST)
+
+    cert = "/etc/clickhouse-server/config.d/server-cert.pem"
+    ca_file = default_ca_file(node_cert_dir_list)
+    extra_dir = CERT_DIR_LIST[1]
+    remove_ca_locations(node_cert_dir_list)
+    node_cert_dir_list.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p {extra_dir} $(dirname {ca_file}) && cp {cert} {ca_file}"
+            f" && cp {cert} {extra_dir}/f1a05c1a.0",
+        ],
+        privileged=True,
+        user="root",
+    )
+    node_cert_dir_list.restart_clickhouse()
+
+    assert https_ping(node_cert_dir_list) == "Ok.\n"
+
+    # The default CA file was loaded...
+    assert (
+        int(
+            node_cert_dir_list.query(
+                f"SELECT count() FROM system.certificates WHERE path = '{ca_file}'"
+            ).strip()
+        )
+        > 0
+    )
+    # ...and so was the existing entry of the `SSL_CERT_DIR` list.
+    assert (
+        int(
+            node_cert_dir_list.query(
+                f"SELECT count() FROM system.certificates WHERE path LIKE '{extra_dir}%'"
+            ).strip()
+        )
+        > 0
+    )
+    # Certificates were found on the filesystem, so the embedded ones are not used.
+    assert (
+        node_cert_dir_list.query(
+            "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
+        ).strip()
+        == "0"
+    )
+
+    # With the default CA file gone, the list alone is a usable trust store as well:
+    # the embedded fallback must not engage while a listed directory holds a root.
+    node_cert_dir_list.exec_in_container(
+        ["bash", "-c", f"rm -f {ca_file}"], privileged=True, user="root"
+    )
+    node_cert_dir_list.restart_clickhouse()
+
+    assert https_ping(node_cert_dir_list) == "Ok.\n"
+    assert (
+        int(
+            node_cert_dir_list.query(
+                f"SELECT count() FROM system.certificates WHERE path LIKE '{extra_dir}%'"
+            ).strip()
+        )
+        > 0
+    )
+    assert (
+        node_cert_dir_list.query(
+            "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
+        ).strip()
+        == "0"
+    )

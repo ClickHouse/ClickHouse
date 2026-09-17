@@ -23,6 +23,8 @@
 #include "Poco/DirectoryIterator.h"
 #include "Poco/RegularExpression.h"
 #include "Poco/Timestamp.h"
+#include <string>
+#include <vector>
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -170,6 +172,23 @@ static bool poco_dir_contains_certs(const std::string & dir)
 
 	ERR_clear_error();
 	return false;
+}
+
+/// Splits a `:`-separated directory list, as accepted by OpenSSL for `SSL_CERT_DIR`, skipping empty entries.
+static std::vector<std::string> poco_split_dir_list(const std::string & dirs)
+{
+	std::vector<std::string> result;
+	std::string::size_type begin = 0;
+	while (begin <= dirs.size())
+	{
+		std::string::size_type end = dirs.find(':', begin);
+		if (end == std::string::npos)
+			end = dirs.size();
+		if (end > begin)
+			result.push_back(dirs.substr(begin, end - begin));
+		begin = end + 1;
+	}
+	return result;
 }
 
 static bool poco_file_cert(const std::string & file)
@@ -373,12 +392,27 @@ void Context::init(const Params& params)
 				errCode = 1;
 			}
 
-			if (poco_dir_cert(dir) && poco_dir_contains_certs(dir) && SSL_CTX_load_verify_locations(_pSSLContext, 0, dir))
+			/// The default file and the default directory are not alternatives:
+			/// `SSL_CTX_set_default_verify_paths` loads both, and a split trust store may keep some
+			/// roots only in the directory, so the directory is loaded even when the file succeeded.
+			///
+			/// `SSL_CERT_DIR` may name several directories separated by `:` (OpenSSL's `X509_LOOKUP_hash_dir`
+			/// accepts such a list), so every entry is checked and loaded on its own: a missing or empty entry
+			/// must not hide the roots kept in the others. Only the entries that were actually loaded are
+			/// recorded, so that `system.certificates` enumerates exactly the trust store in use.
+			std::string loadedDirs;
+			for (const std::string & entry : poco_split_dir_list(dir))
 			{
-				/// The default file and the default directory are not alternatives:
-				/// `SSL_CTX_set_default_verify_paths` loads both, and a split trust store may keep some
-				/// roots only in the directory, so the directory is loaded even when the file succeeded.
-				_caPaths.caDefaultDir = dir;
+				if (poco_dir_cert(entry) && poco_dir_contains_certs(entry) && SSL_CTX_load_verify_locations(_pSSLContext, 0, entry.c_str()))
+				{
+					if (!loadedDirs.empty())
+						loadedDirs += ':';
+					loadedDirs += entry;
+				}
+			}
+			if (!loadedDirs.empty())
+			{
+				_caPaths.caDefaultDir = loadedDirs;
 				errCode = 1;
 			}
 
