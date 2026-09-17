@@ -573,8 +573,9 @@ bool remoteAddressIsLocal(const String & address, bool secure, const ClusterLoca
         host = host.substr(1, host.size() - 2);
     Poco::Net::IPAddress ip;
     /// The server resolves names through DNS; this is the one name known to be loopback without it.
+    /// Hostnames are case-insensitive, so `LocalHost` reaches the same loopback address.
     if (!Poco::Net::IPAddress::tryParse(host, ip))
-        return host == "localhost";
+        return equalsCaseInsensitive(host, "localhost");
     /// `isLocalAddress` decides loopback addresses by value alone (127.0.0.2 is not local); the
     /// interface scan it does for the rest would inspect this machine, not the server's.
     return ip.isLoopback() && isLocalAddress(ip);
