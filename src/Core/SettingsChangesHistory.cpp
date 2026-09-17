@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
+            {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"insert_expected_table_engine", "", "", "New setting: an INSERT is refused unless the table it names has this engine; a Distributed table forwards it to its shards. Remote write over a Distributed table sets it to TimeSeries."},
             {"insert_expected_column_types", "", "", "New setting: an INSERT is refused unless the table it names declares these columns with exactly these types; a Distributed table forwards it to its shards. Remote write over a Distributed table sets it to the time_series type the table declares."},
         });
