@@ -984,6 +984,7 @@ void MergeTreeReaderWide::addStreams(
 {
     bool has_any_stream = false;
     bool has_all_streams = true;
+    bool has_derived_stream = false;
 
     /// See `columns_not_cacheable`. The streams of the distinct-paths subcolumn are the structure
     /// and shared data streams of the `JSON` column, so it is recognized by its name: a typed path
@@ -999,8 +1000,14 @@ void MergeTreeReaderWide::addStreams(
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
         /// Don't create streams for ephemeral subcolumns that don't store any real data.
+        /// Their rows are derived from the streams of the parent column - the null map of a
+        /// sparse `Nullable` from the sparse offsets, for example - which `getStream` opens on
+        /// demand while reading, so a column made of them alone is read like any other.
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+        {
+            has_derived_stream = true;
             return;
+        }
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
 
@@ -1028,10 +1035,11 @@ void MergeTreeReaderWide::addStreams(
     if (has_any_stream && !has_all_streams)
         partially_read_columns.insert(name_and_type.name);
 
-    /// Not a single stream of the column is in the part: it was added by an `ALTER` after the
-    /// part was written, and the read produces nothing for it. `partially_read_columns` records
-    /// the other half of the same situation, so `isColumnFilledAfterReading` can ask about both.
-    if (!has_any_stream)
+    /// Not a single stream of the column is in the part, and nothing of it is derived from the
+    /// streams of another column: it was added by an `ALTER` after the part was written, and the
+    /// read produces nothing for it. `partially_read_columns` records the other half of the same
+    /// situation, so `isColumnFilledAfterReading` can ask about both.
+    if (!has_any_stream && !has_derived_stream)
         columns_absent_from_part.insert(name_and_type.name);
 }
 

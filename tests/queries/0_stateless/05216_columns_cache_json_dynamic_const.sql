@@ -13,14 +13,14 @@ DROP TABLE IF EXISTS t_cc_json;
 
 CREATE TABLE t_cc_json (id UInt64, json JSON(a0 String, max_dynamic_paths = 4), d Dynamic(max_types = 3), vec Array(Float32) CODEC(Quantized('rabitq', 64)))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0;
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024, index_granularity_bytes = 0;
 
 INSERT INTO t_cc_json SELECT
     number,
     format('{{"a0":"s{0}","a{1}":{0},"b{2}":"x","c{3}":[{0}]}}', number, number % 3 + 1, number % 5, number % 7),
     multiIf(number % 5 = 0, number::Dynamic, number % 5 = 1, toString(number)::Dynamic, number % 5 = 2, toDate(number)::Dynamic, number % 5 = 3, [number]::Dynamic, (number * 1.5)::Dynamic),
     arrayMap(i -> toFloat32(i + number % 7), range(64))
-FROM numbers(50000);
+FROM numbers(12000);
 
 SYSTEM DROP COLUMNS CACHE;
 
