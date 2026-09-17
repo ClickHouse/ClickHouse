@@ -8758,6 +8758,11 @@ If false (default), AI functions refuse to use a named-collection `endpoint` tha
     /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
     /* ####################################################### */ \
     \
+    DECLARE(Bool, allow_experimental_user_defined_types, false, R"(
+Enables experimental user-defined type definitions and UUID-bound aliases in supported Atomic table column declarations.
+Mapped table columns are supported for `Memory` and non-replicated `MergeTree`-family tables, with declared-type introspection and explicit physicalization for downgrade.
+When disabled, no new user-defined type definition or table-reference metadata can be created; ordinary physical schemas and already-physicalized tables keep their normal runtime behavior.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_materialized_postgresql_table, false, R"(
 Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental
 )", EXPERIMENTAL) \

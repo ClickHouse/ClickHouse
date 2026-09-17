@@ -67,6 +67,7 @@ public:
         NAMED_COLLECTION,
         USER_NAME,
         DEFINER,
+        TYPE_OBJECT,
     };
     ParameterType getParameterType() const;
     std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
@@ -124,6 +125,9 @@ public:
 
     /// Returns all the flags related to a source.
     static AccessFlags allSourceFlags();
+
+    /// Returns all the flags related to stable type-object identities.
+    static AccessFlags allTypeObjectFlags();
 
     /// Returns all the flags which could be granted on the global level.
     /// The same as allFlags().

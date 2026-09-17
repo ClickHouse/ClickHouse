@@ -158,6 +158,15 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         static const AccessFlags show_dictionaries = AccessType::SHOW_DICTIONARIES;
         static const AccessFlags show_tables_or_dictionaries = show_tables | show_dictionaries;
         static const AccessFlags show_databases = AccessType::SHOW_DATABASES;
+        static const AccessFlags show_types = AccessType::SHOW_TYPES;
+        static const AccessFlags type_lifecycle
+            = AccessType::CREATE_TYPE | AccessType::ALTER_TYPE | AccessType::DROP_TYPE;
+
+        /// Type lifecycle rights are database-scoped but describe a distinct
+        /// object namespace. They imply visibility in that namespace without
+        /// granting any table visibility or table lifecycle right.
+        if (res & type_lifecycle)
+            res |= show_types;
 
         if (res & AccessFlags::allColumnFlags())
             res |= show_columns;
@@ -815,6 +824,8 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
             | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
             | AccessType::TRUNCATE;
 
+        const AccessFlags type_ddl = AccessType::CREATE_TYPE | AccessType::ALTER_TYPE | AccessType::DROP_TYPE;
+
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
         const AccessFlags workload_ddl = AccessType::CREATE_WORKLOAD | AccessType::DROP_WORKLOAD;
@@ -825,10 +836,11 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | type_ddl | workload_ddl
+            | resource_ddl | handler_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | handler_ddl;
+        const AccessFlags ddl_flags = table_ddl | type_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl | handler_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
 
         const AccessFlags role_management_flags

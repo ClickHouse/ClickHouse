@@ -2,6 +2,7 @@
 #include <DataTypes/UDT/IAuthorityAdapter.h>
 #include <Databases/IDatabase.h>
 #include <Databases/RenderedCreateQuery.h>
+#include <Databases/UDT/ILifecycleAdapter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TableNameHints.h>
@@ -113,6 +114,11 @@ const UDT::TypeAuthorityCapabilities & IDatabase::getSupportedUDTAuthorityCapabi
 const UDT::IAuthorityAdapter & IDatabase::getUDTAuthorityAdapter() const noexcept
 {
     return UDT::getUnsupportedAuthorityAdapter();
+}
+
+UDT::ILifecycleAdapter & IDatabase::getUDTLifecycleAdapter() noexcept
+{
+    return UDT::getUnsupportedLifecycleAdapter();
 }
 
 void IDatabase::alterDatabaseComment(const AlterCommand & /*command*/, ContextPtr /*query_context*/)

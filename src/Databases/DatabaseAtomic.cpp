@@ -1,6 +1,7 @@
 #include <exception>
 #include <filesystem>
 #include <thread>
+#include <Access/UDTUsageAccess.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/UDT/isUDTResourceOrControlExceptionCode.h>
@@ -16,6 +17,7 @@
 #include <Databases/UDT/AtomicAuthority.h>
 #include <Databases/UDT/AtomicAuthorityStartup.h>
 #include <Databases/UDT/AtomicDatabaseSchemaMutationStorage.h>
+#include <Databases/UDT/AtomicLifecycleAdapter.h>
 #include <Databases/UDT/AuthorityVerificationBatchExecutor.h>
 #include <Databases/UDT/AuthorityVerificationRuntimeState.h>
 #include <Databases/UDT/AuthorityVerificationScheduler.h>
@@ -394,6 +396,13 @@ const UDT::IAuthorityAdapter & DatabaseAtomic::getUDTAuthorityAdapter() const no
     return UDT::getUnsupportedAuthorityAdapter();
 }
 
+UDT::ILifecycleAdapter & DatabaseAtomic::getUDTLifecycleAdapter() noexcept
+{
+    if (udt_authority_mode == AuthorityMode::Enabled)
+        return *udt_lifecycle_adapter;
+    return UDT::getUnsupportedLifecycleAdapter();
+}
+
 UDT::AtomicAuthority &
 DatabaseAtomic::initializeUDTAuthorityUnlocked(std::unique_ptr<const UDT::AuthorityRoot> recovered_root, bool activate_recovered_authority)
 {
@@ -604,6 +613,97 @@ UDT::AuthorityQuarantineAdmissionDecision DatabaseAtomic::decideUDTQuarantineAdm
     if (!runtime)
         return {.status = UDT::AuthorityQuarantineAdmissionStatus::RuntimeFailClosed, .statistics = {}};
     return runtime->decideOperation(operation, limits);
+}
+
+void DatabaseAtomic::assertUDTTypeLifecycleOperationAllowed(
+    const UDT::AuthorityRoot * exact_active_root,
+    std::span<const UDT::SchemaObjectID> sorted_unique_touched_objects,
+    std::string_view operation) const
+{
+    using UDT::AtomicAuthority;
+    using UDT::AuthorityQuarantineOperationKind;
+    using UDT::AuthorityQuarantineOperationTiming;
+    using UDT::AuthorityVerificationRuntimeState;
+
+    if (operation.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Atomic UDT lifecycle quarantine gate has no operation name");
+
+    /// RESTORE owns no authority manifest. Once its inactive preflight has
+    /// succeeded, the first type mutation must not install even private
+    /// authority components until every restored-object publication releases
+    /// its lease.
+    if (!exact_active_root)
+    {
+        if (udt_restore_publication_leases.load(std::memory_order_acquire))
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cannot {} while an Atomic RESTORE publication is in flight", operation);
+        }
+
+        std::lock_guard authority_lock(udt_authority_mutex);
+        if (udt_authority_shutdown)
+            throw Exception(ErrorCodes::ABORTED, "Cannot {} after Atomic database shutdown", operation);
+        if (udt_table_startup_state || udt_degraded_startup_status || udt_authority || udt_mutation_storage || udt_verification_runtime
+            || udt_verification_scheduler || active_udt_authority.load(std::memory_order_acquire)
+            || active_udt_verification_runtime.load(std::memory_order_acquire))
+        {
+            throw Exception(
+                ErrorCodes::ABORTED, "Cannot {} because the Atomic UDT authority no longer has the exact never-enabled image", operation);
+        }
+        return;
+    }
+
+    if (sorted_unique_touched_objects.empty() || !std::is_sorted(sorted_unique_touched_objects.begin(), sorted_unique_touched_objects.end())
+        || std::adjacent_find(sorted_unique_touched_objects.begin(), sorted_unique_touched_objects.end())
+            != sorted_unique_touched_objects.end())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Atomic UDT lifecycle operation {} supplied an incomplete or non-canonical touch set", operation);
+    }
+    for (const auto & object : sorted_unique_touched_objects)
+    {
+        if (!object.isValid() || object.database_uuid != db_uuid)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Atomic UDT lifecycle operation {} supplied a foreign or invalid touched object", operation);
+        }
+    }
+
+    AtomicAuthority * authority = nullptr;
+    AuthorityVerificationRuntimeState * runtime = nullptr;
+    std::optional<AtomicAuthority::RootSnapshot> current_snapshot;
+    {
+        std::lock_guard authority_lock(udt_authority_mutex);
+        if (udt_authority_shutdown || udt_table_startup_state || udt_degraded_startup_status)
+            throw Exception(ErrorCodes::ABORTED, "Cannot {} because the Atomic UDT authority is unavailable", operation);
+        authority = udt_authority.get();
+        runtime = udt_verification_runtime.get();
+        if (!authority || !runtime || active_udt_authority.load(std::memory_order_acquire) != authority
+            || active_udt_verification_runtime.load(std::memory_order_acquire) != runtime)
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cannot {} without one exact active Atomic UDT authority runtime", operation);
+        }
+        current_snapshot.emplace(authority->acquireCurrentRoot());
+        if (!*current_snapshot || std::addressof(current_snapshot->get()) != exact_active_root)
+        {
+            throw Exception(
+                ErrorCodes::ABORTED, "Cannot {} because the Atomic UDT authority root changed before quarantine admission", operation);
+        }
+    }
+
+    const auto decision = runtime->decideOperation({
+        .kind = AuthorityQuarantineOperationKind::DDL,
+        .timing = AuthorityQuarantineOperationTiming::New,
+        .pinned_root = authorityRootGraphIdentity(current_snapshot->get()),
+        .touch_set_is_complete = true,
+        .sorted_unique_touched_objects = sorted_unique_touched_objects,
+        .continuation_proof_set_is_complete = false,
+        .sorted_unique_continuation_proofs = {},
+    });
+    if (!decision.isAllowed())
+    {
+        throw Exception(
+            ErrorCodes::ABORTED, "Atomic UDT quarantine rejected {} (status {})", operation, static_cast<unsigned>(decision.status));
+    }
 }
 
 void DatabaseAtomic::assertUDTNewDefinitionClosureOperationAllowed(

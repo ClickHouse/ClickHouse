@@ -171,6 +171,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_function_early_short_circuit", false, false, "New setting"},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
+            {"allow_experimental_user_defined_types", false, false, "New setting for the experimental UDT-aware type-family admission path."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {

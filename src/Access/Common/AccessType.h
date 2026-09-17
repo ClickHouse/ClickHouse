@@ -154,13 +154,15 @@ enum class AccessType : uint8_t
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
-/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
+/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/TYPE_OBJECT/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.
 #define APPLY_FOR_ACCESS_TYPES(M) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
+    M(SHOW_TYPES, "", DATABASE, SHOW) /* allows database-scoped UDT introspection without using the table namespace */\
+    M(USAGE_TYPE, "", TYPE_OBJECT, ALL) /* allows one operation to bind or construct an exact database/type UUID identity */\
     M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>;
                                        implicitly enabled by any grant on the table */\
     M(CHECK, "", TABLE, ALL) /* allows to execute CHECK TABLE; */\
@@ -230,6 +232,7 @@ enum class AccessType : uint8_t
     \
     M(ALTER_TABLE, "", GROUP, ALTER) \
     M(ALTER_DATABASE, "", GROUP, ALTER) \
+    M(ALTER_TYPE, "", DATABASE, ALTER) /* allows database-scoped UDT rename/comment lifecycle */\
     \
     M(ALTER_VIEW_MODIFY_QUERY, "ALTER TABLE MODIFY QUERY", VIEW, ALTER_VIEW) \
     M(ALTER_VIEW_MODIFY_REFRESH, "ALTER TABLE MODIFY QUERY", VIEW, ALTER_VIEW) \
@@ -240,6 +243,7 @@ enum class AccessType : uint8_t
     M(ALTER, "", GROUP, ALL) /* allows to execute ALTER TABLE */\
     \
     M(CREATE_DATABASE, "", DATABASE, CREATE) /* allows to execute {CREATE|ATTACH} DATABASE */\
+    M(CREATE_TYPE, "", DATABASE, CREATE) /* allows to execute database-scoped CREATE/ATTACH TYPE */\
     M(CREATE_TABLE, "", TABLE, CREATE) /* allows to execute {CREATE|ATTACH} {TABLE|VIEW} */\
     M(CREATE_VIEW, "", VIEW, CREATE) /* allows to execute {CREATE|ATTACH} VIEW;
                                         implicitly enabled by the grant CREATE_TABLE */\
@@ -258,6 +262,7 @@ enum class AccessType : uint8_t
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH|TRUNCATE} DATABASE */\
+    M(DROP_TYPE, "", DATABASE, DROP) /* allows database-scoped DROP TYPE */\
     M(DROP_TABLE, "", TABLE, DROP) /* allows to execute {DROP|DETACH} TABLE */\
     M(DROP_VIEW, "", VIEW, DROP) /* allows to execute {DROP|DETACH} TABLE for views;
                                     implicitly enabled by the grant DROP_TABLE */\

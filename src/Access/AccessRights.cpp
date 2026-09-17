@@ -1,10 +1,12 @@
 #include <Access/AccessRights.h>
+#include <Access/Common/UDTAccessTarget.h>
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
 
 #include <boost/container/small_vector.hpp>
 #include <list>
+#include <type_traits>
 
 namespace DB
 {
@@ -15,6 +17,67 @@ namespace ErrorCodes
 
 namespace
 {
+    /// The access radix historically shares its first structural level between
+    /// database names and global-with-parameter values. TYPE_OBJECT is a new,
+    /// permanent identity namespace, so keep its in-memory path disjoint without
+    /// changing either its stable external wire or any pre-existing tree path.
+    constexpr char type_object_tree_namespace_bytes[] = "\0clickhouse:type-object-tree:v1:";
+    constexpr std::string_view type_object_tree_namespace{
+        type_object_tree_namespace_bytes, sizeof(type_object_tree_namespace_bytes) - 1};
+
+    bool isTypeObjectAccess(const AccessFlags & flags)
+    {
+        return flags && AccessFlags::allTypeObjectFlags().contains(flags);
+    }
+
+    [[noreturn]] void throwUnsupportedTypeObjectAccessShape()
+    {
+        throw UDT::AccessTargetError(
+            UDT::AccessTargetError::Code::InvalidValue,
+            "TYPE_OBJECT access accepts only TYPE * or one exact canonical UUID target");
+    }
+
+    String makeTypeObjectTreePath(std::string_view external_parameter)
+    {
+        static_cast<void>(UDT::decodeAccessTarget(external_parameter));
+        String result{type_object_tree_namespace};
+        result += external_parameter;
+        return result;
+    }
+
+    String restoreTypeObjectExternalParameter(std::string_view tree_path)
+    {
+        if (!tree_path.starts_with(type_object_tree_namespace))
+            throwUnsupportedTypeObjectAccessShape();
+
+        const auto external_parameter = tree_path.substr(type_object_tree_namespace.size());
+        static_cast<void>(UDT::decodeAccessTarget(external_parameter));
+        return String{external_parameter};
+    }
+
+    template <bool wildcard, typename... Args>
+    void validateRawTypeObjectAccessShape(const AccessFlags & flags, const Args &... args)
+    {
+        if (!isTypeObjectAccess(flags))
+            return;
+        if constexpr (wildcard || sizeof...(Args) > 1)
+        {
+            throwUnsupportedTypeObjectAccessShape();
+        }
+        else if constexpr (sizeof...(Args) == 1)
+        {
+            auto validate_parameter = [](const auto & value)
+            {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::is_convertible_v<const Value &, std::string_view>)
+                    static_cast<void>(makeTypeObjectTreePath(std::string_view{value}));
+                else
+                    throwUnsupportedTypeObjectAccessShape();
+            };
+            (validate_parameter(args), ...);
+        }
+    }
+
     struct ProtoElement
     {
         AccessFlags access_flags;
@@ -52,6 +115,10 @@ namespace
 
         AccessRightsElement getResult() const
         {
+            const bool type_object = isTypeObjectAccess(access_flags);
+            if (type_object && full_name.size() > 1)
+                throwUnsupportedTypeObjectAccessShape();
+
             AccessRightsElement res;
             res.access_flags = access_flags;
             res.grant_option = grant_option;
@@ -63,7 +130,9 @@ namespace
                     break;
                 case 1:
                 {
-                    if (access_flags.isGlobalWithParameter())
+                    if (type_object)
+                        res.parameter = restoreTypeObjectExternalParameter(full_name[0]);
+                    else if (access_flags.isGlobalWithParameter())
                         res.parameter = full_name[0];
                     else
                         res.database = full_name[0];
@@ -415,6 +484,12 @@ public:
     void grant(const AccessFlags & flags_)
     {
         if constexpr (wildcard)
+        {
+            if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+                throwUnsupportedTypeObjectAccessShape();
+        }
+
+        if constexpr (wildcard)
             wildcard_grant = true;
 
         AccessFlags flags_to_add = flags_ & getAllGrantableFlags();
@@ -425,6 +500,18 @@ public:
     template <bool wildcard = false, typename ... Args>
     void grant(const AccessFlags & flags_, std::string_view name, const Args &... subnames)
     {
+        AccessFlags scoped_flags = flags_;
+        String type_object_path;
+        if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+        {
+            if constexpr (wildcard || (sizeof...(Args) != 0))
+                throwUnsupportedTypeObjectAccessShape();
+            type_object_path = makeTypeObjectTreePath(name);
+            name = type_object_path;
+        }
+        else if (level == GLOBAL_LEVEL)
+            scoped_flags -= AccessFlags::allTypeObjectFlags();
+
         auto next_level = static_cast<Level>(level + 1);
 
         Node * child = nullptr;
@@ -434,17 +521,24 @@ public:
         else
             child = &getLeaf(name, next_level);
 
-        child->grant<wildcard>(flags_, subnames...);
+        child->grant<wildcard>(scoped_flags, subnames...);
         optimizePath(name);
     }
 
     template <bool wildcard = false, typename StringT>
     void grant(const AccessFlags & flags_, const std::vector<StringT> & names)
     {
+        if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+            throwUnsupportedTypeObjectAccessShape();
+
+        AccessFlags scoped_flags = flags_;
+        if (level == GLOBAL_LEVEL)
+            scoped_flags -= AccessFlags::allTypeObjectFlags();
+
         for (const auto & name : names)
         {
             auto & child = getLeaf(name, static_cast<Level>(level + 1), wildcard);
-            child.grant(flags_);
+            child.grant(scoped_flags);
             optimizePath(name);
         }
     }
@@ -452,6 +546,12 @@ public:
     template <bool wildcard = false>
     void revoke(const AccessFlags & flags_)
     {
+        if constexpr (wildcard)
+        {
+            if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+                throwUnsupportedTypeObjectAccessShape();
+        }
+
         if constexpr (wildcard)
             wildcard_grant = true;
 
@@ -462,6 +562,18 @@ public:
     template <bool wildcard = false, typename... Args>
     void revoke(const AccessFlags & flags_, std::string_view name, const Args &... subnames)
     {
+        AccessFlags scoped_flags = flags_;
+        String type_object_path;
+        if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+        {
+            if constexpr (wildcard || (sizeof...(Args) != 0))
+                throwUnsupportedTypeObjectAccessShape();
+            type_object_path = makeTypeObjectTreePath(name);
+            name = type_object_path;
+        }
+        else if (level == GLOBAL_LEVEL)
+            scoped_flags -= AccessFlags::allTypeObjectFlags();
+
         auto next_level = static_cast<Level>(level + 1);
 
         Node * child = nullptr;
@@ -471,17 +583,24 @@ public:
         else
             child = &getLeaf(name, next_level);
 
-        child->revoke<wildcard>(flags_, subnames...);
+        child->revoke<wildcard>(scoped_flags, subnames...);
         optimizePath(name);
     }
 
     template <bool wildcard = false, typename StringT>
     void revoke(const AccessFlags & flags_, const std::vector<StringT> & names)
     {
+        if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+            throwUnsupportedTypeObjectAccessShape();
+
+        AccessFlags scoped_flags = flags_;
+        if (level == GLOBAL_LEVEL)
+            scoped_flags -= AccessFlags::allTypeObjectFlags();
+
         for (const auto & name : names)
         {
             auto & child = getLeaf(name, static_cast<Level>(level + 1), wildcard);
-            child.revoke(flags_);
+            child.revoke(scoped_flags);
             optimizePath(name);
         }
     }
@@ -489,15 +608,33 @@ public:
     template <bool wildcard = false>
     bool isGranted(const AccessFlags & flags_) const
     {
+        if constexpr (wildcard)
+        {
+            if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+                throwUnsupportedTypeObjectAccessShape();
+        }
+
         return min_flags_with_children.contains(flags_);
     }
 
     template <bool wildcard = false, typename... Args>
     bool isGranted(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
     {
+        AccessFlags scoped_flags = flags_;
+        String type_object_path;
+        if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+        {
+            if constexpr (wildcard || (sizeof...(Args) != 0))
+                throwUnsupportedTypeObjectAccessShape();
+            type_object_path = makeTypeObjectTreePath(name);
+            name = type_object_path;
+        }
+        else if (level == GLOBAL_LEVEL)
+            scoped_flags -= AccessFlags::allTypeObjectFlags();
+
         const auto next_level = static_cast<Level>(level + 1);
 
-        AccessFlags flags_to_check = flags_ - min_flags_with_children;
+        AccessFlags flags_to_check = scoped_flags - min_flags_with_children;
         if (!flags_to_check)
             return true;
         if (!max_flags_with_children.contains(flags_to_check))
@@ -526,7 +663,14 @@ public:
     template <bool wildcard = false, typename StringT>
     bool isGranted(const AccessFlags & flags_, const std::vector<StringT> & names) const
     {
-        AccessFlags flags_to_check = flags_ - min_flags_with_children;
+        if (level == GLOBAL_LEVEL && isTypeObjectAccess(flags_))
+            throwUnsupportedTypeObjectAccessShape();
+
+        AccessFlags scoped_flags = flags_;
+        if (level == GLOBAL_LEVEL)
+            scoped_flags -= AccessFlags::allTypeObjectFlags();
+
+        AccessFlags flags_to_check = scoped_flags - min_flags_with_children;
         if (!flags_to_check)
             return true;
         if (!max_flags_with_children.contains(flags_to_check))
@@ -723,7 +867,7 @@ private:
             if (path.empty())
                 return n.isLeaf();
 
-            return n.node_name[0] == path[0];
+            return !n.node_name.empty() && n.node_name[0] == path[0];
         };
 
         if (auto it = std::find_if(children->begin(), children->end(), find_possible_prefix); it != children->end())
@@ -793,7 +937,7 @@ private:
             if (path.empty())
                 return n.isLeaf();
 
-            return n.node_name[0] == path[0];
+            return !n.node_name.empty() && n.node_name[0] == path[0];
         };
 
         if (children)
@@ -1343,10 +1487,17 @@ void AccessRights::clear()
 template <bool with_grant_option, bool wildcard, typename... Args>
 void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
 {
+    validateRawTypeObjectAccessShape<wildcard>(flags, args...);
     auto helper = [&](std::unique_ptr<Node> & root_node)
     {
         if (!root_node)
-            root_node = std::make_unique<Node>();
+        {
+            auto candidate = std::make_unique<Node>();
+            candidate->grant<wildcard>(flags, args...);
+            if (candidate->flags || candidate->children)
+                root_node = std::move(candidate);
+            return;
+        }
         root_node->grant<wildcard>(flags, args...);
         if (!root_node->flags && !root_node->children)
             root_node = nullptr;
@@ -1387,6 +1538,8 @@ void AccessRights::grantImpl(const AccessRightsElement & element)
 {
     if (element.is_partial_revoke)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "A partial revoke should be revoked, not granted");
+    if (isTypeObjectAccess(element.access_flags))
+        UDT::validateUsageAccessElement(element);
     if (element.wildcard)
     {
         if (element.grant_option)
@@ -1446,6 +1599,7 @@ void AccessRights::grantWildcardWithGrantOption(const AccessFlags & flags, std::
 template <bool grant_option, bool wildcard, typename... Args>
 void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 {
+    validateRawTypeObjectAccessShape<wildcard>(flags, args...);
     auto helper = [&](std::unique_ptr<Node> & root_node)
     {
         if (!root_node)
@@ -1484,6 +1638,8 @@ void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 template <bool grant_option, bool wildcard>
 void AccessRights::revokeImpl(const AccessRightsElement & element)
 {
+    if (isTypeObjectAccess(element.access_flags))
+        UDT::validateUsageAccessElement(element);
     if (element.wildcard)
     {
         if (element.grant_option)
@@ -1575,6 +1731,7 @@ AccessRights AccessRights::getGrantableRights() const
 template <bool grant_option, bool wildcard, typename... Args>
 bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args) const
 {
+    validateRawTypeObjectAccessShape<wildcard>(flags, args...);
     auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
     {
         if (!root_node)
@@ -1629,6 +1786,8 @@ bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) cons
 template <bool grant_option, bool wildcard>
 bool AccessRights::isGrantedImpl(const AccessRightsElement & element) const
 {
+    if (isTypeObjectAccess(element.access_flags))
+        UDT::validateUsageAccessElement(element);
     if (element.wildcard)
     {
         if (element.grant_option)

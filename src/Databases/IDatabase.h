@@ -28,6 +28,7 @@ namespace DB
 namespace UDT
 {
 class IAuthorityAdapter;
+class ILifecycleAdapter;
 struct TypeAuthorityCapabilities;
 }
 
@@ -504,6 +505,11 @@ public:
     /// Returns the active authority, or the process-stable unsupported
     /// adapter while this database has no activated authority state.
     virtual const UDT::IAuthorityAdapter & getUDTAuthorityAdapter() const noexcept;
+
+    /// Returns the database-owned definition-only lifecycle boundary. The default is
+    /// process-stable and fail-closed; it never infers support from an engine
+    /// name or from a metadata directory.
+    virtual UDT::ILifecycleAdapter & getUDTLifecycleAdapter() noexcept;
 
     virtual void renameDatabase(ContextPtr, const String & /*new_name*/);
 

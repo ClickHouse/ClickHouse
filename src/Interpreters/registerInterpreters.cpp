@@ -67,6 +67,7 @@ void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
 void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
+void registerInterpreterUDTQuery(InterpreterFactory & factory);
 
 void registerInterpreters();
 void registerInterpreters()
@@ -137,6 +138,7 @@ void registerInterpreters()
     registerInterpreterUpdateQuery(factory);
     registerInterpreterParallelWithQuery(factory);
     registerInterpreterExecuteAsQuery(factory);
+    registerInterpreterUDTQuery(factory);
 }
 
 }

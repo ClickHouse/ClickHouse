@@ -23,6 +23,7 @@ class AtomicAuthorityStartupStatusSnapshot;
 struct DatabaseSchemaWALExactRepairProvenance;
 struct AtomicDatabaseUDTPersistedConfigurationV2;
 class PreparedAtomicDatabaseUDTConfigurationV2;
+class AtomicLifecycleAdapter;
 class BoundObjectTypeReferences;
 class AuthorityRoot;
 class AuthorityVerificationBatchExecutor;
@@ -46,6 +47,7 @@ struct AuthorityQuarantineAdmissionLimits;
 struct AuthorityQuarantineOperationView;
 enum class AuthorityQuarantineOperationKind : UInt8;
 class IAuthorityAdapter;
+class ILifecycleAdapter;
 struct PersistedTypeReferences;
 struct SchemaObjectID;
 struct TypeAuthorityCapabilities;
@@ -85,6 +87,7 @@ public
 
     const UDT::TypeAuthorityCapabilities & getSupportedUDTAuthorityCapabilities() const noexcept override;
     const UDT::IAuthorityAdapter & getUDTAuthorityAdapter() const noexcept override;
+    UDT::ILifecycleAdapter & getUDTLifecycleAdapter() noexcept override;
 
     /// No-throw half of first activation, called only after the epoch-1
     /// definition-only publication and its durable commit. An empty holder remains
@@ -196,6 +199,10 @@ protected:
     [[nodiscard]] UDT::PreparedAtomicDatabaseUDTConfigurationV2 prepareConfiguredUDTConfigurationForFirstActivationV2();
     [[nodiscard]] const UDT::EffectiveResourceLimits & getConfiguredUDTEffectiveDatabaseLimitsForFirstActivation() const;
     void applyConfiguredUDTVerificationLimitsForFirstActivation(UDT::AuthorityRootBuildLimits & limits) const;
+    void assertUDTTypeLifecycleOperationAllowed(
+        const UDT::AuthorityRoot * exact_active_root,
+        std::span<const UDT::SchemaObjectID> sorted_unique_touched_objects,
+        std::string_view operation) const TSA_REQUIRES(udt_schema_mutation_mutex);
     void transitionPendingUDTAuthorityToDegraded(std::unique_lock<std::mutex> schema_mutation_lock);
 
     virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
@@ -231,6 +238,8 @@ protected:
     std::atomic<UDT::AuthorityVerificationRuntimeState *> active_udt_verification_runtime{nullptr};
     std::atomic<bool> udt_database_startup_complete{false};
     bool udt_authority_shutdown TSA_GUARDED_BY(udt_authority_mutex) = false;
+
+    friend class UDT::AtomicLifecycleAdapter;
     friend class UDT::AuthorityVerificationBatchExecutor;
     friend class UDT::AuthorityVerificationBatchExecutorAccess;
     friend class UDT::AuthorityVerificationScheduler;

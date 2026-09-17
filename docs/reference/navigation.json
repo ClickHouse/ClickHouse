@@ -1156,6 +1156,7 @@
         "reference/system-tables/transactions_info_log",
         "reference/system-tables/unicode",
         "reference/system-tables/user_defined_functions",
+        "reference/system-tables/user_defined_types",
         "reference/system-tables/user_directories",
         "reference/system-tables/user_processes",
         "reference/system-tables/user_query_log",

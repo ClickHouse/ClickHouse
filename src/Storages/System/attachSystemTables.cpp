@@ -34,6 +34,7 @@
 #include <Storages/System/StorageSystemFormats.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Storages/System/StorageSystemUserDefinedFunctions.h>
+#include <Storages/System/StorageSystemUDTs.h>
 #include <Storages/System/StorageSystemWorkloads.h>
 #include <Storages/System/StorageSystemResources.h>
 #include <Storages/System/StorageSystemGraphite.h>
@@ -237,6 +238,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.");
+    attach<StorageSystemUDTs>(context, system_database, "user_defined_types", "Shows durable user-defined type definitions visible to the current user.");
     attach<StorageSystemDictionaryLayouts>(context, system_database, "dictionary_layouts", "Contains a list of all available dictionary layouts.");
     attach<StorageSystemDiskTypes>(context, system_database, "disk_types", "Contains a list of all available disk types.");
     attach<StorageSystemDictionarySources>(context, system_database, "dictionary_sources", "Contains a list of all available dictionary sources.");

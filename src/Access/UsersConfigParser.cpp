@@ -73,6 +73,10 @@ namespace
         if (query.grantees)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can't specify grantees in query using config file");
 
+        /// Keep config-file grants on the same scope-validation path as
+        /// InterpreterGrantQuery. In particular, database-scoped ALL must not
+        /// retain global-with-parameter privileges.
+        query.access_rights_elements.eraseNotGrantable();
         query.access_rights_elements.throwIfFilterIsNotCompilable();
 
         for (auto & element : query.access_rights_elements)

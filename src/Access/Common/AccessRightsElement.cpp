@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/AccessType.h>
+#include <Access/Common/UDTAccessTarget.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -152,6 +153,9 @@ void AccessRightsElement::formatFilter(WriteBuffer & buffer) const
 
 void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool precise) const
 {
+    if (access_flags.getParameterType() == AccessFlags::TYPE_OBJECT)
+        UDT::validateUsageAccessElement(*this);
+
     auto is_enabled_user_name_access_type = true;
     auto is_enabled_read_write_grants = true;
     /// In precise mode the backward-compatibility rewrites below must not fire, so keep both toggles enabled
@@ -169,6 +173,20 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool precise) con
     buffer << "ON ";
     if (isGlobalWithParameter())
     {
+        if (access_flags.getParameterType() == AccessFlags::TYPE_OBJECT)
+        {
+            buffer << "TYPE ";
+            if (anyParameter())
+                buffer << "*";
+            else
+            {
+                const auto target = UDT::decodeAccessTarget(parameter);
+                buffer << "UUID " << quoteString(DB::toString(target.database_uuid)) << " "
+                       << quoteString(DB::toString(target.type_uuid));
+            }
+            return;
+        }
+
         /// Special check for backward compatibility.
         /// If `enable_user_name_access_type` is set to false, we will dump `GRANT CREATE USER ON *` as `GRANT CREATE USER ON *.*`.
         /// This will allow us to run old replicas in the same cluster.
@@ -229,8 +247,15 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool precise) con
 
 
 AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, std::string_view database_)
-    : access_flags(access_flags_), database(database_), parameter(database_)
+    : access_flags(access_flags_)
 {
+    if (access_flags && AccessFlags::allTypeObjectFlags().contains(access_flags))
+        parameter = database_;
+    else
+    {
+        database = database_;
+        parameter = database_;
+    }
 }
 
 AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, std::string_view database_, std::string_view table_)
@@ -286,6 +311,8 @@ void AccessRightsElement::throwIfNotGrantable() const
 {
     if (empty())
         return;
+    if (access_flags.getParameterType() == AccessFlags::TYPE_OBJECT)
+        UDT::validateUsageAccessElement(*this);
     auto grantable_flags = getGrantableFlags();
     if (grantable_flags)
     {
@@ -311,6 +338,8 @@ void AccessRightsElement::throwIfNotGrantable() const
 
 void AccessRightsElement::eraseNotGrantable()
 {
+    if (access_flags.getParameterType() == AccessFlags::TYPE_OBJECT)
+        UDT::validateUsageAccessElement(*this);
     access_flags = getGrantableFlags();
 }
 

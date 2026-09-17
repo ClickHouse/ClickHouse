@@ -2,7 +2,11 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/UDTAccessTarget.h>
+#include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST.h>
@@ -10,9 +14,16 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
 
 namespace
 {
@@ -57,6 +68,42 @@ namespace
             columns = std::move(res_columns);
             return true;
         });
+    }
+
+    bool parseUUIDLiteral(IParser::Pos & pos, Expected & expected, UUID & uuid)
+    {
+        ASTPtr literal;
+        if (!ParserStringLiteral{}.parse(pos, literal, expected))
+            return false;
+
+        uuid = parseFromString<UUID>(literal->as<ASTLiteral &>().value.safeGet<String>());
+        if (uuid == UUIDHelpers::Nil)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "A user-defined type access target cannot contain a nil UUID");
+        return true;
+    }
+
+    bool parseUDTAccessTarget(IParser::Pos & pos, Expected & expected, String & parameter)
+    {
+        auto type = ParserKeyword::createDeprecated("TYPE");
+        if (!type.ignore(pos, expected))
+            return false;
+
+        if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+        {
+            parameter.clear();
+            return true;
+        }
+
+        auto uuid = ParserKeyword::createDeprecated("UUID");
+        if (!uuid.ignore(pos, expected))
+            return false;
+
+        UDT::AccessTarget target;
+        if (!parseUUIDLiteral(pos, expected, target.database_uuid) || !parseUUIDLiteral(pos, expected, target.type_uuid))
+            return false;
+
+        parameter = UDT::encodeAccessTarget(target);
+        return true;
     }
 }
 
@@ -134,10 +181,13 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             String filter;
 
             size_t is_global_with_parameter = 0;
+            size_t is_type_object = 0;
             for (const auto & elem : access_and_columns)
             {
                 if (elem.first.isGlobalWithParameter())
                     ++is_global_with_parameter;
+                if (elem.first.getParameterType() == AccessFlags::TYPE_OBJECT)
+                    ++is_type_object;
             }
 
             if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
@@ -145,7 +195,17 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
 
             bool wildcard = false;
             bool default_database = false;
-            if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
+            if (is_type_object)
+            {
+                if (is_type_object != access_and_columns.size())
+                    return false;
+                if (std::any_of(
+                        access_and_columns.begin(), access_and_columns.end(), [](const auto & elem) { return !elem.second.empty(); }))
+                    return false;
+                if (!parseUDTAccessTarget(pos, expected, parameter))
+                    return false;
+            }
+            else if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
             {
                 ASTPtr parameter_ast;
                 // *[.*]

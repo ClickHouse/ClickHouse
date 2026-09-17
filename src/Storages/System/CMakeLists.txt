@@ -38,6 +38,9 @@ set(GENERATED_LICENSES_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.ge
 # Generate license data at configure time to avoid creating a build-time dependency
 # that blocks all downstream targets (table_functions, server-lib, etc.) via the
 # CMake order-only dependency chain.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemLicenses.sh"
+    "${ClickHouse_SOURCE_DIR}/utils/list-licenses/list-licenses.sh")
 execute_process(
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemLicenses.sh "${CMAKE_SOURCE_DIR}"
     OUTPUT_FILE ${GENERATED_LICENSES_SRC}.tmp

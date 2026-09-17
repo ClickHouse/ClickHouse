@@ -112,6 +112,7 @@ namespace
         const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
         const Flags & getTableEngineFlags() const { return all_flags_for_target[TABLE_ENGINE]; }
         const Flags & getSourceFlags() const { return all_flags_for_target[SOURCE]; }
+        const Flags & getTypeObjectFlags() const { return all_flags_for_target[TYPE_OBJECT]; }
         const Flags & getUserNameFlags() const { return all_flags_for_target[USER_NAME]; }
         const Flags & getDefinerFlags() const { return all_flags_for_target[DEFINER]; }
         const Flags & getNamedCollectionFlags() const { return all_flags_for_target[NAMED_COLLECTION]; }
@@ -137,6 +138,7 @@ namespace
             TABLE_ENGINE = 7,
             DEFINER = 8,
             SOURCE = 9,
+            TYPE_OBJECT = 10,
         };
 
         struct Node;
@@ -192,7 +194,7 @@ namespace
             std::string_view parent_group_name,
             std::unordered_map<std::string_view, Node *> & nodes,
             std::unordered_map<std::string_view, NodePtr> & owned_nodes,
-            size_t & next_flag)
+            size_t flag)
         {
             NodePtr node;
             auto keyword = replaceUnderscoreWithSpace(name);
@@ -214,7 +216,7 @@ namespace
             node->node_type = node_type;
             node->aliases = splitAliases(aliases);
             if (node_type != GROUP)
-                node->setFlag(next_flag++);
+                node->setFlag(flag);
 
             bool has_parent_group = (parent_group_name != std::string_view{"NONE"});
             if (!has_parent_group)
@@ -253,8 +255,6 @@ namespace
         {
             std::unordered_map<std::string_view, NodePtr> owned_nodes;
             std::unordered_map<std::string_view, Node *> nodes;
-            size_t next_flag = 0;
-
 #           define MAKE_ACCESS_FLAGS_NODE(name, aliases, node_type, parent_group_name) \
                 NodeDescriptor{AccessType::name, #name, aliases, node_type, #parent_group_name},
 
@@ -265,10 +265,43 @@ namespace
 
 #           undef MAKE_ACCESS_FLAGS_NODE
 
+            const auto is_udt_access_type = [](AccessType access_type)
+            {
+                return access_type == AccessType::SHOW_TYPES || access_type == AccessType::USAGE_TYPE
+                    || access_type == AccessType::ALTER_TYPE || access_type == AccessType::CREATE_TYPE
+                    || access_type == AccessType::DROP_TYPE;
+            };
+
+            /// AccessFlags also determine the canonical order of grants. Preserve
+            /// every pre-UDT bit position even though the UDT descriptors must be
+            /// declared before their existing parent groups.
+            const size_t legacy_flag_count = std::count_if(
+                node_descriptors.begin(),
+                node_descriptors.end(),
+                [&](const auto & descriptor) { return descriptor.node_type != GROUP && !is_udt_access_type(descriptor.access_type); });
+            size_t next_legacy_flag = 0;
+            size_t next_udt_flag = legacy_flag_count;
+
             for (const auto & descriptor : node_descriptors)
+            {
+                size_t flag = 0;
+                if (descriptor.node_type != GROUP)
+                {
+                    if (is_udt_access_type(descriptor.access_type))
+                        flag = next_udt_flag++;
+                    else
+                        flag = next_legacy_flag++;
+                }
                 makeNode(
-                    descriptor.access_type, descriptor.name, descriptor.aliases, descriptor.node_type,
-                    descriptor.parent_group_name, nodes, owned_nodes, next_flag);
+                    descriptor.access_type,
+                    descriptor.name,
+                    descriptor.aliases,
+                    descriptor.node_type,
+                    descriptor.parent_group_name,
+                    nodes,
+                    owned_nodes,
+                    flag);
+            }
 
             if (!owned_nodes.contains("NONE"))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "'NONE' not declared");
@@ -340,7 +373,7 @@ namespace
                 collectAllFlags(child.get());
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE] | all_flags_for_target[DEFINER] | all_flags_for_target[SOURCE];
+            all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION] | all_flags_for_target[USER_NAME] | all_flags_for_target[TABLE_ENGINE] | all_flags_for_target[DEFINER] | all_flags_for_target[SOURCE] | all_flags_for_target[TYPE_OBJECT];
             all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
         }
 
@@ -391,7 +424,7 @@ namespace
         std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
         std::vector<Flags> access_type_to_flags_mapping;
         Flags all_flags;
-        Flags all_flags_for_target[static_cast<size_t>(SOURCE) + 1];
+        Flags all_flags_for_target[static_cast<size_t>(TYPE_OBJECT) + 1];
         Flags all_flags_grantable_on_database_level;
         Flags all_flags_grantable_on_table_level;
         Flags all_flags_grantable_on_global_with_parameter_level;
@@ -447,8 +480,11 @@ std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIn
     if (source_flags)
         result.emplace(ParameterType::SOURCE, source_flags);
 
+    auto type_object_flags = AccessFlags::allTypeObjectFlags() & *this;
+    if (type_object_flags)
+        result.emplace(ParameterType::TYPE_OBJECT, type_object_flags);
 
-    auto other_flags = (~named_collection_flags & ~user_flags & ~definer_flags & ~table_engine_flags & ~source_flags) & *this;
+    auto other_flags = (~named_collection_flags & ~user_flags & ~definer_flags & ~table_engine_flags & ~source_flags & ~type_object_flags) & *this;
     if (other_flags)
         result.emplace(ParameterType::NONE, other_flags);
 
@@ -478,6 +514,9 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
     if (AccessFlags::allSourceFlags().contains(*this))
         return AccessFlags::SOURCE;
 
+    if (AccessFlags::allTypeObjectFlags().contains(*this))
+        return AccessFlags::TYPE_OBJECT;
+
     throw Exception(ErrorCodes::MIXED_ACCESS_PARAMETER_TYPES, "Having mixed parameter types: {}", toString());
 }
 
@@ -506,6 +545,7 @@ AccessFlags AccessFlags::allUserNameFlags() { return Helper::instance().getUserN
 AccessFlags AccessFlags::allDefinerFlags() { return Helper::instance().getDefinerFlags(); }
 AccessFlags AccessFlags::allTableEngineFlags() { return Helper::instance().getTableEngineFlags(); }
 AccessFlags AccessFlags::allSourceFlags() { return Helper::instance().getSourceFlags(); }
+AccessFlags AccessFlags::allTypeObjectFlags() { return Helper::instance().getTypeObjectFlags(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalWithParameterLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnDatabaseLevel() { return Helper::instance().getAllFlagsGrantableOnDatabaseLevel(); }

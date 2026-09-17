@@ -1,0 +1,97 @@
+---
+description: 'Create and use experimental database-owned user-defined type aliases'
+sidebarTitle: 'TYPE'
+slug: /sql-reference/statements/create/type
+title: 'CREATE TYPE'
+doc_type: 'reference'
+---
+
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
+User-defined types (UDTs) give a stable, database-owned identity and name to an underlying ClickHouse data type. The experimental implementation retains exact logical bindings in supported table, view, materialized-view, and dictionary metadata, while storage, data parts, and client protocols continue to use physical ClickHouse types.
+
+The feature is disabled by default. Enable it in sessions that execute UDT lifecycle statements or physicalization:
+
+```sql
+SET allow_experimental_user_defined_types = 1;
+```
+
+Ordinary reads and `system.columns` queries that select only physical metadata, such as `type`, do not resolve the UDT catalog and continue to use the physical schema. Selecting the UDT-specific `system.columns` metadata resolves current type names only when the caller has table-wide `SHOW COLUMNS`; column-scoped callers keep the normal visible rows but receive empty UDT-specific fields because the sidecar is a table-wide integrity object.
+
+## Syntax {#syntax}
+
+```sql
+CREATE TYPE [IF NOT EXISTS] [database.]type_name
+    [(parameter_name parameter_kind [, ...])]
+    [DECREASES unsigned_parameter]
+    AS underlying_type
+    [COMMENT 'comment']
+```
+
+`parameter_kind` is one of `TYPE`, `Bool`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, or `String`. Parameters do not have default values. `DECREASES` is only for a bounded self-recursive definition and must name an unsigned integer parameter.
+
+The type name must not collide with a built-in type family or alias. A definition can use built-in types and other UDTs from the same Atomic database.
+
+For example:
+
+```sql
+CREATE DATABASE app ENGINE = Atomic;
+
+CREATE TYPE app.UserId AS UInt64 COMMENT 'stable user identifier';
+CREATE TYPE app.FixedId(N UInt16) AS FixedString(N);
+CREATE TYPE app.Box(T TYPE) AS Tuple(value T);
+```
+
+Use `SHOW TYPES FROM app`, `SHOW CREATE TYPE app.UserId`, and `DESCRIBE TYPE app.UserId` to inspect definitions. `SHOW CREATE TYPE` and `DESCRIBE TYPE` require a qualified `database.type` name.
+
+## Privileges {#privileges}
+
+Definition DDL uses the `CREATE TYPE`, `ALTER TYPE`, `DROP TYPE`, and `SHOW TYPES` access types. Creating a table reference, or adding or modifying a referenced column, additionally requires `USAGE TYPE` for every distinct stable database/type UUID used by the operation.
+
+To grant access to every UDT:
+
+```sql
+GRANT USAGE TYPE ON TYPE * TO app_writer;
+```
+
+An administrator can instead grant one stable identity. Obtain the database UUID from `system.databases` and the type UUID from `DESCRIBE TYPE`, then run:
+
+```sql
+GRANT USAGE TYPE ON TYPE UUID '<database_uuid>' '<type_uuid>' TO app_writer;
+```
+
+The exact grant follows the UUID across `ALTER TYPE ... RENAME TO`. Dropping and recreating the same name produces a new UUID and does not inherit an exact grant. Revoking `USAGE TYPE` prevents new reference-bearing table DDL, but does not prevent `SELECT` from an existing table.
+
+## Verification, quarantine, and resource limits {#verification-quarantine-and-resource-limits}
+
+An enabled Atomic authority periodically verifies canonical definition records, dependent-object sidecars, installation records, and the exact authority inventory root. Work is bounded by configured object, byte, work, memory, I/O, wall-time, CPU-time, and load thresholds. Cursor progress and per-database overrides are durable and UUID-bound.
+
+If verification detects integrity damage, the complete affected dependency closure is quarantined. New reads, writes, mutations, and DDL fail closed; a read already pinned to the exact last-verified object revision and authority root may finish. Automatic repair selects exact authenticated bytes in order from the local schema WAL, a configured replicated-authority adapter, and then a configured verified-backup adapter. Replica and backup trust, freshness, and transport remain explicit adapter responsibilities. Quarantine is released only after complete exact-root re-verification. Startup recovery that cannot produce a valid executable root publishes diagnostic-only `CONFLICTED`, `INVALID`, or `INCOMPLETE` rows; mapped objects remain unavailable, while unrelated ordinary physical objects in the database can still load.
+
+Inspect definition status in [`system.user_defined_types`](/operations/system-tables/user_defined_types); database-wide verifier, quarantine, quota, exact-root, and authenticated last-repair provenance diagnostics in [`system.databases`](/operations/system-tables/databases); and the current mapped-object verification stamp in [`system.tables`](/operations/system-tables/tables).
+
+Server and per-database configuration uses these prefixes:
+
+```text
+user_defined_types.authority_verification.*
+user_defined_types.authority_verification.database_overrides.<database-uuid>.*
+user_defined_types.resource_limits.server.*
+user_defined_types.resource_limits.database_overrides.<database-uuid>.*
+```
+
+Database UUID selectors must use canonical UUID spelling. Effective limits are the minimum of implementation, server, persisted database, and authority-capability ceilings. Lowering a database quota does not discard a valid durable root: it becomes `OVER_QUOTA`, rejects net growth, and continues to allow neutral or shrinking mutations.
+
+## Limitations {#limitations}
+
+The experimental implementation does not support:
+
+- `ReplicatedMergeTree`, `SharedMergeTree`, replicated databases, or distributed physicalization;
+- references outside the owning Atomic database;
+- nonconstant implicit String conversion, defaults, checks, or nominal runtime value wrappers;
+- parameterized-view bindings, refreshable Materialized Views, inferred inner-table mappings whose analyzed output is not the exact complete physical inner schema, opaque logical schema adapters, or UDT-aware backup/restore manifests;
+- `CREATE OR REPLACE TYPE`, default or variadic type parameters, `DROP TYPE ... CASCADE`, cross-database rename, or definition-body replacement;
+- `PHYSICALIZE TYPE REFERENCES ... ON CLUSTER`.
+
+Unsupported paths fail before writing reference metadata.
