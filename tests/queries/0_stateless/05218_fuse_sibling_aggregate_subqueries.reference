@@ -198,3 +198,7 @@
 35	1	1
 35	1	1
 35 tables	2
+-- 36 cross_to_inner_join_rewrite = 2 rejects a comma join it cannot turn into an INNER JOIN, and it is reached only while the join tree is still a cross join
+36 fused	0
+36a fused	1
+36b fused	1

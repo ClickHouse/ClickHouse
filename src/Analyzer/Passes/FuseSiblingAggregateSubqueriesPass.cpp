@@ -37,6 +37,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsUInt64 cross_to_inner_join_rewrite;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsString force_optimize_projection_name;
@@ -586,6 +587,11 @@ public:
             if (join_type.locality != JoinLocality::Unspecified || join_type.is_comma != join_types.front().is_comma)
                 return;
         }
+
+        /// At `cross_to_inner_join_rewrite = 2` CrossToInnerJoinPass rejects a comma join it cannot turn into
+        /// an INNER JOIN, and it reaches that check only while the join tree is still a cross join.
+        if (join_types.front().is_comma && getSettings()[Setting::cross_to_inner_join_rewrite] >= 2)
+            return;
 
         auto branches = cross_join_node->getTableExpressions();
 

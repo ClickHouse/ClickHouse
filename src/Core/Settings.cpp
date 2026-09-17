@@ -6379,7 +6379,8 @@ is answered as
 The rewrite is deliberately restricted to the cases where it is provably answer-preserving: aggregates
 that take no arguments (such as `count()`), MergeTree sources that read stored values with no
 expression evaluated on the way out, and branch filters built from comparisons and logical
-connectives over a single one of those tables.
+connectives. The conjuncts a branch does not share with its siblings must all read a single one of
+those tables; the shared ones may read any of them.
 
 Three shapes are known to lose:
 
@@ -6407,6 +6408,10 @@ an effective non-zero `max_partitions_to_read` (the query setting when it is set
 otherwise), or a table that sets both `max_concurrent_queries` and
 `min_marks_to_honor_max_concurrent_queries` to non-zero values. The fused read spans the union of the
 partitions and the marks the branches read, so each of those is evaluated against that union.
+
+A comma join is skipped when `cross_to_inner_join_rewrite` is `2`, which asks for a comma join with no
+equi-join condition in `WHERE` to be rejected: fusing every branch of such a join would leave nothing
+to reject.
 
 :::note
 Supported only with the analyzer (`enable_analyzer = 1`).
