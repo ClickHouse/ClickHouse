@@ -8,6 +8,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
 
@@ -99,6 +100,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const String & comment,
     ContextPtr context_,
     PostgreSQLSettings settings_,
+    String collection_name_,
     const String & remote_table_schema_,
     const String & on_conflict_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -107,6 +109,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , on_conflict(on_conflict_)
     , pool(std::move(pool_))
     , settings(std::move(settings_))
+    , collection_name(std::move(collection_name_))
     , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -129,9 +132,22 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr query_context
 {
     /// A setting the definition does not state carries the value the creating session had for it: `default`
     /// where that is the compiled-in default and `other` where it is not - the rule `Join` and `Distributed`
-    /// follow for server-backed values.
+    /// follow for server-backed values. `loadFromQueryContext` assigns all of them, so the changed flag says
+    /// nothing here and the source has to come from the value.
     SettingDescriptions descriptions = settings.enumerateSettings();
     reportOriginByValue(descriptions);
+
+    /// Except for what a named collection supplied, which is neither the session's nor a default - and which
+    /// the value cannot reveal, since a collection may well state the default. Looked up by name, as
+    /// `StorageKafka` does: the collection is not kept, and may since have changed.
+    if (!collection_name.empty())
+    {
+        if (const auto collection = NamedCollectionFactory::instance().tryGet(collection_name))
+            for (auto & setting : descriptions)
+                if (collection->has(setting.name))
+                    setting.origin = SettingOrigin::NamedCollection;
+    }
+
     return attributeSettingsStatedInDefinition(std::move(descriptions), query_context);
 }
 
@@ -818,11 +834,16 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
+    ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, String * collection_name)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
+        if (collection_name && !engine_args.empty())
+            if (const auto * identifier = engine_args[0]->as<ASTIdentifier>())
+                *collection_name = identifier->name();
+
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
     else
@@ -893,7 +914,9 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
+        String collection_name;
+        auto configuration = StoragePostgreSQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, &collection_name);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);
@@ -918,6 +941,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.comment,
             args.getContext(),
             std::move(postgresql_settings),
+            std::move(collection_name),
             configuration.schema,
             configuration.on_conflict);
     },

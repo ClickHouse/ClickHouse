@@ -20,14 +20,20 @@ SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'join_stated' AND source = 'definition'
 ORDER BY name;
 
-SELECT '-- what the clause leaves out is reported too, and claims `default` only when it is the default';
--- Not the values themselves: the server's own settings supply them, and a test server may change some. The
--- stateless configuration sets `max_rows_in_join` and `max_bytes_in_join` in its default profile, and those then
--- report `other`.
-SELECT name, (value = `default`) = (source = 'default') AS source_matches_value, source IN ('default', 'other') AS source_is_expected
-FROM system.table_settings
-WHERE database = currentDatabase() AND table = 'join_stated' AND source != 'definition'
-ORDER BY name;
+SELECT '-- what the clause leaves out is reported with the value the server supplies';
+-- Against `system.settings` rather than against fixed values, because the server's profile decides them: the
+-- stateless configuration sets `max_rows_in_join` and `max_bytes_in_join` in its default profile, while a bare
+-- server leaves them at the compiled-in defaults. This is the assertion that would catch an implementation
+-- reporting the compiled-in default instead of the value the table actually holds.
+SELECT ts.name, ts.value = s.value AS holds_the_server_value, ts.source IN ('default', 'other') AS source_is_expected
+FROM system.table_settings AS ts
+INNER JOIN system.settings AS s ON s.name = ts.name
+WHERE ts.database = currentDatabase() AND ts.table = 'join_stated' AND ts.source != 'definition'
+ORDER BY ts.name;
+
+-- `disk` and `persistent` have no server setting behind them, so they are not in the join above.
+SELECT name, value, source FROM system.table_settings
+WHERE database = currentDatabase() AND table = 'join_stated' AND name = 'disk';
 
 SELECT '-- the creating session does not supply those values: the server does';
 SET join_use_nulls = 0;
@@ -37,6 +43,8 @@ CREATE TABLE join_session_1 (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);
 SELECT uniqExact(value) FROM system.table_settings
 WHERE database = currentDatabase() AND table IN ('join_session_0', 'join_session_1') AND name = 'join_use_nulls';
 
+-- Not an assertion about this feature: it records that the stored definition is where the value is *not*
+-- visible, which is the reason the table has to report it.
 SELECT '-- and none of it is in the stored definition';
 SELECT create_table_query LIKE '%SETTINGS%' FROM system.tables
 WHERE database = currentDatabase() AND name = 'join_session_1';
@@ -52,7 +60,10 @@ INSERT INTO join_limited VALUES (1, 1), (2, 2), (3, 3); -- { serverError SET_SIZ
 CREATE TABLE join_last_row (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS join_any_take_last_row = 1;
 INSERT INTO join_last_row VALUES (1, 10);
 INSERT INTO join_last_row VALUES (1, 20);
+-- The row the engine returns, and the value reported for the setting that decides it.
 SELECT joinGet('join_last_row', 'v', toUInt64(1));
+SELECT name, value, source FROM system.table_settings
+WHERE database = currentDatabase() AND table = 'join_last_row' AND name = 'join_any_take_last_row';
 
 SELECT '-- a temporary table reports its definition too';
 CREATE TEMPORARY TABLE join_temporary (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS persistent = 0;

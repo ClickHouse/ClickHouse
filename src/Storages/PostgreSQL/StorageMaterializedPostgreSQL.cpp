@@ -161,7 +161,16 @@ SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr q
     /// value the replication handler works with, reported as `other` since the definition did not state it.
     SettingDescriptions settings = replication_settings->enumerateSettings();
     reportOriginByValue(settings);
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
+
+    /// The constructor replaced this one with the table's own remote name, so the value reported is the
+    /// handler's rather than the clause's even where the clause states it - and `definition` promises the
+    /// value came from the clause. Say `other` instead, as for anything else the engine assigned itself.
+    for (auto & setting : settings)
+        if (setting.name == "materialized_postgresql_tables_list")
+            setting.origin = SettingOrigin::Other;
+
+    return settings;
 }
 
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()

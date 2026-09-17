@@ -1,2 +1,6 @@
 -- what the definition states is reported
-input_format_csv_delimiter	;	definition
+format_csv_delimiter	;	definition
+-- and the row carries the metadata the engine knows, not an empty type and an assumed tier
+format_csv_delimiter	1	1	1	1
+-- including for an obsolete setting, which must not claim to be a production one
+input_format_parquet_import_nested	Obsolete	1

@@ -1,0 +1,6 @@
+-- the collection, the clause, the session and the default are all told apart
+postgresql_connection_attempt_timeout	7	other
+postgresql_connection_pool_auto_close_connection	0	default
+postgresql_connection_pool_retries	4	named_collection
+postgresql_connection_pool_size	16	named_collection
+postgresql_connection_pool_wait_timeout	3000	definition

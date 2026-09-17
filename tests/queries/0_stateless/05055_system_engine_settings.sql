@@ -52,10 +52,12 @@ SELECT countDistinct(n) <= 1 FROM (
     SELECT count() AS n FROM system.engine_settings WHERE engine_name LIKE 'Iceberg%' GROUP BY engine_name);
 
 -- Every engine that accepts a SETTINGS clause should be able to say which settings it accepts.
--- These five cannot: they have no settings of their own to list, so what a table of theirs reports
--- comes from the base implementation reading its stored definition. (`Join` keeps no settings
--- struct either, but it lists its eight and its tables report the values they hold.) A name
--- appearing here that is not one of the five means an engine was added without being wired up.
+-- These five cannot: they have no settings struct at all, so a table of theirs reports only what its
+-- own definition states, from the base implementation. (`Join` keeps no struct either, but it lists
+-- its eight and its tables report the values they hold. The object storage engines report only their
+-- definition too, but they do have a struct, so they are listed here and their rows carry its
+-- metadata.) A name appearing here that is not one of the five means an engine was added without
+-- being wired up.
 SELECT name FROM system.table_engines
 WHERE supports_settings AND name NOT IN (SELECT DISTINCT engine_name FROM system.engine_settings)
 ORDER BY name;

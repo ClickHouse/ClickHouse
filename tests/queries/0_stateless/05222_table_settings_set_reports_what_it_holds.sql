@@ -24,16 +24,27 @@ SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'set_stated'
 ORDER BY name;
 
+-- Not an assertion about this feature: it records that the engine does accept the setting, which is why the
+-- table reporting nothing for it is a gap rather than a non-question.
 SELECT '-- the unused format setting still stays in the definition';
 SELECT create_table_query LIKE '%input_format_tsv_skip_first_lines = 2%' FROM system.tables
 WHERE database = currentDatabase() AND name = 'set_stated';
 
-SELECT '-- the rows agree with what `system.engine_settings` says of the engine';
+SELECT '-- the two rows it reports agree with what `system.engine_settings` says of the engine';
 SELECT count() FROM (
     SELECT name, `default`, description, type, tier FROM system.table_settings
     WHERE database = currentDatabase() AND table = 'set_plain'
     EXCEPT
     SELECT name, `default`, description, type, tier FROM system.engine_settings WHERE engine_name = 'Set');
+
+SELECT '-- but the engine advertises far more than any table of it reports, which is the remaining gap';
+-- `SetSettings` declares the format settings too, and the engine accepts them and never reads them, so a table
+-- can say nothing about them. `system.engine_settings` still lists them. This pins the asymmetry so that
+-- closing it - by narrowing what the engine accepts, or by reporting the rest - is a visible change.
+SELECT
+    (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'set_plain'),
+    (SELECT count() FROM system.engine_settings WHERE engine_name = 'Set')
+        > (SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'set_plain');
 
 SELECT '-- `persistent` is the value the engine acts on';
 DROP TABLE IF EXISTS set_volatile;

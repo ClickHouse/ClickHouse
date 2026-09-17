@@ -1177,8 +1177,10 @@ PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_
 namespace DB::StorageKafkaUtils
 {
 
-/// Shared by `StorageKafka` and `StorageKafka2`, which keep the same state and derive the same working values; both
-/// befriend this, because it composes the protected `IStorage` helpers.
+/// Shared by `StorageKafka` and `StorageKafka2`, which keep the same state and derive the same working values.
+/// Both befriend this: the `IStorage` helpers it composes are public, but the state it reports - the collection
+/// name, the expanded topics, the brokers, the group, the format, the schema and the generated client id - is
+/// private to each storage, and neither exposes all of it.
 template <typename KafkaStorage>
 SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context)
 {

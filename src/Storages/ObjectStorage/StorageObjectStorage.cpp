@@ -23,6 +23,7 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -1181,6 +1182,26 @@ bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & as
     return configuration->scheduleDataProcessingJob(assignee, *this);
 }
 
+namespace
+{
+
+/// The settings plain object storage accepts, by name, for their metadata alone - the type, default,
+/// description and tier are compiled in, so one enumeration serves every table. Built on first use
+/// because it is only ever needed to answer `system.table_settings`.
+const std::unordered_map<String, SettingDescription> & objectStorageSettingsByName()
+{
+    static const std::unordered_map<String, SettingDescription> known = []
+    {
+        std::unordered_map<String, SettingDescription> result;
+        for (auto & setting : StorageObjectStorageSettings{}.enumerateSettings())
+            result.emplace(setting.name, std::move(setting));
+        return result;
+    }();
+    return known;
+}
+
+}
+
 SettingDescriptions StorageObjectStorage::getTableSettings(ContextPtr query_context) const
 {
     /// The settings belong to the configuration rather than to this storage. A data lake configuration keeps
@@ -1191,8 +1212,28 @@ SettingDescriptions StorageObjectStorage::getTableSettings(ContextPtr query_cont
     if (settings.empty())
     {
         /// What the clause states is still in the stored `CREATE` query, so report that, as `File`, `URL` and the
-        /// `Log` family do. What it does not state cannot be recovered: nothing holds it under its own name.
-        return IStorage::getTableSettings(query_context);
+        /// `Log` family do. What it does not state cannot be recovered: the creator applied the clause to a copy of
+        /// the creating session's settings, and only the resulting `FormatSettings` survives.
+        ///
+        /// Unlike `File` and the others, this engine does have a settings struct - it just never builds one per
+        /// table - so the type, default, description and tier of each stated setting are known, and are the same
+        /// ones `system.engine_settings` reports for the engine. Take them from there rather than leave the row
+        /// claiming a `Production` tier and an empty type for a setting that may well be obsolete.
+        auto stated = IStorage::getTableSettings(query_context);
+        const auto & known = objectStorageSettingsByName();
+        for (auto & setting : stated)
+        {
+            const auto it = known.find(setting.name);
+            if (it == known.end())
+                continue;
+
+            setting.default_value = it->second.default_value;
+            setting.type = it->second.type;
+            setting.comment = it->second.comment;
+            setting.tier = it->second.tier;
+            setting.aliases = it->second.aliases;
+        }
+        return stated;
     }
 
     return attributeSettingsStatedInDefinition(std::move(settings), query_context);
