@@ -182,8 +182,9 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
         return nullptr;
     }
 
-    auto * key_condition_ptr = new_key_condition.get();
-    key_condition_cache[column_names] = std::move(new_key_condition);
+    auto & cached_key_condition = key_condition_cache[column_names];
+    cached_key_condition = std::move(new_key_condition);
+    auto * key_condition_ptr = cached_key_condition.get();
 
     for (size_t col_idx : key_condition_ptr->getUsedColumns())
     {
