@@ -334,6 +334,8 @@ private:
 
         ~TrackedGuard() override { --disk.live_guards[path]; }
 
+        void sync() override { inner->sync(); }
+
     private:
         const DirSyncCountingDisk & disk;
         std::string path;

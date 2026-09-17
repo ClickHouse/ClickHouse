@@ -21,9 +21,15 @@ public:
     explicit LocalDirectorySyncGuard(const String & full_path);
     ~LocalDirectorySyncGuard() override;
 
+    LocalDirectorySyncGuard(const LocalDirectorySyncGuard &) = delete;
+    LocalDirectorySyncGuard & operator=(const LocalDirectorySyncGuard &) = delete;
+    LocalDirectorySyncGuard(LocalDirectorySyncGuard &&) = delete;
+    LocalDirectorySyncGuard & operator=(LocalDirectorySyncGuard &&) = delete;
+
+    void sync() override;
+
 private:
     int fd = -1;
 };
 
 }
-

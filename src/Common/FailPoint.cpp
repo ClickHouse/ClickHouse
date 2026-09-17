@@ -319,6 +319,13 @@ static struct InitFiu
     REGULAR(datalake_get_tables_throw) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
+    ONCE(udt_schema_storage_temp_write_failure) \
+    ONCE(udt_schema_storage_temp_sync_failure) \
+    ONCE(udt_schema_storage_temp_rename_failure) \
+    PAUSEABLE_ONCE(database_schema_mutation_pause_after_prepare) \
+    PAUSEABLE_ONCE(database_schema_mutation_pause_after_first_artifact_action) \
+    PAUSEABLE_ONCE(database_schema_mutation_pause_after_installation_barrier) \
+    PAUSEABLE_ONCE(database_schema_mutation_pause_after_commit) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \
     PAUSEABLE(atomic_populate_pause_before_subscription) \

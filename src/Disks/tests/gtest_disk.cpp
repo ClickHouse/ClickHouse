@@ -1,13 +1,22 @@
-#include <gtest/gtest.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Disks/tests/gtest_disk.h>
 #include <atomic>
+#include <cerrno>
 #include <filesystem>
 #include <mutex>
 #include <stdexcept>
 #include <unordered_set>
+#include <fcntl.h>
 #include <unistd.h>
+#include <Disks/LocalDirectorySyncGuard.h>
+#include <Disks/tests/gtest_disk.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <gtest/gtest.h>
+#include <Common/Exception.h>
+
+namespace DB::ErrorCodes
+{
+extern const int CANNOT_FSYNC;
+}
 
 namespace fs = std::filesystem;
 
@@ -161,4 +170,51 @@ TEST_F(DiskTest, iterateDirectory)
         iter->next();
         EXPECT_FALSE(iter->isValid());
     }
+}
+
+
+TEST_F(DiskTest, directorySyncCanBeRequestedExplicitly)
+{
+    disk->createDirectories("synced/");
+    auto guard = disk->getDirectorySyncGuard("synced/");
+    ASSERT_NE(guard, nullptr);
+    EXPECT_NO_THROW(guard->sync());
+    EXPECT_NO_THROW(guard->sync());
+}
+
+
+TEST(LocalDirectorySyncGuardTest, explicitSyncPropagatesFailure)
+{
+    int pipe_fds[2];
+    ASSERT_EQ(::pipe(pipe_fds), 0);
+    ASSERT_EQ(::close(pipe_fds[0]), 0);
+
+    DB::LocalDirectorySyncGuard guard(pipe_fds[1]);
+    try
+    {
+        guard.sync();
+        FAIL() << "expected directory synchronization failure";
+    }
+    catch (const DB::Exception & exception)
+    {
+        EXPECT_EQ(exception.code(), DB::ErrorCodes::CANNOT_FSYNC);
+    }
+    errno = 0;
+    EXPECT_EQ(::fcntl(pipe_fds[1], F_GETFD), -1);
+    EXPECT_EQ(errno, EBADF);
+    EXPECT_NO_THROW(guard.sync());
+}
+
+
+TEST(LocalDirectorySyncGuardTest, destructorSynchronizesAndClosesDescriptor)
+{
+    const int directory_fd = ::open(".", O_RDONLY | O_DIRECTORY);
+    ASSERT_NE(directory_fd, -1);
+    {
+        DB::LocalDirectorySyncGuard guard(directory_fd);
+    }
+
+    errno = 0;
+    EXPECT_EQ(::fcntl(directory_fd, F_GETFD), -1);
+    EXPECT_EQ(errno, EBADF);
 }

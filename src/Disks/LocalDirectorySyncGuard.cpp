@@ -38,26 +38,9 @@ LocalDirectorySyncGuard::LocalDirectorySyncGuard(const String & full_path)
 
 LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
 {
-    ProfileEvents::increment(ProfileEvents::DirectorySync);
-
     try
     {
-        Stopwatch watch;
-
-#if defined(OS_DARWIN)
-        /// macOS does not declare fdatasync in this build, so use fsync. Unlike
-        /// F_FULLFSYNC it does not force a drive-cache flush, matching the
-        /// fdatasync semantics used on Linux.
-        if (-1 == ::fsync(fd))
-            throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fsync");
-#else
-        if (-1 == ::fdatasync(fd))
-            throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fdatasync");
-#endif
-        if (-1 == ::close(fd))
-            throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
-
-        ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
+        sync();
     }
     catch (...)
     {
@@ -65,4 +48,35 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
     }
 }
 
+void LocalDirectorySyncGuard::sync()
+{
+    if (fd == -1)
+        return;
+
+    ProfileEvents::increment(ProfileEvents::DirectorySync);
+    Stopwatch watch;
+    const int fd_to_sync = fd;
+    fd = -1;
+
+#if defined(OS_DARWIN)
+    /// macOS does not declare fdatasync in this build, so use fsync. Unlike
+    /// F_FULLFSYNC it does not force a drive-cache flush, matching the
+    /// fdatasync semantics used on Linux.
+    if (-1 == ::fsync(fd_to_sync))
+    {
+        static_cast<void>(::close(fd_to_sync));
+        throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fsync");
+    }
+#else
+    if (-1 == ::fdatasync(fd_to_sync))
+    {
+        static_cast<void>(::close(fd_to_sync));
+        throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fdatasync");
+    }
+#endif
+    if (-1 == ::close(fd_to_sync))
+        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
+
+    ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
+}
 }

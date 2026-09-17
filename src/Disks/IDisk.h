@@ -128,6 +128,11 @@ class ISyncGuard
 public:
     ISyncGuard() = default;
     virtual ~ISyncGuard() = default;
+
+    /// Synchronize now and propagate any error to the caller. A guard is
+    /// consumed by its first synchronization attempt; repeated calls are
+    /// no-ops even when the first attempt failed.
+    virtual void sync() = 0;
 };
 
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;

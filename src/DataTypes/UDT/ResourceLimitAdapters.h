@@ -2,6 +2,7 @@
 
 #include <DataTypes/UDT/IAuthorityAdapter.h>
 #include <DataTypes/UDT/InstantiatedTypeDescriptor.h>
+#include <DataTypes/UDT/PersistedTypeReferences.h>
 #include <DataTypes/UDT/ResourceLimits.h>
 #include <DataTypes/UDT/TemplateChecker.h>
 #include <DataTypes/UDT/TemplateSpecializer.h>
@@ -35,5 +36,7 @@ TypeCatalogBuildLimits makeTypeCatalogBuildLimits(const EffectiveResourceLimits 
 TemplateSpecializerLimits makeTemplateSpecializerLimits(const EffectiveResourceLimits & limits);
 TypeDescriptorLimits makeTypeDescriptorLimits(const EffectiveResourceLimits & limits);
 TypeResolverLimits makeTypeResolverLimits(const EffectiveResourceLimits & limits);
+void lowerPersistedTypeReferencesLimits(PersistedTypeReferencesLimits & result, const EffectiveResourceLimits & limits) noexcept;
+PersistedTypeReferencesLimits makePersistedTypeReferencesLimits(const EffectiveResourceLimits & limits);
 
 }

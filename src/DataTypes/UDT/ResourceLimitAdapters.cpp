@@ -29,6 +29,12 @@ UInt64 checkedSum(UInt64 lhs, UInt64 rhs, std::string_view description)
 }
 }
 
+void lowerPersistedTypeReferencesLimits(PersistedTypeReferencesLimits & result, const EffectiveResourceLimits & limits) noexcept
+{
+    result.maximum_occurrence_paths = lower(result.maximum_occurrence_paths, limits, ResourceLimit::OccurrencePathsPerObject);
+    result.maximum_sidecar_bytes = lower(result.maximum_sidecar_bytes, limits, ResourceLimit::SidecarBytesPerObject);
+}
+
 ResourceLimitLayer makeAuthorityResourceLimitLayer(const TypeAuthorityLimits & limits)
 {
     ResourceLimitLayer result(ResourceLimitLayerKind::AuthorityAdapter);
@@ -148,6 +154,13 @@ TypeResolverLimits makeTypeResolverLimits(const EffectiveResourceLimits & limits
     result.maximum_physical_ast_nodes = limits.get(ResourceLimit::LoweredPhysicalTypeNodes);
     result.specializer = makeTemplateSpecializerLimits(limits);
     result.descriptors = makeTypeDescriptorLimits(limits);
+    return result;
+}
+
+PersistedTypeReferencesLimits makePersistedTypeReferencesLimits(const EffectiveResourceLimits & limits)
+{
+    PersistedTypeReferencesLimits result;
+    lowerPersistedTypeReferencesLimits(result, limits);
     return result;
 }
 
