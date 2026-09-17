@@ -263,6 +263,9 @@ namespace ProfileEvents
     extern const Event SelectedMarks;
     extern const Event SelectedMarksTotal;
     extern const Event SelectQueriesWithPrimaryKeyUsage;
+    extern const Event DistributedPlanWorkerPartsReceived;
+    extern const Event DistributedPlanWorkerPartsScanned;
+    extern const Event DistributedPlanWorkerPartsPruned;
 }
 
 namespace DB
@@ -4949,14 +4952,20 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 for (const auto & part : *prepared_parts)
                     snapshot_parts.insert(part.data_part->info.getPartNameV1());
 
+            NameSet received_parts;
+            NameSet scanned_parts;
             for (auto & bucket : distributed_read_task_buckets)
             {
                 RangesInDataPartsDescription marks_to_read;
                 for (auto & part_desc : bucket.marks)
                 {
                     const String part_name = part_desc.info.getPartNameV1();
+                    received_parts.insert(part_name);
                     if (shortlisted_parts.contains(part_name))
+                    {
+                        scanned_parts.insert(part_name);
                         marks_to_read.push_back(std::move(part_desc));
+                    }
                     else if (!snapshot_parts.contains(part_name))
                         throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
                             "Distributed read: part {} selected by the coordinator is not available on this replica "
@@ -4964,6 +4973,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 }
                 bucket.marks = std::move(marks_to_read);
             }
+
+            /// The coordinator can split one part's marks over several lanes, so count part names, not entries.
+            ProfileEvents::increment(ProfileEvents::DistributedPlanWorkerPartsReceived, received_parts.size());
+            ProfileEvents::increment(ProfileEvents::DistributedPlanWorkerPartsScanned, scanned_parts.size());
+            ProfileEvents::increment(ProfileEvents::DistributedPlanWorkerPartsPruned, received_parts.size() - scanned_parts.size());
         }
 
         /// A FINAL worker keeps all local parts and resolves each lane's marks against them in
