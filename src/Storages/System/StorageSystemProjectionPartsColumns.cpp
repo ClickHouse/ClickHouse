@@ -128,8 +128,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
 
         using State = MergeTreeDataPartState;
 
-        /// The rendered text is identical for every column of a part; resolving the key per column
-        /// re-enters the uncached patch branch of PartitionKeySamples::get once per column.
+        /// The rendered text is identical for every column of a part.
         String partition_str;
         if (columns_mask[0])
             partition_str = part->partition.serializeToString(partition_key_samples.get(*part));
