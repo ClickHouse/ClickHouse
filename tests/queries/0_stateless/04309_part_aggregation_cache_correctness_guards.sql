@@ -12,7 +12,7 @@
 -- which also fail the optimization closed (the cache serves aggregate states, not raw rows, so it cannot honor
 -- them); pin them to 0 too so the positive guards populate the cache. The read-limit guard below sets one
 -- explicitly per query to exercise its skip path.
-SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0;
+SET allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0;
 
 SYSTEM DROP PART AGGREGATION CACHE;
 

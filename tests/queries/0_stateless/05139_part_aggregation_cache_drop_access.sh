@@ -20,7 +20,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The functional-test config (`tests/config/users.d/limits.yaml`) sets `max_rows_to_group_by` and
 # read limits, on which the optimization fails closed; pin them to 0 so the cache is exercised
 # (as in `04033_part_aggregation_cache`).
-CACHE_SETTINGS="allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0"
+CACHE_SETTINGS="allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0"
 
 USER_NO_GRANT="u05139_no_grant_${CLICKHOUSE_DATABASE}"
 USER_DROP="u05139_drop_${CLICKHOUSE_DATABASE}"

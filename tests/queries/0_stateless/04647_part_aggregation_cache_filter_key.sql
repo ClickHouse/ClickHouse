@@ -10,7 +10,7 @@
 -- and read limits (`max_rows_to_read`, `max_bytes_to_read`, `*_leaf`), on which the optimization
 -- fails closed; pin them all to 0 so the cache is actually exercised (as in
 -- `04033_part_aggregation_cache`).
-SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0;
+SET allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0, max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0;
 
 SYSTEM DROP PART AGGREGATION CACHE;
 

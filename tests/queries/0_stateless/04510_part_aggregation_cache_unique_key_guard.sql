@@ -12,7 +12,7 @@
 -- is answered correctly and populates nothing in the cache (the guard fires); without the guard the two
 -- parts below would be cached and `system.part_aggregation_cache` would be non-empty.
 
-SET allow_experimental_analyzer = 0, allow_experimental_unique_key = 1, allow_experimental_part_aggregation_cache = 1,
+SET allow_experimental_unique_key = 1, allow_experimental_part_aggregation_cache = 1,
     optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0,
     max_rows_to_group_by = 0, max_rows_to_read = 0, max_bytes_to_read = 0, max_rows_to_read_leaf = 0, max_bytes_to_read_leaf = 0,
     async_insert = 0;

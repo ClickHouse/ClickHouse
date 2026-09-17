@@ -263,14 +263,17 @@ void optimizeUsePartAggregationCache(
     if (source_filter_dag && (source_filter_dag->hasNonDeterministic() || source_filter_dag->hasStatefulFunctions()))
         return;
 
-    /// The populator reads each part's data directly from storage with the set of columns required
-    /// to feed the aggregator: the GROUP BY keys, the aggregate arguments, and the input columns of
-    /// the intermediate `ExpressionStep`/`FilterStep` actions. When a key or aggregate argument is
-    /// produced by an intermediate action (`GROUP BY toYear(d)`, `GROUP BY lower(s)`) its name is
-    /// not a storage column, so `createMergeTreeSequentialSource` would throw inside the populator,
-    /// which swallows the exception and silently never caches the part. Verify up-front that every
-    /// column the populator would read is present in the storage snapshot, and skip the
-    /// optimization otherwise (fail-closed), instead of relying on the populator's catch-all.
+    /// The populator reads each part's data directly from storage with the storage columns that the
+    /// aggregation keys, the aggregate arguments and the intermediate `ExpressionStep`/`FilterStep`
+    /// actions are computed from (`collectPartAggregationCacheColumnsToRead`). A key or aggregate
+    /// argument is often not a storage column itself: the analyzer addresses every table column
+    /// through an alias produced by an intermediate `ExpressionStep` (`__table1.k := k`), and
+    /// `GROUP BY toYear(d)` is computed by one as well. Such columns are produced while replaying
+    /// the actions in the populator. Whatever remains must be a real storage column, otherwise
+    /// `createMergeTreeSequentialSource` would throw inside the populator, which swallows the
+    /// exception and silently never caches the part. Verify up-front that every column the
+    /// populator would read is present in the storage snapshot, and skip the optimization otherwise
+    /// (fail-closed), instead of relying on the populator's catch-all.
     {
         const auto & storage_snapshot = reading->getStorageSnapshot();
         auto column_is_readable = [&](const String & name)
@@ -279,16 +282,8 @@ void optimizeUsePartAggregationCache(
                 GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name).has_value();
         };
 
-        /// Mirrors the `columns_to_read` set built by `populatePartAggregationCache`.
-        NameSet columns_to_read;
-        for (const auto & key : params.keys)
-            columns_to_read.insert(key);
-        for (const auto & agg : params.aggregates)
-            for (const auto & arg : agg.argument_names)
-                columns_to_read.insert(arg);
-        for (const auto & action : intermediate_actions)
-            for (const auto & col : action.actions->getRequiredColumnsWithTypes())
-                columns_to_read.insert(col.name);
+        /// Exactly the columns `populatePartAggregationCache` reads.
+        const Names columns_to_read = collectPartAggregationCacheColumnsToRead(params, intermediate_actions);
 
         bool all_readable = true;
         for (const auto & name : columns_to_read)
@@ -321,13 +316,7 @@ void optimizeUsePartAggregationCache(
         /// `rows() == 0` and the part's real row count is lost. Skip the optimization in that case
         /// (fail-closed) rather than relying on the populator silently producing nothing, so such
         /// queries keep going through the normal aggregation path.
-        bool has_column_to_read = !params.keys.empty();
-        for (const auto & agg : params.aggregates)
-            has_column_to_read |= !agg.argument_names.empty();
-        for (const auto & action : intermediate_actions)
-            has_column_to_read |= !action.actions->getRequiredColumnsWithTypes().empty();
-
-        if (!has_column_to_read)
+        if (columns_to_read.empty())
             return;
     }
 

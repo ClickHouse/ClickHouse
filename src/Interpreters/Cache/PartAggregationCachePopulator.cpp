@@ -14,6 +14,8 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <Common/Arena.h>
+
+#include <ranges>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
@@ -42,6 +44,36 @@ PartAggregationCache::Key makePartAggregationCacheKey(
     return PartAggregationCache::Key{getSipHash128AsPair(hash), table_id, part.data_part->name};
 }
 
+Names collectPartAggregationCacheColumnsToRead(
+    const Aggregator::Params & params,
+    const std::vector<IntermediateStepAction> & intermediate_actions)
+{
+    /// What the aggregator consumes.
+    NameSet required;
+    for (const auto & key : params.keys)
+        required.insert(key);
+    for (const auto & agg : params.aggregates)
+        for (const auto & arg : agg.argument_names)
+            required.insert(arg);
+
+    /// Walk the actions top-down, from the aggregation towards the read step. Each action produces
+    /// exactly the columns of its sample block (an `ExpressionStep` emits only its DAG outputs, a
+    /// `FilterStep` those plus the filter column), so whatever is required above it and produced by
+    /// it is replaced with the action's own inputs. A filter must always be evaluated, so its inputs
+    /// are required even when nothing above depends on its outputs.
+    for (const auto & action : intermediate_actions | std::views::reverse)
+    {
+        for (const auto & produced : action.actions->getSampleBlock())
+            required.erase(produced.name);
+        for (const auto & input : action.actions->getRequiredColumnsWithTypes())
+            required.insert(input.name);
+    }
+
+    Names columns_to_read(required.begin(), required.end());
+    std::sort(columns_to_read.begin(), columns_to_read.end());
+    return columns_to_read;
+}
+
 void populatePartAggregationCache(
     const PartAggregationCachePtr & cache,
     const IASTHash & query_hash,
@@ -56,19 +88,9 @@ void populatePartAggregationCache(
 {
     auto log = getLogger("PartAggregationCachePopulator");
 
-    /// Collect all columns needed: aggregation keys + aggregate args + columns required by intermediate actions.
-    Names columns_to_read;
-    for (const auto & key : params.keys)
-        columns_to_read.push_back(key);
-    for (const auto & agg : params.aggregates)
-        for (const auto & arg : agg.argument_names)
-            columns_to_read.push_back(arg);
-    for (const auto & action : intermediate_actions)
-        for (const auto & col : action.actions->getRequiredColumnsWithTypes())
-            columns_to_read.push_back(col.name);
-
-    std::sort(columns_to_read.begin(), columns_to_read.end());
-    columns_to_read.erase(std::unique(columns_to_read.begin(), columns_to_read.end()), columns_to_read.end());
+    /// The storage columns the keys, the aggregate arguments and the intermediate actions are
+    /// computed from; the optimizer verified they are readable from every part.
+    Names columns_to_read = collectPartAggregationCacheColumnsToRead(params, intermediate_actions);
 
     /// On a cold cache this path reads and aggregates every uncached part before the normal query
     /// pipeline exists. Attach the query's process-list element so the per-part reads honour the

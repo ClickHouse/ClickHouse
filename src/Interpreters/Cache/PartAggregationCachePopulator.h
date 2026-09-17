@@ -33,6 +33,17 @@ PartAggregationCache::Key makePartAggregationCacheKey(
     const String & table_id,
     const RangesInDataPart & part);
 
+/// The storage columns the populator reads from each part: the aggregation keys and aggregate
+/// arguments, traced back through the intermediate actions to the columns they are computed from.
+/// The keys and arguments are frequently not storage columns themselves: the analyzer refers to
+/// every table column through an alias output of an intermediate `ExpressionStep`
+/// (`__table1.k := k`), and `GROUP BY toYear(d)` has the same shape. `intermediate_actions` is in
+/// bottom-up order (`ReadFromMergeTree` -> `AggregatingStep`), as `populatePartAggregationCache`
+/// takes it. The result is sorted and free of duplicates.
+Names collectPartAggregationCacheColumnsToRead(
+    const Aggregator::Params & params,
+    const std::vector<IntermediateStepAction> & intermediate_actions);
+
 void populatePartAggregationCache(
     const PartAggregationCachePtr & cache,
     const IASTHash & query_hash,
