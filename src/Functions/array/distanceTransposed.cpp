@@ -18,6 +18,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/NaNUtils.h>
+#include <Common/PODArray.h>
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -26,7 +27,6 @@
 #include <cmath>
 #include <cstring>
 #include <optional>
-#include <vector>
 
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if USE_SIMSIMD
@@ -793,7 +793,7 @@ private:
         const size_t plane_bytes = num_groups * bytes_per_group;
 
         /// The distance as a function of the Hamming distance, which cannot exceed the number of compared dimensions.
-        std::vector<Float64> lut(used_dims + 1);
+        PODArray<Float64> lut(used_dims + 1);
         for (size_t hamming = 0; hamming <= used_dims; ++hamming)
             lut[hamming] = Kernel::fromHammingDistance(hamming, used_dims, scale);
 
@@ -809,10 +809,10 @@ private:
 
         /// The sign bit plane of the first `used_dims` elements of a reference vector, in the layout of the stored planes. The sign
         /// is the one of the element's representation, i.e. the bit its own top bit plane would hold: `-0.0` counts as negative.
-        std::vector<UInt8> ref_plane(plane_bytes);
+        PODArray<UInt8> ref_plane(plane_bytes);
         auto binarize_reference = [&](const RefT * ref)
         {
-            std::fill(ref_plane.begin(), ref_plane.end(), 0);
+            memset(ref_plane.data(), 0, plane_bytes);
             for (size_t group = 0; group < num_groups; ++group)
                 for (size_t d = 0; d < stride; ++d)
                     if (signBit(ref[group * stride + d]))
@@ -832,7 +832,7 @@ private:
                 - static_cast<size_t>(std::popcount(static_cast<uint8_t>(stored[0] & padding_mask)));
         };
 
-        std::vector<size_t> hamming(input_rows_count, 0);
+        PODArray<size_t> hamming(input_rows_count, 0);
         if constexpr (ref_is_const)
         {
             binarize_reference(ref_values.data());
