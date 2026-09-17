@@ -1,20 +1,20 @@
 ---
-slug: /use-cases/observability/clickstack/getting-started/oss
-title: 'Getting started with ClickStack Open Source'
-sidebarTitle: 'Open source'
-description: 'Run ClickStack Open Source locally, send test data, and confirm that ingestion works'
+title: 'Getting started with ClickStack'
+sidebarTitle: 'Getting started'
+description: 'Run ClickStack locally, send test data, and confirm that ingestion works'
 doc_type: 'guide'
-keywords: ['ClickStack Open Source', 'getting started', 'Docker deployment', 'OpenTelemetry', 'local deployment']
+keywords: ['ClickStack', 'getting started', 'Docker deployment', 'OpenTelemetry', 'local deployment']
+slug: /clickstack/getting-started/oss
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-Run ClickStack Open Source locally, send a test event through its OpenTelemetry Collector, and confirm that the event is available in the ClickStack UI.
+Run ClickStack locally, send a test event through its OpenTelemetry Collector, and confirm that the event is available in the ClickStack UI.
 
-With ClickStack Open Source, you run and manage the ClickHouse backend, ClickStack UI, and ingestion pipeline. The all-in-one image bundles these components with MongoDB in a single Docker container for local evaluation and testing.
+With ClickStack, you run and manage the ClickHouse backend, ClickStack UI, and ingestion pipeline. The all-in-one image bundles these components with MongoDB in a single Docker container for local evaluation and testing.
 
 <Tip>
-A managed version of ClickStack is also available — see [Managed ClickStack](/clickstack/getting-started/managed).
+A managed version of ClickStack is also available — see [ClickHouse Observability](/clickstack/getting-started/managed).
 </Tip>
 
 The steps below use the authenticated all-in-one image. If you want a local UI without creating an account, follow the [local mode with Docker walkthrough](/clickstack/deployment/local-mode-only) instead.
@@ -30,7 +30,7 @@ Install [Docker](https://docs.docker.com/get-docker/) and confirm that the follo
 
 For sustained or production workloads, review [Open source deployment options](/clickstack/deployment/oss) and [Going to production](/clickstack/managing/production).
 
-## Set up ClickStack Open Source with the all-in-one image {#set-up-clickstack-open-source}
+## Set up ClickStack with the all-in-one image {#set-up-clickstack-open-source}
 
 <Steps titleSize="h3">
 <Step title="Start ClickStack" id="deploy-stack-with-docker">
@@ -129,7 +129,7 @@ Open the **Search** view in ClickStack and search for `ClickStack ingestion test
 
 The result should include the test event with the `clickstack-docs-test` service name.
 
-<Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="ClickStack Open Source logs view showing the ClickStack ingestion test event" border/>
+<Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="ClickStack logs view showing the ClickStack ingestion test event" border/>
 </Step>
 </Steps>
 
@@ -142,7 +142,7 @@ You now have a local ClickStack instance, a working ingestion endpoint, and a te
 Choose a guide for the data that you want to send to ClickStack:
 
 <CardGroup cols={2}>
-  <Card title="Instrument an application" icon="code" href="/clickstack/ingesting-data/sdks/index">
+  <Card title="Instrument an application" icon="code" href="/clickstack/ingesting-data/sdks">
     Send application traces and logs with a supported OpenTelemetry SDK.
   </Card>
   <Card title="Collect host logs" icon="server" href="/clickstack/integration-examples/host-logs">
@@ -151,7 +151,7 @@ Choose a guide for the data that you want to send to ClickStack:
   <Card title="Monitor Kubernetes" icon="cubes" href="/clickstack/integration-examples/kubernetes">
     Collect logs, metrics, and traces from a Kubernetes cluster.
   </Card>
-  <Card title="Explore other integrations" icon="plug" href="/clickstack/integration-examples/index">
+  <Card title="Explore other integrations" icon="plug" href="/clickstack/integration-examples">
     Find guides for additional applications and telemetry sources.
   </Card>
 </CardGroup>
@@ -186,7 +186,7 @@ Use a generator to test ingestion without an existing application or dataset:
   </Card>
 </CardGroup>
 
-See [all ClickStack sample data and demos](/clickstack/example-datasets/index).
+See [all ClickStack sample data and demos](/clickstack/example-datasets).
 
 ### Prepare for production {#prepare-for-production}
 

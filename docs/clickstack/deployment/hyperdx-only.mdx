@@ -1,9 +1,10 @@
 ---
-slug: /use-cases/observability/clickstack/deployment/hyperdx-only
 title: 'HyperDX only'
 description: 'Deploying HyperDX only'
 doc_type: 'guide'
 keywords: ['HyperDX standalone deployment', 'HyperDX ClickHouse integration', 'deploy HyperDX only', 'HyperDX Docker installation', 'ClickHouse visualization tool']
+sidebarTitle: 'HyperDX only'
+slug: /clickstack/deployment/hyperdx-only
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
@@ -29,7 +30,7 @@ In this mode, data ingestion is left entirely to the user. You can ingest data i
 <Steps>
 <Step title="Deploy with Docker" id="deploy-hyperdx-with-docker">
 
-Run the following command, modifying `YOUR_MONGODB_URI` as required. 
+Run the following command, modifying `YOUR_MONGODB_URI` as required.
 
 ```shell
 docker run -e MONGO_URI=mongodb://YOUR_MONGODB_URI -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx
@@ -39,7 +40,7 @@ docker run -e MONGO_URI=mongodb://YOUR_MONGODB_URI -p 8080:8080 docker.hyperdx.i
 
 Visit [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
 
-Create a user, providing a username and password which meets the requirements. 
+Create a user, providing a username and password which meets the requirements.
 
 On clicking `Create` you'll be prompted for connection details.
 
@@ -71,4 +72,4 @@ Even if you're managing your own OpenTelemetry collector, independent of the oth
 
 For details on deploying and configuring a standalone collector see ["Ingesting with OpenTelemetry"](/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
 
-<JSONSupport/>
+<JSONSupport schemaUrl="/clickstack/ingesting-data/schema/map-vs-json" />

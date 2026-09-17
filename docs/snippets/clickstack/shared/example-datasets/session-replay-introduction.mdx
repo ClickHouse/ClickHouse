@@ -1,0 +1,21 @@
+
+<Info>
+**TL;DR**
+
+This guide walks through instrumenting a web application for session replay using the ClickStack Browser SDK. Unlike other sample datasets that load pre-generated data, this demo provides an interactive application where you generate session data through your own interactions.
+
+Time required: 10-15 minutes
+</Info>
+
+## Overview {#overview}
+
+The [session replay demo application](https://github.com/ClickHouse/clickstack-session-replay-demo) is a documentation explorer built with vanilla JavaScript. It demonstrates how minimal session replay instrumentation can be — one script tag and one initialization call captures all user interactions automatically.
+
+The repository includes two branches:
+
+- **`main`** — fully instrumented and ready to use immediately
+- **`pre-instrumented`** — a clean version without instrumentation, with code comments indicating where to add it
+
+This guide uses the `main` branch first to see session replay in action, then walks through the instrumentation code so you can apply the same pattern to your own application.
+
+For background on what session replay is and the available capabilities, see the [Session Replay](../features/session-replay) feature page.

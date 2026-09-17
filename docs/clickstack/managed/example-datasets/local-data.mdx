@@ -1,0 +1,71 @@
+---
+title: 'Local logs & metrics'
+toc_max_heading_level: 2
+description: 'Getting started with ClickHouse Observability local and system data and metrics'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'example data', 'sample dataset', 'logs', 'observability']
+sidebarTitle: 'Local logs & metrics'
+slug: /clickstack/managed/example-datasets/local-data
+---
+
+import Configuration from "/snippets/clickstack/shared/example-datasets/local-data-config.mdx";
+import Metrics from "/snippets/clickstack/shared/example-datasets/local-data-metrics.mdx";
+
+This getting started guide allows you to collect local logs and metrics from your system, sending them to ClickHouse Observability for visualization and analysis.
+
+**This example works on OSX and Linux systems only**
+
+This guide assumes you have completed the [Getting Started Guide for ClickHouse Observability](/clickstack/deployment/managed) and have the [connection credentials recorded](/clickstack/getting-started/managed#next-steps).
+
+<Steps>
+<Step title="Create a custom OpenTelemetry configuration" id="create-otel-configuration">
+
+<Configuration />
+</Step>
+<Step title="Start the OpenTelemetry collector" id="start-the-otel-collector">
+
+Run a standalone collector with the following command:
+
+```shell
+docker run -d \
+  -p 4317:4317 -p 4318:4318 \
+  --user 0:0 \
+  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+  -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+  -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+  -v /var/log:/host/var/log:ro \
+  -v /private/var/log:/host/private/var/log:ro \
+  clickhouse/clickstack-otel-collector:latest
+```
+
+The collector will immediately begin collecting local system logs and metrics.
+</Step>
+<Step title="Select your service" id="select-your-service">
+
+Select the service with ClickHouse Observability from the main ClickHouse cloud landing page.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/clickstack/select_service.webp" alt="Select Service" />
+</Frame>
+</div>
+</Step>
+<Step title="Explore system logs" id="navigate-to-the-hyperdx-ui">
+
+Select `ClickStack` from the left menu to open ClickHouse Observability, where you will be automatically authenticated.
+
+The search UI should be populated with local system logs. Expand the filters to select the `system.log`:
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX Local logs" />
+</Frame>
+</div>
+</Step>
+<Step title="Explore system metrics" id="explore-system-metrics">
+
+<Metrics />
+</Step>
+</Steps>

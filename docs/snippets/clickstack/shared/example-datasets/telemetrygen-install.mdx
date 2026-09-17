@@ -1,0 +1,16 @@
+Run `telemetrygen` from its Docker image (no install required). Define a small wrapper so the commands below stay readable; `--add-host` lets the container reach a collector listening on the host:
+
+```shell
+telemetrygen() {
+  docker run --rm --add-host=host.docker.internal:host-gateway \
+    ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+}
+export OTEL_ENDPOINT=host.docker.internal:4317
+```
+
+Or install the binary with Go and target `localhost` instead:
+
+```shell
+go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+export OTEL_ENDPOINT=localhost:4317
+```

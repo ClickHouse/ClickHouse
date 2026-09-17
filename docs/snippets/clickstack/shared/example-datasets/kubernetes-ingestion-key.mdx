@@ -1,0 +1,42 @@
+<Steps>
+<Step title="Retrieve ingestion API key" id="retrieve-ingestion-api-key">
+
+Ingestion to the OTel collector deployed by the ClickStack collector is secured with an ingestion key.
+
+Navigate to [`Team Settings`](http://localhost:8080/team) and copy the `Ingestion API Key` from the `API Keys` section. This API key ensures data ingestion through the OpenTelemetry collector is secure.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/copy_api_key.webp" alt="Copy API key" />
+</Frame>
+</div>
+</Step>
+<Step title="Create API Key Kubernetes Secret" id="create-api-key-kubernetes-secret">
+
+Create a new Kubernetes secret with the Ingestion API Key and a config map containing the location of the OTel collector deployed with the ClickStack helm chart. Later components will use this to allow ingest into the collector deployed with the ClickStack Helm chart:
+
+```shell
+# create secret with the ingestion API key
+kubectl create secret generic hyperdx-secret \
+--from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
+-n otel-demo
+
+# create a ConfigMap pointing to the ClickStack OTel collector deployed above
+kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+```
+
+Restart the OpenTelemetry demo application pods to take into account the Ingestion API Key.
+
+```shell
+kubectl rollout restart deployment -n otel-demo -l app.kubernetes.io/part-of=opentelemetry-demo
+```
+
+Trace and log data from demo services should now begin to flow into your observability backend.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="HyperDX Kubernetes Data" />
+</Frame>
+</div>
+</Step>
+</Steps>

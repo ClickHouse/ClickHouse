@@ -1,0 +1,13 @@
+```shell
+# Healthy services: the bulk of the traffic, all spans Ok
+for svc in frontend checkout cart; do
+  tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+    --otlp-attributes 'deployment.environment="production"' \
+    --telemetry-attributes "http.route=\"/$svc\""
+done
+
+# One slow dependency returning errors
+tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+  --otlp-attributes 'deployment.environment="production"' \
+  --telemetry-attributes 'http.route="/charge"'
+```

@@ -1,9 +1,10 @@
 ---
-slug: /use-cases/observability/clickstack/deployment/helm-upgrade
 title: 'Helm upgrade guide'
 description: 'Migrating from the v1.x inline-template ClickStack Helm chart to the v2.x subchart architecture'
 doc_type: 'guide'
 keywords: ['ClickStack upgrade', 'Helm migration', 'v1.x to v2.x', 'subchart architecture', 'ClickStack migration']
+sidebarTitle: 'Helm upgrade guide'
+slug: /clickstack/deployment/helm-upgrade
 ---
 
 This guide covers migrating from the inline-template ClickStack Helm chart (v1.x) to the subchart-based architecture (v2.x). This is a **breaking change** that replaces hand-rolled Kubernetes resources with operator-managed custom resources for MongoDB and ClickHouse, and uses the official OpenTelemetry Collector Helm chart.

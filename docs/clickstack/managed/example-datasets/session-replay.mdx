@@ -1,0 +1,126 @@
+---
+title: 'Session replay demo'
+description: 'Interactive demo application showing how to instrument a web app for ClickHouse Observability session replay'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'session replay', 'browser sdk', 'demo', 'observability', 'instrumentation']
+sidebarTitle: 'Session replay demo'
+slug: /clickstack/managed/example-datasets/session-replay
+---
+
+import Introduction from "/snippets/clickstack/shared/example-datasets/session-replay-introduction.mdx";
+import Replay from "/snippets/clickstack/shared/example-datasets/session-replay-view.mdx";
+
+<Introduction />
+
+## Prerequisites {#prerequisites}
+
+- Complete the OpenTelemetry path in the [ClickHouse Observability quickstart](/clickstack/getting-started/managed), including starting a local collector that sends data to your Cloud service.
+- Docker and Docker Compose installed.
+- Port `3000` available for the demo application.
+
+The demo application runs locally. Its Browser SDK sends session data to your collector, and you explore the sessions in ClickHouse Observability.
+
+## Running the demo {#running-the-demo}
+
+<Steps>
+<Step title="Clone the repository" id="clone-repository">
+
+```shell
+git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+cd clickstack-session-replay-demo
+```
+</Step>
+<Step title="Configure the demo collector connection" id="configure-collector-connection">
+
+In `app/public/js/app.js`, replace the existing `window.HyperDX.init` call with the following configuration for the local collector from the commercial quickstart:
+
+```javascript
+window.HyperDX.init({
+  url: 'http://localhost:4318',
+  service: 'clickhouse-session-replay-demo',
+  consoleCapture: true,
+  advancedNetworkCapture: true,
+});
+```
+
+This local collector does not require the OSS ingestion API key. If you use a different collector, set `url` to its browser-accessible OTLP HTTP endpoint. For a collector that requires an authorization token, add `apiKey` with that collector's token. Do not use your ClickHouse Cloud database password as a Browser SDK key.
+
+</Step>
+<Step title="Start the demo application" id="start-demo-app">
+
+Run only the demo application, using the collector you already configured:
+
+```shell
+docker-compose --profile demo up --build --no-deps demo-app
+```
+
+The `--no-deps` option prevents Compose from starting the bundled OSS ClickStack service. The `--build` option includes your SDK configuration change in the demo image.
+
+Open [http://localhost:3000](http://localhost:3000) and interact with the app: search for topics, filter by category, view code examples, and bookmark items.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/clickstack/session-replay/demo-app.webp" alt="Session replay demo app" />
+</Frame>
+</div>
+
+The ClickStack Browser SDK captures these interactions and sends them through your collector to ClickHouse Observability.
+</Step>
+<Step title="View your session replay" id="view-session-replay">
+
+Open your ClickHouse Cloud service and select **ClickStack** to open ClickHouse Observability. Navigate to **Client Sessions** from the left sidebar.
+
+<Replay />
+</Step>
+</Steps>
+
+## The instrumentation {#instrumentation}
+
+The demo includes the ClickStack Browser SDK in `app/public/index.html`:
+
+```html
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+```
+
+The initialization in `app/public/js/app.js` configures its collector connection and session capture. Use the configuration above when adapting this example for ClickHouse Observability.
+
+### Try it yourself {#try-it-yourself}
+
+To instrument the app from scratch, switch to the `pre-instrumented` branch:
+
+```shell
+git checkout pre-instrumented
+```
+
+Add the SDK script and initialization at the locations indicated by comments in `app/public/index.html` and `app/public/js/app.js`. Rebuild and start the demo application with the command above.
+
+## Troubleshooting {#troubleshooting}
+
+### Sessions not appearing {#sessions-not-appearing}
+
+1. Check the browser console for errors.
+2. Confirm your collector is running and sends data to the Cloud service you are viewing.
+3. Check that the SDK's `url` points to your collector, and that any configured `apiKey` matches its receiver authentication.
+4. Adjust the time range in **Client Sessions** (try **Last 15 minutes**).
+5. Hard refresh the browser: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows/Linux).
+
+### 401 Unauthorized errors {#401-errors}
+
+Check the authentication required by your collector. The local collector from the commercial quickstart does not require an ingestion API key; a secured collector may require its own token. Rebuild the demo application after changing its SDK configuration.
+
+## Cleanup {#cleanup}
+
+Stop the local demo application:
+
+```shell
+docker-compose --profile demo stop demo-app
+```
+
+This does not stop your separately managed collector or Cloud service.
+
+## Learn more {#learn-more}
+
+- [Session Replay](../features/session-replay) — feature overview, SDK options, and privacy controls
+- [Browser SDK Reference](../ingesting-data/sdks/browser) — SDK configuration
+- [ClickHouse Observability Getting Started](/clickstack/getting-started/managed) — configure your service and ingestion
+- [All Sample Datasets](/clickstack/managed/example-datasets) — other example datasets and guides

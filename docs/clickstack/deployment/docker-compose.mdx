@@ -1,16 +1,17 @@
 ---
-slug: /use-cases/observability/clickstack/deployment/docker-compose
 title: 'Docker Compose'
-description: 'Deploying ClickStack Open Source with Docker Compose - The ClickHouse Observability Stack'
+description: 'Deploying ClickStack with Docker Compose'
 doc_type: 'guide'
 keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'HyperDX Docker deployment', 'ClickStack deployment guide', 'OpenTelemetry Docker Compose']
+sidebarTitle: 'Docker Compose'
+slug: /clickstack/deployment/docker-compose
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
 import JSONSupport from '/snippets/_json_support.mdx';
 
-All ClickStack Open Source components are distributed separately as individual Docker images:
+All ClickStack components are distributed separately as individual Docker images:
 
 * **ClickHouse**
 * **HyperDX**
@@ -53,7 +54,7 @@ docker compose up
 
 Visit [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
 
-Create a user, providing a username and password which meets the requirements. 
+Create a user, providing a username and password which meets the requirements.
 
 On clicking `Create` data sources will be created for the ClickHouse instance deployed with Docker Compose.
 
@@ -69,7 +70,7 @@ For an example of using an alternative ClickHouse instance, see ["Using ClickHou
 </Step>
 <Step title="Complete connection details" id="complete-connection-details">
 
-To connect to the deployed ClickHouse instance, simply click **Create** and accept the default settings.  
+To connect to the deployed ClickHouse instance, simply click **Create** and accept the default settings.
 
 If you prefer to connect to your own **external ClickHouse cluster** e.g. ClickHouse Cloud, you can manually enter your connection credentials.
 
@@ -114,7 +115,7 @@ The OTel collector configuration can be modified if required - see ["Modifying c
 
 ## Using ClickHouse Cloud {#using-clickhouse-cloud}
 
-This distribution can be used with ClickHouse Cloud, but it differs from [Managed ClickStack](/clickstack/deployment/managed). In this setup, you manage the ClickStack UI yourself while using ClickHouse Cloud only for compute and storage. Unless you have a specific reason to operate the UI independently, we recommend using Managed ClickStack, which includes integrated authentication and additional enterprise features, and removes the need to manage the ClickStack UI yourself.
+This distribution can be used with ClickHouse Cloud, but it differs from [ClickHouse Observability](/clickstack/deployment/managed). In this setup, you manage the ClickStack UI yourself while using ClickHouse Cloud only for compute and storage. Unless you have a specific reason to operate the UI independently, we recommend using ClickHouse Observability, which includes integrated authentication and additional enterprise features, and removes the need to manage the ClickStack UI yourself.
 
 You should:
 
@@ -146,4 +147,4 @@ You should:
 
 - On connecting to the HyperDX UI and creating a connection to ClickHouse, use your Cloud credentials.
 
-<JSONSupport/>
+<JSONSupport schemaUrl="/clickstack/ingesting-data/schema/map-vs-json" />

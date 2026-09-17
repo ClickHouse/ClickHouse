@@ -1,0 +1,125 @@
+---
+title: 'Monitoring Kubernetes'
+description: 'Getting started with ClickHouse Observability and monitoring Kubernetes'
+doc_type: 'guide'
+keywords: ['ClickHouse Observability', 'kubernetes', 'logs', 'observability', 'container monitoring']
+sidebarTitle: 'Monitoring Kubernetes'
+slug: /clickstack/managed/example-datasets/kubernetes
+---
+
+import Demo from "/snippets/clickstack/shared/example-datasets/kubernetes-demo.mdx";
+import IngestionKey from "/snippets/clickstack/shared/example-datasets/kubernetes-ingestion-key.mdx";
+import Collectors from "/snippets/clickstack/shared/example-datasets/kubernetes-collectors.mdx";
+
+This guide collects logs and metrics from your Kubernetes cluster and sends them to **ClickHouse Observability** for visualization and analysis. You can optionally use the ClickStack fork of the OpenTelemetry demo to generate telemetry.
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/winI7256Ejk?si=TRThhzCJdq87xg_x" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+## Prerequisites {#prerequisites}
+
+- A **Kubernetes cluster** (v1.20+ recommended).
+- A ClickHouse Cloud service with ClickHouse Observability and its [connection credentials](/clickstack/getting-started/managed#next-steps).
+- **[Helm](https://helm.sh/)** v3+
+- **`kubectl`**, configured to interact with your cluster
+
+ClickHouse Cloud manages ClickHouse and the observability UI. This walkthrough deploys collectors in your cluster. The Helm chart also deploys local HyperDX and MongoDB for ingestion-key administration; use the Cloud UI to explore your data.
+
+## Prepare the demo environment {#prepare-demo-environment}
+
+If you already have workloads running in your cluster, you can skip the optional demo application and monitor existing pods, nodes, and containers.
+
+<Demo />
+
+## Deploy the ingestion stack {#deploy-ingestion-stack}
+
+<Steps>
+<Step title="Add the ClickStack Helm chart repository" id="add-helm-clickstack">
+
+To deploy ClickStack, we use the [official Helm chart](/clickstack/deployment/helm).
+
+This requires us to add the HyperDX Helm repository:
+
+```shell
+helm repo add hyperdx https://hyperdxio.github.io/helm-charts
+helm repo update
+```
+</Step>
+<Step title="Deploy collectors for ClickHouse Observability" id="deploy-clickstack">
+
+For ClickHouse Observability, deploy the chart and [disable the included ClickHouse](/clickstack/deployment/helm#using-clickhouse-cloud).
+
+<Note>
+The chart currently always deploys both HyperDX and MongoDB. While these components offer an alternative access path, they're not integrated with ClickHouse Cloud authentication. These components are intended for administrators in this deployment model, [providing access to the secure ingestion key](#retrieve-ingestion-api-key) needed to ingest through the deployed OTel collector, but shouldn't be exposed to end users.
+</Note>
+
+```shell
+# specify ClickHouse Cloud credentials
+export CLICKHOUSE_URL=<CLICKHOUSE_CLOUD_URL> # full https url
+export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+helm install my-hyperdx hyperdx/hdx-oss-v2  --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.clickhouseEndpoint=${CLICKHOUSE_URL} --set clickhouse.config.users.otelUserName=${CLICKHOUSE_USER} --set clickhouse.config.users.otelUserPassword=${CLICKHOUSE_PASSWORD} --set global.storageClassName="standard-rwo" -n otel-demo
+```
+
+To verify the deployment status, run the following command and confirm all components are in the `Running` state. ClickHouse runs in Cloud and is absent from this deployment:
+
+```shell
+kubectl get pods -l "app.kubernetes.io/name=hdx-oss-v2" -n otel-demo
+
+NAME                                                    READY   STATUS    RESTARTS   AGE
+my-hyperdx-hdx-oss-v2-app-78876d79bb-565tb              1/1     Running   0          14m
+my-hyperdx-hdx-oss-v2-mongodb-984845f96-czb6m           1/1     Running   0          14m
+my-hyperdx-hdx-oss-v2-otel-collector-64cf698f5c-8s7qj   1/1     Running   0          14m
+```
+
+</Step>
+<Step title="Access local HyperDX for ingestion-key administration" id="access-the-hyperdx-ui">
+
+<Note>
+For this Helm deployment, the local HyperDX instance is used only for ingestion-key administration. It provides an ingestion key managed by the OpAMP server bundled with HyperDX, which secures ingestion through the deployed OTel collector - a capability not currently available in ClickHouse Observability.
+</Note>
+
+For security, the service uses `ClusterIP` and isn't exposed externally by default.
+
+To access the HyperDX UI, port forward from 3000 to the local port 8080.
+
+```shell
+kubectl port-forward \
+ pod/$(kubectl get pod -l app.kubernetes.io/name=hdx-oss-v2 -o jsonpath='{.items[0].metadata.name}' -n otel-demo) \
+  8080:3000 \
+ -n otel-demo
+```
+
+Navigate [http://localhost:8080](http://localhost:8080) to access the HyperDX UI.
+
+Create a user, providing a username and password that meets the complexity requirements.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" />
+</Frame>
+</div>
+</Step>
+</Steps>
+
+<IngestionKey />
+
+## Collect Kubernetes telemetry {#collect-kubernetes-telemetry}
+
+<Collectors />
+
+## Explore Kubernetes data {#explore-kubernetes-data-hyperdx}
+
+If using ClickHouse Observability, simply log in to your ClickHouse Cloud service and select "ClickStack" from the left menu. You will be automatically authenticated and won't need to create a user.
+
+Data sources for logs, metrics and traces will be pre-created for you.
+
+To explore the Kubernetes data, navigate to the Kubernetes dashboard at `/kubernetes` in the Cloud UI. Each of the tabs, Pods, Nodes, and Namespaces, should be populated with data.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" />
+</Frame>
+</div>

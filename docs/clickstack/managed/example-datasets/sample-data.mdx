@@ -1,0 +1,73 @@
+---
+title: 'Sample logs, traces and metrics'
+description: 'Getting started with ClickHouse Observability and a sample dataset with logs, sessions, traces and metrics'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickHouse Observability', 'example data', 'sample dataset', 'logs', 'observability']
+sidebarTitle: 'Sample logs, traces and metrics'
+slug: /clickstack/managed/example-datasets/sample-data
+---
+
+import Download from "/snippets/clickstack/shared/example-datasets/sample-data-download.mdx";
+import Explore from "/snippets/clickstack/shared/example-datasets/sample-data-explore.mdx";
+
+This guide demonstrates ClickHouse Observability using a sample dataset.
+
+The following guide assumes you have completed the [Getting Started Guide for ClickHouse Observability](/clickstack/getting-started/managed) using the OpenTelemetry ingestion path.
+
+<Steps>
+<Step title="Select your service" id="select-your-service-managed">
+
+Select the service with ClickHouse Observability from the main ClickHouse cloud landing page.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/clickstack/select_service.webp" alt="Select Service" />
+</Frame>
+</div>
+</Step>
+<Step title="Open ClickHouse Observability" id="navigate-to-the-hyperdx-ui-managed">
+
+Select `ClickStack` from the left menu to open ClickHouse Observability, where you will be automatically authenticated.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx.webp" alt="ClickHouse Observability" />
+</Frame>
+</div>
+</Step>
+<Download />
+<Step title="Load sample data" id="load-sample-data-managed">
+
+To load this data, we simply send it to the HTTP endpoint of the deployed OpenTelemetry (OTel) collector.
+
+The command below uses the local collector started in the commercial quickstart. If you use an existing collector, replace `http://localhost:4318` with its OTLP HTTP endpoint and add the authentication header required by that receiver.
+
+Run the following command to send the data to the OTel collector:
+
+```shell
+for filename in $(tar -tf sample.tar.gz); do
+  endpoint="http://localhost:4318/v1/${filename%.json}"
+  echo "loading ${filename%.json}"
+  tar -xOf sample.tar.gz "$filename" | while read -r line; do
+    printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+    -H "Content-Type: application/json" \
+    --data-binary @-
+  done
+done
+```
+This simulates OTLP log, trace, and metric sources sending data to the OTel collector. In production, these sources may be language clients or even other OTel collectors.
+
+Returning to the `Search` view, you should see that data has started to load (adjust the time frame to the `Last 1 hour` if the data doesn't render):
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX search" />
+</Frame>
+</div>
+
+Data loading will take a few minutes. Allow for the load to be completed before progressing to the next steps.
+</Step>
+</Steps>
+
+<Explore />

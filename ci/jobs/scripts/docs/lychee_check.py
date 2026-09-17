@@ -52,6 +52,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from urllib.parse import urljoin, urlsplit
 
 # A heading line ending in a Mintlify `{#anchor}`. Captures the heading up to
 # the anchor and the anchor id; the replacement appends an HTML anchor lychee
@@ -125,6 +126,65 @@ def collect_snippet_anchors(text, docs_root, page_dir, seen):
         ids.update(m.group(1) for m in ELEMENT_ID_RE.finditer(snip))
         ids |= collect_snippet_anchors(snip, docs_root, os.path.dirname(sp), seen)
     return ids
+
+
+CLICKSTACK_EDITION_PATHS = ("clickstack/",)
+CLICKSTACK_LINK_SNIPPETS = {
+    "snippets/_demo.mdx",
+    "snippets/_json_support.mdx",
+    "snippets/_vector_sample_data.mdx",
+}
+NAMED_SNIPPET_IMPORT_RE = re.compile(
+    r"^import\s+(\w+)\s+from\s+['\"]([^'\"]+\.mdx?)['\"];?", re.MULTILINE
+)
+
+
+def expand_clickstack_snippets(text, docs_root, page_dir, stack=()):
+    """Materialize shared content where its relative links actually render."""
+    text = strip_mdx_comments(text)
+    for name, source in NAMED_SNIPPET_IMPORT_RE.findall(strip_code_blocks(text)):
+        path = os.path.abspath(
+            os.path.join(docs_root, source.lstrip("/")) if source.startswith("/")
+            else os.path.join(page_dir, source)
+        )
+        if path in stack:
+            raise ValueError(f"Cyclic snippet import: {path}")
+        with open(path, encoding="utf-8") as snippet_file:
+            snippet = snippet_file.read()
+        snippet = re.sub(r"\A---\n.*?\n---\n", "", snippet, flags=re.DOTALL)
+
+        def inject(match):
+            content = snippet
+            # Small snippets reused at different URL depths take literal link
+            # arguments. Preserve their actual targets in the lychee input.
+            for prop, value in re.findall(r'(\w+)="([^"\n]*)"', match.group(1)):
+                content = content.replace("href={" + prop + "}", 'href="' + value + '"')
+            return expand_clickstack_snippets(
+                content, docs_root, os.path.dirname(path), stack + (path,)
+            )
+
+        text = re.sub(r"<" + name + r"\b([^>]*?)/>", inject, text)
+    return text
+
+
+def resolve_clickstack_relative_links(text, page_path):
+    # Mintlify serves index.mdx at its parent URL, whereas lychee resolves a
+    # relative link from the directory containing the physical index.mdx file.
+    page_url = "/" + os.path.splitext(page_path)[0].removesuffix("/index")
+
+    def resolve_link(match):
+        prefix, target = match.groups()
+        if target.startswith(("/", "#")) or urlsplit(target).scheme:
+            return match.group(0)
+        return prefix + urljoin(page_url, target)
+
+    parts = re.split(r"(```.*?```|~~~.*?~~~|`[^`\n]*`)", text, flags=re.DOTALL)
+    return "".join(
+        part if i % 2 else re.sub(
+            r'''(\]\(|\bhref=["'])([^\s)'"<>]+)''', resolve_link, part
+        )
+        for i, part in enumerate(parts)
+    )
 
 
 def collect_generated_setting_anchors(page_path):
@@ -322,10 +382,18 @@ def build_tree(docs_root, dest):
         for name in files:
             rel = name if rel_dir == "." else os.path.join(rel_dir, name)
             dst = os.path.join(out_dir, name)
+            if rel.startswith("snippets/clickstack/shared/") or rel in CLICKSTACK_LINK_SNIPPETS:
+                # These snippets are checked in both edition pages below. They
+                # have no standalone URL from which relative links can resolve.
+                open(dst, "w").close()
+                continue
             if rel in checked and name.endswith((".md", ".mdx")):
                 with open(os.path.join(root, name), "r",
                           encoding="utf-8", errors="replace") as f:
                     raw = f.read()
+                if rel.startswith(CLICKSTACK_EDITION_PATHS):
+                    raw = expand_clickstack_snippets(raw, docs_root, root)
+                    raw = resolve_clickstack_relative_links(raw, rel)
                 text = strip_mdx_comments(transform_anchors(raw))
                 # Append anchors the page inherits from imported snippets, which
                 # Mintlify renders inline but lychee cannot see across the import.

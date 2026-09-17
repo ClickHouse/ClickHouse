@@ -1,10 +1,10 @@
 ---
-slug: /use-cases/observability/clickstack/notebooks
-title: 'AI Notebooks with ClickStack'
+title: 'AI Notebooks with ClickHouse Observability'
 sidebarTitle: 'AI Notebooks'
 description: 'AI-powered investigation notebooks for ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'AI notebooks', 'investigation', 'observability', 'HyperDX']
+slug: /clickstack/notebooks
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
@@ -17,9 +17,9 @@ AI Notebooks are an interactive investigation tool in ClickStack that combines a
 <Image img="/images/use-cases/observability/hyperdx-notebook-hero.webp" alt="AI Notebook investigating a Visa cache full outage" size="lg"/>
 
 <Info>
-**Managed ClickStack only**
+**ClickHouse Observability only**
 
-AI Notebooks are only available in Managed ClickStack deployments.
+AI Notebooks are only available in ClickHouse Observability deployments.
 </Info>
 
 ## Setup {#setup}
@@ -93,11 +93,11 @@ In addition to AI-generated tiles, you can add your own analysis blocks using th
 | Button       | Shortcut | Description                                                                                                                     |
 | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | **Search**   | `S`      | A log/trace search view, equivalent to the search page.                                                                         |
-| **Chart**    | `L`      | A time series line chart, using the same visualization builder as [Dashboards](/clickstack/features/dashboards/overview). |
+| **Chart**    | `L`      | A time series line chart, using the same visualization builder as [Dashboards](/clickstack/managed/features/dashboards/overview). |
 | **Table**    | `T`      | A tabular aggregation view.                                                                                                     |
 | **Markdown** | `M`      | Freeform text for notes, hypotheses, or conclusions.                                                                            |
 
-After adding a tile, it opens in inline edit mode where you can configure the data source, filters, and aggregations — the same interface used when building [dashboard visualizations](/clickstack/features/dashboards/overview#creating-visualizations). Click **Save** to finalize the tile.
+After adding a tile, it opens in inline edit mode where you can configure the data source, filters, and aggregations — the same interface used when building [dashboard visualizations](/clickstack/managed/features/dashboards/overview#creating-visualizations). Click **Save** to finalize the tile.
 
 Manual tiles are added below the last visible tile in the current branch. You can resize tiles vertically by dragging their bottom edge.
 

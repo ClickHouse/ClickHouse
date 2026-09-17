@@ -1,0 +1,66 @@
+import DemoArchitecture from '/snippets/_demo.mdx';
+
+<Steps>
+<Step title="Install cert-manager (Optional)" id="install-cert-manager">
+
+If your setup needs TLS certificates, install [cert-manager](https://cert-manager.io/) using Helm:
+
+```shell
+# Add Cert manager repo
+
+helm repo add jetstack https://charts.jetstack.io
+
+helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set startupapicheck.timeout=5m --set installCRDs=true --set global.leaderElection.namespace=cert-manager
+```
+</Step>
+<Step title="Deploy the OpenTelemetry Demo (Optional)" id="deploy-otel-demo">
+
+This **step is optional and intended if you have no existing pods to monitor**. Although users with existing services deployed in their Kubernetes environment can skip, this demo does include instrumented microservices which generate trace and session replay data - allowing users to explore the observability features.
+
+The following deploys the ClickStack fork of the OpenTelemetry Demo application stack within a Kubernetes cluster, tailored for observability testing and showcasing instrumentation. It includes backend microservices, load generators, telemetry pipelines, supporting infrastructure (e.g., Kafka, Redis), and SDK integrations with ClickStack.
+
+All services are deployed to the `otel-demo` namespace. Each deployment includes:
+
+- Automatic instrumentation with OTel and ClickStack SDKS for traces, metrics, and logs.
+- All services send their instrumentation to a `my-hyperdx-hdx-oss-v2-otel-collector` OpenTelemetry collector (not deployed)
+- [Forwarding of resource tags](../integration-examples/kubernetes#forwarding-resouce-tags-to-pods) to correlate logs, metrics and traces via the environment variable `OTEL_RESOURCE_ATTRIBUTES`.
+
+```shell
+## download demo Kubernetes manifest file
+curl -O https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
+# wget alternative
+# wget https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
+kubectl apply --namespace otel-demo -f opentelemetry-demo.yaml
+```
+
+On deployment of the demo, confirm all pods have been successfully created and are in the `Running` state:
+
+```shell
+kubectl get pods -n=otel-demo
+
+NAME                                 READY   STATUS    RESTARTS   AGE
+accounting-fd44f4996-fcl4k           1/1     Running   0          13m
+ad-769f968468-qq8mw                  1/1     Running   0          13m
+artillery-loadgen-7bc4bdf47d-5sb96   1/1     Running   0          13m
+cart-5b4c98bd8-xm7m2                 1/1     Running   0          13m
+checkout-784f69b785-cnlpp            1/1     Running   0          13m
+currency-fd7775b9c-rf6cr             1/1     Running   0          13m
+email-5c54598f99-2td8s               1/1     Running   0          13m
+flagd-5466775df7-zjb4x               2/2     Running   0          13m
+fraud-detection-5769fdf75f-cjvgh     1/1     Running   0          13m
+frontend-6dcb696646-fmcdz            1/1     Running   0          13m
+frontend-proxy-7b8f6cd957-s25qj      1/1     Running   0          13m
+image-provider-5fdb455756-fs4xv      1/1     Running   0          13m
+kafka-7b6666866d-xfzn6               1/1     Running   0          13m
+load-generator-57cbb7dfc9-ncxcf      1/1     Running   0          13m
+payment-6d96f9bcbd-j8tj6             1/1     Running   0          13m
+product-catalog-7fb77f9c78-49bhj     1/1     Running   0          13m
+quote-576c557cdf-qn6pr               1/1     Running   0          13m
+recommendation-546cc68fdf-8x5mm      1/1     Running   0          13m
+shipping-7fc69f7fd7-zxrx6            1/1     Running   0          13m
+valkey-cart-5f7b667bb7-gl5v4         1/1     Running   0          13m
+```
+
+<DemoArchitecture instrumentationUrl="../ingesting-data/sdks" />
+</Step>
+</Steps>

@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-kubernetes
-title: 'Monitoring Kubernetes with Managed ClickStack'
-description: 'Collect logs, infrastructure metrics, and events from a Kubernetes cluster into Managed ClickStack'
+title: 'Monitoring Kubernetes with ClickHouse Observability'
+description: 'Collect logs, infrastructure metrics, and events from a Kubernetes cluster into ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
 unlisted: true
@@ -11,11 +11,11 @@ hide_advert: true
 
 import { Image } from "/snippets/components/Image.jsx";
 
-This guide walks you through collecting logs, infrastructure metrics, and Kubernetes events from a cluster into Managed ClickStack, then viewing them in the built-in Kubernetes dashboard.
+This guide walks you through collecting logs, infrastructure metrics, and Kubernetes events from a cluster into ClickHouse Observability, then viewing them in the built-in Kubernetes dashboard.
 
 The pattern is the standard OpenTelemetry one: two collectors deployed via the [OpenTelemetry Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), each forwarding to your ClickStack gateway collector via OTLP. A **DaemonSet** runs on every node to collect container logs and kubelet metrics. A **Deployment** with a single replica collects Kubernetes events and cluster-wide metrics. For background on the gateway role, see [Collector roles](/clickstack/ingesting-data/collector#collector-roles).
 
-This guide assumes you've completed [Setting up your OpenTelemetry Collector](/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) and have a ClickStack gateway collector running. 
+This guide assumes you've completed [Setting up your OpenTelemetry Collector](/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) and have a ClickStack gateway collector running.
 
 For a Kubernetes-resident workload, the gateway collector itself should be deployed **inside the same cluster using the upstream OpenTelemetry Helm chart with the ClickStack collector image**. Follow the Helm path in [Deploying the collector](/clickstack/ingesting-data/collector#configuring-the-collector) to install it. **Ensure you have recorded this OTLP endpoint**.
 

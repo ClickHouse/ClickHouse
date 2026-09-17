@@ -31,6 +31,8 @@ TRANSLATION_DIRS = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
 MINTLIFY_BUILTINS = {
     "Accordion",
     "Badge",
+    "Card",
+    "CardGroup",
     "CodeBlock",
     "Frame",
     "Info",
@@ -196,7 +198,9 @@ def main() -> int:
                 "instead of importing the custom Image component"
             )
 
-        used_tags = set(TAG_RE.findall(visible_text))
+        # Inline code can contain placeholders such as `<YOUR_API_KEY>`.
+        markup_text = re.sub(r"(`+)(?!`).*?(?<!`)\1(?!`)", "", visible_text)
+        used_tags = set(TAG_RE.findall(markup_text))
         missing = sorted(used_tags - imported - declared - MINTLIFY_BUILTINS)
         if missing:
             errors.append(

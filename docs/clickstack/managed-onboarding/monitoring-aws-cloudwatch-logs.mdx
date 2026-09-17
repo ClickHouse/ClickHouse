@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/monitoring-aws-cloudwatch-logs
-title: 'Monitoring AWS CloudWatch logs with Managed ClickStack'
-description: 'Forward AWS CloudWatch logs into Managed ClickStack via the OpenTelemetry CloudWatch receiver'
+title: 'Monitoring AWS CloudWatch logs with ClickHouse Observability'
+description: 'Forward AWS CloudWatch logs into ClickHouse Observability via the OpenTelemetry CloudWatch receiver'
 doc_type: 'guide'
 keywords: ['clickstack', 'aws', 'cloudwatch', 'logs', 'managed', 'observability', 'otel']
 unlisted: true
@@ -13,7 +13,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
-This guide walks you through forwarding AWS CloudWatch logs into Managed ClickStack using the OpenTelemetry [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver), then viewing them in the ClickStack UI.
+This guide walks you through forwarding AWS CloudWatch logs into ClickHouse Observability using the OpenTelemetry [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver), then viewing them in the ClickStack UI.
 
 We'll run a separate collector that polls CloudWatch via the AWS API and forwards events to your ClickStack collector via OTLP. Keep this collector in the same AWS account and region as the log groups to minimise API latency and cost.
 

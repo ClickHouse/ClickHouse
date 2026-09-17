@@ -1,21 +1,21 @@
 ---
-slug: /use-cases/observability/clickstack/rbac
 title: 'Role-based access control (RBAC)'
 sidebarTitle: 'Role-based access control'
 toc_max_heading_level: 2
 description: 'Configure role-based access control in ClickStack to manage team permissions for dashboards, saved searches, sources, alerts, and more.'
 doc_type: 'guide'
 keywords: ['clickstack', 'rbac', 'roles', 'permissions', 'access control', 'security']
+slug: /clickstack/managing/rbac
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickStack includes role-based access control (RBAC) so you can define custom roles with fine-grained permissions over [dashboards](/clickstack/features/dashboards/overview), [saved searches](/clickstack/features/search), sources, [alerts](/clickstack/features/alerts), webhooks, and notebooks. Permissions work at two levels: resource-level access (no access, read, or manage per resource type) and optional fine-grained rules that restrict access to individual resources by name, tag, or ID. ClickStack ships with three built-in roles, and you can create custom roles to match your team's needs.
+ClickStack includes role-based access control (RBAC) so you can define custom roles with fine-grained permissions over [dashboards](/clickstack/managed/features/dashboards/overview), [saved searches](/clickstack/managed/features/search), sources, [alerts](/clickstack/managed/features/alerts), webhooks, and notebooks. Permissions work at two levels: resource-level access (no access, read, or manage per resource type) and optional fine-grained rules that restrict access to individual resources by name, tag, or ID. ClickStack ships with three built-in roles, and you can create custom roles to match your team's needs.
 
 <Info>
-**Managed ClickStack only**
+**ClickHouse Observability only**
 
-RBAC is only available in Managed ClickStack deployments.
+RBAC is only available in ClickHouse Observability deployments.
 </Info>
 
 ## User access prerequisites {#user-access-prerequisites}
@@ -27,7 +27,7 @@ ClickStack authenticates through ClickHouse Cloud. Before you can assign ClickSt
 
 | Cloud SQL Console access | ClickStack access |
 |---|---|
-| **SQL Console Admin** (Full Access) | Full access to ClickStack. Required for enabling [alerts](/clickstack/features/alerts). |
+| **SQL Console Admin** (Full Access) | Full access to ClickStack. Required for enabling [alerts](/clickstack/managed/features/alerts). |
 | **SQL Console Read Only** (Read Only) | Can view observability data and create dashboards. |
 | **No access** | Can't access ClickStack. |
 
@@ -102,11 +102,11 @@ Each role grants an access level per resource type. The three levels are:
 
 The resource types you can control are:
 
-- **[Dashboards](/clickstack/features/dashboards/overview)** — saved dashboard layouts and charts.
-- **[Saved searches](/clickstack/features/search)** — persisted log/trace/event queries.
+- **[Dashboards](/clickstack/managed/features/dashboards/overview)** — saved dashboard layouts and charts.
+- **[Saved searches](/clickstack/managed/features/search)** — persisted log/trace/event queries.
 - **Sources** — ingestion source configurations.
-- **[Alerts](/clickstack/features/alerts)** — alert rules and their notification settings.
-- **Webhooks** — outbound notification destinations (such as Slack, PagerDuty, and generic HTTP endpoints) that [alerts](/clickstack/features/alerts) deliver to. This doesn't refer to the ClickStack API.
+- **[Alerts](/clickstack/managed/features/alerts)** — alert rules and their notification settings.
+- **Webhooks** — outbound notification destinations (such as Slack, PagerDuty, and generic HTTP endpoints) that [alerts](/clickstack/managed/features/alerts) deliver to. This doesn't refer to the ClickStack API.
 - **Notebooks** — collaborative investigation notebooks.
 
 ### Administrative permissions {#administrative-permissions}
@@ -152,7 +152,7 @@ You can add multiple rules per resource type. Each rule is checked independently
 <Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="Access rules with OR logic tooltip" size="md"/>
 
 **Example**: To give a role read-only access to testing dashboards, expand Dashboards, switch to Fine-Grained Controls, and add two rules:
-- **Name** `contains` `testing` with access level **Read**                                                                                                                                   
+- **Name** `contains` `testing` with access level **Read**
 - **Tag** `is` `testing` with access level **Read**
 
  A dashboard that matches either rule is accessible.

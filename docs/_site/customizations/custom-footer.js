@@ -10,7 +10,7 @@
         ['ClickHouse Cloud', 'https://clickhouse.com/cloud'],
         ['Bring Your Own Cloud', 'https://clickhouse.com/cloud/bring-your-own-cloud'],
         ['Postgres managed by ClickHouse', 'https://clickhouse.com/cloud/postgres'],
-        ['Managed ClickStack', 'https://clickhouse.com/cloud/clickstack'],
+        ['ClickHouse Observability', 'https://clickhouse.com/cloud/clickstack'],
         ['ClickHouse', 'https://clickhouse.com/clickhouse'],
         ['ClickStack', 'https://clickhouse.com/clickstack'],
         ['Agentic Data Stack', 'https://clickhouse.com/ai'],

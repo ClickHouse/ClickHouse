@@ -1,0 +1,104 @@
+<Steps>
+<Step title="Explore sessions" id="explore-sessions">
+
+Suppose we have reports that our users are experiencing issues paying for goods. We can view their experience using the session replay capabilities.
+
+Select `Client Sessions` from the left menu.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-11.webp" alt="Sessions" />
+</Frame>
+</div>
+
+This view allows us to see front-end sessions for our e-commerce store. Sessions remain Anonymous until users check out and try to complete a purchase.
+
+Note that some sessions with emails have an associated error, potentially confirming reports of failed transactions.
+
+Select a trace with a failure and associated email. The subsequent view allows us to replay the user's session and review their issue. Press play to watch the session.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-12.webp" alt="Session replay" />
+</Frame>
+</div>
+
+The replay shows the user navigating the site, adding items to their cart. Feel free to skip to later in the session where they attempt to complete a payment.
+
+<Tip>
+Any errors are annotated on the timeline in red.
+</Tip>
+
+The user was unable to place the order, with no obvious error. Scroll to the bottom of the left panel, containing the network and console events from the user's browser. You will notice a 500 error was thrown on making a `/api/checkout` call.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-13.webp" alt="Error in session" />
+</Frame>
+</div>
+
+Select this `500` error. Neither the `Overview` nor `Column Values` indicate the source of the issue, other than the fact the error is unexpected, causing an `Internal Error`.
+</Step>
+<Step title="Explore traces" id="explore-traces">
+
+Navigate to the `Trace` tab to see the full distributed trace.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-14.webp" alt="Session trace" />
+</Frame>
+</div>
+
+Scroll down the trace to see the origin of the error - the `checkout` service span. Select the `Payment` service span.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-15.webp" alt="Span" />
+</Frame>
+</div>
+
+Select the tab `Column Values` and scroll down. We can see the issue is associated with a cache being full.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-16.webp" alt="Column values" />
+</Frame>
+</div>
+
+Scrolling up and returning to the trace, we can see logs are correlated with the span, thanks to our earlier configuration. These provide further context.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-17.webp" alt="Correlated log" />
+</Frame>
+</div>
+
+We've established that a cache is getting filled in the payment service, which is preventing payments from completing.
+</Step>
+<Step title="Explore logs" id="explore-logs">
+
+For further details, we can return to the `Search`:
+
+Select `Logs` from the sources and apply a filter to the `payment` service.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-18.webp" alt="Logs" />
+</Frame>
+</div>
+
+We can see that while the issue is recent, the number of impacted payments is high. Furthermore, a cache related to the visa payments appears to be causing issues.
+</Step>
+<Step title="Chart metrics" id="chart-metrics">
+
+While an error has clearly been introduced in the code, we can use metrics to confirm the cache size. Navigate to the `Chart Explorer` view.
+
+Select `Metrics` as the data source. Complete the chart builder to plot the `Maximum` of `visa_validation_cache.size (Gauge)` and press the play button. The cache was clearly increasing before reaching a maximum size, after which errors were generated.
+
+<div className="ch-image-lg">
+<Frame>
+  <img src="/images/use-cases/observability/hyperdx-19.webp" alt="Metrics" />
+</Frame>
+</div>
+</Step>
+</Steps>

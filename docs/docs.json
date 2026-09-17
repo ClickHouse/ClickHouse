@@ -94,6 +94,9 @@
                 "$ref": "./products/managed-postgres/navigation.json"
               },
               {
+                "$ref": "./clickstack/navigation.json"
+              },
+              {
                 "href": "https://langfuse.com/docs",
                 "icon": "/images/icons/logo-langfuse.svg",
                 "item": "Langfuse"
@@ -104,7 +107,9 @@
                 "item": "Open source"
               },
               {
-                "$ref": "./clickstack/navigation.json"
+                "item": "ClickStack",
+                "icon": "/images/icons/icon-clickstack.svg",
+                "href": "/clickstack/home"
               },
               {
                 "$ref": "./products/agentic-data-stack/navigation.json"
@@ -240,6 +245,9 @@
     },
     {
       "src": "/_site/customizations/raise-issue-link.js"
+    },
+    {
+      "src": "/_site/customizations/clickstack-edition.js"
     }
   ],
   "styling": {

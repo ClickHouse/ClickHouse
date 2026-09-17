@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/managed-getting-started
-title: 'Get started with Managed ClickStack'
-description: 'Deploy an OpenTelemetry collector against Managed ClickStack and instrument an application end to end'
+title: 'Get started with ClickHouse Observability'
+description: 'Deploy an OpenTelemetry collector against ClickHouse Observability and instrument an application end to end'
 doc_type: 'guide'
 keywords: ['clickstack', 'opentelemetry', 'collector', 'instrumentation', 'managed', 'observability', 'gateway', 'nodejs', 'sdk']
 unlisted: true
@@ -13,7 +13,7 @@ import { Image } from "/snippets/components/Image.jsx";
 import GatherCredentials from '/snippets/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/clickstack/_create_ingestion_user.mdx';
 
-This guide takes you from an empty Managed ClickStack service all the way to logs, metrics, traces, and session replays flowing from a real application. You'll deploy a new OpenTelemetry collector (or adapt an existing one if you have one) against your service, instrument a sample Node.js application with no changes to its business logic, then explore the telemetry in the ClickStack UI.
+This guide takes you from an empty ClickHouse Observability service all the way to logs, metrics, traces, and session replays flowing from a real application. You'll deploy a new OpenTelemetry collector (or adapt an existing one if you have one) against your service, instrument a sample Node.js application with no changes to its business logic, then explore the telemetry in the ClickStack UI.
 
 <Note>
 If you're setting up a new collector, or using your own, it should run as a **gateway**: a single OTLP endpoint that your applications, SDKs, and agent collectors send to. The gateway batches events, applies any processing you've configured, and writes them to ClickHouse via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
@@ -23,7 +23,7 @@ The application we'll instrument is the [HackerNews Analyzer](https://github.com
 
 ## Prerequisites {#prerequisites}
 
-- A **Managed ClickStack service** in [ClickHouse Cloud](https://console.clickhouse.cloud).
+- A **ClickHouse Observability service** in [ClickHouse Cloud](https://console.clickhouse.cloud).
 - **Node 18+ and npm** to run the sample application.
 - **Docker**, if you don't already have a collector and want to follow the new-collector path below.
 
@@ -50,7 +50,7 @@ If you're using an existing OpenTelemetry collector, we assume it's already conf
 
 <Tab title="I don't have a collector">
 
-Deploy the **ClickStack distribution of the OpenTelemetry collector**, which is preconfigured for Managed ClickStack. In the example below, we run the collector locally for simplicity.
+Deploy the **ClickStack distribution of the OpenTelemetry collector**, which is preconfigured for ClickHouse Observability. In the example below, we run the collector locally for simplicity.
 
 <Note>
 In production, you would typically deploy the collector in a Kubernetes cluster, or on a virtual machine that can be reached by your OpenTelemetry SDKs, agents, and other collectors. This allows telemetry from across your environment to be centrally collected and forwarded to ClickStack.
@@ -91,7 +91,7 @@ For production, we recommend enabling TLS on the OTLP endpoint. See [Securing th
 
 <Tab title="I have a collector">
 
-Extend your existing collector configuration to write to Managed ClickStack via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+Extend your existing collector configuration to write to ClickHouse Observability via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
 <Info>
 **ClickHouse exporter required**
@@ -191,7 +191,7 @@ A few things to note:
 
 Reload your collector with the new configuration. Keep the OTLP endpoint and whatever auth header your setup expects to hand, you'll point the application at them in the next steps.
 
-For further details on configuring OpenTelemetry collectors against Managed ClickStack, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
+For further details on configuring OpenTelemetry collectors against ClickHouse Observability, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
 
 </Tab>
 
@@ -345,6 +345,6 @@ If nothing shows up:
 
 - [Monitoring Kubernetes](/clickstack/managed-onboarding/monitoring-kubernetes): collect logs, infra metrics, and Kubernetes events from a cluster.
 - [Monitoring AWS CloudWatch logs](/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): forward CloudWatch logs via the OpenTelemetry CloudWatch receiver.
-- [Tuning Managed ClickStack](/clickstack/managed-onboarding/tuning-clickstack-schema): refine your schema for query performance and storage efficiency.
+- [Tuning ClickHouse Observability](/clickstack/managed-onboarding/tuning-clickstack-schema): refine your schema for query performance and storage efficiency.
 - [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector) with TLS on the OTLP endpoint and least-privilege ingestion users.
 - [Going to production](/clickstack/managing/production) for recommendations when going to production.

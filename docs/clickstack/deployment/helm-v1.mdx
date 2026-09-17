@@ -1,9 +1,10 @@
 ---
-slug: /use-cases/observability/clickstack/deployment/helm-v1
 title: 'Helm (v1.x)'
 description: 'Deploying ClickStack with the v1.x inline-template Helm chart'
 doc_type: 'guide'
 keywords: ['ClickStack Helm chart', 'Helm ClickHouse deployment', 'HyperDX Helm installation', 'Kubernetes observability stack', 'ClickStack Kubernetes deployment']
+sidebarTitle: 'Helm (v1.x)'
+slug: /clickstack/deployment/helm-v1
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
@@ -332,7 +333,7 @@ For ingress-specific issues, TLS problems, or cloud deployment troubleshooting, 
 - [Cloud Deployments](/clickstack/deployment/helm-cloud-v1#loadbalancer-dns-resolution-issue) - GKE OpAMP issues and cloud-specific problems
 </Tip>
 
-<JSONSupport/>
+<JSONSupport schemaUrl="/clickstack/ingesting-data/schema/map-vs-json" />
 
 ## Related Documentation {#related-documentation}
 
@@ -346,7 +347,7 @@ For ingress-specific issues, TLS problems, or cloud deployment troubleshooting, 
 - [Upgrade guide](/clickstack/deployment/helm-upgrade) - Migrating from v1.x to v2.x
 
 ### Additional resources {#additional-resources}
-- [ClickStack getting started guide](/clickstack/getting-started/index) - Introduction to ClickStack
+- [ClickStack getting started guide](/clickstack/getting-started) - Introduction to ClickStack
 - [ClickStack Helm charts repository](https://github.com/ClickHouse/ClickStack-helm-charts) - Chart source code and values reference
 - [Kubernetes documentation](https://kubernetes.io/docs/) - Kubernetes reference
 - [Helm documentation](https://helm.sh/docs/) - Helm reference

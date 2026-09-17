@@ -1,0 +1,79 @@
+Create a `custom-local-config.yaml` file with the following content:
+
+```yaml
+receivers:
+  filelog:
+    include:
+      - /host/var/log/**/*.log        # Linux logs from host
+      - /host/var/log/syslog
+      - /host/var/log/messages
+      - /host/private/var/log/*.log   # macOS logs from host
+    start_at: beginning
+    resource:
+      service.name: "system-logs"
+
+  hostmetrics:
+    collection_interval: 1s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.time:
+            enabled: true
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.usage:
+            enabled: true
+          system.memory.utilization:
+            enabled: true
+      filesystem:
+        metrics:
+          system.filesystem.usage:
+            enabled: true
+          system.filesystem.utilization:
+            enabled: true
+      paging:
+        metrics:
+          system.paging.usage:
+            enabled: true
+          system.paging.utilization:
+            enabled: true
+          system.paging.faults:
+            enabled: true
+      disk:
+      load:
+      network:
+      processes:
+
+service:
+  pipelines:
+    logs/local:
+      receivers: [filelog]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+    metrics/hostmetrics:
+      receivers: [hostmetrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+This configuration collects system logs and metrics for OSX and Linux systems, sending the results to your observability backend. The configuration extends the ClickStack collector by adding new receivers and pipelines—you reference the existing `clickhouse` exporter and processors (`memory_limiter`, `batch`) that are already configured in the base ClickStack collector.
+
+<Info>
+**Ingestion timestamps**
+
+This configuration adjusts timestamps at ingest, assigning an updated time value to each event. You should ideally [preprocess or parse timestamps](../ingesting-data/collector#processing-filtering-transforming-enriching) using OTel processors or operators in their log files to ensure accurate event time is retained.
+
+With this example setup, if the receiver or file processor is configured to start at the beginning of the file, all existing log entries will be assigned the same adjusted timestamp - the time of processing rather than the original event time. Any new events appended to the file will receive timestamps approximating their actual generation time.
+
+To avoid this behavior, you can set the start position to `end` in the receiver configuration. This ensures only new entries are ingested and timestamped near their true arrival time.
+</Info>
+
+For more details on the OpenTelemetry (OTel) configuration structure, we recommend [the official guide](https://opentelemetry.io/docs/collector/configuration/).

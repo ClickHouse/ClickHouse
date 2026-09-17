@@ -1,0 +1,46 @@
+The platform is built around a common data model: all observability data should be ingested as wide, rich events. These events are stored in ClickHouse tables by data type - logs, traces, metrics, and sessions - but remain fully queryable and cross-correlatable at the database level.
+
+The platform is built to handle high-cardinality workloads efficiently by leveraging ClickHouse's column-oriented architecture, flexible schema for high-cardinality attributes, and fully parallelized execution engine. This enables sub-second queries across massive datasets, fast aggregations over wide time ranges, and deep inspection of individual traces.
+
+## Features {#features}
+
+The stack includes several key features designed for debugging and root cause analysis:
+
+- Correlate/search logs, metrics, session replays, and traces all in one place
+- Schema agnostic, works on top of your existing ClickHouse schema
+- Blazing-fast searches & visualizations optimized for ClickHouse
+- Intuitive full-text search and property search syntax (ex. `level:err`), SQL optional.
+- Analyze trends in anomalies with event deltas
+- Set up alerts in just a few clicks
+- Dashboard high cardinality events without a complex query language
+- Native JSON string querying
+- Live tail logs and traces to always get the freshest events
+- OpenTelemetry (OTel) supported out of the box
+- Monitor health and performance from HTTP requests to DB queries (APM)
+- Event deltas for identifying anomalies and performance regressions
+- Log pattern recognition
+- Open ClickStack pages directly with [deep links](./url-parameters) using URL query parameters
+
+## Principles {#clickstack-principles}
+
+The platform is designed with a set of core principles that prioritize ease of use, performance, and flexibility at every layer of the observability stack:
+
+### Easy to set up in minutes {#clickstack-easy-to-setup}
+
+Use the getting started guide for your edition to configure ingestion and start exploring your data.
+
+### User-friendly and purpose-built {#user-friendly-purpose-built}
+
+The HyperDX UI supports both SQL and Lucene-style syntax, allowing users to choose the query interface that fits their workflow. Purpose-built for observability, the UI is optimized to help teams identify root causes quickly and navigate complex data without friction.
+
+### End-to-end observability {#end-to-end-observability}
+
+The platform provides full-stack visibility, from front-end user sessions to backend infrastructure metrics, application logs, and distributed traces. This unified view enables deep correlation and analysis across the entire system.
+
+### Built for ClickHouse {#built-for-clickhouse}
+
+Every layer of the stack is designed to make full use of ClickHouse's capabilities. Queries are optimized to leverage ClickHouse's analytical functions and columnar engine, ensuring fast search and aggregation over massive volumes of data.
+
+### OpenTelemetry-native {#open-telemetry-native}
+
+The platform supports OpenTelemetry ingestion through a collector endpoint. For advanced users, it also supports direct ingestion into ClickHouse using native file formats, custom pipelines, or third-party tools like Vector.

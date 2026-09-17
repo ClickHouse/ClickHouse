@@ -1,23 +1,24 @@
 ---
-slug: /use-cases/observability/clickstack/getting-started/remote-demo-data
 title: 'Remote demo dataset'
 description: 'Getting started with ClickStack and a remote demo dataset'
 doc_type: 'guide'
 keywords: ['clickstack', 'example data', 'sample dataset', 'logs', 'observability']
+sidebarTitle: 'Remote demo dataset'
+slug: /clickstack/example-datasets/remote-demo-data
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
 import DemoArchitecture from '/snippets/_demo.mdx';
 
-**The following guide assumes you have deployed Open Source ClickStack using the [instructions for the all-in-one image](/clickstack/getting-started/oss), or [Local Mode Only](/clickstack/deployment/local-mode-only) and completed initial user creation. Alternatively, you can skip all local setup and simply connect to our ClickStack hosted demo [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) which uses this dataset.**
+**The following guide assumes you have deployed ClickStack using the [instructions for the all-in-one image](/clickstack/getting-started/oss), or [Local Mode Only](/clickstack/deployment/local-mode-only) and completed initial user creation. Alternatively, you can skip all local setup and simply connect to our ClickStack hosted demo [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) which uses this dataset.**
 
 This guide uses a sample dataset hosted on the public ClickHouse playground at [sql.clickhouse.com](https://sql.clickhouse.com), which you can connect to from your local ClickStack deployment.
 
 <Warning>
-**Not supported with Managed ClickStack**
+**Not supported with ClickHouse Observability**
 
-Remote databases aren't supported when using Managed ClickStack. This dataset is therefore not supported. 
+Remote databases aren't supported when using ClickHouse Observability. This dataset is therefore not supported.
 </Warning>
 
 It contains approximately 40 hours of data captured from the ClickHouse version of the official OpenTelemetry (OTel) demo. The data is replayed nightly with timestamps adjusted to the current time window, allowing users to explore system behavior using HyperDX's integrated logs, traces, and metrics.
@@ -40,11 +41,11 @@ Using HyperDX, the SRE team will analyze logs, traces, and metrics to diagnose a
 
 This demo uses a [ClickStack maintained fork](https://github.com/ClickHouse/opentelemetry-demo) of the official OpenTelemetry demo.
 
-<DemoArchitecture/>
+<DemoArchitecture instrumentationUrl="/clickstack/ingesting-data/sdks" />
 
 ## Demo steps {#demo-steps}
 
-**We have instrumented this demo with [ClickStack SDKs](/clickstack/ingesting-data/sdks/index), deploying the services in Kubernetes, from which metrics and logs have also been collected.**
+**We have instrumented this demo with [ClickStack SDKs](/clickstack/ingesting-data/sdks), deploying the services in Kubernetes, from which metrics and logs have also been collected.**
 
 <Steps>
 <Step title="Connect to the demo server" id="connect-to-the-demo-server">
@@ -76,7 +77,7 @@ Rename the connection to `Demo` and complete the subsequent form with the follow
 This step can be skipped if you clicked `Connect to Demo Server` when deploying in Local Mode. If using this mode, sources will be prefixed with `Demo_` e.g. `Demo_Logs`
 </Info>
 
-Scroll up to `Sources` and modify each of the sources - `Logs`, `Traces`, `Metrics`, and `Sessions` - to use the `otel_v2` database. 
+Scroll up to `Sources` and modify each of the sources - `Logs`, `Traces`, `Metrics`, and `Sessions` - to use the `otel_v2` database.
 
 <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp" alt="Edit Demo Source" size="lg"/>
 
@@ -148,7 +149,7 @@ Select `Trace` to visualize the associated trace. Scrolling down through the sub
 
 <Image img="/images/use-cases/observability/hyperdx-demo/step_8.webp" alt="Step 8" size="lg"/>
 
-By scrolling to the bottom of the view we can see that the `payment` service is causing the error, which in turn propagates back up the call chain. 
+By scrolling to the bottom of the view we can see that the `payment` service is causing the error, which in turn propagates back up the call chain.
 
 <Image img="/images/use-cases/observability/hyperdx-demo/step_9.webp" alt="Step 9" size="lg"/>
 </Step>
@@ -170,7 +171,7 @@ If we apply event clustering to the traces by selecting `Event Patterns`, we can
 </Step>
 <Step title="Explore infrastructure for a trace" id="explore-infrastructure-for-a-trace">
 
-Switch to the results view by clicking on `Results table`. Filter to errors using the `StatusCode` filter and `Error` value. 
+Switch to the results view by clicking on `Results table`. Filter to errors using the `StatusCode` filter and `Error` value.
 
 <Image img="/images/use-cases/observability/hyperdx-demo/step_13.webp" alt="Step 13" size="lg"/>
 
@@ -182,7 +183,7 @@ By correlating traces with metrics we can see that memory and CPU increased with
 </Step>
 <Step title="Event deltas for faster resolution" id="event-deltas-for-faster-resolution">
 
-Event Deltas help surface anomalies by attributing changes in performance or error rates to specific subsets of data—making it easier to quickly pinpoint the root cause. 
+Event Deltas help surface anomalies by attributing changes in performance or error rates to specific subsets of data—making it easier to quickly pinpoint the root cause.
 
 While we know that the `payment` service has a cache issue, causing an increase in resource consumption, we haven't fully identified the root cause.
 
@@ -204,7 +205,7 @@ With analysis performed on the subset of data, we can see that the "background" 
 </Step>
 <Step title="Using charts for more context" id="using-charts-for-more-context">
 
-In ClickStack, we can chart any numeric value from logs, traces, or metrics for greater context. 
+In ClickStack, we can chart any numeric value from logs, traces, or metrics for greater context.
 
 We have established:
 
@@ -225,7 +226,7 @@ Select `Chart Explorer` from the left menu. Complete the following values to cha
 
 <br/>
 
-Clicking `▶️` will show how the performance of payments degraded over time. 
+Clicking `▶️` will show how the performance of payments degraded over time.
 
 <Image img="/images/use-cases/observability/hyperdx-demo/step_18.webp" alt="Step 18" size="lg"/>
 
@@ -277,7 +278,7 @@ Search for `SpanAttributes.userEmail: Ronny.Windler` to find our customer's sess
 </Step>
 <Step title="Replaying sessions" id="replaying-sessions">
 
-Sessions can be replayed by pressing the ▶️ button. Switching between `Highlighted` and `All Events` allows varying degrees of span granularity, with the former highlighting key events and errors. 
+Sessions can be replayed by pressing the ▶️ button. Switching between `Highlighted` and `All Events` allows varying degrees of span granularity, with the former highlighting key events and errors.
 
 If we scroll to the bottom of the spans we can see a `500` error associated with `/api/checkout`. Selecting the ▶️ button for this specific span moves the replay to this point in the session, allowing us to confirm the customer's experience - payment seems to simply not work with no error rendered.
 
@@ -289,4 +290,4 @@ Selecting the span we can confirm this was caused by an internal error. By click
 </Step>
 </Steps>
 
-This demo walks through a real-world incident involving failed payments in an e-commerce app, showing how ClickStack helps uncover root causes through unified logs, traces, metrics, and session replays - explore our [other getting started guides](/clickstack/example-datasets/index) to dive deeper into specific features.
+This demo walks through a real-world incident involving failed payments in an e-commerce app, showing how ClickStack helps uncover root causes through unified logs, traces, metrics, and session replays - explore our [other getting started guides](/clickstack/example-datasets) to dive deeper into specific features.

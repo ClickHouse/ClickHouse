@@ -1,5 +1,13 @@
 [
   {
+    "destination": "/clickstack/getting-started/managed",
+    "source": "/clickstack/managed/getting-started"
+  },
+  {
+    "destination": "/clickstack/getting-started/oss",
+    "source": "/clickstack/getting-started"
+  },
+  {
     "destination": "/get-started/setup/cloud",
     "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
   },

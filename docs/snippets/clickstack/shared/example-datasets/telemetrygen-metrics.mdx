@@ -1,0 +1,5 @@
+```shell
+tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+```

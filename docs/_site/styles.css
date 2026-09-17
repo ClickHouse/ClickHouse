@@ -3629,3 +3629,38 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 td:has(> .integration-table-logo) {
     white-space: nowrap;
 }
+
+/* Product identity stays visible on every ClickStack/Observability page. */
+.ch-clickstack-edition-pill {
+    display: inline-flex;
+    align-self: flex-start;
+    width: fit-content;
+    margin-bottom: 12px;
+    padding: 3px 10px;
+    border: 1px solid #d4d4d4;
+    border-radius: 9999px;
+    background: #f5f5f5;
+    color: #404040;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.dark .ch-clickstack-edition-pill {
+    border-color: #4a4a4a;
+    background: #262626;
+    color: #ededed;
+}
+
+/* Show the full commercial product name in the primary sidebar switcher. */
+.nav-dropdown-trigger .truncate {
+    white-space: normal;
+    text-overflow: clip;
+    text-align: left;
+}
+
+.ch-clickstack-edition-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}

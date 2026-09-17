@@ -1,0 +1,76 @@
+---
+title: 'Going to production'
+sidebarTitle: 'Production'
+description: 'Going to production with ClickHouse Observability'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'production', 'deployment', 'best practices', 'operations']
+slug: /clickstack/managed/managing/production
+---
+
+import ResourceEstimation from '/snippets/_resource_estimation.mdx';
+
+Prepare ClickHouse Observability for production using the guidance below.
+
+
+
+For production deployments, [ClickHouse Observability](/clickstack/getting-started/managed) is recommended. It applies industry-standard [security practices](/products/cloud/features/security) by default - including enhanced encryption, authentication and connectivity, and managed access controls, as well as providing the following benefits:
+
+- Automatic scaling of compute independent of storage
+- Low-cost and effectively unlimited retention based on object storage
+- The ability to independently isolate read and write workloads with Warehouses.
+- Integrated authentication
+- Automated [backups](/products/cloud/features/backups/overview)
+- Seamless upgrades
+
+**Follow these [best practices](/products/cloud/guides/production-readiness) for ClickHouse Cloud when using ClickHouse Observability.**
+
+<a id="secure-ingestion"></a>
+
+### Secure ingestion {#secure-ingestion-managed}
+
+By default, the ClickStack OpenTelemetry Collector isn't secured when deployed outside of the Open Source distributions and doesn't require authentication on its OTLP ports.
+
+To secure ingestion, specify an authentication token when deploying the collector using the `OTLP_AUTH_TOKEN` environment variable. See ["Securing the collector"](../ingesting-data/collector#securing-the-collector) for further details.
+
+<a id="create-a-database-ingestion-user-oss"></a>
+
+#### Create an ingestion user {#create-a-database-ingestion-user-managed}
+
+It's recommended to create a dedicated user for the OTel collector for ingestion into Managed ClickHouse and ensuring ingestion is sent to a specific database e.g. `otel`. See ["Creating an ingestion user"](../ingesting-data/collector#creating-an-ingestion-user) for further details.
+
+<a id="configure-ttl"></a>
+
+### Configure Time To Live (TTL) {#configure-ttl-managed}
+
+Ensure the [Time To Live (TTL)](./ttl) has been [appropriately configured](./ttl#modifying-ttl) for your ClickHouse Observability deployment. This controls how long data is retained for - the default of 3 days often needs to be modified.
+
+### Estimating Resources {#estimating-resources}
+
+<ResourceEstimation/>
+
+For more details on refining sizing assumptions for your environment, see ["Refining sizing assumptions for your environment"](/clickstack/managing/estimating-resources#refining-sizing-assumptions).
+
+#### Isolating observability workloads {#isolating-workloads}
+
+If you're adding ClickStack to an **existing ClickHouse Cloud service** that already supports other workloads, such as real-time application analytics, isolating observability traffic is strongly recommended.
+
+Use [**Managed Warehouses**](/products/cloud/features/infrastructure/warehouses) to create a **child service** dedicated to ClickStack. This allows you to:
+
+- Isolate ingest and query load from existing applications
+- Scale observability workloads independently
+- Prevent observability queries from impacting production analytics
+- Share the same underlying datasets across services when needed
+
+This approach ensures your existing workloads remain unaffected while allowing ClickStack to scale independently as observability data grows.
+
+For larger deployments or custom sizing guidance, please contact support for a more precise estimate.
+
+<a id="clickhouse"></a>
+<a id="mongodb-guidelines"></a>
+<a id="network-security"></a>
+<a id="self-managed-security"></a>
+<a id="session-secret"></a>
+<a id="user-permissions"></a>
+
+For self-managed deployment security and MongoDB guidance, see [ClickStack production guidance](/clickstack/managing/production).

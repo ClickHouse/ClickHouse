@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
 title: 'Setting up your OpenTelemetry Collector'
-description: 'Setting up an OpenTelemetry Collector for Managed ClickStack'
+description: 'Setting up an OpenTelemetry Collector for ClickHouse Observability'
 doc_type: 'guide'
 keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
 unlisted: true
@@ -14,7 +14,7 @@ import CreateIngestionUser from '/snippets/clickstack/_create_ingestion_user.mdx
 import ConfirmInUI from '/snippets/clickstack/_confirm_in_ui.mdx';
 import { AgentPrompt } from '/snippets/components/AgentPrompt/AgentPrompt.jsx';
 
-This guide walks you through deploying an OpenTelemetry collector against an existing Managed ClickStack service, or adapting your existing collector, before verifying that data is flowing through.
+This guide walks you through deploying an OpenTelemetry collector against an existing ClickHouse Observability service, or adapting your existing collector, before verifying that data is flowing through.
 
 Install the official ClickHouse agent skills before using the setup assistant:
 
@@ -23,7 +23,7 @@ npx skills add clickhouse/agent-skills
 ```
 
 <AgentPrompt
-  prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my Managed ClickStack service."
+  prompt="Use the clickstack-otel-collector skill to wire an OpenTelemetry collector into my ClickHouse Observability service."
   description="Your agent will set up the ClickStack OpenTelemetry collector for you. Works with Claude Code, Cursor, Codex, and other coding agents."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
@@ -61,7 +61,7 @@ Pick the tab that matches your situation:
 </Step>
 <Step title="Deploy the collector" id="deploy-the-collector">
 
-Deploy the **ClickStack distribution of the OpenTelemetry collector**, which is preconfigured for Managed ClickStack. In the example below, we run the collector locally and generate artificial telemetry from the same machine for simplicity.
+Deploy the **ClickStack distribution of the OpenTelemetry collector**, which is preconfigured for ClickHouse Observability. In the example below, we run the collector locally and generate artificial telemetry from the same machine for simplicity.
 
 <Note>
 In production, you would typically deploy the collector in a Kubernetes cluster, or on a virtual machine that can be reached by your OpenTelemetry SDKs, agents, and other collectors. This allows telemetry from across your environment to be centrally collected and forwarded to ClickStack.
@@ -209,7 +209,7 @@ For the full set of flags and more variations, see [Synthetic data with telemetr
 </Step>
 <Step title="Adapt your collector configuration" id="adapt-collector">
 
-Extend your existing collector configuration to write to Managed ClickStack via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+Extend your existing collector configuration to write to ClickHouse Observability via the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
 <Info>
 **ClickHouse exporter required**
@@ -309,7 +309,7 @@ A few things to note:
 
 Reload your collector with the new configuration. Applications, SDKs, and agent collectors should then send to the OTLP endpoints exposed by your collector with whatever auth header your setup expects.
 
-For further details on configuring OpenTelemetry collectors against Managed ClickStack, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
+For further details on configuring OpenTelemetry collectors against ClickHouse Observability, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
 </Step>
 <Step title="Verify the endpoint" id="verify-the-endpoint-existing">
 

@@ -1,0 +1,11 @@
+```shell
+tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+  --otlp-attributes 'deployment.environment="production"' \
+  --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+  --otlp-attributes 'deployment.environment="production"' \
+  --telemetry-attributes 'http.method="POST"'
+tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+  --otlp-attributes 'deployment.environment="production"' \
+  --telemetry-attributes 'http.status_code="500"'
+```
