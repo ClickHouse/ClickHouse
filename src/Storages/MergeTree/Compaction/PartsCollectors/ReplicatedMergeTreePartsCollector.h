@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 namespace DB
 {

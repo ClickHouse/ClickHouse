@@ -8,6 +8,7 @@
 
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MutateTask.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <expected>
 
