@@ -90,7 +90,7 @@ constexpr auto move_source_version_id_attribute = "clickhouse_move_source_versio
 /// can be restamped onto other bytes. The token is a digest of that generation keyed by the queue's Keeper
 /// identity, so every attempt of the same queue (after a restart, on another replica) stamps the same token,
 /// while another queue moving the same key, or a restamp from public data, does not. The identity carries the
-/// Keeper name as well as the path: the same path on two Keeper clusters is two queues, not one.
+/// Keeper name as well as the path: one path under two Keeper names is two queues, not one.
 constexpr auto move_token_attribute = "clickhouse_move_token";
 
 String makeMoveToken(
