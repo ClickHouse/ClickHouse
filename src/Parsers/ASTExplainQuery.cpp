@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -130,6 +131,12 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
             if (const auto * set_query = explained->as<ASTSetQuery>();
                 set_query && (!set_query->is_standalone || (set_query->changes.empty() && set_query->default_settings.empty() && set_query->query_parameters.empty())))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires a non-empty standalone SET query during AST JSON deserialization", toString(kind));
+
+            /// `ParsedQuery` always wraps a top-level `SELECT` in `ASTSelectWithUnionQuery`, and the
+            /// interpreters of these kinds check for that wrapper. Only `EXPLAIN TEXT` formats a bare
+            /// `ASTSelectQuery`, which `forQueryFromJSON` callers may build directly.
+            if (explained->getQueryKind() == QueryKind::Select && !explained->as<ASTSelectWithUnionQuery>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} requires the SELECT to be wrapped in 'SelectWithUnionQuery' during AST JSON deserialization", toString(kind));
 
             /// `ParserExplainQuery` hands `EXPLAIN AST` to the full `ParserQuery`. `EXPLAIN QUERY TREE` accepts
             /// only `SELECT`. Every other kind accepts `SELECT`, `CREATE TABLE`, `INSERT` and `SYSTEM`. a wider

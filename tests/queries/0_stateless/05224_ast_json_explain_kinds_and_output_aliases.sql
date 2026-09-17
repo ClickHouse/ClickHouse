@@ -6,6 +6,13 @@ SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN PIPELINE","qu
 SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN QUERY TREE","query":{"type":"SetQuery","is_standalone":true,"changes":[{"name":"max_threads","value":{"field_type":"UInt64","value":1}}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN AST","query":{"type":"SetQuery","is_standalone":false,"changes":[{"name":"max_threads","value":{"field_type":"UInt64","value":1}}]}}'); -- { serverError BAD_ARGUMENTS }
 
+-- A top-level SELECT is always wrapped by the parser and the interpreters of these kinds require the
+-- wrapper, so a bare SelectQuery would format to SQL that does not execute the same way as the JSON.
+SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN QUERY TREE","query":{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN","query":{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN AST","query":{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ExplainQuery","kind":"EXPLAIN","query":{"type":"SelectIntersectExceptQuery","final_operator":"EXCEPT ALL","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}},{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+
 -- Parser-producible shapes still round-trip.
 SELECT formatQueryFromJSON(parseQueryToJSON('EXPLAIN AST SET max_threads = 1'));
 SELECT formatQueryFromJSON(parseQueryToJSON('EXPLAIN AST USE default'));
