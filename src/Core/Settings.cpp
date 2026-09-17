@@ -8293,6 +8293,13 @@ Enable automatic switching to execution with parallel replicas based on collecte
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, automatic_parallel_replicas_ignore_thresholds, false, R"(
+For testing of the automatic parallel replicas cost model - ignore the thresholds that decide a query before the cost model is consulted, so that the cost model comparison decides every query.
+
+Two thresholds are ignored: `automatic_parallel_replicas_min_bytes_per_replica`, and the cap on how many threads a read can usefully occupy (derived from `merge_tree_min_bytes_per_task_for_remote_reading`), which otherwise makes a small read compare equal on both sides of the comparison and so never switch.
+
+This does not change read task sizing, and it does not suppress the recollection of statistics that have drifted - a decision made on stale statistics is not a decision made by the cost model.
+)", 0) \
     DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
 The maximum number of replicas for each shard when executing a query.
 

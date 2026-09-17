@@ -23,12 +23,6 @@ FORMAT Null;
 
 -- If ClickHouse will choose too small task size, we don't want to artificially correct it's decision.
 SET max_threads = 3, merge_tree_min_read_task_size = 1;
--- This test measures the number of requests to the coordinator, which is exactly what the per-task
--- byte floor governs, and it reads from `s3_cache`. `no-random-settings` only covers the per-query
--- randomizer, not a server profile - and the `AutoParallelReplicas` stateless jobs lower this setting
--- in theirs. Pin it to the default so the request count the assertion below checks is the one the
--- default task sizing produces.
-SET merge_tree_min_bytes_per_task_for_remote_reading = 2097152;
 
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 2, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'parallel_replicas';

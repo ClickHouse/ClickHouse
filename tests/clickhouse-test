@@ -1947,19 +1947,17 @@ class SettingsRandomizer:
         # `automatic_parallel_replicas_mode` turns it off outright; `parallel_replicas_local_plan` = 0
         # makes the analyzer skip building the parallel-replicas plan at all
         # (`InterpreterSelectQueryAnalyzer::buildQueryPlanWithParallelReplicas`), so AutoPR has nothing
-        # to compare against; `filesystem_prefetch_min_bytes_for_single_read_task` is an ALIAS of
-        # `merge_tree_min_bytes_per_task_for_remote_reading` (`DECLARE_WITH_ALIAS` in Settings.cpp), and
-        # randomizing it to 1-16 MiB puts the per-task byte floor back, which clamps both sides of the
-        # cost model to the same value and decides the query before the cost model sees it.
+        # to compare against.
         #
-        # Match by alias, not by name: a setting pinned in the profile under one name can be randomized
-        # here under the other, which is how the last one was missed.
+        # Compare by ALIAS, not by name, when adding to the profile: `DECLARE_WITH_ALIAS` in
+        # Settings.cpp gives some settings a second name, and a setting pinned in the profile under one
+        # name can be randomized here under the other. That is how the randomizer silently put back a
+        # threshold the profile had disabled, for 84% of the queries in a run, without colliding by
+        # name with anything.
         if args.autopr:
             for setting in (
                 "automatic_parallel_replicas_mode",
                 "parallel_replicas_local_plan",
-                "filesystem_prefetch_min_bytes_for_single_read_task",
-                "merge_tree_min_bytes_per_task_for_remote_reading",
             ):
                 random_settings.pop(setting, None)
             return
