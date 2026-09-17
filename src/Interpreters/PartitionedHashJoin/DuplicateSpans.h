@@ -152,12 +152,20 @@ public:
         for (const auto bucket : scratch.keys)
             openKey(mapped_at(bucket));
 
+        /// The rows of a key that arrived together are consecutive items, and a run of them goes through
+        /// one read and one write of the cell word. Item by item, every write would wait on the previous
+        /// one's store to the same word.
         const size_t n = scratch.item.size();
-        for (size_t i = 0; i < n; ++i)
+        for (size_t i = 0; i < n;)
         {
-            if (i + 16 < n)
-                __builtin_prefetch(&mapped_at(scratch.bucket[i + 16]), 1, 3);
-            placeItem(mapped_at(scratch.bucket[i]), scratch.item[i]);
+            const UInt32 bucket = scratch.bucket[i];
+            size_t end = i + 1;
+            while (end < n && scratch.bucket[end] == bucket)
+                ++end;
+            if (end + 16 < n)
+                __builtin_prefetch(&mapped_at(scratch.bucket[end + 16]), 1, 3);
+            placeItems(mapped_at(bucket), &scratch.item[i], end - i);
+            i = end;
         }
 
         for (const auto bucket : scratch.keys)
@@ -169,8 +177,7 @@ public:
             if (!zero_mapped)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows of the zero key were appended, but no cell was given for them");
             openKey(*zero_mapped);
-            for (const auto it : scratch.zero_items)
-                placeItem(*zero_mapped, it);
+            placeItems(*zero_mapped, scratch.zero_items.data(), scratch.zero_items.size());
             closeKey(*zero_mapped);
         }
 
@@ -198,12 +205,20 @@ private:
         mapped = RowRefList::makeFill(span, /*placed=*/0, /*has_header=*/false);
     }
 
-    static void placeItem(RowRefList & mapped, UInt64 it)
+    /// Writes `count` items of one key; the open span's cursor state stays in registers across them.
+    static void placeItems(RowRefList & mapped, const UInt64 * items, size_t count)
     {
         chassert(mapped.isFill());
         UInt64 * cur = mapped.fillCursor();
         UInt32 placed = mapped.fillPlaced();
         bool hdr = mapped.fillHasHeader();
+        for (size_t k = 0; k < count; ++k)
+            placeWord(cur, placed, hdr, items[k]);
+        mapped = RowRefList::makeFill(cur, placed, hdr);
+    }
+
+    static ALWAYS_INLINE void placeWord(UInt64 *& cur, UInt32 & placed, bool & hdr, UInt64 it)
+    {
         if (!refWordIsInline(it))
         {
             cur[0] = RowRefList::fromWord(it).rows();
@@ -238,7 +253,6 @@ private:
             *cur++ = it;
             ++placed;
         }
-        mapped = RowRefList::makeFill(cur, placed, hdr);
     }
 
     static void closeKey(RowRefList & mapped)
