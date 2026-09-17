@@ -21,24 +21,26 @@
                  merge_tree_min_bytes_per_task_for_remote_reading + 1)`. When that second term is the
                  smaller one it clamps BOTH sides to the same value, the comparison collapses to
                  `0 > output_bytes / replicas`, and the answer is "no" before the cost model looks at
-                 anything.
+                 anything. Measured across runs of these jobs, by the value of this setting:
 
-                 Measured across two runs of these jobs, by the value of this setting:
+                     2 MiB (default)     86 of 7366 evaluations escaped the clamp,  76 switched
+                     16 KiB             248 of 7746 evaluations escaped the clamp, 236 switched
+                     1 KiB              600 of 7568 evaluations escaped the clamp, 561 switched
 
-                     2 MiB (default)    86 of 7366 evaluations escaped the clamp,  76 switched
-                     16 KiB            248 of 7746 evaluations escaped the clamp, 236 switched
+                 0 is not "a very small threshold" but a distinct code path: `considerEnablingParallelReplicas`
+                 reads the setting as `value ? input_bytes / value + 1 : SIZE_MAX`, so zero makes the
+                 clamp structurally unreachable and every evaluation is decided by the cost model. Any
+                 non-zero value leaves a residue - at 1 the clamp still binds for reads of a couple of
+                 bytes.
 
-                 Most reads here are far too small to parallelize - the median is ~190 bytes and p75 is
-                 ~1.6 KiB - so the clamp still (correctly) decides the large majority, and no value
-                 changes that. 1 KiB is the floor of what is worth setting: below it the read task size
-                 stops being plausible for the tests that read from object storage, and above it the
-                 reach falls away quickly.
-
-                 Note this setting governs real read-task sizing too, not just the cost model, so a test
-                 that asserts on the number of coordinator requests has to pin it - see
-                 03581_parallel_replicas_task_size. `no-random-settings` does not cover a server
-                 profile. -->
-            <merge_tree_min_bytes_per_task_for_remote_reading>1024</merge_tree_min_bytes_per_task_for_remote_reading>
+                 Zero is also the quieter choice for real reading. `MergeTreeReadPoolBase` only raises
+                 `min_marks_per_task` when `min_bytes_per_task / avg_mark_bytes` exceeds it, so zero
+                 skips that heuristic and leaves task sizing on its default path instead of shrinking
+                 tasks - which is what a small non-zero value does, and what broke
+                 03581_parallel_replicas_task_size at 16 KiB. That test keeps its pin regardless: it
+                 asserts on coordinator request counts, and `no-random-settings` gives it no protection
+                 against a server profile. -->
+            <merge_tree_min_bytes_per_task_for_remote_reading>0</merge_tree_min_bytes_per_task_for_remote_reading>
             <parallel_replicas_local_plan>1</parallel_replicas_local_plan>
             <parallel_replicas_for_non_replicated_merge_tree>1</parallel_replicas_for_non_replicated_merge_tree>
         </default>
