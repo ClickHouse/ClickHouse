@@ -124,8 +124,7 @@ ColumnsDescription readSchemaFromFormat(
 /// It runs schema inference for some set of formats on the same file.
 /// If schema reader of some format successfully inferred the schema from
 /// some file, we consider that the data is in this format.
-/// A caller that only needs the detected format name passes structure_is_required = false: it already
-/// holds an explicit structure, so an inferred structure that is unusable on its own is not an error.
+/// With structure_is_required = false only the format name is needed, so an unusable inferred structure is not an error.
 std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
