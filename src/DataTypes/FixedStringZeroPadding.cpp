@@ -20,8 +20,8 @@ bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & ri
     if (!left || !right)
         return false;
 
-    auto left_decayed = removeNullable(removeLowCardinality(left));
-    auto right_decayed = removeNullable(removeLowCardinality(right));
+    auto left_decayed = removeLowCardinalityAndNullable(left);
+    auto right_decayed = removeLowCardinalityAndNullable(right);
 
     const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left_decayed.get());
     const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right_decayed.get());
@@ -45,6 +45,7 @@ bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & ri
     /// `toFixedString('V0', 3) = 'V0\0'` is 1. Recursing here would make these functions disagree
     /// with `equals` in the opposite direction. `Tuple` above is different: `equals` decomposes it
     /// element-wise with the element types intact, so the rule does reach a `FixedString` inside it.
+    /// TODO: fix the weird equals behavior
     if (typeid_cast<const DataTypeArray *>(left_decayed.get()) || typeid_cast<const DataTypeMap *>(left_decayed.get()))
         return false;
 
@@ -57,7 +58,7 @@ bool zeroPaddedStringConstant(const DataTypePtr & type)
     if (!type)
         return false;
 
-    auto decayed = removeNullable(removeLowCardinality(type));
+    auto decayed = removeLowCardinalityAndNullable(type);
 
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(decayed.get()))
         return zeroPaddedStringConstant(type_array->getNestedType());
@@ -67,7 +68,7 @@ bool zeroPaddedStringConstant(const DataTypePtr & type)
 
 Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
 {
-    auto inner_type = removeNullable(removeLowCardinality(type));
+    auto inner_type = removeLowCardinalityAndNullable(type);
 
     if (isFixedString(inner_type) && field.getType() == Field::Types::String)
         return Field(String(stripTrailingZeros(field.safeGet<String>())));
@@ -88,63 +89,70 @@ Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & t
 
 DataTypePtr indexedElementType(const DataTypePtr & type)
 {
-    auto decayed = removeNullable(removeLowCardinality(type));
+    auto decayed = removeLowCardinalityAndNullable(type);
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(decayed.get()))
-        return removeNullable(removeLowCardinality(type_array->getNestedType()));
+        return removeLowCardinalityAndNullable(type_array->getNestedType());
     return decayed;
 }
 
-ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePtr & type)
+ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePtr & left, const DataTypePtr & right)
 {
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
         return ColumnConst::create(
-            stripTrailingZerosInStrings(column_const->getDataColumnPtr(), type), column_const->size());
+            stripTrailingZerosInStrings(column_const->getDataColumnPtr(), left, right), column_const->size());
 
-    if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-    {
-        const auto & column_nullable = assert_cast<const ColumnNullable &>(*column);
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
         return ColumnNullable::create(
-            stripTrailingZerosInStrings(column_nullable.getNestedColumnPtr(), type_nullable->getNestedType()),
-            column_nullable.getNullMapColumnPtr());
-    }
+            stripTrailingZerosInStrings(column_nullable->getNestedColumnPtr(), left, right),
+            column_nullable->getNullMapColumnPtr());
 
-    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    auto left_decayed = removeLowCardinalityAndNullable(left);
+    auto right_decayed = removeLowCardinalityAndNullable(right);
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
-        const auto & column_tuple = assert_cast<const ColumnTuple &>(*column);
-        const auto & element_types = type_tuple->getElements();
-        Columns elements(element_types.size());
-        for (size_t i = 0; i < element_types.size(); ++i)
-            elements[i] = stripTrailingZerosInStrings(column_tuple.getColumnPtr(i), element_types[i]);
+        const auto & left_elements = assert_cast<const DataTypeTuple &>(*left_decayed).getElements();
+        const auto & right_elements = assert_cast<const DataTypeTuple &>(*right_decayed).getElements();
+        const size_t size = column_tuple->tupleSize();
+        chassert(left_elements.size() == size && right_elements.size() == size);
+
+        Columns elements(size);
+        for (size_t i = 0; i < size; ++i)
+            elements[i] = stripTrailingZerosInStrings(column_tuple->getColumnPtr(i), left_elements[i], right_elements[i]);
         return ColumnTuple::create(std::move(elements));
     }
 
-    if (isString(type))
+    if (const auto * column_string = typeid_cast<const ColumnString *>(column.get());
+        column_string && zeroPaddedStringComparison(left_decayed, right_decayed))
     {
-        const auto & column_string = assert_cast<const ColumnString &>(*column);
-        const size_t size = column_string.size();
+        const size_t size = column_string->size();
         auto result = ColumnString::create();
         result->reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
-            auto value = stripTrailingZeros(column_string.getDataAt(i));
+            auto value = stripTrailingZeros(column_string->getDataAt(i));
             result->insertData(value.data(), value.size());
         }
         return result;
     }
 
-    /// No `String` values are reachable in this type, so there is nothing to canonicalise.
+    /// Either the rule does not apply to this pair of types, or the values already have one
+    /// canonical spelling: two `FixedString`s share a common `FixedString` type only when their
+    /// widths are equal, and there the rule and an exact comparison give the same answer.
     return column;
 }
 
-ColumnPtr stripTrailingZerosInArrayElements(const ColumnPtr & column, const DataTypePtr & element_type)
+ColumnPtr
+stripTrailingZerosInArrayElements(const ColumnPtr & column, const DataTypePtr & left_element, const DataTypePtr & right_element)
 {
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
         return ColumnConst::create(
-            stripTrailingZerosInArrayElements(column_const->getDataColumnPtr(), element_type), column_const->size());
+            stripTrailingZerosInArrayElements(column_const->getDataColumnPtr(), left_element, right_element),
+            column_const->size());
 
     const auto & column_array = assert_cast<const ColumnArray &>(*column);
     return ColumnArray::create(
-        stripTrailingZerosInStrings(column_array.getDataPtr(), element_type), column_array.getOffsetsPtr());
+        stripTrailingZerosInStrings(column_array.getDataPtr(), left_element, right_element), column_array.getOffsetsPtr());
 }
 
 }

@@ -84,9 +84,10 @@ struct CountEqualAction
 namespace Impl
 {
 
-/// Field-level equality honouring the zero-padding rule. Recurses into `Tuple` so a `FixedString`
-/// inside one is compared the same way as a top-level one, matching `equals`.
-inline bool fieldsEqual(const Field & left, const Field & right, bool zero_padded)
+/// Field-level equality honouring the zero-padding rule, since Field has no FixedString type.
+/// Recurses into Tuple so inner FixedStrings are handled correctly.
+inline bool fieldsEqual(
+    const Field & left, const Field & right, const DataTypePtr & left_type, const DataTypePtr & right_type, bool zero_padded)
 {
     if (!zero_padded)
         return accurateEquals(left, right);
@@ -94,15 +95,33 @@ inline bool fieldsEqual(const Field & left, const Field & right, bool zero_padde
     if (left.getType() == Field::Types::String && right.getType() == Field::Types::String)
         return stripTrailingZeros(left.safeGet<String>()) == stripTrailingZeros(right.safeGet<String>());
 
-    if (left.getType() == Field::Types::Tuple && right.getType() == Field::Types::Tuple)
+    auto left_decayed = removeLowCardinalityAndNullable(left_type);
+    auto right_decayed = removeLowCardinalityAndNullable(right_type);
+
+    const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_decayed.get());
+    const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_decayed.get());
+
+    if (left_tuple_type && right_tuple_type && left.getType() == Field::Types::Tuple
+        && right.getType() == Field::Types::Tuple)
     {
         const auto & left_tuple = left.safeGet<Tuple>();
         const auto & right_tuple = right.safeGet<Tuple>();
+        const auto & left_elements = left_tuple_type->getElements();
+        const auto & right_elements = right_tuple_type->getElements();
+
         if (left_tuple.size() != right_tuple.size())
             return false;
 
+        chassert(left_elements.size() == left_tuple.size());
+        chassert(right_elements.size() == right_tuple.size());
+
         for (size_t i = 0; i < left_tuple.size(); ++i)
-            if (!fieldsEqual(left_tuple[i], right_tuple[i], true))
+            if (!fieldsEqual(
+                    left_tuple[i],
+                    right_tuple[i],
+                    left_elements[i],
+                    right_elements[i],
+                    zeroPaddedStringComparison(left_elements[i], right_elements[i])))
                 return false;
 
         return true;
@@ -242,12 +261,13 @@ public:
         return current;
     }
 
-    static ResultType linearSearchConst(const Array & arr, const Field & value, bool zero_padded)
+    static ResultType linearSearchConst(
+        const Array & arr, const Field & value, const DataTypePtr & element_type, const DataTypePtr & value_type, bool zero_padded)
     {
         ResultType current = 0;
         for (size_t i = 0, size = arr.size(); i < size; ++i)
         {
-            if (!fieldsEqual(arr[i], value, zero_padded))
+            if (!fieldsEqual(arr[i], value, element_type, value_type, zero_padded))
                 continue;
 
             ConcreteAction::apply(current, i);
@@ -610,8 +630,8 @@ private:
 
     static bool allowArguments(const DataTypePtr & inner_type, const DataTypePtr & arg)
     {
-        auto inner_type_decayed = removeNullable(removeLowCardinality(inner_type));
-        auto arg_decayed = removeNullable(removeLowCardinality(arg));
+        auto inner_type_decayed = removeLowCardinalityAndNullable(inner_type);
+        auto arg_decayed = removeLowCardinalityAndNullable(arg);
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
@@ -1286,6 +1306,9 @@ private:
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
         const bool zero_padded = zeroPaddedComparison(arguments);
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        const DataTypePtr & element_type = array_type ? array_type->getNestedType() : arguments[0].type;
+        const DataTypePtr & value_type = arguments[1].type;
 
         if (isColumnConst(*item_arg))
         {
@@ -1298,13 +1321,13 @@ private:
                 if (zero_padded
                     || isColumnNullableOrLowCardinalityNullable(
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
-                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value, zero_padded);
+                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value, element_type, value_type, zero_padded);
                 else
                     current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
             }
             else
             {
-                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value, zero_padded);
+                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value, element_type, value_type, zero_padded);
             }
 
             return result_type->createColumnConst(item_arg->size(), current);
@@ -1342,7 +1365,7 @@ private:
                 {
                     if (null_map && (*null_map)[row])
                         continue;
-                    if (!Impl::fieldsEqual(arr[i], value, zero_padded))
+                    if (!Impl::fieldsEqual(arr[i], value, element_type, value_type, zero_padded))
                         continue;
                 }
 
@@ -1390,8 +1413,8 @@ private:
         /// comparison below matches `equals`. See `zeroPaddedStringComparison`.
         if (zeroPaddedComparison(arguments))
         {
-            col_nested = stripTrailingZerosInStrings(col_nested, common_type);
-            item_arg = stripTrailingZerosInStrings(item_arg, common_type);
+            col_nested = stripTrailingZerosInStrings(col_nested, array_elements_type, index_type);
+            item_arg = stripTrailingZerosInStrings(item_arg, array_elements_type, index_type);
         }
 
         auto col_res = ResultColumnType::create();

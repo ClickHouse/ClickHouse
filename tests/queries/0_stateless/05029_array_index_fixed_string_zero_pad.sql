@@ -128,6 +128,35 @@ select 'interior zero not collapsed',
     has([toFixedString('a\0b', 3)], toFixedString('ab', 3)),
     has(materialize([toFixedString('a\0b', 3)]), toFixedString('ab', 3));
 
+-- A `Tuple` can pair a field the rule applies to with a `String`/`String` field where a trailing
+-- zero byte is data. The rule is per field, not per tuple: the `FixedString` field below pads, the
+-- `String` field does not, so `equals` keeps these tuples unequal and the search must too.
+select 'mixed tuple, str field differs',
+    has([tuple('a\0', toFixedString('b', 1))], tuple('a', toFixedString('b', 2))),
+    has(materialize([tuple('a\0', toFixedString('b', 1))]), tuple('a', toFixedString('b', 2)));
+select 'mixed tuple, str field equal',
+    has([tuple('a', toFixedString('b', 1))], tuple('a', toFixedString('b', 2))),
+    has(materialize([tuple('a', toFixedString('b', 1))]), tuple('a', toFixedString('b', 2)));
+select 'mixed tuple, fs field differs',
+    has([tuple('a', toFixedString('b', 1))], tuple('a', toFixedString('c', 2))),
+    has(materialize([tuple('a', toFixedString('b', 1))]), tuple('a', toFixedString('c', 2)));
+select 'mixed tuple nested one level',
+    has([tuple('a\0', tuple(toFixedString('b', 1)))], tuple('a', tuple(toFixedString('b', 2)))),
+    has(materialize([tuple('a\0', tuple(toFixedString('b', 1)))]), tuple('a', tuple(toFixedString('b', 2))));
+-- The same tuple through the other functions, which canonicalise in their own code.
+select 'mixed tuple hasAny',
+    hasAny([tuple('a\0', toFixedString('b', 1))], [tuple('a', toFixedString('b', 2))]),
+    hasAny(materialize([tuple('a\0', toFixedString('b', 1))]), [tuple('a', toFixedString('b', 2))]);
+select 'mixed tuple hasAll',
+    hasAll([tuple('a\0', toFixedString('b', 1))], [tuple('a', toFixedString('b', 2))]),
+    hasAll(materialize([tuple('a\0', toFixedString('b', 1))]), [tuple('a', toFixedString('b', 2))]);
+select 'mixed tuple indexOf',
+    indexOf([tuple('a\0', toFixedString('b', 1))], tuple('a', toFixedString('b', 2))),
+    indexOf(materialize([tuple('a\0', toFixedString('b', 1))]), tuple('a', toFixedString('b', 2)));
+select 'mixed tuple countEqual',
+    countEqual([tuple('a\0', toFixedString('b', 1))], tuple('a', toFixedString('b', 2))),
+    countEqual(materialize([tuple('a\0', toFixedString('b', 1))]), tuple('a', toFixedString('b', 2)));
+
 -- `hasAny`, `hasAll` and `hasSubstr` share one comparison with `has` and must not disagree with it
 -- on the same operands. Every array argument here is a one-element array, so all four reduce to the
 -- same question. Both a constant and a materialized haystack, since that is the split the issue is
@@ -166,6 +195,15 @@ select 'has, str elem',      has(['ab'], toFixedString('ab', 3))
     = arrayExists(x -> x = toFixedString('ab', 3), ['ab']);
 select 'has, tuple elem',    has([tuple(toFixedString('V0', 3))], tuple('V0\0'))
     = arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]);
+-- For the mixed tuple, compare against `equals` on the same two tuples directly: it is the rule
+-- these functions have to match, and unlike `arrayExists` it cannot be rewritten into `has`.
+select 'has, mixed tuple',  has([tuple('a\0', toFixedString('b', 1))], tuple('a', toFixedString('b', 2)))
+    = (tuple('a\0', toFixedString('b', 1)) = tuple('a', toFixedString('b', 2)));
+select 'has, mixed tuple materialized',
+    has(materialize([tuple('a\0', toFixedString('b', 1))]), tuple('a', toFixedString('b', 2)))
+    = (tuple('a\0', toFixedString('b', 1)) = tuple('a', toFixedString('b', 2)));
+select 'hasAny, mixed tuple', hasAny([tuple('a\0', toFixedString('b', 1))], [tuple('a', toFixedString('b', 2))])
+    = (tuple('a\0', toFixedString('b', 1)) = tuple('a', toFixedString('b', 2)));
 select 'has, nullable elem',
     has(cast([toFixedString('V0', 3), null], 'Array(Nullable(FixedString(3)))'), toFixedString('V0', 4))
     = arrayExists(x -> x = toFixedString('V0', 4), cast([toFixedString('V0', 3), null], 'Array(Nullable(FixedString(3)))'));

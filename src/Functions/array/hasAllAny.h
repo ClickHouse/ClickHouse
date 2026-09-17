@@ -81,9 +81,11 @@ public:
         if (first_array_type && second_array_type
             && zeroPaddedStringComparison(first_array_type->getNestedType(), second_array_type->getNestedType()))
         {
-            const auto & element_type = assert_cast<const DataTypeArray &>(*common_type).getNestedType();
+            /// Both element types are passed so the rule is decided per leaf: inside a `Tuple`
+            /// element only the fields whose own pair of types is zero-padded are canonicalised.
             for (auto & preprocessed_column : preprocessed_columns)
-                preprocessed_column = stripTrailingZerosInArrayElements(preprocessed_column, element_type);
+                preprocessed_column = stripTrailingZerosInArrayElements(
+                    preprocessed_column, first_array_type->getNestedType(), second_array_type->getNestedType());
         }
 
         VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
