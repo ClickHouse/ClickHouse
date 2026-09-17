@@ -38,6 +38,9 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+
     QueryPlanStepPtr clone() const override;
 
     const StoragePtr & getStorage() const { return storage; }
@@ -49,6 +52,10 @@ private:
     StoragePtr storage;
     size_t num_streams;
     bool delay_read_for_global_sub_queries;
+
+    /// Whether `applyFilters` has run for this step, i.e. whether the sets of the in-source filters
+    /// were built in place; see `updatePrewhereInfo`.
+    bool filters_applied = false;
 
     /// In-source filtering (row-level security filter, PREWHERE) from `query_info`,
     /// or nullptr when there is nothing to apply.

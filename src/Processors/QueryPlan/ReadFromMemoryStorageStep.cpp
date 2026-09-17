@@ -411,6 +411,41 @@ QueryPlanStepPtr ReadFromMemoryStorageStep::clone() const
     return std::make_unique<ReadFromMemoryStorageStep>(*this);
 }
 
+void ReadFromMemoryStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
+    /// The row-level filter and `PREWHERE` are evaluated inside the source, which starts running
+    /// as soon as the pipeline is executed. A condition such as `PREWHERE k IN (SELECT ...)` carries
+    /// a `FutureSet` that the pipeline-level `CreatingSetsStep` fills in; relying on it is not
+    /// enough, because `DelayedPortsProcessor` can be short-circuited by a downstream processor that
+    /// closes its inputs early, and the source would then see a not-ready set. Build the sets in
+    /// place, the same way `ReadFromMergeTree` does for its storage-level `PREWHERE`.
+    /// This has to happen here, during plan optimization: at the end of `QueryPlan::optimize`,
+    /// `DelayedCreatingSetsStep` takes the subquery plans out of the sets, and an in-place build
+    /// from `initializePipeline` would find nothing to execute.
+    /// Sets of `GLOBAL IN` are excluded: `ReadFromRemote` has to attach an external table to them
+    /// before they are built.
+    if (query_info.row_level_filter)
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.row_level_filter->actions, context);
+    if (query_info.prewhere_info)
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
+
+    filters_applied = true;
+}
+
+void ReadFromMemoryStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    SourceStepWithFilter::updatePrewhereInfo(prewhere_info_value);
+
+    /// `optimizePrewhere` runs after `applyFilters`, so a condition with `IN (subquery)` that it moves
+    /// into `PREWHERE` still needs its set built in place, for the reason given in `applyFilters`.
+    /// Only when `applyFilters` did run for this step: otherwise the sets are left to the
+    /// `CreatingSetsStep` of the plan, and building one here would execute the subquery twice.
+    if (filters_applied && query_info.prewhere_info)
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
+}
+
 MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAndTypesList & physical_columns) const
 {
     if (!query_info.row_level_filter && !query_info.prewhere_info)
@@ -418,19 +453,6 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
 
     auto result = std::make_shared<MemorySourceFilter>();
     ExpressionActionsSettings actions_settings(context);
-
-    /// The row-level filter and `PREWHERE` are evaluated inside the source, which starts running
-    /// as soon as the pipeline is executed. A condition such as `PREWHERE k IN (SELECT ...)` carries
-    /// a `FutureSet` that the pipeline-level `CreatingSetsStep` fills in; relying on it here is not
-    /// enough, because `DelayedPortsProcessor` can be short-circuited by a downstream processor that
-    /// closes its inputs early, and the source would then see a not-ready set. Build the sets in
-    /// place, the same way `ReadFromMergeTree` does for its storage-level `PREWHERE`.
-    /// Sets of `GLOBAL IN` are excluded: `ReadFromRemote` has to attach an external table to them
-    /// before they are built.
-    if (query_info.row_level_filter)
-        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.row_level_filter->actions, context);
-    if (query_info.prewhere_info)
-        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
 
     /// The row-level security filter runs first, so PREWHERE expressions are never evaluated
     /// on the rows the policy hides.
