@@ -45,7 +45,8 @@ public:
     const_iterator end() const { return entries.end(); }
 
 private:
-    /// `HTTPHeaderFilter` edits a name in place, then restores the invariant.
+    /// `HTTPHeaderFilter` strips control characters from a name in place, which leaves the case,
+    /// and so the invariant, untouched.
     friend class HTTPHeaderFilter;
 
     HTTPHeaderEntries entries;
