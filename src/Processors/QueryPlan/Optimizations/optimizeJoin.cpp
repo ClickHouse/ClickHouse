@@ -3,6 +3,7 @@
 #include <Common/safe_cast.h>
 
 #include <Core/Joins.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/IDataType.h>
 
@@ -34,6 +35,7 @@
 #include <optional>
 #include <ranges>
 #include <stack>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -51,6 +53,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
 namespace QueryPlanOptimizations

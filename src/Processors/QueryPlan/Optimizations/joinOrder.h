@@ -135,4 +135,5 @@ struct QueryGraph
 struct QueryPlanOptimizationSettings;
 
 DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
+
 }

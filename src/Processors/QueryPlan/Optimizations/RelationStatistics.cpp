@@ -10,6 +10,8 @@ namespace DB::QueryPlanOptimizations
 
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
+    /// Column statistics are usually absent; do not pay for a full lineage walk of the
+    /// `ActionsDAG` when there is nothing to remap.
     if (mapped.empty())
         return;
 
@@ -29,8 +31,11 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             continue;
 
         ColumnStats stats = stats_it->second;
+        /// Add the offset, guarding against overflow when the source NDV is near the maximum.
         if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - output_lineage.input->ndv_delta)
             stats.num_distinct_values += output_lineage.input->ndv_delta;
+        /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
+        /// width to unknown.
         if (!output_lineage.input->preserves_width)
             stats.avg_bytes = 0;
         /// The value range and NULL set survive only lineage known to pass the value through

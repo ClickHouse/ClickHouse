@@ -1,3 +1,5 @@
+#include <memory>
+#include <ranges>
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Interpreters/Context.h>

@@ -59,6 +59,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     std::optional<Float64> total_number_of_distinct_values = 1;
     RelationStats aggregation_stats;
+    /// Carry imprecision and source from the input, or the annotation is lost for aggregation subqueries.
     aggregation_stats.imprecise_estimate = input_stats.imprecise_estimate;
     aggregation_stats.source = input_stats.source;
     for (const auto & key : aggregator_params.keys)
@@ -66,6 +67,10 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         auto key_stats = input_stats.column_stats.find(key);
         if (key_stats == input_stats.column_stats.end())
         {
+            /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns.
+            /// The estimate then falls back to the input row count (an over-count of groups), so it is no longer
+            /// precise. Flag it and surface a missing-statistics source so the EXPLAIN label and the
+            /// join-reordering diagnostic reflect that the fallback was caused by missing column statistics.
             total_number_of_distinct_values.reset();
             aggregation_stats.imprecise_estimate = true;
             if (aggregation_stats.source == RowEstimateSource::Statistics || aggregation_stats.source == RowEstimateSource::NoSource)
@@ -76,8 +81,10 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         UInt64 key_number_of_distinct_values = key_stats->second.num_distinct_values;
         if (input_stats.estimated_rows)
             key_number_of_distinct_values = std::min(key_number_of_distinct_values, *input_stats.estimated_rows);
+
         aggregation_stats.column_stats[key].num_distinct_values = key_number_of_distinct_values;
 
+        /// For now assume that aggregation columns are independent, so multiply their NDVs
         if (total_number_of_distinct_values)
             *total_number_of_distinct_values *= static_cast<Float64>(key_number_of_distinct_values);
     }
@@ -88,6 +95,7 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         total_number_of_distinct_values = input_stats.estimated_rows;
 
     aggregation_stats.estimated_rows = total_number_of_distinct_values;
+
     return aggregation_stats;
 }
 
@@ -113,6 +121,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         String table_display_name = reading->getStorageID().getTableName();
+
+        /// Analyze partition and primary-key ranges before estimating the relation so column
+        /// statistics come only from parts that can satisfy the query. Reuse the result for
+        /// the index-based fallback below.
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
@@ -120,12 +132,22 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             const bool has_throwing_row_limit
                 = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
                 || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
+
+            /// Range analysis normally enforces throwing read limits and memoizes its result.
+            /// At this stage, however, later planning may make the executed read exempt from those
+            /// limits. In that case use an estimation-only analysis; execution will analyze again
+            /// after its final read mode is known.
             analyzed_result = has_throwing_row_limit ? reading->selectRangesToReadForEstimation() : reading->selectRangesToRead();
         }
 
+        /// An exact empty range selection proves that the relation is empty. Other empty
+        /// analysis results can be placeholders for deferred work, so only propagate zero
+        /// when `has_exact_ranges` is set.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
             return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
 
+        /// `STREAM` defers range analysis until execution. Its placeholder result has zero
+        /// selected rows but does not mean that the relation is empty.
         if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
         {
             return RelationStats{
@@ -170,6 +192,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 total_granules = 0;
         for (const auto & idx_stat : analyzed_result->index_stats)
         {
+            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
+            /// Further index_stats are used to estimate amount of filtered data after applying the index.
             if (ReadFromMergeTree::IndexType::None == idx_stat.type)
             {
                 total_parts = idx_stat.num_parts_after;
@@ -179,10 +203,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
             is_filtered_by_index = is_filtered_by_index || (total_parts && idx_stat.num_parts_after < total_parts)
                 || (total_granules && idx_stat.num_granules_after < total_granules);
+
             if (is_filtered_by_index)
                 break;
         }
         bool has_filter = filter || reading->getPrewhereInfo();
+
+        /// If any conditions are pushed down to storage but not used in the index,
+        /// we cannot precisely estimate the row count
         if (has_filter && !is_filtered_by_index)
             return RelationStats{
                 .estimated_rows = {},
@@ -207,11 +235,19 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
     }
 
+    /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
+    /// since this is defined in clickhouse_storages_system module,
+    /// which is not linked to current module
     if (step->getName() == "ReadFromSystemOne")
+    {
+        /// system.one always produces exactly one row - used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
+    }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
+    {
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+    }
 
     if (node.children.size() != 1)
         return {};
@@ -251,6 +287,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
+        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
+        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
         return RelationStats{
             .estimated_rows = join_step->getResultRowsEstimation(),
             .column_stats = join_step->getResultColumnStats(),
@@ -270,6 +308,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return stats;
     }
 
+    /// Estimates must see through exchanges: they do not change row counts, and an
+    /// already-distributed subtree would otherwise report unknown cardinality, degrading
+    /// broadcast-vs-shuffle and join order decisions.
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter);
 
