@@ -148,6 +148,9 @@ private:
         ResourceCost max_consumed = 0; /// Maximum consumption value for this request before it should be finished
         bool is_master_slot = false; /// (true) master or (false) worker slot
         bool is_noncompeting = false; /// Noncompeting slot has `ResourceLink::queue == nullptr` and is granted immediately w/o scheduling
+        UInt64 enqueue_time_ns = 0;
+        UInt64 grant_time_ns = 0;
+        size_t request_seq = 0;
     };
 
 public:
@@ -273,6 +276,7 @@ private:
     std::atomic_bool acquirable{false}; // Tracks `(granted > 0 || exception) && !shutdown` value that could be read w/o locking mutex
     SlotCount allocated = 0; /// Current number of allocated (granted and acquired) slots
     Int64 granted = 0; /// Allocated but not acquired slots (might be negative if acquired more than allocated)
+    SlotCount noncompeting_granted = 0; /// Granted noncompeting slots waiting to be acquired
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
     ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
 
@@ -302,27 +306,52 @@ private:
     class RequestChain
     {
     public:
+        static constexpr size_t max_inflight_requests = 4;
+
         RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_);
         void finish();
         void granted();
         bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
         void cancel(std::unique_lock<std::mutex> & lock);
-        void scheduled();
+        void scheduled(bool was_granted = true);
         ResourceCost getMaxConsumed() const { return tail->max_consumed; }
-        bool hasEnqueued() const { return enqueued; }
+        bool hasEnqueued() const { return enqueued_count > 0; }
+        bool canEnqueue() const { return enqueued_count < max_inflight_requests; }
+        size_t getEnqueuedCount() const { return enqueued_count; }
+        bool currentIsNoncompeting() const { return next_grant->is_noncompeting; }
+        bool currentIsMaster() const { return next_grant->is_master_slot; }
+        size_t currentRequestSeq() const { return next_grant->request_seq; }
+        std::optional<UInt64> currentWaitQueueUs() const
+        {
+            if (next_grant->grant_time_ns >= next_grant->enqueue_time_ns && next_grant->enqueue_time_ns > 0)
+                return (next_grant->grant_time_ns - next_grant->enqueue_time_ns) / 1000;
+            return std::nullopt;
+        }
+        void recordGrantTime();
 
     private:
+        using Requests = std::vector<Request>;
+        Requests::iterator next(Requests::iterator it)
+        {
+            ++it;
+            if (it == requests.end())
+                it = requests.begin();
+            return it;
+        }
+
+        CPULeaseAllocation * lease_ptr = nullptr;
         // Configuration
         const ResourceLink master_link; /// Resource link to use for master thread resource requests
         const ResourceLink worker_link; /// Resource link to use for worker threads resource requests
 
         // Current state
-        using Requests = std::vector<Request>;
         Requests requests; /// Circular buffer of requests per every slot
-        Requests::iterator head; /// Next request to be enqueued
+        Requests::iterator next_enqueue; /// Next request to be enqueued
+        Requests::iterator next_grant; /// Next request to be granted
         Requests::iterator tail; /// Next request to be finished
-        bool enqueued = false; /// True if the next request is already enqueued to the scheduler
+        size_t enqueued_count = 0; /// Number of requests currently enqueued to the scheduler
         bool request_master_slot = true; /// The next request should use (true) master_link or (false) worker_link
+        size_t request_seq_counter = 0;
 
         // Cancellation of enqueued request
         std::condition_variable cancel_cv;
