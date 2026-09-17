@@ -442,8 +442,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         /// oversized by that multiplicity. The count is the one a previous run of this query left in
         /// the hash table statistics cache. Without one the table starts at the smallest degree and
         /// doubles as the keys arrive, as `hash`'s does. The row hint only caps the reserve: a table
-        /// cannot hold more keys than rows. Every clause sizes its table from the one cached count, as
-        /// `HashJoin` reserves each of its maps from the one statistics entry.
+        /// cannot hold more keys than rows. Every clause sizes its table from the one cached count.
         if (!clauses.front().hasTable())
         {
             const size_t keys = readDistinctKeysFromStatisticsCache() ? *cached_distinct_keys : 1;
@@ -658,7 +657,7 @@ void PartitionedHashJoin::onBuildPhaseFinish()
     /// A previous run's exact count replaces the sketch estimate. The table it sizes needs no safety
     /// margin and, when the data has not changed, no grow: the preallocation `HashJoin` made from the
     /// same cache entry. The entry counts the keys of every clause together, and each clause sizes from
-    /// it, as `HashJoin` reserves each of its maps from the one entry.
+    /// it. `HashJoin` reserves each of its maps from the one entry the same way.
     const bool exact = readDistinctKeysFromStatisticsCache();
     for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
         clauses[clause_idx].setDistinctEstimate(exact ? static_cast<double>(*cached_distinct_keys) : merged[clause_idx].estimate(), exact);
@@ -860,7 +859,7 @@ ThreadPool & PartitionedHashJoin::postBuildPool(size_t clause_idx)
 
 void PartitionedHashJoin::reinitUsedFlags()
 {
-    /// The per-row shape marks the flags of the stored rows and never reads a per-offset flag, so the
+    /// The per-row shape marks the flags of the stored rows and never reads a per-offset flag. The
     /// `cells + 1` space would be allocated and zeroed for nothing. `HashJoin::reinitUsedFlags` skips it
     /// for the same shape.
     if (used_flags_per_row)

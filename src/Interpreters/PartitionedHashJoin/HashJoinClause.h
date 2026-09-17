@@ -84,8 +84,8 @@ public:
         StoredBlock stored;
         /// Indexed like the join's clauses.
         std::vector<Input> clauses;
-        /// The block's used flags when the join keeps them per right-table row (one per row, zeroed by
-        /// the fill thread), handed to the join's flags when the block is stored.
+        /// The block's used flags when the join keeps them per right-table row: one per row, zeroed by
+        /// the fill thread. The store hands them to the join's flags.
         JoinStuff::JoinUsedFlags::UsedFlagsForColumns per_row_flags;
         size_t rows = 0;
         UInt32 block_no = 0; /// assigned at the build barrier
@@ -260,8 +260,8 @@ public:
     /// ungrouped call and for the fill-phase gate; the grouped call receives the value `planPostBuild`
     /// computed from the ungrouped floor.
     size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est = 1) const;
-    /// The pool of the post-build waves, created by the join once per build and handed to every clause;
-    /// the join's drain into another join runs on one too.
+    /// A pool of post-build waves. The join creates one per clause; the clause pool of a concurrent
+    /// build and the join's drain into another join use one too.
     static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     /// What the join's other clauses hold or will hold next to this clause's build - their tables and

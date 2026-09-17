@@ -48,9 +48,10 @@ class TableJoin;
   * wrapped past a range end.
   *
   * A join with several disjuncts (`ON a OR b`) holds one clause per disjunct over the one store, as
-  * `HashJoin` holds one map per disjunct. The fill routes every row to every clause, the tables are built
-  * one after another at the barrier, and the probe walks the clauses in order. A right row reached
-  * through several keys is emitted once (`KnownRowsHolder`).
+  * `HashJoin` holds one map per disjunct. The fill routes every row to every clause. The barrier builds
+  * the tables, at once when no memory budget applies and one after another under a budget. The probe
+  * walks the clauses in order. A right row reached through several keys is emitted once
+  * (`KnownRowsHolder`).
   *
   * The table doubles in place when a wrapping insert would take the last empty cell. It also
   * doubles between waves when the projected fill would exceed 50%. Duplicates of a key are
@@ -64,10 +65,10 @@ class TableJoin;
   * used flags and the probe. Used flags are `cells + 1` entries (offset 0 is the zero-value cell).
   * That is the layout `JoinUsedFlags` and the non-joined scan expect.
   *
-  * A right row reachable through several keys (several disjuncts, or a mixed non-equi ON condition
-  * on a RIGHT or FULL join) needs used flags per right-table row, not per cell. Those joins keep
-  * the flags per row (`used_flags_per_row`), attached to the stored blocks, and their non-joined
-  * scan walks the stored blocks instead of the table, as `HashJoin` does.
+  * Several disjuncts, or a mixed non-equi ON condition on a RIGHT or FULL join, make a right row
+  * reachable through several keys. Such a row needs a used flag per right-table row, not per cell.
+  * Those joins keep the flags per row (`used_flags_per_row`), attached to the stored blocks. Their
+  * non-joined scan walks the stored blocks instead of the table, as `HashJoin` does.
   *
   * The Join table engine (`StorageJoin`) runs this join in a third mode, `join_table_mode`: one
   * single-partition table, created empty with the join and filled one block at a time under the
@@ -367,9 +368,9 @@ private:
     void finishBuildPhase(bool all_values_unique);
     /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
     void reinitUsedFlags();
-    /// The pool of one clause's post-build waves, created on first use after the barrier and sized to the
-    /// smaller of the thread count and the block count. One per clause, so the clauses can build at once;
-    /// released with the scratch.
+    /// The pool of one clause's post-build waves. It is created on first use after the barrier and sized
+    /// to the smaller of the thread count and the block count. One per clause, so the clauses can build at
+    /// once; released with the scratch.
     ThreadPool & postBuildPool(size_t clause_idx);
 
     /// `MapsShape` is the standard shape the (kind, strictness) pair dispatches to; the shared table is
@@ -450,8 +451,8 @@ private:
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
     /// Fill-phase distinct estimates for `predictedResidentBytes`, one per clause. Merging every lane
-    /// on every block would cost `lanes * clauses * 8 KiB`, so the values are reused until the row
-    /// count has grown by a sixteenth. A slightly stale value only delays the switch by one refresh
+    /// on every block would cost `lanes * clauses * 8 KiB`. The values are therefore reused until the
+    /// row count has grown by a sixteenth. A slightly stale value only delays the switch by one refresh
     /// interval.
     mutable std::vector<std::atomic<size_t>> cached_distinct_estimates;
     mutable std::atomic<size_t> distinct_estimate_at_rows{0};
