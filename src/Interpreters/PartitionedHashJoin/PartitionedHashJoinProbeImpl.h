@@ -313,8 +313,9 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
     /// Where the ring is supported it is the probe path above the threshold. On string-key tables it
     /// is also the only thing that overlaps cell misses: the look-ahead prefetcher is off there because
     /// `getKeyHolder` per look-ahead is too expensive for its heuristic. The conditions are the
-    /// software-prefetch ones - the user toggle and a table larger than L2 - plus a row floor, below
-    /// which the ring's prime and drain cost more than the overlap wins.
+    /// software-prefetch ones - the user toggle and a table of at least L2 size, which the probe
+    /// stream then keeps evicting - plus a row floor, below which the ring's prime and drain cost
+    /// more than the overlap wins.
     using MapNonConst = std::remove_const_t<Map>;
     constexpr bool amac_supported = amac_join_supported<KeyGetter, MapNonConst>;
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
@@ -322,12 +323,12 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
     constexpr bool flat_lookup_supported = can_prefetch && is_hash_join_table<MapNonConst>;
     bool use_amac = false;
     if constexpr (amac_supported)
-        use_amac = amac_enabled && added_columns.enable_prefetch && ht_total_bytes > getMinBytesForPrefetchInJoin() && rows >= amac_min_rows;
+        use_amac = amac_enabled && added_columns.enable_prefetch && ht_total_bytes >= getMinBytesForPrefetchInJoin() && rows >= amac_min_rows;
 
     /// Mutually exclusive with the find pass, on the same threshold.
     bool use_prefetch = false;
     if constexpr (can_prefetch)
-        use_prefetch = !use_amac && added_columns.enable_prefetch && ht_total_bytes > getMinBytesForPrefetchInJoin();
+        use_prefetch = !use_amac && added_columns.enable_prefetch && ht_total_bytes >= getMinBytesForPrefetchInJoin();
 
     /// Used only by `loop`'s plain path; `flat_loop` builds its own over the flat lookup.
     auto prefetcher = makeJoinPrefetcher(
