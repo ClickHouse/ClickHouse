@@ -1538,11 +1538,18 @@ std::vector<TableInfo> fetchTables(
 
     /// Fetch table names from undumped databases so unqualified references and empty-database
     /// merge() calls can be checked for ambiguity against them, not just against dumped databases.
+    /// A predefined database is never dumped and exists wherever the dump is replayed, so a
+    /// namesake there never competes for a database-less reference's binding.
+    std::set<String> undumped_databases_to_scan;
+    for (const auto & db : undumped_databases)
+        if (!DatabaseCatalog::isPredefinedDatabase(db))
+            undumped_databases_to_scan.insert(db);
+
     std::map<String, std::map<String, String>> undumped_tables_by_db;
-    if (!undumped_databases.empty())
+    if (!undumped_databases_to_scan.empty())
     {
         String undumped_list;
-        for (const auto & db : undumped_databases)
+        for (const auto & db : undumped_databases_to_scan)
         {
             if (!undumped_list.empty())
                 undumped_list += ", ";

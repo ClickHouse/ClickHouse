@@ -445,6 +445,34 @@ else
 fi
 rm -rf "$UNDUMPED_MRG_PATH"
 
+echo '--- a database-less reference whose only namesake is predefined is dumped ---'
+# `tables` exists in system and INFORMATION_SCHEMA on every server, and no dump contains a
+# predefined database, so a namesake there is not an omitted-database conflict.
+PREDEF_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_predef"
+PREDEF_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_predef.sql"
+rm -rf "$PREDEF_PATH"
+$CLICKHOUSE_LOCAL --path "$PREDEF_PATH" --multiquery --query "
+CREATE DATABASE predef_a;
+CREATE TABLE predef_a.tables (k UInt64) ENGINE = MergeTree ORDER BY k;
+USE predef_a;
+CREATE VIEW predef_a.reads_loop AS SELECT * FROM loop(tables);
+CREATE VIEW predef_a.reads_merge AS SELECT * FROM merge('', '^tables\$');
+"
+if $CLICKHOUSE_LOCAL --path "$PREDEF_PATH" --dump-schema='predef_a' > "$PREDEF_DUMP_FILE" 2>"$ERR_FILE"; then
+    predef_src_line=$(grep -n 'CREATE TABLE predef_a\.tables ' "$PREDEF_DUMP_FILE" | cut -d: -f1)
+    predef_loop_line=$(grep -n 'CREATE VIEW predef_a\.reads_loop ' "$PREDEF_DUMP_FILE" | cut -d: -f1)
+    predef_merge_line=$(grep -n 'CREATE VIEW predef_a\.reads_merge ' "$PREDEF_DUMP_FILE" | cut -d: -f1)
+    if [[ -n "$predef_src_line" && -n "$predef_loop_line" && -n "$predef_merge_line" \
+        && "$predef_src_line" -lt "$predef_loop_line" && "$predef_src_line" -lt "$predef_merge_line" ]]; then
+        echo 'OK: a predefined namesake is not a competing binding'
+    else
+        echo "FAIL: predefined-namesake dump incomplete or misordered (src=$predef_src_line loop=$predef_loop_line merge=$predef_merge_line)"
+    fi
+else
+    echo "FAIL: dump refused over a predefined-database namesake: $(cat "$ERR_FILE")"
+fi
+rm -rf "$PREDEF_PATH" "$PREDEF_DUMP_FILE"
+
 echo '--- the prelude omits dump-specific gates this schema cannot need ---'
 # Dump-specific gates are emitted only when the dumped AST contains their markers.
 echo "ungated gate emitted: $(grep -c 'SET allow_experimental_time_series_table' "${DUMP_FILE}")"

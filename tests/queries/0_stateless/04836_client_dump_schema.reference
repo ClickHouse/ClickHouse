@@ -71,6 +71,8 @@ reference kept bound to the omitted database: 1
 omitted binding reported: 1
 --- a database-less merge() satisfiable by an omitted database is refused, not rebound ---
 omitted-database merge refused: 1
+--- a database-less reference whose only namesake is predefined is dumped ---
+OK: a predefined namesake is not a competing binding
 --- the prelude omits dump-specific gates this schema cannot need ---
 ungated gate emitted: 0
 explicit-uuid gate emitted: 0
