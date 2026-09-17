@@ -69,6 +69,13 @@
                   "group": "2026",
                   "pages": [
                     {
+                      "group": "September",
+                      "pages": [
+                        "clickstack/managed/demo-days/2026/2026-09-10",
+                        "clickstack/managed/demo-days/2026/2026-09-04"
+                      ]
+                    },
+                    {
                       "group": "August",
                       "pages": [
                         "clickstack/managed/demo-days/2026/2026-08-28",
@@ -127,6 +134,7 @@
             "clickstack/managed/managing/admin",
             "clickstack/managed/managing/config",
             "clickstack/managing/estimating-resources",
+            "clickstack/managing/isolating-read-write",
             "clickstack/managed/managing/materialized-views",
             "clickstack/managed/managing/performance-tuning",
             "clickstack/managed/managing/production",
@@ -337,6 +345,13 @@
                 {
                   "group": "2026",
                   "pages": [
+                    {
+                      "group": "September",
+                      "pages": [
+                        "clickstack/demo-days/2026/2026-09-10",
+                        "clickstack/demo-days/2026/2026-09-04"
+                      ]
+                    },
                     {
                       "group": "August",
                       "pages": [

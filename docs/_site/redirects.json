@@ -1,5 +1,9 @@
 [
   {
+    "destination": "/clickstack/managing/isolating-read-write",
+    "source": "/use-cases/observability/clickstack/isolating-read-write"
+  },
+  {
     "destination": "/clickstack/getting-started/managed",
     "source": "/clickstack/managed/getting-started"
   },
@@ -1908,8 +1912,16 @@
     "source": "/cloud/managed-postgres/branching"
   },
   {
-    "destination": "/products/managed-postgres/clickhouse-integration",
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
     "source": "/cloud/managed-postgres/clickhouse-integration"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/cloud/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/cloud/managed-postgres/walshadow"
   },
   {
     "destination": "/products/managed-postgres/connection",
@@ -1950,6 +1962,18 @@
   {
     "destination": "/products/managed-postgres/migrations/clickpipes",
     "source": "/cloud/managed-postgres/migrations/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/products/managed-postgres/clickhouse-integration"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/clickpipes",
+    "source": "/products/managed-postgres/clickpipes"
+  },
+  {
+    "destination": "/products/managed-postgres/sync-to-clickhouse/walshadow",
+    "source": "/products/managed-postgres/walshadow"
   },
   {
     "destination": "/products/managed-postgres/migrations/data-validation",
@@ -40880,7 +40904,7 @@
     "source": "/sql-reference/table-functions/sqlite"
   },
   {
-    "destination": "/reference/functions/table-functions/timeSeriesMetrics",
+    "destination": "/reference/functions/table-functions/timeSeriesMetricFamilies",
     "source": "/sql-reference/table-functions/timeSeriesMetrics"
   },
   {

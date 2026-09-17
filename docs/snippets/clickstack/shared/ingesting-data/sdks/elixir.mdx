@@ -1,12 +1,7 @@
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Logs</td>
-      <td className="pe-2">✖️ Metrics</td>
-      <td className="pe-2">✖️ Traces</td>
-    </tr>
-  </tbody>
-</table>
+import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+<ClickStackIntegrates signals={['logs']} />
+
 _🚧 OpenTelemetry metrics & tracing instrumentation coming soon!_
 
 ## Getting started {#getting-started}
@@ -45,7 +40,7 @@ shell to ship telemetry to ClickStack via the OpenTelemetry collector:
 <Tab title="ClickHouse Observability">
 
 ```shell
-OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
 ```
 
 </Tab>
@@ -54,7 +49,7 @@ OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
 
 ```shell
 export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
 ```
 
 </Tab>

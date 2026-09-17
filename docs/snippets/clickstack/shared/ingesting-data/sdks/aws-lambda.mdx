@@ -1,14 +1,6 @@
-**This guide Integrates:**
+import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Logs</td>
-      <td className="pe-2">✅ Metrics</td>
-      <td className="pe-2">✅ Traces</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
 ## Installing the OpenTelemetry Lambda layers {#installing-the-otel-lambda-layers}
 
@@ -164,7 +156,7 @@ processors:
 
 exporters:
   otlphttp:
-    endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+    endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
     compression: gzip
 
 service:
@@ -203,7 +195,7 @@ processors:
 
 exporters:
   otlphttp:
-    endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+    endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
     headers:
       authorization: <YOUR_INGESTION_API_KEY>
     compression: gzip
@@ -279,7 +271,7 @@ exporters:
   logging:
     verbosity: detailed
   otlphttp:
-    endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+    endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
     compression: gzip
 
 service:
@@ -319,7 +311,7 @@ exporters:
   logging:
     verbosity: detailed
   otlphttp:
-    endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+    endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
     headers:
       authorization: <YOUR_INGESTION_API_KEY>
     compression: gzip

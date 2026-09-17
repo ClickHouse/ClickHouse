@@ -9,6 +9,7 @@
     '/clickstack/deployment/managed',
     '/clickstack/notebooks',
     '/clickstack/managing/estimating-resources',
+    '/clickstack/managing/isolating-read-write',
     '/clickstack/managing/rbac'
   ];
 
@@ -16,6 +17,8 @@
   var SHARED_GUIDES = [
     "/api-reference",
     "/architecture",
+    "/demo-days/2026/2026-09-10",
+    "/demo-days/2026/2026-09-04",
     "/demo-days/2026/2026-04-03",
     "/demo-days/2026/2026-04-10",
     "/demo-days/2026/2026-04-17",

@@ -1,13 +1,10 @@
+import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack uses the OpenTelemetry standard for collecting telemetry data (logs, metrics,
 traces and exceptions). Traces are auto-generated with automatic instrumentation, so manual
 instrumentation isn't required to get value out of tracing.
 
-This guide integrates:
-
-- **Logs**
-- **Metrics**
-- **Traces**
-- **Exceptions**
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
 ## Getting started {#getting-started}
 
@@ -43,8 +40,8 @@ To initialize the SDK, you'll need to call the `init` function at the top of the
 const HyperDX = require('@hyperdx/node-opentelemetry');
 
 HyperDX.init({
-    url: 'http://your-otel-collector:4318',
-    apiKey: 'YOUR_INGESTION_API_KEY', // Omit for ClickHouse Observability
+    url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+    apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for ClickHouse Observability
     service: 'my-service'
 });
 ```
@@ -56,8 +53,8 @@ HyperDX.init({
 import * as HyperDX from '@hyperdx/node-opentelemetry';
 
 HyperDX.init({
-    url: 'http://your-otel-collector:4318',
-    apiKey: 'YOUR_INGESTION_API_KEY', // Omit for ClickHouse Observability
+    url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+    apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for ClickHouse Observability
     service: 'my-service'
 });
 ```
@@ -143,8 +140,8 @@ To enable this, you'll need to add the following code to the end of your applica
 ```javascript
 const HyperDX = require('@hyperdx/node-opentelemetry');
 HyperDX.init({
-    url: 'http://your-otel-collector:4318',
-    apiKey: 'YOUR_INGESTION_API_KEY', // Omit for ClickHouse Observability
+    url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+    apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for ClickHouse Observability
     service: 'my-service'
 });
 const app = express();
@@ -166,8 +163,8 @@ const Koa = require("koa");
 const Router = require("@koa/router");
 const HyperDX = require('@hyperdx/node-opentelemetry');
 HyperDX.init({
-    url: 'http://your-otel-collector:4318',
-    apiKey: 'YOUR_INGESTION_API_KEY', // Omit for ClickHouse Observability
+    url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+    apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for ClickHouse Observability
     service: 'my-service'
 });
 
@@ -312,7 +309,7 @@ The `HYPERDX_API_KEY` can be omitted for ClickHouse Observability.
 </Info>
 
 ```shell
-HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
+HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' npx opentelemetry-instrument index.js
 ```
 
 </Tab>
@@ -325,7 +322,7 @@ The `HYPERDX_API_KEY` can be omitted for ClickHouse Observability.
 </Info>
 
 ```shell
-HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
 ```
 
 </Tab>
