@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
@@ -83,6 +84,9 @@ public:
         StoredBlock stored;
         /// Indexed like the join's clauses.
         std::vector<Input> clauses;
+        /// The block's used flags when the join keeps them per right-table row (one per row, zeroed by
+        /// the fill thread), handed to the join's flags when the block is stored.
+        JoinStuff::JoinUsedFlags::UsedFlagsForColumns per_row_flags;
         size_t rows = 0;
         UInt32 block_no = 0; /// assigned at the build barrier
 

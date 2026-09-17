@@ -30,7 +30,9 @@ JoinResultPtr PartitionedHashJoin::probeDispatch(Block block, size_t lane)
     using enum JoinKind;
     using enum JoinStrictness;
 
-    if (prefer_use_maps_all)
+    /// RIGHT and FULL always probe `MapsAll`; INNER and LEFT do so when the build kept every right row
+    /// of a key for a mixed ON condition or promoted ALL to RightAny.
+    if (prefer_use_maps_all && (kind == Inner || kind == Left))
     {
         if (kind == Inner)
         {

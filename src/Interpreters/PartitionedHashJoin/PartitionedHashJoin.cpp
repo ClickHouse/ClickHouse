@@ -140,6 +140,7 @@ PartitionedHashJoin::PartitionedHashJoin(
               /*allow_set_maps_=*/false))
     , delegate_mode(hash_join->needUsedFlagsForPerRightTableRow(table_join))
     , join_table_mode(join_table_mode_)
+    , used_flags_per_row(hash_join->needUsedFlagsForPerRightTableRow(table_join))
     , cached_distinct_estimates(table_join->getClauses().size())
     , build_rows_hint(build_rows_hint_)
     , single_fill_thread(
@@ -158,6 +159,17 @@ PartitionedHashJoin::PartitionedHashJoin(
     for (size_t clause_idx = 0; clause_idx < table_join->getClauses().size(); ++clause_idx)
         clauses.emplace_back(
             *hash_join, *table_join, clause_idx, any_take_last_row, num_threads, max_bytes_before_external_join, build_blocks, accumulated_bytes, log);
+
+    /// The same shapes for which `HashJoin` allocates its per-row flags: the flagged (kind, strictness)
+    /// pairs of `MapGetter`. The others mark nothing and read nothing.
+    if (used_flags_per_row)
+        joinDispatch(
+            hash_join->getKind(),
+            hash_join->getStrictness(),
+            hash_join->data->maps.front(),
+            hash_join->getMapsKind(),
+            [&](auto kind_, auto strictness_, auto & map_)
+            { allocate_per_row_flags = MapGetter<kind_, strictness_, mapsKindOf<decltype(map_)>()>::flagged; });
 
     /// `HashJoin`'s constructor derived the row store layout as `hash` builds it, so it gave way to the
     /// rerange optimization. This join never reranges its rows: derive the layout without that rule.
@@ -395,6 +407,10 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
 
     FillBlock fill;
     fill.rows = rows;
+    /// Zeroed here, on the fill thread, rather than for every block at once on the thread that stores
+    /// them; `HashJoin` allocates its per-row flags on its fill workers too.
+    if (allocate_per_row_flags)
+        fill.per_row_flags = JoinStuff::JoinUsedFlags::UsedFlagsForColumns(rows);
 
     /// Each clause prepares its own keys, null map and ON mask from the one materialized block.
     fill.clauses.resize(clauses.size());
@@ -525,7 +541,17 @@ bool PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
         ProfileEvents::increment(ProfileEvents::HashJoinRowStoreBlocks);
     }
 
-    if (!isRightOrFull(hash_join->getKind()))
+    /// Per-row used flags cover every stored row, the ones that never enter a table included: a row
+    /// nothing marks is emitted as non-joined, so no null map is kept for it, as `HashJoin` keeps none.
+    /// Attached here, on the one thread that stores blocks, before any probe can read them.
+    if (allocate_per_row_flags)
+    {
+        auto & flags = hash_join->used_flags->per_row_flags;
+        if (flags.size() <= stored.block_no)
+            flags.resize(stored.block_no + 1);
+        flags[stored.block_no] = std::move(fill.per_row_flags);
+    }
+    if (!isRightOrFull(hash_join->getKind()) || used_flags_per_row)
         return false;
 
     /// RIGHT/FULL output needs the rows that never made it into the table - null keys and rows the
@@ -822,6 +848,12 @@ ThreadPool & PartitionedHashJoin::postBuildPool()
 
 void PartitionedHashJoin::reinitUsedFlags()
 {
+    /// The per-row shape marks the flags of the stored rows and never reads a per-offset flag, so the
+    /// `cells + 1` space would be allocated and zeroed for nothing; `HashJoin::reinitUsedFlags` skips it
+    /// for the same shape.
+    if (used_flags_per_row)
+        return;
+
     /// One per-offset space of `cells + 1` (offset 0 is the zero-value cell). Must run after the leaf
     /// barrier, which sized flags to its empty map. `reinit` only grows.
     const size_t flags = clauses.front().tableCells() + 1;

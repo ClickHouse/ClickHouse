@@ -379,6 +379,11 @@ private:
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
     size_t joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 
+    /// The probe of a join with several ON clauses (`ON a OR b`), over one table per clause: the
+    /// multi-map loop of `HashJoin`, with the used flags kept per right-table row.
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
+    size_t joinRightColumns(const std::vector<const Map *> & tables, AddedColumnsType & added_columns, const ScatteredBlock & block);
+
     /// Per-probe-stream scratch, pooled on the join and reused across blocks: the find pass's results.
     /// `found_word` is the matched cell's mapped value by value (see `amac_mapped_fits_word`; 0 is a
     /// miss; ASOF stores the mapped pointer's bits instead). `found_offset` is the used-flags offset.
@@ -411,6 +416,13 @@ private:
     const bool delegate_mode;
     /// The Join table engine's mode; see the class comment.
     const bool join_table_mode;
+    /// The used flags are keyed per right-table row instead of per cell: several ON clauses, or a mixed
+    /// non-equi ON condition on a RIGHT or FULL join (`HashJoin::needUsedFlagsForPerRightTableRow`). A
+    /// right row is then reachable through several keys, so a cell's flag cannot stand for its rows.
+    const bool used_flags_per_row;
+    /// Whether the shape keeps used flags at all (`MapGetter::flagged`); with `used_flags_per_row` every
+    /// stored block then carries one flag per row.
+    bool allocate_per_row_flags = false;
     /// A query's instance after `shareJoinTable`.
     bool shared_from_join_table = false;
     /// See `markPartialBuild`.
