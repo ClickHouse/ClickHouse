@@ -47,9 +47,7 @@ struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
 {
 };
 
-/// The specialization that used to be here could never match, because a type pack cannot bind the
-/// bucket-count parameter, so the nullable two-level aggregation variants built on a bare
-/// `TwoLevelHashTable` took no size hint. Now they take one, like every other two-level variant.
+/// A type pack cannot bind the non-type `bits_for_bucket`, so the parameters are spelled out.
 template <
     typename Key,
     typename Cell,
