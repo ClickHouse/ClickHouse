@@ -141,7 +141,8 @@ PartitionedHashJoin::PartitionedHashJoin(
     , join_table_mode(join_table_mode_)
     , build_rows_hint(build_rows_hint_)
     , single_fill_thread(
-          !delegate_mode && (num_threads == 1 || (build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())))
+          !delegate_mode && !join_table_mode
+          && (num_threads == 1 || (build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())))
     , stats_collecting_params(stats_collecting_params_.build)
     , match_stats_collecting_params(stats_collecting_params_.match)
     , log(getLogger("PartitionedHashJoin"))
