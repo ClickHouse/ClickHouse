@@ -2007,7 +2007,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 object_storage,
                 files_metadata->getTableMetadata(),
                 after_processing_settings,
-                files_metadata->getPath());
+                files_metadata->getKeeperIdentity());
             postProcessor.process(successful_objects, post_processing_failed_paths);
 
             if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
