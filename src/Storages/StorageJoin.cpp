@@ -161,63 +161,72 @@ void StorageJoin::optimizeUnlocked()
         LOG_INFO(getLogger("StorageJoin"), "Optimized Join storage from {} to {} bytes", current_bytes, optimized_bytes);
 }
 
+namespace
+{
+
+/// One of the six settings `Join` takes from the server's settings for whatever its definition leaves out. The value
+/// is rendered through the same setting field the server's settings use, so the comparison with the default compares
+/// like with like. A value other than the default was set by something `Join` cannot name, such as a settings
+/// profile, which is what `Other` says; `StorageDistributed` reports what it copies from the server the same way.
+SettingDescription describeServerBackedJoinSetting(std::string_view name, String value)
+{
+    static const Settings core_settings;
+
+    SettingDescription described;
+    described.name = String{name};
+    described.value = std::move(value);
+    described.default_value = core_settings.getDefaultValueString(name);
+    described.type = core_settings.getTypeName(name);
+    described.comment = core_settings.getDescription(name);
+    described.tier = core_settings.getTier(name);
+    described.origin = described.value == described.default_value ? SettingOrigin::Default : SettingOrigin::Other;
+    return described;
+}
+
+}
+
 SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) const
 {
     /// `Join` keeps no settings object. The creator resolves its eight settings once - from the table's own
     /// `SETTINGS` clause and, for what the clause leaves out, from the server's settings (`args.getContext`, the
     /// global context, not the creating session) - and passes the results to the constructor. Report what the
     /// table holds: a setting the clause leaves out is shown nowhere else, not even by `SHOW CREATE TABLE`.
-    static const Settings core_settings;
-
-    SettingDescriptions settings;
-    settings.reserve(8);
-
-    const auto add_from_server = [&](std::string_view name, String value)
-    {
-        SettingDescription described;
-        described.name = String{name};
-        described.value = std::move(value);
-        described.default_value = core_settings.getDefaultValueString(name);
-        described.type = core_settings.getTypeName(name);
-        described.comment = core_settings.getDescription(name);
-        described.tier = core_settings.getTier(name);
-        /// Unless the definition states it, the value came from the server's settings when the table was loaded.
-        /// A value other than the default was set there by something the table cannot name, such as a settings
-        /// profile, which is what `Other` says. `StorageDistributed` reports what it copies from the server the
-        /// same way.
-        described.origin = described.value == described.default_value ? SettingOrigin::Default : SettingOrigin::Other;
-        settings.push_back(std::move(described));
+    SettingDescriptions settings{
+        describeServerBackedJoinSetting("join_use_nulls", SettingFieldBool{use_nulls}.toString()),
+        describeServerBackedJoinSetting("max_rows_in_join", SettingFieldUInt64{limits.max_rows}.toString()),
+        describeServerBackedJoinSetting("max_bytes_in_join", SettingFieldUInt64{limits.max_bytes}.toString()),
+        describeServerBackedJoinSetting("join_overflow_mode", SettingFieldOverflowMode{limits.overflow_mode}.toString()),
+        describeServerBackedJoinSetting("join_any_take_last_row", SettingFieldBool{overwrite}.toString()),
+        describeServerBackedJoinSetting(
+            "any_join_distinct_right_table_keys", SettingFieldBool{any_join_distinct_right_table_keys}.toString()),
     };
-
-    /// Rendered through the same setting fields the server's settings use, so that the comparison with the
-    /// default compares like with like.
-    add_from_server("join_use_nulls", SettingFieldBool{use_nulls}.toString());
-    add_from_server("max_rows_in_join", SettingFieldUInt64{limits.max_rows}.toString());
-    add_from_server("max_bytes_in_join", SettingFieldUInt64{limits.max_bytes}.toString());
-    add_from_server("join_overflow_mode", SettingFieldOverflowMode{limits.overflow_mode}.toString());
-    add_from_server("join_any_take_last_row", SettingFieldBool{overwrite}.toString());
-    add_from_server("any_join_distinct_right_table_keys", SettingFieldBool{any_join_distinct_right_table_keys}.toString());
 
     /// These two have defaults of the engine's own rather than server settings behind them, so unless the
     /// definition states them they are at those defaults.
-    const auto add_engine_default = [&](std::string_view name, String value, String default_value, std::string_view type, std::string_view comment)
-    {
-        SettingDescription described;
-        described.name = String{name};
-        described.value = std::move(value);
-        described.default_value = std::move(default_value);
-        described.type = type;
-        described.comment = comment;
-        described.origin = SettingOrigin::Default;
-        settings.push_back(std::move(described));
-    };
-
-    add_engine_default("disk", disk->getName(), "default", "String", "Name of the disk the table's data is stored on.");
-    add_engine_default(
-        "persistent", SettingFieldBool{persistent}.toString(), SettingFieldBool{true}.toString(), "Bool",
-        "Whether the table's data is written to disk, so that it is restored after a restart.");
+    for (auto & setting : persistenceSettings())
+        settings.push_back(std::move(setting));
 
     return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+}
+
+SettingDescriptions StorageJoin::enumerateEngineSettings(ContextPtr context)
+{
+    /// What a table created now would take for each setting its definition leaves out: the server's settings, which
+    /// the creator reads from the global context, and the engine's own defaults for `disk` and `persistent`.
+    const auto & server = context->getGlobalContext()->getSettingsRef();
+    SettingDescriptions settings{
+        describeServerBackedJoinSetting("join_use_nulls", server[Setting::join_use_nulls].toString()),
+        describeServerBackedJoinSetting("max_rows_in_join", server[Setting::max_rows_in_join].toString()),
+        describeServerBackedJoinSetting("max_bytes_in_join", server[Setting::max_bytes_in_join].toString()),
+        describeServerBackedJoinSetting("join_overflow_mode", server[Setting::join_overflow_mode].toString()),
+        describeServerBackedJoinSetting("join_any_take_last_row", server[Setting::join_any_take_last_row].toString()),
+        describeServerBackedJoinSetting(
+            "any_join_distinct_right_table_keys", server[Setting::any_join_distinct_right_table_keys].toString()),
+    };
+
+    const auto defaults = persistenceSettingDefaults();
+    settings.insert(settings.end(), defaults.begin(), defaults.end());
+    return settings;
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -607,6 +616,7 @@ void registerStorageJoin(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = has_builtin_fn,
+            .enumerate_engine_settings_fn = StorageJoin::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(

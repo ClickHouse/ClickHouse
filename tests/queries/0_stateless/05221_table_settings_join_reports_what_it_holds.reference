@@ -14,3 +14,13 @@ max_rows_in_join	1	1
 1
 -- and none of it is in the stored definition
 0
+-- the values reported are the ones the engine acts on
+max_rows_in_join	2
+20
+-- a temporary table reports its definition too
+persistent	0	definition
+-- `system.engine_settings` lists the same eight, as a table created now would get them
+8
+0
+-- and `Join` and `Set` describe the two settings they share alike
+0

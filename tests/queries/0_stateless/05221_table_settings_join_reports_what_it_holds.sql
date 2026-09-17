@@ -41,6 +41,41 @@ SELECT '-- and none of it is in the stored definition';
 SELECT create_table_query LIKE '%SETTINGS%' FROM system.tables
 WHERE database = currentDatabase() AND name = 'join_session_1';
 
+SELECT '-- the values reported are the ones the engine acts on';
+DROP TABLE IF EXISTS join_limited;
+DROP TABLE IF EXISTS join_last_row;
+CREATE TABLE join_limited (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k)
+    SETTINGS max_rows_in_join = 2, join_overflow_mode = 'throw';
+SELECT name, value FROM system.table_settings
+WHERE database = currentDatabase() AND table = 'join_limited' AND name = 'max_rows_in_join';
+INSERT INTO join_limited VALUES (1, 1), (2, 2), (3, 3); -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+CREATE TABLE join_last_row (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS join_any_take_last_row = 1;
+INSERT INTO join_last_row VALUES (1, 10);
+INSERT INTO join_last_row VALUES (1, 20);
+SELECT joinGet('join_last_row', 'v', toUInt64(1));
+
+SELECT '-- a temporary table reports its definition too';
+CREATE TEMPORARY TABLE join_temporary (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k) SETTINGS persistent = 0;
+SELECT name, value, source FROM system.table_settings
+WHERE database = '' AND table = 'join_temporary' AND name = 'persistent';
+
+SELECT '-- `system.engine_settings` lists the same eight, as a table created now would get them';
+SELECT count() FROM system.engine_settings WHERE engine_name = 'Join';
+-- A table that states nothing reports exactly what the engine-level rows say.
+SELECT count() FROM (
+    SELECT name, value, `default`, changed, description, type, tier FROM system.table_settings
+    WHERE database = currentDatabase() AND table = 'join_session_0'
+    EXCEPT
+    SELECT name, value, `default`, changed, description, type, tier FROM system.engine_settings WHERE engine_name = 'Join');
+
+SELECT '-- and `Join` and `Set` describe the two settings they share alike';
+SELECT count() FROM (
+    SELECT name, `default`, description, type FROM system.engine_settings WHERE engine_name = 'Join' AND name IN ('disk', 'persistent')
+    EXCEPT
+    SELECT name, `default`, description, type FROM system.engine_settings WHERE engine_name = 'Set' AND name IN ('disk', 'persistent'));
+
 DROP TABLE join_stated;
 DROP TABLE join_session_0;
 DROP TABLE join_session_1;
+DROP TABLE join_limited;
+DROP TABLE join_last_row;

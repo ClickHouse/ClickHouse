@@ -18,8 +18,8 @@ namespace ErrorCodes
 }
 
 #define SET_RELATED_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Bool, persistent, true, "Disable setting to avoid the overhead of writing to disk for StorageSet", 0) \
-    DECLARE(String, disk, "default", "Name of the disk used to persist set data", 0)
+    DECLARE(Bool, persistent, true, "Whether the table's data is also written to disk, so that it is restored after a restart. Disable it to avoid the overhead of writing to disk.", 0) \
+    DECLARE(String, disk, "default", "Name of the disk the table's data is written to.", 0)
 
 #define LIST_OF_SET_SETTINGS(M, ALIAS) \
     SET_RELATED_SETTINGS(M, ALIAS) \

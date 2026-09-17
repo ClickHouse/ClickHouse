@@ -47,6 +47,9 @@ public:
     /// clause states - see the definition.
     SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
+    /// For `system.engine_settings`: the eight settings with the values a table created now would get.
+    static SettingDescriptions enumerateEngineSettings(ContextPtr context);
+
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     /// Only delete is supported.

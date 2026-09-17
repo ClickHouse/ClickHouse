@@ -193,6 +193,27 @@ StorageSet::StorageSet(
 }
 
 
+SettingDescriptions StorageSetOrJoinBase::persistenceSettingDefaults()
+{
+    static const SettingDescriptions defaults = []
+    {
+        SettingDescriptions result;
+        for (auto & setting : SetSettings{}.enumerateSettings())
+            if (setting.name == "disk" || setting.name == "persistent")
+                result.push_back(std::move(setting));
+        return result;
+    }();
+    return defaults;
+}
+
+SettingDescriptions StorageSetOrJoinBase::persistenceSettings() const
+{
+    auto settings = persistenceSettingDefaults();
+    for (auto & setting : settings)
+        setting.value = setting.name == "disk" ? disk->getName() : SettingFieldBool{persistent}.toString();
+    return settings;
+}
+
 SettingDescriptions StorageSet::getTableSettings(ContextPtr query_context) const
 {
     /// The creator applies the table's `SETTINGS` clause to a `SetSettings`, takes `disk` and `persistent` from it and
@@ -200,18 +221,7 @@ SettingDescriptions StorageSet::getTableSettings(ContextPtr query_context) const
     /// them with the values it holds. Unstated, they are the struct's fixed defaults - not server settings, unlike
     /// `StorageJoin`'s. The format settings `SetSettings` also declares are accepted and never read, so a row for one
     /// would describe nothing the table does.
-    SettingDescriptions settings;
-    for (auto & setting : SetSettings{}.enumerateSettings())
-    {
-        if (setting.name == "disk")
-            setting.value = disk->getName();
-        else if (setting.name == "persistent")
-            setting.value = SettingFieldBool{persistent}.toString();
-        else
-            continue;
-        settings.push_back(std::move(setting));
-    }
-    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+    return attributeSettingsStatedInDefinition(persistenceSettings(), query_context);
 }
 
 SetPtr StorageSet::getSet() const
