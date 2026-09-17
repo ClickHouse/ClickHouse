@@ -1,6 +1,10 @@
 --- applies ---
 plain bound	1
 mirrored bound	1
+mirrored greaterOrEquals	1
+mirrored lessOrEquals	1
+mirrored greater	1
+mirrored equals	1
 greaterOrEquals	1
 less	1
 lessOrEquals	1
@@ -70,8 +74,12 @@ serialized plan	0
 20000	60000	20000
 10000	40000	10000	40000
 10000	40000	10000	40000
+10000	40000
+10000	40000
 05218hp_eq_general_off	0
 05218hp_eq_general_on	20000
+05218hp_ge_mirrored_off	0
+05218hp_ge_mirrored_on	20000
 05218hp_ge_simple_off	0
 05218hp_ge_simple_on	20000
 05218hp_le_general_off	0

@@ -49,6 +49,22 @@ SELECT 'mirrored bound', count() FROM (EXPLAIN actions = 1
     SELECT a, b, c, count() AS cnt FROM having_prefilter GROUP BY a, b, c HAVING 4 < count()
 ) WHERE explain LIKE '%HAVING pre-filter: count() > 4%';
 
+SELECT 'mirrored greaterOrEquals', count() FROM (EXPLAIN actions = 1
+    SELECT a, b, c, count() AS cnt FROM having_prefilter GROUP BY a, b, c HAVING 4 >= count()
+) WHERE explain LIKE '%HAVING pre-filter: count() <= 4%';
+
+SELECT 'mirrored lessOrEquals', count() FROM (EXPLAIN actions = 1
+    SELECT a, b, c, count() AS cnt FROM having_prefilter GROUP BY a, b, c HAVING 4 <= count()
+) WHERE explain LIKE '%HAVING pre-filter: count() >= 4%';
+
+SELECT 'mirrored greater', count() FROM (EXPLAIN actions = 1
+    SELECT a, b, c, count() AS cnt FROM having_prefilter GROUP BY a, b, c HAVING 4 > count()
+) WHERE explain LIKE '%HAVING pre-filter: count() < 4%';
+
+SELECT 'mirrored equals', count() FROM (EXPLAIN actions = 1
+    SELECT a, b, c, count() AS cnt FROM having_prefilter GROUP BY a, b, c HAVING 4 = count()
+) WHERE explain LIKE '%HAVING pre-filter: count() = 4%';
+
 SELECT 'greaterOrEquals', count() FROM (EXPLAIN actions = 1
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt >= 4
 ) WHERE explain LIKE '%HAVING pre-filter: count() >= 4%';
@@ -353,6 +369,13 @@ SELECT count(), sum(cnt), sum(u), sum(length(g)) FROM (
 SELECT count(), sum(cnt), sum(u), sum(length(g)) FROM (
     SELECT a, uniqExact(b) AS u, groupArray(c) AS g, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt = 4)
     SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218hp_eq_general_on';
+
+-- A reversed-operand bound is recorded as the mirror of the written one, so the skipped count is the
+-- one the mirrored op implies.
+SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING 4 <= cnt)
+    SETTINGS query_plan_aggregation_having_prefilter = 0, log_comment = '05218hp_ge_mirrored_off';
+SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING 4 <= cnt)
+    SETTINGS query_plan_aggregation_having_prefilter = 1, log_comment = '05218hp_ge_mirrored_on';
 
 SYSTEM FLUSH LOGS query_log;
 
