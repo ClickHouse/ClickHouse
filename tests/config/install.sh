@@ -32,8 +32,6 @@ while [[ "$#" -gt 0 ]]; do
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
         --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
         --distributed-cache) USE_DISTRIBUTED_CACHE=1 ;;
-        --meta-in-keeper) USE_META_IN_KEEPER_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
-        --shared-catalog) USE_SHARED_CATALOG=1 ;;
 
         --wide-parts) USE_POLYMORPHIC_PARTS=1 ;;
         --db-ordinary) USE_DATABASE_ORDINARY=1 ;;
@@ -227,7 +225,6 @@ if check_clickhouse_version 25.10; then
 fi
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/blob_list_aggressive_parts_killer.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/lost_forever_check.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/prometheus.xml $DEST_SERVER_PATH/config.d/
@@ -313,19 +310,7 @@ case "$(uname -s)" in
         ;;
 esac
 
-ln -sf $SRC_PATH/config.d/outdated_parts_v3.xml $DEST_SERVER_PATH/config.d/
-
-if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-    echo "Distributed cache configuration will not be added"
-else
-    echo " Adding Distributed cache configuration"
-    if [[ "$NO_AZURE" != "1" ]]; then
-        ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
-    fi
-    ln -sf $SRC_PATH/config.d/distributed_cache_server.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/distributed_cache_client.xml $DEST_SERVER_PATH/config.d/
-fi
-
+ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
 install_build_type_configs
@@ -405,18 +390,17 @@ if [[ -n "$USE_DISTRIBUTED_PLAN" ]] && [[ "$USE_DISTRIBUTED_PLAN" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/distributed_plan.xml $DEST_SERVER_PATH/users.d/
 fi
 
+echo $USE_DISTRIBUTED_CACHE
+if [[ -n "$USE_DISTRIBUTED_CACHE" ]] && [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
+    ln -sf $SRC_PATH/users.d/enable_distributed_cache_for_reads.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/enable_distributed_cache_for_tmp_files.xml $DEST_SERVER_PATH/config.d/
+
+fi
+
 if [[ -n "$LLVM_COVERAGE" ]] && [[ "$LLVM_COVERAGE" -eq 1 ]]; then
     # Pin random-by-default fault injection seeds in the default profile so coverage
     # is deterministic without injecting per-query settings (which break readonly tests).
     ln -sf $SRC_PATH/users.d/coverage_fault_injection_seeds.xml $DEST_SERVER_PATH/users.d/
-fi
-
-echo $USE_DISTRIBUTED_CACHE
-if [[ -n "$USE_DISTRIBUTED_CACHE" ]] && [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
-    ln -sf $SRC_PATH/users.d/enable_distributed_cache_for_reads.xml $DEST_SERVER_PATH/users.d/
-    ln -sf $SRC_PATH/config.d/enable_distributed_cache.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/enable_distributed_cache_for_tmp_files.xml $DEST_SERVER_PATH/config.d/
-
 fi
 
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
@@ -447,10 +431,6 @@ ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
 
 ln -sf \
    $SRC_PATH/config.d/query_masking_rules.xml $DEST_SERVER_PATH/config.d/
-
-# private configs
-ln -sf $SRC_PATH/config.d/smt_old_parts_lifetime.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/zookeeper_connection_pool.xml $DEST_SERVER_PATH/config.d/
 
 # Always install zookeeper.xml as the base config
 ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
@@ -553,49 +533,6 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/azure_storage_connection_limits.xml $DEST_SERVER_PATH/config.d/
 fi
 
-if [[ -n "$USE_META_IN_KEEPER_FOR_MERGE_TREE" ]] && [[ "$USE_META_IN_KEEPER_FOR_MERGE_TREE" -eq 1 ]]; then
-    setup_storage_policy
-
-    if [[ "$USE_ENCRYPTED_STORAGE" == "1" ]]; then
-        ln -sf $SRC_PATH/config.d/s3_with_keeper_encrypted_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
-    else
-        ln -sf $SRC_PATH/config.d/s3_with_keeper_storage_policy_for_merge_tree_by_default.xml $DEST_SERVER_PATH/config.d/
-    fi
-
-    # CI burn-in: blob-list part storage by default on the blob-manager-enabled keeper disks.
-    ln -sf $SRC_PATH/config.d/enable_blobs_list_for_parts.xml $DEST_SERVER_PATH/config.d/
-fi
-
-if [[ -n "$USE_SHARED_CATALOG" ]] && [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-    ln -sf $SRC_PATH/users.d/shared_catalog.xml $DEST_SERVER_PATH/users.d/
-    ln -sf $SRC_PATH/config.d/shared_catalog.xml $DEST_SERVER_PATH/config.d/
-
-    rm -f $DEST_SERVER_PATH/config.d/zookeeper.xml
-    rm -f $DEST_SERVER_PATH/config.d/keeper_port.xml
-    rm -f $DEST_SERVER_PATH/config.d/zookeeper_fault_injection.xml
-
-    # Do not update configs if config.xml already exists
-    # Otherwise, server will reload configs, and allocated ports will be incorrectly reset
-    if [[ ! -f /etc/clickhouse-server1/config.xml ]]; then
-      # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
-      # And we have to copy configs...
-
-      ch_server_1_path=$DEST_SERVER_PATH/../clickhouse-server1
-      mkdir -p $ch_server_1_path
-
-      cp -r $DEST_SERVER_PATH/* $ch_server_1_path
-
-      rm $ch_server_1_path/config.d/macros.xml
-      cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
-
-      sed -i "s|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>|<filesystem_caches_path>/var/lib/clickhouse/filesystem_caches_1/</filesystem_caches_path>|" $ch_server_1_path/config.d/filesystem_caches_path.xml
-      sed -i "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_1/</custom_cached_disks_base_directory>|" $ch_server_1_path/config.d/filesystem_caches_path.xml
-
-      # Add ZooKeeper client fault injection to the second replica
-      ln -sf $SRC_PATH/config.d/shared_catalog_fault_injections.xml $ch_server_1_path/config.d/
-    fi
-fi
-
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     if [[ "$NO_AZURE" != "1" ]]; then
         ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
@@ -614,7 +551,6 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     else
       sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $SRC_PATH/config.d/storage_conf_02944.xml >$DEST_SERVER_PATH/config.d/storage_conf_02944.xml
     fi
-
     # storage_conf.xml may carry settings unknown to the previous-release server: strip them by version.
     # allow_dynamic_cache_resize was added in 25.5; keep_free_space_eviction_threads and
     # reserve_granularity in 26.7.
@@ -640,7 +576,6 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
             $DEST_SERVER_PATH/config.d/storage_conf.xml >$DEST_SERVER_PATH/config.d/storage_conf.xml.tmp
         mv $DEST_SERVER_PATH/config.d/storage_conf.xml.tmp $DEST_SERVER_PATH/config.d/storage_conf.xml
     fi
-
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
