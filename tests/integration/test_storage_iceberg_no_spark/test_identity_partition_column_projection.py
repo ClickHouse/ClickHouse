@@ -2,6 +2,8 @@
 
 import io
 import json
+import os
+import tempfile
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -9,6 +11,8 @@ from decimal import Decimal
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pyiceberg.catalog import load_catalog
+from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.manifest import ManifestContent, read_manifest_list
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import NestedField, Schema
 from pyiceberg.transforms import IdentityTransform
@@ -221,6 +225,43 @@ def strip_partition_logical_types(started_cluster, s3_uri):
         bucket, key, io.BytesIO(payload), len(payload)
     )
     return stripped
+
+
+def read_minio_object(started_cluster, bucket, key):
+    response = started_cluster.minio_client.get_object(bucket, key)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def current_snapshot_manifests(started_cluster, table_name):
+    """The manifest list entries of the current snapshot of the table `table_name` written by
+    ClickHouse into Minio: the data manifests and the delete manifests it consists of."""
+    bucket = started_cluster.minio_bucket
+    metadata_files = table_object_names(started_cluster, table_name, ".metadata.json")
+    latest = max(
+        metadata_files,
+        key=lambda name: int(os.path.basename(name).split(".")[0].lstrip("v")),
+    )
+    metadata = json.loads(read_minio_object(started_cluster, bucket, latest))
+    current_snapshot_id = metadata["current-snapshot-id"]
+    [snapshot] = [
+        snapshot
+        for snapshot in metadata["snapshots"]
+        if snapshot["snapshot-id"] == current_snapshot_id
+    ]
+    manifest_list = snapshot["manifest-list"]
+    if manifest_list.startswith("s3://"):
+        manifest_list = manifest_list[len("s3://") :].split("/", 1)[1]
+    manifest_list = manifest_list.lstrip("/")
+
+    content = read_minio_object(started_cluster, bucket, manifest_list)
+    with tempfile.NamedTemporaryFile(suffix=".avro") as manifest_list_file:
+        manifest_list_file.write(content)
+        manifest_list_file.flush()
+        return list(read_manifest_list(PyArrowFileIO().new_input(manifest_list_file.name)))
 
 
 def test_identity_partition_column_not_stored_in_data_files(
@@ -1047,4 +1088,230 @@ def test_identity_partition_decimal_widened_across_schemas(
             f"SELECT id FROM {table_expression} WHERE price > 0 ORDER BY id"
         ).strip()
         == "1\n3\n4"
+    )
+
+
+def test_identity_partition_decimal_widened_position_delete_from_other_schema(
+    started_cluster_iceberg_no_spark,
+):
+    """The contract of `test_identity_partition_decimal_widened_across_schemas` for the deletes: a
+    position delete file is matched to the data files it may cover by the partition tuple, so a
+    delete written after the widening (its manifest declares the partition as `decimal(20, 2)`) has
+    to apply to a data file written before it (`decimal(9, 2)`). Were the two decoded into the
+    carriers of their own manifests, `defineDeletesSpan` would find no span for the old file and the
+    deleted row would silently come back."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    identifier = f"{namespace}.t_decimal_widened_delete"
+    table = catalog.create_table(
+        identifier=identifier,
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+            NestedField(
+                field_id=2,
+                name="price",
+                field_type=DecimalType(9, 2),
+                required=False,
+            ),
+            NestedField(field_id=3, name="val", field_type=StringType(), required=False),
+        ),
+        location="s3://warehouse-rest/data",
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=2,
+                field_id=1000,
+                transform=IdentityTransform(),
+                name="price",
+            )
+        ),
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 1, "price": Decimal("1.50"), "val": "a"},
+                {"id": 2, "price": Decimal("1.50"), "val": "b"},
+            ],
+            schema=pa.schema(
+                [
+                    pa.field("id", pa.int64(), nullable=True),
+                    pa.field("price", pa.decimal128(9, 2), nullable=True),
+                    pa.field("val", pa.string(), nullable=True),
+                ]
+            ),
+        )
+    )
+
+    with table.update_schema() as update:
+        update.update_column("price", field_type=DecimalType(20, 2))
+
+    table = catalog.load_table(identifier)
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 3, "price": Decimal("1.50"), "val": "c"},
+                {"id": 4, "price": Decimal("1.50"), "val": "d"},
+            ],
+            schema=pa.schema(
+                [
+                    pa.field("id", pa.int64(), nullable=True),
+                    pa.field("price", pa.decimal128(20, 2), nullable=True),
+                    pa.field("val", pa.string(), nullable=True),
+                ]
+            ),
+        )
+    )
+
+    data_files = data_file_paths(table)
+    assert len(data_files) == 2
+    for path in data_files:
+        drop_column_from_data_file(started_cluster_iceberg_no_spark, path, "price")
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{identifier}`"
+
+    assert (
+        instance.query(f"SELECT id FROM {table_expression} ORDER BY id").strip()
+        == "1\n2\n3\n4"
+    )
+
+    # One row on each side of the widening. The delete file is written under the current, widened,
+    # schema and has to apply to both data files.
+    instance.query(
+        f"DELETE FROM {table_expression} WHERE id IN (1, 3)",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    # A position delete, not a rewrite of the data files: the two original files are still the
+    # data files of the table.
+    assert data_file_paths(catalog.load_table(identifier)) == data_files
+
+    assert (
+        instance.query(f"SELECT id FROM {table_expression} ORDER BY id").strip()
+        == "2\n4"
+    )
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id, val FROM {table_expression} WHERE price = 1.50 ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "2\tb\n4\td"
+        ), move_to_prewhere
+
+
+def test_identity_partition_decimal_mixed_manifest_encodings_deletes_and_compaction(
+    started_cluster_iceberg_no_spark,
+):
+    """Two manifests of one table keep the same decimal partition value in two encodings: one as an
+    annotated `decimal` (the way ClickHouse writes it), the other as the raw `fixed` of
+    `test_identity_partition_decimal_stored_as_raw_fixed`. Everything that matches partition tuples
+    between manifests has to see one value:
+
+    - a position delete written by ClickHouse (annotated) has to cover the data file of the raw
+      manifest as well (`defineDeletesSpan`);
+    - `OPTIMIZE TABLE ... MANIFEST` has to rewrite the two data files as one partition group, and
+      the rewritten manifest has to keep the partition value readable.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    bucket = started_cluster_iceberg_no_spark.minio_bucket
+    table_name = "test_identity_partition_mixed_encodings_" + get_uuid_str()
+
+    create_iceberg_table(
+        "s3",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(id Int64, price Decimal(7, 2))",
+        format_version=2,
+        partition_by="price",
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES (1, 1.50), (2, 1.50)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES (3, 1.50), (4, 1.50)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    data_files = table_object_names(started_cluster_iceberg_no_spark, table_name, ".parquet")
+    assert len(data_files) == 2
+    for key in data_files:
+        drop_column_from_data_file(
+            started_cluster_iceberg_no_spark, f"s3://{bucket}/{key}", "price"
+        )
+
+    # Exactly one of the two data manifests gets the raw encoding.
+    manifests_before = current_snapshot_manifests(started_cluster_iceberg_no_spark, table_name)
+    assert [manifest.content for manifest in manifests_before] == [ManifestContent.DATA] * 2
+    stripped_manifest = manifests_before[0].manifest_path
+    if stripped_manifest.startswith("s3://"):
+        stripped_manifest = stripped_manifest[len("s3://") :].split("/", 1)[1]
+    assert (
+        strip_partition_logical_types(
+            started_cluster_iceberg_no_spark, f"s3://{bucket}/{stripped_manifest.lstrip('/')}"
+        )
+        > 0
+    )
+
+    table_function = get_creation_expression(
+        "s3", table_name, started_cluster_iceberg_no_spark, table_function=True
+    )
+    assert (
+        instance.query(
+            f"SELECT id, price FROM {table_function} ORDER BY id",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        ).strip()
+        == "1\t1.50\n2\t1.50\n3\t1.50\n4\t1.50"
+    )
+
+    # One row of each manifest: the delete file has to cover both data files.
+    instance.query(
+        f"DELETE FROM {table_name} WHERE id IN (1, 3)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert (
+        instance.query(f"SELECT id FROM {table_function} ORDER BY id").strip() == "2\n4"
+    )
+
+    instance.query(
+        f"OPTIMIZE TABLE {table_name} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    # The two data files are of one partition and one schema, so they land in one rewritten data
+    # manifest; the delete manifest is carried forward.
+    manifests_after = current_snapshot_manifests(started_cluster_iceberg_no_spark, table_name)
+    assert sorted(manifest.content for manifest in manifests_after) == [
+        ManifestContent.DATA,
+        ManifestContent.DELETES,
+    ], [(manifest.manifest_path, manifest.content) for manifest in manifests_after]
+
+    assert (
+        instance.query(
+            f"SELECT id, price FROM {table_function} ORDER BY id",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        ).strip()
+        == "2\t1.50\n4\t1.50"
+    )
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id FROM {table_function} WHERE price = 1.50 ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "2\n4"
+        ), move_to_prewhere
+    assert (
+        instance.query(f"SELECT id FROM {table_function} WHERE price < 0 ORDER BY id").strip()
+        == ""
     )
