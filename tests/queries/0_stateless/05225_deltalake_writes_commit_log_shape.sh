@@ -3,21 +3,8 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# Lint of the `_delta_log` entries ClickHouse commits, against the Delta protocol's writer
-# requirements (https://github.com/delta-io/delta/blob/master/PROTOCOL.md):
-#   * one version file per INSERT, named `%020d.json`, versions contiguous;
-#   * every line is a single action object; at most one `metaData`/`protocol` per commit;
-#   * every `add` has a relative, URI-style `path` (no leading `/`, no scheme), `size` equal to the
-#     object size, `partitionValues` whose keys are exactly the partition columns, `dataChange`,
-#     `modificationTime`; the referenced Parquet file holds exactly the rows of its partition;
-#   * a second identical INSERT appends again (the writer is not idempotent: documented);
-#   * a 0-row INSERT: on an unpartitioned table it currently commits an empty version (a commit with
-#     no `add`, legal per the protocol but elided by Spark), on a partitioned table it commits
-#     nothing. The asymmetry is recorded here so that a change in either direction is deliberate.
-# Any Spark/delta-rs reader failure on ClickHouse-written tables starts with one of these being
-# off, so the lint is the cheapest place to catch it.
-#
-# The empty Delta tables are bootstrapped by hand (a v0 _delta_log with only protocol + metaData).
+# Lint of the committed `_delta_log` entries against the Delta protocol, duplicate INSERT, 0-row INSERT
+# (empty version on an unpartitioned table, no version on a partitioned one: recorded so a change is deliberate).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -43,8 +30,7 @@ versions() {
     echo
 }
 
-# Lint one commit file. Everything the reference must not depend on (UUIDs, timestamps, sizes)
-# is reduced to a boolean or a count.
+# Lint one commit file; UUIDs, timestamps and sizes are reduced to booleans or counts.
 lint_commit() {
     local table="$1"
     local version="$2"
@@ -76,9 +62,7 @@ lint_commit() {
         WHERE JSONHas(line, 'add')
         FORMAT TSVRaw
     " | tr '\t' '\n'
-    # Cross-check every add against the data file it references: committed size == object size,
-    # and the file holds a plausible share of the rows (all rows of one INSERT are spread over the
-    # adds of that commit).
+    # Committed size must equal the object size; print the rows of each referenced file.
     ${CLICKHOUSE_LOCAL} --query "
         SELECT
             JSONExtractString(line, 'add', 'path'),

@@ -3,18 +3,8 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# `delta_lake_insert_max_rows_in_data_file` and `delta_lake_insert_max_bytes_in_data_file` split
-# one INSERT into several data files (all committed in a single version). The bytes limit had no
-# test at all. The sink checks the limit before appending each chunk, so with chunks of a known
-# size the split is deterministic:
-#   * rows limit 50000 with 10000-row chunks -> exactly 50000 rows per file;
-#   * the limits apply per partition on a partitioned table;
-#   * the bytes limit (counted on the in-memory chunk, not the compressed file) also rotates;
-#   * the defaults (1M rows / 1 GiB) keep a 200k-row INSERT in one file;
-#   * whatever the split, one commit, all rows readable, no file exceeds the limit by more than
-#     one chunk.
-#
-# The empty Delta tables are bootstrapped by hand (a v0 _delta_log with only protocol + metaData).
+# `delta_lake_insert_max_rows_in_data_file` / `delta_lake_insert_max_bytes_in_data_file` split one INSERT
+# into several files of one commit; with 10000-row chunks the split is deterministic.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,8 +24,7 @@ bootstrap() {
 EOF
 }
 
-# Row count (from the Parquet footer) of every data file the latest commit added, sorted; plus
-# versions and readable rows.
+# Row count of every data file the latest commit added, sorted.
 rows_per_file() {
     local path="$1"
     local latest
@@ -59,8 +48,7 @@ report() {
     echo "readable rows: $(${CLICKHOUSE_LOCAL} --query "SELECT count() FROM deltaLakeLocal('${path}')")"
 }
 
-# 10000-row chunks reach the sink: max_block_size bounds the source blocks and the squashing
-# thresholds re-emit them as-is.
+# 10000-row chunks reach the sink.
 CHUNKS="max_block_size = 10000, min_insert_block_size_rows = 10000, min_insert_block_size_bytes = 0, max_threads = 1, max_insert_threads = 1"
 INSERT_200K="SELECT number AS id, repeat('x', 100) AS s, toInt32(number % 2) AS p FROM numbers(200000)"
 

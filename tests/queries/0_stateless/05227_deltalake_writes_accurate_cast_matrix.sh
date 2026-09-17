@@ -3,16 +3,8 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# On INSERT every column is cast to the Delta write-schema type. With the default
-# `delta_lake_accurate_write_cast = 1` a value that does not fit must be rejected (nothing
-# committed) instead of silently truncated; with the setting off the plain cast wraps. The existing
-# test covers Int32 -> byte only; this one goes through the rest of the Delta primitive types a
-# Spark-created table can have, each with a value that does not fit and one that does:
-#   byte, short, integer, long, float, decimal(9,2), date, timestamp, string (from a number).
-# The table is created with wider ClickHouse types than the Delta schema (as a user attaching to a
-# lake would), so the cast happens inside the sink, not in the client.
-#
-# The empty Delta table is bootstrapped by hand (a v0 _delta_log with only protocol + metaData).
+# Accurate cast on write (`delta_lake_accurate_write_cast`) over the Delta primitive types: values that
+# do not fit are rejected with nothing committed, boundary values round-trip, plain cast wraps.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,7 +21,7 @@ cat > "${TABLE}/_delta_log/00000000000000000000.json" <<EOF
 {"metaData":{"id":"${CLICKHOUSE_DATABASE}-cast","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"b\",\"type\":\"byte\",\"nullable\":true,\"metadata\":{}},{\"name\":\"sh\",\"type\":\"short\",\"nullable\":true,\"metadata\":{}},{\"name\":\"i\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}},{\"name\":\"l\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}},{\"name\":\"f\",\"type\":\"float\",\"nullable\":true,\"metadata\":{}},{\"name\":\"d\",\"type\":\"decimal(9,2)\",\"nullable\":true,\"metadata\":{}},{\"name\":\"dt\",\"type\":\"date\",\"nullable\":true,\"metadata\":{}},{\"name\":\"ts\",\"type\":\"timestamp\",\"nullable\":true,\"metadata\":{}},{\"name\":\"s\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{},"createdTime":1700000000000}}
 EOF
 
-# Wider ClickHouse types than the Delta schema, so every value below reaches the sink unchanged.
+# Wider ClickHouse types than the Delta schema, so the cast happens in the sink.
 CREATE="CREATE TABLE t (b Int32, sh Int32, i Int64, l UInt64, f Float64, d Decimal(18, 2), dt Date32, ts DateTime64(9), s String) ENGINE = DeltaLakeLocal('${TABLE}')"
 
 state() {
@@ -40,9 +32,7 @@ error_code() {
     grep -oE '\([A-Z_]+\)' | head -1
 }
 
-# name | values that must be rejected by the accurate cast
-# (stdin of clickhouse-local is closed: it would otherwise swallow the rest of the here-document as
-# INSERT data)
+# name | values that must be rejected (stdin closed: clickhouse-local would read the here-document)
 while IFS='|' read -r name values; do
     echo "-- ${name}: rejected, nothing committed"
     ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "

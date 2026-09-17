@@ -3,12 +3,8 @@
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
-# Delta Lake tables support append only. Every other mutating statement, and every INSERT that is
-# rejected before its commit, must fail closed: a user-facing error (never a logical error), no new
-# `_delta_log` version, no data file left behind, and the previously committed rows intact.
-# A statement that "succeeds" as a silent no-op is a bug too (OPTIMIZE used to do that).
-#
-# The empty Delta tables are bootstrapped by hand (a v0 _delta_log with only protocol + metaData).
+# Non-append statements and rejected INSERTs must fail closed: user error, no new version, no data
+# file, committed rows intact.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,8 +30,7 @@ state() {
     echo "versions: $(find "${path}/_delta_log" -name '*.json' | wc -l | tr -d ' '), data files: $(find "${path}" -name '*.parquet' | wc -l | tr -d ' '), rows: $(${CLICKHOUSE_LOCAL} --query "SELECT count() FROM deltaLakeLocal('${path}')")"
 }
 
-# Print only the error code name of a failing statement, so the reference stays stable across
-# message wording changes while still catching a LOGICAL_ERROR or an unexpected success.
+# Error code name only, so the reference does not depend on message wording.
 error_code() {
     grep -oE '\([A-Z_]+\)' | head -1
 }
