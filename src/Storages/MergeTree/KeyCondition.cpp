@@ -2520,6 +2520,57 @@ static std::optional<bool> isNumericallyZeroConstant(const Field & field)
     }
 }
 
+/// Whether a value of this type holds a float anywhere, including inside a container.
+static bool typeContainsFloat(const DataTypePtr & type_with_wrappers)
+{
+    const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
+
+    if (isFloat(type))
+        return true;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::ranges::any_of(tuple_type->getElements(), typeContainsFloat);
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return typeContainsFloat(array_type->getNestedType());
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        return typeContainsFloat(map_type->getNestedType());
+
+    return false;
+}
+
+/// Whether the constant may reach a float element of the key input as a zero, `+0.0` or `-0.0`.
+/// `Tuple` is walked element by element, being the only container a sorting key can carry. Any other
+/// float carrier, and a constant whose shape does not match the type, are conservatively treated as
+/// holding a zero, so that the caller declines the rewrite and the granules are scanned.
+static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & type_with_wrappers)
+{
+    const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
+
+    if (isFloat(type))
+        return isNumericallyZeroConstant(field).value_or(true);
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (field.getType() != Field::Types::Tuple)
+            return true;
+
+        const auto & elements = tuple_type->getElements();
+        const auto & values = field.safeGet<Tuple>();
+        if (values.size() != elements.size())
+            return true;
+
+        for (size_t i = 0; i < values.size(); ++i)
+            if (constantMayHoldFloatZero(values[i], elements[i]))
+                return true;
+
+        return false;
+    }
+
+    return typeContainsFloat(type);
+}
+
 
 bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
@@ -2635,6 +2686,14 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
         if (positive_zero != negative_zero && constant_can_be_a_zero)
             return false;
+    }
+    else if (constantMayHoldFloatZero(out_value, key_input_type))
+    {
+        /// The zero sits inside a container, such as `k Tuple(Float64, Float64)` with `ORDER BY toString(k)`
+        /// and `WHERE k = (0.0, 1.0)`: the predicate also matches `(-0.0, 1.0)`, which the transformed key
+        /// tells apart. Whether the transform distinguishes the signs would have to be probed over every
+        /// combination of signs of the zero elements, so the index simply does not answer this predicate.
+        return false;
     }
 
     out_value = transformed_value;
