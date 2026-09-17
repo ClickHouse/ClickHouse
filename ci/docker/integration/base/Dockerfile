@@ -31,7 +31,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 COPY requirements.txt /
-RUN python3.13 -m pip install --ignore-installed --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
+RUN python3.13 -m pip install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
