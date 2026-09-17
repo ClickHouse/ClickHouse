@@ -920,6 +920,30 @@ def test_paged_enumeration_and_mass_removal_guard(janedoe_in_role_a):
 # ---------------------------------------------------------------------------------------------
 
 
+def test_role_in_another_storage_is_not_created_again(janedoe_in_role_a):
+    """`create_roles` has the global `CREATE ROLE IF NOT EXISTS` semantics: a role of the name in any
+    storage, not only in `roles_storage`, is left alone, so the name keeps resolving to one role.
+    `node_manual` has a `memory` storage after `local_directory` for this."""
+    sync_node_manual()
+    created_before = count_in_log(node_manual, "Created role 'role_b'")
+    admin(node_manual, "DROP ROLE role_b")
+    admin(node_manual, "CREATE ROLE role_b IN memory")
+    try:
+        admin(node_manual, "SYSTEM RELOAD USERS")
+        assert (
+            admin(node_manual, "SELECT storage FROM system.roles WHERE name = 'role_b'")
+            == "memory\n"
+        )
+        assert count_in_log(node_manual, "Created role 'role_b'") == created_before
+    finally:
+        admin(node_manual, "DROP ROLE IF EXISTS role_b")
+        admin(node_manual, "SYSTEM RELOAD USERS")
+        assert (
+            admin(node_manual, "SELECT storage FROM system.roles WHERE name = 'role_b'")
+            == "local_directory\n"
+        )
+
+
 def test_dry_run_changes_nothing(janedoe_in_role_a):
     assert_logs_contain_with_retry(
         node_dry,

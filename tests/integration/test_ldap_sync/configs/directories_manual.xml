@@ -11,6 +11,8 @@
         <local_directory>
             <path>/var/lib/clickhouse/access/</path>
         </local_directory>
+        <!-- A second writable storage, for `test_role_in_another_storage_is_not_created_again`. -->
+        <memory/>
         <ldap>
             <server>openldap_strict</server>
             <exclude_users>
