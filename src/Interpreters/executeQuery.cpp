@@ -374,9 +374,8 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
     }
 }
 
-/// Whether a `LOG_ERROR` on this logger would reach any sink. Mirrors the enablement check in
-/// `LOG_IMPL`: a log file, the console and `system.text_log` all sit behind the logger's own level,
-/// and a client can additionally ask for server logs through `send_logs_level`.
+/// Mirrors `LOG_IMPL`'s enablement check: a log file, the console and `system.text_log` all sit behind
+/// the logger's own level, and a client can additionally ask for server logs through `send_logs_level`.
 static bool errorMessageWillBeLogged(const LoggerPtr & logger)
 {
     /// `currentThreadHasGroup` must stay first: `currentThreadLogsLevel` throws without a thread status.
@@ -957,9 +956,7 @@ void logQueryException(
 
     elem.is_internal = log_as_internal;
 
-    /// `elem.stack_trace` has exactly two readers: `logException` below, and the `stack_trace` column
-    /// of `system.query_log`. Symbolizing it builds the symbol index of the whole binary on first use
-    /// in a process, which `clickhouse-local` deliberately does not do at startup.
+    /// `elem.stack_trace` has two readers: `logException` below and `system.query_log`'s `stack_trace` column.
     std::shared_ptr<QueryLog> query_log;
     if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
         && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
@@ -1057,8 +1054,7 @@ void logExceptionBeforeStart(
 
     bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
 
-    /// Unlike in `logQueryException`, a configured `query_log` here receives the trace even for a
-    /// cancelled query. That asymmetry is pre-existing.
+    /// A configured `system.query_log` here receives the trace even for a cancelled query.
     auto query_log = context->getQueryLog();
     const bool query_log_will_read = query_log && settings[Setting::log_queries]
         && elem.type >= settings[Setting::log_queries_min_type]
