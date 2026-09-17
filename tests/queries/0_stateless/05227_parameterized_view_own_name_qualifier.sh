@@ -39,10 +39,12 @@ $CLIENT --query "SELECT count() FROM pv3(p1 = []) INNER JOIN t1 ON t1.c1 = pv3.k
 
 echo '-- qualified matcher and matcher-expanded column names'
 $CLIENT --query "SELECT pv3.* FROM t1 INNER JOIN pv3(p1 = []) ON t1.c1 = pv3.k1 ORDER BY k1 LIMIT 1"
-# c1 of the view clashes with t1.c1, so the view's copy must be qualified with the view name
+# `c1` of the view clashes with `t1.c1`, so the view's copy must be qualified with the view name
 $CLIENT --query "SELECT * FROM t1 INNER JOIN pv1(p1 = 'a') ON t1.c1 = pv1.c1 LIMIT 0 SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 0 FORMAT TSVWithNames"
 $CLIENT --query "SELECT * FROM t1 INNER JOIN pv3(p1 = []) ON t1.c1 = pv3.k1 INNER JOIN t2 ON t1.c1 = t2.c1 LIMIT 0 SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 0 FORMAT TSVWithNames"
 $CLIENT --query "SELECT * FROM t1 INNER JOIN pv3(p1 = []) ON t1.c1 = pv3.k1 INNER JOIN t2 ON t1.c1 = t2.c1 LIMIT 0 SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 1 FORMAT TSVWithNames"
+$CLIENT --query "SELECT $DB.pv3.* FROM t1 INNER JOIN pv3(p1 = []) ON t1.c1 = pv3.k1 ORDER BY k1 LIMIT 1"
+$CLIENT --query "SELECT count() FROM pv3(p1 = []) INNER JOIN pv3(p1 = ['1']) USING (k1)"
 
 echo '-- arguments still survive per call (issue 112148 must stay fixed)'
 $CLIENT --query "SELECT k1 FROM pv3(p1 = ['1'])"
@@ -53,6 +55,6 @@ $CLIENT --query "SELECT numbers.number FROM numbers(3)" 2>&1 | grep -o -m1 'UNKN
 $CLIENT --query "SELECT count() FROM t1 INNER JOIN numbers(3) ON 1 = 1" 2>&1 | grep -o -m1 'ALIAS_REQUIRED'
 $CLIENT --query "SELECT view.dummy FROM view(SELECT 1 AS dummy)" 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
 $CLIENT --query "SELECT count() FROM t1 INNER JOIN view(SELECT 1 AS dummy) ON 1 = 1" 2>&1 | grep -o -m1 'ALIAS_REQUIRED'
-# a clashing column of view(...) has no name to be qualified with, in both qualification modes
+# a clashing column of `view(...)` has no name to be qualified with, in both qualification modes
 $CLIENT --query "SELECT * FROM t1, view(SELECT '0' AS c1) LIMIT 0 SETTINGS joined_subquery_requires_alias = 0, analyzer_compatibility_multiple_joins_qualify_column_names = 0 FORMAT TSVWithNames"
 $CLIENT --query "SELECT * FROM t1 INNER JOIN t2 ON t1.c1 = t2.c1, view(SELECT '0' AS c1) LIMIT 0 SETTINGS joined_subquery_requires_alias = 0, analyzer_compatibility_multiple_joins_qualify_column_names = 1 FORMAT TSVWithNames"

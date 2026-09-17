@@ -26,7 +26,6 @@
 
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/StorageView.h>
 
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>

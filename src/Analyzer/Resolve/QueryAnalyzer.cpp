@@ -924,9 +924,7 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
         return;
 
-    /// The restriction exists because a subquery or a table function has no name to qualify its columns with.
-    /// A parameterized view does have one, even though it is resolved as a `TableFunctionNode`, so it is exempt
-    /// exactly like the plain table below.
+    /// A parameterized view has a name to qualify its columns with, so it is exempt like the plain table below.
     if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>();
         table_function_node && table_function_node->isParameterizedView())
         return;
