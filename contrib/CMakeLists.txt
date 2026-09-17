@@ -9,7 +9,10 @@ endif ()
 
 if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     # 3rd-party libraries usually not intended to work with UBSan.
-    add_compile_options(-fno-sanitize=undefined)
+    # `unsigned-integer-overflow` is not a part of the `undefined` group and has to be listed
+    # separately. Header-only third-party code, which is compiled as a part of our own translation
+    # units and therefore is not affected by these options, is excluded in `tests/ubsan_ignorelist.txt`.
+    add_compile_options(-fno-sanitize=undefined -fno-sanitize=unsigned-integer-overflow)
 endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
