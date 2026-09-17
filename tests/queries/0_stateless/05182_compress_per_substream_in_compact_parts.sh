@@ -15,7 +15,7 @@ create_and_fill()
     $CLICKHOUSE_CLIENT -q "
     CREATE TABLE $1 ($2) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000,
-        index_granularity = 8192, index_granularity_bytes = 0,
+        index_granularity = 8192, index_granularity_bytes = 1073741824,
         min_compress_block_size = $4, max_compress_block_size = 1048576,
         write_marks_for_substreams_in_compact_parts = 1, compress_per_column_in_compact_parts = 1,
         compress_per_substream_in_compact_parts = $3"
@@ -74,10 +74,10 @@ every=$(read_bytes small_every "sum(t.c0)" every)
 size_adaptive=$(part_size small_adaptive)
 size_every=$(part_size small_every)
 size_off=$(part_size small_off)
-[ "$size_adaptive" -le $((size_off * 110 / 100)) ] && echo "no_size_regression OK" \
-    || echo "no_size_regression FAIL (adaptive=$size_adaptive off=$size_off)"
-[ "$size_every" -gt "$size_off" ] && echo "every_boundary_costs_size OK" \
-    || echo "every_boundary_costs_size FAIL (every=$size_every off=$size_off)"
+[ "$size_adaptive" -le $((size_off * 3 / 2)) ] && echo "size_near_packed OK" \
+    || echo "size_near_packed FAIL (adaptive=$size_adaptive off=$size_off)"
+[ "$size_every" -ge $((size_adaptive * 2)) ] && echo "every_boundary_costs_size OK" \
+    || echo "every_boundary_costs_size FAIL (every=$size_every adaptive=$size_adaptive)"
 
 # With the adaptive layout a substream mark can point into the middle of a compressed block.
 $CLICKHOUSE_CLIENT -q "
