@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `Lance` is experimental: every client call in this test has to opt in explicitly.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_lance=1"
+
 . "${CUR_DIR}/data_lance/run_local_test.sh"
 
 fixture_dir="${CLICKHOUSE_USER_FILES_UNIQUE}/data_lance"
