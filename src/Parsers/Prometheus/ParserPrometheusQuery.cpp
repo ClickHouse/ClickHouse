@@ -36,7 +36,8 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (table_name.empty())
     {
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                        "The name of a TimeSeries table to use with promql dialect is not specified, use: SET promql_table = '...'");
+                        "The name of a TimeSeries table, or of a Distributed table over per-shard TimeSeries tables, "
+                        "to use with promql dialect is not specified, use: SET promql_table = '...'");
     }
 
     const auto * begin = pos->begin;
