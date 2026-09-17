@@ -56,6 +56,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsTimezone session_timezone;
 
     extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
     extern SettingsBool format_geojson_validate_geometry;
@@ -111,7 +112,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 {
     FormatSettings format_settings;
 
-    format_settings.session_time_zone = &DateLUT::instance();
+    /// From the supplied settings rather than the ambient context, because storage engines build
+    /// persistent format settings from a copied `Settings`. An empty value means the server's zone.
+    const String & session_timezone = settings[Setting::session_timezone].value;
+    format_settings.session_time_zone
+        = session_timezone.empty() ? &DateLUT::serverTimezoneInstance() : &DateLUT::instance(session_timezone);
 
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
