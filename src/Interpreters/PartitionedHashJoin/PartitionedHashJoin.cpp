@@ -435,16 +435,19 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
         /// oversized by that multiplicity. The count is the one a previous run of this query left in
         /// the hash table statistics cache. Without one the table starts at the smallest degree and
         /// doubles as the keys arrive, as `hash`'s does. The row hint only caps the reserve: a table
-        /// cannot hold more keys than rows.
+        /// cannot hold more keys than rows. Every clause sizes its table from the one cached count, as
+        /// `HashJoin` reserves each of its maps from the one statistics entry.
         if (!clauses.front().hasTable())
         {
             const size_t keys = readDistinctKeysFromStatisticsCache() ? *cached_distinct_keys : 1;
-            clauses.front().beginSinglePartitionInsert(
-                clauses.front().reserveFor(build_rows_hint.value_or(keys), static_cast<double>(keys)),
-                accumulated_rows.load(std::memory_order_relaxed),
-                /*grow_at_max_fill_=*/true);
+            for (auto & clause : clauses)
+                clause.beginSinglePartitionInsert(
+                    clause.reserveFor(build_rows_hint.value_or(keys), static_cast<double>(keys)),
+                    accumulated_rows.load(std::memory_order_relaxed),
+                    /*grow_at_max_fill_=*/true);
         }
-        clauses.front().insertSingleLaneBlock(fill);
+        for (auto & clause : clauses)
+            clause.insertSingleLaneBlock(fill);
 
         if (!check_limits)
             return true;
@@ -458,8 +461,10 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     FillLane & lane = getFillLane(worker_id);
     {
         /// A sketch merge reads `hll` under this lock, so it never sees a half-written register.
+        /// One hash pass per clause, as `HashJoin` hashes each block once per map.
         std::lock_guard hll_lock(lane.hll_mutex);
-        clauses.front().computeRoutes(fill, lane.hll.front());
+        for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+            clauses[clause_idx].computeRoutes(fill, lane.hll[clause_idx]);
     }
 
     accumulated_rows.fetch_add(rows, std::memory_order_relaxed);
