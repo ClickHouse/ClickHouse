@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <Core/SettingsFields.h>
 #include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
@@ -191,6 +192,27 @@ StorageSet::StorageSet(
     restore();
 }
 
+
+SettingDescriptions StorageSet::getTableSettings(ContextPtr query_context) const
+{
+    /// The creator applies the table's `SETTINGS` clause to a `SetSettings`, takes `disk` and `persistent` from it and
+    /// discards the rest. Those two are the only settings this engine acts on, and the table keeps both, so report
+    /// them with the values it holds. Unstated, they are the struct's fixed defaults - not server settings, unlike
+    /// `StorageJoin`'s. The format settings `SetSettings` also declares are accepted and never read, so a row for one
+    /// would describe nothing the table does.
+    SettingDescriptions settings;
+    for (auto & setting : SetSettings{}.enumerateSettings())
+    {
+        if (setting.name == "disk")
+            setting.value = disk->getName();
+        else if (setting.name == "persistent")
+            setting.value = SettingFieldBool{persistent}.toString();
+        else
+            continue;
+        settings.push_back(std::move(setting));
+    }
+    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+}
 
 SetPtr StorageSet::getSet() const
 {

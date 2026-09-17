@@ -79,8 +79,8 @@ public:
 
     String getName() const override { return "Set"; }
 
-    /// See `IStorage::settingsNotRetainedByEngine`.
-    SettingDescriptions getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
+    /// Reports `disk` and `persistent`, the two settings this engine acts on - see the definition.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     /// Access the insides.
     SetPtr getSet() const;

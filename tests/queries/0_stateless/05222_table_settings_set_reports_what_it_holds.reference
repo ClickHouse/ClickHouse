@@ -1,0 +1,8 @@
+-- nothing stated: both settings at their defaults
+disk	default	default	default
+persistent	1	1	default
+-- stated: reported as the definition, and nothing else is
+disk	default	definition
+persistent	0	definition
+-- the unused format setting still stays in the definition
+1

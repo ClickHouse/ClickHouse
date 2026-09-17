@@ -12,11 +12,11 @@ DROP TABLE IF EXISTS kept_some;
 DROP TABLE IF EXISTS not_advertised;
 
 SELECT '-- an engine that keeps nothing reports nothing, even when its definition states a setting';
-CREATE TABLE kept_none (a UInt64) ENGINE = Set SETTINGS persistent = 0;
+CREATE TABLE kept_none (query String, database String, settings Map(String, String)) ENGINE = QueryRunner SETTINGS threads = 2;
 SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'kept_none';
 
 SELECT '-- while `system.engine_settings` still advertises the engine, which is the gap';
-SELECT count() > 0 FROM system.engine_settings WHERE engine_name = 'Set';
+SELECT count() > 0 FROM system.engine_settings WHERE engine_name = 'QueryRunner';
 
 SELECT '-- an engine that keeps its settings is unaffected';
 CREATE TABLE kept_some (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4096;

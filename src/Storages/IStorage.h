@@ -262,11 +262,12 @@ public:
 
     /// Report this table's settings as they are actually in effect, for `system.table_settings`.
     ///
-    /// The base implementation answers from the table's own `SETTINGS` clause - the complete answer for a
-    /// storage that keeps no settings struct (`File`, `URL`, `Join`, the `Log` family). An engine that keeps
-    /// one overrides this to report every setting with its origin (see `SettingOrigin`). It is a method on the
-    /// storage rather than a static enumeration of the settings type because some values live only in the
-    /// instance - replicated metadata, see `StorageObjectStorageQueue`.
+    /// The base implementation answers from the table's own `SETTINGS` clause. That is all a storage can say when
+    /// it has no settings of its own to list: `File` and `URL` take core settings, and the `Log` family's two have
+    /// fixed defaults. An engine with settings of its own overrides this to report every one of them with its
+    /// origin (see `SettingOrigin`) - from a settings struct, or from the values it holds, as `StorageJoin` does.
+    /// It is a method on the storage rather than a static enumeration of the settings type because some values
+    /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`.
     virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
     /// Maps a name as the definition spells it to the name the settings struct uses, or nullopt when

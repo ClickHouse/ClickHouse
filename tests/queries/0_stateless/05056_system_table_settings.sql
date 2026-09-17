@@ -32,7 +32,7 @@ WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg', 'plain')
   AND name IN ('index_granularity', 'enable_block_number_column', 'persistent', 'disk')
 ORDER BY table, name;
 
-SELECT '-- an engine with a settings struct reports its defaults too, one without does not';
+SELECT '-- an engine that has settings of its own reports their defaults too, one that only has its clause does not';
 SELECT table, countIf(source = 'default') > 0 AS has_defaults
 FROM system.table_settings
 WHERE database = currentDatabase() AND table IN ('mt', 'jn', 'lg')

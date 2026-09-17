@@ -22,8 +22,8 @@ jn	Join	persistent	0	1	definition
 lg	Log	disk	default	1	definition
 mt	MergeTree	enable_block_number_column	1	1	definition
 mt	MergeTree	index_granularity	4096	1	definition
--- an engine with a settings struct reports its defaults too, one without does not
-jn	0
+-- an engine that has settings of its own reports their defaults too, one that only has its clause does not
+jn	1
 lg	0
 mt	1
 -- a secret is masked, and says so

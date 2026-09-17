@@ -20,6 +20,8 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
+#include <Core/SettingsFields.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
 
@@ -74,6 +76,7 @@ StorageJoin::StorageJoin(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool overwrite_,
+    bool any_join_distinct_right_table_keys_,
     bool persistent_)
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , key_names(key_names_)
@@ -82,6 +85,7 @@ StorageJoin::StorageJoin(
     , kind(kind_)
     , strictness(strictness_)
     , overwrite(overwrite_)
+    , any_join_distinct_right_table_keys(any_join_distinct_right_table_keys_)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     for (const auto & key : key_names)
@@ -155,6 +159,65 @@ void StorageJoin::optimizeUnlocked()
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
         LOG_INFO(getLogger("StorageJoin"), "Optimized Join storage from {} to {} bytes", current_bytes, optimized_bytes);
+}
+
+SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) const
+{
+    /// `Join` keeps no settings object. The creator resolves its eight settings once - from the table's own
+    /// `SETTINGS` clause and, for what the clause leaves out, from the server's settings (`args.getContext`, the
+    /// global context, not the creating session) - and passes the results to the constructor. Report what the
+    /// table holds: a setting the clause leaves out is shown nowhere else, not even by `SHOW CREATE TABLE`.
+    static const Settings core_settings;
+
+    SettingDescriptions settings;
+    settings.reserve(8);
+
+    const auto add_from_server = [&](std::string_view name, String value)
+    {
+        SettingDescription described;
+        described.name = String{name};
+        described.value = std::move(value);
+        described.default_value = core_settings.getDefaultValueString(name);
+        described.type = core_settings.getTypeName(name);
+        described.comment = core_settings.getDescription(name);
+        described.tier = core_settings.getTier(name);
+        /// Unless the definition states it, the value came from the server's settings when the table was loaded.
+        /// A value other than the default was set there by something the table cannot name, such as a settings
+        /// profile, which is what `Other` says. `StorageDistributed` reports what it copies from the server the
+        /// same way.
+        described.origin = described.value == described.default_value ? SettingOrigin::Default : SettingOrigin::Other;
+        settings.push_back(std::move(described));
+    };
+
+    /// Rendered through the same setting fields the server's settings use, so that the comparison with the
+    /// default compares like with like.
+    add_from_server("join_use_nulls", SettingFieldBool{use_nulls}.toString());
+    add_from_server("max_rows_in_join", SettingFieldUInt64{limits.max_rows}.toString());
+    add_from_server("max_bytes_in_join", SettingFieldUInt64{limits.max_bytes}.toString());
+    add_from_server("join_overflow_mode", SettingFieldOverflowMode{limits.overflow_mode}.toString());
+    add_from_server("join_any_take_last_row", SettingFieldBool{overwrite}.toString());
+    add_from_server("any_join_distinct_right_table_keys", SettingFieldBool{any_join_distinct_right_table_keys}.toString());
+
+    /// These two have defaults of the engine's own rather than server settings behind them, so unless the
+    /// definition states them they are at those defaults.
+    const auto add_engine_default = [&](std::string_view name, String value, String default_value, std::string_view type, std::string_view comment)
+    {
+        SettingDescription described;
+        described.name = String{name};
+        described.value = std::move(value);
+        described.default_value = std::move(default_value);
+        described.type = type;
+        described.comment = comment;
+        described.origin = SettingOrigin::Default;
+        settings.push_back(std::move(described));
+    };
+
+    add_engine_default("disk", disk->getName(), "default", "String", "Name of the disk the table's data is stored on.");
+    add_engine_default(
+        "persistent", SettingFieldBool{persistent}.toString(), SettingFieldBool{true}.toString(), "Bool",
+        "Whether the table's data is written to disk, so that it is restored after a restart.");
+
+    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -534,6 +597,7 @@ void registerStorageJoin(StorageFactory & factory)
             args.constraints,
             args.comment,
             join_any_take_last_row,
+            old_any_join,
             persistent);
     };
 
