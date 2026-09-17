@@ -39,7 +39,7 @@ extern const int CANNOT_KILL;
 class ShutdownCommand final : public ISystemCommand
 {
 public:
-    ShutdownCommand(InterpreterSystemQuery & interpreter_)
+    explicit ShutdownCommand(InterpreterSystemQuery & interpreter_)
         : ISystemCommand(interpreter_)
     {
     }
@@ -67,7 +67,7 @@ public:
 class KillCommand final : public ISystemCommand
 {
 public:
-    KillCommand(InterpreterSystemQuery & interpreter_)
+    explicit KillCommand(InterpreterSystemQuery & interpreter_)
         : ISystemCommand(interpreter_)
     {
     }
@@ -97,7 +97,7 @@ public:
 class SuspendCommand final : public ISystemCommand
 {
 public:
-    SuspendCommand(InterpreterSystemQuery & interpreter_)
+    explicit SuspendCommand(InterpreterSystemQuery & interpreter_)
         : ISystemCommand(interpreter_)
     {
     }

@@ -9,7 +9,7 @@ namespace DB
 class ISystemCommand
 {
 public:
-    ISystemCommand(InterpreterSystemQuery & interpreter_)
+    explicit ISystemCommand(InterpreterSystemQuery & interpreter_)
         : interpreter(interpreter_)
         , log(interpreter_.log)
         , query(interpreter_.query_ptr->as<ASTSystemQuery &>())
