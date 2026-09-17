@@ -139,8 +139,8 @@ SELECT
     bitmapAndnotCardinality(a, b) = 20,
     bitmapHasAny(a, b) = 1;
 
--- UInt64 operands are backed by Roaring64Map, which has no direct and_cardinality or
--- intersect, so these cases exercise the fallback rather than the fast path.
+-- UInt64 operands are backed by Roaring64Map, which gained and_cardinality and
+-- intersect in CRoaring 5.2.0, so these cases now reach the direct routines too.
 
 SELECT '--- UInt64: Large x Large, overlapping ---';
 WITH
@@ -213,3 +213,64 @@ SELECT
     bitmapOrCardinality(a, e) = 40,
     bitmapAndnotCardinality(a, e) = 40,
     bitmapAndnotCardinality(e, a) = 0;
+
+-- Negative values are stored as static_cast<Value>(x), so they land in the top half of
+-- the unsigned key space. The Large x Small path applies that same cast on lookup, so
+-- these cases pin the two halves of the cast against each other.
+
+SELECT '--- Int32: negative values ---';
+WITH
+    bitmapBuild(arrayMap(x -> toInt32(x - 20), range(40))) AS a,
+    bitmapBuild(arrayMap(x -> toInt32(x), range(40))) AS b
+SELECT
+    bitmapAndCardinality(a, b) = bitmapCardinality(bitmapAnd(a, b)),
+    bitmapOrCardinality(a, b) = bitmapCardinality(bitmapOr(a, b)),
+    bitmapXorCardinality(a, b) = bitmapCardinality(bitmapXor(a, b)),
+    bitmapAndnotCardinality(a, b) = bitmapCardinality(bitmapAndnot(a, b)),
+    bitmapHasAny(a, b) = (bitmapCardinality(bitmapAnd(a, b)) > 0);
+
+SELECT '--- Int32: negative values, Large x Small ---';
+WITH
+    bitmapBuild(arrayMap(x -> toInt32(x - 20), range(40))) AS a,
+    bitmapBuild([-5, -1, 7]::Array(Int32)) AS b
+SELECT
+    bitmapAndCardinality(a, b) = bitmapCardinality(bitmapAnd(a, b)),
+    bitmapAndCardinality(a, b) = bitmapAndCardinality(b, a),
+    bitmapHasAny(a, b) = (bitmapCardinality(bitmapAnd(a, b)) > 0),
+    bitmapHasAny(a, b) = bitmapHasAny(b, a);
+
+SELECT '--- Int64: negative values ---';
+WITH
+    bitmapBuild(arrayMap(x -> toInt64(x - 20), range(40))) AS a,
+    bitmapBuild(arrayMap(x -> toInt64(x), range(40))) AS b
+SELECT
+    bitmapAndCardinality(a, b) = bitmapCardinality(bitmapAnd(a, b)),
+    bitmapOrCardinality(a, b) = bitmapCardinality(bitmapOr(a, b)),
+    bitmapXorCardinality(a, b) = bitmapCardinality(bitmapXor(a, b)),
+    bitmapAndnotCardinality(a, b) = bitmapCardinality(bitmapAndnot(a, b)),
+    bitmapHasAny(a, b) = (bitmapCardinality(bitmapAnd(a, b)) > 0);
+
+-- Roaring64Map keys each element by its high 32 bits, so operands spread across several
+-- of those keys exercise the merge over sub-bitmaps rather than a single one.
+
+SELECT '--- UInt64: many high-32 keys, shared element ---';
+WITH
+    bitmapBuild(arrayMap(x -> toUInt64(x) * 4294967296, range(40))) AS a,
+    bitmapBuild(arrayConcat([toUInt64(0)], arrayMap(x -> toUInt64(x) * 4294967296 + 1, range(40)))) AS b
+SELECT
+    bitmapAndCardinality(a, b) = bitmapCardinality(bitmapAnd(a, b)),
+    bitmapOrCardinality(a, b) = bitmapCardinality(bitmapOr(a, b)),
+    bitmapXorCardinality(a, b) = bitmapCardinality(bitmapXor(a, b)),
+    bitmapAndnotCardinality(a, b) = bitmapCardinality(bitmapAndnot(a, b)),
+    bitmapHasAny(a, b) = (bitmapCardinality(bitmapAnd(a, b)) > 0);
+
+SELECT '--- UInt64: many high-32 keys, no shared element ---';
+WITH
+    bitmapBuild(arrayMap(x -> toUInt64(x) * 4294967296, range(40))) AS a,
+    bitmapBuild(arrayMap(x -> toUInt64(x) * 4294967296 + 1, range(40))) AS b
+SELECT
+    bitmapAndCardinality(a, b) = 0,
+    bitmapHasAny(a, b) = 0,
+    bitmapOrCardinality(a, b) = 80,
+    bitmapXorCardinality(a, b) = 80,
+    bitmapAndnotCardinality(a, b) = 40;
