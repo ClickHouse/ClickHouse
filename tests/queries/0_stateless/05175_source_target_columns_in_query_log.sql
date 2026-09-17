@@ -13,10 +13,9 @@ INSERT INTO tgt (tgtKey, tgtVal) SELECT * FROM src SETTINGS log_comment = '05175
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT tables, columns
+SELECT tables, columns, type
 FROM system.query_log
 WHERE query_kind = 'Insert'
-  AND type = 'QueryFinish'
   AND current_database = currentDatabase()
   AND log_comment = '05175_source_target_columns'
 FORMAT VERTICAL;

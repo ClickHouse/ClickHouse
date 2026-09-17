@@ -64,7 +64,7 @@ public:
 
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
-    static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
+    static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table, const Names& column_names);
 
 private:
     static Block getSampleBlock(
