@@ -415,9 +415,6 @@ private:
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet) TSA_REQUIRES(was_cancelled_mutex);
 
-    /// The synchronous receive/process loop of read(): reads packets until they produce a result.
-    ReadResult readLoop();
-
     /// Attributes identifying the query fragment this executor runs, for the OpenTelemetry span
     /// covering it (the read context fiber span or the synchronous-path fragment span).
     OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
@@ -444,6 +441,13 @@ private:
 
     /// Close the fragment span of a parallel replica that became unavailable.
     void finishFragmentSpanForUnavailableReplica() noexcept TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Record the fragment as failed, from a `SCOPE_FAIL` at the entry points of the executor, so
+    /// that no later cancel or teardown path records a benign outcome for a fragment that actually
+    /// failed. Runs during unwinding, where no handler is active and the exception message is not
+    /// available; only the status is recorded, the message is on the query span. Takes the lock
+    /// itself: declare the `SCOPE_FAIL` before the `LockAndBlocker` of the entry point.
+    void failFragmentSpan() noexcept;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);

@@ -56,14 +56,17 @@ ${CLICKHOUSE_CLIENT} -q "
     as select number, toString(number) from numbers(1000000)
 "
 
-# Deliberately not disabled at the end: other tests enable this failpoint without disabling
-# it, so disabling would race against them when tests run in parallel.
-${CLICKHOUSE_CLIENT} -q "system enable failpoint parallel_replicas_wait_for_unused_replicas"
-
 # Both asynchronous (fiber) and fully synchronous connection handling: the per-replica
 # fragment spans are produced by different mechanisms on the two paths.
 for async_socket in 1 0; do
     echo "=== async_socket_for_remote=$async_socket ==="
+
+    # The failpoint is registered as `ONCE`: a single query consumes it, so it is enabled before
+    # each query. Without it the synchronous path never even sends the query to the remote
+    # replicas: the local replica takes all the marks before the synchronous `RemoteSource` is
+    # scheduled, and the coordinator cancels the unused replicas before `sendQuery`. Deliberately
+    # not disabled at the end: other tests enable it too, and disabling would race against them.
+    ${CLICKHOUSE_CLIENT} -q "system enable failpoint parallel_replicas_wait_for_unused_replicas"
 
     trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
     query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-$async_socket"

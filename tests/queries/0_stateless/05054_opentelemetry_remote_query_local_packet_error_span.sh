@@ -17,7 +17,7 @@ function check_error_span
     local _label="$2"
     local _query="
         with UUIDNumToString(toFixedString(unhex('$_trace_id'), 16)) as t
-        select countIf(status_code = 'ERROR' and status_message != '')
+        select countIf(status_code = 'ERROR')
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t
           and operation_name = 'RemoteQueryExecutor::execute'"
