@@ -7,6 +7,11 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
+}
+
 using namespace DB::Iceberg;
 
 namespace
@@ -183,6 +188,145 @@ TEST(IcebergSchemaProcessor, RebindingSchemaIdToDifferentTypeStillRejected)
     IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(first);
     EXPECT_THROW(processor.addIcebergTableSchema(second), DB::Exception);
+}
+
+/// The manifest header 'schema' key is only a copy of the table schema at write time; metadata.json
+/// is authoritative. Broken writers (observed with AWS S3 Tables maintenance jobs) store degraded
+/// copies in manifest headers under an already-used schema-id, e.g. `timestamp` instead of
+/// `timestamptz`. With toleration enabled (the default of `iceberg_tolerate_conflicting_manifest_schemas`),
+/// the divergent manifest copy must be ignored and the metadata.json schema kept.
+TEST(IcebergSchemaProcessor, ConflictingManifestSchemaToleratedWhenEnabled)
+{
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_metadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
+
+    /// The metadata.json copy must win: the field keeps the timestamptz type.
+    auto schema = processor.getClickhouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// With toleration disabled (`compatibility` below 26.9), the same conflict must still fail.
+TEST(IcebergSchemaProcessor, ConflictingManifestSchemaRejectedWhenDisabled)
+{
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_metadata);
+    EXPECT_THROW(
+        processor.addIcebergTableSchema(
+            from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false),
+        DB::Exception);
+}
+
+/// Toleration only applies to manifest header copies: two conflicting metadata.json definitions of
+/// the same schema-id are genuine catalog corruption and must always be rejected.
+TEST(IcebergSchemaProcessor, ConflictingMetadataSchemaAlwaysRejected)
+{
+    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(first);
+    EXPECT_THROW(
+        processor.addIcebergTableSchema(
+            second, IcebergSchemaProcessor::SchemaSource::Metadata, /*tolerate_conflicting_manifest_schemas=*/true),
+        DB::Exception);
+}
+
+/// A manifest header carrying a schema-id NOT registered from metadata.json (e.g. an expired schema
+/// still referenced by an old manifest) must register normally regardless of the toleration flag.
+TEST(IcebergSchemaProcessor, ManifestSchemaWithNewIdRegistersNormally)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":5,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
+    EXPECT_TRUE(processor.hasClickHouseTableSchemaById(5));
+}
+
+/// The maintenance entrypoints (`remove_orphan_files`, `expire_snapshots`, manifest compaction) can
+/// register a schema that came from a manifest before metadata.json is read. Such a schema is never
+/// authoritative: the metadata.json copy of the same schema-id must replace it, together with the
+/// per-field lookups and the cached transformation DAGs derived from it.
+TEST(IcebergSchemaProcessor, ManifestHeaderRegisteredFirstIsReplacedByMetadata)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto other = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"},{"id":2,"name":"v","required":false,"type":"int"}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    processor.addIcebergTableSchema(other);
+
+    /// Populate everything derived from the schema that came from the manifest.
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6))");
+    auto stale_dag = processor.getSchemaTransformationDagByIds(0, 1);
+    ASSERT_NE(stale_dag, nullptr);
+
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata));
+
+    auto schema = processor.getClickhouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+    EXPECT_NE(processor.getSchemaTransformationDagByIds(0, 1).get(), stale_dag.get());
+
+    /// Once metadata.json has settled the schema-id, a later divergent schema from a manifest is handled like
+    /// any header conflicting with a known metadata.json copy: ignored when tolerated, rejected otherwise.
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
+    EXPECT_THROW(
+        processor.addIcebergTableSchema(
+            from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false),
+        DB::Exception);
+    EXPECT_EQ(processor.getClickhouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// An identical metadata.json copy confirms a schema that came from a manifest and was registered before it; the schema-id then
+/// behaves as if it had been registered from metadata.json in the first place.
+TEST(IcebergSchemaProcessor, ManifestHeaderRegisteredFirstIsConfirmedByIdenticalMetadata)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto degraded = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata));
+
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        degraded, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true));
+    EXPECT_THROW(
+        processor.addIcebergTableSchema(
+            degraded, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false),
+        DB::Exception);
+    EXPECT_EQ(processor.getClickhouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
+}
+
+/// Two manifest headers that disagree on a schema-id metadata.json has not defined leave no
+/// authoritative copy to decide between them, so this is a specification violation even when
+/// conflicts with metadata.json are tolerated. Other schema-ids are unaffected.
+TEST(IcebergSchemaProcessor, ConflictingManifestHeadersWithoutMetadataSchemaRejected)
+{
+    auto first = parseSchema(R"json({"schema-id":5,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto second = parseSchema(R"json({"schema-id":5,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    auto other = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(other);
+    processor.addIcebergTableSchema(first, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    try
+    {
+        processor.addIcebergTableSchema(second, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION);
+    }
+    EXPECT_TRUE(processor.hasClickHouseTableSchemaById(0));
+    EXPECT_EQ(processor.getClickhouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
 }
 
 /// A renamed field bound to the same schema-id must still be rejected (issue #107316).
