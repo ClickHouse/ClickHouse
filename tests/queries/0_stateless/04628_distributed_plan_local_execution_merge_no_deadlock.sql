@@ -37,6 +37,18 @@ SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
 SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
 SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
 
+SYSTEM FLUSH LOGS query_log;
+-- The child plans executed as distributed-plan tasks (`main`, `stage_*`) of the statements above. The outer plan
+-- falls back on `ReadFromMerge` by design, so a lost child distribution shows only here, not in the rows.
+SELECT countIf(query = 'main' OR query LIKE 'stage\_%') > 0 AS children_executed_distributed
+FROM system.query_log
+WHERE type = 'QueryFinish' AND event_date >= yesterday()
+    AND initial_query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE type = 'QueryFinish' AND event_date >= yesterday() AND is_initial_query
+            AND current_database = currentDatabase() AND query LIKE 'SELECT count(\_table) FROM m\_dlk%')
+SETTINGS make_distributed_plan = 0;
+
 DROP TABLE m_dlk;
 DROP TABLE d_dlk_1;
 DROP TABLE d_dlk_2;
