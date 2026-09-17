@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
-            {"use_iceberg_manifest_object_metadata", true, true, "New setting allowing an Iceberg data file's size to be taken from its manifest entry, to avoid one object storage metadata request per data file"},
+            {"use_iceberg_manifest_object_metadata", false, true, "New setting: take an Iceberg data file's size from its manifest entry instead of issuing one object storage metadata request per data file. `compatibility` below 26.9 keeps issuing the request."},
             {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
             {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
             {"allow_experimental_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},

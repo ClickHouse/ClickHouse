@@ -6091,7 +6091,7 @@ Threshold for compaction data files in iceberg.
     DECLARE(Bool, use_iceberg_manifest_object_metadata, true, R"(
 Take the size of an Iceberg data file from the `file_size_in_bytes` its manifest entry already
 records, instead of asking the object store for it. This removes one metadata request (an S3
-`HeadObject`) per data file per query, on the coordinator and on every cluster function worker.
+`HeadObject`) per data file per query.
 
 It relies on the Iceberg spec guarantee that data files are immutable: a new snapshot writes new
 files rather than rewriting an existing path. No ETag is fetched, so the content caches identify a

@@ -131,6 +131,60 @@ def test_manifest_object_metadata_yields_to_etag_validation(
     assert validated_heads == disabled_heads
 
 
+def test_manifest_object_metadata_still_fetches_etag_and_time_when_requested(
+    started_cluster_iceberg_no_spark,
+):
+    """`_etag` and `_time` come from the object store, which the manifest cannot replace.
+
+    Whether the virtual column is selected or only filtered on, the read must ask the object store
+    for that file and return the real value. Were the guard lost, `_etag` would quietly come back
+    empty with the shortcut on. A plain read of the same table proves the shortcut itself fires.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_manifest_object_metadata_virtuals_" + get_uuid_str()
+    num_files = 4
+    create_table_with_one_row_per_data_file(
+        instance, started_cluster_iceberg_no_spark, table_name, num_files
+    )
+
+    shortcut_on = {"use_iceberg_manifest_object_metadata": 1, "s3_validate_etag_on_read": 0}
+    shortcut_off = {"use_iceberg_manifest_object_metadata": 0}
+    used = ("IcebergManifestObjectMetadataUsed",)
+
+    # Control: without a virtual column in the way, every file is answered from the manifest.
+    _, (control_used,) = run_and_get_profile_events(
+        instance,
+        f"SELECT sum(x) FROM {table_name}",
+        query_id=f"{table_name}_control",
+        settings=shortcut_on,
+        events=used,
+    )
+    assert control_used == num_files
+
+    # Selected: the values must be the store's, identical to a read that never took the shortcut.
+    selected_query = f"SELECT _path, _etag, _time FROM {table_name} ORDER BY _path"
+    with_shortcut, (selected_used,) = run_and_get_profile_events(
+        instance, selected_query, f"{table_name}_selected", shortcut_on, used
+    )
+    assert selected_used == 0
+    assert with_shortcut == instance.query(selected_query, settings=shortcut_off)
+    for row in with_shortcut.strip().split("\n"):
+        _, etag, time = row.split("\t")
+        assert etag != "", row
+        assert time != "1970-01-01 00:00:00", row
+
+    # Filtered only: `requested_virtual_columns` has to carry a column that appears in no select list.
+    for filtered_query in (
+        f"SELECT count() FROM {table_name} WHERE _etag != ''",
+        f"SELECT count() FROM {table_name} WHERE _time > toDateTime('2000-01-01 00:00:00')",
+    ):
+        matched, (filtered_used,) = run_and_get_profile_events(
+            instance, filtered_query, f"{table_name}_{get_uuid_str()}", shortcut_on, used
+        )
+        assert filtered_used == 0, filtered_query
+        assert int(matched) == num_files, filtered_query
+
+
 # The relative path of a data file is what the content caches key on, and
 # `IcebergPathResolver::resolve` strips the bucket from it: `s3://bucket/tbl/data/00001.parquet`
 # becomes `tbl/data/00001.parquet`. Without an ETag to fold in, two tables that share a relative
