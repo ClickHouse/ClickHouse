@@ -45,11 +45,50 @@ SELECT mode(x), toTypeName(mode(x))
 FROM VALUES('x Array(UInt8)', ([1]), ([2]), ([2]), ([3]));
 SELECT mode(x), toTypeName(mode(x))
 FROM VALUES('x Tuple(UInt8, String)', ((1, 'a')), ((2, 'b')), ((2, 'b')));
+SELECT toTypeName(mode(toLowCardinality(toString(number % 2))))
+FROM numbers(3);
+
+SELECT 'floating point zero';
+SELECT mode(x) = 0
+FROM VALUES('x Float32', (0.0), (0.0), (-0.0), (-0.0), (1.0), (1.0), (1.0));
+SELECT mode(x) = 0
+FROM VALUES('x Float64', (0.0), (0.0), (-0.0), (-0.0), (1.0), (1.0), (1.0));
 
 SELECT 'other numeric types';
 SELECT mode(x), toTypeName(mode(x))
 FROM VALUES('x Decimal64(2)', (1.25), (2.50), (2.50), (3.75));
 SELECT mode(toDate(number % 2)), toTypeName(mode(toDate(number % 2))) FROM numbers(3);
+SELECT toTypeName(mode(x)) = 'Date32'
+FROM VALUES('x Date32', ('2020-01-01'), ('2020-01-02'), ('2020-01-02'));
+SELECT toTypeName(mode(x)) = 'DateTime64(3)'
+FROM VALUES('x DateTime64(3)', ('2020-01-01 00:00:00.000'), ('2020-01-01 00:00:01.000'), ('2020-01-01 00:00:01.000'));
+
+SELECT 'persisted states';
+DROP TABLE IF EXISTS mode_state_05220;
+CREATE TABLE mode_state_05220
+(
+    k UInt8,
+    numeric_state AggregateFunction(mode, UInt64),
+    string_state AggregateFunction(mode, String)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY k;
+INSERT INTO mode_state_05220
+SELECT 1, modeState(x), modeState(toString(x))
+FROM VALUES('x UInt64', (1), (1), (2));
+INSERT INTO mode_state_05220
+SELECT 1, modeState(x), modeState(toString(x))
+FROM VALUES('x UInt64', (2), (2), (3));
+SELECT k, modeMerge(numeric_state), modeMerge(string_state)
+FROM mode_state_05220
+GROUP BY k
+ORDER BY k;
+OPTIMIZE TABLE mode_state_05220 FINAL;
+SELECT k, modeMerge(numeric_state), modeMerge(string_state)
+FROM mode_state_05220
+GROUP BY k
+ORDER BY k;
+DROP TABLE mode_state_05220;
 
 SELECT 'array combinator';
 SELECT modeArray(x)

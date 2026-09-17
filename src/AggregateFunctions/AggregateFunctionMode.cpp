@@ -28,6 +28,19 @@ namespace
 {
 
 template <typename T>
+ALWAYS_INLINE T normalizeModeKey(T value)
+{
+    if constexpr (is_floating_point<T>)
+    {
+        if (value == T{0})
+            return T{0};
+    }
+
+    return value;
+}
+
+
+template <typename T>
 struct AggregateFunctionModeData
 {
     /// CRC32 for integer keys, like uniqExact and groupUniqArray.
@@ -61,7 +74,7 @@ public:
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** __restrict columns, size_t row_num, Arena *) const override
     {
         const auto & values = assert_cast<const ColumnType &>(*columns[0]).getData();
-        ++this->data(place).counts[values[row_num]];
+        ++this->data(place).counts[normalizeModeKey(values[row_num])];
     }
 
     void ALWAYS_INLINE addBatchSinglePlace(
@@ -81,13 +94,13 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i])
-                    ++counts[values[i]];
+                    ++counts[normalizeModeKey(values[i])];
             }
         }
         else
         {
             for (size_t i = row_begin; i < row_end; ++i)
-                ++counts[values[i]];
+                ++counts[normalizeModeKey(values[i])];
         }
     }
 
@@ -109,7 +122,7 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (!null_map[i] && flags[i])
-                    ++counts[values[i]];
+                    ++counts[normalizeModeKey(values[i])];
             }
         }
         else
@@ -117,7 +130,7 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (!null_map[i])
-                    ++counts[values[i]];
+                    ++counts[normalizeModeKey(values[i])];
             }
         }
     }
@@ -128,14 +141,14 @@ public:
             return;
 
         const auto & values = assert_cast<const ColumnType &>(*columns[0]).getData();
-        this->data(place).counts[values[0]] += length;
+        this->data(place).counts[normalizeModeKey(values[0])] += length;
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & counts = this->data(place).counts;
         for (const auto & pair : this->data(rhs).counts)
-            counts[pair.getKey()] += pair.getMapped();
+            counts[normalizeModeKey(pair.getKey())] += pair.getMapped();
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -150,7 +163,7 @@ public:
         while (reader.next())
         {
             const auto & pair = reader.get();
-            counts[pair.first] = pair.second;
+            counts[normalizeModeKey(pair.first)] = pair.second;
         }
     }
 
@@ -390,7 +403,8 @@ If multiple values have the same maximum frequency, any of them may be returned.
 mode(x)
     )";
     FunctionDocumentation::Arguments arguments = {{"x", "Expression.", {"Any"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the most frequent value.", {"Any"}};
+    FunctionDocumentation::ReturnedValue returned_value
+        = {"Returns the most frequent value. The return type matches the input type, except that `LowCardinality` is removed.", {"Any"}};
     FunctionDocumentation::Examples examples
         = {{"Usage example",
             R"(
