@@ -716,18 +716,21 @@ void PartitionedHashJoin::runPostBuildPhase()
 
     /// With the table settled and its key count published: the exact runtime filter of a fixed table
     /// (8- or 16-bit keys, or a range map the conversion built) replaces the planner's Bloom filter.
-    std::visit(
-        [&](const auto & shape_maps)
-        {
-            publishSharedFixedHashTableFilters(
-                *table_join,
-                hash_join->right_table_keys,
-                hash_join->data->type,
-                hash_join->data->key_range,
-                hash_join->data->keys_to_join.load(std::memory_order_relaxed),
-                shape_maps);
-        },
-        clause.tableMaps().maps);
+    /// Only from a table that holds the whole build side; a bucket's would drop the probe rows of every
+    /// other bucket.
+    if (!partial_build)
+        std::visit(
+            [&](const auto & shape_maps)
+            {
+                publishSharedFixedHashTableFilters(
+                    *table_join,
+                    hash_join->right_table_keys,
+                    hash_join->data->type,
+                    hash_join->data->key_range,
+                    hash_join->data->keys_to_join.load(std::memory_order_relaxed),
+                    shape_maps);
+            },
+            clause.tableMaps().maps);
 
     LOG_TRACE(
         log,

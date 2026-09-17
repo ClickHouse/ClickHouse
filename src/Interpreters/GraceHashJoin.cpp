@@ -893,12 +893,12 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
 {
     if (partitioned_buckets)
     {
-        /// No row hint: a table sized for `reserve_num` up front would count against the bucket's
+        /// No row hint. A table sized for `reserve_num` up front would count against the bucket's
         /// predicted bytes before any row arrives, and under a tight threshold every bucket would
-        /// rebucket at once; sized at the barrier from its own rows, the prediction grows with the
-        /// rows, as a `HashJoin` bucket's byte count does. No memory budget either: the bucket count
-        /// is how this join bounds memory.
-        return std::make_shared<PartitionedHashJoin>(
+        /// rebucket at once. Sized at the barrier from its own rows, the prediction grows with the rows,
+        /// as a `HashJoin` bucket's byte count does. No memory budget either: the bucket count is how
+        /// this join bounds memory.
+        auto join = std::make_shared<PartitionedHashJoin>(
             table_join,
             right_sample_block,
             max_threads,
@@ -906,6 +906,10 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
             HashJoinStatsCollectingParams{},
             /*max_bytes_before_external_join_=*/0,
             /*build_rows_hint_=*/std::nullopt);
+        /// A bucket holds the keys of its hash class only; a runtime filter built from it would drop the
+        /// probe rows of every other bucket before they reach their bucket's file.
+        join->markPartialBuild();
+        return join;
     }
 
     /// `max_threads` still matters even though inserts here are serialized: the fill streams

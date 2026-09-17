@@ -212,6 +212,12 @@ public:
     std::shared_ptr<IJoin> cloneNoParallel(
         const std::shared_ptr<TableJoin> & table_join_, SharedHeader left_sample_block_, SharedHeader right_sample_block_) const override;
 
+    /// This instance holds part of the right side - a `GraceHashJoin` bucket - so its table cannot stand
+    /// in for the whole build side. The exact runtime filter over a fixed table drops every probe row
+    /// whose key the table lacks, so it is not published from a partial build. A grace bucket is marked
+    /// by its owner.
+    void markPartialBuild() { partial_build = true; }
+
     void setEnableLazyColumnsIndexing(bool value) override;
 
     /// See `HashJoinClause::BuildStats`. Valid after `runPostBuildPhase`.
@@ -365,6 +371,8 @@ private:
     const bool join_table_mode;
     /// A query's instance after `shareJoinTable`.
     bool shared_from_join_table = false;
+    /// See `markPartialBuild`.
+    bool partial_build = false;
     /// The storage's read lock, see `setLock`.
     TableLockHolder storage_join_lock;
 
