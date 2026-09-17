@@ -388,13 +388,18 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 /// same across a same-second, same-size overwrite and would let the cache serve stale row-group
 /// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
 /// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
-/// are immutable, so the path is a stable identity on its own and no ETag is required (this also
-/// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
-std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+/// are immutable, so no ETag is required (this also avoids disabling the cache for data lakes whose
+/// object metadata does not carry an ETag); the storage namespace stands in for it as the token.
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
+    const ObjectInfo & object_info, bool is_data_lake, const String & storage_namespace)
 {
     String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+    /// A data lake path is stripped of its namespace, and a table function reads under a nil table
+    /// UUID, so the table UUID in the key does not separate two tables the way it does for
+    /// `MergeTree`. Fold the namespace in, so `icebergS3('.../bucketA/tbl')` and
+    /// `icebergS3('.../bucketB/tbl')` cannot share an entry for the same relative path.
     if (is_data_lake)
-        return identifier;
+        return QueryConditionCache::makeFilePartName(identifier, makeImmutableContentsCacheToken(storage_namespace));
     const auto & metadata = object_info.getObjectMetadata();
     if (!metadata || !metadata->isEtagUsableAsCacheKey())
         return std::nullopt;
@@ -994,7 +999,11 @@ Chunk StorageObjectStorageSource::generate()
         else if (format_filter_info->condition_hash)
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key
+                = makeQueryConditionCacheKey(
+                    *object_info,
+                    configuration->isDataLakeConfiguration(),
+                    dataSourceDescriptionForObjectPath(*configuration, object_info->getPath()));
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -1143,16 +1152,21 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             /// An engine that records the object's size itself (Iceberg, in the manifest entry) can
             /// answer without a metadata request. Only the size is known that way, so the object
-            /// store is still asked for anything else the query wants from the response.
+            /// store is still asked for anything else the query wants from the response - including
+            /// an ETag to validate the read against: `s3_validate_etag_on_read` pins every GET to the
+            /// ETag seen beforehand, and the manifest has none to offer, so honouring that setting
+            /// means asking after all rather than silently reading unvalidated.
+            const auto & settings = context_->getSettingsRef();
             const bool needs_object_store_response = with_tags
                 || query_settings.ignore_non_existent_file
                 || read_from_format_info.requested_virtual_columns.contains("_etag")
-                || read_from_format_info.requested_virtual_columns.contains("_time");
+                || read_from_format_info.requested_virtual_columns.contains("_time")
+                || (settings[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3);
 
             std::optional<ObjectMetadata> metadata_without_request;
-            if (!needs_object_store_response
-                && context_->getSettingsRef()[Setting::use_iceberg_manifest_object_metadata])
-                metadata_without_request = object_info->tryGetObjectMetadataWithoutRequest();
+            if (!needs_object_store_response && settings[Setting::use_iceberg_manifest_object_metadata])
+                metadata_without_request = object_info->tryGetObjectMetadataWithoutRequest(
+                    dataSourceDescriptionForObjectPath(*configuration, object_info->getPath()));
 
             if (metadata_without_request)
                 object_info->setObjectMetadata(*metadata_without_request);
@@ -1176,7 +1190,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (query_condition_cache && !object_info->file_bucket_info)
         {
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key
+                = makeQueryConditionCacheKey(
+                    *object_info,
+                    configuration->isDataLakeConfiguration(),
+                    dataSourceDescriptionForObjectPath(*configuration, object_info->getPath()));
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
             if (query_condition_cache_key)
                 matching_marks = query_condition_cache->read(
@@ -1237,9 +1255,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             const auto metadata = object_info->getObjectMetadata();
             if (!metadata)
                 return std::nullopt;
-            /// Contents pinned by the path cannot go stale, so a cached row count for this path stays
-            /// valid however old it is. Reporting the epoch says exactly that.
-            if (metadata->contents_identified_by_path)
+            /// Immutable contents cannot go stale, so a cached row count stays valid however old it
+            /// is. Reporting the epoch says exactly that. The count cache key already carries the
+            /// storage namespace (`getUniqueStoragePathIdentifier` above, with connection info), so
+            /// two objects at the same relative path in different buckets do not share an entry.
+            if (metadata->immutable_contents_namespace)
                 return std::optional<time_t>(0);
             /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
             /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
@@ -1875,6 +1895,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         }
         else
         {
+            /// The path and the token are hashed as two separate updates. Keep it that way: this hash
+            /// is the key of on-disk cache entries, so a different composition would orphan every entry
+            /// written by an earlier version.
             SipHash hash;
             hash.update(object_info.getPath());
             hash.update(*content_cache_token);

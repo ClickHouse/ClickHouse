@@ -53,6 +53,14 @@ std::string relativizePathUnderPrefix(const std::string & prefix, const std::str
 
 std::string formatObjectPath(
     const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info);
+
+/// The data source description (endpoint and bucket/container) of the storage namespace an object's
+/// path is resolved against. Usually the configuration's own, but a data lake data file may live in
+/// a foreign bucket, in which case its path is fully qualified and names that bucket itself. Anything
+/// that identifies an object across tables must take the namespace from here rather than from
+/// `getDataSourceDescription`, or the same foreign object read through two tables would be stamped
+/// with two namespaces, and two tables' own-bucket files with one.
+std::string dataSourceDescriptionForObjectPath(const StorageObjectStorageConfiguration & configuration, const std::string & path);
 /// `joinPathUnderPrefix` is not injective under a non-empty prefix: a key with a leading separator
 /// and the same key without it render to the same `_path` value, so `relativizePathUnderPrefix`
 /// alone cannot tell which of them produced a given value. Returns every key that could have, so

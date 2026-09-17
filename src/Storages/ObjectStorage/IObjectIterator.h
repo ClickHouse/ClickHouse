@@ -56,7 +56,15 @@ struct ObjectInfo
     ///
     /// Unlike `getFileSizeHint` above, which only feeds the progress indicator, this replaces the
     /// object store's answer - so an override must only return what its metadata guarantees.
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadataWithoutRequest() const { return std::nullopt; }
+    ///
+    /// `storage_namespace` identifies the endpoint and bucket/container the object lives in: the
+    /// one a fully qualified path names itself, otherwise the table's (`dataSourceDescriptionForObjectPath`).
+    /// An override that reports the contents as immutable must record it, because a bucket-relative
+    /// path alone does not identify an object across namespaces.
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadataWithoutRequest(const String & /*storage_namespace*/) const
+    {
+        return std::nullopt;
+    }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }

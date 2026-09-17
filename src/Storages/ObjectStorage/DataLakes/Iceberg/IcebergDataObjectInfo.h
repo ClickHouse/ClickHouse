@@ -93,7 +93,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     /// A manifest entry records `file_size_in_bytes` for every data file. Reads `info`, which a
     /// cluster function worker fills in after construction (`ClusterFunctionReadTaskResponse::
     /// getObjectInfo`), so this must stay lazy rather than be computed in the constructor.
-    std::optional<ObjectMetadata> tryGetObjectMetadataWithoutRequest() const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadataWithoutRequest(const String & storage_namespace) const override;
 
     void addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path);
 

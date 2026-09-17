@@ -9,6 +9,11 @@ using namespace DB;
 namespace
 {
 
+/// Two storage namespaces as `StorageObjectStorageConfiguration::getDataSourceDescription` reports
+/// them: the endpoint together with the bucket.
+const String namespace_a = "storage.example.com443/bucket_a";
+const String namespace_b = "storage.example.com443/bucket_b";
+
 ObjectInfo makeObjectInfo(const String & path, std::optional<String> etag, bool etag_is_strong)
 {
     ObjectInfo object_info(path);
@@ -30,7 +35,7 @@ ObjectInfo makeObjectInfo(const String & path, std::optional<String> etag, bool 
 TEST(QueryConditionCacheKey, StrongEtagIsUsedAsKey)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", "strong-etag", /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false, namespace_a);
     ASSERT_TRUE(key.has_value());
     EXPECT_EQ(*key, QueryConditionCache::makeFilePartName("bucket/data.parquet", "strong-etag"));
 }
@@ -42,7 +47,7 @@ TEST(QueryConditionCacheKey, StrongEtagIsUsedAsKey)
 TEST(QueryConditionCacheKey, WeakEtagBypassesCache)
 {
     auto object_info = makeObjectInfo("hdfs/data.parquet", "1700000000_42", /*etag_is_strong=*/ false);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false, namespace_a);
     EXPECT_FALSE(key.has_value());
 }
 
@@ -51,7 +56,7 @@ TEST(QueryConditionCacheKey, WeakEtagBypassesCache)
 TEST(QueryConditionCacheKey, EmptyEtagBypassesCache)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", "", /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false, namespace_a);
     EXPECT_FALSE(key.has_value());
 }
 
@@ -59,21 +64,44 @@ TEST(QueryConditionCacheKey, EmptyEtagBypassesCache)
 TEST(QueryConditionCacheKey, MissingMetadataBypassesCache)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", std::nullopt, /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false, namespace_a);
     EXPECT_FALSE(key.has_value());
 }
 
-/// Data-lake data files are immutable, so the path is a stable identity on its own: the cache is
-/// keyed on the identifier alone, even when the object carries a weak etag or no etag at all.
-TEST(QueryConditionCacheKey, DataLakeUsesIdentifierWithoutEtag)
+/// Data-lake data files are immutable, so the cache is keyed without an etag - the storage namespace
+/// stands in as the content token, even when the object carries a weak etag or no etag at all.
+TEST(QueryConditionCacheKey, DataLakeUsesTheNamespaceWithoutEtag)
 {
+    const auto expected = QueryConditionCache::makeFilePartName("lake/data.parquet", makeImmutableContentsCacheToken(namespace_a));
+
     auto weak = makeObjectInfo("lake/data.parquet", "1700000000_42", /*etag_is_strong=*/ false);
-    auto weak_key = StorageObjectStorageSource::makeQueryConditionCacheKey(weak, /*is_data_lake=*/ true);
+    auto weak_key = StorageObjectStorageSource::makeQueryConditionCacheKey(weak, /*is_data_lake=*/ true, namespace_a);
     ASSERT_TRUE(weak_key.has_value());
-    EXPECT_EQ(*weak_key, "lake/data.parquet");
+    EXPECT_EQ(*weak_key, expected);
 
     auto no_meta = makeObjectInfo("lake/data.parquet", std::nullopt, /*etag_is_strong=*/ true);
-    auto no_meta_key = StorageObjectStorageSource::makeQueryConditionCacheKey(no_meta, /*is_data_lake=*/ true);
+    auto no_meta_key = StorageObjectStorageSource::makeQueryConditionCacheKey(no_meta, /*is_data_lake=*/ true, namespace_a);
     ASSERT_TRUE(no_meta_key.has_value());
-    EXPECT_EQ(*no_meta_key, "lake/data.parquet");
+    EXPECT_EQ(*no_meta_key, expected);
+}
+
+/// A data-lake path is stripped of its bucket (`s3://bucket/tbl/data/x.parquet` becomes
+/// `tbl/data/x.parquet`), and an object-storage table function reads under a nil table UUID, so the
+/// table UUID in the cache key does not separate two tables the way it does for `MergeTree`. The
+/// namespace has to, or one table's skip marks could be served for another table's data file.
+TEST(QueryConditionCacheKey, DataLakeSeparatesTheNamespaces)
+{
+    auto object_info = makeObjectInfo("tbl/data/00001.parquet", std::nullopt, /*etag_is_strong=*/ true);
+
+    const auto key_in_a = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ true, namespace_a);
+    const auto key_in_b = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ true, namespace_b);
+
+    ASSERT_TRUE(key_in_a.has_value());
+    ASSERT_TRUE(key_in_b.has_value());
+    EXPECT_NE(*key_in_a, *key_in_b);
+
+    /// And the same data file in the same namespace still hits its own entry.
+    EXPECT_EQ(
+        *key_in_a,
+        *StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ true, namespace_a));
 }

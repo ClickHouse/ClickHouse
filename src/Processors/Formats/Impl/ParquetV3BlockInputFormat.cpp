@@ -110,19 +110,15 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
     {
-        String file_name = object_with_metadata->getPath();
-        /// Not necessarily the store's ETag: for an object whose path identifies its contents the
-        /// token is empty and the file name alone keys the entry. The caller has already checked
-        /// that the contents can be identified before enabling the cache.
-        String content_token = object_with_metadata->metadata->getContentCacheToken().value_or("");
-        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, content_token);
-        return metadata_cache->getOrSetMetadata(
-            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+        if (const auto content_token = object_with_metadata->metadata->getContentCacheToken())
+        {
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(object_with_metadata->getPath(), *content_token);
+            return metadata_cache->getOrSetMetadata(
+                cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+        }
     }
-    else
-    {
-        return Parquet::Reader::readFileMetaData(prefetcher);
-    }
+
+    return Parquet::Reader::readFileMetaData(prefetcher);
 }
 
 Chunk ParquetV3BlockInputFormat::read()

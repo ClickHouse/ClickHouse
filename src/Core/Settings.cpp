@@ -6094,13 +6094,16 @@ records, instead of asking the object store for it. This removes one metadata re
 `HeadObject`) per data file per query, on the coordinator and on every cluster function worker.
 
 It relies on the Iceberg spec guarantee that data files are immutable: a new snapshot writes new
-files rather than rewriting an existing path. No ETag is fetched, so caches key on the path alone -
-as the query condition cache already does for every data lake - and `s3_validate_etag_on_read`
-cannot detect a mid-read overwrite of these files. Turn this off for a table whose data files are
-rewritten in place; a reader may otherwise serve data cached for the previous contents.
+files rather than rewriting an existing path. No ETag is fetched, so the content caches identify a
+data file by its path within its storage namespace instead. Turn this off for a table whose data
+files are rewritten in place; a reader may otherwise serve data cached for the previous contents.
 
-The object store is still asked when the query needs something the manifest does not record: the
-`_etag`, `_time` or `_tags` virtual columns, or `ignore_non_existent_file`.
+The object store is still asked whenever the manifest cannot supply what the read needs: the
+`_etag`, `_time` or `_tags` virtual columns; `ignore_non_existent_file`; a data file the manifest
+records as empty, so that a missing object is reported rather than skipped by `skip_empty_files`;
+and, on S3, `s3_validate_etag_on_read`, which pins each read to an ETag seen beforehand and so
+cannot work without one. On S3 the request is therefore only saved with
+`s3_validate_etag_on_read = 0`.
 )", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
