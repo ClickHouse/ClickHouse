@@ -25,15 +25,7 @@ INSERT INTO test_skip_idx_alias SELECT number FROM numbers(100);
 
 -- Count the granules the index leaves, rather than matching the `EXPLAIN` output verbatim: the
 -- number of granules per index is randomized by `merge_tree_coarse_index_granularity` in CI.
-SELECT 'analyzer', countIf(explain LIKE '%Name: idx%') AS index_used, countIf(explain LIKE '%Granules: 1/25%') AS granules_left
-FROM (EXPLAIN indexes = 1 SELECT count() FROM test_skip_idx_alias WHERE s > 97)
-SETTINGS enable_analyzer = 1;
-
-SET enable_analyzer = 0;
-
-SELECT 'legacy analyzer', countIf(explain LIKE '%Name: idx%') AS index_used, countIf(explain LIKE '%Granules: 1/25%') AS granules_left
+SELECT countIf(explain LIKE '%Name: idx%') AS index_used, countIf(explain LIKE '%Granules: 1/25%') AS granules_left
 FROM (EXPLAIN indexes = 1 SELECT count() FROM test_skip_idx_alias WHERE s > 97);
-
-SET enable_analyzer = 1;
 
 DROP TABLE test_skip_idx_alias;

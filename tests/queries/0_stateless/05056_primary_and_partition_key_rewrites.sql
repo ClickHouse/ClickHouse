@@ -21,11 +21,6 @@ INSERT INTO test_primary_key_rewrites SELECT number, number % 100 FROM numbers(1
 SELECT 'primary_key', countIf(explain LIKE '%Condition: (multiIf(greater(v, 0), v, 0) in [98, +Inf))%')
 FROM (EXPLAIN indexes = 1 SELECT t FROM test_primary_key_rewrites WHERE multiIf(v > 0, v, 0) > 97);
 
-SET enable_analyzer = 0;
-SELECT 'primary_key_legacy_analyzer', countIf(explain LIKE '%Condition: (multiIf(greater(v, 0), v, 0) in [98, +Inf))%')
-FROM (EXPLAIN indexes = 1 SELECT t FROM test_primary_key_rewrites WHERE multiIf(v > 0, v, 0) > 97);
-SET enable_analyzer = 1;
-
 -- The key must not change the result.
 SELECT 'primary_key_results';
 SELECT count() FROM test_primary_key_rewrites WHERE multiIf(v > 0, v, 0) > 97;

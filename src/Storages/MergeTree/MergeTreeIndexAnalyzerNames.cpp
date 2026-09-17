@@ -5,15 +5,11 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Core/LogsLevel.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
@@ -29,11 +25,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
 
 namespace
 {
@@ -78,28 +69,6 @@ ActionsDAG buildRewrittenExpressionWithAnalyzer(
     return std::move(dag);
 }
 
-/// Reproduce the rewrites of the legacy analyzer (the AST optimizations of `TreeRewriter`, e.g.
-/// `TreeOptimizer::optimizeIf`, which rewrites `multiIf` with a single condition to `if`) on the
-/// key expressions. They are applied to a `SELECT` query, so the key expressions are analyzed
-/// as the projection of a synthetic one, the same way the key expressions themselves are
-/// analyzed in `IndexDescription::initExpressionInfo` and `KeyDescription::getSortingKeyFromAST`.
-ActionsDAG buildRewrittenExpressionWithLegacyAnalyzer(
-    const ASTPtr & expression_list_ast, const ExpressionActionsPtr & expression, const ContextMutablePtr & context)
-{
-    auto source_columns = expression->getRequiredColumnsWithTypes();
-
-    auto select_query = make_intrusive<ASTSelectQuery>();
-    /// The description is shared through the metadata snapshot, so do not let the rewrite touch its AST.
-    select_query->setExpression(ASTSelectQuery::Expression::SELECT, expression_list_ast->clone());
-
-    ASTPtr query = select_query;
-    auto syntax_result = TreeRewriter(context).analyzeSelect(query, TreeRewriterResult(source_columns));
-
-    auto expression_list = select_query->select();
-    auto actions = ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true);
-    return actions->getActionsDAG().clone();
-}
-
 /// The generic computation of the alternative (rewritten) form of a list of key expressions: it is
 /// the same for a skip index, a primary key and a partition key.
 AlternativeKeyExpressionPtr getAlternativeExpression(
@@ -131,9 +100,7 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     {
         auto execution_context = Context::createCopy(context);
 
-        auto dag = execution_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-            ? buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, execution_context)
-            : buildRewrittenExpressionWithLegacyAnalyzer(expression_list_ast, expression, execution_context);
+        auto dag = buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, execution_context);
 
         const auto & outputs = dag.getOutputs();
         if (outputs.size() != column_names.size())

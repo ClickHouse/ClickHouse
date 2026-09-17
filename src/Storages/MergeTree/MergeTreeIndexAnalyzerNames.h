@@ -28,8 +28,8 @@ class MergeTreeIndexMinMax;
   * so without the alternative form a rewritten filter expression does not match the index expression,
   * and the index is not used (issue #103128).
   *
-  * Both the query analyzer (query tree passes) and the legacy analyzer (`TreeRewriter` AST
-  * optimizations) are reproduced, depending on `enable_analyzer` in the context.
+  * The rewrites of the query analyzer (the query tree passes) are reproduced with the settings of
+  * the given query context.
   *
   * Returns nullptr when not applicable: the index is on plain columns, no name differs after the
   * rewrites, or the index expression cannot be analyzed (best effort). Otherwise the result's
