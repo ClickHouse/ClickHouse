@@ -2495,11 +2495,14 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
-/// Whether the value is, or contains at any depth, a floating point zero. A stored `-0.` compares equal
-/// to such a zero, so a key range built from it stands for the predicate only if the key transform sends
-/// both spellings of the zero to key values the index compares as equal.
+/// Whether the value is, or contains at any depth, a numeric zero. A stored `-0.` compares equal to such
+/// a zero: the predicate compares the key column and the set in a common numeric domain, so an integer,
+/// a decimal or a boolean zero in the set matches a stored `-0.` in the same way a floating point zero
+/// does - `f IN (SELECT toUInt8(0))` casts the stored value to `UInt8` - and the key transform sees such
+/// an element as `0.` after the conversion into its floating point input type. A string is not a zero:
+/// the comparison with a string set happens in the string domain, where the two spellings differ.
 /// Iterative because `Field`s nest inside `Field`s and a recursive walk overflows the native stack.
-static bool fieldHoldsFloatingPointZero(const Field & field)
+static bool fieldHoldsNumericZero(const Field & field)
 {
     absl::InlinedVector<const Field *, 16> pending{&field};
 
@@ -2512,6 +2515,50 @@ static bool fieldHoldsFloatingPointZero(const Field & field)
         {
             case Field::Types::Float64:
                 if (current->safeGet<Float64>() == 0)
+                    return true;
+                break;
+            case Field::Types::UInt64:
+                if (current->safeGet<UInt64>() == 0)
+                    return true;
+                break;
+            case Field::Types::Int64:
+                if (current->safeGet<Int64>() == 0)
+                    return true;
+                break;
+            case Field::Types::UInt128:
+                if (current->safeGet<UInt128>() == 0)
+                    return true;
+                break;
+            case Field::Types::Int128:
+                if (current->safeGet<Int128>() == 0)
+                    return true;
+                break;
+            case Field::Types::UInt256:
+                if (current->safeGet<UInt256>() == 0)
+                    return true;
+                break;
+            case Field::Types::Int256:
+                if (current->safeGet<Int256>() == 0)
+                    return true;
+                break;
+            case Field::Types::Bool:
+                if (!current->safeGet<bool>())
+                    return true;
+                break;
+            case Field::Types::Decimal32:
+                if (current->safeGet<DecimalField<Decimal32>>().getValue().value == 0)
+                    return true;
+                break;
+            case Field::Types::Decimal64:
+                if (current->safeGet<DecimalField<Decimal64>>().getValue().value == 0)
+                    return true;
+                break;
+            case Field::Types::Decimal128:
+                if (current->safeGet<DecimalField<Decimal128>>().getValue().value == 0)
+                    return true;
+                break;
+            case Field::Types::Decimal256:
+                if (current->safeGet<DecimalField<Decimal256>>().getValue().value == 0)
                     return true;
                 break;
             case Field::Types::Array:
@@ -2543,14 +2590,17 @@ static bool fieldHoldsFloatingPointZero(const Field & field)
 /// every comparison treats as equal, so key ranges built from the elements of a set stand for the
 /// predicate only if the key transform sends both spellings to key values the index compares as equal.
 /// `{-0., +0.}` is the only such pair on a floating point domain: every other pair of distinct bit
-/// patterns compares unequal, and a `NaN` equals nothing. `Field` has no `Float32`, so `Float32` and
+/// patterns compares unequal, and a `NaN` equals nothing.
+/// The elements are screened as they are in the set, before the conversion into the input type of the
+/// transform, so that a zero which becomes a floating point zero only through that conversion, such as
+/// the `UInt8` zero of a subquery set, is not missed. `Field` has no `Float32`, so `Float32` and
 /// `BFloat16` values arrive here as `Float64`.
 static bool keyTransformSeparatesEqualSetElements(const IColumn & set_column, const DeterministicKeyTransformDag & dag)
 {
     const size_t set_size = set_column.size();
     bool set_holds_a_zero = false;
     for (size_t i = 0; i < set_size && !set_holds_a_zero; ++i)
-        set_holds_a_zero = fieldHoldsFloatingPointZero(set_column[i]);
+        set_holds_a_zero = fieldHoldsNumericZero(set_column[i]);
 
     /// A set without a zero in it has nothing that a stored `-0.` compares equal to, so no transform on
     /// it can be narrower than the predicate.
@@ -2558,25 +2608,35 @@ static bool keyTransformSeparatesEqualSetElements(const IColumn & set_column, co
         return false;
 
     const DataTypePtr input_type = removeNullable(removeLowCardinality(dag.input_type));
+    const WhichDataType which_input_type(input_type);
+
+    if (which_input_type.isFloat())
+    {
+        /// Both spellings go through in one column, in the transform's own input type, so neither the
+        /// conversion nor the transform can treat them differently for any other reason.
+        auto probe_column = dag.input_type->createColumn();
+        probe_column->insert(Field(0.0));
+        probe_column->insert(Field(-0.0));
+
+        ColumnPtr transformed_column;
+        DataTypePtr transformed_type;
+        if (!applyDeterministicDagToColumn(
+                std::move(probe_column), dag.input_type, dag.input_name, dag, transformed_column, transformed_type))
+            return true;
+
+        return !Range::equals((*transformed_column)[0], (*transformed_column)[1]);
+    }
+
+    /// A scalar domain that is not floating point has a single spelling for every value, so a key range
+    /// built from the elements is never narrower than the predicate on it.
+    if (which_input_type.isNumber() || which_input_type.isStringOrFixedString() || which_input_type.isEnum()
+        || which_input_type.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which_input_type.isUUID()
+        || which_input_type.isIPv4() || which_input_type.isIPv6() || which_input_type.isInterval())
+        return false;
 
     /// A value that holds several zeros at once - a container, or a member whose type is only known at
     /// runtime - is not decided by a single pair of probes, so such a domain is declined instead.
-    if (!WhichDataType(input_type).isFloat())
-        return true;
-
-    /// Both spellings go through in one column, in the transform's own input type, so neither the
-    /// conversion nor the transform can treat them differently for any other reason.
-    auto probe_column = dag.input_type->createColumn();
-    probe_column->insert(Field(0.0));
-    probe_column->insert(Field(-0.0));
-
-    ColumnPtr transformed_column;
-    DataTypePtr transformed_type;
-    if (!applyDeterministicDagToColumn(
-            std::move(probe_column), dag.input_type, dag.input_name, dag, transformed_column, transformed_type))
-        return true;
-
-    return !Range::equals((*transformed_column)[0], (*transformed_column)[1]);
+    return true;
 }
 
 bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
