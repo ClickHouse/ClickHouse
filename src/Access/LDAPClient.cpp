@@ -49,11 +49,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool LDAPClient::SearchParams::isSelfLookup() const
+bool LDAPClient::SearchParams::isSelfLookup(bool bind_dn_is_user_dn) const
 {
-    /// Both DN placeholders denote the user's own entry (the synchronisation substitutes the
-    /// enumerated entry's DN for both), so both spellings select the shortcut.
-    const bool base_is_own_entry = (base_dn == Params::DETECTED_USER_DN_PLACEHOLDER) || (base_dn == "{bind_dn}");
+    /// `{bind_dn}` denotes the user's own entry only when the login binds as the detected DN (search-and-bind);
+    /// with a `bind_dn` template it is the template's result, which the detection may well differ from.
+    const bool base_is_own_entry = (base_dn == Params::DETECTED_USER_DN_PLACEHOLDER) || (bind_dn_is_user_dn && base_dn == "{bind_dn}");
     return base_is_own_entry && scope == Scope::BASE && boost::iequals(search_filter, "(objectClass=*)");
 }
 
@@ -1484,7 +1484,7 @@ std::vector<LDAPSyncClient::UserEntry> LDAPSyncClient::enumerate(const UserEnume
     is_self_lookup.reserve(role_search_params.size());
     for (const auto & mapping : role_search_params)
     {
-        const bool self_lookup = mapping.isSelfLookup() && !mapping.attribute.empty();
+        const bool self_lookup = mapping.isSelfLookup(params.bindsAsDetectedUserDN()) && !mapping.attribute.empty();
         is_self_lookup.push_back(self_lookup);
 
         if (!self_lookup || boost::iequals(mapping.attribute, "dn"))
@@ -1531,10 +1531,15 @@ std::vector<LDAPSyncClient::UserEntry> LDAPSyncClient::enumerate(const UserEnume
         user.dn = entry.dn;
         user.external_roles.reserve(role_search_params.size());
 
-        /// The role searches see this entry as "the user", exactly as a login of that user would.
+        /// The role searches see this entry as "the user", exactly as a login of that user would: `{user_dn}` is
+        /// the entry's DN, and `{bind_dn}` is what that login binds as, the detected DN in search-and-bind mode and
+        /// the `bind_dn` template with the name substituted otherwise (see `openConnection`; the detection changes
+        /// `{user_dn}` only). A mapping over `{bind_dn}` thus grants during the run what it grants at a login.
         placeholders.user_name = user.name;
-        placeholders.bind_dn = user.dn;
         placeholders.user_dn = user.dn;
+        placeholders.bind_dn = params.bindsAsDetectedUserDN()
+            ? user.dn
+            : replacePlaceholders(params.bind_dn, { {"{user_name}", escapeForDN(user.name)} });
 
         for (size_t i = 0; i < role_search_params.size(); ++i)
         {

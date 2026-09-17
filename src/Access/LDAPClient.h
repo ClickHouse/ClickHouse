@@ -41,10 +41,11 @@ public:
         String attribute = "cn";
 
         /// True when the search reads an attribute of the user's own entry: `base_dn` is exactly
-        /// `{user_dn}` (or `{bind_dn}`), the scope is `base` and the filter is `(objectClass=*)`,
-        /// e.g. an Active Directory `memberOf` lookup. `LDAPSyncClient::enumerate` answers such a
-        /// search from the attributes of the enumerated entry instead of issuing one search per user.
-        bool isSelfLookup() const;
+        /// `{user_dn}` (or `{bind_dn}` when `bind_dn_is_user_dn`, i.e. the login binds as the detected
+        /// DN), the scope is `base` and the filter is `(objectClass=*)`, e.g. an Active Directory
+        /// `memberOf` lookup. `LDAPSyncClient::enumerate` answers such a search from the attributes of
+        /// the enumerated entry instead of issuing one search per user.
+        bool isSelfLookup(bool bind_dn_is_user_dn) const;
 
         void updateHash(SipHash & hash) const;
     };
@@ -389,9 +390,10 @@ public:
     /// Opens one connection, binds as `params.lookup_bind_dn` and runs the paged enumeration, then
     /// resolves the role mappings of every entry on the same connection: a self-lookup mapping
     /// (`SearchParams::isSelfLookup`) is read from the entry's own attributes, which were fetched
-    /// along with the user name, every other mapping is one `search` per user with
-    /// `Placeholders{user_name = name, bind_dn = user_dn = dn}`. The result is in directory order and
-    /// not deduplicated; the caller decides what a duplicate name means.
+    /// along with the user name, every other mapping is one `search` per user with `{user_name}` the
+    /// name, `{user_dn}` the entry's DN and `{bind_dn}` what a login of that user binds as: the entry's
+    /// DN in search-and-bind mode, the `bind_dn` template with the name substituted otherwise. The
+    /// result is in directory order and not deduplicated; the caller decides what a duplicate name means.
     /// Throws `BAD_ARGUMENTS` without a lookup identity, when `attribute` is empty or `dn`, or when
     /// `base_dn`/`search_filter` contain a per-user placeholder (nothing could substitute it);
     /// `LDAP_ERROR` for every directory-side failure (see `searchEntries`) and for an entry with zero
