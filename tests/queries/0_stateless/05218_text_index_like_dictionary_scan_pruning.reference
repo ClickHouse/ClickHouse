@@ -59,3 +59,7 @@ prefix alone, no index	[6,7]
 05218_no_literal	3	1
 05218_no_literal_mixed	3	1
 05218_no_literal_prefix	1	1
+Block starting at the exclusive upper bound
+block starts at the upper bound	[1,2,3,4]
+block starts at the upper bound, no index	[1,2,3,4]
+05218_at_upper_bound	1	1

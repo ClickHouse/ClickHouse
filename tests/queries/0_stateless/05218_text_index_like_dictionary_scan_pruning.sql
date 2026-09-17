@@ -281,3 +281,39 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
 ORDER BY log_comment;
 
 DROP TABLE tab_no_literal;
+
+SELECT 'Block starting at the exclusive upper bound';
+
+DROP TABLE IF EXISTS tab_upper_bound;
+
+-- Block first tokens: 'toaa0' and 'toab'. The range of 'toaa%' ends, exclusively, at 'toab', so the second
+-- block starts exactly at that bound and none of its tokens can carry the prefix: one block, not two.
+CREATE TABLE tab_upper_bound
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, dictionary_block_size = 4) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 4;
+
+INSERT INTO tab_upper_bound VALUES
+    (1, 'toaa0'), (2, 'toaa1'), (3, 'toaa2'), (4, 'toaa3'), (5, 'toab'), (6, 'toab1'), (7, 'toab2'), (8, 'toab3');
+OPTIMIZE TABLE tab_upper_bound FINAL;
+
+SELECT 'block starts at the upper bound', groupArray(id) FROM tab_upper_bound WHERE message LIKE 'toaa%' SETTINGS log_comment = '05218_at_upper_bound';
+SELECT 'block starts at the upper bound, no index', groupArray(id) FROM tab_upper_bound WHERE message LIKE 'toaa%' SETTINGS use_skip_indexes = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    log_comment,
+    ProfileEvents['TextIndexReadDictionaryBlocks'] AS dictionary_blocks_read,
+    read_rows < (SELECT count() FROM tab_upper_bound) AS granules_pruned
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND log_comment = '05218_at_upper_bound';
+
+DROP TABLE tab_upper_bound;
