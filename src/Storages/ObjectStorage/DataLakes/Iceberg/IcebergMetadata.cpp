@@ -7,7 +7,6 @@
 #if USE_AVRO
 
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -415,6 +414,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
+    std::optional<String> refresh_cursor;
 
     if (snapshot_object->has(f_summary))
     {
@@ -429,6 +429,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         {
             total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
         }
+
+        if (summary_object->has(f_refresh_cursor))
+            refresh_cursor = summary_object->getValue<String>(f_refresh_cursor);
     }
 
     if (!snapshot_object->has(f_schema_id))
@@ -443,7 +446,16 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_rows,
         total_bytes,
         total_position_deletes,
+        refresh_cursor,
         metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
+}
+
+std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
+{
+    auto state = getRelevantState(local_context);
+    if (!state.first)
+        return std::nullopt;
+    return state.first->refresh_cursor;
 }
 
 IcebergDataSnapshotPtr
@@ -802,7 +814,8 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
-            args, context, object_storage_, data_lake_settings, persistent_components);
+            args, context, object_storage_, data_lake_settings, persistent_components,
+            catalog_, storage_id.getTableName());
     }
     else
     {
@@ -1398,7 +1411,7 @@ void IcebergMetadata::addDeleteTransformers(
     if (!iceberg_object_info)
         return;
 
-    if (!iceberg_object_info->info.position_deletes_objects.empty())
+    if (iceberg_object_info->info.hasPositionDeletes())
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
