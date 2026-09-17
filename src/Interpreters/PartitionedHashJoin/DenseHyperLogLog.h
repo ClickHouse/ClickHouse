@@ -32,10 +32,9 @@ struct DenseHyperLogLog
 
     std::array<UInt8, register_count> registers{};
 
-    /// The words `add` receives are the top 32 bits of a 64-bit multiplicative mix (or a raw
-    /// `key8`/`key16` value). The rank reads their low 19 bits, which are the product's middle bits and
-    /// are not avalanche-quality for structured keys. fmix32 is a bijection: it redistributes bits and
-    /// never merges two distinct words.
+    /// Without this, the rank would read the words' low 19 bits: the middle bits of the multiplicative
+    /// product, not avalanche-quality for structured keys. fmix32 is a bijection: it redistributes bits
+    /// and never merges two distinct words.
     static ALWAYS_INLINE UInt32 finalize(UInt32 hash)
     {
         hash ^= hash >> 16;
