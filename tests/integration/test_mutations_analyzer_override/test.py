@@ -95,3 +95,53 @@ def test_override_forces_old_analyzer(start_cluster):
         assert count_old_analyzer_log_lines(table) >= 1
     finally:
         set_override("true")
+
+
+def test_old_analyzer_keeps_equality_chain_semantics(start_cluster):
+    """
+    The old analyzer folds `x = c1 OR x = c2 OR x = c3` into `x IN (c1, c2, c3)` in
+    `LogicalExpressionsOptimizer`. That fold must keep the semantics of `equals`: `IN`
+    matches by set membership, which disagrees with `equals` on a floating-point NaN
+    (`nan = nan` is 0, `nan IN (nan)` is 1) and on the signed zero (`-0.0 = 0.0` is 1,
+    `-0.0 IN (0.0)` is 0). And `in` rejects a `Dynamic` / `JSON` argument outright, so
+    such a chain has to stay a comparison for the mutation to run at all.
+    """
+    set_override("false")
+    try:
+        table = "t_override_false_chain"
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"CREATE TABLE {table} (id UInt64, f Float64, d Dynamic) "
+            "ENGINE = MergeTree ORDER BY id"
+        )
+        node.query(
+            f"INSERT INTO {table} VALUES "
+            "(1, nan, '1'), (2, 1., '2'), (3, 2., '3'), (4, 5., '4'), (5, -0.0, '5')"
+        )
+
+        # `f = nan` matches nothing, so only rows 2 and 3 go.
+        node.query(
+            f"ALTER TABLE {table} DELETE WHERE (f = nan) OR (f = 1.) OR (f = 2.) "
+            "SETTINGS mutations_sync = 2"
+        )
+        assert node.query(f"SELECT id FROM {table} ORDER BY id") == "1\n4\n5\n"
+
+        # `-0.0 = 0.0` holds, so row 5 goes too.
+        node.query(
+            f"ALTER TABLE {table} DELETE WHERE (f = 0.) OR (f = 5.) OR (f = 7.) "
+            "SETTINGS mutations_sync = 2"
+        )
+        assert node.query(f"SELECT id FROM {table} ORDER BY id") == "1\n"
+
+        # A string chain on a `Dynamic` column must not be folded into `IN`, which rejects the type.
+        node.query(f"INSERT INTO {table} VALUES (6, 6., '6'), (7, 7., '7')")
+        node.query(
+            f"ALTER TABLE {table} DELETE WHERE (d = '1') OR (d = '6') OR (d = '9') "
+            "SETTINGS mutations_sync = 2"
+        )
+        assert node.query(f"SELECT id FROM {table} ORDER BY id") == "7\n"
+
+        assert count_old_analyzer_log_lines(table) >= 1
+        node.query(f"DROP TABLE {table} SYNC")
+    finally:
+        set_override("true")

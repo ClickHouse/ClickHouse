@@ -86,7 +86,8 @@ private:
 
     /** Whether folding the chain into `IN` keeps the semantics of `equals`. It does not for a
       * floating-point NaN or signed zero, because `IN` matches by set membership - see
-      * `comparisonWithConstantMatchesSetMembership`.
+      * `comparisonWithConstantMatchesSetMembership` - and it cannot be done at all for a column with a
+      * dynamic structure (`Dynamic`, `JSON`), which `in` rejects.
       */
     bool equalityChainMatchesSetMembership(const std::vector<ASTFunction *> & functions) const;
 

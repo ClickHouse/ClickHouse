@@ -2,7 +2,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/setMembershipEquivalence.h>
-#include <Common/NaNUtils.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
@@ -252,23 +251,11 @@ bool LogicalExpressionsOptimizer::isLowCardinalityEqualityChain(const std::vecto
 /// so a literal that cannot be a float in disguise (a string, for instance) is left alone.
 static bool literalIsNumericNaNOrZero(const Field & value)
 {
+    if (const auto scalar = scalarNumberIsNaNOrZero(value))
+        return *scalar;
+
     switch (value.getType())
     {
-        case Field::Types::Float64:
-        {
-            const Float64 number = value.safeGet<Float64>();
-            return isNaN(number) || number == 0.0;
-        }
-        case Field::Types::UInt64:
-            return value.safeGet<UInt64>() == 0;
-        case Field::Types::Int64:
-            return value.safeGet<Int64>() == 0;
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-            /// Not worth analyzing: such a chain is rewritten only when the compared column is known.
-            return true;
         case Field::Types::Tuple:
         {
             for (const auto & element : value.safeGet<Tuple>())
@@ -298,6 +285,11 @@ bool LogicalExpressionsOptimizer::equalityChainMatchesSetMembership(const std::v
     /// column reference. With the type at hand the check is exact; without it, a literal that could reach a
     /// floating-point comparison as a NaN or a zero keeps the chain as a comparison.
     auto type = tryGetColumnType(*first_operands.at(0));
+
+    /// `in` rejects an argument with a dynamic structure (`Dynamic`, `JSON`, a container of them) outright,
+    /// so folding the chain would turn a working query into an exception. Keep the comparisons.
+    if (type && type->hasDynamicStructure())
+        return false;
 
     for (const auto * function : functions)
     {
