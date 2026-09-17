@@ -3,6 +3,7 @@
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
@@ -34,6 +35,7 @@ public:
     struct Data
     {
         ContextPtr context;
+        const NameSet & nondeterministic_virtual_columns;
         FirstNonDeterministicFunctionResult result;
     };
 
@@ -44,7 +46,7 @@ public:
 
     static void visit(const ASTPtr & node, Data & data)
     {
-        if (data.result.nondeterministic_function_name || data.result.subquery)
+        if (data.result.nondeterministic_function_name || data.result.nondeterministic_virtual_column_name || data.result.subquery)
             return;
 
         if (node->as<ASTSelectQuery>())
@@ -65,6 +67,13 @@ public:
                 if (!func->isDeterministic())
                     data.result.nondeterministic_function_name = func->getName();
             }
+        }
+        else if (const auto * identifier = node->as<ASTIdentifier>())
+        {
+            /// A virtual column such as `_table` or `_database` is a constant on one server, but replicas
+            /// of the same table may have different local names, so it is as non-deterministic as `hostName`.
+            if (data.nondeterministic_virtual_columns.contains(identifier->name()))
+                data.result.nondeterministic_virtual_column_name = identifier->name();
         }
     }
 };
@@ -139,9 +148,10 @@ using ExecuteNonDeterministicConstFunctionsVisitor = InDepthNodeVisitor<ExecuteN
 
 }
 
-FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const MutationCommand & command, ContextPtr context)
+FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(
+    const MutationCommand & command, ContextPtr context, const NameSet & nondeterministic_virtual_columns)
 {
-    FirstNonDeterministicFunctionMatcher::Data finder_data{context, {}};
+    FirstNonDeterministicFunctionMatcher::Data finder_data{context, nondeterministic_virtual_columns, {}};
 
     switch (command.type)
     {
@@ -151,7 +161,7 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
             auto update_assignments_ast = alter->update_assignments->clone();
             FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
 
-            if (finder_data.result.nondeterministic_function_name)
+            if (finder_data.result.nondeterministic_function_name || finder_data.result.nondeterministic_virtual_column_name)
                 return finder_data.result;
 
             ASTPtr predicate_ast(alter->predicate);
