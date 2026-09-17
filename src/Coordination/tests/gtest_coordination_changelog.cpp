@@ -4,7 +4,12 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <base/defines.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -14,6 +19,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <future>
 #include <thread>
 
@@ -42,6 +48,7 @@ namespace ProfileEvents
 {
     extern const Event KeeperLogsEntryReadFromFile;
     extern const Event KeeperLogsReadAheadFillDecodedEntries;
+    extern const Event KeeperLogsReadAheadFillReopens;
     extern const Event KeeperLogsReadAheadCursorsInstalled;
     extern const Event KeeperLogsReadAheadScheduleRejected;
     extern const Event KeeperLogsReadAheadReadersCreated;
@@ -147,7 +154,7 @@ TEST(CoordinationSettingsLoadFromConfig, MapsObsoleteCommitLogsCacheSizeThreshol
     {
         SCOPED_TRACE("neither setting set, default");
         auto config = make_config();
-        EXPECT_EQ(get_commit_window_bytes_from_config(config), 500ull * 1024 * 1024);
+        EXPECT_EQ(get_commit_window_bytes_from_config(config), 16ull * 1024 * 1024);
     }
 }
 
@@ -170,6 +177,125 @@ TEST(ChangelogValidRuns, ForwardGapAfterCompactionStartsNewRun)
     EXPECT_EQ(runs.end_index, 1601u);
     EXPECT_EQ(runs.end_position, 40u);
 }
+
+/// Not built under ASan, TSan or MSan: their runtimes replace `operator new`, so
+/// `Memory::trackMemory` never runs and the tracker has nothing to report.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+
+/// The cache's accounting is only worth having if it matches what the allocator actually hands out.
+/// Add a few entries to a `LogEntryStorage` on a thread of its own and compare the size it charges
+/// against a memory tracker parented to that thread. `Memory::trackMemory` sizes an allocation
+/// through the same `getActualAllocationSize` that `cachedLogEntryBytes` uses, so the two agree to
+/// within tens of bytes whether or not the allocator rounds to size classes, and any future drift in
+/// what a cached entry really costs shows up here.
+TEST(CachedLogEntryBytes, MatchesTrackedAllocation)
+{
+    struct Measurement
+    {
+        Int64 tracked = 0;
+        size_t charged = 0;
+        size_t expected = 0;
+    };
+
+    /// Every entry gets the same term, so `log_term_infos` does not grow while measuring.
+    const auto make_entry = [](size_t payload_size)
+    {
+        auto payload = nuraft::buffer::alloc(payload_size);
+        /// `buffer::alloc` leaves the payload uninitialized while `log_entry` checksums it, which
+        /// MSan reports. Real entries always carry written content; the contents are irrelevant here,
+        /// only the allocation is.
+        memset(payload->data_begin(), 0, payload_size);
+        return nuraft::cs_new<nuraft::log_entry>(/*term=*/1, payload, nuraft::log_val_type::app_log);
+    };
+
+    /// Entries must live and die on the measuring thread: a free elsewhere is charged to that other
+    /// thread's tracker, and an own `ThreadStatus` keeps this independent of whatever
+    /// `current_thread` the rest of `unit_tests_dbms` has set up.
+    const auto measure = [&](size_t payload_size, size_t count)
+    {
+        Measurement measurement;
+
+        std::thread measured([&]
+        {
+            /// Built before the tracker is attached, so its own allocations are not measured.
+            auto keeper_context = makeKeeperContext(/*use_lsmt_storage=*/false);
+            DB::LogEntryStorage storage(
+                DB::LogFileSettings{.latest_logs_cache_size_threshold = 0},
+                DB::ReadAheadSettings{},
+                keeper_context);
+
+            /// The first entry of a fresh storage also pays for the first block of `log_term_infos`,
+            /// a `std::deque` whose block is 4 KiB no matter how many entries follow. That cost is
+            /// per storage rather than per entry, so it is paid here, outside the measured window.
+            storage.addEntry(1, make_entry(payload_size));
+            DB::KeeperLogInfo log_info_before;
+            storage.getKeeperLogInfo(log_info_before);
+
+            DB::ThreadStatus thread_status;
+            auto & thread_tracker = DB::CurrentThread::get().memory_tracker;
+            MemoryTracker scope_tracker(
+                &total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/false);
+            MemoryTracker * prev_parent = thread_tracker.getParent();
+            Int64 prev_untracked_limit = DB::CurrentThread::get().untracked_memory_limit;
+
+            /// Whatever the `ThreadStatus` constructor deferred must not land on `scope_tracker`.
+            DB::CurrentThread::flushUntrackedMemory();
+            SCOPE_EXIT_SAFE({
+                DB::CurrentThread::flushUntrackedMemory();
+                DB::CurrentThread::get().untracked_memory_limit = prev_untracked_limit;
+                thread_tracker.setParent(prev_parent);
+            });
+
+            /// Without this these small allocations are batched below the default 4 MiB and never
+            /// reach the tracker at all.
+            DB::CurrentThread::get().untracked_memory_limit = 1;
+            thread_tracker.setParent(&scope_tracker);
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                auto entry = make_entry(payload_size);
+                measurement.expected += DB::cachedLogEntryBytes(entry);
+                storage.addEntry(2 + i, entry);
+            }
+
+            DB::CurrentThread::flushUntrackedMemory();
+            measurement.tracked = scope_tracker.get();
+
+            DB::KeeperLogInfo log_info_after;
+            storage.getKeeperLogInfo(log_info_after);
+            measurement.charged = log_info_after.latest_logs_cache_size - log_info_before.latest_logs_cache_size;
+        });
+        measured.join();
+
+        return measurement;
+    };
+
+    /// The two sides cannot agree exactly at these counts, because the accounting charges one bucket
+    /// slot per entry while `unordered_map` allocates its bucket array in steps: a single entry can
+    /// be charged 8 bytes it has not allocated yet, and the entry that triggers a rehash allocates
+    /// more than it is charged. Both are tens of bytes, far below the hundreds per entry that
+    /// payload-only accounting used to miss.
+    constexpr Int64 unaccounted_slack = 128;
+
+    for (size_t payload_size : {64UL, 500UL, 4096UL})
+    {
+        for (size_t count : {1UL, 2UL, 3UL})
+        {
+            SCOPED_TRACE(fmt::format("payload_size={} count={}", payload_size, count));
+
+            const Measurement measurement = measure(payload_size, count);
+
+            /// The storage charges exactly what `cachedLogEntryBytes` says, nothing else.
+            EXPECT_EQ(measurement.charged, measurement.expected);
+
+            EXPECT_LE(std::abs(measurement.tracked - static_cast<Int64>(measurement.charged)), unaccounted_slack)
+                << "cache charges " << measurement.charged << " bytes while the allocator handed out "
+                << measurement.tracked;
+        }
+    }
+}
+
+#endif
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestSimple)
 {
@@ -3040,7 +3166,9 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadExhaustedLatestCacheHandoff
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "commit_ra_cache_pad_entry"; // fixed-size payload, so the threshold below
                                                               // deterministically admits `cached_tail` entries
-    const uint64_t threshold = cached_tail * payload.size();
+    // The cache charges resident bytes per entry, not payload bytes, so size the threshold with the
+    // same accounting the cache uses.
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,
@@ -3315,9 +3443,11 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadWedgedFill)
     appender.join();
 }
 
-// When a serve-wait timeout falls back to a direct read, the reader must be fast-forwarded past the
-// served range instead of leaving the fill task to re-decode it entry by entry.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
+// When a serve-wait timeout falls back to a direct read, the reader must be left alone: the fill
+// keeps its cursor and its open file, so the next request is served from the deque rather than
+// paying another fallback. It re-decodes the range the fallback served, which appendChunk clamps;
+// that waste is bounded by that range and paid once, not once per request.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackKeepsFillRunning)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "Read-ahead engine mechanics are independent of compression; body always uses "
@@ -3356,6 +3486,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
 
     const uint64_t decoded_baseline = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
     const uint64_t fallbacks_baseline = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadTimeoutFallbacks];
+    const uint64_t reopens_baseline = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillReopens];
 
     constexpr int32_t peer_id = 7;
 
@@ -3373,14 +3504,14 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
     for (size_t i = 0; i < 5; ++i)
         EXPECT_EQ((*first_batch)[i]->get_term(), static_cast<uint64_t>(i + 1));
 
-    // Still wedged: the stale cursor (captured before the fast-forward reset) has not yet been given
-    // a chance to run at all -- no decode should have happened yet.
+    // Still wedged: the cursor has not yet been given a chance to run at all -- no decode should
+    // have happened yet.
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries], decoded_baseline)
         << "The wedged fill must not have decoded anything before being unwedged";
 
     DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
 
-    // The reader must have been fast-forwarded to index 6, so this batch is served from the deque with
+    // advance_reader_to moved the deque front to index 6, so this batch is served from the deque with
     // no further timeout fallback.
     auto second_batch = changelog.log_entries_ext(6, 11, /*batch_size_hint_in_bytes=*/0, peer_id);
 
@@ -3393,11 +3524,18 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
     for (size_t i = 0; i < 5; ++i)
         EXPECT_EQ((*second_batch)[i]->get_term(), static_cast<uint64_t>(i + 6));
 
-    // The 5 legitimate entries for [6, 11) plus at most one wasted entry from the stale cursor's
-    // already-started chunk (chunk_size == 1 bounds the waste); without fast-forward this would be >=10.
+    // The fallback no longer resets the reader, so the cursor resumes where it was and re-decodes the
+    // already-served [1, 5] before appendChunk clamps it against decoded_front_index. That waste is
+    // bounded by the range the fallback served, which is what matters: it is paid once, not once per
+    // request, because the reader survives.
     const uint64_t decoded_total = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries] - decoded_baseline;
     EXPECT_GE(decoded_total, 5u) << "The fill must have decoded the legitimate entries for [6, 11)";
-    EXPECT_LE(decoded_total, 6u) << "The fill must not have re-decoded the already-served range [1, 5]";
+    EXPECT_LE(decoded_total, total) << "The re-decode must be bounded by the range the fallback served";
+
+    // The load-bearing property of keeping the reader: the fill never lost its open file, so the next
+    // request costs no reopen. Resetting it here used to drop held_buf and pay a fresh open per serve.
+    const uint64_t reopens_total = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillReopens] - reopens_baseline;
+    EXPECT_LE(reopens_total, 1u) << "The timeout fallback must not have cost the fill its open changelog file";
 }
 
 // A fill-task exception must not poison the shared read-ahead pool: the reader transitions to Error,
@@ -4032,7 +4170,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadIdleReaderEvictedAfterCacheHitCat
     constexpr uint64_t total = 100;
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "peer_idle_evict_pad_entry";
-    const uint64_t threshold = cached_tail * payload.size();
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,
@@ -4106,7 +4244,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefresh
     constexpr uint64_t total = 100;
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "commit_idle_evict_pad_entry";
-    const uint64_t threshold = cached_tail * payload.size();
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,

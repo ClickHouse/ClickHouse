@@ -25,6 +25,10 @@ ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=23
 # derived images can create their own users with these ids (e.g. "clickhouse")
 RUN userdel --remove ubuntu
 
+# ubuntu:24.04 ships a default "ubuntu" user with uid/gid 1000; remove it so
+# derived images can create their own users with these ids (e.g. "clickhouse")
+RUN userdel --remove ubuntu
+
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
     && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
@@ -108,12 +112,10 @@ RUN apt-get update \
         nasm \
         pigz \
         rename \
-        software-properties-common \
         tzdata \
         netbase \
         perl \
         pv \
-        python3-requests \
         ripgrep \
         zstd \
         locales \
@@ -168,7 +170,8 @@ RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F23C5A6CF475977595C
         python3.13-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13 \
+    && python3.13 -m pip install --no-cache-dir requests==2.32.5
 
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
 ENV LC_ALL en_US.UTF-8

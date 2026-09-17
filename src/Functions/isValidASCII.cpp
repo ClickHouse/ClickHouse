@@ -30,6 +30,9 @@ namespace
 UInt8 isValidASCII(const UInt8 * data, UInt64 len)
 {
 #if USE_SIMDUTF
+    /// The dispatched call is not free, so do not pay for it on empty strings.
+    if (len == 0)
+        return 1;
     /// Hand-written SIMD kernels with runtime dispatch. The plain OR-reduction below is vectorized with
     /// 32-bit lanes by clang 23 (the accumulator is promoted to int), which quarters its throughput.
     return simdutf::validate_ascii(reinterpret_cast<const char *>(data), len);

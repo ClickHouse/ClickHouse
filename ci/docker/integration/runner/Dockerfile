@@ -38,7 +38,6 @@ RUN apt-get update \
     libssl-dev \
     libcurl4-openssl-dev \
     default-jdk \
-    software-properties-common \
     libkrb5-dev \
     krb5-user \
     g++ \
@@ -46,9 +45,18 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-# The awscli apt package is gone in ubuntu:24.04, install AWS CLI v2
-# the same way as the fasttest and stateless-test images
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+# The awscli apt package is gone in ubuntu:24.04, install a pinned AWS CLI v2
+ARG AWSCLI_VERSION=2.36.41
+ARG AWSCLI_SHA256_X86_64=659c1fe734a9534736fa452bb1b557dd4cccadea5823f45a74c0f09408a93d22
+ARG AWSCLI_SHA256_AARCH64=1612cda15d605985d8cb675ec429c8916e3b696fa52325994955dc3215c590a9
+RUN arch="$(uname -m)" \
+    && case "$arch" in \
+        x86_64) sha256="$AWSCLI_SHA256_X86_64" ;; \
+        aarch64) sha256="$AWSCLI_SHA256_AARCH64" ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${arch}-${AWSCLI_VERSION}.zip" -o awscliv2.zip \
+    && echo "$sha256  awscliv2.zip" | sha256sum --check --strict \
     && unzip -q awscliv2.zip \
     && ./aws/install \
     && rm -rf awscliv2.zip aws
@@ -73,11 +81,7 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 # kazoo 2.10.0 is broken
 # https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 COPY requirements.txt /
-# Upgrade pip on its own first: upgrading pip as part of the bulk install with
-# `--ignore-installed` leaves the old version's files behind, producing a broken
-# mix of two pip versions (`ImportError: cannot import name 'get_runnable_pip'`).
-RUN python3.13 -m pip install --no-cache-dir --upgrade $(grep '^pip==' requirements.txt) \
-    && python3.13 -m pip install --ignore-installed --no-cache-dir -r requirements.txt
+RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
 
 
 RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
