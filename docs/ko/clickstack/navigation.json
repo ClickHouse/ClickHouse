@@ -175,6 +175,7 @@
         "ko/clickstack/managing/admin",
         "ko/clickstack/managing/config",
         "ko/clickstack/managing/estimating-resources",
+        "ko/clickstack/managing/isolating-read-write",
         "ko/clickstack/managing/materialized-views",
         "ko/clickstack/managing/performance-tuning",
         "ko/clickstack/managing/production",

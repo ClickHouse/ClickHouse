@@ -175,6 +175,7 @@
         "fr/clickstack/managing/admin",
         "fr/clickstack/managing/config",
         "fr/clickstack/managing/estimating-resources",
+        "fr/clickstack/managing/isolating-read-write",
         "fr/clickstack/managing/materialized-views",
         "fr/clickstack/managing/performance-tuning",
         "fr/clickstack/managing/production",
