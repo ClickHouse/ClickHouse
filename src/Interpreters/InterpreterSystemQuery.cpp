@@ -248,19 +248,24 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 
 
 /// The form of `SYSTEM DROP REPLICA` / `SYSTEM DROP DATABASE REPLICA` without a database or a table
-/// affects every database on the server, so it requires `SYSTEM DROP REPLICA` for all of them.
+/// affects every database on the server that the command can target, so it requires `SYSTEM DROP REPLICA` for all of them.
 /// Instead of silently skipping the databases the user has no access to (and possibly doing nothing at all),
 /// check the permissions in advance and tell the user which databases they are missing the privilege for.
-void checkAccessForDropWholeReplica(const ContextPtr & context, const Databases & databases, std::string_view query_name)
+/// When there is nothing to target at all, the server-wide command is still a privileged operation
+/// and must not succeed for a user without any privileges, so the global privilege is required in that case.
+void checkAccessForDropWholeReplica(const ContextPtr & context, const Strings & target_databases, std::string_view query_name)
 {
     auto access = context->getAccess();
     if (access->isGranted(AccessType::SYSTEM_DROP_REPLICA))
         return;
 
+    if (target_databases.empty())
+        context->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
+
     std::vector<String> databases_without_access;
-    for (const auto & elem : databases)
-        if (!access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            databases_without_access.emplace_back(elem.first);
+    for (const auto & database_name : target_databases)
+        if (!access->isGranted(AccessType::SYSTEM_DROP_REPLICA, database_name))
+            databases_without_access.emplace_back(database_name);
 
     if (!databases_without_access.empty())
         throw Exception(
@@ -1689,7 +1694,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        checkAccessForDropWholeReplica(getContext(), databases, "SYSTEM DROP REPLICA");
+        Strings target_databases;
+        for (const auto & elem : databases)
+            target_databases.emplace_back(elem.first);
+        checkAccessForDropWholeReplica(getContext(), target_databases, "SYSTEM DROP REPLICA");
 
         /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
@@ -2093,7 +2101,14 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     else if (query.is_drop_whole_replica)
     {
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
-        checkAccessForDropWholeReplica(getContext(), databases, "SYSTEM DROP DATABASE REPLICA");
+
+        /// Only `Replicated` databases are affected by this command, so only they require the privilege:
+        /// a user must not be denied because of unrelated databases the command would never touch.
+        Strings target_databases;
+        for (const auto & elem : databases)
+            if (dynamic_cast<DatabaseReplicated *>(elem.second.get()))
+                target_databases.emplace_back(elem.first);
+        checkAccessForDropWholeReplica(getContext(), target_databases, "SYSTEM DROP DATABASE REPLICA");
 
         /// If we are here, then the user has the necessary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
