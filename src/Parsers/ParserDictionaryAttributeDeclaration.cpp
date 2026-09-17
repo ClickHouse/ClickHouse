@@ -12,7 +12,10 @@ namespace DB
 bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier name_parser;
-    ParserDataType type_parser;
+    /// Dictionary attribute declarations are a durable type-bearing DDL site, just like
+    /// table column declarations. Keep qualified names structurally distinct so the UDT
+    /// admission/binding pass can prove and bind them before the dictionary is published.
+    ParserDataTypeWithQualifiedReferences type_parser;
     ParserKeyword s_default{Keyword::DEFAULT};
     ParserKeyword s_expression{Keyword::EXPRESSION};
     ParserKeyword s_hierarchical{Keyword::HIERARCHICAL};

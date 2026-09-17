@@ -329,6 +329,7 @@ static struct InitFiu
     ONCE(udt_schema_storage_temp_sync_failure) \
     ONCE(udt_schema_storage_temp_rename_failure) \
     ONCE(udt_authority_prepared_publication_failure) \
+    PAUSEABLE_ONCE(udt_dictionary_repository_pause_after_live_admission) \
     PAUSEABLE_ONCE(udt_authority_runtime_pause_after_publication_waiter_registration) \
     PAUSEABLE_ONCE(udt_authority_verification_pause_before_cache_invalidation) \
     PAUSEABLE_ONCE(udt_authority_shutdown_pause_before_fence) \

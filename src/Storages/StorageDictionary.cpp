@@ -40,12 +40,13 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int THERE_IS_NO_COLUMN;
-    extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE;
-    extern const int DICTIONARY_ALREADY_EXISTS;
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
+extern const int ABORTED;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int THERE_IS_NO_COLUMN;
+extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE;
+extern const int DICTIONARY_ALREADY_EXISTS;
+extern const int NOT_IMPLEMENTED;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -375,6 +376,15 @@ void registerStorageDictionary(StorageFactory & factory)
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
+            if (dictionary_id.hasUUID()
+                && !ExternalLoaderDictionaryStorageConfigRepository::bindActiveUUIDRepositoryStorage(
+                    external_dictionaries_loader, dictionary_id.getInternalDictionaryName(), result_storage))
+            {
+                throw Exception(
+                    ErrorCodes::ABORTED,
+                    "UUID-backed DDL dictionary {} did not bind its exact config-repository owner",
+                    dictionary_id.getNameForLogs());
+            }
 
             bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")
                 .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);

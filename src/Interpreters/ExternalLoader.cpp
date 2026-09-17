@@ -1668,6 +1668,8 @@ void ExternalLoader::reloadConfig(const String & repository_name, const String &
 ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(
     const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const
 {
+    beforeCreateOrCloneObject(name, config, previous_version);
+
     if (previous_version)
         return previous_version->clone();
 

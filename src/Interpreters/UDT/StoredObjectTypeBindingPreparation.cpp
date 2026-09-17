@@ -19,6 +19,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -96,6 +97,24 @@ resolveDeclaration(const ASTPtr & declared_type, UDTTypeExpressionResolutionScop
         case Code::LimitExceeded: fail(Error::Code::LimitExceeded, error.what());
         case Code::InvalidObject:
         case Code::InvalidOutput: fail(Error::Code::InvalidDeclaration, error.what());
+        case Code::InvalidConfiguration:
+        case Code::ConflictingDescriptor:
+        case Code::SidecarMismatch:
+        case Code::PhysicalSchemaMismatch:
+        case Code::PathMismatch: fail(Error::Code::MissingLogicalBinding, error.what());
+    }
+    fail(Error::Code::MissingLogicalBinding, error.what());
+}
+
+[[noreturn]] void rethrowDictionaryBindingError(const DictionaryAttributeTypeBindingError & error)
+{
+    using Code = DictionaryAttributeTypeBindingError::Code;
+    switch (error.code)
+    {
+        case Code::CrossDatabaseReference: fail(Error::Code::CrossDatabaseReference, error.what());
+        case Code::LimitExceeded: fail(Error::Code::LimitExceeded, error.what());
+        case Code::InvalidObject:
+        case Code::InvalidAttribute: fail(Error::Code::InvalidDeclaration, error.what());
         case Code::InvalidConfiguration:
         case Code::ConflictingDescriptor:
         case Code::SidecarMismatch:
@@ -1213,6 +1232,14 @@ struct PreparedStoredObjectTypeBindingHandoff::Impl
         ASTPtr physical_type;
     };
 
+    struct DictionaryReplacement
+    {
+        ASTDictionaryAttributeDeclaration * declaration = nullptr;
+        size_t child_ordinal = 0;
+        ASTPtr original_type;
+        ASTPtr physical_type;
+    };
+
     using Bindings = std::variant<PreparedViewOutputTypeBindings, PreparedDictionaryAttributeTypeBindings>;
 
     StoredObjectKind object_kind = StoredObjectKind::Unclassified;
@@ -1221,6 +1248,7 @@ struct PreparedStoredObjectTypeBindingHandoff::Impl
     ASTCreateQuery * create_root = nullptr;
     Bindings bindings;
     std::vector<ColumnReplacement> column_replacements;
+    std::vector<DictionaryReplacement> dictionary_replacements;
     std::vector<AuxiliaryCastTargetReplacement> auxiliary_cast_replacements;
     std::vector<AuxiliaryStringReplacement> auxiliary_string_replacements;
     std::vector<AuxiliarySettingReplacement> auxiliary_setting_replacements;
@@ -1269,6 +1297,11 @@ bool PreparedStoredObjectTypeBindingHandoff::usesSelectedOutputClassification() 
 const PreparedViewOutputTypeBindings * PreparedStoredObjectTypeBindingHandoff::tryGetViewBindings() const noexcept
 {
     return impl && !impl->bindings_released ? std::get_if<PreparedViewOutputTypeBindings>(&impl->bindings) : nullptr;
+}
+
+const PreparedDictionaryAttributeTypeBindings * PreparedStoredObjectTypeBindingHandoff::tryGetDictionaryBindings() const noexcept
+{
+    return impl && !impl->bindings_released ? std::get_if<PreparedDictionaryAttributeTypeBindings>(&impl->bindings) : nullptr;
 }
 
 void PreparedStoredObjectTypeBindingHandoff::applyPhysicalTypeASTs()
@@ -1357,6 +1390,15 @@ PreparedViewOutputTypeBindings PreparedStoredObjectTypeBindingHandoff::releaseVi
     auto * bindings = tryGetViewBindings();
     if (!impl || !impl->replacements_applied || !bindings)
         fail(Error::Code::InvalidState, "View bindings are unavailable or were already released");
+    impl->bindings_released = true;
+    return std::move(*bindings);
+}
+
+PreparedDictionaryAttributeTypeBindings PreparedStoredObjectTypeBindingHandoff::releaseDictionaryBindings() &&
+{
+    auto * bindings = tryGetDictionaryBindings();
+    if (!impl || !impl->replacements_applied || !bindings)
+        fail(Error::Code::InvalidState, "Dictionary bindings are unavailable or were already released");
     impl->bindings_released = true;
     return std::move(*bindings);
 }

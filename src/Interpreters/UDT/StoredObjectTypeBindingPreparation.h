@@ -3,6 +3,7 @@
 #include <DataTypes/UDT/TableColumnTypeBindings.h>
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/UDT/DictionaryAttributeTypeBindings.h>
 #include <Interpreters/UDT/StoredObjectTypeSupport.h>
 #include <Interpreters/UDT/ViewOutputTypeBindings.h>
 
@@ -125,6 +126,7 @@ public:
     bool usesSelectedOutputClassification() const noexcept;
 
     const PreparedViewOutputTypeBindings * tryGetViewBindings() const noexcept;
+    const PreparedDictionaryAttributeTypeBindings * tryGetDictionaryBindings() const noexcept;
 
     /// Validates every original declaration pointer before changing any AST,
     /// then applies all prebuilt physical types without another lookup.
@@ -136,6 +138,7 @@ public:
     void validateNormalizedViewOutputs(const NamesAndTypesList & normalized_outputs) const;
 
     [[nodiscard]] PreparedViewOutputTypeBindings releaseViewBindings() &&;
+    [[nodiscard]] PreparedDictionaryAttributeTypeBindings releaseDictionaryBindings() &&;
 
 private:
     struct Impl;

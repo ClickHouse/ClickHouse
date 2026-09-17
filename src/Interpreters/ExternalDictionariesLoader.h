@@ -63,6 +63,8 @@ protected:
         const std::string & repository_name,
         const std::string & config_file_path) const override;
 
+    void beforeCreateOrCloneObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const override;
+
     bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & old_config, const String & old_key_in_config,
                                                  const Poco::Util::AbstractConfiguration & new_config, const String & new_key_in_config) const override;
 

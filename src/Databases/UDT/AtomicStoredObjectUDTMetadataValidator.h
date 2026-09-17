@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Databases/UDT/StoredObjectUDTPublicationPackage.h>
+
+#include <Interpreters/UDT/DictionaryAttributeTypeBindings.h>
 #include <Interpreters/UDT/ViewOutputTypeBindings.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -16,6 +18,7 @@ struct AtomicStoredObjectUDTMetadataValidatorLimits
 {
     PersistedTypeReferencesLimits persisted_references;
     ViewOutputTypeBindingLimits view_outputs;
+    DictionaryAttributeTypeBindingLimits dictionary_attributes;
     UInt64 maximum_metadata_bytes = 16ULL << 20;
     UInt64 maximum_parser_depth = 256;
     UInt64 maximum_parser_backtracks = 100'000;

@@ -48,6 +48,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>

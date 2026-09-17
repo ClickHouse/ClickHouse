@@ -230,6 +230,13 @@ protected:
         const String & repository_name,
         const String & config_file_path) const = 0;
 
+    /// Called against the exact immutable loader configuration immediately
+    /// before either first construction or cloning an existing object.
+    virtual void beforeCreateOrCloneObject(
+        const String & /* name */, const ObjectConfig & /* config */, const LoadablePtr & /* previous_version */) const
+    {
+    }
+
     /// Returns whether the object must be reloaded after a specified change in its configuration.
     virtual bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & /* old_config */, const String & /* old_key_in_config */,
                                                          const Poco::Util::AbstractConfiguration & /* new_config */, const String & /* new_key_in_config */) const { return true; /* always reload */ }

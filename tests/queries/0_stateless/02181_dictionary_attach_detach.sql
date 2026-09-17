@@ -23,6 +23,8 @@ DETACH TABLE 02181_test_dictionary; --{serverError CANNOT_DETACH_DICTIONARY_AS_T
 ATTACH TABLE 02181_test_dictionary; --{serverError INCORRECT_QUERY}
 
 DETACH DICTIONARY 02181_test_dictionary;
+SHOW CREATE DICTIONARY 02181_test_dictionary FORMAT Null;
+SELECT 'detached dictionary metadata is readable';
 ATTACH DICTIONARY 02181_test_dictionary;
 
 SELECT * FROM 02181_test_dictionary;

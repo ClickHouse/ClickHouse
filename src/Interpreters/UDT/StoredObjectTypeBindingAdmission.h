@@ -1,4 +1,6 @@
 #pragma once
+
+#include <Interpreters/UDT/DictionaryAttributeTypeBindings.h>
 #include <Interpreters/UDT/StoredObjectTypeSupport.h>
 #include <Interpreters/UDT/ViewOutputTypeBindings.h>
 
@@ -65,4 +67,52 @@ private:
     const PreparedViewOutputTypeBindings & type_bindings,
     const StoredObjectPhysicalizationAdapterRegistry & adapter_registry,
     bool uses_selected_output_classification = false);
+
+/// In-memory, pre-publication result for exact Dictionary attribute bindings.
+/// Logical admission requires the ObjectDefinition/DictionaryAttribute route
+/// and a complete Dictionary physicalization dispatch.
+class PreparedDictionaryAttributeTypeBindingAdmission final
+{
+public:
+    PreparedDictionaryAttributeTypeBindingAdmission(const PreparedDictionaryAttributeTypeBindingAdmission &) = delete;
+    PreparedDictionaryAttributeTypeBindingAdmission & operator=(const PreparedDictionaryAttributeTypeBindingAdmission &) = delete;
+    PreparedDictionaryAttributeTypeBindingAdmission(PreparedDictionaryAttributeTypeBindingAdmission && other) noexcept;
+    PreparedDictionaryAttributeTypeBindingAdmission & operator=(PreparedDictionaryAttributeTypeBindingAdmission &&) = delete;
+
+    const PreparedDictionaryAttributeTypeBindings & getTypeBindings() const noexcept { return type_bindings; }
+    const StoredObjectAdmissionDispatch & getAdmission() const noexcept { return admission; }
+
+    /// One-shot capability binding these exact logical references to the
+    /// complete physicalization adapter admission that accepted them.
+    [[nodiscard]] StoredObjectUDTPublicationAdmissionProof releasePublicationAdmissionProof() &&;
+
+private:
+    PreparedDictionaryAttributeTypeBindingAdmission(
+        PreparedDictionaryAttributeTypeBindings type_bindings_, StoredObjectAdmissionDispatch admission_);
+
+    friend PreparedDictionaryAttributeTypeBindingAdmission prepareDictionaryAttributeTypeBindingAdmission(
+        const ASTCreateQuery &,
+        const SchemaObjectID &,
+        UInt64,
+        std::span<const DictionaryAttributeTypeBindingInput>,
+        const StoredObjectPhysicalizationAdapterRegistry &,
+        const DictionaryAttributeTypeBindingLimits &);
+
+    PreparedDictionaryAttributeTypeBindings type_bindings;
+    StoredObjectAdmissionDispatch admission;
+    bool publication_proof_available = true;
+};
+
+[[nodiscard]] PreparedDictionaryAttributeTypeBindingAdmission prepareDictionaryAttributeTypeBindingAdmission(
+    const ASTCreateQuery & create,
+    const SchemaObjectID & dictionary,
+    UInt64 object_schema_revision,
+    std::span<const DictionaryAttributeTypeBindingInput> attributes,
+    const StoredObjectPhysicalizationAdapterRegistry & adapter_registry,
+    const DictionaryAttributeTypeBindingLimits & limits = {});
+
+[[nodiscard]] StoredObjectUDTPublicationAdmissionProof authorizePreparedDictionaryAttributeTypeBindings(
+    const ASTCreateQuery & create,
+    const PreparedDictionaryAttributeTypeBindings & type_bindings,
+    const StoredObjectPhysicalizationAdapterRegistry & adapter_registry);
 }

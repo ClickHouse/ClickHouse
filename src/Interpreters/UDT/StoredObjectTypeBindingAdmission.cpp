@@ -249,4 +249,109 @@ StoredObjectUDTPublicationAdmissionProof authorizePreparedViewOutputTypeBindings
         expectation.physical_schema_fingerprint,
         result.getExactDescriptorCount());
 }
+
+PreparedDictionaryAttributeTypeBindingAdmission::PreparedDictionaryAttributeTypeBindingAdmission(
+    PreparedDictionaryAttributeTypeBindings type_bindings_, StoredObjectAdmissionDispatch admission_)
+    : type_bindings(std::move(type_bindings_))
+    , admission(std::move(admission_))
+{
+}
+
+PreparedDictionaryAttributeTypeBindingAdmission::PreparedDictionaryAttributeTypeBindingAdmission(
+    PreparedDictionaryAttributeTypeBindingAdmission && other) noexcept
+    : type_bindings(std::move(other.type_bindings))
+    , admission(std::move(other.admission))
+    , publication_proof_available(other.publication_proof_available)
+{
+    other.publication_proof_available = false;
+}
+
+StoredObjectUDTPublicationAdmissionProof PreparedDictionaryAttributeTypeBindingAdmission::releasePublicationAdmissionProof() &&
+{
+    if (!publication_proof_available)
+        throw std::logic_error("dictionary UDT publication admission proof was already consumed");
+    publication_proof_available = false;
+
+    const auto & result = admission.getAdmission();
+    const auto * dispatch = admission.tryGetPhysicalizationDispatch();
+    if (!result.hasLogicalReferences() || !dispatch || !type_bindings.persisted_references || !type_bindings.sidecar_expectation)
+        throw std::logic_error("dictionary UDT publication requires complete logical binding admission");
+    const auto & references = *type_bindings.persisted_references;
+    const auto & expectation = *type_bindings.sidecar_expectation;
+    if (references.object != expectation.object || references.object_schema_revision != expectation.object_schema_revision
+        || references.physical_schema_fingerprint != expectation.physical_schema_fingerprint
+        || dispatch->getSchemaObjectKind() != references.object.kind || result.getExactDescriptorCount() != references.descriptors.size())
+        throw std::logic_error("dictionary UDT publication admission no longer matches its exact bindings");
+    return StoredObjectUDTPublicationAdmissionProof(
+        expectation.object,
+        expectation.object_schema_revision,
+        expectation.sidecar_hash,
+        expectation.physical_schema_fingerprint,
+        result.getExactDescriptorCount());
+}
+
+PreparedDictionaryAttributeTypeBindingAdmission prepareDictionaryAttributeTypeBindingAdmission(
+    const ASTCreateQuery & create,
+    const SchemaObjectID & dictionary,
+    UInt64 object_schema_revision,
+    std::span<const DictionaryAttributeTypeBindingInput> attributes,
+    const StoredObjectPhysicalizationAdapterRegistry & adapter_registry,
+    const DictionaryAttributeTypeBindingLimits & limits)
+{
+    auto type_bindings = prepareDictionaryAttributeTypeBindings(dictionary, object_schema_revision, attributes, limits);
+    const auto descriptors = exactDescriptors(type_bindings.persisted_references);
+    auto admission = admitStoredObjectDictionaryAttributeCreate(create, dictionary.database_uuid, descriptors, adapter_registry);
+    validatePreparedBindingPackage(
+        type_bindings.persisted_references,
+        type_bindings.bound_physical_schema,
+        type_bindings.sidecar_expectation,
+        type_bindings.dependency_edges,
+        admission);
+    return PreparedDictionaryAttributeTypeBindingAdmission(std::move(type_bindings), std::move(admission));
+}
+
+StoredObjectUDTPublicationAdmissionProof authorizePreparedDictionaryAttributeTypeBindings(
+    const ASTCreateQuery & create,
+    const PreparedDictionaryAttributeTypeBindings & type_bindings,
+    const StoredObjectPhysicalizationAdapterRegistry & adapter_registry)
+{
+    if (!type_bindings.persisted_references || !type_bindings.sidecar_expectation)
+        throw std::logic_error("prepared Dictionary attribute admission has no complete logical binding package");
+
+    const auto classification = classifyStoredObjectCreateQuery(create);
+    if (classification.object_kind != StoredObjectKind::Dictionary || classification.source_mode != StoredObjectSourceMode::ObjectDefinition
+        || !classification.structured_udt_scan_complete || !classification.type_string_scan_complete
+        || classification.structured_udt_occurrence_sites != 0 || classification.qualified_type_reference_candidate_sites != 0
+        || classification.source_query_has_structured_udt_reference || classification.has_unclassified_udt_reference || create.attach
+        || create.if_not_exists || create.replace_view || create.replace_table || create.create_or_replace || create.has_attach_from_path
+        || create.attach_short_syntax || create.attach_as_replicated.has_value() || !create.cluster.empty() || create.targets
+        || create.is_populate)
+        throw std::logic_error("physicalized Dictionary CREATE changed after exact attribute preparation");
+
+    const auto descriptors = exactDescriptors(type_bindings.persisted_references);
+    const auto result = admitStoredObjectExplicitDestination(
+        StoredObjectKind::Dictionary,
+        classification.source_mode,
+        type_bindings.persisted_references->object.database_uuid,
+        descriptors,
+        adapter_registry);
+    const auto dispatch = adapter_registry.tryGetDispatch(
+        StoredObjectKind::Dictionary,
+        classification.source_mode,
+        storedObjectOccurrenceSiteMask(StoredObjectOccurrenceSite::DictionaryAttribute));
+    const auto & references = *type_bindings.persisted_references;
+    const auto & expectation = *type_bindings.sidecar_expectation;
+    if (!type_bindings.bound_physical_schema || type_bindings.dependency_edges.empty() || !result.isAccepted()
+        || !result.hasLogicalReferences() || !dispatch || references.object != expectation.object
+        || references.object_schema_revision != expectation.object_schema_revision
+        || references.physical_schema_fingerprint != expectation.physical_schema_fingerprint
+        || dispatch->getSchemaObjectKind() != references.object.kind || result.getExactDescriptorCount() != references.descriptors.size())
+        throw std::logic_error("prepared Dictionary publication admission differs from its exact bindings");
+    return StoredObjectUDTPublicationAdmissionProof(
+        expectation.object,
+        expectation.object_schema_revision,
+        expectation.sidecar_hash,
+        expectation.physical_schema_fingerprint,
+        result.getExactDescriptorCount());
+}
 }

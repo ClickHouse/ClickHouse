@@ -20,6 +20,7 @@ class EffectiveResourceLimits;
 struct PersistedTypeReferences;
 class StoredObjectUDTPublicationAdmissionProof;
 struct PreparedViewOutputTypeBindings;
+struct PreparedDictionaryAttributeTypeBindings;
 enum class StoredObjectKind : UInt8;
 enum class StoredObjectSourceMode : UInt8;
 struct DefinitionMutationRequest;

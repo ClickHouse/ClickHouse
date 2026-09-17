@@ -144,7 +144,7 @@ namespace CurrentMetrics
 {
 extern const Metric AttachedTable;
 extern const Metric AttachedReplicatedTable;
-    extern const Metric AttachedDictionary;
+extern const Metric AttachedDictionary;
 extern const Metric AttachedView;
 }
 
@@ -207,7 +207,7 @@ namespace ErrorCodes
 extern const int ABORTED;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int UNKNOWN_TABLE;
-    extern const int DICTIONARY_ALREADY_EXISTS;
+extern const int DICTIONARY_ALREADY_EXISTS;
 extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 extern const int INCORRECT_QUERY;
 extern const int UNKNOWN_DATABASE_ENGINE;
@@ -2348,22 +2348,22 @@ void replaceExternalEngineWithNullIfNeeded(ASTStorage & storage, bool enabled)
     }
 }
 
-    void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
+void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
+{
+    ASTDictionary & dict = *create_query.dictionary;
+    if (Poco::toLower(dict.source->name) == "clickhouse")
     {
-        ASTDictionary & dict = *create_query.dictionary;
-        if (Poco::toLower(dict.source->name) == "clickhouse")
-        {
-            auto config = getDictionaryConfigurationFromAST(create_query, Context::getGlobalContextInstance());
-            auto info = getInfoIfClickHouseDictionarySource(config, Context::getGlobalContextInstance());
-            if (info && info->is_local)
-                return;
-        }
-        auto source_ast = make_intrusive<ASTFunctionWithKeyValueArguments>();
-        source_ast->name = "null";
-        source_ast->elements = make_intrusive<ASTExpressionList>();
-        source_ast->children.push_back(source_ast->elements);
-        dict.set(dict.source, source_ast);
+        auto config = getDictionaryConfigurationFromAST(create_query, Context::getGlobalContextInstance());
+        auto info = getInfoIfClickHouseDictionarySource(config, Context::getGlobalContextInstance());
+        if (info && info->is_local)
+            return;
     }
+    auto source_ast = make_intrusive<ASTFunctionWithKeyValueArguments>();
+    source_ast->name = "null";
+    source_ast->elements = make_intrusive<ASTExpressionList>();
+    source_ast->children.push_back(source_ast->elements);
+    dict.set(dict.source, source_ast);
+}
 
 ASTs * getEngineArgsFromCreateQuery(ASTCreateQuery & create_query)
 {

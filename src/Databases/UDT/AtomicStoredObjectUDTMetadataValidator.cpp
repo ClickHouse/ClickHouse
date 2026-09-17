@@ -15,6 +15,7 @@
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -112,6 +113,39 @@ NamesAndTypesList decodeViewPhysicalOutputs(const ASTCreateQuery & create)
         fail(Error::Code::InvalidMetadata, "Atomic View metadata contains an invalid physical output type");
     }
     return outputs;
+}
+
+NamesAndTypesList decodeDictionaryPhysicalAttributes(const ASTCreateQuery & create)
+{
+    if (!create.dictionary_attributes_list)
+        fail(Error::Code::InvalidMetadata, "Atomic Dictionary metadata has no attribute declarations");
+
+    NamesAndTypesList attributes;
+    try
+    {
+        for (const auto & child : create.dictionary_attributes_list->children)
+        {
+            const auto * declaration = child ? child->as<ASTDictionaryAttributeDeclaration>() : nullptr;
+            if (!declaration || !declaration->type)
+                fail(Error::Code::InvalidMetadata, "Atomic Dictionary metadata contains an attribute without a physical type");
+            attributes.emplace_back(declaration->name, DataTypeFactory::instance().get(declaration->type));
+        }
+    }
+    catch (const Error &)
+    {
+        throw;
+    }
+    catch (const std::bad_alloc &)
+    {
+        throw;
+    }
+    catch (const Exception & exception)
+    {
+        if (isUDTResourceOrControlExceptionCode(exception.code()))
+            throw;
+        fail(Error::Code::InvalidMetadata, "Atomic Dictionary metadata contains an invalid physical attribute type");
+    }
+    return attributes;
 }
 
 Digest computeTrustedPhysicalSchemaFingerprint(const ASTCreateQuery & create, const AtomicStoredObjectUDTMetadataValidatorLimits & limits)

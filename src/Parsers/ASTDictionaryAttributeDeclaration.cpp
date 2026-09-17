@@ -58,10 +58,11 @@ void ASTDictionaryAttributeDeclaration::readJSON(const Poco::JSON::Object & json
     JSONObjectReader r(json);
 
     /// `ParserDictionaryAttributeDeclaration` always requires a non-empty attribute name followed by
-    /// `ParserDataType`, so both are mandatory and `attr_type` must be a data-type node. (`as<T>` is
-    /// exact-type, so use `dynamic_cast` to also accept the `ASTDataType` subclasses `ASTEnumDataType`/
-    /// `ASTTupleDataType`.) Reject malformed `clickhouse_json` here instead of failing later in
-    /// dictionary configuration.
+    /// `ParserDataTypeWithQualifiedReferences`, so both are mandatory. The SQL parser can additionally
+    /// produce `ASTUDTReference`; that node deliberately has no JSON representation, so the JSON dialect
+    /// can only provide the ordinary data-type branch here. (`as<T>` is exact-type, so use
+    /// `dynamic_cast` to also accept the `ASTDataType` subclasses `ASTEnumDataType`/`ASTTupleDataType`.)
+    /// Reject malformed `clickhouse_json` here instead of failing later in dictionary configuration.
     name = r.getString("name");
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' for `DictionaryAttributeDeclaration` during AST JSON deserialization");
