@@ -4,6 +4,7 @@ on the caller's context, where an undeclared database is the caller's own: the p
 
 import concurrent.futures
 import json
+import time
 
 import pytest
 
@@ -68,6 +69,13 @@ MIXED_INSERT_USER = "prom_mixed_insert"
 # wrong-engine table it is not granted, and so must not be told about.
 SWAP_DENIED_USER = "prom_swap_denied"
 MIXED_SHARDS = ("metrics.ts_mixed", "remote_shard.ts_mixed")
+# Query parameters that make a shard's sink commit a part inside consume() instead of at the end of
+# the stream: nothing squashes the pushed block, and a non-zero wait commits it where it lands.
+EARLY_COMMIT_SETTING = {
+    "input_format_max_block_wait_ms": 1000,
+    "min_insert_block_size_rows": 0,
+    "min_insert_block_size_bytes": 0,
+}
 # cityHash64(host) % 2 over two shards of equal weight, shard 0 being the local one.
 LOCAL_HOST = "h3"
 REMOTE_HOST = "h1"
@@ -168,12 +176,15 @@ def one_sample(metric_name, host="h0"):
     )
 
 
-def mixed_write(metric_name, hosts, user):
+def mixed_write(metric_name, hosts, user, settings=None):
     """A remote write of one sample per host over the mixed wrapper, as a caller of this name."""
+    query = f"user={user}&password="
+    for name, value in (settings or {}).items():
+        query += f"&{name}={value}"
     return get_response_to_remote_write(
         node.ip_address,
         9093,
-        f"/mixed/write?user={user}&password=",
+        f"/mixed/write?{query}",
         convert_time_series_to_protobuf(
             [
                 ({"__name__": metric_name, "host": host}, {START_TIME: 1.0})
@@ -335,6 +346,46 @@ def test_a_batch_that_straddles_the_shards_is_refused_by_the_shard_it_may_not_wr
     # The refusal is what this pins; what the other shard's inserter had buffered by then is the
     # sink's own business, and it finishes no insert once a job has thrown.
     assert mixed_counts("straddling_metric")[0] == 0
+
+
+def test_no_shard_keeps_its_half_when_the_caller_asks_for_an_early_commit():
+    """The sink forwards the caller's settings to every shard, and these make one commit a part
+    inside consume(): the remote half of a refused batch would be visible before the end of the stream.
+    """
+    response = mixed_write(
+        "early_commit_metric",
+        [LOCAL_HOST, REMOTE_HOST],
+        MIXED_INSERT_USER,
+        EARLY_COMMIT_SETTING,
+    )
+    assert response.status_code == 403, response.text
+    assert "metrics.ts_mixed" in response.text, response.text
+
+    # The remote shard commits on a server the refusal never reached, so its rows would appear a
+    # moment after the response: the shards have to stay empty, not merely be empty once.
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        assert mixed_counts("early_commit_metric") == [0, 0]
+        time.sleep(0.5)
+
+
+def test_an_early_commit_setting_still_writes_the_shards_a_caller_may_write():
+    """Pinned off rather than refused: the same request from a caller granted both shards is the
+    write it always was."""
+    response = mixed_write(
+        "early_commit_ok_metric",
+        [LOCAL_HOST, REMOTE_HOST],
+        "prom_metrics",
+        EARLY_COMMIT_SETTING,
+    )
+    assert response.status_code == 204, response.text
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM timeSeriesTags(remote_shard.ts_mixed) "
+        "WHERE metric_name = 'early_commit_ok_metric'",
+        "1",
+    )
+    assert mixed_counts("early_commit_ok_metric") == [1, 1]
 
 
 def test_a_denied_caller_is_not_told_what_the_local_shard_holds():
