@@ -24,6 +24,8 @@
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <base/unaligned.h>
+
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -62,13 +64,7 @@ ALWAYS_INLINE size_t hammingDistance(const UInt8 * __restrict a, const UInt8 * _
     size_t result = 0;
     size_t i = 0;
     for (; i + sizeof(UInt64) <= bytes; i += sizeof(UInt64))
-    {
-        UInt64 x;
-        UInt64 y;
-        memcpy(&x, a + i, sizeof(UInt64));
-        memcpy(&y, b + i, sizeof(UInt64));
-        result += static_cast<size_t>(std::popcount(x ^ y));
-    }
+        result += static_cast<size_t>(std::popcount(unalignedLoad<UInt64>(a + i) ^ unalignedLoad<UInt64>(b + i)));
     for (; i < bytes; ++i)
         result += static_cast<size_t>(std::popcount(static_cast<uint8_t>(a[i] ^ b[i])));
     return result;
