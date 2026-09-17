@@ -801,57 +801,57 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
     const auto result = client.authenticate(role_search_params, role_search_results);
     const auto current_check_timestamp = std::chrono::steady_clock::now();
 
-    // Update the cache, but only if this is the latest check and the server is still configured in a compatible way.
-    if (result)
+    std::lock_guard lock(mutex);
+
+    /// `SYSTEM RELOAD CONFIG` can replace or remove the server definition while the password is being verified.
+    /// Neither outcome obtained under the old definition counts for the new one: a success must not be cached for
+    /// it, and a failure must not be reported as one either, since `MultipleAccessStorage` would then let the
+    /// storages that follow serve the same name. Both are an error, like the same post-check of `findLDAPUser` and
+    /// `enumerateLDAPUsers`.
+    const auto pit = ldap_client_params_blueprint.find(server);
+    if (pit == ldap_client_params_blueprint.end())
+        throw Exception(ErrorCodes::LDAP_ERROR,
+            "LDAP server '{}' was removed from the configuration while the password of user '{}' was being verified; refusing to use the result",
+            server, credentials.getUserName());
+
+    auto new_params = pit->second;
+    new_params.user = credentials.getUserName();
+    new_params.password = credentials.getPassword();
+
+    if (params_hash != computeParamsHash(new_params, role_search_params))
+        throw Exception(ErrorCodes::LDAP_ERROR,
+            "The definition of LDAP server '{}' changed while the password of user '{}' was being verified; refusing to use the result",
+            server, credentials.getUserName());
+
+    if (!result)
+        return false;
+
+    // Update the cache, but only if this is the latest check.
+    auto & entry = ldap_caches[server][credentials.getUserName()];
+    if (entry.last_successful_authentication_timestamp < current_check_timestamp)
     {
-        std::lock_guard lock(mutex);
+        entry.last_successful_params_hash = params_hash;
+        entry.last_successful_authentication_timestamp = current_check_timestamp;
 
-        /// `SYSTEM RELOAD CONFIG` can replace or remove the server definition while the password is being verified.
-        /// A password verified against the old definition must not count for the new one, and the result is not
-        /// reported as a failure either: that would let the storages that follow serve the same name. It is an
-        /// error, like the same post-check of `findLDAPUser` and `enumerateLDAPUsers`.
-        const auto pit = ldap_client_params_blueprint.find(server);
-        if (pit == ldap_client_params_blueprint.end())
-            throw Exception(ErrorCodes::LDAP_ERROR,
-                "LDAP server '{}' was removed from the configuration while the password of user '{}' was being verified; refusing to use the result",
-                server, credentials.getUserName());
-
-        auto new_params = pit->second;
-        new_params.user = credentials.getUserName();
-        new_params.password = credentials.getPassword();
-
-        const UInt128 new_params_hash = computeParamsHash(new_params, role_search_params);
-        if (params_hash != new_params_hash)
-            throw Exception(ErrorCodes::LDAP_ERROR,
-                "The definition of LDAP server '{}' changed while the password of user '{}' was being verified; refusing to use the result",
-                server, credentials.getUserName());
-
-        auto & entry = ldap_caches[server][credentials.getUserName()];
-        if (entry.last_successful_authentication_timestamp < current_check_timestamp)
-        {
-            entry.last_successful_params_hash = params_hash;
-            entry.last_successful_authentication_timestamp = current_check_timestamp;
-
-            if (role_search_results)
-                entry.last_successful_role_search_results = *role_search_results;
-            else
-                entry.last_successful_role_search_results.clear();
-        }
-        else if (
-            entry.last_successful_params_hash != params_hash ||
-            (
-                role_search_params == nullptr ?
-                !entry.last_successful_role_search_results.empty() :
-                role_search_params->size() != entry.last_successful_role_search_results.size()
-            )
+        if (role_search_results)
+            entry.last_successful_role_search_results = *role_search_results;
+        else
+            entry.last_successful_role_search_results.clear();
+    }
+    else if (
+        entry.last_successful_params_hash != params_hash ||
+        (
+            role_search_params == nullptr ?
+            !entry.last_successful_role_search_results.empty() :
+            role_search_params->size() != entry.last_successful_role_search_results.size()
         )
-        {
-            // Somehow a newer check with different params/password succeeded, so the current result is obsolete and we discard it.
-            return false;
-        }
+    )
+    {
+        // Somehow a newer check with different params/password succeeded, so the current result is obsolete and we discard it.
+        return false;
     }
 
-    return result;
+    return true;
 }
 
 bool ExternalAuthenticators::findLDAPUser(const String & server, const String & user_name,
@@ -885,13 +885,12 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
     LDAPSimpleAuthClient client(params.value());
     const auto result = client.find(role_search_params, role_search_results);
 
-    if (result)
+    /// `SYSTEM RELOAD CONFIG` can mutate `ldap_client_params_blueprint` between the snapshot above and the
+    /// bind/search round-trip. Neither outcome obtained under the old definition counts for the new one: a user
+    /// found must not be materialised for it, and a miss must not be reported as one either, since
+    /// `LDAPAccessStorage::findImpl` would then let the storages that follow serve the same name. Both are an
+    /// error, like the same post-check of `checkLDAPCredentials` and `enumerateLDAPUsers`.
     {
-        /// `SYSTEM RELOAD CONFIG` can mutate `ldap_client_params_blueprint` between the snapshot above and the
-        /// bind/search round-trip. A user found under the old definition must not be materialised for the new one,
-        /// and the result is not reported as a miss either: `LDAPAccessStorage::findImpl` would then let the
-        /// storages that follow serve the same name. It is an error, like the same post-check of
-        /// `checkLDAPCredentials` and `enumerateLDAPUsers`.
         std::lock_guard lock(mutex);
 
         const auto pit = ldap_client_params_blueprint.find(server);
