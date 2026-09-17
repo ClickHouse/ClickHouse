@@ -158,6 +158,18 @@ void populatePartAggregationCache(
 
             auto params_copy = params;
             params_copy.only_merge = false;
+            /// The cache key (`makePartAggregationCacheKey`) covers the keys, the aggregates and the
+            /// filter, but deliberately not the query's `LIMIT`, so a cached per-part state must hold
+            /// every group of the part. `Params::top_k` (the `GROUP BY ... ORDER BY <keys> LIMIT n`
+            /// Top-K, see `enable_group_by_top_k_optimization`) prunes the aggregation to the best `n`
+            /// groups per stream; inheriting it here would persist a truncated state that a later
+            /// query with a wider `LIMIT` (or none) would reuse. Today it cannot be set at this point:
+            /// the planner pushes the Top-K only into a non-final aggregation, which this optimization
+            /// rejects, and the plan-level pass (`tryOptimizeGroupByTopK`) runs after it. Clear it
+            /// anyway so the cached state does not depend on the order of the optimization passes.
+            /// `top_k` only affects the insertion path of `Aggregator::executeOnBlock`, never merging,
+            /// so the query itself keeps its Top-K on the merge of the complete cached states.
+            params_copy.top_k.reset();
 
             Aggregator aggregator(aggregator_header, params_copy);
             AggregatedDataVariants data_variants;
