@@ -1176,19 +1176,40 @@ def test_complete_multi_part_upload_no_such_upload_keeps_prior_object(
             f"SELECT countIf(tag = 'NEW'), countIf(tag = 'OLD') FROM {table_function}"
         ).split()
 
+    def head_object_requests(query_id):
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return int(
+            node.query(
+                f"""
+                SELECT ProfileEvents['S3HeadObject']
+                FROM system.query_log
+                WHERE query_id = '{query_id}' AND type != 'QueryStart'
+                ORDER BY event_time_microseconds DESC
+                LIMIT 1
+                """
+            )
+        )
+
     node.query(insert(100, "OLD"))
 
     # An upload aborted between create and complete: the server reports NoSuchUpload and the key
     # still holds the OLD object. Overwriting it must fail rather than report a stored NEW object.
     broken_s3.setup_at_complete_multi_part_upload(count=1, action="no_such_upload")
 
-    error = node.query_and_get_error(insert(900, "NEW"))
+    error = node.query_and_get_error(insert(900, "NEW"), query_id=f"{key}_recovery")
     assert "Code: 499" in error, error
     assert "NoSuchUpload" in error or "does not exist" in error, error
     assert read_tags() == ["0", "100"]
 
+    # To tell an aborted upload from a completion whose response was lost, the recovery reads the
+    # object's metadata and looks for the id this upload stamped. That HEAD is a request like any
+    # other, so it has to be accounted for -- it went uncounted while it lived outside the client.
+    assert head_object_requests(f"{key}_recovery") == 1
+
     # Control: without the injection the same INSERT replaces the object, so the fixture does write
-    # a real multipart upload and the assertion above is not vacuous.
+    # a real multipart upload and the assertion above is not vacuous. It also asks for no HEAD at
+    # all, which is what makes the one above attributable to the recovery.
     broken_s3.reset()
-    node.query(insert(900, "NEW"))
+    node.query(insert(900, "NEW"), query_id=f"{key}_control")
     assert read_tags() == ["900", "0"]
+    assert head_object_requests(f"{key}_control") == 0

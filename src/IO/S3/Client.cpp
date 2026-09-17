@@ -65,6 +65,9 @@ namespace ProfileEvents
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
+
+    extern const Event S3HeadObject;
+    extern const Event DiskS3HeadObject;
 }
 
 namespace CurrentMetrics
@@ -556,7 +559,19 @@ bool Client::isObjectWrittenWithIdempotencyId(
     if (idempotency_id.empty())
         return false;
 
-    auto head_request = HeadObjectRequest().WithBucket(bucket).WithKey(key);
+    Expect404ResponseScope scope; /// The object is absent whenever the write did not land.
+
+    ProfileEvents::increment(ProfileEvents::S3HeadObject);
+    if (isClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
+    /// Spell the type out: `HeadObjectRequest().WithBucket(...)` returns the SDK's base request, so
+    /// `auto` would slice ours away and reach the SDK's own HeadObject, skipping the api mode, the
+    /// extra headers and the region and URI overrides this client exists to apply.
+    HeadObjectRequest head_request;
+    head_request.SetBucket(bucket);
+    head_request.SetKey(key);
+
     auto head_outcome = HeadObject(head_request);
 
     if (!head_outcome.IsSuccess())
