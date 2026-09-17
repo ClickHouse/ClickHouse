@@ -14,3 +14,7 @@ a one-partition build still emits every non-joined row	8	1
 -- convert_join_to_in rewrites a qualifying partitioned_hash join
 0
 the rewritten query gives the same rows as the join	50000	1
+-- with automatic external join the partitioned algorithm stays selected
+1
+-- listing both algorithms keeps partitioned_hash when spilling is configured
+1
