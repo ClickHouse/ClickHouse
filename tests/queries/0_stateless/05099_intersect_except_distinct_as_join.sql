@@ -64,7 +64,7 @@ WITH both AS (SELECT a FROM t_set_left INTERSECT DISTINCT SELECT a FROM t_set_ri
 SELECT explain FROM (EXPLAIN QUERY TREE dump_ast = 1 WITH both AS MATERIALIZED (SELECT a FROM t_set_left INTERSECT DISTINCT SELECT a FROM t_set_right) SELECT count() FROM both SETTINGS enable_materialized_cte = 1)
 WHERE explain LIKE '%cte_name%' OR explain LIKE '%both AS%';
 
-SELECT 'ALL modes keep the set-operation step';
+SELECT 'ALL modes are executed as a multiset join';
 SELECT * FROM (SELECT number % 3 AS x FROM numbers(6) INTERSECT ALL SELECT number % 3 FROM numbers(3)) ORDER BY x;
 SELECT * FROM (SELECT number % 3 AS x FROM numbers(6) EXCEPT ALL SELECT number % 3 FROM numbers(3)) ORDER BY x;
 
@@ -80,7 +80,7 @@ WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%Inter
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT * FROM (SELECT a, b FROM t_set_left INTERSECT DISTINCT SELECT a, b FROM t_set_right) SETTINGS optimize_rewrite_intersect_except_to_join = 0)
 WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a, b FROM t_set_left INTERSECT ALL SELECT a, b FROM t_set_right)
-WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';
+WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%' OR explain LIKE '%Multiset%';
 -- A rewritten arm of a rewritten set operation drops its own DISTINCT.
 SELECT replaceRegexpOne(replaceRegexpOne(explain, '^[ │├└─]+', ''), '^Type: \\w+ \\| (Strictness: \\w+).*$', '\\1') FROM (EXPLAIN SELECT a FROM t_set_left INTERSECT DISTINCT SELECT a FROM t_set_right INTERSECT DISTINCT SELECT a FROM t_set_third)
 WHERE explain LIKE '%Join%' OR explain LIKE '%Distinct%' OR explain LIKE '%IntersectOrExcept%';

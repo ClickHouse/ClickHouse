@@ -1210,6 +1210,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
+
+    /// A multiset join runs on the count maps of `HashJoin` (see `JoinOperator::multiset`). It is not
+    /// spilled either: a spilling join probes a left row against the bucket the row lands in at that
+    /// moment, and a rebucketed right side would be counted in two.
+    const bool is_multiset = table_join->isMultiset();
+    if (is_multiset && algorithm != JoinAlgorithm::HASH && algorithm != JoinAlgorithm::PARALLEL_HASH)
+        return nullptr;
+
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
@@ -1231,7 +1239,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
+        if (!is_multiset && params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
         {
             if (table_join->allowParallelHashJoin())
             {

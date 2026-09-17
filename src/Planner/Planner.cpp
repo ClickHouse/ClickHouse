@@ -7,6 +7,8 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
@@ -22,6 +24,7 @@
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -183,6 +186,8 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
+    extern const SettingsBool optimize_rewrite_intersect_except_to_join;
+    extern const SettingsJoinAlgorithm join_algorithm;
 }
 
 namespace ServerSetting
@@ -2381,6 +2386,104 @@ void Planner::buildQueryPlanIfNeeded()
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
+/// `INTERSECT ALL` and `EXCEPT ALL` as a multiset LEFT SEMI or LEFT ANTI join of the two arms on all columns
+/// (see `JoinOperator::multiset`), so that they run on the hash joins and their optimizations instead of the
+/// set-operation step. Null-safe comparison matches `NULL` with `NULL` like the set operation does. Returns
+/// nullptr for the shapes the join cannot take, which keep the set-operation step.
+///
+/// The `DISTINCT` modes are rewritten in the query tree (`RewriteIntersectExceptToJoinPass`), this one in
+/// the plan: SQL has no syntax for the multiset join, so a query tree join node would be shipped to remote
+/// shards as a plain SEMI or ANTI JOIN and lose the duplicates, while the union node keeps its meaning.
+static std::unique_ptr<JoinStepLogical> tryBuildIntersectExceptAllAsJoin(
+    SelectUnionMode union_mode, std::vector<std::unique_ptr<QueryPlan>> & query_plans, const ContextPtr & query_context)
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!settings[Setting::optimize_rewrite_intersect_except_to_join])
+        return nullptr;
+
+    /// Only the hash joins count the right rows of a key, see `JoinOperator::multiset`.
+    const auto & join_algorithms = settings[Setting::join_algorithm].value;
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        && !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
+        return nullptr;
+
+    chassert(query_plans.size() == 2);
+    const auto left_header = query_plans.front()->getCurrentHeader();
+    const auto & right_plan = query_plans.back();
+    const auto right_header = right_plan->getCurrentHeader();
+    const size_t num_columns = left_header->columns();
+
+    /// The join expression addresses the columns of both sides by name, so the right side gets names of its own.
+    Names right_names;
+    right_names.reserve(num_columns);
+    NameSet left_names;
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const auto & column = left_header->getByPosition(i);
+        if (hasDynamicType(column.type) || !left_names.insert(column.name).second)
+            return nullptr;
+        right_names.push_back("__intersect_except_right_" + toString(i));
+    }
+    for (const auto & name : right_names)
+        if (left_names.contains(name))
+            return nullptr;
+
+    ActionsDAG rename_dag(right_header->getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs renamed_outputs;
+    renamed_outputs.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        renamed_outputs.push_back(&rename_dag.addAlias(*rename_dag.getInputs()[i], right_names[i]));
+    rename_dag.getOutputs() = std::move(renamed_outputs);
+    auto rename_step = std::make_unique<ExpressionStep>(right_header, std::move(rename_dag));
+    rename_step->setStepDescription("Rename the right arm");
+    right_plan->addStep(std::move(rename_step));
+    const auto renamed_right_header = right_plan->getCurrentHeader();
+
+    JoinExpressionActions join_expression_actions(*left_header, *renamed_right_header);
+    std::vector<JoinActionRef> predicates;
+    predicates.reserve(num_columns);
+    ActionsDAG::NodeRawConstPtrs output_nodes;
+    output_nodes.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        auto left = join_expression_actions.findNode(left_header->getByPosition(i).name, /*is_input=*/ true);
+        auto right = join_expression_actions.findNode(right_names[i], /*is_input=*/ true);
+        predicates.push_back(JoinActionRef::transform({left, right}, JoinActionRef::AddFunction(JoinConditionOperator::NullSafeEquals)));
+        output_nodes.push_back(left.getNode());
+    }
+    /// The output header of the join is what the expression outputs: the left columns, in order.
+    join_expression_actions.getActionsDAG()->getOutputs() = output_nodes;
+
+    const bool is_intersect = union_mode == SelectUnionMode::INTERSECT_ALL;
+    JoinOperator join_operator(
+        JoinKind::Left, is_intersect ? JoinStrictness::Semi : JoinStrictness::Anti, JoinLocality::Unspecified, std::move(predicates));
+    join_operator.multiset = true;
+
+    JoinSettings join_settings(settings, query_context->getJoinAnalyzeMode());
+    std::erase_if(
+        join_settings.join_algorithms,
+        [](JoinAlgorithm algorithm) { return algorithm != JoinAlgorithm::HASH && algorithm != JoinAlgorithm::PARALLEL_HASH; });
+    /// `default` stands for `direct,hash`.
+    if (join_settings.join_algorithms.empty())
+        join_settings.join_algorithms = {JoinAlgorithm::HASH};
+
+    auto join_step = std::make_unique<JoinStepLogical>(
+        left_header,
+        renamed_right_header,
+        std::move(join_operator),
+        std::move(join_expression_actions),
+        std::move(output_nodes),
+        std::move(join_settings),
+        SortingStep::Settings(settings));
+    if (is_intersect)
+        join_step->setStepDescription("INTERSECT ALL");
+    else
+        join_step->setStepDescription("EXCEPT ALL");
+    /// The counted side is the right one, so the join order is not up to the optimizer.
+    join_step->setOptimized();
+    return join_step;
+}
+
 void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
@@ -2438,10 +2541,18 @@ void Planner::buildPlanForUnionNode()
     bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT
         || union_mode == SelectUnionMode::EXCEPT_DISTINCT;
 
+    std::unique_ptr<JoinStepLogical> intersect_except_all_join;
+    if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::EXCEPT_ALL)
+        intersect_except_all_join = tryBuildIntersectExceptAllAsJoin(union_mode, query_plans, query_context);
+
     if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
     {
         auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* allow_narrowing = */ true);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
+    }
+    else if (intersect_except_all_join)
+    {
+        query_plan.unitePlans(std::move(intersect_except_all_join), std::move(query_plans));
     }
     else if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::INTERSECT_DISTINCT
         || union_mode == SelectUnionMode::EXCEPT_ALL || union_mode == SelectUnionMode::EXCEPT_DISTINCT)

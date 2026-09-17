@@ -89,6 +89,7 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
@@ -335,6 +336,8 @@ std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties()
 
     description.emplace_back("Type", toString(join_operator.kind));
     description.emplace_back("Strictness", toString(join_operator.strictness));
+    if (join_operator.multiset)
+        description.emplace_back("Multiset", "1");
     description.emplace_back("Locality", toString(join_operator.locality));
     description.emplace_back("Expression", formatJoinCondition(join_operator.expression));
     return description;
@@ -2554,6 +2557,17 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     actions_dag->serialize(ctx.out, ctx.registry);
 
     join_operator.serialize(ctx.out, actions_dag.get());
+
+    /// The multiset flag changes what the join computes, so a peer that cannot read it must not get the
+    /// join at all.
+    if (ctx.step_version >= 1)
+        writeIntBinary(static_cast<UInt8>(join_operator.multiset), ctx.out);
+    else if (join_operator.multiset)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a multiset join requires query plan serialization version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MULTISET_JOIN);
+
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
     /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
@@ -2618,6 +2632,14 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
     auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
+
+    if (ctx.step_version >= 1)
+    {
+        UInt8 multiset = 0;
+        readIntBinary(multiset, ctx.in);
+        join_operator.multiset = multiset != 0;
+    }
+
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
@@ -2720,7 +2742,8 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MULTISET_JOIN}};
+    registry.registerStep("Join", JoinStepLogical::deserialize, versions);
 }
 
 

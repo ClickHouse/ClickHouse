@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
-            {"optimize_rewrite_intersect_except_to_join", false, true, "New setting to execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a semi or anti join on all columns followed by `DISTINCT`."},
+            {"optimize_rewrite_intersect_except_to_join", false, true, "New setting to execute `INTERSECT` and `EXCEPT` as a semi or anti join on all columns: the `DISTINCT` modes followed by `DISTINCT`, the `ALL` modes as a multiset join."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
         });

@@ -342,6 +342,21 @@ HashJoin::HashJoin(
         strictness,
         right_sample_block.dumpStructure());
 
+    if (table_join->isMultiset())
+    {
+        /// The planner builds a multiset join for `INTERSECT ALL` and `EXCEPT ALL` only, as a LEFT SEMI or
+        /// LEFT ANTI join on the keys alone; the count maps run nothing else.
+        if (kind != JoinKind::Left || (strictness != JoinStrictness::Semi && strictness != JoinStrictness::Anti)
+            || preferUseMapsAll() || table_join->getMixedJoinExpression() || table_join->isSpecialStorage()
+            || sample_block_with_columns_to_add.columns() != 0)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "A multiset join must be a LEFT SEMI or LEFT ANTI join on keys alone, got {} {} with {} right columns",
+                kind,
+                strictness,
+                sample_block_with_columns_to_add.columns());
+    }
+
     use_set_maps = canUseSetMaps();
     if (use_set_maps)
         LOG_TRACE(log, "Using key-only hash tables: the join never reads a right row");
@@ -608,7 +623,7 @@ bool HashJoin::mustKeepRightBlocks() const
 /// settled on this join, they are dead weight for the whole probe phase, so it says so and they go.
 void HashJoin::dropRightBlocksKeptForAnotherAlgorithm()
 {
-    if (!data || getMapsKind() != JoinMapsKind::Set)
+    if (!data || !isKeyOnlyMapsKind(getMapsKind()))
         return;
 
     /// A nullmap holds a raw pointer into a stored block, and the non-joined stream reads the block
@@ -633,6 +648,8 @@ JoinMapsKind HashJoin::getMapsKind() const
 {
     if (preferUseMapsAll())
         return JoinMapsKind::All;
+    if (table_join->isMultiset())
+        return JoinMapsKind::Count;
     if (use_set_maps)
         return JoinMapsKind::Set;
     return JoinMapsKind::Default;
@@ -1135,12 +1152,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             }
 
             /// Whether anything that outlives the build phase still points into the block. Per-row used
-            /// flags are keyed by the stored block, so they keep it alive - except on a set map, which is
-            /// never `flagged` (see `MapGetter`), so there are no such flags to begin with.
+            /// flags are keyed by the stored block, so they keep it alive - except on a key-only map, which
+            /// is never `flagged` (see `MapGetter`), so there are no such flags to begin with.
             const bool block_is_referenced
-                = is_inserted || nullmap_stored_for_block || (flag_per_row && maps_kind != JoinMapsKind::Set);
-            /// Every clause reads its keys out of the block before it goes. Only a set map gets here with
-            /// more than one clause: several clauses always mean `flag_per_row`.
+                = is_inserted || nullmap_stored_for_block || (flag_per_row && !isKeyOnlyMapsKind(maps_kind));
+            /// Every clause reads its keys out of the block before it goes. Only a key-only map gets here
+            /// with more than one clause: several clauses always mean `flag_per_row`.
             const bool last_clause = onexpr_idx + 1 == onexprs.size();
 
             if (!block_is_referenced && last_clause)
@@ -1148,9 +1165,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->allocated_size -= data_allocated_bytes;
-                /// A set map references no block at all, so every block is dropped here even though its
-                /// rows did take part in the join and must stay counted.
-                if (maps_kind != JoinMapsKind::Set)
+                /// A key-only map references no block at all, so every block is dropped here even though
+                /// its rows did take part in the join and must stay counted.
+                if (!isKeyOnlyMapsKind(maps_kind))
                     data->rows_to_join -= rows;
                 /// Nothing was inserted, so no refs to this block exist; null the index entry so
                 /// that a stale ref trips the chassert in `StoredColumnsIndex::at` in debug builds
@@ -1431,6 +1448,11 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
                 res = HashJoinMethods<kind_, strictness_, MapsSet>::joinBlockImpl(
                     *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
             }
+            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsCount *>>)
+            {
+                res = HashJoinMethods<kind_, strictness_, MapsCount>::joinBlockImpl(
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+            }
             else
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
@@ -1641,9 +1663,9 @@ public:
         {
             auto fill_callback = [&](auto, auto, auto & map)
             {
-                /// Only RIGHT and FULL joins have non-joined rows, and those never run on a set map.
-                if constexpr (SetJoinMaps<decltype(map)>)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-joined right rows cannot be produced from a set map");
+                /// Only RIGHT and FULL joins have non-joined rows, and those never run on a key-only map.
+                if constexpr (KeyOnlyJoinMaps<decltype(map)>)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-joined right rows cannot be produced from a key-only map");
                 else
                     rows_added = fillColumnsFromMap<with_row_store, with_columns>(map, columns_right);
             };
@@ -1999,10 +2021,10 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 {
-    /// A set map stores the right blocks only for the algorithm that says it may take them. Asking
+    /// A key-only map stores the right blocks only for the algorithm that says it may take them. Asking
     /// for them without having said so would hand back an empty list and silently lose the right
     /// side, so say plainly that the join was built for a different contract.
-    if (getMapsKind() == JoinMapsKind::Set && !right_blocks_may_be_taken)
+    if (isKeyOnlyMapsKind(getMapsKind()) && !right_blocks_may_be_taken)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Right blocks of a key-only join were asked for, but no algorithm said it would take them");
@@ -2700,7 +2722,7 @@ void HashJoin::publishSharedRuntimeFilters()
             [&](auto & map)
             {
                 using MapType = std::decay_t<decltype(map)>;
-                if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll> || std::is_same_v<MapType, MapsSet>)
+                if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll> || std::is_same_v<MapType, MapsSet> || std::is_same_v<MapType, MapsCount>)
                 {
                     auto dispatch = [&]<typename BuildKey>(
                         auto & range_ptr,
@@ -2855,7 +2877,7 @@ void HashJoin::tryConvertToFixedHashMap()
         [&](auto & map)
         {
             using MapType = std::decay_t<decltype(map)>;
-            if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll> || std::is_same_v<MapType, MapsSet>)
+            if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll> || std::is_same_v<MapType, MapsSet> || std::is_same_v<MapType, MapsCount>)
             {
                 bool is_signed = !right_table_keys.getByPosition(0).type->isValueRepresentedByUnsignedInteger();
                 if (data->type == Type::key32)

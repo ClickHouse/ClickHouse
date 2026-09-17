@@ -882,8 +882,8 @@ protected:
                 {
                     /// `StorageJoin` reads the right rows back out of the maps, so it never stores them
                     /// in a map that keeps none.
-                    if constexpr (SetJoinMaps<decltype(map)>)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a set map");
+                    if constexpr (KeyOnlyJoinMaps<decltype(map)>)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a key-only map");
                     else
                         chunk = createChunk<kind, strictness>(map);
                 }))

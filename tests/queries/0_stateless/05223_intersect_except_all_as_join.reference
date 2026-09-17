@@ -1,0 +1,79 @@
+same multiset as the set-operation step
+473	93635	19
+1
+2527	354865	410
+1
+each right row matches at most one left row
+1	2
+2	1
+1	1
+2	1
+3	1
+3
+2
+hash and parallel hash
+50000	17415000
+50000	17415000
+50000	17415000
+50000	32535000
+50000	32535000
+50000	32535000
+three arms
+243	48270
+243	48270
+2430	335645
+2430	335645
+2757	400230
+2757	400230
+228	44950
+228	44950
+NULL matches NULL
+\N
+\N
+1
+(NULL,1)
+floats are compared bitwise like in the set operation
+0
+0
+-0
+nan
+types are converted to the common type
+1	Int64
+1	Int64
+a	String
+constants and empty inputs
+1
+1	a
+0
+0
+10
+0
+the result is used by the outer query
+3
+4
+5
+2
+1
+2
+14
+2
+the plan
+Join (JOIN FillRightFirst)
+│  Type: left | Strictness: semi | Algorithm: ConcurrentHashJoin
+│  Multiset: 1
+│  Join conditions: number <=> number
+Join (JOIN FillRightFirst)
+│  Type: left | Strictness: anti | Algorithm: ConcurrentHashJoin
+│  Multiset: 1
+│  Join conditions: number <=> number
+the set-operation step stays for what the join cannot take
+IntersectOrExcept
+IntersectOrExcept
+50000	32535000
+IntersectOrExcept
+│  Type: left | Strictness: semi | Algorithm: HashJoin
+IntersectOrExcept
+IntersectOrExcept
+2
+0	0
+1	1

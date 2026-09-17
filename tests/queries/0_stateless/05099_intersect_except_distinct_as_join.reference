@@ -40,7 +40,7 @@ inside IN and a CTE
 200	100	299
     QUERY id: 3, alias: __table1, is_subquery: 1, is_cte: 1, is_materialized: 1, is_distinct: 1, cte_name: both
 both AS __table1
-ALL modes keep the set-operation step
+ALL modes are executed as a multiset join
 0
 1
 2
@@ -60,7 +60,10 @@ Strictness: anti
 Join conditions: a <=> a AND tuple(b) <=> tuple(b)
 Distinct
 IntersectOrExcept
-IntersectOrExcept
+Join (JOIN FillRightFirst)
+Strictness: semi
+Multiset: 1
+Join conditions: a <=> a AND tuple(b) <=> tuple(b)
 Distinct (DISTINCT)
 Distinct (Preliminary DISTINCT)
 Join (JOIN FillRightFirst)

@@ -1,5 +1,8 @@
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
+-- The INTERSECT and EXCEPT cases below cover the extremes plumbing of `IntersectOrExceptStep`, which
+-- unites the extremes of its arms; as a join they would report the extremes of the result instead.
+SET optimize_rewrite_intersect_except_to_join = 0;
 
 -- `extremes` is pinned per statement: a runner-injected `extremes = 0` removes the extremes
 -- plumbing entirely and would make every query below pass without exercising the bug.

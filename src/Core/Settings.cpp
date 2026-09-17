@@ -6372,7 +6372,7 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
     DECLARE(Bool, optimize_rewrite_intersect_except_to_join, true, R"(
-Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a `SEMI LEFT JOIN` or `ANTI LEFT JOIN` on all columns followed by `DISTINCT`, so that they use the join algorithms and their optimizations. `NULL` values match each other like in the set operations. The `ALL` modes are not affected, and neither are the `DISTINCT` modes when `join_algorithm` enables no algorithm that can execute a semi join (such as only `full_sorting_merge`).
+Execute `INTERSECT` and `EXCEPT` as a `SEMI LEFT JOIN` or `ANTI LEFT JOIN` on all columns, so that they use the join algorithms and their optimizations. The `DISTINCT` modes are followed by `DISTINCT`; the `ALL` modes run as a multiset join, where each right row matches at most one left row, which only the `hash` and `parallel_hash` algorithms execute. `NULL` values match each other like in the set operations. The set operations are executed as before when `join_algorithm` enables no algorithm that can execute the join.
 )", 0) \
     DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
 Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
