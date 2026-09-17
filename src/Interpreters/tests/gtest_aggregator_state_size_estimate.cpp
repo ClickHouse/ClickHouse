@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -384,4 +385,68 @@ TEST(AggregatorStateSizeEstimate, WithoutKeyUsesExplicitStateVersion)
     const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
     EXPECT_EQ(estimate.sample_bytes, expected_v0_bytes);
     EXPECT_EQ(estimate.bytes, expected_v0_bytes);
+}
+
+TEST(AggregatorStateSizeEstimate, CompressionFollowsTheWireCodec)
+{
+    tryRegisterAggregateFunctions();
+
+    /// The states are sent with `network_compression_method`, which need not be the factory's default
+    /// codec, so the sample has to go through the codec the caller resolved. Compare the two extremes on
+    /// a highly compressible state: the `NONE` codec must report the sample as incompressible, while
+    /// the default one must compress it.
+    constexpr size_t keys = 256;
+    constexpr size_t state_values = 1000;
+
+    DataTypes argument_types = {std::make_shared<DataTypeUInt64>()};
+    AggregateFunctionProperties properties;
+    AggregateFunctionPtr function
+        = AggregateFunctionFactory::instance().get("groupArray", NullsAction::EMPTY, argument_types, {}, properties);
+    auto state_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{});
+
+    auto values = ColumnUInt64::create();
+    for (size_t i = 0; i < state_values; ++i)
+        values->insert(UInt64(42));
+    const IColumn * arguments[1] = {values.get()};
+
+    auto states = state_type->createColumn();
+    auto & state_column = assert_cast<ColumnAggregateFunction &>(*states);
+    for (size_t key = 0; key < keys; ++key)
+    {
+        state_column.insertDefault();
+        for (size_t i = 0; i < state_values; ++i)
+            function->add(state_column.getData()[key], arguments, i, &state_column.createOrGetArena());
+    }
+
+    AggregateDescription description;
+    description.function = function;
+    description.column_name = "st";
+
+    Block header;
+    header.insert({std::make_shared<DataTypeUInt8>()->createColumn(), std::make_shared<DataTypeUInt8>(), "k"});
+    header.insert({state_type->createColumn(), state_type, "st"});
+
+    Aggregator aggregator(header, makeMergeParams({"k"}, {description}));
+
+    auto key_column = ColumnUInt8::create();
+    for (size_t key = 0; key < keys; ++key)
+        key_column->insert(UInt64(key));
+
+    auto variants = std::make_shared<AggregatedDataVariants>();
+    bool no_more_keys = false;
+    std::atomic<bool> is_cancelled{false};
+    Columns columns = {std::move(key_column), states->getPtr()};
+    aggregator.mergeOnBlock(columns, keys, /*is_overflows=*/false, *variants, no_more_keys, is_cancelled);
+
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    const auto with_none = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1, none);
+    const auto with_default = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
+
+    /// Same sample under both codecs: only the compressed figure may differ.
+    EXPECT_EQ(with_none.sample_bytes, with_default.sample_bytes);
+    EXPECT_EQ(with_none.bytes, with_default.bytes);
+    /// `NONE` cannot shrink anything, and the clamp turns its framing overhead into "incompressible".
+    EXPECT_EQ(with_none.compressed_bytes, with_none.sample_bytes);
+    /// A thousand identical values per state compress by far more than 2x with any real codec.
+    EXPECT_LT(with_default.compressed_bytes * 2, with_default.sample_bytes);
 }

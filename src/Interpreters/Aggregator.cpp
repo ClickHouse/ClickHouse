@@ -309,7 +309,8 @@ size_t compressedSampleSize(size_t sample_bytes, size_t compressed_bytes)
 
 }
 
-Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
+Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedState(
+    AggregatedDataVariants & result, ssize_t bucket, const CompressionCodecPtr & wire_codec) const
 {
     /// `NativeWriter` serializes the states through the `SerializationAggregateFunction` of the output
     /// header's `DataTypeAggregateFunction` (see `prepareOutputBlockColumns`), which passes the type's
@@ -330,8 +331,11 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
             /// We only interested in the size of compressed state, not the serialized representation itself.
             /// The states have to be serialized through `compressed_buf` and not into `null_buf` directly,
             /// otherwise nothing gets compressed and we measure the serialized size instead of the compressed one.
+            /// The sample goes through the codec the replicas send their states with: a codec with a different
+            /// ratio (`LZ4` on a server whose default is `ZSTD(3)`) would otherwise misprice compressible states
+            /// by the difference between the two.
             NullWriteBuffer null_buf;
-            CompressedWriteBuffer compressed_buf(null_buf);
+            CompressedWriteBuffer compressed_buf(null_buf, wire_codec);
 
             /// The total is extrapolated from the sample mean, so the sample must be large enough for
             /// skewed distributions - e.g. `uniqExact` or `groupArray` states where a few giant states
@@ -387,7 +391,7 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
             NullWriteBuffer null_buf;
-            CompressedWriteBuffer compressed_buf(null_buf);
+            CompressedWriteBuffer compressed_buf(null_buf, wire_codec);
             is_simple_count
                 ? writeVarUInt(getCountState(result.without_key), compressed_buf)
                 : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], compressed_buf, state_versions[j]);

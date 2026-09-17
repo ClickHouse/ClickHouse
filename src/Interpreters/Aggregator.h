@@ -8,6 +8,7 @@
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Compression/ICompressionCodec_fwd.h>
 
 #include <Core/Block.h>
 #include <Processors/Chunk.h>
@@ -541,7 +542,10 @@ public:
         size_t sample_bytes = 0;
         size_t compressed_bytes = 0;
     };
-    CompressedStateSizeEstimate estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
+    /// `wire_codec` is the codec the states are sent with (`network_compression_method`); the factory's
+    /// default codec is used when it is not set.
+    CompressedStateSizeEstimate estimateSizeOfCompressedState(
+        AggregatedDataVariants & result, ssize_t bucket, const CompressionCodecPtr & wire_codec = nullptr) const;
 
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }

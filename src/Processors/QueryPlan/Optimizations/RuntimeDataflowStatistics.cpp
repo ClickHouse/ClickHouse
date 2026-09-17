@@ -669,7 +669,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
         return;
     }
 
-    const auto estimate = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
+    const auto estimate = variant.aggregator->estimateSizeOfCompressedState(variant, bucket, wire_codec);
 
     auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationState];
     std::lock_guard lock(statistics.mutex);
