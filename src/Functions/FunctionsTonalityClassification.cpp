@@ -87,10 +87,10 @@ REGISTER_FUNCTION(DetectTonality)
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-<Warning>
+:::warning
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-</Warning>
+:::
 
 Determines the sentiment of the provided text data.
 
@@ -106,14 +106,12 @@ The function makes use of an embedded emotional dictionary and only works for th
     {
         "Russian sentiment analysis",
         R"(
-SET allow_experimental_nlp_functions = 1;
-
 SELECT
     detectTonality('Шарик - хороший пёс'),
     detectTonality('Шарик - пёс'),
     detectTonality('Шарик - плохой пёс')
         )",
-        "0.44445\t0\t-0.3"
+        "0.44445, 0, -0.3"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
