@@ -196,15 +196,21 @@ SQLQueryPiece applyHistogramQuantile(
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE});
         builder.from_table = context.subqueries.back().name;
 
-        /// Prometheus silently drops input series whose `le` label is missing or cannot be
-        /// parsed as a float, so for example a pure non-histogram input produces an empty
-        /// result. This filter applies before the out-of-range phi short-circuit above:
-        /// even for an out-of-range phi only series with a parsable `le` produce output.
-        builder.where = makeASTFunction("isNotNull",
-            makeASTFunction("toFloat64OrNull",
+        /// Prometheus silently drops input series whose `le` label is missing, cannot be
+        /// parsed as a float, or parses as NaN, so for example a pure non-histogram input
+        /// produces an empty result. This filter applies before the out-of-range phi
+        /// short-circuit above: even for an out-of-range phi only series with a valid `le`
+        /// produce output.
+        auto parsed_le_expr = []
+        {
+            return makeASTFunction("toFloat64OrNull",
                 makeASTFunction("timeSeriesExtractTag",
                     make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                    make_intrusive<ASTLiteral>("le"))));
+                    make_intrusive<ASTLiteral>("le")));
+        };
+        builder.where = makeASTFunction("and",
+            makeASTFunction("isNotNull", parsed_le_expr()),
+            makeASTFunction("not", makeASTFunction("isNaN", parsed_le_expr())));
 
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 

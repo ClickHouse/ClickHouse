@@ -442,6 +442,12 @@ def send_test_data():
                 {"__name__": "bad_le_bucket", "le": "+Inf"},
                 {300: 60},
             ),
+            # A NaN `le` label is parseable as a Float64, but it is not a valid
+            # histogram bucket bound and must be dropped like other malformed bounds.
+            (
+                {"__name__": "nan_le_bucket", "le": "NaN"},
+                {300: 25},
+            ),
             (
                 {"__name__": "rate_bucket", "le": "0.1"},
                 {300: 10, 330: 15, 360: 20},
@@ -5210,6 +5216,16 @@ def test_histogram_quantile():
         '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0.55"]}]}',
         [["[]", "1970-01-01 00:05:00.000", "0.55"]],
         eps=1e-12,
+    )
+
+    # A NaN `le` label is parseable by toFloat64OrNull, but Prometheus drops it as
+    # an invalid bucket. In particular, it must not turn an all-invalid histogram
+    # into a zero-valued result.
+    do_query_test(
+        "histogram_quantile(0.5, nan_le_bucket)",
+        300,
+        '{"resultType": "vector", "result": []}',
+        [],
     )
 
     # Idiomatic `histogram_quantile(phi, rate(bucket[window]))` pattern.
