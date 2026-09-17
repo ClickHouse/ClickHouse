@@ -484,22 +484,10 @@ struct RowRefList
                 return;
             }
 
-            switch (list.word & TAG_MASK)
+            if ((list.word & TAG_MASK) != TAG_BATCH) [[unlikely]]
             {
-                case TAG_RUN:
-                    cur = list.runRefs();
-                    run_end = cur + list.countField();
-                    return;
-                case TAG_CHAIN: {
-                    const RangeHeader * header = list.chainHeader();
-                    cur = header->refs();
-                    run_end = cur + header->ownLen();
-                    pending = header->prev;
-                    return;
-                }
-                case TAG_BATCH:
-                    break;
-                default: chassert(false && "a build-time word reached a reader"); return;
+                moveTo(startRanges(list.word));
+                return;
             }
 
             const Batch * b = list.asBatch();
@@ -534,22 +522,8 @@ struct RowRefList
                         run_end = &next_node->refs[1] + next_node->size;
                         next_node = reinterpret_cast<const Batch *>(next_node->refs[0]); /// NOLINT(performance-no-int-to-ptr)
                     }
-                    else if (pending != 0)
-                    {
-                        if (RangeHeader::prevHasHeader(pending))
-                        {
-                            const auto * header = reinterpret_cast<const RangeHeader *>(RangeHeader::prevPtr(pending));
-                            cur = header->refs();
-                            run_end = cur + header->ownLen();
-                            pending = header->prev;
-                        }
-                        else
-                        {
-                            cur = RangeHeader::prevPtr(pending);
-                            run_end = cur + RangeHeader::prevLen(pending);
-                            pending = 0;
-                        }
-                    }
+                    else if (pending != 0) [[unlikely]]
+                        moveTo(nextRange(pending));
                     else
                         cur = nullptr; /// exhausted
                 }
@@ -567,6 +541,58 @@ struct RowRefList
         bool operator != (std::default_sentinel_t) const { return ok(); }
 
     private:
+        /// A run of a `TAG_RUN` / `TAG_CHAIN` word and the previous-range word that follows it.
+        struct RangeCursor
+        {
+            const UInt64 * cur = nullptr;
+            const UInt64 * run_end = nullptr;
+            UInt64 pending = 0;
+        };
+
+        /// The run and chain layouts are decoded out of line and returned by value: the `Batch` path
+        /// stays as small as it was without the tags, so the callers that iterate one key per map cell
+        /// (the non-joined fillers) keep inlining it, and the iterator never escapes into a call, which
+        /// would force its members onto the stack on every path.
+        static NO_INLINE RangeCursor startRanges(UInt64 word)
+        {
+            const RowRefList list = fromWord(word);
+            switch (word & TAG_MASK)
+            {
+                case TAG_RUN:
+                {
+                    const UInt64 * refs = list.runRefs();
+                    return {refs, refs + list.countField(), 0};
+                }
+                case TAG_CHAIN:
+                {
+                    const RangeHeader * header = list.chainHeader();
+                    return {header->refs(), header->refs() + header->ownLen(), header->prev};
+                }
+                default:
+                    chassert(false && "a build-time word reached a reader");
+                    return {};
+            }
+        }
+
+        /// The range before the one just exhausted; `pending` is the exhausted range's header's `prev`.
+        static NO_INLINE RangeCursor nextRange(UInt64 pending)
+        {
+            if (RangeHeader::prevHasHeader(pending))
+            {
+                const auto * header = reinterpret_cast<const RangeHeader *>(RangeHeader::prevPtr(pending));
+                return {header->refs(), header->refs() + header->ownLen(), header->prev};
+            }
+            const UInt64 * refs = RangeHeader::prevPtr(pending);
+            return {refs, refs + RangeHeader::prevLen(pending), 0};
+        }
+
+        void moveTo(RangeCursor range)
+        {
+            cur = range.cur;
+            run_end = range.run_end;
+            pending = range.pending;
+        }
+
         /// Run mode: `cur` walks the current contiguous run bounded by `run_end`. For a `Batch` chain
         /// `next_node` is the next overflow node (newest-first); for a range chain `pending` is the
         /// header's previous-range word (0 when none). `cur == nullptr` => range mode or done.
