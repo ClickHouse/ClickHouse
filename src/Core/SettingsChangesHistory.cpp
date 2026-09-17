@@ -41,6 +41,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.10",
+        {
+            {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
+            {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
+        });
         addSettingsChanges(settings_changes_history, "26.9",
         {
             {"allow_block_nested_loop_join", false, true, "New setting that gates the block nested loop join, which executes a `JOIN` whose `ON` section determines no join key instead of rejecting it with `INVALID_JOIN_ON_EXPRESSION`. The compatibility value 0 restores the previous behavior."},
