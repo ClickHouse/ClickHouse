@@ -259,3 +259,48 @@ SELECT 'test6_algo', merge_algorithm FROM system.part_log
     ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE t_ttl_vert_repl_off;
+
+-- Test 7: nothing reserves the name of the TTL filter column, so a table may already have one.
+-- The merge has to pick a free name instead: reading a user column as the filter would drop live
+-- rows, and the duplicate name breaks the merge outright once the column is part of the key.
+DROP TABLE IF EXISTS t_ttl_vert_filter_name;
+
+CREATE TABLE t_ttl_vert_filter_name
+(
+    id UInt64,
+    d DateTime,
+    _ttl_filter UInt8,
+    c1 UInt64
+)
+ENGINE = MergeTree
+ORDER BY (id, _ttl_filter)
+TTL d + INTERVAL 1 DAY
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
+    enable_block_number_column = 0,
+    enable_block_offset_column = 0,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    vertical_merge_optimize_ttl_delete = 1,
+    merge_with_ttl_timeout = 0,
+    ratio_of_defaults_for_sparse_serialization = 1.0;
+
+-- Keys 1 and 2 are live and carry the value the filter treats as "drop"; key 9 is the row the TTL
+-- is there to remove, so the merge takes the TTL delete path.
+INSERT INTO t_ttl_vert_filter_name VALUES
+    (1, '2100-01-01 00:00:00', 0, 101),
+    (2, '2100-01-01 00:00:00', 0, 102),
+    (9, '2000-01-01 00:00:00', 1, 109);
+
+OPTIMIZE TABLE t_ttl_vert_filter_name FINAL;
+
+SELECT 'test7_rows', id, _ttl_filter, c1 FROM t_ttl_vert_filter_name ORDER BY id;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT 'test7_algo', merge_algorithm FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_vert_filter_name' AND event_type = 'MergeParts'
+    AND merge_reason != 'TTLDropMerge'
+    ORDER BY event_time_microseconds LIMIT 1;
+
+DROP TABLE t_ttl_vert_filter_name;

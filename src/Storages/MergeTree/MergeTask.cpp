@@ -3021,8 +3021,10 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
         time_t current_time_,
-        bool force_)
-        : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_), getTraits())
+        bool force_,
+        const String & filter_column_name_)
+        : ITransformingStep(input_header_, TTLDeleteFilterTransform::transformHeader(input_header_, filter_column_name_), getTraits())
+        , filter_column_name(filter_column_name_)
     {
         /// Build TTL expressions once and share them across all per-stream
         /// transform instances created by `addSimpleTransform`. This ensures the
@@ -3044,15 +3046,15 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        pipeline.addSimpleTransform([state = shared_state](const SharedHeader & header)
+        pipeline.addSimpleTransform([state = shared_state, name = filter_column_name](const SharedHeader & header)
         {
-            return std::make_shared<TTLDeleteFilterTransform>(header, state);
+            return std::make_shared<TTLDeleteFilterTransform>(header, state, name);
         });
     }
 
     void updateOutputHeader() override
     {
-        output_header = TTLDeleteFilterTransform::transformHeader(input_headers.front());
+        output_header = TTLDeleteFilterTransform::transformHeader(input_headers.front(), filter_column_name);
     }
 
 private:
@@ -3072,6 +3074,7 @@ private:
     }
 
     std::shared_ptr<const TTLDeleteFilterTransform::SharedState> shared_state;
+    const String filter_column_name;
 };
 
 class TTLStep : public ITransformingStep
@@ -3475,13 +3478,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// stream has the filter column available for the merging algorithm.
     if (global_ctx->vertical_ttl_delete)
     {
+        global_ctx->ttl_filter_column_name
+            = TTLDeleteFilterTransform::chooseFilterColumnName(*merge_parts_query_plan.getCurrentHeader());
+
         auto ttl_filter_step = std::make_unique<TTLDeleteFilterStep>(
             merge_parts_query_plan.getCurrentHeader(),
             global_ctx->context,
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part->ttl_infos,
             global_ctx->time_of_merge,
-            ctx->force_ttl);
+            ctx->force_ttl,
+            global_ctx->ttl_filter_column_name);
 
         ttl_filter_step->setStepDescription("TTL delete filter");
         merge_parts_query_plan.addStep(std::move(ttl_filter_step));
@@ -3519,7 +3526,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         if (global_ctx->vertical_lightweight_delete)
             filter_column_name = RowExistsColumn::name;
         else if (global_ctx->vertical_ttl_delete)
-            filter_column_name = TTLDeleteFilterTransform::TTL_FILTER_COLUMN_NAME;
+            filter_column_name = global_ctx->ttl_filter_column_name;
 
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)

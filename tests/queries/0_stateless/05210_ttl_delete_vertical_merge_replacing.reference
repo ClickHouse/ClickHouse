@@ -24,3 +24,6 @@ test6_id_range	100	199
 test6_versions	[2]
 test6_cols	200	200	200
 test6_algo	Horizontal
+test7_rows	1	0	101
+test7_rows	2	0	102
+test7_algo	Vertical
