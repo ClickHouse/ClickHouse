@@ -203,6 +203,9 @@ function makeElement(tag) {
         transposeIfNeeded() {},
         _changeTableLayout() {},
         finalizeFailedTable() {},
+        /// Read by `postSingle` before a failed run drops its page (the offset the streamed rows
+        /// were numbered from); the stub never paginates, so it is the unpaginated first page.
+        _rowNumberOffset() { return 0; },
         start() {},
         finish() {},
         updateProgress() {},

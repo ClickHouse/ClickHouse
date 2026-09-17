@@ -167,10 +167,17 @@ void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeCacheIfExists(object.remote_path);
 }
 
-void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void CachedObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     for (const auto & object : objects)
+    {
         removeCacheIfExists(object.remote_path);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
