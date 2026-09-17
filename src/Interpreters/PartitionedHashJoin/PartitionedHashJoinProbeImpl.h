@@ -353,7 +353,7 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
     /// Serves as both the in-order second pass and the plain loop. With `precomputed` the lookup is
     /// the find pass's result, and the skip check compiles out because skipped rows were recorded as
     /// misses there. Everything downstream is the standard machinery.
-    auto loop = [&]<bool need_filter, bool with_skip, bool precomputed>(const ProbeScratch * results)
+    auto loop = [&]<bool need_filter, bool with_skip, bool precomputed, bool selector_is_range>(const ProbeScratch * results)
     {
         if constexpr (need_filter)
         {
@@ -363,13 +363,38 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
 
         using Mapped = typename MapNonConst::mapped_type;
 
+        /// The loop invariants as locals. Captured by reference they would live in the closure, whose
+        /// address the `appendFromBlock` call sees. The compiler then reloads the row count, the selector
+        /// (with its variant check), the key getter, the table and the output after every call: a dozen
+        /// loads per probe row that `HashJoinMethods::joinRightColumns` does not pay.
+        const size_t num_rows = rows;
+        AddedColumnsType & cols = added_columns;
+        const Map & map = table;
+        JoinStuff::JoinUsedFlags & flags = used_flags;
+        [[maybe_unused]] const UInt8 * const skip_local = skip_data;
+        /// A private copy keeps the key getter's column pointer in a register.
+        std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> keys = key_getter;
+        [[maybe_unused]] size_t selector_base = 0;
+        [[maybe_unused]] const UInt64 * selector_indexes = nullptr;
+        if constexpr (selector_is_range)
+            selector_base = selector.getRange().first;
+        else
+            selector_indexes = selector.getIndexes().getData().data();
+        auto index_at = [&](size_t k) __attribute__((always_inline))
+        {
+            if constexpr (selector_is_range)
+                return selector_base + k;
+            else
+                return static_cast<size_t>(selector_indexes[k]);
+        };
+
         IColumn::Offset current_offset = 0;
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t i = 0; i < num_rows; ++i)
         {
             if constexpr (can_prefetch && !precomputed)
                 prefetcher.prefetchAt(i);
 
-            const size_t ind = selector[i];
+            const size_t ind = index_at(i);
 
             bool right_row_found = false;
             KnownRowsHolder<flag_per_row> dummy_known_rows;
@@ -394,14 +419,14 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
                         auto mapped_value = mappedFromWord<Mapped>(word);
                         typename KeyGetter::FindResult find_result(&mapped_value, true, offset);
                         processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsShape, Map, KeyGetter>(
-                            find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
+                            find_result, cols, flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
                     }
                     else
                     {
                         typename KeyGetter::FindResult find_result(
                             reinterpret_cast<Mapped *>(word), true, offset); /// NOLINT(performance-no-int-to-ptr)
                         processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsShape, Map, KeyGetter>(
-                            find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
+                            find_result, cols, flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
                     }
                 }
             }
@@ -409,16 +434,16 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
             {
                 bool skip_row = false;
                 if constexpr (with_skip)
-                    skip_row = skip_data && skip_data[ind];
+                    skip_row = skip_local && skip_local[ind];
 
                 if (!skip_row)
                 {
-                    auto find_result = key_getter.findKey(table, ind, pool);
+                    auto find_result = keys.findKey(map, ind, pool);
                     if (find_result.isFound())
                     {
                         right_row_found = true;
                         processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsShape, Map, KeyGetter>(
-                            find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
+                            find_result, cols, flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
                     }
                 }
             }
@@ -426,13 +451,22 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
             if (!right_row_found)
             {
                 if constexpr (join_features.is_anti_join && join_features.left)
-                    setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-                addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);
+                    setUsed<need_filter>(cols.filter, i, cols.matched_rows);
+                addNotFoundRow<join_features.add_missing, join_features.need_replication>(cols, current_offset);
             }
 
             if constexpr (join_features.need_replication)
-                added_columns.offsets_to_replicate[i] = current_offset;
+                cols.offsets_to_replicate[i] = current_offset;
         }
+    };
+
+    /// `loop` over the block's selector kind, chosen once per block.
+    auto run_loop = [&]<bool need_filter, bool with_skip, bool precomputed>(const ProbeScratch * results)
+    {
+        if (selector.isContinuousRange())
+            loop.template operator()<need_filter, with_skip, precomputed, true>(results);
+        else
+            loop.template operator()<need_filter, with_skip, precomputed, false>(results);
     };
 
     /// Whether the second pass is `word_loop`. Three conditions hold. The recorded word is the mapped
@@ -746,9 +780,9 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
             else
             {
                 if (added_columns.need_filter)
-                    loop.template operator()<true, false, true>(&results);
+                    run_loop.template operator()<true, false, true>(&results);
                 else
-                    loop.template operator()<false, false, true>(&results);
+                    run_loop.template operator()<false, false, true>(&results);
             }
         }
     }
@@ -796,16 +830,16 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
             if (added_columns.need_filter)
             {
                 if (fast_path)
-                    loop.template operator()<true, false, false>(nullptr);
+                    run_loop.template operator()<true, false, false>(nullptr);
                 else
-                    loop.template operator()<true, true, false>(nullptr);
+                    run_loop.template operator()<true, true, false>(nullptr);
             }
             else
             {
                 if (fast_path)
-                    loop.template operator()<false, false, false>(nullptr);
+                    run_loop.template operator()<false, false, false>(nullptr);
                 else
-                    loop.template operator()<false, true, false>(nullptr);
+                    run_loop.template operator()<false, true, false>(nullptr);
             }
         }
     }
