@@ -812,6 +812,10 @@ static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 /// 04367_distributed_plan_merge_scatter_multishard; the second, materializing run of the
 /// transforms in `ReadFromMerge::buildPipeline` is fenced by `planContainsLogicalExchange`) —
 /// unless the query has subquery sets, whose plans a child fragment cannot carry anymore.
+///
+/// Each child takes its own decision when it is planned. The outer plan falls back on
+/// `ReadFromMerge` by design and turns `make_distributed_plan` off in the context these settings
+/// are built from, so an accepted child decision is restored here before it is re-applied.
 static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan)
 {
@@ -819,6 +823,8 @@ static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     optimization_settings.enable_parallel_replicas = false;
     if (queryHasSubquerySets(query_info))
         optimization_settings.make_distributed_plan = false;
+    else if (child_plan.staysDistributed())
+        optimization_settings.make_distributed_plan = true;
     /// Include the fallback decision here before call to optimize
     if (child_plan.isInitialized())
         child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
