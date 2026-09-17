@@ -12,6 +12,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
@@ -264,12 +265,26 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
 static NameSet collectIndicesRebuiltByMutation(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
+    const AlterConversionsPtr & alter_conversions,
     const MutationCommands & commands,
     bool suitable_for_ttl_optimization,
     bool materialize_ttl_recalculate_only,
     const ContextPtr & context)
 {
     NameSet rebuilt;
+
+    /// A column the part does not store may still be described by a missing-column marker in its
+    /// serialization infos, which records the type it was inserted with. `MutationsInterpreter::prepare`
+    /// reads the old type from that marker when the column files are absent, and treats a marker-only
+    /// `CLEAR COLUMN` like one over stored data; both lookups go by the name the part knows the column
+    /// under, so a rename this mutation applies on top is translated back first.
+    const auto & serialization_infos = part->getSerializationInfos();
+    auto markerName = [&](String name)
+    {
+        if (alter_conversions && alter_conversions->isColumnRenamed(name))
+            name = alter_conversions->getColumnOldName(name);
+        return name;
+    };
 
     bool rebuilds_every_index = std::ranges::any_of(
         commands, [](const auto & command) { return command.affectsAllColumns(); });
@@ -313,12 +328,19 @@ static NameSet collectIndicesRebuiltByMutation(
 
         if (command.type == MutationCommand::Type::READ_COLUMN)
         {
-            auto part_column = part->tryGetColumn(command.column_name);
-            if (part_column && command.data_type && !part_column->type->equals(*command.data_type))
+            DataTypePtr old_type;
+            if (auto part_column = part->tryGetColumn(command.column_name))
+                old_type = part_column->type;
+            else if (const auto * missing = serialization_infos.getMissingColumnInfo(markerName(command.column_name));
+                     missing && !missing->type_name.empty())
+                old_type = DataTypeFactory::instance().get(missing->type_name);
+
+            if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 type_changed_columns.insert(command.column_name);
         }
 
-        if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear && part->tryGetColumn(command.column_name))
+        if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear
+            && (part->tryGetColumn(command.column_name) || serialization_infos.isMissingColumn(markerName(command.column_name))))
             cleared_columns.insert(command.column_name);
 
         if (command.type != MutationCommand::Type::MATERIALIZE_TTL
@@ -955,6 +977,7 @@ static void splitAndModifyMutationCommands(
             auto rebuilt_indices = collectIndicesRebuiltByMutation(
                 part,
                 metadata_snapshot,
+                alter_conversions,
                 commands,
                 suitable_for_ttl_optimization,
                 (*part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only],
