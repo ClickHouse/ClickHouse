@@ -250,6 +250,7 @@ protected:
 
         UInt64 elapsedMilliseconds() const;
         UInt64 elapsedMilliseconds(const TimePoint & current) const;
+        UInt64 elapsedMicroseconds() const;
 
         std::chrono::time_point<std::chrono::system_clock> point;
     };

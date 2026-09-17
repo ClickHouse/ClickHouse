@@ -133,6 +133,15 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
+    /// The last mark ANY task of this part will read (the end of the part's
+    /// selected ranges, fixed at pool build) - the reader's prefetch edge.
+    /// 0 = unknown.
+    size_t planned_last_mark = 0;
+    /// The part's whole per-query assignment in marks (the request-map
+    /// FALLBACK: pools that pre-slice per-thread stripes pass a tighter
+    /// per-task list; pools with one sequential consumer per part - in-order,
+    /// projection-index - and merges use this).
+    std::vector<std::pair<size_t, size_t>> planned_ranges;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -161,6 +170,8 @@ public:
         MergeTreeReaderPtr prepared_index;
 
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
+        void updatePlannedLastMark(size_t planned_last_mark);
+        void updateRequestMap(std::vector<std::pair<size_t, size_t>> planned_mark_ranges);
     };
 
     struct BlockSizeParams
@@ -231,11 +242,18 @@ public:
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
+    /// `planned_ranges`, when non-empty, is THIS reader's stripe of the part
+    /// (the pool's per-thread slice, in marks - see
+    /// `MergeTreeReadPool::ThreadTask`): it becomes the readers' REQUEST MAP,
+    /// and its last mark narrows the announced planned read end from the
+    /// part's whole per-query assignment
+    /// (`MergeTreeReadTaskInfo::planned_last_mark`).
     static Readers createReaders(
         const MergeTreeReadTaskInfoPtr & read_info,
         const Extras & extras,
         const MarkRanges & ranges,
-        const std::vector<MarkRanges> & patches_ranges);
+        const std::vector<MarkRanges> & patches_ranges,
+        std::vector<std::pair<size_t, size_t>> planned_ranges = {});
 
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,

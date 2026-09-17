@@ -1,0 +1,35 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/disks/reader_executor_pin/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk_s3>
+            <!-- Explicit small segments: 5 MiB is not a divisor of the executor's
+                 16 MiB fill-ahead lead, so a horizon-bounded read-ahead window always
+                 ends strictly inside a segment - the partially downloaded segment the
+                 pin test needs. cache_on_write_operations=0 so the INSERT does not
+                 warm the cache; the scan under test populates it. -->
+            <disk_cache>
+                <type>cache</type>
+                <disk>disk_s3</disk>
+                <path>/disk_cache/</path>
+                <max_size>10Gi</max_size>
+                <max_file_segment_size>5Mi</max_file_segment_size>
+                <boundary_alignment>1Mi</boundary_alignment>
+                <cache_on_write_operations>0</cache_on_write_operations>
+            </disk_cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>disk_cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        </policies>
+    </storage_configuration>
+</clickhouse>

@@ -47,6 +47,8 @@ public:
 
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
+    void updatePlannedLastMark(size_t planned_last_mark) override;
+    void updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges) override;
 
     /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
     /// Looks up its own index name in the map.

@@ -283,6 +283,23 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
+void MergeTreeReaderWide::updatePlannedLastMark(size_t planned_last_mark)
+{
+    /// Also keep the reader's own settings current: streams are added lazily
+    /// (`addStream` during reads), and a stream born after this update must
+    /// start from the task series' current planned end, not the creation-time one.
+    settings.planned_last_mark = planned_last_mark;
+    for (auto & [_, stream] : streams)
+        stream->updatePlannedLastMark(planned_last_mark);
+}
+
+void MergeTreeReaderWide::updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges)
+{
+    settings.planned_mark_ranges = mark_ranges;
+    for (auto & [_, stream] : streams)
+        stream->updateRequestMap(mark_ranges);
+}
+
 MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
 {
     auto context = data_part_info_for_read->getContext();

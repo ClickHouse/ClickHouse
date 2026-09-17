@@ -26,6 +26,7 @@
     M(BucketedMetricLog,     bucketed_metric_log,  "Contains history of metrics values from tables system.metrics and system.events. Periodically flushed to disk. Single Map column form of system.metric_log with bucketed serialization.") \
     M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
     M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
+    M(ReaderExecutorLog,     reader_executor_log,  "Contains one row per ReaderExecutor at destruction, with per-reader byte counters split by tier (page cache, filesystem cache, source), request counts and a time breakdown.") \
     M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTree tables backed by a remote filesystem.") \
     M(ObjectStorageQueueLog, s3queue_log,          "Contains log entries with information about files processed by the S3Queue engine.") \
     M(ObjectStorageQueueLog, azure_queue_log,      "Contains log entries with information about files processed by the AzureQueue engine.") \

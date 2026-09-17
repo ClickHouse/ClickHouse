@@ -1,0 +1,50 @@
+<clickhouse>
+    <!-- Userspace page cache (block-granular, in-memory). Enabled by a non-zero
+         max size; the executor uses it for disks WITHOUT a file cache when
+         use_page_cache_for_disks_without_file_cache=1. Block size 1 MiB, so cached
+         holes can be small enough for the live connection to bridge - unlike the
+         4 MiB-aligned FileCache. -->
+    <page_cache_max_size>2Gi</page_cache_max_size>
+
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/disks/reader_executor_metric/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk_s3>
+            <!-- Cache layer at production geometry (32 MiB segments, 4 MiB alignment).
+                 cache_on_write_operations=0 so INSERT does not warm the cache; reads
+                 alone populate it, which lets the test control the cache state. -->
+            <disk_cache>
+                <type>cache</type>
+                <disk>disk_s3</disk>
+                <path>/disk_cache/</path>
+                <max_size>10Gi</max_size>
+                <max_file_segment_size>32Mi</max_file_segment_size>
+                <boundary_alignment>4Mi</boundary_alignment>
+                <cache_on_write_operations>0</cache_on_write_operations>
+            </disk_cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>disk_cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+            <!-- Raw S3, no file cache: the executor routes reads through the
+                 userspace page cache instead, exercising the block-granular
+                 (1 MiB) cache where the live-connection bridge can fire. -->
+            <s3_page>
+                <volumes>
+                    <main>
+                        <disk>disk_s3</disk>
+                    </main>
+                </volumes>
+            </s3_page>
+        </policies>
+    </storage_configuration>
+</clickhouse>

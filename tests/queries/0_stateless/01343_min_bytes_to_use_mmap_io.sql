@@ -1,4 +1,8 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-flaky-check
+
+-- this test checks I/O counters (CreatedReadBufferMMap) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 DROP TABLE IF EXISTS test_01343;
 -- min_bytes_for_full_part_storage = 0 forces full (non-packed) storage: a packed part keeps all
 -- columns in a single `data.packed` archive read through one buffer, so it creates no per-file mmap

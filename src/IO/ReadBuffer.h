@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
@@ -234,6 +236,22 @@ public:
     virtual void setReadUntilPosition(size_t /* position */) {}
 
     virtual void setReadUntilEnd() {}
+
+    /// The caller's TRUE final read boundary, when it knows more than the
+    /// current read-until position: a MergeTree reader advances
+    /// `setReadUntilPosition` per assigned mark range, while the end of the
+    /// LAST range the reader will ever be asked is known up front. A
+    /// read-ahead implementation must not speculate past this edge, but must
+    /// still serve reads beyond it (the edge bounds prefetch, not service).
+    /// Purely advisory; default no-op.
+    virtual void setPlannedReadEnd(size_t /* position */) {}
+
+    /// Advisory REQUEST MAP: the exact byte ranges (offset, size; sorted,
+    /// disjoint) the caller's whole assignment will read from this file.
+    /// Bounds read-ahead and fill sizing, never service; absent = the whole
+    /// file. A caller whose assignment changes (task switch) re-announces;
+    /// the new map REPLACES the old. Default: ignore.
+    virtual void setRequestMap(std::vector<std::pair<size_t, size_t>> /* ranges */) {}  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

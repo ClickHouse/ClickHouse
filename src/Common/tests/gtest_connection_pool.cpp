@@ -3,6 +3,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>

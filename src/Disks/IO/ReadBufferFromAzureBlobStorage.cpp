@@ -149,6 +149,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     String expected_etag_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
+    , blob_client(std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path_)))
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
     , max_single_download_retries(max_single_download_retries_)

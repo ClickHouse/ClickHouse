@@ -53,7 +53,9 @@ void OffsetMap::build(const StoredObjects & objects)
 
 VectorWithMemoryTracking<OffsetMap::ObjectRange> OffsetMap::map(ByteRange file_range) const
 {
-    chassert(file_range.end() <= total_size);
+    /// Callers may request past `total_size`: the executor's plan window over-reaches near EOF.
+    /// The scan clips every overlap to the segments, so an over-long range yields only the
+    /// in-file part (empty once fully past the last segment).
     VectorWithMemoryTracking<ObjectRange> result;
 
     /// Linear scan: a read spans a handful of objects at most (usually one), so a lookup index

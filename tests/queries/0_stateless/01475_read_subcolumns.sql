@@ -1,4 +1,7 @@
--- Tags: no-object-storage, no-random-settings, no-parallel
+-- Tags: no-object-storage, no-random-settings, no-parallel, no-flaky-check
+
+-- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
 
 SET use_uncompressed_cache = 0;
 

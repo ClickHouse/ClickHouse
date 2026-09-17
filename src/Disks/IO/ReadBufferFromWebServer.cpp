@@ -219,7 +219,9 @@ bool ReadBufferFromWebServer::nextImpl()
     }
     else
     {
-        if (working_buffer.begin() == impl->buffer().begin())
+        /// On the first call, working_buffer may not be initialized yet (the constructor passes
+        /// nullptr); skip the position sync in that case (else `position()` reads a null cursor).
+        if (working_buffer.begin() && working_buffer.begin() == impl->buffer().begin())
             impl->position() = position();
     }
 

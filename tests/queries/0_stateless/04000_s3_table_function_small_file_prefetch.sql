@@ -3,6 +3,10 @@
 -- - no-random-settings -- deterministic prefetch behavior
 -- - no-parallel-replicas -- other replicas may do prefetch
 --
+-- Pinned to the LEGACY read path (`use_reader_executor = 0`): this guards the legacy
+-- small-object prefetch gating (`RemoteFSPrefetches`); the experimental executor has its
+-- own prefetch machinery and does not emit these events.
+--
 -- Regression test: reading many small files via the s3() table function must use the initial
 -- prefetch path. A change that taught the read buffer to support readBigAt accidentally
 -- suppressed the small-object prefetch (it was gated on `!supportsReadAt()`), turning tiny-file
@@ -22,7 +26,8 @@ SETTINGS s3_truncate_on_insert = 1;
 -- reading the data (optimize_count_from_files) and would not exercise the prefetch path.
 SELECT * FROM s3(s3_conn, filename='04000_prefetch_*.tsv', format='TSV', structure='a UInt64, b String')
 FORMAT Null
-SETTINGS max_threads = 1,
+SETTINGS use_reader_executor = 0,
+         max_threads = 1,
          remote_filesystem_read_method = 'threadpool',
          remote_filesystem_read_prefetch = 1,
          enable_filesystem_cache = 0,
@@ -36,7 +41,8 @@ SETTINGS max_threads = 1,
 -- (e.g. `S3Queue` ingestion of many small files).
 SELECT * FROM s3(s3_conn, filename='04000_prefetch_*.tsv', format='TSV', structure='a UInt64, b String')
 FORMAT Null
-SETTINGS max_threads = 1,
+SETTINGS use_reader_executor = 0,
+         max_threads = 1,
          remote_filesystem_read_method = 'threadpool',
          remote_filesystem_read_prefetch = 1,
          filesystem_cache_name = 'cache_for_readbigat',

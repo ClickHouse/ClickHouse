@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <base/sort.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Poco/Net/HTTPRequest.h>
@@ -33,7 +34,6 @@
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 #include <Core/UUID.h>
-#include <base/sleep.h>
 
 namespace fs = std::filesystem;
 
