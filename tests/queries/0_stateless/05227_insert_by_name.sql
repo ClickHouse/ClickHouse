@@ -51,6 +51,18 @@ SELECT a, b FROM input() FORMAT TSV
 42	hello
 SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
 
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT b FROM input() FORMAT TSV
+hello
+SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
+
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT b, a FROM input() FORMAT TSV
+hello	100
+SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
+
 SELECT JSONExtractBool(
     parseQueryToJSON('INSERT INTO insert_by_name_dst_05227 BY NAME SELECT 1 AS a'),
     'by_name')
