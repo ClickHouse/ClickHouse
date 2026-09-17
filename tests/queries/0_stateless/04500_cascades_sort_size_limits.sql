@@ -19,7 +19,7 @@ INSERT INTO t_sort_limits SELECT number, number * 2 FROM numbers(100000);
 
 SELECT '-- max_rows_to_sort is enforced under Cascades';
 SELECT * FROM t_sort_limits ORDER BY v FORMAT Null
-SETTINGS max_rows_to_sort = 10, sort_overflow_mode = 'throw', distributed_plan_execute_locally = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SETTINGS max_rows_to_sort = 10, sort_overflow_mode = 'throw', distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0; -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 SELECT '-- Baseline without Cascades fails the same way';
 SELECT * FROM t_sort_limits ORDER BY v FORMAT Null
