@@ -148,9 +148,6 @@ public:
         /// All work is done (all data is processed or all output are closed), nothing more to do.
         Finished,
 
-        /// No one needs data on output ports.
-        /// Unneeded,
-
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
@@ -169,7 +166,7 @@ public:
       *
       * It may access input and output ports,
       *  indicate the need for work by another processor by returning NeedData or PortFull,
-      *  or indicate the absence of work by returning Finished or Unneeded,
+      *  or indicate that processing has finished by returning `Finished`,
       *  it may pull data from input ports and push data to output ports.
       *
       * The method is not thread-safe and must be called from a single thread in one moment of time,
