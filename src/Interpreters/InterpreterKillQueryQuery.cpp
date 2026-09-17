@@ -68,7 +68,7 @@ static const char * cancellationCodeToStatus(CancellationCode code)
 struct SelfKillTarget
 {
     String query_id;
-    String user;
+    UUID user_id;
 };
 
 
@@ -100,77 +100,65 @@ static bool matchColumnEqualsStringLiteral(const IAST & ast, std::string_view co
 }
 
 
-/// The string `ProcessList` keys this caller's queries by. Empty when the statement is not running as a
-/// registered query, and there is then no identity to scope a kill to.
-static std::optional<String> tryGetCallerUserName(const ContextPtr & context)
-{
-    if (auto element = context->getProcessListElement())
-        return element->getClientInfo().current_user;
-    return {};
-}
-
-
-/// `query_id = '<id>'`, optionally `AND user = '<the caller>'`; anything else is nullopt and so fails closed.
+/// `KILL QUERY` is deliberately not required here: its holder's ordinary path also throws for want of that
+/// `SELECT`, so requiring it would let granting a privilege take an ability away.
 static std::optional<SelfKillTarget> trySelfKillTarget(const ASTKillQueryQuery & query, const ContextPtr & context)
 {
     if (query.type != ASTKillQueryQuery::Type::Query || !query.where_expression)
         return {};
 
-    auto caller = tryGetCallerUserName(context);
-    if (!caller)
-        return {};
-
     String query_id;
-    if (matchColumnEqualsStringLiteral(*query.where_expression, "query_id", query_id))
-        return SelfKillTarget{std::move(query_id), std::move(*caller)};
-
-    const auto * conjunction = query.where_expression->as<ASTFunction>();
-    if (!conjunction || conjunction->name != "and" || !conjunction->arguments || conjunction->arguments->children.size() != 2)
+    if (!matchColumnEqualsStringLiteral(*query.where_expression, "query_id", query_id))
         return {};
 
-    const auto & first = *conjunction->arguments->children[0];
-    const auto & second = *conjunction->arguments->children[1];
-
-    String user;
-    const bool matched
-        = (matchColumnEqualsStringLiteral(first, "query_id", query_id) && matchColumnEqualsStringLiteral(second, "user", user))
-        || (matchColumnEqualsStringLiteral(second, "query_id", query_id) && matchColumnEqualsStringLiteral(first, "user", user));
-
-    if (!matched || user != *caller)
+    /// Every column the read below names needs its own `SELECT` grant, hence exactly these three.
+    static const Strings kill_query_columns{"query_id", "user", "query"};
+    if (context->getAccess()->isGranted(AccessType::SELECT, "system", "processes", kill_query_columns))
         return {};
 
-    return SelfKillTarget{std::move(query_id), std::move(*caller)};
+    auto user_id = context->getUserID();
+    if (!user_id)
+        return {};
+
+    return SelfKillTarget{std::move(query_id), *user_id};
 }
 
 
-/// An absent id and an id owned by another user both give an empty block, which is what a read of
-/// `system.processes` returns for a predicate matching no row.
-static Block ownRunningQueryBlock(ProcessList & process_list, const SelfKillTarget & target)
+enum class SelfKillOutcome : uint8_t
+{
+    Found,
+    SkippedSelf,
+    Missing,
+};
+
+
+/// The three columns are always present, so a lookup that finds nothing is the empty result a read of
+/// `system.processes` gives for a predicate matching no row: an absent id and another user's are the same.
+static std::pair<SelfKillOutcome, Block>
+ownRunningQueryBlock(ProcessList & process_list, const SelfKillTarget & target, const ContextPtr & context)
 {
     auto query_id_column = ColumnString::create();
     auto user_column = ColumnString::create();
     auto query_column = ColumnString::create();
 
-    if (auto query_text = process_list.tryGetQueryTextOfUserQuery(target.query_id, target.user))
+    auto outcome = SelfKillOutcome::Missing;
+    /// `extractQueriesExceptMeAndCheckAccess` skips the row of the caller's own KILL statement.
+    if (target.query_id == context->getProcessListElement()->getClientInfo().current_query_id)
+        outcome = SelfKillOutcome::SkippedSelf;
+    else if (auto own_query = process_list.tryGetOwnRunningQuery(target.query_id, target.user_id))
     {
         query_id_column->insert(target.query_id);
-        user_column->insert(target.user);
-        query_column->insert(*query_text);
+        user_column->insert(own_query->user);
+        query_column->insert(own_query->query);
+        outcome = SelfKillOutcome::Found;
     }
 
-    return Block{
-        {std::move(query_id_column), std::make_shared<DataTypeString>(), "query_id"},
-        {std::move(user_column), std::make_shared<DataTypeString>(), "user"},
-        {std::move(query_column), std::make_shared<DataTypeString>(), "query"}};
-}
-
-
-static ASTPtr canonicalSelfKillPredicate(const SelfKillTarget & target)
-{
-    return makeASTFunction(
-        "and",
-        makeASTFunction("equals", make_intrusive<ASTIdentifier>("query_id"), make_intrusive<ASTLiteral>(target.query_id)),
-        makeASTFunction("equals", make_intrusive<ASTIdentifier>("user"), make_intrusive<ASTLiteral>(target.user)));
+    return {
+        outcome,
+        Block{
+            {std::move(query_id_column), std::make_shared<DataTypeString>(), "query_id"},
+            {std::move(user_column), std::make_shared<DataTypeString>(), "user"},
+            {std::move(query_column), std::make_shared<DataTypeString>(), "query"}}};
 }
 
 
@@ -178,11 +166,13 @@ struct QueryDescriptor
 {
     String query_id;
     String user;
+    /// Set to cancel the entry only while it still belongs to this principal.
+    std::optional<UUID> user_id;
     size_t source_num;
     bool processed = false;
 
-    QueryDescriptor(String query_id_, String user_, size_t source_num_, bool processed_ = false)
-        : query_id(std::move(query_id_)), user(std::move(user_)), source_num(source_num_), processed(processed_) {}
+    QueryDescriptor(String query_id_, String user_, size_t source_num_, bool processed_ = false, std::optional<UUID> user_id_ = {})
+        : query_id(std::move(query_id_)), user(std::move(user_)), user_id(user_id_), source_num(source_num_), processed(processed_) {}
 };
 
 using QueryDescriptors = std::vector<QueryDescriptor>;
@@ -243,6 +233,21 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
+/// Row-driven like the function above, so a block carrying no row yields no descriptor.
+static QueryDescriptors selfKillDescriptors(const Block & processes_block, const SelfKillTarget & target)
+{
+    QueryDescriptors res;
+
+    const ColumnString & query_id_col = typeid_cast<const ColumnString &>(*processes_block.getByName("query_id").column);
+    const ColumnString & user_col = typeid_cast<const ColumnString &>(*processes_block.getByName("user").column);
+
+    for (size_t i = 0, num_processes = processes_block.rows(); i < num_processes; ++i)
+        res.emplace_back(String{query_id_col.getDataAt(i)}, String{user_col.getDataAt(i)}, i, false, target.user_id);
+
+    return res;
+}
+
+
 class SyncKillQuerySource final : public ISource
 {
 public:
@@ -280,7 +285,9 @@ public:
 
                 LOG_DEBUG(getLogger("KillQuery"), "Will kill query {} (synchronously)", curr_process.query_id);
 
-                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user);
+                auto code = curr_process.user_id
+                    ? process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, *curr_process.user_id)
+                    : process_list.sendCancelToQuery(curr_process.query_id, curr_process.user);
 
                 if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
                 {
@@ -322,20 +329,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
-
-        ASTPtr query_to_queue = query_ptr;
-
-        /// Queue the caller's identity written by the server, not the id alone: access is checked on the
-        /// initiator only, and a worker runs DDL with no bound user (so, with full access) unless
-        /// `distributed_ddl_use_initial_user_and_roles` is on.
-        if (auto self_kill = trySelfKillTarget(query, getContext()))
-        {
-            query_to_queue = query_ptr->clone();
-            auto & kill_to_queue = query_to_queue->as<ASTKillQueryQuery &>();
-            kill_to_queue.setOrReplace(kill_to_queue.where_expression, canonicalSelfKillPredicate(*self_kill));
-        }
-
-        return executeDDLQueryOnCluster(query_to_queue, getContext(), params);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     BlockIO res_io;
@@ -343,22 +337,27 @@ BlockIO InterpreterKillQueryQuery::execute()
     {
     case ASTKillQueryQuery::Type::Query:
     {
-        static const Strings kill_query_columns{"query_id", "user", "query"};
-        const bool can_read_processes
-            = getContext()->getAccess()->isGranted(AccessType::SELECT, "system", "processes", kill_query_columns);
+        auto self_kill = trySelfKillTarget(query, getContext());
 
-        std::optional<SelfKillTarget> self_kill;
-        if (!can_read_processes)
-            self_kill = trySelfKillTarget(query, getContext());
+        std::optional<SelfKillOutcome> outcome;
+        Block own_block;
+        if (self_kill)
+            std::tie(outcome, own_block) = ownRunningQueryBlock(getContext()->getProcessList(), *self_kill, getContext());
 
-        Block processes_block = self_kill
-            ? ownRunningQueryBlock(getContext()->getProcessList(), *self_kill)
+        /// A `KILL QUERY` holder naming somebody else's id gets the ordinary path's error, not a no-op.
+        const bool reduced = outcome
+            && (*outcome != SelfKillOutcome::Missing || !getContext()->getAccess()->isGranted(AccessType::KILL_QUERY));
+
+        Block processes_block = reduced
+            ? std::move(own_block)
             : getSelectResult("query_id, user, query", "system.processes");
         if (processes_block.empty())
             return res_io;
 
         ProcessList & process_list = getContext()->getProcessList();
-        QueryDescriptors queries_to_stop = extractQueriesExceptMeAndCheckAccess(processes_block, getContext());
+        QueryDescriptors queries_to_stop = reduced
+            ? selfKillDescriptors(processes_block, *self_kill)
+            : extractQueriesExceptMeAndCheckAccess(processes_block, getContext());
 
         auto header = processes_block.cloneEmpty();
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
@@ -370,7 +369,11 @@ BlockIO InterpreterKillQueryQuery::execute()
             {
                 if (!query.test)
                     LOG_DEBUG(getLogger("KillQuery"), "Will kill query {} (asynchronously)", query_desc.query_id);
-                auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user);
+                CancellationCode code = CancellationCode::Unknown;
+                if (!query.test)
+                    code = query_desc.user_id
+                        ? process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, *query_desc.user_id)
+                        : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user);
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
 
@@ -610,11 +613,7 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
     AccessRightsElements required_access;
     if (query.type == ASTKillQueryQuery::Type::Query)
-    {
-        /// `AccessType::CLUSTER`, checked unconditionally by `executeDDLQueryOnCluster`, still applies.
-        if (!trySelfKillTarget(query, getContext()))
-            required_access.emplace_back(AccessType::KILL_QUERY);
-    }
+        required_access.emplace_back(AccessType::KILL_QUERY);
     else if (query.type == ASTKillQueryQuery::Type::Mutation)
         required_access.emplace_back(
                 AccessType::ALTER_UPDATE

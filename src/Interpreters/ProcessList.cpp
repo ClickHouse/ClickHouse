@@ -124,6 +124,10 @@ ProcessList::EntryPtr ProcessList::insert(
     const ClientInfo & client_info = query_context->getClientInfo();
     const Settings & settings = query_context->getSettingsRef();
 
+    /// Read before `mutex` is taken: `Context::getUserID` locks the context, and `QueryStatus` is
+    /// constructed with `mutex` held (see the constructor's own note about holding both locks).
+    const std::optional<UUID> user_id = query_context->getUserID();
+
     if (client_info.current_query_id.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
@@ -364,6 +368,7 @@ ProcessList::EntryPtr ProcessList::insert(
             query_,
             normalized_query_hash,
             client_info,
+            user_id,
             priorities.insert(
                 settings[Setting::priority],
                 saturatedMilliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
@@ -509,6 +514,7 @@ QueryStatus::QueryStatus(
     const String & query_,
     UInt64 normalized_query_hash_,
     const ClientInfo & client_info_,
+    const std::optional<UUID> & user_id_,
     QueryPriorities::Handle && priority_handle_,
     QuerySlotPtr && query_slot_,
     MemoryReservationPtr && memory_reservation_,
@@ -521,6 +527,7 @@ QueryStatus::QueryStatus(
     , query(query_)
     , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
+    , user_id(user_id_)
     , query_slot(std::move(query_slot_))
     , memory_reservation(std::move(memory_reservation_))
     , thread_group(std::move(thread_group_))
@@ -767,19 +774,25 @@ QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_quer
 }
 
 
-std::optional<String> ProcessList::tryGetQueryTextOfUserQuery(const String & current_query_id, const String & current_user)
+std::optional<ProcessList::OwnQuery> ProcessList::tryGetOwnRunningQuery(const String & current_query_id, const UUID & user_id)
 {
     LockAndBlocker lock(mutex);
 
-    /// `query` is set by the constructor and never mutated afterwards, so plain reads are safe.
-    if (auto elem = tryGetProcessListElement(current_query_id, current_user))
-        return elem->query;
+    auto query_user = queries_to_user.find(current_query_id);
+    if (query_user == queries_to_user.end())
+        return {};
 
-    return {};
+    /// `query` is set by the constructor and never mutated afterwards, so plain reads are safe.
+    auto elem = tryGetProcessListElement(current_query_id, query_user->second);
+    if (!elem || elem->user_id != user_id)
+        return {};
+
+    return OwnQuery{query_user->second, elem->query};
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+CancellationCode ProcessList::sendCancelToQueryImpl(
+    const String & current_query_id, const String & current_user, const std::optional<UUID> & expected_user_id)
 {
     QueryStatusPtr elem;
 
@@ -798,7 +811,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     {
         LockAndBlocker lock(mutex);
         elem = tryGetProcessListElement(current_query_id, current_user);
-        if (!elem)
+        if (!elem || (expected_user_id && elem->user_id != *expected_user_id))
             return CancellationCode::NotFound;
         elem->is_cancelling = true;
     }
@@ -812,6 +825,19 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     });
 
     return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user)
+{
+    return sendCancelToQueryImpl(current_query_id, current_user, {});
+}
+
+
+CancellationCode ProcessList::sendCancelToQuery(
+    const String & current_query_id, const String & current_user, const UUID & expected_user_id)
+{
+    return sendCancelToQueryImpl(current_query_id, current_user, expected_user_id);
 }
 
 

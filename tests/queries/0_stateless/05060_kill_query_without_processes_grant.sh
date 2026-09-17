@@ -6,12 +6,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 U1="u1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 U2="u2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+U3="u3_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+A1="a1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+A2="a2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ID="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2"
-$CLICKHOUSE_CLIENT -q "CREATE USER $U1, $U2 IDENTIFIED WITH no_password"
-# Deliberately no SELECT on system.processes and no KILL QUERY for either user.
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $U1, $U2"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $A1, ${A1}_renamed, $A2, ${A2}_new"
+$CLICKHOUSE_CLIENT -q "CREATE USER $U1, $U2, $U3 IDENTIFIED WITH no_password"
+# Deliberately no SELECT on system.processes for any user under test.
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $U1, $U2, $U3"
+$CLICKHOUSE_CLIENT -q "GRANT KILL QUERY ON *.* TO $U3"
 
 # $1 = user, $2 = query_id. Every poll loop is bounded so a regression fails instead of hanging.
 function start_victim()
@@ -61,6 +65,16 @@ function denial()
     fi
 }
 
+# A caller who is refused must be refused for want of the grant, not answered with an empty result.
+function processes_grant_denial()
+{
+    if grep -q -F "the grant SELECT ON system.processes" <<< "$1"; then
+        echo "needs SELECT ON system.processes"
+    else
+        echo "unexpected: $1"
+    fi
+}
+
 echo "-- 1. own query by id, holding neither grant"
 start_victim "$U1" "own_$ID"
 OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'own_$ID' ASYNC" 2>&1)
@@ -80,40 +94,20 @@ echo "-- 3. an id nobody is running: no rows, no error"
 OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE query_id = 'absent_$ID' ASYNC" 2>&1)
 echo "rows: $(echo -n "$OUT" | grep -c .)"
 
-echo "-- 4. a condition that is not a by-id self kill still needs the grant"
+echo "-- 4. every condition other than the one matched shape behaves as before"
 OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q "KILL QUERY WHERE user = currentUser() ASYNC" 2>&1)
 denial "$OUT"
-
-echo "-- 5. the canonical predicate, which ON CLUSTER queues verbatim"
-start_victim "$U1" "canon_$ID"
+start_victim "$U1" "conj_$ID"
 OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q \
-    "KILL QUERY WHERE query_id = 'canon_$ID' AND user = '$U1' ASYNC" 2>&1)
-echo "rows: $(echo -n "$OUT" | grep -c .)"
-echo "status: $(echo "$OUT" | cut -f1)"
-echo "victim: $(wait_gone "canon_$ID")"
-drop_victim "canon_$ID"
-
-echo "-- 6. a foreign user literal does not qualify"
-start_victim "$U2" "foreign_$ID"
-OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q \
-    "KILL QUERY WHERE query_id = 'foreign_$ID' AND user = '$U2' ASYNC" 2>&1)
+    "KILL QUERY WHERE query_id = 'conj_$ID' AND user = '$U1' ASYNC" 2>&1)
 denial "$OUT"
-echo "victim: $(running "foreign_$ID")"
-drop_victim "foreign_$ID"
+echo "victim: $(running "conj_$ID")"
+drop_victim "conj_$ID"
 
 echo "-- 7. a qualified column name is not matched"
 OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q \
     "KILL QUERY WHERE processes.query_id = 'own_$ID' ASYNC" 2>&1)
 denial "$OUT"
-
-echo "-- 8. the same predicate written as the function calls it serializes to"
-start_victim "$U1" "serialized_$ID"
-OUT=$($CLICKHOUSE_CLIENT --user "$U1" -q \
-    "KILL QUERY WHERE and(equals(query_id, 'serialized_$ID'), equals(user, '$U1')) ASYNC" 2>&1)
-echo "rows: $(echo -n "$OUT" | grep -c .)"
-echo "status: $(echo "$OUT" | cut -f1)"
-echo "victim: $(wait_gone "serialized_$ID")"
-drop_victim "serialized_$ID"
 
 echo "-- 9. holding the grants keeps the ordinary path, including other users' queries"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.processes TO $U1"
@@ -125,4 +119,41 @@ echo "status: $(echo "$OUT" | cut -f1)"
 echo "victim: $(wait_gone "granted_$ID")"
 drop_victim "granted_$ID"
 
-$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2"
+echo "-- 10. KILL QUERY without the SELECT grant, aimed at another user's id"
+start_victim "$U2" "foreign_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U3" -q "KILL QUERY WHERE query_id = 'foreign_$ID' ASYNC" 2>&1)
+processes_grant_denial "$OUT"
+echo "victim: $(running "foreign_$ID")"
+drop_victim "foreign_$ID"
+
+echo "-- 11. a recreated name is a different principal and reaches nothing"
+$CLICKHOUSE_CLIENT -q "CREATE USER $A1 IDENTIFIED WITH no_password"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $A1"
+start_victim "$A1" "reused_$ID"
+$CLICKHOUSE_CLIENT -q "ALTER USER $A1 RENAME TO ${A1}_renamed"
+$CLICKHOUSE_CLIENT -q "CREATE USER $A1 IDENTIFIED WITH no_password"
+OUT=$($CLICKHOUSE_CLIENT --user "$A1" -q "KILL QUERY WHERE query_id = 'reused_$ID' ASYNC" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "victim: $(running "reused_$ID")"
+drop_victim "reused_$ID"
+
+echo "-- 12. KILL QUERY without the SELECT grant, aimed at its holder's own id"
+start_victim "$U3" "kqown_$ID"
+OUT=$($CLICKHOUSE_CLIENT --user "$U3" -q "KILL QUERY WHERE query_id = 'kqown_$ID' ASYNC" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "status: $(echo "$OUT" | cut -f1)"
+echo "victim: $(wait_gone "kqown_$ID")"
+drop_victim "kqown_$ID"
+
+echo "-- 13. a renamed principal still reaches the query it started under the old name"
+$CLICKHOUSE_CLIENT -q "CREATE USER $A2 IDENTIFIED WITH no_password"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON system.numbers TO $A2"
+start_victim "$A2" "renamed_$ID"
+$CLICKHOUSE_CLIENT -q "ALTER USER $A2 RENAME TO ${A2}_new"
+OUT=$($CLICKHOUSE_CLIENT --user "${A2}_new" -q "KILL QUERY WHERE query_id = 'renamed_$ID' ASYNC" 2>&1)
+echo "rows: $(echo -n "$OUT" | grep -c .)"
+echo "status: $(echo "$OUT" | cut -f1)"
+echo "victim: $(wait_gone "renamed_$ID")"
+drop_victim "renamed_$ID"
+
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $U1, $U2, $U3, $A1, ${A1}_renamed, $A2, ${A2}_new"

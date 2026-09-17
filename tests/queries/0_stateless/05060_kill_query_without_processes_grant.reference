@@ -7,22 +7,27 @@ rows: 0
 victim: 1
 -- 3. an id nobody is running: no rows, no error
 rows: 0
--- 4. a condition that is not a by-id self kill still needs the grant
+-- 4. every condition other than the one matched shape behaves as before
 ACCESS_DENIED
--- 5. the canonical predicate, which ON CLUSTER queues verbatim
-rows: 1
-status: waiting
-victim: gone
--- 6. a foreign user literal does not qualify
 ACCESS_DENIED
 victim: 1
 -- 7. a qualified column name is not matched
 ACCESS_DENIED
--- 8. the same predicate written as the function calls it serializes to
+-- 9. holding the grants keeps the ordinary path, including other users' queries
 rows: 1
 status: waiting
 victim: gone
--- 9. holding the grants keeps the ordinary path, including other users' queries
+-- 10. KILL QUERY without the SELECT grant, aimed at another user's id
+needs SELECT ON system.processes
+victim: 1
+-- 11. a recreated name is a different principal and reaches nothing
+rows: 0
+victim: 1
+-- 12. KILL QUERY without the SELECT grant, aimed at its holder's own id
+rows: 1
+status: waiting
+victim: gone
+-- 13. a renamed principal still reaches the query it started under the old name
 rows: 1
 status: waiting
 victim: gone
