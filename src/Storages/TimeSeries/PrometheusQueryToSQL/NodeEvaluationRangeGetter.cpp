@@ -69,9 +69,7 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "end_time is not specified");
         if (*settings_.start_time > *settings_.end_time)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "start_time must not be greater than end_time");
-        const bool has_range = *settings_.start_time < *settings_.end_time;
-        const bool is_query_range = settings_.mode == PrometheusQueryEvaluationMode::QUERY_RANGE;
-        if (has_range || is_query_range)
+        if (*settings_.start_time < *settings_.end_time)
         {
             if (!settings_.step)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "step is not specified");
@@ -80,11 +78,8 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
         }
         range.start_time = *settings_.start_time;
         range.end_time = *settings_.end_time;
-        range.step = (has_range || is_query_range) ? *settings_.step : DurationType{0};
+        range.step = (*settings_.start_time < *settings_.end_time) ? *settings_.step : DurationType{0};
     }
-
-    query_start_time = range.start_time;
-    query_end_time = range.end_time;
 
     visitNode(root, range);
     setWindows();
@@ -104,26 +99,13 @@ void NodeEvaluationRangeGetter::visitChildren(const Node * node, const NodeEvalu
     {
         case NodeType::Offset:
         {
-            const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(node);
+            const auto * offset_node = static_cast<const PQT::Offset *>(node);
             const auto * expression = offset_node->getExpression();
             NodeEvaluationRange expression_range = range;
-            switch (offset_node->at_modifier)
+            if (auto timestamp = offset_node->at_timestamp)
             {
-                case PrometheusQueryTree::Offset::AtModifier::None:
-                    break;
-                case PrometheusQueryTree::Offset::AtModifier::Timestamp:
-                    chassert(offset_node->at_timestamp);
-                    expression_range.start_time = *offset_node->at_timestamp;
-                    expression_range.end_time = *offset_node->at_timestamp;
-                    break;
-                case PrometheusQueryTree::Offset::AtModifier::Start:
-                    expression_range.start_time = query_start_time;
-                    expression_range.end_time = query_start_time;
-                    break;
-                case PrometheusQueryTree::Offset::AtModifier::End:
-                    expression_range.start_time = query_end_time;
-                    expression_range.end_time = query_end_time;
-                    break;
+                expression_range.start_time = *timestamp;
+                expression_range.end_time = *timestamp;
             }
             if (auto offset_value = offset_node->offset_value)
             {
@@ -136,7 +118,7 @@ void NodeEvaluationRangeGetter::visitChildren(const Node * node, const NodeEvalu
 
         case NodeType::Subquery:
         {
-            const auto * subquery_node = static_cast<const PrometheusQueryTree::Subquery *>(node);
+            const auto * subquery_node = static_cast<const PQT::Subquery *>(node);
             auto subquery_range = subquery_node->range;
 
             DurationType step;
@@ -189,7 +171,7 @@ void NodeEvaluationRangeGetter::setWindows()
     {
         if (node->node_type == NodeType::RangeSelector)
         {
-            const auto * range_selector_node = static_cast<const PrometheusQueryTree::RangeSelector *>(node);
+            const auto * range_selector_node = static_cast<const PQT::RangeSelector *>(node);
             auto range = range_selector_node->range;
             node_range.window = range;
             const auto * instant_selector_node = range_selector_node->getInstantSelector();
@@ -202,7 +184,7 @@ void NodeEvaluationRangeGetter::setWindows()
         {
             /// We propagate the range of a subquery up to its parents until we meet a range-vector function
             /// (e.g. avg_over_time) if any, so such function could user a proper window.
-            const auto * subquery_node = static_cast<const PrometheusQueryTree::Subquery *>(node);
+            const auto * subquery_node = static_cast<const PQT::Subquery *>(node);
             auto range = subquery_node->range;
             node_range.window = range;
             propagateRangeToParents(node, range);
@@ -211,7 +193,7 @@ void NodeEvaluationRangeGetter::setWindows()
 }
 
 
-void NodeEvaluationRangeGetter::propagateRangeToParents(const PrometheusQueryTree::Node * node, Decimal64 range)
+void NodeEvaluationRangeGetter::propagateRangeToParents(const PQT::Node * node, Decimal64 range)
 {
     chassert(node->result_type == ResultType::RANGE_VECTOR);
     const auto * parent = node->parent;
