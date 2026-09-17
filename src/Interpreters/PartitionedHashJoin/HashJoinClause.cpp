@@ -70,6 +70,9 @@ namespace
 constexpr size_t max_plan_bits = 15;
 
 constexpr size_t locator_piece_rows = 32768; /// locator synthesis scratch stays L2-resident
+/// A single fill thread inserts in sections of this many rows and may finish its duplicate scratch after
+/// each; a section's duplicated cells, its scratch and the spans it writes stay L2-resident.
+constexpr size_t single_lane_section_rows = 32768;
 
 size_t ceilDiv(size_t a, size_t b)
 {
@@ -424,16 +427,17 @@ KeyGetter makeSectionKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & 
         return KeyGetter(key_columns, key_sizes, nullptr);
 }
 
-/// Inserts one compact section into the shared table on behalf of the owner of `target.range_end`.
-/// Semantics match `insertFromBlockImplTypeCase`: one hash per build row, then the value shape's own append.
-/// The recorded ref comes from the scattered locator column, 8-byte encoded or 4-byte packed.
-/// On the single-partition path it is `RowRef(block_no, i)`, with `skip_bytes` excluding rows that
-/// must not be inserted.
+/// Inserts one compact section - rows `[first_row, first_row + rows)` of the columns - into the shared
+/// table on behalf of the owner of `target.range_end`. Semantics match `insertFromBlockImplTypeCase`:
+/// one hash per build row, then the value shape's own append. The recorded ref comes from the
+/// scattered locator column, 8-byte encoded or 4-byte packed. On the single-partition path it is
+/// `RowRef(block_no, i)`, with `skip_bytes` excluding rows that must not be inserted.
 template <typename KeyGetter, typename Table>
 void insertSectionShared(
     InsertTarget<Table> & target,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
+    size_t first_row,
     size_t rows,
     const UInt64 * locators,
     const UInt32 * narrow_locators,
@@ -456,6 +460,9 @@ void insertSectionShared(
     }
 
     auto key_getter = makeSectionKeyGetter<KeyGetter, mapped_asof>(key_columns, key_sizes);
+
+    /// Sections start past row 0 only on the single fill thread, whose wrapping target never runs the ring.
+    chassert(first_row == 0 || target.wrap);
 
     /// The ring replaces the sequential loop once the caller has decided the cell misses dominate
     /// and the section is long enough to amortize prime and drain. ASOF stays sequential: appending
@@ -482,19 +489,22 @@ void insertSectionShared(
     if constexpr (can_prefetch)
         use_prefetch = enable_prefetch && target.table.reservedBytes() > getMinBytesForPrefetchInJoin();
 
+    /// The prefetcher counts the section's own rows. It calibrates its look-ahead at a fixed iteration
+    /// from the start of the loop it drives; fed absolute row numbers, a section starting past row 0
+    /// would keep the uncalibrated minimum for all of its rows.
     auto prefetcher = makeJoinPrefetcher(
         use_prefetch,
         rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                target.table.prefetch(key_getter.getKeyHolder(k, pool));
+                target.table.prefetch(key_getter.getKeyHolder(first_row + k, pool));
         });
 
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = first_row, end = first_row + rows; i < end; ++i)
     {
         if constexpr (can_prefetch)
-            prefetcher.prefetchAt(i);
+            prefetcher.prefetchAt(i - first_row);
 
         if (skip_bytes && skip_bytes[i])
             continue;
@@ -528,6 +538,7 @@ void insertSectionFixed(
     const HashJoin & join,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
+    size_t first_row,
     size_t rows,
     const UInt64 * locators,
     const UInt32 * narrow_locators,
@@ -553,7 +564,7 @@ void insertSectionFixed(
     }
     auto key_getter = makeSectionKeyGetter<KeyGetter, mapped_asof>(key_columns, key_sizes);
 
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = first_row, end = first_row + rows; i < end; ++i)
     {
         if (skip_bytes && skip_bytes[i])
             continue;
@@ -589,6 +600,56 @@ void insertSectionFixed(
             else
                 appendRowToMapped(mapped, ref, scratch, any_take_last_row, all_unique, static_cast<UInt32>(emplace_result.getKey()));
         }
+    }
+}
+
+/// The Join table engine's insert of one stored block: `emplaceKey` per row. The first row of a key
+/// initializes the cell; every later row appends to its `RowRefList` (a `Batch` chain, as `HashJoin`
+/// builds it) or, under `any_take_last_row`, replaces its `RowRef`. Rows the null map skips are stored
+/// but never inserted. The table grows inside `emplace`. Returns whether a cell refers to the block,
+/// by `HashJoin`'s rule: a list-valued shape always does, a single-row one when a row was stored.
+template <typename KeyGetter, typename Table>
+bool insertJoinTableRows(
+    Table & table,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    size_t rows,
+    UInt32 block_no,
+    const UInt8 * skip_bytes,
+    Arena & pool,
+    bool any_take_last_row)
+{
+    using Mapped = typename Table::mapped_type;
+    if constexpr (std::is_same_v<Mapped, AsofRowRefs>)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table cannot be ASOF");
+    }
+    else
+    {
+        bool any_row_stored = !std::is_same_v<Mapped, RowRef>;
+        KeyGetter key_getter(key_columns, key_sizes, nullptr);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (skip_bytes && skip_bytes[i])
+                continue;
+
+            auto emplace_result = key_getter.emplaceKey(table, i, pool);
+            Mapped & mapped = emplace_result.getMapped();
+            const UInt64 ref = RowRef(block_no, i).encode();
+            if constexpr (std::is_same_v<Mapped, RowRef>)
+            {
+                const bool store_row = emplace_result.isInserted() || any_take_last_row;
+                if (store_row)
+                    mapped = RowRef::fromWord(ref);
+                any_row_stored |= store_row;
+            }
+            else
+            {
+                static_assert(std::is_same_v<Mapped, RowRefList>);
+                mapped.insert(ref, pool);
+            }
+        }
+        return any_row_stored;
     }
 }
 
@@ -686,6 +747,38 @@ void emplaceSizedBuildArena(std::deque<Arena> & arenas, size_t predicted_bytes)
         return;
     }
     arenas.emplace_back(predicted_bytes, /*growth_factor_=*/2, predicted_bytes);
+}
+
+/// The key range of a built `key32` / `key64` table, or nothing when its keys span more than `max_range`
+/// values. The keys are compared as the build column's type, signed or unsigned. The shared table's
+/// cells are walked by position; the zero key lives in the zero-value cell.
+template <bool is_signed, size_t max_range, typename Table>
+std::optional<HashJoin::RightTableData::KeyRange> denseKeyRange(const Table & table)
+{
+    using Key = typename Table::key_type;
+    using Ordered = std::conditional_t<is_signed, std::make_signed_t<Key>, Key>;
+    std::optional<Ordered> min_key;
+    std::optional<Ordered> max_key;
+    /// The width in the keys' stored, unsigned arithmetic: a span of signed keys wraps into the right value.
+    auto width = [&] { return static_cast<size_t>(static_cast<Key>(*max_key) - static_cast<Key>(*min_key)); };
+    auto visit = [&](Key key)
+    {
+        const auto ordered = static_cast<Ordered>(key);
+        min_key = min_key ? std::min(*min_key, ordered) : ordered;
+        max_key = max_key ? std::max(*max_key, ordered) : ordered;
+        return width() < max_range;
+    };
+    if (table.hasZero() && !visit(Key{}))
+        return std::nullopt;
+    for (size_t pos = 0, cells = table.cellCount(); pos < cells; ++pos)
+    {
+        const auto * cell = table.cellAt(pos);
+        if (!table.isEmptyCell(cell) && !visit(cell->getKey()))
+            return std::nullopt;
+    }
+    if (!min_key)
+        return std::nullopt;
+    return HashJoin::RightTableData::KeyRange{.min_key = static_cast<UInt64>(static_cast<Key>(*min_key)), .size = width() + 1};
 }
 
 /// Runs `f(table)` on the shared table of the active map type. The direct-index maps (`key8`, `key16`)
@@ -865,6 +958,7 @@ HashJoinClause::HashJoinClause(
     , max_fanout_per_pass(table_join.partitionedHashJoinMaxFanoutPerPass())
     , cap_partitions_by_l1_descriptors(table_join.partitionedHashJoinCapPartitionsByL1Descriptors())
     , parallel_hash_join_threshold(table_join.parallelHashJoinThreshold())
+    , fixed_hash_table_conversion_enabled(table_join.enableJoinFixedHashTableConversion())
     , log(std::move(log_))
 {
     /// A ceiling above 2^15 would let a 16-bit plan wrap the drop bucket onto partition 0 and insert
@@ -919,6 +1013,7 @@ void HashJoinClause::releaseTable()
     releaseBuildScratch();
     table_maps.reset();
     build_arenas.clear();
+    join_table_arena.reset();
 }
 
 size_t HashJoinClause::tableAndArenaBytes() const
@@ -928,6 +1023,8 @@ size_t HashJoinClause::tableAndArenaBytes() const
         res += table_maps->getBufferSizeInBytes(hash_join.data->type);
     for (const auto & arena : build_arenas)
         res += arena.allocatedBytes();
+    if (join_table_arena)
+        res += join_table_arena->allocatedBytes();
     return res;
 }
 
@@ -956,6 +1053,7 @@ void HashJoinClause::insertPartitionSection(
     size_t worker,
     size_t partition,
     const ColumnRawPtrs & key_columns,
+    size_t first_row,
     size_t rows,
     const UInt64 * locators,
     const UInt32 * narrow_locators_data,
@@ -1006,6 +1104,7 @@ void HashJoinClause::insertPartitionSection(
                 target, \
                 key_columns, \
                 key_sizes, \
+                first_row, \
                 rows, \
                 locators, \
                 narrow_locators_data, \
@@ -1024,6 +1123,7 @@ void HashJoinClause::insertPartitionSection(
                 hash_join, \
                 key_columns, \
                 key_sizes, \
+                first_row, \
                 rows, \
                 locators, \
                 narrow_locators_data, \
@@ -1180,8 +1280,13 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
     /// plus the crossings of the rehash walks. Real builds overflow a few hundred rows; 64 per partition
     /// is a loose allowance that costs 2 MiB of budget at 1024 partitions.
     const size_t allowance = entry_bytes * (ctx.drain_claimed + ctx.rehash_listed + 64 * partitions);
-    const bool refused
-        = new_degree > 32 || (grow_budget != 0 && residentBytes() + need + allowance + extra_reserved > grow_budget);
+    /// A single fill thread's table only holds keys whose rows are already stored, so a grow is bounded by
+    /// the resident rows and refusing it saves nothing. The spilling wrapper owns the spill decision on
+    /// that path: it reads the join's `predictedResidentBytes` between blocks and at the barrier. The first
+    /// block always lands in memory, as it does in `hash`.
+    const bool over_budget = grow_budget != 0 && !grow_at_max_fill
+        && residentBytes() + need + allowance + extra_reserved > grow_budget;
+    const bool refused = new_degree > 32 || over_budget;
     if (refused)
     {
         if (reason == GrowReason::LastFreeCell)
@@ -1426,7 +1531,7 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
     LOG_TRACE(
         log,
         "Partition plan: table of 2^{} cells, bits = {}, partitions = {}, {} scatter pass(es) (bits per pass [{}]), {} rows in {} "
-        "blocks, estimated {} distinct keys",
+        "blocks, {} distinct keys {}",
         size_degree,
         bits,
         partitions,
@@ -1434,7 +1539,107 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
         fmt::join(pass_bits, ", "),
         rows,
         build_blocks.size(),
-        static_cast<size_t>(hll_estimate));
+        static_cast<size_t>(hll_estimate),
+        estimate_is_exact ? "from the statistics cache" : "estimated by the sketch");
+}
+
+void HashJoinClause::tryConvertToFixedHashMap()
+{
+    /// `HashJoin`'s conversion, on the shared table. Its conditions: the setting, a 32- or 64-bit integer
+    /// key, not ASOF (its per-key sorted vectors are not copied), at most 2^18 keys in a range at most 2^18
+    /// wide, and above 2^16 cells at least a quarter full. The fixed map then takes at most about twice
+    /// the memory of the table it replaces. Row refs point at stored blocks, not at cells, so the mapped
+    /// values are copied by value; the duplicate runs stay in the build arenas, which outlive the table.
+    constexpr size_t max_range = 1uz << 18;
+    constexpr size_t max_range_sparsity_factor = 4;
+
+    const HashJoin::Type type = hash_join.data->type;
+    if (!fixed_hash_table_conversion_enabled || (type != HashJoin::Type::key32 && type != HashJoin::Type::key64)
+        || hash_join.getStrictness() == JoinStrictness::Asof || stats.distinct_keys == 0 || stats.distinct_keys > max_range)
+        return;
+
+    const bool is_signed = !hash_join.right_table_keys.getByPosition(0).type->isValueRepresentedByUnsignedInteger();
+    const size_t keys = stats.distinct_keys;
+    std::optional<HashJoin::RightTableData::KeyRange> converted;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            auto convert = [&](auto & source, auto & range8, auto & range16, auto & range17, auto & range18, auto types)
+            {
+                using Source = typename std::decay_t<decltype(source)>::element_type;
+                using Key = typename Source::key_type;
+                if constexpr (std::is_copy_assignable_v<typename Source::mapped_type>)
+                {
+                    const auto range = is_signed ? denseKeyRange<true, max_range>(*source) : denseKeyRange<false, max_range>(*source);
+                    if (!range)
+                        return;
+
+                    auto build = [&](auto & dest, HashJoin::Type new_type)
+                    {
+                        using RangeMap = typename std::decay_t<decltype(dest)>::element_type;
+                        auto range_map = std::make_shared<RangeMap>();
+                        const Key min_key = static_cast<Key>(range->min_key);
+                        auto insert = [&](const auto * cell)
+                        {
+                            typename RangeMap::LookupResult res;
+                            bool inserted = false;
+                            range_map->emplace(static_cast<Key>(cell->getKey() - min_key), res, inserted);
+                            res->getMapped() = cell->getMapped();
+                        };
+                        if (source->hasZero())
+                            insert(source->zeroValue());
+                        for (size_t pos = 0, cells = source->cellCount(); pos < cells; ++pos)
+                            if (const auto * cell = source->cellAt(pos); !source->isEmptyCell(cell))
+                                insert(cell);
+                        dest = std::move(range_map);
+                        source.reset();
+                        hash_join.data->type = new_type;
+                        hash_join.data->key_range = *range;
+                        converted = range;
+                    };
+
+                    if (range->size <= (1uz << 8))
+                        build(range8, types[0]);
+                    else if (range->size <= (1uz << 16))
+                        build(range16, types[1]);
+                    else if (range->size <= (1uz << 17))
+                    {
+                        if ((1uz << 17) <= keys * max_range_sparsity_factor)
+                            build(range17, types[2]);
+                    }
+                    else if ((1uz << 18) <= keys * max_range_sparsity_factor)
+                        build(range18, types[3]);
+                }
+            };
+
+            using enum HashJoin::Type;
+            if (type == key32)
+                convert(
+                    shape_maps.key32,
+                    shape_maps.range8_key32,
+                    shape_maps.range16_key32,
+                    shape_maps.range17_key32,
+                    shape_maps.range18_key32,
+                    std::array{range8_key32, range16_key32, range17_key32, range18_key32});
+            else
+                convert(
+                    shape_maps.key64,
+                    shape_maps.range8_key64,
+                    shape_maps.range16_key64,
+                    shape_maps.range17_key64,
+                    shape_maps.range18_key64,
+                    std::array{range8_key64, range16_key64, range17_key64, range18_key64});
+        },
+        table_maps->maps);
+
+    if (!converted)
+        return;
+
+    /// The probe's prefetch gates and the used flags are sized from the table that exists now.
+    const HashJoin::Type new_type = hash_join.data->type;
+    ht_total_bytes = table_maps->getBufferSizeInBytes(new_type);
+    stats.table_cells = table_maps->getBufferSizeInCells(new_type);
+    LOG_DEBUG(log, "Converted join hash map to fixed hash map (range: {}, keys: {}, type: {})", converted->size, keys, new_type);
 }
 
 void HashJoinClause::createHashJoinTable()
@@ -1444,7 +1649,7 @@ void HashJoinClause::createHashJoinTable()
     /// reserve alone asks for. The exactness check compares against what was actually created.
     ht_total_bytes = HashJoinTableMaps::bufferBytesForDegree(maps_variant_index, type, size_degree);
 
-    table_maps = std::make_unique<HashJoinTableMaps>(maps_variant_index);
+    table_maps = std::make_shared<HashJoinTableMaps>(maps_variant_index);
     table_maps->create(type, size_degree, bits);
 
     stats.table_size_degree = size_degree;
@@ -1565,7 +1770,7 @@ size_t HashJoinClause::reserveFor(size_t rows, double distinct_estimate) const
     /// then takes over: at most a 2x over-reservation, only for builds already holding 64 GiB of cells.
     if (reserve_override_for_tests)
         return *reserve_override_for_tests;
-    const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * reserve_safety);
+    const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * reserveSafety());
     const size_t rows_bound = std::max<size_t>(rows, 1);
     if (scaled >= 2147483648.0)
         return rows_bound;
@@ -1588,7 +1793,8 @@ void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, boo
     grow_at_max_fill = grow_at_max_fill_;
     total_rows = rows;
     /// The barrier's plan already derived these for the post-build path. The single fill thread has no
-    /// plan and derives them here, from the hint, before its first block.
+    /// plan and derives them here, from the cached distinct count or the smallest degree, before its
+    /// first block.
     size_degree = sizeDegreeFor(reserve);
     bits = 0;
     partitions = 1;
@@ -1615,21 +1821,88 @@ void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, boo
     ctx.range_committed[0] = 1;
 }
 
+void HashJoinClause::createJoinTable()
+{
+    /// Sized for a handful of keys and doubled by `emplace` as the rows arrive: the engine has no
+    /// estimate, and the table exists from the start so that an empty Join table can be probed.
+    size_degree = sizeDegreeFor(1);
+    bits = 0;
+    partitions = 1;
+    createHashJoinTable();
+    forHashJoinTable(*table_maps, hash_join.data->type, [](auto & table) { table.commitAll(); });
+    join_table_arena = std::make_shared<Arena>();
+}
+
+bool HashJoinClause::insertJoinTableBlock(FillBlock & fill)
+{
+    const HashJoin::Type type = hash_join.data->type;
+    const Sizes & key_sizes = hash_join.key_sizes[0];
+    bool any_row_stored = false;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, Table, /*use_offset=*/false>::Type; \
+        any_row_stored = insertJoinTableRows<KeyGetter, Table>( \
+            *shape_maps.TYPE, fill.key_columns, key_sizes, fill.rows, fill.block_no, fill.skipData(), *join_table_arena, any_take_last_row); \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default:
+                    throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", type);
+            }
+        },
+        table_maps->maps);
+
+    ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, fill.rows);
+    stats.inserted_rows += fill.rows;
+    /// What `HashJoin` keeps for a Join table; the per-query instances size their used flags from it.
+    hash_join.data->keys_to_join = table_maps->getTotalRowCount(type);
+    /// The table may have doubled; the probe's prefetch heuristics read the size.
+    ht_total_bytes = table_maps->getBufferSizeInBytes(type);
+    fill.releaseInputs();
+    return any_row_stored;
+}
+
+void HashJoinClause::shareTable(const HashJoinClause & source)
+{
+    table_maps = source.table_maps;
+    join_table_arena = source.join_table_arena;
+    ht_total_bytes = source.ht_total_bytes;
+}
+
 void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
 {
     auto & ctx = *post_build_ctx;
-    insertPartitionSection(
-        ctx,
-        /*worker=*/0,
-        single_partition,
-        fill.key_columns,
-        fill.rows,
-        /*locators=*/nullptr,
-        /*narrow_locators_data=*/nullptr,
-        fill.block_no,
-        fill.skipData());
+    auto & state = ctx.worker_state[0];
+    /// In sections, each finished on the spot when its duplicate groups look complete (see
+    /// `PassScratch::cheapToFinish`). The cells a section touched and the scratch it filled are then
+    /// still cache-resident; one finish over the whole build at the end walks every duplicated key's
+    /// cell from memory again. A build whose duplicates are spread over the blocks keeps accumulating
+    /// and is finished once, in `finishSinglePartitionInsert`.
+    for (size_t first_row = 0; first_row < fill.rows; first_row += single_lane_section_rows)
+    {
+        insertPartitionSection(
+            ctx,
+            /*worker=*/0,
+            single_partition,
+            fill.key_columns,
+            first_row,
+            std::min(single_lane_section_rows, fill.rows - first_row),
+            /*locators=*/nullptr,
+            /*narrow_locators_data=*/nullptr,
+            fill.block_no,
+            fill.skipData());
+        if (state.scratch.cheapToFinish())
+            state.scratch_used_high_water = std::max(state.scratch_used_high_water, finishPassScratch(state.scratch, *state.writer));
+    }
     ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, fill.rows);
-    ctx.worker_state[0].inserted_rows += fill.rows;
+    state.inserted_rows += fill.rows;
     fill.releaseInputs();
 }
 
@@ -2194,7 +2467,7 @@ bool HashJoinClause::postBuildPartitioned()
         if (groups > 0)
         {
             const UInt64 projected
-                = boundaryProjection(claimedTotal(), ctx.insertedRows(), insertableRows(), hll_estimate, reserve_safety);
+                = boundaryProjection(claimedTotal(), ctx.insertedRows(), insertableRows(), hll_estimate, reserveSafety());
             maybeGrowForLoadFactor(projected, chunkBytesForBlockRange(b, b + 1));
         }
 
@@ -2821,6 +3094,7 @@ void HashJoinClause::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
                 worker,
                 partition,
                 section_columns,
+                /*first_row=*/0,
                 partition_rows,
                 narrow_locators ? nullptr : ctx.locators[partition].data(),
                 narrow_locators ? ctx.locators32[partition].data() : nullptr,
@@ -2843,6 +3117,7 @@ void HashJoinClause::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
                     worker,
                     partition,
                     section_columns,
+                    /*first_row=*/0,
                     piece_rows,
                     narrow_locators ? nullptr : ctx.locators[partition].data() + piece_start,
                     narrow_locators ? ctx.locators32[partition].data() + piece_start : nullptr,

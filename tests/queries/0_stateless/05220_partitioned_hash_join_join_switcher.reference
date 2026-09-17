@@ -1,0 +1,23 @@
+-- auto stays in memory
+INNER | auto,partitioned_hash	20000	1
+LEFT | auto,partitioned_hash	20000	1
+RIGHT | auto,partitioned_hash	21000	1
+FULL | auto,partitioned_hash	21000	1
+ANY LEFT | auto,partitioned_hash	20000	1
+ANY INNER | auto,partitioned_hash	5000	1
+SEMI LEFT | auto,partitioned_hash	20000	1
+ANTI LEFT | auto,partitioned_hash	0	1
+SEMI RIGHT | auto,partitioned_hash	5000	1
+ANTI RIGHT | auto,partitioned_hash	1000	1
+-- auto switches to MergeJoin at max_rows_in_join
+INNER | auto,partitioned_hash | max_rows_in_join	20000	1
+LEFT | auto,partitioned_hash | max_rows_in_join	20000	1
+RIGHT | auto,partitioned_hash | max_rows_in_join	21000	1
+FULL | auto,partitioned_hash | max_rows_in_join	21000	1
+ANY LEFT | auto,partitioned_hash | max_rows_in_join	20000	1
+ANY INNER | auto,partitioned_hash | max_rows_in_join	20000	1
+SEMI LEFT | auto,partitioned_hash | max_rows_in_join	20000	1
+-- every in-memory query built its table with the partitioned join
+1	0
+-- every switching query started from the partitioned join
+1	1

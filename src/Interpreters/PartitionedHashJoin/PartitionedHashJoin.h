@@ -10,7 +10,7 @@
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
-#include <Common/SharedMutex.h>
+#include <Storages/TableLockHolder.h>
 
 #include <atomic>
 #include <deque>
@@ -23,6 +23,7 @@
 namespace DB
 {
 
+class MatchedRowsStats;
 class TableJoin;
 
 /** Partitioned hash join (`join_algorithm = 'partitioned_hash'`).
@@ -58,16 +59,29 @@ class TableJoin;
   * used flags and the probe. Used flags are `cells + 1` entries (offset 0 is the zero-value cell).
   * That is the layout `JoinUsedFlags` and the non-joined scan expect.
   *
-  * Several ON disjuncts need used flags per right-table row, not per cell. Those joins run a
-  * standard `HashJoin` behind this interface (`delegate_mode`) instead of a partitioned build.
+  * Several ON disjuncts, or a mixed non-equi ON condition on a RIGHT or FULL join, need used flags
+  * per right-table row, not per cell. Those joins run a standard `HashJoin` behind this interface
+  * (`delegate_mode`) instead of a partitioned build.
+  *
+  * The Join table engine (`StorageJoin`) runs this join in a third mode, `join_table_mode`: one
+  * single-partition table, created empty with the join and filled one block at a time under the
+  * storage's write lock through `HashJoinTable::emplace`, so it grows as the rows arrive and is
+  * probe-ready between inserts; the rows of a key are chained with the appendable `RowRefList`
+  * `Batch`. There is no build phase. A query gets an instance of its own whose `hash_join` reuses
+  * the storage's stored blocks and which shares the table and its arena by pointer
+  * (`shareJoinTable`), with used flags of its own sized to the table. `joinGet` is a one-block probe
+  * of the storage's instance.
   */
 class PartitionedHashJoin : public IJoin
 {
 public:
     /// `build_rows_hint_` is the planner's right-side row estimate, when it has one. Below
-    /// `parallel_hash_join_threshold` the join builds on one fill thread. The pipeline keeps the
-    /// `hash` shape. The table is sized from the hint and grows like `hash`'s. Every block is
-    /// inserted as it arrives, so nothing is left for the barrier.
+    /// `parallel_hash_join_threshold`, and whenever the query has one thread, the join builds on one
+    /// fill thread and the pipeline keeps the `hash` shape. The table is sized from the distinct-key
+    /// count a previous run left in the hash table statistics cache, or starts small without one, and
+    /// grows like `hash`'s. Every block is inserted as it arrives, so nothing is left for the barrier.
+    /// One thread would pay the histogram and scatter passes of the partitioned build and gain nothing
+    /// from them.
     PartitionedHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
@@ -77,7 +91,44 @@ public:
         size_t max_bytes_before_external_join_ = 0,
         std::optional<size_t> build_rows_hint_ = {});
 
+    /// The Join table engine's instance; see the class comment. Single-threaded by construction: the
+    /// storage serializes the inserts with its write lock.
+    struct JoinTableTag
+    {
+    };
+    PartitionedHashJoin(JoinTableTag, std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, bool any_take_last_row_);
+
     ~PartitionedHashJoin() override;
+
+    /// Makes this Join table instance a query's view of `source`, the storage's. `hash_join` reuses the
+    /// storage's stored blocks (the saved sample, the row store and the null maps come with them); the
+    /// table and its arena are shared by pointer; the used flags of this instance are sized to the
+    /// table. The caller holds the storage's read lock and hands it to `setLock`, so the table cannot
+    /// change while this instance reads it.
+    void shareJoinTable(const PartitionedHashJoin & source);
+
+    /// Keeps the storage's read lock for this instance's lifetime, as `HashJoin::setLock` does.
+    void setLock(TableLockHolder holder) { storage_join_lock = std::move(holder); }
+
+    /// A query's instance of a Join table is probed through `FilledJoinStep`: there is no right stream
+    /// to fill and no `NonJoinedBlocksTransform` to run the parallel non-joined regime in.
+    JoinPipelineType pipelineType() const override
+    {
+        return shared_from_join_table ? JoinPipelineType::FilledRight : JoinPipelineType::FillRightFirst;
+    }
+    bool isParallelNonJoinedProcessingEnabled() const override
+    {
+        return !shared_from_join_table && supportParallelNonJoinedBlocksProcessing();
+    }
+
+    /// `joinGet` over the storage's instance, with the contract of `HashJoin::joinGet`. The key types
+    /// and the result type are checked first. Then the keys are probed as one block with `LEFT ANY`
+    /// semantics, and the requested column comes back with a default for every key not found.
+    DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add);
+
+    /// `OPTIMIZE TABLE` on a Join table: compacts the columns of the stored blocks.
+    void shrinkStoredBlocksToFit();
 
     /// Shapes outside this predicate must be planned onto another enabled algorithm rather than
     /// failing at execution time; see `tryCreateJoin` in `Planner/PlannerJoins.cpp`.
@@ -126,8 +177,12 @@ public:
     bool isSingleLaneBuild() const { return single_fill_thread; }
 
     void onBuildPhaseFinish() override;
-    bool hasPostBuildPhase() const override { return true; }
+    /// A Join table's join has no build phase at all.
+    bool hasPostBuildPhase() const override { return !join_table_mode; }
     void runPostBuildPhase() override;
+
+    /// The matched-row statistics `EXPLAIN ANALYZE` reports, when the query collects them.
+    const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
 
     /// The planner reads the matched count of the previous run to decide on the row store. It is
     /// published at destruction, as the other hash joins publish theirs.
@@ -160,6 +215,12 @@ public:
     std::shared_ptr<IJoin> cloneNoParallel(
         const std::shared_ptr<TableJoin> & table_join_, SharedHeader left_sample_block_, SharedHeader right_sample_block_) const override;
 
+    /// This instance holds part of the right side - a `GraceHashJoin` bucket - so its table cannot stand
+    /// in for the whole build side. The exact runtime filter over a fixed table drops every probe row
+    /// whose key the table lacks, so it is not published from a partial build. A grace bucket is marked
+    /// by its owner.
+    void markPartialBuild() { partial_build = true; }
+
     void setEnableLazyColumnsIndexing(bool value) override;
 
     /// See `HashJoinClause::BuildStats`. Valid after `runPostBuildPhase`.
@@ -170,7 +231,12 @@ public:
     void setReserveOverrideForTests(size_t reserve) { clause.setReserveOverrideForTests(reserve); }
     void setAmacEnabledForTests(bool value) { clause.setAmacEnabledForTests(value); }
     void setL1CacheSizeForTests(size_t bytes) { clause.setL1CacheSizeForTests(bytes); }
-    void setPartitionBitsForTests(size_t value) { clause.setPartitionBitsForTests(value); }
+    /// A forced partition plan is a partitioned build, which a one-thread join would otherwise skip.
+    void setPartitionBitsForTests(size_t value)
+    {
+        clause.setPartitionBitsForTests(value);
+        single_fill_thread = false;
+    }
     void setGrowBudgetForTests(size_t bytes) { clause.setGrowBudgetForTests(bytes); }
     void setGrowBudgetForDrainForTests(size_t bytes) { clause.setGrowBudgetForDrainForTests(bytes); }
     size_t predictedArenaBytesForTests(bool grouped) const { return clause.predictedArenaBytesForTests(grouped); }
@@ -202,8 +268,30 @@ public:
     /// `GraceHashJoin` does.
     void drainStoredBlocksInto(IJoin & target);
 
+    /// Every right block stored so far, for an algorithm that takes them over during the fill
+    /// (`JoinSwitcher`, `GraceHashJoin`): the fill lanes, or the row store of a single fill thread. With
+    /// `restructure` the blocks come back in the right input's structure. Only before the build phase
+    /// finished, and nothing but destruction may follow.
+    BlocksList releaseJoinedBlocks(bool restructure);
+    /// The structure the right blocks are stored in.
+    const Block & savedBlockSample() const;
+    /// Right rows stored so far. `getTotalRowCount` reports the distinct keys once the table is built.
+    size_t getRightTableRowCount() const;
+
 private:
     friend class NotJoinedPartitioned;
+    /// Reads a Join table's rows straight out of the table and the stored blocks.
+    friend class JoinSource;
+
+    PartitionedHashJoin(
+        std::shared_ptr<TableJoin> table_join_,
+        SharedHeader right_sample_block_,
+        size_t num_threads_,
+        bool any_take_last_row_,
+        const HashJoinStatsCollectingParams & stats_collecting_params_,
+        size_t max_bytes_before_external_join_,
+        std::optional<size_t> build_rows_hint_,
+        bool join_table_mode_);
 
     /// `HashJoin::data` is private and the non-joined filler is a friend of this class, not of it.
     const HashJoin::RightTableData & storedData() const { return *hash_join->data; }
@@ -213,34 +301,47 @@ private:
 
     using FillBlock = HashJoinClause::FillBlock;
 
-    /// One per fill thread, so appends and sketch updates never contend.
+    /// One per fill thread, so appends and sketch updates never contend. The mutex guards `hll` alone.
+    /// The lane's filler holds it across a block's hash pass. A sketch merge takes it lane by lane, so
+    /// a merge never stalls the other lanes.
     struct FillLane
     {
         std::vector<FillBlock> blocks;
         DenseHyperLogLog hll;
+        mutable std::mutex hll_mutex;
     };
 
     FillLane & getFillLane();
     FillLane & getFillLane(size_t worker_id);
     /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and
-    /// filtered rows for RIGHT/FULL output.
-    void storeBlockInRowStore(FillBlock & fill);
+    /// filtered rows for RIGHT/FULL output. Returns whether a saved null map refers to the block.
+    bool storeBlockInRowStore(FillBlock & fill);
+    /// A block that nothing refers to is not kept, as `HashJoin` does not keep it: `ANY` tables see
+    /// their repeated keys re-inserted without growing. Join-engine mode only.
+    void dropLastStoredBlock();
     /// The saved-block form of one stored block, for the drains that hand blocks to another join.
     Block storedBlockToBlock(StoredBlock && stored) const;
     size_t liveDistinctEstimate() const;
+    /// Reads the previous run's distinct-key count into `cached_distinct_keys` and counts it as a
+    /// preallocation. False when the cache has no entry for this join or the entry exceeds
+    /// `max_size_to_preallocate_for_joins`.
+    bool readDistinctKeysFromStatisticsCache();
     void finishBuildPhase(bool all_values_unique);
     /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
     void reinitUsedFlags();
 
     /// `MapsShape` is the standard shape the (kind, strictness) pair dispatches to; the shared table is
-    /// its partitioned counterpart, holding identical cells.
+    /// its partitioned counterpart, holding identical cells. With `join_get_columns` the block carries
+    /// the keys under the right-side names and the result is the `joinGet` output of those columns.
     JoinResultPtr probeDispatch(Block block, size_t lane);
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape> // NOLINT(readability-identifier-naming)
-    JoinResultPtr probeImpl(Block block, size_t lane);
+    JoinResultPtr probeImpl(Block block, size_t lane, const Block * join_get_columns = nullptr);
 
+    /// Returns the number of probe rows processed: all of them, unless a mixed ON condition stops the
+    /// block at `max_joined_block_rows`, as the standard join does.
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
-    void joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
+    size_t joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 
     /// Per-probe-stream scratch, pooled on the join and reused across blocks: the find pass's results.
     /// `found_word` is the matched cell's mapped value by value (see `amac_mapped_fits_word`; 0 is a
@@ -272,6 +373,14 @@ private:
 
     /// Set for the shapes that need per-row used flags; see the class comment.
     const bool delegate_mode;
+    /// The Join table engine's mode; see the class comment.
+    const bool join_table_mode;
+    /// A query's instance after `shareJoinTable`.
+    bool shared_from_join_table = false;
+    /// See `markPartialBuild`.
+    bool partial_build = false;
+    /// The storage's read lock, see `setLock`.
+    TableLockHolder storage_join_lock;
 
     /// `IJoin::totals` is private, so the guarded overrides keep their own copy.
     std::mutex totals_mutex;
@@ -282,9 +391,8 @@ private:
     /// atomic loads. It is sized once and never resized, so the fast path cannot race a rehash.
     /// Lane-less callers keep the thread-id map.
     /// Mutable because `predictedResidentBytes` is a `const` query that still has to refresh the
-    /// cached distinct estimate under this lock. Shared with the per-lane sketch `add`, exclusive
-    /// for the merge: a torn register would persist into the barrier's estimate.
-    mutable SharedMutex fill_mutex;
+    /// cached distinct estimate under this lock. The sketches themselves are under their lane's lock.
+    mutable std::mutex fill_mutex;
     std::deque<FillLane> lanes;
     std::unordered_map<std::thread::id, FillLane *> lane_by_thread;
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
@@ -297,15 +405,23 @@ private:
     mutable std::atomic<size_t> distinct_estimate_at_rows{0};
 
     std::optional<size_t> build_rows_hint;
-    /// An estimated build below `parallel_hash_join_threshold` runs on one fill thread, which inserts
-    /// into the table as the blocks arrive.
+    /// An estimated build below `parallel_hash_join_threshold`, and every build of a one-thread query, runs
+    /// on one fill thread, which inserts into the table as the blocks arrive.
     bool single_fill_thread = false;
-    /// Distinct-key statistics for the next run of this query (join reordering, runtime filters). Never
-    /// read to size this build: the sketch sizes the table and a grow corrects it, and a cached count
-    /// would not depend on the data.
+    /// The distinct-key count a previous run of this query left in the hash table statistics cache,
+    /// read once when the table is sized (`readDistinctKeysFromStatisticsCache`); the clause then sizes
+    /// from it as an exact estimate.
+    std::optional<size_t> cached_distinct_keys;
+    /// Distinct-key statistics. The count this build publishes serves the next run of this query: join
+    /// reordering, runtime filters, and this join's table size. The previous run's count, when the cache
+    /// has one, sizes this build's table.
     StatsCollectingParams stats_collecting_params;
     /// The matched-row statistics the planner's row store decision reads.
     StatsCollectingParams match_stats_collecting_params;
+    /// The matched-row counts `EXPLAIN ANALYZE` reports, only when the query asks for them. The left
+    /// side is counted per probe block from the block's outputs. The right side comes from the
+    /// non-joined rows, or with `matches = 1` from the row refs the probe records.
+    std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     /// Empty when the probe did not count matches, so nothing is published for that run.
     std::optional<size_t> hash_table_matches;
     bool probe_phase_finished = false;

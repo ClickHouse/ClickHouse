@@ -6,6 +6,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
@@ -297,7 +298,8 @@ GraceHashJoin::GraceHashJoin(
     TemporaryDataOnDiskScopePtr tmp_data_,
     bool any_take_last_row_,
     size_t external_join_threshold_,
-    size_t max_threads_)
+    size_t max_threads_,
+    bool partitioned_buckets_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
@@ -307,6 +309,7 @@ GraceHashJoin::GraceHashJoin(
     , max_num_buckets(max_num_buckets_)
     , external_join_threshold(external_join_threshold_)
     , max_threads(std::max<size_t>(1, max_threads_))
+    , partitioned_buckets(partitioned_buckets_)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope({
@@ -316,7 +319,9 @@ GraceHashJoin::GraceHashJoin(
             .num_files = ProfileEvents::ExternalJoinWritePart,
         }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec()))
     , hash_join(makeInMemoryJoin("grace0"))
-    , hash_join_sample_block(hash_join->savedBlockSample())
+    , hash_join_sample_block(
+          partitioned_buckets ? assert_cast<const PartitionedHashJoin &>(*hash_join).savedBlockSample()
+                              : assert_cast<const HashJoin &>(*hash_join).savedBlockSample())
 {
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
@@ -407,7 +412,7 @@ bool GraceHashJoin::hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const
     if (force_spill)
         return true;
     size_t total_rows = hash_join_->getTotalRowCount();
-    size_t total_bytes = hash_join_->getTotalByteCount();
+    size_t total_bytes = inMemoryBytes(*hash_join_);
 
     return hasMemoryOverflow(total_rows, total_bytes);
 }
@@ -492,7 +497,11 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 JoinResultPtr GraceHashJoin::joinBlock(Block block)
 {
-    if (!post_build_phase_ran.load(std::memory_order_acquire) && getNumBuckets() <= 1)
+    /// A `HashJoin` bucket gets its post-build optimizations when it is the only bucket. The partitioned
+    /// join's post-build phase is its table build, which `finishInMemoryBuild` runs at the end of every
+    /// bucket's fill; running it here, where the plan-time header probe also arrives, would build before
+    /// the fill.
+    if (!partitioned_buckets && !post_build_phase_ran.load(std::memory_order_acquire) && getNumBuckets() <= 1)
     {
         std::lock_guard lock(hash_join_mutex);
         /// Re-checked under the lock: several probe threads can pass the check above before the first one finishes.
@@ -551,14 +560,13 @@ size_t GraceHashJoin::getTotalByteCount() const
     return hash_join->getTotalByteCount();
 }
 
-void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
+void GraceHashJoin::GraceHashJoinStats::foldIn(UInt64 right_table_rows, UInt64 keys, size_t peak_bytes, const MatchedRowsStats * match_stats)
 {
-    UInt64 right_table_rows = in_memory_join.getRightTableRowCount();
     right_rows += right_table_rows;
-    unique_keys += in_memory_join.getTotalRowCount();
-    peak_in_memory_bytes = std::max(peak_in_memory_bytes, in_memory_join.getPeakBuildBytes());
+    unique_keys += keys;
+    peak_in_memory_bytes = std::max(peak_in_memory_bytes, peak_bytes);
 
-    if (const auto * match_stats = in_memory_join.getMatchStats())
+    if (match_stats)
     {
         left_rows_total += match_stats->getInputLeft();
 
@@ -567,12 +575,52 @@ void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
     }
 }
 
+size_t GraceHashJoin::inMemoryBytes(const IJoin & join) const
+{
+    if (partitioned_buckets)
+        return assert_cast<const PartitionedHashJoin &>(join).predictedResidentBytes();
+    return join.getTotalByteCount();
+}
+
+size_t GraceHashJoin::inMemoryPeakBytes(const IJoin & join) const
+{
+    if (partitioned_buckets)
+        return join.getTotalByteCount();
+    return assert_cast<const HashJoin &>(join).getPeakBuildBytes();
+}
+
+BlocksList GraceHashJoin::releaseInMemoryBlocks(IJoin & join) const
+{
+    if (partitioned_buckets)
+        return assert_cast<PartitionedHashJoin &>(join).releaseJoinedBlocks(/* restructure */ false);
+    return assert_cast<HashJoin &>(join).releaseJoinedBlocks(/* restructure */ false);
+}
+
+void GraceHashJoin::finishInMemoryBuild(IJoin & join) const
+{
+    join.onBuildPhaseFinish();
+    if (partitioned_buckets)
+        join.runPostBuildPhase();
+}
+
+void GraceHashJoin::foldInMemoryJoin(GraceHashJoinStats & into, const IJoin & join) const
+{
+    if (partitioned_buckets)
+    {
+        const auto & partitioned = assert_cast<const PartitionedHashJoin &>(join);
+        into.foldIn(partitioned.getRightTableRowCount(), partitioned.getTotalRowCount(), inMemoryPeakBytes(join), partitioned.getMatchStats());
+        return;
+    }
+    const auto & hash = assert_cast<const HashJoin &>(join);
+    into.foldIn(hash.getRightTableRowCount(), hash.getTotalRowCount(), inMemoryPeakBytes(join), hash.getMatchStats());
+}
+
 GraceHashJoin::GraceHashJoinStats GraceHashJoin::collectStats() const
 {
     GraceHashJoinStats result = stats;
 
     if (current_bucket && hash_join)
-        result.foldIn(*hash_join);
+        foldInMemoryJoin(result, *hash_join);
 
     Buckets buckets_snapshot = getCurrentBuckets();
     result.num_buckets = buckets_snapshot.size();
@@ -802,7 +850,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     size_t bucket_idx = current_bucket->idx;
 
     if (hash_join)
-        stats.foldIn(*hash_join);
+        foldInMemoryJoin(stats, *hash_join);
 
     size_t prev_keys_num = 0;
     if (hash_join && buckets.size() > 1)
@@ -827,7 +875,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             num_rows += block.rows();
             addBlockToJoinImpl(std::move(block), /* worker_id = */ 0);
         }
-        hash_join->onBuildPhaseFinish();
+        finishInMemoryBuild(*hash_join);
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
             bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));
@@ -843,6 +891,27 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
+    if (partitioned_buckets)
+    {
+        /// No row hint. A table sized for `reserve_num` up front would count against the bucket's
+        /// predicted bytes before any row arrives, and under a tight threshold every bucket would
+        /// rebucket at once. Sized at the barrier from its own rows, the prediction grows with the rows,
+        /// as a `HashJoin` bucket's byte count does. No memory budget either: the bucket count is how
+        /// this join bounds memory.
+        auto join = std::make_shared<PartitionedHashJoin>(
+            table_join,
+            right_sample_block,
+            max_threads,
+            any_take_last_row,
+            HashJoinStatsCollectingParams{},
+            /*max_bytes_before_external_join_=*/0,
+            /*build_rows_hint_=*/std::nullopt);
+        /// A bucket holds the keys of its hash class only; a runtime filter built from it would drop the
+        /// probe rows of every other bucket before they reach their bucket's file.
+        join->markPartialBuild();
+        return join;
+    }
+
     /// `max_threads` still matters even though inserts here are serialized: the fill streams
     /// address worker slots by their own id.
     ///
@@ -904,7 +973,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
                 return;
         }
         auto prev_keys_num = hash_join->getTotalRowCount();
-        size_t pre_total_bytes = hash_join->getTotalByteCount();
+        size_t pre_total_bytes = inMemoryBytes(*hash_join);
 
         /// Pre-check: rehash when the in-memory bucket alone is already past half of the
         /// wrapper-supplied auto-spill cap. The inner `HashJoin::addBlockToJoin` grows its
@@ -928,9 +997,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
         {
             hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
             block_added = true;
-            size_t hash_join_total_keys = hash_join->getTotalRowCount();
-            size_t hash_join_total_bytes = hash_join->getTotalByteCount();
-            if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
+            if (!hasMemoryOverflow(hash_join))
                 return;
         }
 
@@ -942,11 +1009,11 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
         buckets_snapshot = rehashBuckets();
         force_spill = false;
         /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
-        stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
+        stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, inMemoryPeakBytes(*hash_join));
         /// `releaseJoinedBlocks` resets the join's data before it finishes allocating, so detach
         /// first: a throw must not leave `hash_join` pointing at a join whose data is gone.
         auto released_join = std::move(hash_join);
-        auto right_blocks = released_join->releaseJoinedBlocks(/* restructure */ false);
+        auto right_blocks = releaseInMemoryBlocks(*released_join);
         released_join.reset();
 
         {
@@ -998,6 +1065,6 @@ void GraceHashJoin::onBuildPhaseFinish()
 {
     // It cannot be called concurrently with other IJoin methods
     if (hash_join)
-        hash_join->onBuildPhaseFinish();
+        finishInMemoryBuild(*hash_join);
 }
 }

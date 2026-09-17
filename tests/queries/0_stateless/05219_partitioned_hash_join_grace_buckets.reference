@@ -1,0 +1,32 @@
+-- grace_hash chosen outright, buckets on the partitioned join
+INNER | a.k = b.k | initial buckets 1	20000	1
+INNER | a.k = b.k | initial buckets 4	20000	1
+LEFT | a.k = b.k | initial buckets 1	20000	1
+LEFT | a.k = b.k | initial buckets 4	20000	1
+RIGHT | a.k = b.k | initial buckets 1	21000	1
+RIGHT | a.k = b.k | initial buckets 4	21000	1
+FULL | a.k = b.k | initial buckets 1	21000	1
+FULL | a.k = b.k | initial buckets 4	21000	1
+ANY LEFT | a.k = b.k | initial buckets 1	20000	1
+ANY LEFT | a.k = b.k | initial buckets 4	20000	1
+SEMI LEFT | a.k = b.k | initial buckets 1	20000	1
+SEMI LEFT | a.k = b.k | initial buckets 4	20000	1
+ANTI LEFT | a.k = b.k | initial buckets 1	0	1
+ANTI LEFT | a.k = b.k | initial buckets 4	0	1
+SEMI RIGHT | a.k = b.k | initial buckets 1	5000	1
+SEMI RIGHT | a.k = b.k | initial buckets 4	5000	1
+ANTI RIGHT | a.k = b.k | initial buckets 1	1000	1
+ANTI RIGHT | a.k = b.k | initial buckets 4	1000	1
+LEFT | a.k = b.k AND a.v * 2 < b.x | initial buckets 1	20000	1
+LEFT | a.k = b.k AND a.v * 2 < b.x | initial buckets 4	20000	1
+RIGHT | a.k = b.k AND a.v * 2 < b.x | initial buckets 1	9998	1
+RIGHT | a.k = b.k AND a.v * 2 < b.x | initial buckets 4	9998	1
+SEMI LEFT | a.k = b.k AND a.v * 2 < b.x | initial buckets 1	8997	1
+SEMI LEFT | a.k = b.k AND a.v * 2 < b.x | initial buckets 4	8997	1
+-- the spilling wrapper of partitioned_hash switches to grace, whose buckets are partitioned joins
+INNER | spill switch	30000	1
+FULL | spill switch	50000	1
+-- every grace query wrote buckets and built them with the partitioned join
+1	0	0
+-- every spill query switched to grace and built its buckets with the partitioned join
+1	0	0

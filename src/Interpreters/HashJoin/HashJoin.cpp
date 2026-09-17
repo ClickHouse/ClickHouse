@@ -2383,31 +2383,13 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
         for (auto & worker : data->workers)
             worker.nullmaps.clear();
 
-        std::vector<size_t> positions;
-        std::vector<bool> is_nullable;
-        positions.reserve(right_sample_block.columns());
-        for (const auto & sample_column : right_sample_block)
-        {
-            positions.emplace_back(data->sample_block.getPositionByName(sample_column.name));
-            is_nullable.emplace_back(isNullableOrLowCardinalityNullable(sample_column.type));
-        }
-
         BlocksList restored_blocks;
         for (auto & worker : data->workers)
         {
             for (auto & saved_columns : worker.columns)
-            {
-                Columns all_columns = materializeStoredBlock(saved_columns, data->column_access_indexes);
-                Block restored_block;
-                for (size_t i = 0; i < positions.size(); ++i)
-                {
-                    auto column = data->sample_block.getByPosition(positions[i]);
-                    column.column = all_columns[positions[i]];
-                    correctNullabilityInplace(column, is_nullable[i]);
-                    restored_block.insert(column);
-                }
-                restored_blocks.emplace_back(std::move(restored_block));
-            }
+                restored_blocks.emplace_back(restoreRightBlock(
+                    data->sample_block.cloneWithColumns(materializeStoredBlock(saved_columns, data->column_access_indexes)),
+                    right_sample_block));
             worker.columns.clear();
         }
 
@@ -2439,6 +2421,18 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
 size_t HashJoin::getNumReleaseChunks() const
 {
     return data ? data->workers.size() : 0;
+}
+
+Block HashJoin::restoreRightBlock(const Block & saved_block, const Block & right_sample_block)
+{
+    Block restored;
+    for (const auto & sample_column : right_sample_block)
+    {
+        auto column = saved_block.getByName(sample_column.name);
+        correctNullabilityInplace(column, isNullableOrLowCardinalityNullable(sample_column.type));
+        restored.insert(std::move(column));
+    }
+    return restored;
 }
 
 BlocksList HashJoin::releaseJoinedBlocksChunk(size_t chunk_idx)

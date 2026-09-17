@@ -156,7 +156,13 @@ public:
     /// The barrier's decision for `rows` build rows, from the sketch estimate set with
     /// `setDistinctEstimate`: the table degree, the partition count and the scatter passes.
     void decidePartitionPlan(size_t rows);
-    void setDistinctEstimate(double estimate) { hll_estimate = estimate; }
+    /// `exact` says the estimate is a previous run's exact distinct count from the hash table statistics
+    /// cache, so the table reserve gets no safety factor (`reserveSafety`).
+    void setDistinctEstimate(double estimate, bool exact = false)
+    {
+        hll_estimate = estimate;
+        estimate_is_exact = exact;
+    }
     double hllEstimate() const { return hll_estimate; }
     /// The barrier's sketch estimate, floored at one so an empty build never sizes a zero-byte table.
     size_t distinctEstimate() const { return std::max<size_t>(static_cast<size_t>(std::llround(hll_estimate)), 1); }
@@ -174,6 +180,11 @@ public:
     /// Builds the table from the fill blocks after the barrier. Returns whether every inserted key was
     /// unique, which drives the RightAny promotion.
     bool postBuild(size_t rows);
+    /// `HashJoin`'s post-build conversion: a built `key32` / `key64` table whose keys span a dense range
+    /// of at most 2^18 values becomes a `range*` fixed map indexed by `key - min_key`. The probe reads
+    /// that map without hashing. Releases the shared table; the row refs it held are copied. Run after
+    /// the build finished and before the join sizes its used flags.
+    void tryConvertToFixedHashMap();
     /// Create the table, insert one block, then finish scratch and publish. A single fill thread
     /// runs the middle step per block. `reserve` is the cell count of the table created. `rows` is
     /// the row count so far, which sizes the arenas. `grow_at_max_fill_` lets walks double the table
@@ -181,6 +192,17 @@ public:
     void beginSinglePartitionInsert(size_t reserve, size_t rows, bool grow_at_max_fill_);
     void insertSingleLaneBlock(FillBlock & fill);
     bool finishSinglePartitionInsert();
+    /// The Join table engine's table: single-partition, small, grown by `emplace`; and its per-block
+    /// insert, which leaves the table probe-ready. Its keys and `RowRefList` chains live in
+    /// `join_table_arena`, shared by pointer with the per-query instances like the table itself.
+    void createJoinTable();
+    /// Returns whether a cell refers to the block: always for the list-valued shapes, and for the
+    /// single-row ones when a row was the first of its key or replaced the row under
+    /// `join_any_take_last_row`.
+    bool insertJoinTableBlock(FillBlock & fill);
+    /// Makes this clause a query's view of a Join table's: the table, its arena and its geometry are
+    /// shared by pointer with `source`, the storage's clause.
+    void shareTable(const HashJoinClause & source);
     /// Frees the post-build context and pool once the build is published.
     void releaseBuildScratch();
     /// Frees the table and arenas. The table goes first: cells point into the arenas and the row store.
@@ -200,6 +222,8 @@ public:
     static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
     bool hasTable() const { return table_maps != nullptr; }
+    /// Which `HashJoin::MapsVariant` alternative the table mirrors.
+    size_t mapsVariantIndex() const { return maps_variant_index; }
     const HashJoinTableMaps & tableMaps() const { return *table_maps; }
     /// The table's buffer bytes (drives the prefetch heuristics).
     size_t tableBytes() const { return ht_total_bytes; }
@@ -264,6 +288,8 @@ private:
     size_t duplicateScratchBytesForRange(size_t rows_in_range, bool first_group) const;
     /// The buffer degree for `reserve` cells; throws past 2^32 cells.
     size_t sizeDegreeFor(size_t reserve) const;
+    /// The safety factor a table reserve gets over its distinct estimate: none over an exact cached count.
+    double reserveSafety() const { return estimate_is_exact ? 1.0 : reserve_safety; }
     /// Rows the partitioned inserts will see: the sum of the exact per-partition counts.
     UInt64 insertableRows() const;
     /// Bytes still held by the saved routes.
@@ -330,16 +356,18 @@ private:
     /// Sets the table's distinct-key count from the owners' and the drain's claims.
     void publishTableSize(const PostBuildContext & ctx);
 
-    /// Inserts one compact section of `rows` rows into partition `partition`'s range for `worker`.
-    /// When `partition` is `single_partition`, inserts into the whole table from the stored blocks.
-    /// That is the only path where `skip_bytes` applies. Row i's stored ref is `locators[i]`, the
-    /// decoded `narrow_locators[i]`, or `RowRef(block_no, i)` when neither is set.
+    /// Inserts one compact section - rows `[first_row, first_row + rows)` of `key_columns` - into partition
+    /// `partition`'s range for `worker`. When `partition` is `single_partition`, inserts into the whole
+    /// table from the stored blocks. That is the only path where `skip_bytes` applies and where a section
+    /// starts past row 0. Row i's stored ref is `locators[i]`, the decoded `narrow_locators[i]`, or
+    /// `RowRef(block_no, i)` when neither is set.
     static constexpr size_t single_partition = std::numeric_limits<size_t>::max();
     void insertPartitionSection(
         PostBuildContext & ctx,
         size_t worker,
         size_t partition,
         const ColumnRawPtrs & key_columns,
+        size_t first_row,
         size_t rows,
         const UInt64 * locators,
         const UInt32 * narrow_locators_data,
@@ -379,12 +407,18 @@ private:
     /// `parallel_hash_join_threshold`: from this many build rows on, the insert phase gets at least one
     /// partition per worker, as `parallel_hash` gets one table per slot.
     size_t parallel_hash_join_threshold;
+    /// `enable_join_fixed_hash_table_conversion`.
+    const bool fixed_hash_table_conversion_enabled;
     std::optional<size_t> l1_cache_bytes_for_tests;
     std::optional<size_t> forced_bits_for_tests;
     double hll_estimate = 0;
+    /// Set when `hll_estimate` is a previous run's exact distinct count from the hash table statistics
+    /// cache rather than the sketch's estimate; see `setDistinctEstimate`.
+    bool estimate_is_exact = false;
     /// Reserve factor over the sketch estimate. Also the multiplicity band below which the arena
     /// prediction treats the build as unique (`predictedTableAndArenaBytes`). That second use needs
-    /// the wide margin. The ~1.15% sketch error alone would not.
+    /// the wide margin. The ~1.15% sketch error alone would not. An exact count from the cache gets no
+    /// factor (`reserveSafety`).
     double reserve_safety = 1.2;
     /// The table's buffer degree, fixed at the barrier: `2^size_degree` cells, `2^bits` ranges.
     size_t size_degree = 0;
@@ -399,9 +433,12 @@ private:
     bool narrow_locators = false;
 
     /// The one table. `build_arenas` hold the string keys and the duplicate spans the cells point at,
-    /// so they must outlive it: one arena per build worker plus one for the drain.
-    std::unique_ptr<HashJoinTableMaps> table_maps;
+    /// so they must outlive it: one arena per build worker plus one for the drain. A Join table's
+    /// instance keeps its keys and `Batch` chains in `join_table_arena` instead; both are shared by
+    /// pointer with the per-query instances.
+    std::shared_ptr<HashJoinTableMaps> table_maps;
     std::deque<Arena> build_arenas;
+    std::shared_ptr<Arena> join_table_arena;
     size_t ht_total_bytes = 0; /// the table's buffer bytes (drives the prefetch heuristics)
 
     std::unique_ptr<ThreadPool> post_build_pool;

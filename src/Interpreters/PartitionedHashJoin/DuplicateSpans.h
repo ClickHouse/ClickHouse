@@ -16,8 +16,9 @@ namespace ErrorCodes
 }
 
 /** Scratch for one pass of duplicate rows in a `PartitionedHashJoin` build. A pass is the inserts
-  * between two `SpanWriter::finish` calls: one owner's partition, one drain run, or one block on the
-  * single fill thread. On a key's first duplicate, the cell's previous word becomes the first item:
+  * between two `SpanWriter::finish` calls: one owner's partition, one drain run, or on the single
+  * fill thread a run of sections up to the first one whose duplicate groups look complete
+  * (`cheapToFinish`). On a key's first duplicate, the cell's previous word becomes the first item:
   * an inline ref, or a span or chain from an earlier pass. Later rows of the key append their refs.
   * The zero key has no bucket; its items live in `zero_items`. At finish, `SpanWriter` writes one
   * exact arena span per key.
@@ -29,6 +30,9 @@ struct PassScratch
     PaddedPODArray<UInt32> keys; /// per duplicated key of the pass: its bucket, first-duplicate order
     PaddedPODArray<UInt64> zero_items; /// the zero key's items of the pass; it has no bucket
     UInt64 spanning_keys = 0; /// keys whose previous word was a run or a chain
+    /// Keys whose rows continue from before this pass: the previous word was a run or a chain, or an
+    /// inline ref from another block. A finish gives each of them one more span.
+    UInt64 continued_keys = 0;
 
     /// Bytes per item (`bucket` + `item`) and per duplicated key (`keys`); the memory planner charges
     /// these. A key's first duplicate of the pass also stores the cell's previous word as an item.
@@ -36,6 +40,12 @@ struct PassScratch
     static constexpr size_t bytes_per_key = sizeof(UInt32);
 
     bool empty() const { return keys.empty() && zero_items.empty(); }
+
+    /// Whether a finish now costs little in layout. Every continued key would get another span - a
+    /// 16-byte header and one more link for the probe to walk. So a pass is finished early only while
+    /// such keys are rare against the items it would write, as when the rows of a key arrive together.
+    /// Spread duplicates keep the pass open, and it is finished once at the end with one span per key.
+    bool cheapToFinish() const { return item.size() + zero_items.size() >= 64 * continued_keys; }
 
     /// Logical occupancy, 8 bytes per zero-key item. Capacity slack is excluded on purpose: the spill
     /// budget is charged this figure, not the allocated bytes.
@@ -56,6 +66,7 @@ struct PassScratch
         keys.clear();
         zero_items.clear();
         spanning_keys = 0;
+        continued_keys = 0;
     }
 };
 
@@ -70,6 +81,7 @@ ALWAYS_INLINE inline void appendRow(RowRefList & mapped, UInt64 ref, UInt32 buck
         scratch.item.push_back(mapped.word);
         scratch.keys.push_back(bucket);
         scratch.spanning_keys += has_prev;
+        scratch.continued_keys += has_prev || refWordBlockNo(mapped.word) != refWordBlockNo(ref);
         mapped = RowRefList::makeCount(/*n_items=*/2, has_prev);
     }
     scratch.bucket.push_back(bucket);
@@ -82,9 +94,11 @@ ALWAYS_INLINE inline void appendRowZero(RowRefList & mapped, UInt64 ref, PassScr
         mapped.addItem();
     else
     {
+        const bool has_prev = !mapped.isInline();
         scratch.zero_items.push_back(mapped.word);
-        scratch.spanning_keys += !mapped.isInline();
-        mapped = RowRefList::makeCount(/*n_items=*/2, !mapped.isInline());
+        scratch.spanning_keys += has_prev;
+        scratch.continued_keys += has_prev || refWordBlockNo(mapped.word) != refWordBlockNo(ref);
+        mapped = RowRefList::makeCount(/*n_items=*/2, has_prev);
     }
     scratch.zero_items.push_back(ref);
 }
@@ -138,12 +152,20 @@ public:
         for (const auto bucket : scratch.keys)
             openKey(mapped_at(bucket));
 
+        /// The rows of a key that arrived together are consecutive items, and a run of them goes through
+        /// one read and one write of the cell word. Item by item, every write would wait on the previous
+        /// one's store to the same word.
         const size_t n = scratch.item.size();
-        for (size_t i = 0; i < n; ++i)
+        for (size_t i = 0; i < n;)
         {
-            if (i + 16 < n)
-                __builtin_prefetch(&mapped_at(scratch.bucket[i + 16]), 1, 3);
-            placeItem(mapped_at(scratch.bucket[i]), scratch.item[i]);
+            const UInt32 bucket = scratch.bucket[i];
+            size_t end = i + 1;
+            while (end < n && scratch.bucket[end] == bucket)
+                ++end;
+            if (end + 16 < n)
+                __builtin_prefetch(&mapped_at(scratch.bucket[end + 16]), 1, 3);
+            placeItems(mapped_at(bucket), &scratch.item[i], end - i);
+            i = end;
         }
 
         for (const auto bucket : scratch.keys)
@@ -155,8 +177,7 @@ public:
             if (!zero_mapped)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows of the zero key were appended, but no cell was given for them");
             openKey(*zero_mapped);
-            for (const auto it : scratch.zero_items)
-                placeItem(*zero_mapped, it);
+            placeItems(*zero_mapped, scratch.zero_items.data(), scratch.zero_items.size());
             closeKey(*zero_mapped);
         }
 
@@ -184,12 +205,20 @@ private:
         mapped = RowRefList::makeFill(span, /*placed=*/0, /*has_header=*/false);
     }
 
-    static void placeItem(RowRefList & mapped, UInt64 it)
+    /// Writes `count` items of one key; the open span's cursor state stays in registers across them.
+    static void placeItems(RowRefList & mapped, const UInt64 * items, size_t count)
     {
         chassert(mapped.isFill());
         UInt64 * cur = mapped.fillCursor();
         UInt32 placed = mapped.fillPlaced();
         bool hdr = mapped.fillHasHeader();
+        for (size_t k = 0; k < count; ++k)
+            placeWord(cur, placed, hdr, items[k]);
+        mapped = RowRefList::makeFill(cur, placed, hdr);
+    }
+
+    static ALWAYS_INLINE void placeWord(UInt64 *& cur, UInt32 & placed, bool & hdr, UInt64 it)
+    {
         if (!refWordIsInline(it))
         {
             cur[0] = RowRefList::fromWord(it).rows();
@@ -224,7 +253,6 @@ private:
             *cur++ = it;
             ++placed;
         }
-        mapped = RowRefList::makeFill(cur, placed, hdr);
     }
 
     static void closeKey(RowRefList & mapped)
