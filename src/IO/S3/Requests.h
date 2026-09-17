@@ -230,13 +230,6 @@ public:
     bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
-class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>
-{
-public:
-    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
-    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
-};
-
 /// Custom object metadata key under which a writer stamps the id identifying itself.
 static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
 
@@ -244,19 +237,31 @@ static constexpr auto IDEMPOTENCY_ID_METADATA_KEY = "clickhouse-idempotency-id";
 /// allows for an object's user metadata. It only has to be unique among writers racing for one key.
 static constexpr size_t IDEMPOTENCY_ID_LENGTH = 22;
 
-class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>
+/// Carries the id the writer stamped under `IDEMPOTENCY_ID_METADATA_KEY` on the object this request
+/// writes. Set it, and `DB::S3::Client` accepts a failure whose object proves to carry that id, i.e.
+/// an earlier attempt of this very write landed and lost its response. Left empty, the client asks
+/// nothing and reports the error as it is.
+class RequestWithIdempotencyId
 {
 public:
-    void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
-
-    /// The id `CreateMultipartUpload` stamped in the object's metadata. Set it and a NO_SUCH_UPLOAD
-    /// is accepted only when the object at the key carries it, i.e. an earlier attempt of this upload
-    /// completed and lost its response. Left empty, the error is reported as it is.
     void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
     const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
 private:
     Aws::String idempotency_id;
+};
+
+class PutObjectRequest : public ExtendedRequest<Model::PutObjectRequest>, public RequestWithIdempotencyId
+{
+public:
+    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
+    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
+};
+
+class CompleteMultipartUploadRequest : public ExtendedRequest<Model::CompleteMultipartUploadRequest>, public RequestWithIdempotencyId
+{
+public:
+    void SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue) override;
 };
 
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;

@@ -304,6 +304,12 @@ private:
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
+    /// True only if the object at `key` carries `idempotency_id`, i.e. the request that set that id
+    /// is what wrote it. An absent object, a foreign id, an unreadable object, and an empty
+    /// `idempotency_id` all give false. Costs one HeadObject and logs its own verdict.
+    bool isObjectWrittenWithIdempotencyId(
+        const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id) const;
+
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;

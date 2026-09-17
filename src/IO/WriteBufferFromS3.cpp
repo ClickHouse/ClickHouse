@@ -711,15 +711,6 @@ bool WriteBufferFromS3::completeMultipartUpload()
 
         const auto & error = outcome.GetError();
 
-        /// A 412 on our own object means this completion was replayed after it had succeeded.
-        /// NO_SUCH_UPLOAD is the same situation via a different error; the client resolves that one.
-        if (error.GetExceptionName() == "PreconditionFailed" && isObjectWrittenByThisBuffer())
-        {
-            LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write ({}). {}, Parts: {}",
-                     error.GetExceptionName(), getShortLogDetails(), multipart_tags.size());
-            return true;
-        }
-
         if (isTransientCompleteMultipartUploadError(error))
         {
             last_error_type = error.GetErrorType();
@@ -753,6 +744,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
     req.SetMetadata(metadataWithIdempotencyId());
+    req.setIdempotencyId(idempotency_id);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
@@ -778,11 +770,6 @@ ObjectAttributes WriteBufferFromS3::metadataWithIdempotencyId() const
     auto metadata = object_metadata.value_or(ObjectAttributes{});
     metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
     return metadata;
-}
-
-bool WriteBufferFromS3::isObjectWrittenByThisBuffer() const
-{
-    return isObjectWrittenWithIdempotencyId(*client_ptr, bucket, key, idempotency_id, log);
 }
 
 void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data)
@@ -836,21 +823,12 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             else
             {
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
-                /// not a genuine error — the caller handles it.
+                /// not a genuine error — the caller handles it. A 412 that this very write had already
+                /// landed never arrives here: the client proves that one by the idempotency id and
+                /// reports success instead.
                 if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
-                {
-                    /// A 412 on our own object means this PUT was replayed after it had succeeded.
-                    /// Anything we cannot prove we wrote is a pre-existing object and must still throw.
-                    if (isObjectWrittenByThisBuffer())
-                    {
-                        LOG_INFO(log, "Single part upload has completed by an earlier attempt of this write. {}, size {}",
-                                 getShortLogDetails(), content_length);
-                        return;
-                    }
-
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
-                }
                 else
                     LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);

@@ -208,12 +208,6 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
     }
 }
 
-bool objectCarriesIdempotencyId(const Aws::Map<Aws::String, Aws::String> & metadata, const Aws::String & idempotency_id)
-{
-    auto it = metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
-    return it != metadata.end() && it->second == idempotency_id;
-}
-
 template <bool IsReadMethod>
 void incrementProfileEvents(ProfileEvents::Event read_event, ProfileEvents::Event write_event)
 {
@@ -554,6 +548,35 @@ Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipar
         request, [this](Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
+bool Client::isObjectWrittenWithIdempotencyId(
+    const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id) const
+{
+    /// A match is what admits an object as the caller's own, so an empty id must never match one.
+    /// Writers always mint an id; an empty one means the caller did not ask for this check.
+    if (idempotency_id.empty())
+        return false;
+
+    auto head_request = HeadObjectRequest().WithBucket(bucket).WithKey(key);
+    auto head_outcome = HeadObject(head_request);
+
+    if (!head_outcome.IsSuccess())
+    {
+        LOG_INFO(
+            log,
+            "There is no readable object at the key to prove the write by. Key: {}, Bucket: {}, HeadObject error: {}",
+            key, bucket, head_outcome.GetError().GetMessage());
+        return false;
+    }
+
+    const auto & metadata = head_outcome.GetResult().GetMetadata();
+    auto it = metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+    if (it != metadata.end() && it->second == idempotency_id)
+        return true;
+
+    LOG_INFO(log, "The object at the key is another write's. Key: {}, Bucket: {}", key, bucket);
+    return false;
+}
+
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
@@ -562,35 +585,35 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    if (!outcome.IsSuccess()
-        && !request.getIdempotencyId().empty()
-        && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
-    {
-        auto check_request = HeadObjectRequest()
-                                 .WithBucket(bucket)
-                                 .WithKey(key);
-        auto check_outcome = HeadObject(check_request);
+    /// A completion that already landed comes back as one of two errors when it is replayed:
+    /// NO_SUCH_UPLOAD, because the server has consumed the upload id, or, for a conditional
+    /// completion, a 412 that its own result now fails. An upload aborted over a pre-existing object
+    /// and a lost CAS race report the very same two, so the error alone decides nothing: it may be
+    /// somebody else's object, and accepting it would report rows as stored that never were. The id
+    /// the upload stamped is what tells them apart. Neither error is retried.
+    const bool may_be_replay_of_a_landed_completion = !outcome.IsSuccess()
+        && (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
+            || outcome.GetError().GetExceptionName() == "PreconditionFailed");
 
-        /// The upload id is gone either because an earlier attempt completed and lost its response,
-        /// or because the upload was aborted. An object at the key does not tell those apart -- it
-        /// may be somebody else's, and accepting it would report rows as stored that never were.
-        /// The id this upload stamped does, and it comes back in this same HEAD.
-        if (check_outcome.IsSuccess()
-            && objectCarriesIdempotencyId(check_outcome.GetResult().GetMetadata(), request.getIdempotencyId()))
+    if (may_be_replay_of_a_landed_completion)
+    {
+        const auto error_name = outcome.GetError().GetExceptionName();
+
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId()))
         {
             LOG_INFO(
                 log,
-                "Multipart upload was completed by an earlier attempt of this upload. Key: {}, Bucket: {}",
-                key, bucket);
+                "Multipart upload was completed by an earlier attempt of this upload ({}). Key: {}, Bucket: {}",
+                error_name, key, bucket);
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
         }
         else
         {
             LOG_INFO(
                 log,
-                "Multipart upload was not completed and the key does not hold its result, reporting the error. "
-                "Key: {}, Bucket: {}, Object at key: {}",
-                key, bucket, check_outcome.IsSuccess() ? "another write's" : "absent");
+                "Multipart upload failed with {} and the key does not hold its result, reporting the error. "
+                "Key: {}, Bucket: {}",
+                error_name, key, bucket);
         }
     }
 
@@ -627,8 +650,25 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+    auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
+
+    /// A conditional PUT that already landed fails its own condition when it is replayed. A lost CAS
+    /// race over somebody else's object reports the same 412, so the error alone decides nothing --
+    /// only the id this PUT stamped tells the two apart.
+    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
+    {
+        const auto & key = request.GetKey();
+        const auto & bucket = request.GetBucket();
+
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId()))
+        {
+            LOG_INFO(log, "Object was put by an earlier attempt of this write. Key: {}, Bucket: {}", key, bucket);
+            outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
+        }
+    }
+
+    return outcome;
 }
 
 Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
