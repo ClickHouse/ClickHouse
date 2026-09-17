@@ -6,7 +6,10 @@ namespace DB
 {
 
 /** Replaces all the "or"'s with {i}like to multiMatchAny
- */
+  *
+  * End-anchored patterns (not ending in `%`, e.g. `'foo'`, `'%foo'`, `'fo_o'`) are never rewritten:
+  * Vectorscan matches `$` before a final newline, RE2 does not.
+  */
 class ConvertOrLikeChainPass final : public IQueryTreePass
 {
 public:
