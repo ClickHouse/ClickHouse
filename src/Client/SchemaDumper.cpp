@@ -218,6 +218,16 @@ std::vector<String> splitDatabaseList(const String & list)
 }
 
 /// Fetches all values of a single-column `String` query result, in row order.
+/// A result column can arrive wrapped in an internal representation (`Const` over a local connection,
+/// `Replicated`, `Sparse`); every cast below reads the unwrapped block instead.
+Block unwrapColumns(const Block & block)
+{
+    Block full = block;
+    for (auto & column : full)
+        column.column = column.column->convertToFullIfWrapped();
+    return full;
+}
+
 std::vector<String> fetchStringColumn(
     IServerConnection & connection, const ConnectionTimeouts & timeouts, const ClientInfo & client_info, const String & query,
     const Settings & base_settings)
@@ -228,10 +238,8 @@ std::vector<String> fetchStringColumn(
         if (block.empty())
             return;
 
-        /// A constant-folded result (`SELECT toString(tcpPort())`) arrives as a `ColumnConst` over
-        /// `LocalConnection`: only the native protocol materializes it on the way to the client.
-        ColumnPtr full_column = block.getByPosition(0).column->convertToFullColumnIfConst();
-        const ColumnString & column = typeid_cast<const ColumnString &>(*full_column);
+        const Block full = unwrapColumns(block);
+        const ColumnString & column = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
         for (size_t i = 0; i < column.size(); ++i)
             result.emplace_back(column[i].safeGet<String>());
     }, base_settings);
@@ -350,18 +358,19 @@ std::vector<RawTableRow> fetchRawRows(
         if (block.empty())
             return;
 
-        const ColumnString & database_column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
-        const ColumnString & name_column = typeid_cast<const ColumnString &>(*block.getByPosition(1).column);
-        const ColumnString & engine_column = typeid_cast<const ColumnString &>(*block.getByPosition(2).column);
-        const ColumnString & create_query_column = typeid_cast<const ColumnString &>(*block.getByPosition(3).column);
-        const ColumnString & as_select_column = typeid_cast<const ColumnString &>(*block.getByPosition(4).column);
-        const ColumnUUID & uuid_column = typeid_cast<const ColumnUUID &>(*block.getByPosition(5).column);
-        const auto & loading_deps_database_column = *block.getByPosition(6).column;
-        const auto & loading_deps_table_column = *block.getByPosition(7).column;
-        const auto & dependents_database_column = *block.getByPosition(8).column;
-        const auto & dependents_table_column = *block.getByPosition(9).column;
-        const ColumnString & target_database_column = typeid_cast<const ColumnString &>(*block.getByPosition(10).column);
-        const ColumnString & target_table_column = typeid_cast<const ColumnString &>(*block.getByPosition(11).column);
+        const Block full = unwrapColumns(block);
+        const ColumnString & database_column = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
+        const ColumnString & name_column = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
+        const ColumnString & engine_column = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
+        const ColumnString & create_query_column = typeid_cast<const ColumnString &>(*full.getByPosition(3).column);
+        const ColumnString & as_select_column = typeid_cast<const ColumnString &>(*full.getByPosition(4).column);
+        const ColumnUUID & uuid_column = typeid_cast<const ColumnUUID &>(*full.getByPosition(5).column);
+        const auto & loading_deps_database_column = *full.getByPosition(6).column;
+        const auto & loading_deps_table_column = *full.getByPosition(7).column;
+        const auto & dependents_database_column = *full.getByPosition(8).column;
+        const auto & dependents_table_column = *full.getByPosition(9).column;
+        const ColumnString & target_database_column = typeid_cast<const ColumnString &>(*full.getByPosition(10).column);
+        const ColumnString & target_table_column = typeid_cast<const ColumnString &>(*full.getByPosition(11).column);
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
@@ -1581,9 +1590,10 @@ std::vector<TableInfo> fetchTables(
                 {
                     if (block.empty())
                         return;
-                    const auto & name_col = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
-                    const auto & key_col = typeid_cast<const ColumnString &>(*block.getByPosition(1).column);
-                    const auto & value_col = typeid_cast<const ColumnString &>(*block.getByPosition(2).column);
+                    const Block full = unwrapColumns(block);
+                    const auto & name_col = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
+                    const auto & key_col = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
+                    const auto & value_col = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
                     for (size_t i = 0; i < name_col.size(); ++i)
                         (*cached)[name_col[i].safeGet<String>()].emplace(
                             key_col[i].safeGet<String>(), value_col[i].safeGet<String>());
@@ -1624,9 +1634,10 @@ std::vector<TableInfo> fetchTables(
             {
                 if (block.empty())
                     return;
-                const auto & db_col = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
-                const auto & name_col = typeid_cast<const ColumnString &>(*block.getByPosition(1).column);
-                const auto & engine_col = typeid_cast<const ColumnString &>(*block.getByPosition(2).column);
+                const Block full = unwrapColumns(block);
+                const auto & db_col = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
+                const auto & name_col = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
+                const auto & engine_col = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
                 for (size_t i = 0; i < db_col.size(); ++i)
                     undumped_tables_by_db[db_col[i].safeGet<String>()].emplace(
                         name_col[i].safeGet<String>(), engine_col[i].safeGet<String>());
