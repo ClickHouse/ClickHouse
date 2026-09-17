@@ -374,6 +374,16 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
     }
 }
 
+/// Whether a `LOG_ERROR` on this logger would reach any sink. Mirrors the enablement check in
+/// `LOG_IMPL`: a log file, the console and `system.text_log` all sit behind the logger's own level,
+/// and a client can additionally ask for server logs through `send_logs_level`.
+static bool errorMessageWillBeLogged(const LoggerPtr & logger)
+{
+    /// `currentThreadHasGroup()` must stay first: `currentThreadLogsLevel()` throws without a thread status.
+    return (currentThreadHasGroup() && currentThreadLogsLevel() >= LogsLevel::error)
+        || logger->is(Poco::Message::PRIO_ERROR);
+}
+
 /// Log exception (with query info) into text log (not into system table).
 static void logException(ContextPtr context, QueryLogElement & elem, bool log_error = true)
 {
@@ -947,19 +957,26 @@ void logQueryException(
 
     elem.is_internal = log_as_internal;
 
-    if (settings[Setting::calculate_text_stack_trace] && log_error)
+    /// `elem.stack_trace` has exactly two readers: `logException` below, and the `stack_trace` column
+    /// of `system.query_log`. Symbolizing it builds the symbol index of the whole binary on first use
+    /// in a process, which `clickhouse-local` deliberately does not do at startup.
+    std::shared_ptr<QueryLog> query_log;
+    if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
+        && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        query_log = context->getQueryLog();
+
+    if (settings[Setting::calculate_text_stack_trace] && log_error
+        && (query_log || errorMessageWillBeLogged(getLogger("executeQuery"))))
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
     logException(context, elem, log_error);
 
     /// In case of exception we log internal queries also
-    if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
-        && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+    if (query_log)
     {
         if (settings[Setting::log_query_settings] && !elem.query_settings)
             elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
-        if (auto query_log = context->getQueryLog())
-            query_log->add([&](QueryLogElement & e) { e = elem; });
+        query_log->add([&](QueryLogElement & e) { e = elem; });
     }
 
     if (query_span)
@@ -1038,12 +1055,17 @@ void logExceptionBeforeStart(
     if (settings[Setting::log_query_settings])
         elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
-    if (settings[Setting::calculate_text_stack_trace])
+    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
+
+    /// Unlike in `logQueryException`, a configured `query_log` here receives the trace even for a
+    /// cancelled query. That asymmetry is pre-existing.
+    auto query_log = context->getQueryLog();
+    if (settings[Setting::calculate_text_stack_trace]
+        && (query_log || (log_error && errorMessageWillBeLogged(getLogger("executeQuery")))))
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
 
     elem.is_internal = log_as_internal;
 
-    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
     logException(context, elem, log_error);
 
     /// Update performance counters before logging to query_log
@@ -1059,7 +1081,7 @@ void logExceptionBeforeStart(
     }
     logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
-    if (auto query_log = context->getQueryLog())
+    if (query_log)
     {
         if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
             && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
