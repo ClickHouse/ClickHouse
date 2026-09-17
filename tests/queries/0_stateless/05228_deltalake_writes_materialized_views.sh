@@ -62,8 +62,9 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "SELECT last_success_time IS NULL, exception LIKE '%SUPPORT_IS_DISABLED%' FROM system.view_refreshes WHERE database = currentDatabase() AND view = 'rmv_nosetting'"
 versions
 
-echo "-- refreshable MV APPEND TO delta with the setting on in its definition: one version per refresh"
-$CLICKHOUSE_CLIENT --query "
+echo "-- refreshable MV APPEND TO delta with the setting on in its definition: one version per refresh,"
+echo "-- triggered from a session that has writes off"
+$CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --query "
     CREATE MATERIALIZED VIEW rmv REFRESH EVERY 100 YEAR SETTINGS refresh_retries = 0 APPEND TO dl
     AS SELECT id + 1000 AS id, s FROM src SETTINGS allow_delta_lake_writes = 1;
     SYSTEM REFRESH VIEW rmv;

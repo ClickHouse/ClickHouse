@@ -15,7 +15,8 @@ versions: 2
 SUPPORT_IS_DISABLED
 1	1
 versions: 2
--- refreshable MV APPEND TO delta with the setting on in its definition: one version per refresh
+-- refreshable MV APPEND TO delta with the setting on in its definition: one version per refresh,
+-- triggered from a session that has writes off
 versions: 4
 20
 Scheduled	
