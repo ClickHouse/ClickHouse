@@ -52,7 +52,7 @@ namespace Setting
 
 namespace FailPoints
 {
-    extern const char storage_join_mutate_interrupt_before_replacing_file[];
+    extern const char storage_join_mutate_interrupt_before_commit[];
 }
 
 namespace ErrorCodes
@@ -195,6 +195,10 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// for execution of mutation interpreter.
     std::lock_guard mutate_lock(mutate_mutex);
 
+    /// No new insert can start while the lock is held, and the ones that already started must finish
+    /// before the rows are snapshotted: see `waitForOutstandingSinks`.
+    waitForOutstandingSinks(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()));
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
 
     auto backup_buf = disk->writeFile(path + mutation_data_file_name);
@@ -223,8 +227,9 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     /// Now acquire exclusive lock and modify storage.
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    join = std::move(new_data);
-    increment = 1;
+    /// The replacement takes the next number, so that the files of the inserts made after the
+    /// mutation is committed are told apart from the ones it replaces. See `completeMutation`.
+    const UInt64 mutation_id = increment + 1;
 
     if (persistent)
     {
@@ -232,37 +237,32 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         compressed_backup_buf.finalize();
         backup_buf->finalize();
 
+        fiu_do_on(FailPoints::storage_join_mutate_interrupt_before_commit,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the mutation is committed");
+        });
+
         /** Removing the files the mutation replaces and putting the replacement in their place is
           * more than one step, and a server that dies in between - a kill, an OOM, a crash - used to
           * leave the table with whichever of the old files happened to survive, while the
           * replacement, staged in a directory the load does not read, was ignored: rows the mutation
-          * never matched were silently gone. The marker names that window, and `restore` finishes
-          * the swap when it finds one.
+          * never matched were silently gone. The marker commits the mutation before anything is
+          * published or removed: up to here a failure leaves the table as it was, and from here on
+          * the swap is finished either below or by `restore` after an interruption.
           */
-        auto commit_buf = disk->writeFile(path + mutation_commit_file_name);
-        commit_buf->finalize();
-
-        std::vector<std::string> files;
-        disk->listFiles(path, files);
-        for (const auto & file_name: files)
-        {
-            if (file_name.ends_with(".bin"))
-                disk->removeFileIfExists(path + file_name);
-        }
-
-        fiu_do_on(FailPoints::storage_join_mutate_interrupt_before_replacing_file,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before the replacement file of the mutation is put in place");
-        });
-
-        disk->replaceFile(path + mutation_data_file_name, path + std::to_string(increment) + ".bin");
-        disk->removeFileIfExists(path + mutation_commit_file_name);
+        commitMutation(mutation_id);
     }
     else
     {
         compressed_backup_buf.cancel();
         backup_buf->cancel();
     }
+
+    join = std::move(new_data);
+    increment = mutation_id;
+
+    if (persistent)
+        completeMutation(mutation_id);
 }
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
