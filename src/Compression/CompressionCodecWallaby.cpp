@@ -102,6 +102,7 @@ public:
     explicit CompressionCodecWallaby(UInt8 float_width_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
 protected:
@@ -2236,7 +2237,11 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
 CompressionCodecWallaby::CompressionCodecWallaby(UInt8 float_width_)
     : float_width(float_width_)
 {
-    setCodecDescription("Wallaby");
+}
+
+ASTPtr CompressionCodecWallaby::getCodecDescription() const
+{
+    return makeCodecDescription("Wallaby");
 }
 
 uint8_t CompressionCodecWallaby::getMethodByte() const
@@ -2246,7 +2251,7 @@ uint8_t CompressionCodecWallaby::getMethodByte() const
 
 void CompressionCodecWallaby::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /* ignore_aliases */ true);
+    getCodecDescription()->updateTreeHash(hash, /* ignore_aliases */ true);
     hash.update(float_width);
 }
 
