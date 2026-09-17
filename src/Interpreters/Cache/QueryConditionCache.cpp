@@ -26,21 +26,29 @@ namespace DB
 namespace
 {
 
-/// Settings which cannot influence which marks match a condition. They are excluded from the key so that they don't split
-/// otherwise identical entries. Mirrors `isSettingIgnoredInQueryResultCache` of the query result cache.
-bool isSettingIgnoredInQueryConditionCache(std::string_view setting_name)
+/// Keep the settings lists in-sync with the ones for the query result cache
+
+bool isQueryConditionCacheRelatedSetting(const String & setting_name)
 {
-    /// Settings of the query condition cache itself: they decide whether the cache is consulted, not what is found in it.
-    return setting_name.starts_with("use_query_condition_cache")
-        || setting_name.starts_with("query_condition_cache_")
-        /// Settings of the query result cache: they operate on the query result, not on the scanned marks.
-        || setting_name.starts_with("query_cache_")
-        || setting_name.ends_with("_query_cache")
-        /// The output format settings only affect the final output.
+    return setting_name == "use_query_condition_cache" || setting_name == "use_query_condition_cache_for_top_k";
+}
+
+bool settingDoesNotAffectQueryCache(std::string_view setting_name)
+{
+    return setting_name == "log_comment"
+        /// As of today, the output format settings only affect the final output.
+        /// However, it should be taken with caution - we should not use these settings in deterministic SQL functions.
         || setting_name.starts_with("output_format_")
-        /// Tunes the server response but does not affect the query behavior.
-        || setting_name == "http_response_headers"
-        || setting_name == "log_comment";
+        /// This setting is used to tune the server response, but does not affect the query behavior.
+        /// An example why it should not affect query caching:
+        /// - if you run a query as usual, and then run the same query with asking the server
+        /// for Content-Disposition: attachment to download the result.
+        || setting_name == "http_response_headers";
+}
+
+bool isSettingIgnoredInQueryConditionCache(const String & setting_name)
+{
+    return isQueryConditionCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryCache(setting_name);
 }
 
 }
@@ -53,8 +61,8 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
     hash.update(condition_hash);
 
     /// Salt with the changed settings, see the comment in the header.
-    /// Note: `changes()` returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic
-    /// order. Therefore, collect and sort the settings first, then hash them.
+    /// Note: `changes()` returns the settings in random order but we must update the composite hash in deterministic order.
+    /// Therefore, first collect and sort the settings changes, then hash them.
     std::vector<std::pair<std::string_view, String>> changed_settings_sorted; /// (name, value)
     const SettingsChanges changed_settings = settings.changes();
     changed_settings_sorted.reserve(changed_settings.size());
@@ -63,9 +71,8 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
         if (!isSettingIgnoredInQueryConditionCache(change.name))
             changed_settings_sorted.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
     }
-    std::sort(
-        changed_settings_sorted.begin(), changed_settings_sorted.end(),
-        [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+    std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & [name, value] : changed_settings_sorted)
     {
         hash.update(name);

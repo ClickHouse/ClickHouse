@@ -13,12 +13,10 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ActionsDAG;
 class QueryConditionCache;
 
-/// Identifies a filter condition in the query condition cache, see FilterStep::setConditionForQueryConditionCache.
 struct QueryConditionCacheCondition
 {
     UInt64 hash;
     String condition;
-    /// The context of the query which evaluates the condition. Its settings are part of the cache key, see QueryConditionCache::makeKey.
     ContextPtr context;
 };
 

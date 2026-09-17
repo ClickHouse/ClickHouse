@@ -416,7 +416,7 @@ void FilterStep::updateOutputHeader()
 
 void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_, ContextPtr context_)
 {
-    condition = QueryConditionCacheCondition{.hash = condition_hash_, .condition = condition_, .context = std::move(context_)};
+    condition = {.hash = condition_hash_, .condition = condition_, .context = context_};
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)

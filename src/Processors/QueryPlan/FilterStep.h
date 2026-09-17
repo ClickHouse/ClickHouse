@@ -53,8 +53,6 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    /// Tag the filter for the query condition cache: `FilterTransform` records the marks which don't match the condition under
-    /// the given hash. `context_` is the context of the query, its settings are part of the cache key.
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_, ContextPtr context_);
 
     static bool canUseType(const DataTypePtr & type);
