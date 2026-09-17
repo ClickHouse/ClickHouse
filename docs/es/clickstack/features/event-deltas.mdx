@@ -100,7 +100,7 @@ Esta es la forma adecuada cuando quieres preguntarte &quot;¿qué hace que los s
   ## Drill-down iterativo
 </div>
 
-Los modos de comparación y distribución son más potentes cuando se usan en cadena. Haz clic en cualquier barra para abrir una ventana emergente con tres acciones:
+Los modos de comparación y distribución son más potentes cuando se encadenan. Haz clic en cualquier barra para abrir una ventana emergente con tres acciones:
 
 * **Filtrar**: conservar solo los spans con este valor
 * **Excluir**: eliminar los spans con este valor
@@ -108,13 +108,13 @@ Los modos de comparación y distribución son más potentes cuando se usan en ca
 
 <Image img="/images/clickstack/event-deltas/drill-down.webp" alt="Ventana emergente al hacer clic en una barra de ScopeVersion que muestra los porcentajes de Selección frente a Fondo y las acciones de filtrar, excluir y copiar" size="lg" />
 
-Después de aplicar un filtro o una exclusión, se borra la selección del mapa de calor, el mapa de calor se vuelve a generar para la nueva población y el modo de distribución se reanuda para ese conjunto filtrado. Observa cómo cambia la forma del mapa de calor; un filtro eficaz elimina visiblemente la banda lenta, hace desaparecer la división bimodal o aplana la tendencia ascendente. Repite: detecta el siguiente valor sospechoso, filtra, observa el nuevo mapa de calor y observa las nuevas distribuciones. Unas pocas iteraciones suelen acotar una regresión a uno o dos atributos.
+Después de aplicar un filtro o una exclusión, se borra la selección del mapa de calor, el mapa de calor se vuelve a generar para la nueva población y el modo de distribución se reanuda sobre ese conjunto filtrado. Observa cómo cambia la forma del mapa de calor; un filtro eficaz elimina visiblemente la banda lenta, hace desaparecer la división bimodal o aplana la deriva ascendente. Repite: detecta el siguiente valor sospechoso, filtra, observa el nuevo mapa de calor y observa las nuevas distribuciones. Unas pocas iteraciones suelen acotar una regresión a uno o dos atributos.
 
 <Note>
   Los buckets agregados **Other (N)** que agrupan valores de baja frecuencia no se pueden pulsar. Para filtrar un valor específico dentro de ese bucket, usa directamente la [barra de búsqueda](/es/clickstack/features/search).
 </Note>
 
-Cuando la población sea lo bastante pequeña, cambia a la pestaña **Results Table** para inspeccionar traces individuales; tus filtros se mantienen.
+Cuando la población sea lo bastante pequeña, cambia a la pestaña **Results Table** para inspeccionar trazas individuales; tus filtros se mantienen.
 
 <div id="customize">
   ## Personaliza el mapa de calor
@@ -142,7 +142,7 @@ Escenarios habituales en los que querrás cambiar estos valores predeterminados:
 
 * **Cambia Scale a Linear** cuando el rango de latencia sea estrecho (por ejemplo, un servicio cuyos spans se ejecutan todos entre 5 y 50 ms). La escala Log desperdicia rango vertical en el extremo superior, donde no hay datos.
 * **Representa algo distinto de la duración en el eje Y.** Configurar **Value** como `SpanAttributes.http.response.size` te permite investigar respuestas lentas y *grandes*; una expresión como `if(StatusCode = 'Error', 1, 0)` representa la frecuencia de errores a lo largo del tiempo en todos los servicios.
-* **Colorea según algo distinto del recuento.** Configurar **Count** como `p95(Duration)` colorea cada bucket según la latencia de cola en lugar del volumen, lo que saca a la luz zonas poco frecuentes pero lentas que una vista basada en recuento oculta. `countDistinct(TraceId)` distingue el volumen de traces del volumen de spans cuando un trace produce muchos spans.
+* **Colorea según algo distinto del recuento.** Configurar **Count** como `p95(Duration)` colorea cada bucket según la latencia de cola en lugar del volumen, lo que saca a la luz zonas poco frecuentes pero lentas que una vista basada en recuento oculta. `countDistinct(TraceId)` distingue el volumen de trazas del volumen de spans cuando una traza produce muchos spans.
 
 <div id="tips">
   ## Consejos para un uso eficaz

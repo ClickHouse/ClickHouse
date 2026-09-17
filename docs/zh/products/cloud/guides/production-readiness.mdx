@@ -106,7 +106,7 @@ ClickHouse Cloud 使用组织级角色 (Admin、Developer、Billing、Member) �
   ### 用户生命周期管理的限制
 </div>
 
-ClickHouse Cloud 目前以私有预览形式支持 [SCIM 预配](/zh/products/cloud/guides/security/cloud-access-management/scim-setup)，并支持 Okta。SCIM 可自动管理用户和组的生命周期，因此当你在身份提供商中分配或取消分配用户时，系统会自动创建或移除相应用户。如果未使用 SCIM，则用户从你的 IdP 中移除后，还必须在 ClickHouse Cloud 控制台中手动删除——在这种情况下，请提前规划好手动用户管理流程。
+ClickHouse Cloud 通过 [Okta](/zh/products/cloud/guides/security/cloud-access-management/scim-setup) 和 [Microsoft Entra ID](/zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra) 支持 SCIM 预配。SCIM 可自动管理用户和组的生命周期，因此当你在身份提供商中分配或取消分配用户时，系统会自动创建或移除相应用户。如果未使用 SCIM，则用户从你的 IdP 中移除后，还必须在 ClickHouse Cloud 控制台中手动删除——在这种情况下，请提前规划好手动用户管理流程。
 
 进一步了解[云访问管理](/zh/products/cloud/guides/security/cloud-access-management/index)和 [SAML 单点登录设置](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)。
 

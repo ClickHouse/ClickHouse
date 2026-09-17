@@ -9,7 +9,7 @@ insert into testX select number from numbers(50) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_1',
     log_queries=1,
-    max_insert_threads=0,
+    max_insert_threads=1,
     parallel_view_processing=0,
     optimize_trivial_insert_select=0;
 select count() from testX;
@@ -22,7 +22,7 @@ insert into testX select number from numbers(50) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_2',
     log_queries=1,
-    max_insert_threads=0,
+    max_insert_threads=1,
     parallel_view_processing=0,
     optimize_trivial_insert_select=1;
 select count() from testX;
@@ -35,7 +35,7 @@ insert into testX select number from numbers(50) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_3',
     log_queries=1,
-    max_insert_threads=0,
+    max_insert_threads=1,
     parallel_view_processing=1,
     optimize_trivial_insert_select=0;
 select count() from testX;
@@ -48,7 +48,7 @@ insert into testX select number from numbers(50) settings
     send_logs_level='fatal',
     insert_deduplication_token='UT_4',
     log_queries=1,
-    max_insert_threads=0,
+    max_insert_threads=1,
     parallel_view_processing=1,
     optimize_trivial_insert_select=1;
 select count() from testX;
@@ -127,10 +127,10 @@ from system.query_log where
     type != 'QueryStart' and
     query like '%insert into testX %'
 order by ALL;
-0	10	0	0	0
-0	10	0	0	1
-0	10	0	1	0
-0	10	0	1	1
+0	10	1	0	0
+0	10	1	0	1
+0	10	1	1	0
+0	10	1	1	1
 0	10	5	0	0
 0	10	5	0	1
 1	10	5	1	0

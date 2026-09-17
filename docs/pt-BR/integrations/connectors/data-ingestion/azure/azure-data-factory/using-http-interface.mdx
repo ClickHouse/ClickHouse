@@ -135,31 +135,31 @@ nova instância do Azure Data Factory.
 1. Faça login no Microsoft Azure Portal e abra sua instância do Data Factory.
    <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Página inicial do Azure Portal com Data Factory" border />
 
-2. Na página de visão geral do Data Factory, clique em **Launch Studio**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Página do Data Factory no Azure Portal" border />
+2. Na página Overview do Data Factory, clique em **Launch Studio**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Página do Azure Portal Data Factory" border />
 
-3. No menu à esquerda, selecione **Manage**, depois vá para **Linked services**
-   e clique em **+ New** para criar um novo linked service.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Botão New Linked Service do Azure Data Factory" border />
+3. No menu à esquerda, selecione **Manage** e depois vá para **Linked services**,
+   então clique em **+ Novo** para criar um novo linked service.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Botão Novo Linked Service do Azure Data Factory" border />
 
-4. Na **barra de pesquisa New linked service**, digite **REST**, selecione **REST** e clique em **Continue**
-   para criar uma instância de [conector REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Pesquisa New Linked Service do Azure Data Factory" border />
+4. Na **barra de pesquisa do novo linked service**, digite **REST**, selecione **REST** e clique em **Continue**
+   para criar uma instância de [um conector REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Busca de novo linked service do Azure Data Factory" border />
 
-5. No painel de configuração do linked service, insira um nome para o novo linked service,
-   clique no campo **Base URL** e, em seguida, em **Add dynamic content** (esse link só
+5. No painel de configuração do linked service, insira um nome para o novo serviço,
+   clique no campo **Base URL** e depois em **Add dynamic content** (esse link só
    aparece quando o campo está selecionado).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="Painel New Lined Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="Painel do novo linked service" border />
 
 6. No painel de conteúdo dinâmico, você pode criar uma URL parametrizada, o que
-   permite definir a consulta mais tarde ao criar datasets para diferentes
+   permite definir a consulta depois, ao criar datasets para diferentes
    tabelas — isso torna o linked service reutilizável.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="Base URL vazia do New Linked Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="URL base do novo linked service vazia" border />
 
 7. Clique no **&quot;+&quot;** ao lado do campo de filtro e adicione um novo parâmetro, nomeando-o
    como `pQuery`, defina o tipo como String e o valor padrão como `SELECT 1`.
    Clique em **Save**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Parâmetros do New Linked Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Parâmetros do novo linked service" border />
 
 8. No campo de expressão, insira o texto a seguir e clique em **OK**. Substitua
    `your-clickhouse-url.com` pelo endereço real da sua instância do
@@ -167,13 +167,13 @@ nova instância do Azure Data Factory.
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="Campo de expressão preenchido do New Linked Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="Campo de expressão do novo linked service preenchido" border />
 
-9. De volta ao formulário principal, selecione **Basic authentication**, insira o nome de usuário e a
+9. De volta ao formulário principal, selecione autenticação básica, insira o nome de usuário e a
    senha usados para se conectar à sua interface HTTP do ClickHouse e clique em **Test
    connection**. Se tudo estiver configurado corretamente, você verá uma mensagem
    de sucesso.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="Check Connection do New Linked Service" border />
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="Verificar conexão do novo linked service" border />
 
 10. Clique em **Create** para finalizar a configuração.
     <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="Lista de Linked Services" border />
@@ -208,7 +208,7 @@ Data](/pt-BR/get-started/sample-datasets/environmental-sensors).
    ```
 
 2. No Azure Data Factory Studio, selecione Author no painel à esquerda. Passe o cursor
-   sobre o item Dataset, clique no ícone de três pontos e escolha New dataset.
+   sobre o item conjunto de dados, clique no ícone de três pontos e escolha New dataset.
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="Novo item de conjunto de dados" border />
 
 3. Na barra de pesquisa, digite **REST**, selecione **REST** e clique em **Continue**.
@@ -271,8 +271,8 @@ salvar suas alterações.
   ## Criando uma atividade de cópia para transferir dados para o ClickHouse
 </div>
 
-Agora que configuramos os datasets de entrada e saída, podemos configurar uma
-atividade de **Copy Data** para transferir dados do nosso dataset de exemplo para a
+Agora que configuramos os conjuntos de dados de entrada e saída, podemos configurar uma
+atividade de **Copy Data** para transferir dados do nosso conjunto de dados de exemplo para a
 tabela `sensors` no ClickHouse.
 
 1. Abra o **Azure Data Factory Studio** e vá para a **guia Author**. No painel
@@ -284,10 +284,10 @@ tabela `sensors` no ClickHouse.
    arraste a atividade **Copy data** para a tela.
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="Novo item Copy Data" border />
 
-3. Selecione a guia **Source** e escolha o dataset de origem que você criou anteriormente.
+3. Selecione a guia **Source** e escolha o conjunto de dados de origem que você criou anteriormente.
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="Origem do Copy Data" border />
 
-4. Vá para a guia **Sink** e selecione o dataset do ClickHouse criado para a
+4. Vá para a guia **Sink** e selecione o conjunto de dados do ClickHouse criado para a
    tabela `sensors`. Defina **Request method** como POST. Certifique-se de que **HTTP compression
    type** esteja definido como **None**.
 
@@ -310,7 +310,7 @@ tabela `sensors` no ClickHouse.
    corretamente, a tarefa deverá terminar com status **Success**.
    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="Sucesso no debug do Copy Data" border />
 
-6. Quando concluir, clique em **Publish all** para salvar as alterações no pipeline e no dataset.
+6. Quando concluir, clique em **Publish all** para salvar as alterações no pipeline e no conjunto de dados.
 
 <div id="additional-resources-1">
   ## Recursos adicionais

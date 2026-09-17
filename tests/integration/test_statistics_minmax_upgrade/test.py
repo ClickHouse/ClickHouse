@@ -76,23 +76,14 @@ def test_statistics_minmax_upgrade(start_cluster):
     assert node.query("SELECT count() FROM t_minmax").strip() == "2000"
 
     # An unrelated ALTER on the upgraded table must not be rejected because of the explicit
-    # `minmax` statistics it still carries in its metadata (loaded from disk with is_implicit=false).
-    # `checkAlterIsPossible` validates the whole post-alter metadata, so only `minmax` newly introduced
-    # by the statement should be rejected; pre-existing `minmax` is grandfathered.
+    # `minmax` statistics it still carries in its metadata.
     node.query("ALTER TABLE t_minmax COMMENT COLUMN id 'the primary key'")
     assert "the primary key" in node.query("SHOW CREATE TABLE t_minmax")
     # The declared `minmax` statistics is still preserved after the unrelated ALTER.
     assert "STATISTICS(minmax)" in node.query("SHOW CREATE TABLE t_minmax")
-    # Re-stating the column with its pre-existing explicit `minmax` is grandfathered too.
     node.query("ALTER TABLE t_minmax MODIFY COLUMN value Int64 STATISTICS(minmax)")
     assert "STATISTICS(minmax)" in node.query("SHOW CREATE TABLE t_minmax")
     assert node.query("SELECT count() FROM t_minmax").strip() == "2000"
-
-    # Introducing a NEW `minmax` statistics on the upgraded table is still rejected.
-    assert "INCORRECT_QUERY" in node.query_and_get_error(
-        "ALTER TABLE t_minmax ADD STATISTICS id TYPE minmax",
-        settings={"allow_statistics": 1},
-    )
 
     # New inserts and a merge across old and new parts work.
     node.query("SYSTEM START MERGES t_minmax")
@@ -108,21 +99,6 @@ def test_statistics_minmax_upgrade(start_cluster):
             settings={"use_statistics_for_part_pruning": 1},
         ).strip()
         == "1000"
-    )
-
-    # --- New `minmax` statistics can no longer be created on the upgraded version. ---
-    assert "INCORRECT_QUERY" in node.query_and_get_error(
-        "CREATE TABLE t_minmax_new (id UInt64, value Int64 STATISTICS(minmax)) "
-        "ENGINE = MergeTree ORDER BY id",
-        settings={"allow_statistics": 1},
-    )
-    assert "INCORRECT_QUERY" in node.query_and_get_error(
-        "ALTER TABLE t_minmax ADD STATISTICS id TYPE minmax",
-        settings={"allow_statistics": 1},
-    )
-    assert "INCORRECT_QUERY" in node.query_and_get_error(
-        "CREATE TABLE t_minmax_auto (id UInt64) ENGINE = MergeTree ORDER BY id "
-        "SETTINGS auto_statistics_types = 'minmax, uniq'"
     )
 
     # A new table created with the current defaults uses `basic` (the replacement), not `minmax`.

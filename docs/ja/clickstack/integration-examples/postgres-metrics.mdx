@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 * 適切な権限を持つ PostgreSQL の監視ユーザー
 
 <Steps>
-  <Step>
-    #### 監視ユーザーに必要な権限があることを確認する
-
+  <Step title="監視ユーザーに必要な権限があることを確認する" id="monitoring-permissions">
     PostgreSQL レシーバーでは、統計ビューへの読み取り権限を持つユーザーが必要です。監視ユーザーに `pg_monitor` ロールを付与してください。
 
     ```sql
@@ -45,9 +43,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### カスタム OTel collector 設定を作成する
-
+  <Step title="カスタム OTel collector 設定を作成する" id="create-custom-config">
     ClickStack では、カスタム設定ファイルをマウントし、環境変数を設定することで、ベースの OpenTelemetry collector 設定を拡張できます。
 
     `postgres-metrics.yaml` を作成します。
@@ -93,9 +89,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### カスタム設定で ClickStack をデプロイする
-
+  <Step title="カスタム設定で ClickStack をデプロイする" id="deploy-clickstack">
     カスタム設定をマウントします。
 
     ```bash
@@ -111,9 +105,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### メトリクス収集を確認する
-
+  <Step title="メトリクス収集を確認する" id="verify-metrics">
     設定後、HyperDX にログインして、メトリクスが取り込まれていることを確認します。
 
     1. Metrics explorer に移動します
@@ -137,9 +129,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 </Info>
 
 <Steps>
-  <Step>
-    #### サンプルのメトリクスデータセットをダウンロードする
-
+  <Step title="サンプルのメトリクスデータセットをダウンロードする" id="download-sample">
     事前生成済みのメトリクスファイルをダウンロードします (実際の傾向を再現した 24 時間分の PostgreSQL メトリクス) :
 
     ```bash
@@ -152,15 +142,13 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 
     このデータセットには、以下のような実際に近いパターンが含まれています:
 
-    * **朝の接続急増 (08:00)&#x20;**&#x20;- ログイン集中
-    * **cache パフォーマンスの問題 (11:00)&#x20;**&#x20;- Blocks&#95;read が急増
-    * **アプリケーションのバグ (14:00-14:30)&#x20;**&#x20;- rollback 率が 15% まで急上昇
-    * **deadlock の発生 (14:15、16:30)&#x20;**&#x20;- まれに発生する deadlock
+    * **朝の接続急増 (08:00)** - ログイン集中
+    * **cache パフォーマンスの問題 (11:00)** - Blocks&#95;read が急増
+    * **アプリケーションのバグ (14:00-14:30)** - rollback 率が 15% まで急上昇
+    * **deadlock の発生 (14:15、16:30)** - まれに発生する deadlock
   </Step>
 
-  <Step>
-    #### ClickStack を起動する
-
+  <Step title="ClickStack を起動する" id="start-clickstack">
     ClickStack インスタンスを起動します:
 
     ```bash
@@ -172,9 +160,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ClickStack が完全に起動するまで約 30 秒待ちます。
   </Step>
 
-  <Step>
-    #### メトリクスを ClickStack に読み込む
-
+  <Step title="メトリクスを ClickStack に読み込む" id="load-metrics">
     メトリクスを ClickHouse に直接読み込みます:
 
     ```bash
@@ -188,9 +174,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### HyperDX でメトリクスを確認する
-
+  <Step title="HyperDX でメトリクスを確認する" id="verify-metrics-demo">
     読み込み後、メトリクスをすばやく確認するには、あらかじめ用意されたダッシュボードを使うのが最も簡単です。
 
     [ダッシュボードと可視化](#dashboards) セクションに進み、ダッシュボードをインポートして、多くの PostgreSQL メトリクスを一度に確認してください。
@@ -210,13 +194,11 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 ClickStack で PostgreSQL の監視を始める際に役立つよう、PostgreSQL のメトリクス向けの基本的な可視化を用意しています。
 
 <Steps>
-  <Step>
-    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">ダウンロード</TrackedLink>する
+  <Step title="ダッシュボード設定をダウンロードする" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>します。
   </Step>
 
-  <Step>
-    #### あらかじめ用意されたダッシュボードをインポートする
-
+  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニュー内にある **Import Dashboard** をクリックします
 
@@ -227,9 +209,7 @@ ClickStack で PostgreSQL の監視を始める際に役立つよう、PostgreSQ
     <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="Finish Import ダイアログ" />
   </Step>
 
-  <Step>
-    #### ダッシュボードを表示する
-
+  <Step title="ダッシュボードを表示する" id="created-dashboard">
     ダッシュボードは、すべての可視化が事前設定された状態で作成されます。
 
     <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="PostgreSQL メトリクスダッシュボード" />
@@ -304,4 +284,4 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
   ## 本番環境への移行
 </div>
 
-このガイドでは、素早くセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を利用しています。本番環境にデプロイする場合は、独自の OTel Collector を実行し、ClickStack の OTLP エンドポイントにデータを送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+このガイドでは、素早くセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を拡張して利用します。本番環境でデプロイする場合は、独自の OTel Collector を実行し、ClickStack の OTLP エンドポイントにデータを送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

@@ -32,9 +32,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 <br />
 
 <Steps>
-  <Step>
-    ### Docker でデプロイする
-
+  <Step title="Docker でデプロイする" id="deploy-with-docker">
     以下を実行すると、OpenTelemetry collector (ポート 4317 と 4318) および HyperDX UI (ポート 8080) が起動します。
 
     ```shell
@@ -48,24 +46,20 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ### HyperDX UI にアクセスする
-
+  <Step title="HyperDX UI にアクセスする" id="navigate-to-hyperdx-ui">
     HyperDX UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開きます。
 
     要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
 
-    `Create` をクリックすると、組み込みの ClickHouse インスタンス用のデータソースが作成されます。
+    `Create` をクリックすると、組み込みの ClickHouse インスタンス用のデータログソースが作成されます。
 
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
 
     別の ClickHouse インスタンスを使用する例については、[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud) を参照してください。
   </Step>
 
-  <Step>
-    ### データを取り込む
-
-    データの取り込みについては、[&quot;データの取り込み&quot;](/ja/clickstack/ingesting-data/index) を参照してください。
+  <Step title="データを取り込む" id="ingest-data">
+    データの取り込みについては、[&quot;データの取り込み&quot;](/ja/clickstack/ingesting-data/overview) を参照してください。
   </Step>
 </Steps>
 

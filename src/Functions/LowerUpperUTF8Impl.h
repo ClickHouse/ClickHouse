@@ -15,6 +15,12 @@
 
 #    include <algorithm>
 
+#    if defined(__aarch64__) && defined(__ARM_NEON)
+#        include <arm_neon.h>
+#    elif defined(__SSE2__)
+#        include <immintrin.h>
+#    endif
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
@@ -40,7 +46,7 @@ struct LowerUpperUTF8Impl
         if (input_rows_count == 0)
             return;
 
-        bool all_ascii = isAllASCII(data.data(), data.size());
+        bool all_ascii = isAllASCIIWithEarlyExit(data.data(), data.size());
         if (all_ascii)
         {
             LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::vector(data, offsets, res_data, res_offsets, input_rows_count);
@@ -61,10 +67,43 @@ struct LowerUpperUTF8Impl
         });
 
         size_t curr_offset = 0;
+
+        auto process_ascii_run = [&](size_t first_row, size_t last_row)
+        {
+            if (first_row == last_row)
+                return;
+
+            const size_t src_begin_offset = first_row == 0 ? 0 : offsets[first_row - 1];
+            const size_t src_end_offset = offsets[last_row - 1];
+            const size_t src_size = src_end_offset - src_begin_offset;
+
+            if (curr_offset > res_data.size() || src_size > res_data.size() - curr_offset)
+                res_data.resize(curr_offset + src_size);
+
+            const size_t dst_begin_offset = curr_offset;
+            LowerUpperImpl<not_case_lower_bound, not_case_upper_bound>::vectorRaw(
+                data.data() + src_begin_offset,
+                data.data() + src_end_offset,
+                res_data.data() + dst_begin_offset);
+            curr_offset += src_size;
+
+            for (size_t row_i = first_row; row_i < last_row; ++row_i)
+                res_offsets[row_i] = dst_begin_offset + offsets[row_i] - src_begin_offset;
+        };
+
+        size_t ascii_run_start = 0;
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
-            const auto * src = reinterpret_cast<const char *>(&data[offsets[row_i - 1]]);
-            size_t src_size = offsets[row_i] - offsets[row_i - 1];
+            const size_t src_begin_offset = row_i == 0 ? 0 : offsets[row_i - 1];
+            const size_t src_end_offset = offsets[row_i];
+            const size_t src_size = src_end_offset - src_begin_offset;
+            if (isAllASCIIWithEarlyExit(data.data() + src_begin_offset, src_size))
+                continue;
+
+            process_ascii_run(ascii_run_start, row_i);
+            ascii_run_start = row_i + 1;
+
+            const auto * src = reinterpret_cast<const char *>(data.data() + src_begin_offset);
 
             /// ICU APIs accept `int32_t` for buffer sizes and return the required output
             /// length as `int32_t` on `U_BUFFER_OVERFLOW_ERROR`. Unicode full case mapping
@@ -144,12 +183,63 @@ struct LowerUpperUTF8Impl
             res_offsets[row_i] = curr_offset;
         }
 
+        process_ascii_run(ascii_run_start, input_rows_count);
+
         res_data.resize(curr_offset);
     }
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Functions lowerUTF8 and upperUTF8 cannot work with FixedString argument");
+    }
+
+private:
+    static bool isAllASCIIWithEarlyExit(const UInt8 * data, size_t size)
+    {
+        size_t i = 0;
+#    if defined(__AVX2__)
+        for (; i + 128 <= size; i += 128)
+        {
+            auto any = _mm256_setzero_si256();
+            for (size_t j = 0; j < 128; j += 32)
+                any = _mm256_or_si256(any, _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i + j)));
+
+            if (_mm256_movemask_epi8(any))
+                return false;
+        }
+#    elif defined(__aarch64__) && defined(__ARM_NEON)
+        for (; i + 64 <= size; i += 64)
+        {
+            const auto bytes0 = vld1q_u8(reinterpret_cast<const uint8_t *>(data + i));
+            const auto bytes1 = vld1q_u8(reinterpret_cast<const uint8_t *>(data + i + 16));
+            const auto bytes2 = vld1q_u8(reinterpret_cast<const uint8_t *>(data + i + 32));
+            const auto bytes3 = vld1q_u8(reinterpret_cast<const uint8_t *>(data + i + 48));
+            const auto any = vorrq_u8(vorrq_u8(bytes0, bytes1), vorrq_u8(bytes2, bytes3));
+            if (vmaxvq_u8(any) & 0x80)
+                return false;
+        }
+#    elif defined(__SSE2__)
+        for (; i + 64 <= size; i += 64)
+        {
+            auto any = _mm_setzero_si128();
+            for (size_t j = 0; j < 64; j += 16)
+                any = _mm_or_si128(any, _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + i + j)));
+
+            if (_mm_movemask_epi8(any))
+                return false;
+        }
+#    endif
+
+        /// Keep the existing vectorized scan for larger tails. For short rows,
+        /// stop at the first non-ASCII byte because this check is on the hot path.
+        if (size - i >= 32)
+            return isAllASCII(data + i, size - i);
+
+        for (; i < size; ++i)
+            if (data[i] & 0x80)
+                return false;
+
+        return true;
     }
 };
 

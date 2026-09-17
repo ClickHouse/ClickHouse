@@ -12,6 +12,13 @@ node1 = cluster.add_instance(
 )
 
 path_to_data = "/var/lib/clickhouse/"
+encrypted_uuid = "40000000-1000-4000-8000-000000000001"
+encrypted_logical_path = f"store/400/{encrypted_uuid}/"
+encrypted_inner_store_path = f"{path_to_data}encrypted_inner/store"
+encrypted_store_prefix = (
+    f"{path_to_data}encrypted_inner/encrypted_outer/store/400"
+)
+encrypted_orphan_path = f"{encrypted_store_prefix}/{encrypted_uuid}"
 
 
 @pytest.fixture(scope="module")
@@ -91,6 +98,10 @@ def test_store_cleanup(started_cluster):
     node1.exec_in_container(
         ["mkdir", f"{path_to_data}/store/456/45600000-1000-4000-8000-000000000004"]
     )
+    # Keep the inner disk's store directory available for its own cleanup pass.
+    node1.exec_in_container(["mkdir", "-p", encrypted_inner_store_path])
+    node1.exec_in_container(["mkdir", "-p", f"{encrypted_orphan_path}/nested"])
+    node1.exec_in_container(["touch", f"{encrypted_orphan_path}/nested/garbage"])
 
     node1.start_clickhouse()
     node1.query("DETACH DATABASE db2", settings=sync_drop)
@@ -103,6 +114,21 @@ def test_store_cleanup(started_cluster):
     )
     node1.wait_for_log_line(
         "directories from store", timeout=60, look_behind_lines=1000000
+    )
+    node1.wait_for_log_line(
+        f"Removing access rights for unused directory {encrypted_logical_path} from disk encrypted_disk",
+        timeout=60,
+        look_behind_lines=1000000,
+    )
+    node1.wait_for_log_line(
+        "Cleaned up 1 directories from store/ on disk encrypted_disk",
+        timeout=60,
+        look_behind_lines=1000000,
+    )
+
+    assert (
+        node1.exec_in_container(["stat", "-c", "%a", encrypted_orphan_path]).strip()
+        == "0"
     )
 
     store = node1.exec_in_container(["ls", f"{path_to_data}/store"])
@@ -164,6 +190,19 @@ def test_store_cleanup(started_cluster):
     node1.wait_for_log_line(
         "Nothing to clean up from store/", timeout=90, look_behind_lines=1000000
     )
+    node1.wait_for_log_line(
+        f"Removing unused directory {encrypted_logical_path} from disk encrypted_disk",
+        timeout=90,
+        look_behind_lines=1000000,
+    )
+    node1.wait_for_log_line(
+        "Cleaned up 1 directories from store/ on disk encrypted_disk",
+        timeout=90,
+        repetitions=2,
+        look_behind_lines=1000000,
+    )
+
+    assert not node1.path_exists(encrypted_orphan_path)
 
     store = node1.exec_in_container(["ls", f"{path_to_data}/store"])
     assert "100" in store

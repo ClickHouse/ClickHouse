@@ -1,0 +1,18 @@
+u	Variant(Int32, String)					
+10	Variant(Int32, String)
+30	Variant(Int32, String)
+x	Variant(Int32, String)
+z	Variant(Int32, String)
+10
+30
+x
+z
+u	Variant(Float64, Int32, String)					
+3.14	Variant(Float64, Int32, String)
+42	Variant(Float64, Int32, String)
+7	Variant(Float64, Int32, String)
+hello	Variant(Float64, Int32, String)
+\N	Variant(Int32, String)
+10	Variant(Int32, String)
+30	Variant(Int32, String)
+z	Variant(Int32, String)

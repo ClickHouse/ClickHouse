@@ -1,0 +1,79 @@
+---
+date: 2025-11-19
+title: 스토리지 장애 후 레플리카를 복원하는 방법
+tags: ['배포 및 스케일링']
+keywords: ['복원', '레플리카', '스토리지 장애', 'Atomic 데이터베이스']
+description: '이 문서에서는 ClickHouse의 Atomic 데이터베이스에서 복제된 테이블을 사용할 때, 레플리카 중 하나의 디스크/스토리지가 유실되거나 손상된 경우 데이터를 복구하는 방법을 설명합니다.'
+---
+
+<Note>
+  이 가이드에서는 config.xml 파일의 `<path>` 매개변수가 다음과 같이 설정되어 있다고 가정합니다:
+
+  ```text
+  <path>/var/lib/clickhouse/</path>
+  ```
+
+  다른 데이터 경로를 구성한 경우, 아래 명령에 있는 `/var/lib/clickhouse`를 모두 `<path>` 설정의 실제 값으로 바꾸십시오.
+</Note>
+
+<Steps>
+  <Step title="정상 레플리카에서 access 구성 복사" id="copy-access-config">
+    로컬 사용자가 포함된 `access` 폴더의 내용을 정상 레플리카에서 복사합니다:
+
+    ```text
+    /var/lib/clickhouse/access
+    ```
+  </Step>
+
+  <Step title="정상 레플리카에서 메타데이터 폴더 백업" id="back-up-the-metadata-folder-from-the-healthy-replica">
+    1. ClickHouse 데이터 디렉터리로 이동합니다:
+
+    ```text
+    cd /var/lib/clickhouse
+    ```
+
+    2. 메타데이터 폴더를 백업합니다(심볼릭 링크 포함). 메타데이터 디렉터리에는 데이터베이스와 테이블의 DDL이 들어 있습니다.
+       데이터베이스 디렉터리에는 모든 테이블 DDL이 들어 있는 `/var/lib/clickhouse/store/..`를 가리키는 심볼릭 링크가 있습니다.
+
+    ```bash
+    { find metadata -type f; find metadata -type l; find metadata -type l | xargs readlink -f; } | tar -cPf backup.tar --files-from=-
+    ```
+
+    <Note>
+      이 명령은 **메타데이터 파일**과 심볼릭 링크 구조가 모두 백업에 보존되도록 합니다.
+    </Note>
+  </Step>
+
+  <Step title="장애가 발생한 레플리카에서 메타데이터 복원" id="restore-the-metadata-on-the-faulty-replica">
+    1. 생성된 `backup.tar` 파일을 장애가 발생한 레플리카로 복사합니다.
+    2. 이 파일을 ClickHouse 데이터 디렉터리에 압축 해제합니다:
+
+    ```text
+    cd /var/lib/clickhouse/
+    tar -xvPf backup.tar
+    ```
+  </Step>
+
+  <Step title="강제 복원 플래그 생성" id="create-force-restore-flag">
+    다른 레플리카에서 자동으로 데이터를 동기화하도록 다음 플래그를 생성합니다:
+
+    ```text
+    sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+    ```
+  </Step>
+
+  <Step title="장애가 발생한 레플리카 재시작" id="restart-faulty-replica">
+    1. 장애가 발생한 노드에서 ClickHouse 서버를 재시작합니다.
+    2. 서버 로그를 확인합니다. 정상 레플리카에서 파트가 다운로드되는 것을 확인할 수 있습니다:
+
+    ```bash
+    2025.11.02 00:00:04.047097 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Downloading files 23
+    2025.11.02 00:00:04.055542 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Download of part 202511_0_0_0 onto disk disk2 finished.
+    2025.11.02 00:00:04.101888 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2025_0_0_1 onto disk default.
+    2025.11.02 00:00:04.102005 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    2025.11.02 00:00:04.102210 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2022_0_0_1 onto disk disk1.
+    2025.11.02 00:00:04.102247 [ 688 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2021_0_0_1 onto disk disk2.
+    2025.11.02 00:00:04.102331 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    ```
+  </Step>
+</Steps>

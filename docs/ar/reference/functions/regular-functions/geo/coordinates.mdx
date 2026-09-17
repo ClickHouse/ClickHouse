@@ -116,6 +116,135 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
+<div id="geotoutm">
+  ## geoToUTM
+</div>
+
+يحوّل الإحداثيات الجغرافية وفق نظام WGS84 `(longitude, latitude)` إلى إحداثيات [Universal Transverse Mercator (UTM)](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system).
+
+UTM عبارة عن مجموعة من 60 إسقاط ميركاتور مستعرض، يغطي كلٌّ منها نطاقًا من خطوط الطول بعرض 6°، ويحوّل الإحداثيات الجغرافية إلى شبكة مستوية بوحدة المتر. يُحدَّد نطاق UTM تلقائيًا من خط الطول، مع تطبيق الاستثناءات القياسية الخاصة بـ Norway وSvalbard، ما لم تُحدَّد قيمة `zone` صراحةً. لا يُعرَّف UTM إلا لخطوط العرض ضمن النطاق `[-80°, 84°]`؛ أما المناطق القطبية فتستخدم نظام UPS المنفصل.
+
+```sql
+geoToUTM(longitude, latitude[, zone])
+```
+
+**المعاملات**
+
+* `longitude` — خط الطول بالدرجات. النطاق: `[-180°, 180°]`. [`Float32`](/ar/reference/data-types/float)/[`Float64`](/ar/reference/data-types/float).
+* `latitude` — خط العرض بالدرجات. النطاق: `[-80°, 84°]`. [`Float32`](/ar/reference/data-types/float)/[`Float64`](/ar/reference/data-types/float).
+* `zone` — اختياري. يفرض الإسقاط على نطاق UTM هذا بدلًا من اختيارها تلقائيًا. النطاق: `[1, 60]`. [`(U)Int*`](/ar/reference/data-types/int-uint).
+
+**القيمة المعادة**
+
+Tuple مسمّاة بالشكل `(easting, northing, zone, band)`: تكون قيمتا `easting` و`northing` بالمتر ([`Float64`](/ar/reference/data-types/float))، ورقم `zone` الخاص بـ UTM ([`UInt8`](/ar/reference/data-types/int-uint))، وحرف `band` لخط العرض في MGRS ([`FixedString(1)`](/ar/reference/data-types/fixedstring)). وتشير قيمة `band` التي تساوي `'N'` أو أي حرف يليه إلى نصف الكرة الشمالي.
+
+يُنتج استثناءً عندما يكون خط العرض خارج `[-80°, 84°]` أو يكون خط الطول خارج `[-180°, 180°]`.
+
+**مثال**
+
+```sql
+SELECT geoToUTM(2.294497, 48.858222) AS utm; -- Eiffel Tower
+```
+
+```text
+(448251.5978370684,5411935.125629659,31,'U')
+```
+
+<div id="utmtogeo">
+  ## UTMToGeo
+</div>
+
+يحوّل إحداثيات [UTM](https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system) إلى الإحداثيات الجغرافية وفق WGS84 `(خط الطول، خط العرض)`. وهذه هي الدالة العكسية لـ [`geoToUTM`](#geotoutm).
+
+```sql
+UTMToGeo(easting, northing, zone, is_north)
+```
+
+**الوسيطات**
+
+* `easting` — الإحداثي الشرقي بالأمتار (يتضمن الإزاحة الشرقية الكاذبة بمقدار 500000 م). [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float*`](/ar/reference/data-types/float).
+* `northing` — الإحداثي الشمالي بالأمتار (يتضمن الإزاحة الشمالية الكاذبة بمقدار 10000000 م في نصف الكرة الجنوبي). [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float*`](/ar/reference/data-types/float).
+* `zone` — رقم نطاق UTM. المدى: `[1, 60]`. [`(U)Int*`](/ar/reference/data-types/int-uint).
+* `is_north` — نصف الكرة الأرضية: `1` للنصف الشمالي و`0` للنصف الجنوبي. [`(U)Int*`](/ar/reference/data-types/int-uint).
+
+**القيمة المعادة**
+
+Tuple مُسمّى بالشكل `(longitude, latitude)` بالدرجات. [`Tuple(Float64, Float64)`](/ar/reference/data-types/tuple).
+
+**مثال**
+
+```sql
+SELECT UTMToGeo(448251.6, 5411935.13, 31, 1) AS coord;
+```
+
+```text
+(2.2944970289079203,48.85822204127082)
+```
+
+<div id="geotomgrs">
+  ## geoToMGRS
+</div>
+
+يحوِّل الإحداثيات الجغرافية وفق WGS84 `(خط الطول، خط العرض)` إلى سلسلة [Military Grid Reference System (MGRS)](https://en.wikipedia.org/wiki/Military_Grid_Reference_System).
+
+تكون السلسلة بالتنسيق `<zone><band><100km square><easting><northing>`، على سبيل المثال `31UDQ4825111935`. تتحكم الوسيطة `precision` في عدد الخانات المستخدمة لكلٍّ من `easting` و`northing`: تكون القيمة `5` (الافتراضية) لدقة 1 م، و`4` لدقة 10 م، و`3` لدقة 100 م، و`2` لدقة 1 كم، و`1` لدقة 10 كم، و`0` لمربع شبكة 100 كم فقط. لا يُعرَّف MGRS إلا لدوائر العرض ضمن النطاق `[-80°, 84°]`.
+
+```sql
+geoToMGRS(longitude, latitude[, precision])
+```
+
+**الوسائط**
+
+* `longitude` — خط الطول بالدرجات. النطاق: `[-180°, 180°]`. [`Float32`](/ar/reference/data-types/float)/[`Float64`](/ar/reference/data-types/float).
+* `latitude` — خط العرض بالدرجات. النطاق: `[-80°, 84°]`. [`Float32`](/ar/reference/data-types/float)/[`Float64`](/ar/reference/data-types/float).
+* `precision` — اختياري. عدد الخانات لكل من الإحداثي الشرقي والإحداثي الشمالي. القيمة الافتراضية: `5`. النطاق: `[0, 5]`. [`(U)Int*`](/ar/reference/data-types/int-uint).
+
+**القيمة المُعادة**
+
+سلسلة مرجعية بتنسيق MGRS. [`String`](/ar/reference/data-types/string).
+
+**مثال**
+
+```sql
+SELECT geoToMGRS(2.294497, 48.858222) AS mgrs, geoToMGRS(2.294497, 48.858222, 3) AS mgrs_100m;
+```
+
+```text
+┌─mgrs────────────┬─mgrs_100m───┐
+│ 31UDQ4825111935 │ 31UDQ482119 │
+└─────────────────┴─────────────┘
+```
+
+<div id="mgrstogeo">
+  ## MGRSToGeo
+</div>
+
+يفكّ ترميز سلسلة [MGRS](https://en.wikipedia.org/wiki/Military_Grid_Reference_System) إلى إحداثيات جغرافية وفق WGS84 `(longitude, latitude)`. وهذه هي العملية العكسية لـ [`geoToMGRS`](#geotomgrs).
+
+النقطة المُعادة هي مركز مربع الشبكة المشار إليه، لذلك تتوافق دقة النتيجة مع الدقة المرمّزة في السلسلة. ويُتجاهل الفراغ الأبيض في الإدخال، كما أن الأحرف لا تتأثر بحالة الأحرف.
+
+```sql
+MGRSToGeo(mgrs)
+```
+
+**الوسائط**
+
+* `mgrs` — سلسلة مرجعية بتنسيق MGRS المطلوب فك ترميزها. [`String`](/ar/reference/data-types/string)/[`FixedString`](/ar/reference/data-types/fixedstring).
+
+**القيمة المُعادة**
+
+Tuple مُسمّى `(longitude, latitude)` بالدرجات. [`Tuple(Float64, Float64)`](/ar/reference/data-types/tuple).
+
+**مثال**
+
+```sql
+SELECT MGRSToGeo('31UDQ4825111935') AS coord;
+```
+
+```text
+(2.294495618908297,48.85822536113692)
+```
+
 <div id="pointinellipses">
   ## pointInEllipses
 </div>
@@ -163,10 +292,13 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **قيم الإدخال**
 
-* `(x, y)` — إحداثيات نقطة على المستوى. نوع البيانات — [Tuple](/ar/reference/data-types/tuple) — قيمة Tuple مكوّنة من رقمين.
-* `[(a, b), (c, d) ...]` — رؤوس المضلع. نوع البيانات — [Array](/ar/reference/data-types/array). تُمثَّل كل قمة بزوج من الإحداثيات `(a, b)`. يجب تحديد الرؤوس بترتيب مع عقارب الساعة أو عكس اتجاه عقارب الساعة. الحد الأدنى لعدد الرؤوس هو 3. يجب أن يكون المضلع ثابتًا.
+* `(x, y)` — إحداثيات نقطة على المستوى. نوع البيانات — [Tuple](/ar/reference/data-types/tuple) — قيمة Tuple مكوّنة من رقمين، أو [Point](/ar/reference/data-types/geo#point).
+* `[(a, b), (c, d) ...]` — رؤوس المضلع. نوع البيانات — [Array](/ar/reference/data-types/array) أو [Ring](/ar/reference/data-types/geo#ring). تُمثَّل كل قمة بزوج من الإحداثيات `(a, b)`. يجب تحديد الرؤوس بترتيب مع عقارب الساعة أو عكس اتجاه عقارب الساعة. الحد الأدنى لعدد الرؤوس هو 3.
 * تدعم الدالة أيضًا المضلع ذي الفتحات (الأجزاء المقتطعة). نوع البيانات — [Polygon](/ar/reference/data-types/geo#polygon). مرِّر إما `Polygon` بالكامل باعتباره المُدخل الثاني، أو مرِّر الحلقة الخارجية أولًا ثم كل فتحة كمدخل إضافي منفصل.
 * تدعم الدالة أيضًا MultiPolygon. نوع البيانات — [MultiPolygon](/ar/reference/data-types/geo#multipolygon). مرِّر إما `MultiPolygon` بالكامل باعتباره المُدخل الثاني، أو أدرج كل مضلع مكوّن باعتباره مُدخلًا مستقلًا.
+* يمكن أيضًا أن تكون وسيطة المضلع عمود [Geometry](/ar/reference/data-types/geo#geometry) يحتوي على قيم ذات شكل مضلع (`Ring` أو `Polygon` أو `MultiPolygon`).
+
+يمكن تمرير الأنواع ذات الشكل المضلع ([Ring](/ar/reference/data-types/geo#ring) و[Polygon](/ar/reference/data-types/geo#polygon) و[MultiPolygon](/ar/reference/data-types/geo#multipolygon) و[Geometry](/ar/reference/data-types/geo#geometry)) إما كثوابت أو كأعمدة جدول عادية (غير ثابتة). وعندما يُمرَّر المضلع عبر عدة وسائط منفصلة (حلقة خارجية تتبعها فتحات، أو عدة مضلعات ضمن multipolygon)، يجب أن تكون جميع تلك الوسائط ثابتة.
 
 **القيم المعادة**
 
@@ -183,6 +315,20 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+يمكن أيضًا تمرير المضلع باستخدام أنواع البيانات الهندسية المسمّاة، بما في ذلك كعمود في جدول:
+
+```sql
+CREATE TABLE poly (id UInt32, shape Polygon) ENGINE = Memory;
+INSERT INTO poly VALUES (1, [[(0, 0), (10, 0), (10, 10), (0, 10)], [(4, 4), (6, 4), (6, 6), (4, 6)]]);
+SELECT id, pointInPolygon((2., 2.), shape) AS res FROM poly;
+```
+
+```text
+┌─id─┬─res─┐
+│  1 │   1 │
+└────┴─────┘
 ```
 
 > **ملاحظة**

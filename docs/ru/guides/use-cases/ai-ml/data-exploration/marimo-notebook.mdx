@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-В этом руководстве вы узнаете, как анализировать набор данных из ClickHouse Cloud в ноутбуке Marimo с помощью [chDB](/ru/products/chdb/index) — быстрого встраиваемого SQL OLAP-движка на базе ClickHouse.
+В этом руководстве вы узнаете, как анализировать набор данных из ClickHouse Cloud в ноутбуке Marimo с помощью [chDB](/ru/chdb/index) — быстрого встраиваемого SQL OLAP-движка на базе ClickHouse.
 
 **Требования:**
 
@@ -25,7 +25,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 **Чему вы научитесь:**
 
 * Подключаться к ClickHouse Cloud из ноутбуков Marimo с помощью chDB
-* Выполнять запросы к удаленным наборам данных и преобразовывать результаты в Pandas DataFrames
+* Выполнять запросы к удаленным наборам данных и преобразовывать результаты в DataFrame в Pandas
 * Визуализировать данные с помощью Plotly в Marimo
 * Использовать реактивную модель выполнения Marimo для интерактивного анализа данных
 
@@ -313,16 +313,16 @@ WHERE town = 'LONDON'
 
 df_distribution = chdb.query(query_distribution, "DataFrame")
 
-# создаём интерактивный ящик с усами.
+# create an interactive box plot.
 fig_box = go.Figure()
 
 fig_box.add_trace(
     go.Box(
         y=df_distribution['price'],
         name=f'London {year_slider.value}',
-        boxmean='sd',  # Показать среднее и стандартное отклонение
+        boxmean='sd',  # Show mean and standard deviation
         marker_color='lightblue',
-        boxpoints='outliers'  # Показать выбросы
+        boxpoints='outliers'  # Show outlier points
     )
 )
 

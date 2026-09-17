@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 ClickHouse utilise généralement le [même comportement que les programmes C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-Les fonctions `to<type>` et [cast](#CAST) se comportent différemment dans certains cas, par exemple avec [LowCardinality](/fr/reference/data-types/lowcardinality) : [cast](#CAST) supprime l&#39;attribut [LowCardinality](/fr/reference/data-types/lowcardinality), contrairement aux fonctions `to<type>`. Il en va de même pour [Nullable](/fr/reference/data-types/nullable). Ce comportement n&#39;est pas conforme à la norme SQL, et peut être modifié à l&#39;aide du paramètre [cast&#95;keep&#95;nullable](/fr/reference/settings/session-settings#cast_keep_nullable).
+Les fonctions `to<type>` et [cast](#CAST) se comportent différemment dans certains cas, par exemple avec [LowCardinality](/fr/reference/data-types/lowcardinality) : [cast](#CAST) supprime l&#39;attribut [LowCardinality](/fr/reference/data-types/lowcardinality), contrairement aux fonctions `to<type>`. Il en va de même pour [Nullable](/fr/reference/data-types/nullable). Ce comportement n&#39;est pas conforme à la norme SQL, et peut être modifié à l&#39;aide du paramètre [cast&#95;keep&#95;nullable](/fr/reference/settings/session-settings/cast#cast_keep_nullable).
 
 <Note>
   Gardez à l&#39;esprit qu&#39;il existe un risque de perte de données si des valeurs d&#39;un type sont converties vers un type plus petit (par exemple de `Int64` vers `Int32`) ou entre
@@ -252,8 +252,8 @@ SELECT accurateCast(42, 'UInt16')
 
 ```response title=Response
 ┌─accurateCast(42, 'UInt16')─┐
-│                        42 │
-└───────────────────────────┘
+│                         42 │
+└────────────────────────────┘
 ```
 
 **Chaîne vers un nombre**
@@ -317,9 +317,9 @@ SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
 ```
 
 ```response title=Response
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
+│                                                           999 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 **Échec de conversion avec valeur par défaut implicite**
@@ -407,12 +407,12 @@ formatRow(format, x, y, ...)
 
 **Arguments**
 
-* `format` — Format texte. Par exemple, CSV, TSV. [`String`](/fr/reference/data-types/string)
+* `format` — format de texte. Par exemple, CSV, TSV. [`String`](/fr/reference/data-types/string)
 * `x, y, ...` — Expressions. [`Any`](/fr/reference/data-types/index)
 
 **Valeur renvoyée**
 
-Une chaîne mise en forme. (pour les formats texte, elle se termine généralement par un caractère de saut de ligne). [`String`](/fr/reference/data-types/string)
+Une chaîne formatée. (pour les formats texte, elle se termine généralement par un caractère de saut de ligne). [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -425,12 +425,9 @@ FROM numbers(3)
 
 ```response title=Response
 ┌─formatRow('CSV', number, 'good')─┐
-│ 0,"good"
-                         │
-│ 1,"good"
-                         │
-│ 2,"good"
-                         │
+│ 0,"good"                        ↴│
+│ 1,"good"                        ↴│
+│ 2,"good"                        ↴│
 └──────────────────────────────────┘
 ```
 
@@ -444,15 +441,15 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
 
 ```response title=Response
 ┌─formatRow('CustomSeparated', number, 'good')─┐
-│ <prefix>
-0    good
-<suffix>                   │
-│ <prefix>
-1    good
-<suffix>                   │
-│ <prefix>
-2    good
-<suffix>                   │
+│ <prefix>                                    ↴│
+│↳0	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳1	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳2	good                                     ↴│
+│↳<suffix>                                     │
 └──────────────────────────────────────────────┘
 ```
 
@@ -763,7 +760,7 @@ AS parseDateTime32BestEffort
 
 ```response title=Response
 ┌─parseDateTime32BestEffort─┐
-│       2015-07-07 12:04:41 │
+│       2010-09-10 06:51:25 │
 └───────────────────────────┘
 ```
 
@@ -801,7 +798,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -812,7 +809,7 @@ SELECT
 
 Introduit dans : v20.9.0
 
-Identique à [`parseDateTime32BestEffort`](#parseDateTime32BestEffort), sauf qu&#39;elle renvoie une date nulle ou une date et heure nulles lorsqu&#39;elle rencontre un format de date qui ne peut pas être traité.
+Identique à [`parseDateTime32BestEffort`](#parseDateTime32BestEffort), sauf qu&#39;elle renvoie une date zéro ou une date et heure nulles lorsqu&#39;elle rencontre un format de date qui ne peut pas être traité.
 
 **Syntaxe**
 
@@ -840,7 +837,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -854,7 +851,7 @@ Introduit dans : v24.11.0
 Analyse une chaîne de date et d&#39;heure avec une précision sub-secondes selon une chaîne de format de date MySQL.
 
 Cette fonction est l&#39;inverse de [`formatDateTime`](/fr/reference/functions/regular-functions/date-time-functions) pour DateTime64.
-Elle analyse un argument de type String à l&#39;aide d&#39;un format String. Elle renvoie un type DateTime64 capable de représenter des dates de 1900 à 2299 avec une précision sub-secondes.
+Elle analyse un argument de type String à l&#39;aide d&#39;un format String. Elle renvoie un type DateTime64 capable de représenter des dates de 0000 à 9999 avec une précision sub-secondes (les précisions élevées couvrent une plage plus étroite, car la valeur est stockée sous la forme d&#39;un nombre `Int64` de ticks : la précision 8 atteint environ 4892 et la précision 9 couvre la plage de 1677 à 2262).
 
 **Syntaxe**
 
@@ -882,8 +879,8 @@ SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                       2025-01-04 23:00:00.123       │
-└─────────────────────────────────────────────────────────────────────┘
+│                                         2025-01-04 23:00:00.123000 │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64BestEffort">
@@ -968,7 +965,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─┐
+┌───────────────────valid─┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -989,7 +986,7 @@ parseDateTime64BestEffortOrZero(time_string[, precision[, time_zone]])
 
 **Arguments**
 
-* `time_string` — `String` contenant une date ou une date et heure à convertir. [`String`](/fr/reference/data-types/string)
+* `time_string` — `String` contenant une date ou une date avec heure à convertir. [`String`](/fr/reference/data-types/string)
 * `precision` — Facultatif. Précision requise. `3` pour les millisecondes, `6` pour les microsecondes. Par défaut : `3`. [`UInt8`](/fr/reference/data-types/int-uint)
 * `time_zone` — Facultatif. Fuseau horaire. La fonction interprète `time_string` selon ce fuseau horaire. [`String`](/fr/reference/data-types/string)
 
@@ -1007,7 +1004,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─────────────────┐
+┌───────────────────valid─┬─────────────────invalid─┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1046,7 +1043,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────────┬─fallback_to_standard────┐
+┌───────────────us_format─┬────fallback_to_standard─┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1057,7 +1054,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
 
 Introduit dans : v22.8.0
 
-Identique à [`parseDateTime64BestEffort`](#parseDateTime64BestEffort), sauf que cette fonction privilégie le format de date américain (`MM/DD/YYYY`, etc.) en cas d’ambiguïté et renvoie `NULL` lorsqu’elle rencontre un format de date qu’elle ne peut pas traiter.
+Identique à [`parseDateTime64BestEffort`](#parseDateTime64BestEffort), sauf que cette fonction privilégie le format de date américain (`MM/DD/YYYY`, etc.) en cas d’ambiguïté et renvoie `NULL` lorsqu’elle rencontre un format de date qui ne peut pas être analysé.
 
 **Syntaxe**
 
@@ -1085,7 +1082,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─┐
+┌────────────────valid_us─┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -1096,7 +1093,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
 
 Introduit dans : v22.8.0
 
-Identique à [`parseDateTime64BestEffort`](#parseDateTime64BestEffort), à ceci près que cette fonction privilégie le format de date américain (`MM/DD/YYYY`, etc.) en cas d’ambiguïté et renvoie une date zéro ou une date-heure zéro lorsqu’elle rencontre un format de date qui ne peut pas être traité.
+Identique à [`parseDateTime64BestEffort`](#parseDateTime64BestEffort), à ceci près que cette fonction privilégie le format de date américain (`MM/DD/YYYY`, etc.) en cas d’ambiguïté et renvoie une date zéro ou une date-heure zéro lorsqu’elle rencontre un format de date qui ne peut pas être analysé.
 
 **Syntaxe**
 
@@ -1124,7 +1121,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─────────────────┐
+┌────────────────valid_us─┬─────────────────invalid─┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1138,7 +1135,7 @@ Introduit dans : v24.10.0
 Analyse une chaîne de date et d&#39;heure avec une précision inférieure à la seconde, selon une chaîne de format de date Joda.
 
 Cette fonction est l&#39;inverse de [`formatDateTimeInJodaSyntax`](/fr/reference/functions/regular-functions/date-time-functions#formatDateTimeInJodaSyntax) pour DateTime64.
-Elle analyse un argument String à l&#39;aide d&#39;une chaîne de format de style Joda. Elle renvoie une valeur de type DateTime64, capable de représenter des dates de 1900 à 2299 avec une précision inférieure à la seconde.
+Elle analyse un argument String à l&#39;aide d&#39;une chaîne de format de style Joda. Elle renvoie une valeur de type DateTime64, capable de représenter des dates de 0000 à 9999 avec une précision inférieure à la seconde (les précisions élevées couvrent une plage plus étroite, car la valeur est stockée dans un nombre de ticks `Int64` : la précision 8 atteint environ 4892 et la précision 9 s&#39;étend de 1677 à 2262).
 
 Consultez la [documentation Joda Time](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) pour les motifs de format.
 
@@ -1150,13 +1147,13 @@ parseDateTime64InJodaSyntax(time_string, format[, timezone])
 
 **Arguments**
 
-* `time_string` — Chaîne à interpréter en DateTime64. [`String`](/fr/reference/data-types/string)
+* `time_string` — Chaîne à analyser en DateTime64. [`String`](/fr/reference/data-types/string)
 * `format` — Chaîne de format en syntaxe Joda indiquant comment interpréter time&#95;string. [`String`](/fr/reference/data-types/string)
 * `timezone` — Facultatif. Fuseau horaire. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie un DateTime64 interprété à partir de la chaîne d’entrée selon la chaîne de format de style Joda. [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie un DateTime64 analysé à partir de la chaîne d’entrée selon la chaîne de format de style Joda. [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -1168,8 +1165,8 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                          2025-01-04 23:00:00.123   │
-└────────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00.123 │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64InJodaSyntaxOrNull">
@@ -1206,8 +1203,8 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                             2025-01-04 23:00:00.123      │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                 2025-01-04 23:00:00.123 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64InJodaSyntaxOrZero">
@@ -1244,8 +1241,8 @@ SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                              2025-01-04 23:00:00.123     │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                                 2025-01-04 23:00:00.123 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64OrNull">
@@ -1282,8 +1279,8 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                            2025-01-04 23:00:00.123        │
-└───────────────────────────────────────────────────────────────────────────┘
+│                                               2025-01-04 23:00:00.123000 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64OrZero">
@@ -1302,7 +1299,7 @@ parseDateTime64OrZero(time_string, format[, timezone])
 
 **Arguments**
 
-* `time_string` — Chaîne à convertir en DateTime64. [`String`](/fr/reference/data-types/string)
+* `time_string` — Chaîne à analyser en DateTime64. [`String`](/fr/reference/data-types/string)
 * `format` — Chaîne de format indiquant comment analyser time&#95;string. [`String`](/fr/reference/data-types/string)
 * `timezone` — Facultatif. Fuseau horaire. [`String`](/fr/reference/data-types/string)
 
@@ -1320,8 +1317,8 @@ SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                             2025-01-04 23:00:00.123       │
-└───────────────────────────────────────────────────────────────────────────┘
+│                                               2025-01-04 23:00:00.123000 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeBestEffort">
@@ -1404,7 +1401,7 @@ SELECT parseDateTimeBestEffort('1735689600') AS parseDateTimeBestEffort
 
 Introduit dans : v1.1.0
 
-Identique à [`parseDateTimeBestEffort`](#parseDateTimeBestEffort), sauf qu&#39;elle renvoie `NULL` lorsqu&#39;elle rencontre un format de date impossible à traiter.
+Identique à [`parseDateTimeBestEffort`](#parseDateTimeBestEffort), sauf qu&#39;elle renvoie `NULL` lorsqu&#39;elle rencontre un format de date qui ne peut pas être analysé.
 La fonction analyse les formats [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), celui de ClickHouse, ainsi que certains autres formats de date et d&#39;heure.
 
 Formats non standard pris en charge :
@@ -1427,7 +1424,7 @@ parseDateTimeBestEffortOrNull(time_string[, time_zone])
 
 **Arguments**
 
-* `time_string` — `String` contenant une date et une heure à convertir. [`String`](/fr/reference/data-types/string)
+* `time_string` — chaîne contenant une date et une heure à convertir. [`String`](/fr/reference/data-types/string)
 * `time_zone` — Facultatif. Fuseau horaire selon lequel `time_string` est interprétée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -1444,7 +1441,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1478,7 +1475,7 @@ parseDateTimeBestEffortOrZero(time_string[, time_zone])
 
 **Arguments**
 
-* `time_string` — `String` contenant une date et une heure à convertir. [`String`](/fr/reference/data-types/string)
+* `time_string` — chaîne contenant une date et une heure à convertir. [`String`](/fr/reference/data-types/string)
 * `time_zone` — Facultatif. Fuseau horaire utilisé pour interpréter `time_string`. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -1495,7 +1492,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1507,7 +1504,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
 Introduite dans : v1.1.0
 
 Cette fonction se comporte comme [`parseDateTimeBestEffort`](#parseDateTimeBestEffort) pour les formats de date ISO, par ex. `YYYY-MM-DD hh:mm:ss`, ainsi que pour d&#39;autres formats de date dont les composants mois et jour peuvent être extraits sans ambiguïté, par ex. `YYYYMMDDhhmmss`, `YYYY-MM`, `DD hh` ou `YYYY-MM-DD hh:mm:ss ±h:mm`.
-Si les composants mois et jour ne peuvent pas être extraits sans ambiguïté, par ex. `MM/DD/YYYY`, `MM-DD-YYYY` ou `MM-DD-YY`, elle privilégie le format de date US plutôt que `DD/MM/YYYY`, `DD-MM-YYYY` ou `DD-MM-YY`.
+Si les composants mois et jour ne peuvent pas être extraits sans ambiguïté, par ex. `MM/DD/YYYY`, `MM-DD-YYYY` ou `MM-DD-YY`, elle privilégie le format de date américain plutôt que `DD/MM/YYYY`, `DD-MM-YYYY` ou `DD-MM-YY`.
 Exception à ce qui précède : si le mois est supérieur à 12 et inférieur ou égal à 31, cette fonction revient au comportement de [`parseDateTimeBestEffort`](#parseDateTimeBestEffort) ; par ex. `15/08/2020` est interprété comme `2020-08-15`.
 
 **Syntaxe**
@@ -1518,7 +1515,7 @@ parseDateTimeBestEffortUS(time_string[, time_zone])
 
 **Arguments**
 
-* `time_string` — `String` contenant une date et une heure à convertir. [`String`](/fr/reference/data-types/string)
+* `time_string` — chaîne contenant une date et une heure à convertir. [`String`](/fr/reference/data-types/string)
 * `time_zone` — Facultatif. Fuseau horaire selon lequel `time_string` est interprétée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -1535,7 +1532,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────┬─fallback_to_standard─┐
+┌───────────us_format─┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
 ```
@@ -1575,7 +1572,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─┐
+┌────────────valid_us─┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1615,7 +1612,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─────────────┐
+┌────────────valid_us─┬─────────────invalid─┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1659,8 +1656,8 @@ SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                      2025-01-04 23:00:00 │
-└──────────────────────────────────────────────────────────────────────────┘
+│                                                     2025-01-04 23:00:00 │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeInJodaSyntaxOrNull">
@@ -1697,8 +1694,8 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                         2025-01-04 23:00:00    │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeInJodaSyntaxOrZero">
@@ -1735,8 +1732,8 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                          2025-01-04 23:00:00   │
-└────────────────────────────────────────────────────────────────────────────────┘
+│                                                           2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeOrNull">
@@ -1745,7 +1742,7 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 Introduit dans : v23.3.0
 
-Identique à [`parseDateTime`](#parseDateTime), mais renvoie `NULL` lorsqu’il rencontre un format de date non analysable.
+Identique à [`parseDateTime`](#parseDateTime), mais renvoie `NULL` lorsqu’il rencontre un format de date impossible à analyser.
 
 **Syntaxe**
 
@@ -1757,7 +1754,7 @@ parseDateTimeOrNull(time_string, format[, timezone])
 
 **Arguments**
 
-* `time_string` — Chaîne à analyser pour la convertir en `DateTime`. [`String`](/fr/reference/data-types/string)
+* `time_string` — chaîne à analyser pour obtenir un `DateTime`. [`String`](/fr/reference/data-types/string)
 * `format` — Chaîne de format indiquant comment analyser time&#95;string. [`String`](/fr/reference/data-types/string)
 * `timezone` — Facultatif. Fuseau horaire. [`String`](/fr/reference/data-types/string)
 
@@ -1775,7 +1772,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 ```response title=Response
 ┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                            2025-01-04 23:00:00  │
+│                                             2025-01-04 23:00:00 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1824,6 +1821,7 @@ SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 Introduit dans : v1.1.0
 
 Utilise la même séquence d’octets source en mémoire pour la valeur `x` fournie et la réinterprète dans le type de destination.
+Lorsque le type de destination est `String`, un `Array` source n’est pris en charge que si son type d’élément est de taille fixe et contigu en mémoire (par exemple, `Array(UInt8)` ou `Array(FixedString(2))`) ; les octets de ses éléments sont copiés tels quels dans leur ordre natif en mémoire, de sorte que le résultat puisse être réinterprété dans le type `Array` d’origine sur n’importe quelle architecture. Les Array dont les éléments sont de longueur variable (par exemple, `Array(String)`) ou Nullable (par exemple, `Array(Nullable(Int32))`) ne sont pas pris en charge.
 
 **Syntaxe**
 
@@ -1833,7 +1831,7 @@ reinterpret(x, type)
 
 **Arguments**
 
-* `x` — N&#39;importe quel type. [`Any`](/fr/reference/data-types/index)
+* `x` — Valeur à réinterpréter. Lors d’une réinterprétation en `String`, un `Array` source doit avoir des éléments contigus de taille fixe. [`Any`](/fr/reference/data-types/index)
 * `type` — Type de destination. S&#39;il s&#39;agit d&#39;un tableau, le type des éléments du tableau doit être de longueur fixe. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -1866,6 +1864,18 @@ SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS str
 ┌─string_to_array_of_Float32─┐
 │ [5.626,6.626,5.626,6.626]  │
 └────────────────────────────┘
+```
+
+**Exemple de Array vers String**
+
+```sql title=Query
+SELECT hex(reinterpret([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8), 'String')) AS array_of_UInt8_to_string
+```
+
+```response title=Response
+┌─array_of_UInt8_to_string─┐
+│ 0102FF                   │
+└──────────────────────────┘
 ```
 
 <div id="reinterpretAsDate">
@@ -1936,7 +1946,7 @@ SELECT reinterpretAsDateTime(65), reinterpretAsDateTime('A')
 
 ```response title=Response
 ┌─reinterpretAsDateTime(65)─┬─reinterpretAsDateTime('A')─┐
-│       1970-01-01 01:01:05 │        1970-01-01 01:01:05 │
+│       1970-01-01 00:01:05 │        1970-01-01 00:01:05 │
 └───────────────────────────┴────────────────────────────┘
 ```
 
@@ -1968,15 +1978,16 @@ Chaîne de longueur fixe contenant les octets représentant `x`. [`FixedString`]
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsFixedString(toDate('1970-03-07'))
+    hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsFixedString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsFixedString(toDate('1970-03-07'))─┐
-│ A                                                           │ A                                              │
-└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+┌─hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsFixedString(toDate('1970-03-07')))─┐
+│ 510E0000                                                         │ 4100                                                │
+└──────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="reinterpretAsFloat32">
@@ -2305,8 +2316,9 @@ SELECT
 
 Introduit dans : v1.1.0
 
-Réinterprète la valeur d’entrée comme une chaîne de caractères (en supposant l’ordre little endian).
-Les octets nuls en fin de chaîne sont ignorés. Par exemple, pour la valeur UInt32 255, la fonction renvoie une chaîne ne contenant qu’un seul caractère.
+Réinterprète la valeur d’entrée comme une chaîne de caractères.
+Pour les valeurs scalaires, l’ordre des octets est normalisé en little endian, et les octets nuls en fin de chaîne sont ignorés. Par exemple, pour la valeur UInt32 255, la fonction renvoie une chaîne ne contenant qu’un seul caractère.
+Pour un `Array` d’éléments de taille fixe, les octets des éléments sont copiés tels quels dans leur ordre natif en mémoire, sans suppression des octets nuls de fin et sans normalisation en little endian, de sorte que le résultat peut être réinterprété dans le type `Array` d’origine sur n’importe quelle architecture.
 
 **Syntaxe**
 
@@ -2316,7 +2328,7 @@ reinterpretAsString(x)
 
 **Arguments**
 
-* `x` — Valeur à réinterpréter en chaîne de caractères. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
+* `x` — Valeur à réinterpréter en chaîne de caractères. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`Array`](/fr/reference/data-types/array)
 
 **Valeur renvoyée**
 
@@ -2327,15 +2339,28 @@ Chaîne contenant les octets représentant `x`. [`String`](/fr/reference/data-ty
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsString(toDate('1970-03-07'))
+    hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
-│ A                                                      │ A                                         │
-└────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+┌─hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsString(toDate('1970-03-07')))─┐
+│ 510E                                                        │ 41                                             │
+└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+```
+
+**Exemple de conversion de Array en String**
+
+```sql title=Query
+SELECT hex(reinterpretAsString([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8))) AS array_of_UInt8_to_string
+```
+
+```response title=Response
+┌─array_of_UInt8_to_string─┐
+│ 0102FF                   │
+└──────────────────────────┘
 ```
 
 <div id="reinterpretAsUInt128">
@@ -2616,7 +2641,7 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
 
 ```response title=Response
 ┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+│ 08090a0b-0c0d-0e0f-0001-020304050607                                  │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2661,9 +2686,11 @@ FORMAT Vertical;
 ```
 
 ```response title=Response
-toBFloat16(toFloat32(42.7)): 42.5
-toBFloat16(t⋯32('42.7')):    42.5
-toBFloat16('42.7'):          42.5
+Row 1:
+──────
+toBFloat16(toFloat32(42.7)):   42.5
+toBFloat16(toFloat32('42.7')): 42.5
+toBFloat16('42.7'):            42.5
 ```
 
 <div id="toBFloat16OrNull">
@@ -2672,7 +2699,7 @@ toBFloat16('42.7'):          42.5
 
 Introduite dans : v1.1.0
 
-Convertit une valeur d&#39;entrée de type String en une valeur de type BFloat16.
+Convertit une valeur d’entrée de type String en une valeur de type BFloat16.
 Si la chaîne ne représente pas une valeur à virgule flottante, la fonction renvoie NULL.
 
 Arguments pris en charge :
@@ -2718,9 +2745,7 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-\N
-12.25
-12.3125
+\N	12.25	12.3125
 ```
 
 <div id="toBFloat16OrZero">
@@ -2730,19 +2755,19 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
 Introduit dans : v1.1.0
 
 Convertit une valeur d’entrée de type String en une valeur de type BFloat16.
-Si la chaîne ne représente pas une valeur en virgule flottante, la fonction renvoie zéro.
+Si la chaîne ne représente pas une valeur à virgule flottante, la fonction renvoie zéro.
 
 Arguments pris en charge :
 
-* Représentations String de valeurs numériques.
+* Représentations sous forme de chaîne de valeurs numériques.
 
 Arguments non pris en charge (renvoient `0`) :
 
-* Représentations String de valeurs binaires et hexadécimales.
+* Représentations sous forme de chaîne de valeurs binaires et hexadécimales.
 * Valeurs numériques.
 
 <Note>
-  La fonction autorise une perte de précision silencieuse lors de la conversion depuis une représentation String.
+  La fonction autorise une perte de précision silencieuse lors de la conversion depuis une représentation sous forme de chaîne.
 </Note>
 
 Voir aussi :
@@ -2775,9 +2800,7 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-0
-12.25
-12.3125
+0	12.25	12.3125
 ```
 
 <div id="toBool">
@@ -2818,6 +2841,8 @@ FORMAT Vertical
 ```
 
 ```response title=Response
+Row 1:
+──────
 toBool(toUInt8(1)):      true
 toBool(toInt8(-1)):      true
 toBool(toFloat32(1.01)): true
@@ -2888,7 +2913,7 @@ SELECT toDate(20297)
 Introduit dans : v21.9.0
 
 Convertit l’argument en type de données [Date32](/fr/reference/data-types/date32).
-Si la valeur est hors de la plage, `toDate32` renvoie les valeurs limites prises en charge par [Date32](/fr/reference/data-types/date32).
+Si la valeur est hors de la plage `[0000-01-01, 9999-12-31]`, `toDate32` renvoie les valeurs limites prises en charge par [Date32](/fr/reference/data-types/date32).
 Si l’argument est de type [`Date`](/fr/reference/data-types/date), ses limites sont prises en compte.
 
 **Syntaxe**
@@ -2917,11 +2942,11 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           2025-01-01
+value:             2025-01-01
 toTypeName(value): Date32
 ```
 
-**Hors limites**
+**Avant 1900**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2931,7 +2956,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:             1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2941,7 +2966,9 @@ toTypeName(value): Date32
 
 Introduite dans : v21.11.0
 
-Convertit l’argument en type de données [Date32](/fr/reference/data-types/date32). Si la valeur est hors plage, `toDate32OrDefault` renvoie la valeur de borne inférieure prise en charge par [Date32](/fr/reference/data-types/date32). Si l’argument est de type [Date](/fr/reference/data-types/date), ses bornes sont prises en compte. Renvoie la valeur par défaut si un argument invalide est fourni.
+Convertit l’argument en type de données [Date32](/fr/reference/data-types/date32). Si l’argument ne peut pas être converti, notamment s’il s’agit d’une valeur numérique hors de la plage de [Date32](/fr/reference/data-types/date32), la fonction renvoie une valeur par défaut, qui correspond soit au deuxième argument (s’il est spécifié), soit à `1900-01-01`, la valeur par défaut historique de [Date32](/fr/reference/data-types/date32) (et non sa borne inférieure, qui est `0000-01-01`). Si l’argument est de type [Date](/fr/reference/data-types/date), ses bornes sont prises en compte.
+
+Notez que, contrairement à [toDate32](#toDate32), cette fonction ne sature pas un argument numérique hors plage aux bornes de [Date32](/fr/reference/data-types/date32) ; un tel argument est traité comme non convertible.
 
 **Syntaxe**
 
@@ -2951,7 +2978,7 @@ toDate32OrDefault(expr[, default])
 
 **Arguments**
 
-* `expr` — Expression qui renvoie un nombre ou la représentation textuelle d’un nombre. [`String`](/fr/reference/data-types/string) ou [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
+* `expr` — Expression qui renvoie un nombre ou la représentation sous forme de chaîne d’un nombre. [`String`](/fr/reference/data-types/string) ou [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
 * `default` — Facultatif. Valeur par défaut à renvoyer si l’analyse échoue. [`Date32`](/fr/reference/data-types/date32)
 
 **Valeur renvoyée**
@@ -2974,6 +3001,16 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
+```
+
+```response title=Response
+2020-01-01
+```
+
+**Nombre hors plage**
+
+```sql title=Query
+SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3023,8 +3060,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 Introduit dans : v21.9.0
 
-Convertit une valeur d’entrée en une valeur de type [Date32](/fr/reference/data-types/date32), mais renvoie la borne inférieure de [Date32](/fr/reference/data-types/date32) si l’argument n’est pas valide.
-Identique à [toDate32](#toDate32), mais renvoie la borne inférieure de [Date32](/fr/reference/data-types/date32) si l’argument n’est pas valide.
+Convertit une valeur d’entrée en une valeur de type [Date32](/fr/reference/data-types/date32), mais renvoie la valeur par défaut `1900-01-01` si l’argument est invalide.
+Identique à [toDate32](#toDate32), mais renvoie `1900-01-01` si l’argument est invalide.
+Notez que `1900-01-01` est une valeur par défaut historique pour les entrées non valides, et non la borne inférieure de [Date32](/fr/reference/data-types/date32), qui est `0000-01-01`.
 
 Voir aussi :
 
@@ -3040,11 +3078,11 @@ toDate32OrZero(x)
 
 **Arguments**
 
-* `x` — Une représentation textuelle d&#39;une date. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne d’une date. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie une valeur `Date32` en cas de réussite ; sinon, la borne inférieure de `Date32` (`1900-01-01`). [`Date32`](/fr/reference/data-types/date32)
+Renvoie une valeur `Date32` en cas de réussite ; sinon, la valeur par défaut historique pour une entrée non valide (`1900-01-01`). [`Date32`](/fr/reference/data-types/date32)
 
 **Exemples**
 
@@ -3113,6 +3151,7 @@ Introduit dans : v1.1.0
 
 Convertit une valeur d’entrée en une valeur de type `Date`, mais renvoie `NULL` si un argument invalide est fourni.
 Identique à [`toDate`](#toDate), mais renvoie `NULL` si un argument invalide est fourni.
+Un argument entier est interprété de la même manière que par `toDate` (comme un nombre de jours depuis le 1970-01-01 s’il ne dépasse pas 65535, sinon comme un timestamp Unix) et produit `NULL` s’il est hors de la plage du type `Date`.
 
 **Syntaxe**
 
@@ -3122,7 +3161,7 @@ toDateOrNull(x)
 
 **Arguments**
 
-* `x` — Une date sous forme de chaîne de caractères. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne d’une date, ou un nombre entier de jours ou un timestamp Unix. [`String`](/fr/reference/data-types/string) ou [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
@@ -3138,8 +3177,8 @@ SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
 
 ```response title=Response
 ┌─toDateOrNull('2025-12-30')─┬─toDateOrNull('invalid')─┐
-│                 2025-12-30 │                   ᴺᵁᴸᴸ │
-└────────────────────────────┴────────────────────────┘
+│                 2025-12-30 │                    ᴺᵁᴸᴸ │
+└────────────────────────────┴─────────────────────────┘
 ```
 
 <div id="toDateOrZero">
@@ -3237,8 +3276,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 Introduit dans : v20.9.0
 
 Convertit une valeur d’entrée en type `DateTime`.
-Prend en charge la conversion depuis `String`, `FixedString`, `Date`, `Date32`, `DateTime` ou des types numériques (`(U)Int*`, `Float*`, `Decimal`).
-DateTime32 offre une plage étendue par rapport à `DateTime` et prend en charge des dates allant de `1900-01-01` à `2299-12-31`.
+Prend en charge la conversion depuis `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` ou des types numériques (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). Les valeurs `Decimal` et `Time64` ne sont pas prises en charge et lèvent une exception ; le type `Time` et les types d’entiers de grande taille tels que `(U)Int128`/`(U)Int256` effectuent un bouclage au lieu de saturer.
+`DateTime32` est un alias de `DateTime` et prend en charge les dates comprises entre `1970-01-01 00:00:00` et `2106-02-07 06:28:15`.
+Lors d’une conversion depuis une chaîne ou l’un des types numériques saturants répertoriés ci-dessus, les valeurs hors de cette plage sont ramenées à ses bornes. Les valeurs à virgule flottante non finies (`NaN`, `inf`, `-inf`) ne peuvent pas être converties et lèvent une exception.
+Les conversions depuis d’autres types de date et d’heure, tels que `Date32` ou `DateTime64`, suivent le paramètre `date_time_overflow_behavior` : le mode `ignore` par défaut peut produire des valeurs ayant subi un bouclage, `saturate` les ramène aux bornes de la plage et `throw` lève une exception.
 
 **Syntaxe**
 
@@ -3248,7 +3289,7 @@ toDateTime32(x[, timezone])
 
 **Arguments**
 
-* `x` — Valeur d’entrée à convertir. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`UInt*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
+* `x` — Valeur d’entrée à convertir. [`String`](/fr/reference/data-types/string), [`FixedString`](/fr/reference/data-types/fixedstring), [`(U)Int*`](/fr/reference/data-types/int-uint), [`Float*`](/fr/reference/data-types/float), [`BFloat16`](/fr/reference/data-types/float), [`Date`](/fr/reference/data-types/date), [`Date32`](/fr/reference/data-types/date32), [`Time`](/fr/reference/data-types/time), [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64)
 * `timezone` — Facultatif. Fuseau horaire de la valeur `DateTime` renvoyée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
@@ -3257,45 +3298,40 @@ Renvoie la valeur d’entrée convertie. [`DateTime`](/fr/reference/data-types/d
 
 **Exemples**
 
-**La valeur est comprise dans la plage**
+**À partir d’une chaîne**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
 ```
 
-**Sous forme de Decimal, avec précision**
+**À partir d’un timestamp Unix**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
-└─────────────────────────┴──────────────────────────────────────────┘
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
 ```
 
 **Avec un fuseau horaire**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -3331,9 +3367,9 @@ SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **Sous forme de Decimal avec précision**
@@ -3345,9 +3381,12 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **Avec fuseau horaire**
@@ -3357,9 +3396,9 @@ SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)──────────────┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
 ```
 
 <div id="toDateTime64OrDefault">
@@ -3408,7 +3447,7 @@ SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2
 ```
 
 ```response title=Response
-2000-12-31 23:00:00.000
+2001-01-01 00:00:00.000
 ```
 
 <div id="toDateTime64OrNull">
@@ -3419,16 +3458,19 @@ Introduit dans : v20.1.0
 
 Convertit une valeur d&#39;entrée en une valeur de type `DateTime64`, mais renvoie `NULL` si l&#39;argument reçu n&#39;est pas valide.
 Identique à `toDateTime64`, mais renvoie `NULL` si l&#39;argument reçu n&#39;est pas valide.
+Un argument entier est interprété comme un timestamp Unix en secondes entières et renvoie `NULL` s’il est hors de la plage du type `DateTime64`.
 
 **Syntaxe**
 
 ```sql
-toDateTime64OrNull(x)
+toDateTime64OrNull(x[, precision[, timezone]])
 ```
 
 **Arguments**
 
-* `x` — Une représentation sous forme de chaîne d’une date et heure avec une précision sous-seconde. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne d’une date et heure avec une précision sous-seconde, ou un timestamp Unix entier. [`String`](/fr/reference/data-types/string) ou [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
+* `precision` — Facultatif. La précision sous-seconde de la valeur renvoyée. [`UInt8`](/fr/reference/data-types/int-uint)
+* `timezone` — Facultatif. Le fuseau horaire de la valeur renvoyée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -3444,8 +3486,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 ```response title=Response
 ┌─toDateTime64OrNull('2025-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
-│                         2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
-└─────────────────────────────────────────────────┴───────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴───────────────────────────────┘
 ```
 
 <div id="toDateTime64OrZero">
@@ -3487,8 +3529,8 @@ SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invali
 
 ```response title=Response
 ┌─toDateTime64OrZero('2025-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
-│                         2025-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
-└─────────────────────────────────────────────────┴─────────────────────────────────────┘
+│                       2025-12-30 13:44:17.123 │       1970-01-01 00:00:00.000 │
+└───────────────────────────────────────────────┴───────────────────────────────┘
 ```
 
 <div id="toDateTimeOrDefault">
@@ -3543,18 +3585,20 @@ SELECT toDateTimeOrDefault('', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))
 
 Introduit dans : v1.1.0
 
-Convertit une valeur d&#39;entrée en valeur de type `DateTime`, mais renvoie `NULL` si l&#39;argument n&#39;est pas valide.
-Identique à [`toDateTime`](#toDateTime), mais renvoie `NULL` si l&#39;argument n&#39;est pas valide.
+Convertit une valeur d&#39;entrée en valeur de type `DateTime`, mais renvoie `NULL` si l&#39;argument est invalide.
+Identique à [`toDateTime`](#toDateTime), mais renvoie `NULL` si l&#39;argument est invalide.
+Un argument entier est interprété comme un horodatage Unix et renvoie `NULL` s&#39;il est hors de la plage du type `DateTime`.
 
 **Syntaxe**
 
 ```sql
-toDateTimeOrNull(x)
+toDateTimeOrNull(x[, timezone])
 ```
 
 **Arguments**
 
-* `x` — Une représentation sous forme de chaîne d&#39;une date et d&#39;une heure. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne d&#39;une date et d&#39;une heure, ou un timestamp Unix sous forme d&#39;entier. [`String`](/fr/reference/data-types/string) ou [`(U)Int8/16/32/64`](/fr/reference/data-types/int-uint)
+* `timezone` — Facultatif. Fuseau horaire de la valeur renvoyée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -3572,6 +3616,18 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
 ┌─toDateTimeOrNull('2025-12-30 13:44:17')─┬─toDateTimeOrNull('invalid')─┐
 │                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
+```
+
+**Argument entier avec un fuseau horaire**
+
+```sql title=Query
+SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(4294967296)
+```
+
+```response title=Response
+┌─toDateTimeOrNull(1583851242, 'Asia/Shanghai')─┬─toDateTimeOrNull(4294967296)─┐
+│                           2020-03-10 22:40:42 │                         ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────┴──────────────────────────────┘
 ```
 
 <div id="toDateTimeOrZero">
@@ -3631,7 +3687,7 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toDecimal128('0xc0fe', 1);`.
 
 <Note>
-  Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les bornes de `Decimal128` :`(-1*10^(38 - S), 1*10^(38 - S))`.
+  Un dépassement de capacité peut se produire si la valeur de `expr` dépasse la limite de `Decimal128` :`(-1*10^(38 - S), 1*10^(38 - S))`.
   Les chiffres excédentaires de la partie fractionnaire sont ignorés (sans arrondi).
   Les chiffres excédentaires de la partie entière entraîneront une exception.
 </Note>
@@ -3777,7 +3833,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -3829,7 +3885,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -3848,8 +3904,8 @@ Arguments pris en charge :
 
 Arguments non pris en charge :
 
-* Valeurs ou représentations sous forme de chaîne de valeurs Float* `NaN` et `Inf` (insensible à la casse).
-* Représentations sous forme de chaîne de valeurs en binaire et en hexadécimal, par exemple `SELECT toDecimal256('0xc0fe', 1);`.
+* Valeurs ou représentations sous forme de chaîne des valeurs Float* `NaN` et `Inf` (insensible à la casse).
+* Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toDecimal256('0xc0fe', 1);`.
 
 <Note>
   Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les bornes de `Decimal256` : `(-1*10^(76 - S), 1*10^(76 - S))`.
@@ -3860,7 +3916,7 @@ Arguments non pris en charge :
 <Warning>
   Les conversions tronquent les chiffres supplémentaires et peuvent se comporter de manière inattendue avec des entrées Float32/Float64, car les opérations sont effectuées à l’aide d’instructions en virgule flottante.
   Par exemple : `toDecimal256(1.15, 2)` est égal à `1.14`, car 1.15 * 100 en virgule flottante donne 114.99.
-  Vous pouvez utiliser une entrée de type String afin que les opérations utilisent le type entier sous-jacent : `toDecimal256('1.15', 2) = 1.15`
+  Vous pouvez utiliser une valeur d’entrée de type String afin que les opérations utilisent le type entier sous-jacent : `toDecimal256('1.15', 2) = 1.15`
 </Warning>
 
 **Syntaxe**
@@ -3964,7 +4020,7 @@ Arguments pris en charge :
 Arguments non pris en charge (renvoient `NULL`) :
 
 * Valeurs ou représentations sous forme de chaîne des valeurs Float* `NaN` et `Inf` (insensible à la casse).
-* Représentations sous forme de chaîne de valeurs en binaire et en hexadécimal.
+* Représentations sous forme de chaîne de valeurs binaires et hexadécimales.
 * Valeurs qui dépassent les limites de `Decimal256` : `(-1 * 10^(76 - S), 1 * 10^(76 - S))`.
 
 Voir aussi :
@@ -3998,7 +4054,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4056,7 +4112,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4079,7 +4135,7 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toDecimal32('0xc0fe', 1);`.
 
 <Note>
-  Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les limites de `Decimal32` :`(-1*10^(9 - S), 1*10^(9 - S))`.
+  Un dépassement de capacité peut se produire si la valeur de `expr` dépasse la limite de `Decimal32` :`(-1*10^(9 - S), 1*10^(9 - S))`.
   Les chiffres en trop dans la partie fractionnaire sont supprimés (sans arrondi).
   Les chiffres en trop dans la partie entière entraînent une exception.
 </Note>
@@ -4225,7 +4281,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4277,7 +4333,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4342,11 +4398,11 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-a:      2.0
+a:      2
 type_a: Decimal(18, 1)
-b:      4.20
+b:      4.2
 type_b: Decimal(18, 2)
-c:      4.200
+c:      4.2
 type_c: Decimal(18, 3)
 ```
 
@@ -4447,7 +4503,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4458,7 +4514,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 Introduit dans : v20.1.0
 
 Convertit une valeur d&#39;entrée en une valeur de type [Decimal(18, S)](/fr/reference/data-types/decimal), mais renvoie `0` en cas d&#39;erreur.
-Comme [`toDecimal64`](#toDecimal64), mais renvoie `0` au lieu de générer une exception en cas d&#39;erreur de conversion.
+Comme [`toDecimal64`](#toDecimal64), mais renvoie `0` au lieu de lever une exception en cas d&#39;erreur de conversion.
 
 Arguments pris en charge :
 
@@ -4505,7 +4561,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4605,13 +4661,14 @@ Renvoie une `FixedString` de longueur N. [`FixedString(N)`](/fr/reference/data-t
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT toFixedString('foo', 8) AS s;
+-- The padding is made of null bytes, so the result is shown with `hex`.
+SELECT hex(toFixedString('foo', 8)) AS s;
 ```
 
 ```response title=Response
-┌─s─────────────┐
-│ foo\0\0\0\0\0 │
-└───────────────┘
+┌─s────────────────┐
+│ 666F6F0000000000 │
+└──────────────────┘
 ```
 
 <div id="toFloat32">
@@ -4778,7 +4835,7 @@ Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  \N
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat32OrZero">
@@ -4992,7 +5049,7 @@ Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  \N
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat64OrZero">
@@ -5171,7 +5228,7 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt128OrNull('0xc0fe');`.
 
 <Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int128](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat se produit, par valeur supérieure ou inférieure.
+  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int128](/fr/reference/data-types/int-uint), un dépassement de capacité positif ou négatif du résultat se produit.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -5189,7 +5246,7 @@ toInt128OrNull(x)
 
 **Arguments**
 
-* `x` — Représentation d’un nombre sous forme de chaîne de caractères. [`String`](/fr/reference/data-types/string)
+* `x` — Représentation sous forme de chaîne d’un nombre. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -5210,7 +5267,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  \N
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt128OrZero">
@@ -5284,7 +5341,7 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt16('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les bornes de [Int16](/fr/reference/data-types/int-uint), un dépassement inférieur ou supérieur se produit dans le résultat.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), un dépassement de capacité positif ou négatif du résultat se produit dans le résultat.
   Cela n&#39;est pas considéré comme une erreur.
   Par exemple : `SELECT toInt16(32768) == -32768;`.
 </Note>
@@ -5397,7 +5454,7 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaînes de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt16OrNull('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), un dépassement de capacité ou sous-dépassement du résultat se produit.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), le résultat peut déborder.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -5415,7 +5472,7 @@ toInt16OrNull(x)
 
 **Arguments**
 
-* `x` — Une représentation sous forme de chaîne d&#39;un nombre. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne de caractères d&#39;un nombre. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -5436,7 +5493,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): \N
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt16OrZero">
@@ -5457,7 +5514,7 @@ Arguments non pris en charge (renvoient `0`) :
 * représentation sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt16OrZero('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité ou sous-dépassement.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), le résultat peut déborder.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -5475,7 +5532,7 @@ toInt16OrZero(x)
 
 **Arguments**
 
-* `x` — Une représentation sous forme de chaîne d’un nombre. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne de caractères d’un nombre. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -5495,7 +5552,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt16OrZero('16'): 16
+toInt16OrZero('16'):  16
 toInt16OrZero('abc'): 0
 ```
 
@@ -5628,7 +5685,7 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt256OrNull('0xc0fe');`.
 
 <Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int256](/fr/reference/data-types/int-uint), un dépassement de capacité ou un sous-dépassement du résultat se produit.
+  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int256](/fr/reference/data-types/int-uint), le résultat peut déborder.
   Cela n’est pas considéré comme une erreur.
 </Note>
 
@@ -5646,7 +5703,7 @@ toInt256OrNull(x)
 
 **Arguments**
 
-* `x` — Une représentation sous forme de chaîne d’un nombre. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne de caractères d’un nombre. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -5667,7 +5724,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  \N
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt256OrZero">
@@ -5854,7 +5911,7 @@ Arguments non pris en charge (renvoient `NULL`) :
 * représentation sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt32OrNull('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat, par excès ou par défaut, se produit.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), le résultat peut déborder.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -5872,7 +5929,7 @@ toInt32OrNull(x)
 
 **Arguments**
 
-* `x` — Une représentation sous forme de chaîne d&#39;un nombre. [`String`](/fr/reference/data-types/string)
+* `x` — Une représentation sous forme de chaîne de caractères d&#39;un nombre. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -5893,7 +5950,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): \N
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt32OrZero">
@@ -5902,7 +5959,7 @@ toInt32OrNull('abc'): \N
 
 Introduit dans : v1.1.0
 
-Comme [`toInt32`](#toInt32), cette fonction convertit une valeur en entrée en une valeur de type [Int32](/fr/reference/data-types/int-uint), mais renvoie `0` en cas d&#39;erreur.
+Comme [`toInt32`](#toInt32), cette fonction convertit une valeur d’entrée en une valeur de type [Int32](/fr/reference/data-types/int-uint), mais renvoie `0` en cas d&#39;erreur.
 
 Arguments pris en charge :
 
@@ -5914,7 +5971,7 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt32OrZero('0xc0fe');`.
 
 <Note>
-  Si la valeur en entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat, par excès ou par défaut, se produit.
+  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), le résultat peut déborder.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -5952,7 +6009,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt32OrZero('32'): 32
+toInt32OrZero('32'):  32
 toInt32OrZero('abc'): 0
 ```
 
@@ -6128,7 +6185,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): \N
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt64OrZero">
@@ -6202,7 +6259,7 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toInt8('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans l&#39;intervalle de [Int8](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité ou sous-dépassement.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans la limite de [Int8](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité ou sous-dépassement.
   Cela n&#39;est pas considéré comme une erreur.
   Par exemple : `SELECT toInt8(128) == -128;`.
 </Note>
@@ -6354,7 +6411,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): \N
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt8OrZero">
@@ -6375,7 +6432,7 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt8OrZero('0xc0fe');`.
 
 <Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int8](/fr/reference/data-types/int-uint), un dépassement de capacité ou sous-dépassement du résultat se produit.
+  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int8](/fr/reference/data-types/int-uint), un dépassement de capacité ou un sous-dépassement du résultat se produit.
   Cela n’est pas considéré comme une erreur.
 </Note>
 
@@ -6413,7 +6470,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt8OrZero('8'): 8
+toInt8OrZero('8'):   8
 toInt8OrZero('abc'): 0
 ```
 
@@ -6459,7 +6516,7 @@ SELECT
 
 ```response title=Response
 ┌─seconds─┬─days─┬─months─┐
-│ 5       │ 3    │ 2      │
+│       5 │    3 │      2 │
 └─────────┴──────┴────────┘
 ```
 
@@ -7049,7 +7106,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
+┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\0world')─┐
 │ hello                      │ hello                             │
 └────────────────────────────┴───────────────────────────────────┘
 ```
@@ -7058,10 +7115,23 @@ SELECT
   ## toTime
 </div>
 
-Introduit dans : v1.1.0
+Introduit dans : v25.5.0
 
 Convertit une valeur d’entrée au type [Time](/fr/reference/data-types/time).
-Prend en charge la conversion à partir de String, FixedString, DateTime ou de types numériques représentant le nombre de secondes écoulées depuis minuit.
+Prend en charge la conversion à partir de String, FixedString, DateTime, DateTime64 ou de types numériques représentant le nombre de secondes écoulées depuis minuit.
+Les valeurs numériques en dehors de la plage du type (de `-999:59:59` à `999:59:59`, soit de `-3599999` à `3599999` secondes) sont saturées aux limites de la plage, et les valeurs à virgule flottante non finies (`NaN`, `inf`, `-inf`) ne peuvent pas être converties et entraînent une exception.
+
+<Info>
+  **`toTime` legacy**
+
+  Avant la v25.5, `toTime` était une fonction différente, qui convertissait une date avec heure en une date fixe (`1970-01-02`) tout en préservant la
+  composante temporelle. Cette fonction est toujours disponible sous le nom de [`toTimeWithFixedDate`](/fr/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+
+  Définir [`use_legacy_to_time`](/fr/reference/settings/session-settings#use_legacy_to_time) sur `1` maintient également le nom `toTime` associé à la fonction
+  legacy, c’est-à-dire que les appels à `toTime` sont résolus vers `toTimeWithFixedDate` au lieu de la fonction de conversion décrite ici.
+  Lorsque le paramètre est activé, utilisez `CAST(x AS Time)` ou `x::Time` pour convertir vers le type `Time`.
+  Le paramètre est défini sur `0` par défaut depuis la v26.7, mais était défini sur `1` par défaut de la v25.6 à la v26.6, c’est pourquoi les exemples ci-dessous le définissent explicitement.
+</Info>
 
 **Syntaxe**
 
@@ -7071,7 +7141,7 @@ toTime(x)
 
 **Arguments**
 
-* `x` — Valeur d’entrée à convertir. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
+* `x` — Valeur d’entrée à convertir. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`BFloat16`](/fr/reference/data-types/float) ou [`Float*`](/fr/reference/data-types/float)
 
 **Valeur renvoyée**
 
@@ -7079,10 +7149,12 @@ Renvoie la valeur convertie. [`Time`](/fr/reference/data-types/time)
 
 **Exemples**
 
-**Conversion de String en Time**
+**Conversion de DateTime64 en Time**
 
 ```sql title=Query
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 ```
 
 ```response title=Response
@@ -7092,6 +7164,8 @@ SELECT toTime('14:30:25')
 **Conversion de DateTime en Time**
 
 ```sql title=Query
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7099,10 +7173,12 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**Conversion d&#39;un entier en Time**
+**Conversion d&#39;un entier (secondes depuis l&#39;epoch) en Time**
 
 ```sql title=Query
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
 ```
 
 ```response title=Response
@@ -7113,32 +7189,34 @@ SELECT toTime(52225)
   ## toTime64
 </div>
 
-introduit dans : v25.6.0
+Introduit dans : v25.6.0
 
-Convertit une valeur d&#39;entrée en [Time64](/fr/reference/data-types/time64).
-Prend en charge la conversion depuis String, FixedString, DateTime64 ou des types numériques représentant des microsecondes écoulées depuis minuit.
-Offre une précision à la microseconde pour les valeurs temporelles.
+Convertit une valeur d’entrée au type [Time64](/fr/reference/data-types/time64).
+Prend en charge la conversion à partir de String, FixedString, DateTime64 ou de types numériques représentant le nombre de secondes écoulées depuis minuit.
+Fournit une précision à la sous-seconde pour les valeurs de temps, jusqu’à `scale` chiffres fractionnaires.
 
 **Syntaxe**
 
 ```sql
-toTime64(x)
+toTime64(x, scale)
 ```
 
 **Arguments**
 
-* `x` — Valeur d&#39;entrée à convertir. [`String`](/fr/reference/data-types/string) or [`FixedString`](/fr/reference/data-types/fixedstring) or [`DateTime64`](/fr/reference/data-types/datetime64) or [`(U)Int*`](/fr/reference/data-types/int-uint) or [`Float*`](/fr/reference/data-types/float)
+* `x` — valeur d’entrée à convertir. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
+* `scale` — précision (nombre de chiffres fractionnaires, `0`–`9`) du `Time64` obtenu. [`(U)Int*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
-Renvoie la valeur d&#39;entrée convertie avec une précision à la microseconde. [`Time64(6)`](/fr/reference/data-types/time64)
+Renvoie la valeur convertie avec la précision `scale` demandée. [`Time64`](/fr/reference/data-types/time64)
 
 **Exemples**
 
-**Conversion de `String` en `Time64`**
+**Conversion de String en Time64**
 
 ```sql title=Query
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
 ```
 
 ```response title=Response
@@ -7148,17 +7226,19 @@ SELECT toTime64('14:30:25.123456')
 **Conversion de DateTime64 en Time64**
 
 ```sql title=Query
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**Conversion d’un entier en Time64**
+**Conversion d’un Float (secondes depuis minuit) en Time64**
 
 ```sql title=Query
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
 ```
 
 ```response title=Response
@@ -7240,15 +7320,15 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 
 ```response title=Response
 ┌─toTime64OrZero('12:30:45.123')─┬─toTime64OrZero('invalid')─┐
-│                   12:30:45.123 │             00:00:00.000 │
-└────────────────────────────────┴──────────────────────────┘
+│                   12:30:45.123 │              00:00:00.000 │
+└────────────────────────────────┴───────────────────────────┘
 ```
 
 <div id="toTimeOrNull">
   ## toTimeOrNull
 </div>
 
-Introduit dans : v1.1.0
+Introduit dans : v25.5.0
 
 Convertit une valeur d&#39;entrée en une valeur de type Time, mais renvoie `NULL` en cas d&#39;erreur.
 Comme [`toTime`](#toTime), mais renvoie `NULL` au lieu de lever une exception en cas d&#39;erreur de conversion.
@@ -7290,10 +7370,10 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-Introduit dans : v1.1.0
+Introduit dans : v25.5.0
 
 Convertit une valeur d’entrée en une valeur de type Time, mais renvoie `00:00:00` en cas d’erreur.
-Comme toTime, mais renvoie `00:00:00` au lieu de générer une exception en cas d’erreur de conversion.
+Comme toTime, mais renvoie `00:00:00` au lieu de lever une exception en cas d’erreur de conversion.
 
 **Syntaxe**
 
@@ -7452,7 +7532,7 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt128OrNull('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt128`](/fr/reference/data-types/int-uint), un dépassement de capacité (overflow ou underflow) du résultat se produit.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt128`](/fr/reference/data-types/int-uint), un dépassement ou un sous-dépassement du résultat se produit.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -7491,7 +7571,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): \N
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt128OrZero">
@@ -7512,7 +7592,7 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toUInt128OrZero('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt128`](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat se produit.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt128`](/fr/reference/data-types/int-uint), un dépassement ou sous-dépassement du résultat se produit.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -7574,7 +7654,7 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt16('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), un dépassement de capacité inférieur ou supérieur se produit dans le résultat.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), un dépassement ou sous-dépassement se produit dans le résultat.
   Cela n&#39;est pas considéré comme une erreur.
   Par exemple : `SELECT toUInt16(65536) == 0;`.
 </Note>
@@ -7687,7 +7767,7 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toUInt16OrNull('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), un dépassement de capacité (overflow ou underflow) se produit dans le résultat.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), un dépassement ou sous-dépassement se produit dans le résultat.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -7726,7 +7806,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): \N
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt16OrZero">
@@ -7767,7 +7847,7 @@ toUInt16OrZero(x)
 
 * `x` — Une représentation sous forme de chaîne d’un nombre. [`String`](/fr/reference/data-types/string)
 
-**Valeur de retour**
+**Valeur renvoyée**
 
 Renvoie une valeur de type UInt16, ou `0` si la conversion échoue. [`UInt16`](/fr/reference/data-types/int-uint)
 
@@ -7810,7 +7890,7 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt256('0xc0fe');`.
 
 <Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les bornes de UInt256, le résultat déborde par excès ou par défaut.
+  Si la valeur d’entrée ne peut pas être représentée dans la limite de UInt256, le résultat présente un dépassement de capacité par excès ou par défaut.
   Cela n’est pas considéré comme une erreur.
 </Note>
 
@@ -7957,7 +8037,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): \N
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt256OrZero">
@@ -8031,16 +8111,16 @@ Lève une exception en cas d’erreur.
 
 Arguments pris en charge :
 
-* Les valeurs ou les représentations sous forme de chaîne de caractères du type (U)Int*.
+* Les valeurs ou les représentations sous forme de chaîne du type (U)Int*.
 * Les valeurs de type Float*.
 
 Arguments non pris en charge :
 
-* Les représentations sous forme de chaîne de caractères de valeurs Float*, y compris `NaN` et `Inf`.
-* Les représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par ex. `SELECT toUInt32('0xc0fe');`.
+* Les représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
+* Les représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toUInt32('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans la plage de [`UInt32`](/fr/reference/data-types/int-uint), le résultat déborde ou sous-déborde.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans la limite de [`UInt32`](/fr/reference/data-types/int-uint), le résultat présente un dépassement de capacité par excès ou par défaut.
   Cela n&#39;est pas considéré comme une erreur.
   Par exemple : `SELECT toUInt32(4294967296) == 0;`
 </Note>
@@ -8063,7 +8143,7 @@ toUInt32(expr)
 
 **Arguments**
 
-* `expr` — Expression renvoyant un nombre ou la représentation textuelle d’un nombre. [`Expression`](/fr/reference/data-types/special-data-types/expression)
+* `expr` — Expression renvoyant un nombre ou la représentation sous forme de chaîne d’un nombre. [`Expression`](/fr/reference/data-types/special-data-types/expression)
 
 **Valeur renvoyée**
 
@@ -8192,7 +8272,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): \N
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt32OrZero">
@@ -8275,7 +8355,7 @@ Types non pris en charge :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt64('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), le résultat fait l&#39;objet d&#39;un dépassement supérieur ou inférieur.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), le résultat fait l&#39;objet d&#39;un dépassement de capacité par excès ou par défaut.
   Cela n&#39;est pas considéré comme une erreur.
   Par exemple : `SELECT toUInt64(18446744073709551616) == 0;`
 </Note>
@@ -8388,7 +8468,7 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toUInt64OrNull('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité, par excès ou par défaut.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité par excès ou par défaut.
   Cela n&#39;est pas considéré comme une erreur.
 </Note>
 
@@ -8427,7 +8507,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): \N
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt64OrZero">
@@ -8510,7 +8590,7 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt8('0xc0fe');`.
 
 <Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans la plage de [UInt8](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
+  Si la valeur d&#39;entrée ne peut pas être représentée dans la limite de [UInt8](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
   Cela n&#39;est pas considéré comme une erreur.
   Par exemple : `SELECT toUInt8(256) == 0;`.
 </Note>
@@ -8615,12 +8695,12 @@ Comme [`toUInt8`](#toUInt8), cette fonction convertit une valeur d’entrée en 
 
 Arguments pris en charge :
 
-* Représentations sous forme de chaîne de caractères de (U)Int8/16/32/128/256.
+* Représentations sous forme de chaîne de (U)Int8/16/32/128/256.
 
 Arguments non pris en charge (renvoient `NULL`) :
 
-* Représentations sous forme de chaîne de caractères de valeurs Float* ordinaires, y compris `NaN` et `Inf`.
-* Représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par ex. `SELECT toUInt8OrNull('0xc0fe');`.
+* Représentations sous forme de chaîne de valeurs Float* ordinaires, y compris `NaN` et `Inf`.
+* Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toUInt8OrNull('0xc0fe');`.
 
 <Note>
   Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt8`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
@@ -8662,7 +8742,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): \N
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt8OrZero">
@@ -8756,7 +8836,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
 ```response title=Response
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
 ```
@@ -8835,7 +8915,7 @@ toUnixTimestamp64Micro(value)
 
 **Valeur renvoyée**
 
-Renvoie un horodatage Unix en microsecondes. [`Int64`](/fr/reference/data-types/int-uint)
+Renvoie un timestamp Unix en microsecondes. [`Int64`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
@@ -8848,8 +8928,8 @@ SELECT toUnixTimestamp64Micro(dt64);
 
 ```response title=Response
 ┌─toUnixTimestamp64Micro(dt64)─┐
-│               1739489491011123 │
-└────────────────────────────────┘
+│             1739489491011123 │
+└──────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Milli">
@@ -8931,9 +9011,9 @@ SELECT toUnixTimestamp64Nano(dt64);
 ```
 
 ```response title=Response
-┌─toUnixTimestamp64Nano(dt64)────┐
-│            1739489491011123456 │
-└────────────────────────────────┘
+┌─toUnixTimestamp64Nano(dt64)─┐
+│         1739489491011123456 │
+└─────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Second">

@@ -57,7 +57,20 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     if (empty_columns.empty() || isCompactPart(data_part))
         return {};
 
-    for (const auto & column : empty_columns)
+    /// A part must keep at least one physical column: `loadColumns` and `loadIndexGranularity`
+    /// throw NO_FILE_IN_DATA_PART "No columns in part" for a zero-column part.
+    NameSet columns_to_remove = empty_columns;
+    size_t columns_kept = 0;
+    for (const auto & column : columns)
+        columns_kept += !columns_to_remove.contains(column.name);
+
+    if (columns_kept == 0 && !columns.empty())
+        columns_to_remove.erase(columns.back().name);
+
+    if (columns_to_remove.empty())
+        return {};
+
+    for (const auto & column : columns_to_remove)
         LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
@@ -75,7 +88,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
     NameSet remove_files;
     const String mrk_extension = data_part->getMarksFileExtension();
-    for (const auto & column_name : empty_columns)
+    for (const auto & column_name : columns_to_remove)
     {
         auto serialization = data_part->tryGetSerialization(column_name);
         if (!serialization)
@@ -113,7 +126,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     }
 
     /// Remove columns from columns array
-    for (const String & empty_column_name : empty_columns)
+    for (const String & empty_column_name : columns_to_remove)
     {
         auto find_func = [&empty_column_name](const auto & pair) -> bool
         {

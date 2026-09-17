@@ -14,10 +14,13 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
 
+#include <base/scope_guard.h>
+
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
 #include <chrono>
+#include <map>
 #include <filesystem>
 #include <ranges>
 #include <thread>
@@ -152,6 +155,15 @@ static std::vector<std::string> listAllBlobs(std::string test)
                     | std::views::filter([](const auto & inode) { return inode.is_regular_file(); })
                     | std::views::transform([](const auto & file) { return file.path(); })
                     | std::ranges::to<std::vector<std::string>>());
+}
+
+/// Every object of the disk with its contents, so that a test can say that a reversal put object storage back exactly.
+static std::map<std::string, std::string> allObjects(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & test)
+{
+    std::map<std::string, std::string> objects;
+    for (const auto & path : listAllBlobs(test))
+        objects.emplace(path, readObject(object_storage, path));
+    return objects;
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, JustWorking)
@@ -623,6 +635,40 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFile)
     EXPECT_EQ(readObject(object_storage, b_file_path), "Hello world!");
 
     EXPECT_NE(a_file_path, b_file_path);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RewriteFileUpdatesSize)
+{
+    auto metadata = getMetadataStorage("RewriteFileUpdatesSize");
+    auto object_storage = getObjectStorage("RewriteFileUpdatesSize");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "test");
+        tx->createMetadataFile("A/file", {StoredObject("A/file", "file", file_size)});
+        size_t root_file_size = writeObject(object_storage, tx->generateObjectKeyForPath("root_file").serialize(), "test");
+        tx->createMetadataFile("root_file", {StoredObject("root_file", "root_file", root_file_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getFileSize("A/file"), 4u);
+    EXPECT_EQ(metadata->getFileSize("root_file"), 4u);
+
+    {
+        auto tx = metadata->createTransaction();
+        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "Hello world!");
+        tx->createMetadataFile("A/file", {StoredObject("A/file", "file", file_size)});
+        size_t root_file_size = writeObject(object_storage, tx->generateObjectKeyForPath("root_file").serialize(), "Hello world!");
+        tx->createMetadataFile("root_file", {StoredObject("root_file", "root_file", root_file_size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getFileSize("A/file"), 12u);
+    EXPECT_EQ(metadata->getFileSize("root_file"), 12u);
+
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/file").front().remote_path), "Hello world!");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root_file").front().remote_path), "Hello world!");
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
@@ -1969,103 +2015,6 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateExistingDirectory)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/B/C/file").front().remote_path), "1");
 }
 
-TEST_F(MetadataPlainRewritableDiskTest, ValidateDirectoryPreconditions)
-{
-    thread_local_rng.seed(42);
-
-    auto metadata = getMetadataStorage("ValidateDirectoryPreconditions");
-    auto object_storage = getObjectStorage("ValidateDirectoryPreconditions");
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->createDirectoryRecursive("A/B/C");
-        tx->commit(DB::NoCommitOptions{});
-    }
-
-    /// Reused remote path: the directory is removed by a concurrent transaction before the commit.
-    {
-        auto tx = metadata->createTransaction();
-        tx->createDirectory("A/B/C");
-
-        {
-            auto concurrent_tx = metadata->createTransaction();
-            concurrent_tx->removeDirectory("A/B/C");
-            concurrent_tx->commit(DB::NoCommitOptions{});
-        }
-
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
-        EXPECT_FALSE(metadata->existsDirectory("A/B/C"));
-    }
-
-    /// Reused remote path: the directory is removed and recreated by concurrent transactions,
-    /// so its remote path changed.
-    {
-        {
-            auto setup_tx = metadata->createTransaction();
-            setup_tx->createDirectoryRecursive("A/B/C");
-            setup_tx->commit(DB::NoCommitOptions{});
-        }
-
-        auto tx = metadata->createTransaction();
-        tx->createDirectory("A/B/C");
-
-        {
-            auto concurrent_tx = metadata->createTransaction();
-            concurrent_tx->removeDirectory("A/B/C");
-            concurrent_tx->commit(DB::NoCommitOptions{});
-        }
-        {
-            auto concurrent_tx = metadata->createTransaction();
-            concurrent_tx->createDirectoryRecursive("A/B/C");
-            concurrent_tx->commit(DB::NoCommitOptions{});
-        }
-
-        auto remote_prefix = generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/C/");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
-        EXPECT_TRUE(metadata->existsDirectory("A/B/C"));
-        EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/B/C/"), remote_prefix);
-    }
-
-    /// New remote path: the directory is created by a concurrent transaction before the commit.
-    {
-        auto tx = metadata->createTransaction();
-        tx->createDirectory("X");
-
-        {
-            auto concurrent_tx = metadata->createTransaction();
-            concurrent_tx->createDirectory("X");
-            concurrent_tx->commit(DB::NoCommitOptions{});
-        }
-
-        auto remote_prefix = generateObjectKeyPrefixForDirectoryPath(metadata, "X/");
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
-        EXPECT_TRUE(metadata->existsDirectory("X"));
-        EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "X/"), remote_prefix);
-    }
-
-    /// A file write into an existing directory is validated at commit time as well.
-    {
-        auto tx = metadata->createTransaction();
-        size_t file_size = writeObject(object_storage, tx->generateObjectKeyForPath("X/file").serialize(), "1");
-        tx->createMetadataFile("X/file", {StoredObject("X/file", "file", file_size)});
-
-        {
-            auto concurrent_tx = metadata->createTransaction();
-            concurrent_tx->removeDirectory("X");
-            concurrent_tx->commit(DB::NoCommitOptions{});
-        }
-
-        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
-        EXPECT_FALSE(metadata->existsFile("X/file"));
-        EXPECT_FALSE(metadata->existsDirectory("X"));
-    }
-
-    EXPECT_EQ(listAllBlobs("ValidateDirectoryPreconditions"), sorted(std::vector<std::string>({
-        "./ValidateDirectoryPreconditions/__meta/wcageakzukwtfkvkwibqrfhzrrlubsbg/prefix.path", /// A/B/C
-        "./ValidateDirectoryPreconditions/huevlfwzdbhkvtedpymtjpafjjjfynpz/file"                /// X/file
-    })));
-}
-
 TEST_F(MetadataPlainRewritableDiskTest, RecreateDirectoryInSameTransaction)
 {
     auto metadata = getMetadataStorage("RecreateDirectoryInSameTransaction");
@@ -2213,8 +2162,8 @@ TEST_F(MetadataPlainRewritableDiskTest, SnapshotDecisionPreservedOnConcurrentCha
         tx2->commit(DB::NoCommitOptions{});
     }
 
-    EXPECT_ANY_THROW(tx1->commit(DB::NoCommitOptions{}));
-    EXPECT_TRUE(metadata->existsDirectory("X"));
+    tx1->commit(DB::NoCommitOptions{});
+    EXPECT_FALSE(metadata->existsDirectory("X"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, ConcurrentCreateUnderUnlinkFile)
@@ -2257,8 +2206,6 @@ TEST_F(MetadataPlainRewritableDiskTest, ConcurrentRemoveOfMoveTarget)
         tx->commit(DB::NoCommitOptions{});
     }
 
-    /// A move whose target existed in the snapshot must keep failing
-    /// after the target is removed concurrently.
     auto tx1 = metadata->createTransaction();
     tx1->moveDirectory("A", "B");
 
@@ -2268,8 +2215,213 @@ TEST_F(MetadataPlainRewritableDiskTest, ConcurrentRemoveOfMoveTarget)
         tx2->commit(DB::NoCommitOptions{});
     }
 
-    EXPECT_ANY_THROW(tx1->commit(DB::NoCommitOptions{}));
+    tx1->commit(DB::NoCommitOptions{});
+
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("B"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ConcurrentCreateDirectory)
+{
+    auto metadata = getMetadataStorage("ConcurrentCreateDirectory");
+
+    /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111289
+    auto tx1 = metadata->createTransaction();
+    tx1->createDirectoryRecursive("A");
+
+    {
+        auto tx2 = metadata->createTransaction();
+        tx2->createDirectoryRecursive("A");
+        tx2->commit(DB::NoCommitOptions{});
+    }
+
+    auto remote_prefix = generateObjectKeyPrefixForDirectoryPath(metadata, "A/");
+    tx1->commit(DB::NoCommitOptions{});
 
     EXPECT_TRUE(metadata->existsDirectory("A"));
-    EXPECT_FALSE(metadata->existsDirectory("B"));
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/"), remote_prefix);
+    EXPECT_EQ(listAllBlobs("ConcurrentCreateDirectory").size(), 1);
+
+    metadata = restartMetadataStorage("ConcurrentCreateDirectory");
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/"), remote_prefix);
+}
+
+
+
+/// An object storage call can write and then report a failure, so `execute` cannot know from its own return values
+/// what it has already changed. Here the copy that publishes the blob under its new key succeeds and the call fails
+/// afterwards; without the reversal converging on the state the transaction started from, the blob would stay, and a
+/// directory reports whatever blobs sit under its prefix - so a restart would show a file the transaction never
+/// committed.
+TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndoRemovesABlobPublishedByAFailedCall)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("MoveFilePublishedBlob");
+    auto object_storage = getObjectStorage("MoveFilePublishedBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    const auto objects_before = listAllBlobs("MoveFilePublishedBlob");
+
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_after_copy_on_file_move");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_after_copy_on_file_move"));
+
+        auto tx = metadata->createTransaction();
+        tx->moveFile("/A/source", "/A/moved");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(readObject(object_storage, source_blob), "the source file");
+    EXPECT_EQ(listAllBlobs("MoveFilePublishedBlob"), objects_before);
+
+    metadata = restartMetadataStorage("MoveFilePublishedBlob");
+    EXPECT_TRUE(metadata->existsFile("/A/source"));
+    EXPECT_FALSE(metadata->existsFile("/A/moved"));
+}
+
+
+/// A commit that fails must leave object storage as it found it. The transactions below end with an operation that
+/// fails on its own, so no fault has to be injected to reach the reversal, and each one asserts that every object of
+/// the disk is back with the contents it had. `03008_s3_plain_rewritable_fault` covers the same thing end to end.
+TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAMovedDirectoryTree)
+{
+    auto metadata = getMetadataStorage("UndoMovedTree");
+    auto object_storage = getObjectStorage("UndoMovedTree");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->createDirectoryRecursive("A/B/C/D");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto objects_before = allObjects(object_storage, "UndoMovedTree");
+
+    {
+        /// The move rewrites the marker of every directory of the subtree, and the file move fails on its own.
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(allObjects(object_storage, "UndoMovedTree"), objects_before);
+
+    metadata = restartMetadataStorage("UndoMovedTree");
+    EXPECT_TRUE(metadata->existsDirectory("A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("MOVED"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAnUnlinkedFile)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UndoUnlink");
+    auto object_storage = getObjectStorage("UndoUnlink");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "the file");
+        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto objects_before = allObjects(object_storage, "UndoUnlink");
+
+    {
+        /// Unlinking a file whose blob is not shared removes the blob, so the reversal has to put it back.
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("/A/file", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(allObjects(object_storage, "UndoUnlink"), objects_before);
+
+    metadata = restartMetadataStorage("UndoUnlink");
+    EXPECT_TRUE(metadata->existsFile("/A/file"));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "the file");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAMovedFile)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UndoMovedFile");
+    auto object_storage = getObjectStorage("UndoMovedFile");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto objects_before = allObjects(object_storage, "UndoMovedFile");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveFile("/A/source", "/A/moved");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(allObjects(object_storage, "UndoMovedFile"), objects_before);
+
+    metadata = restartMetadataStorage("UndoMovedFile");
+    EXPECT_TRUE(metadata->existsFile("/A/source"));
+    EXPECT_FALSE(metadata->existsFile("/A/moved"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAReplacedFile)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("UndoReplacedFile");
+    auto object_storage = getObjectStorage("UndoReplacedFile");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto objects_before = allObjects(object_storage, "UndoReplacedFile");
+
+    {
+        /// This fault stops the move once both blobs have been put aside and the target has been removed, so the
+        /// reversal has to restore two blobs and drop two copies rather than undo an operation that never began.
+        FailPointInjection::enableFailPoint("plain_object_storage_copy_fail_on_file_move");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_copy_fail_on_file_move"));
+
+        auto tx = metadata->createTransaction();
+        tx->replaceFile("/A/source", "/A/target");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(allObjects(object_storage, "UndoReplacedFile"), objects_before);
+
+    metadata = restartMetadataStorage("UndoReplacedFile");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/source").front().remote_path), "the source file");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/target").front().remote_path), "the target file");
 }

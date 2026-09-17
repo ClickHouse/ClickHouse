@@ -20,9 +20,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 对于驻留在 Kubernetes 中的工作负载，网关采集器本身应当**使用带有 ClickStack 采集器镜像的上游 OpenTelemetry Helm 图表部署在同一个集群内**。请按照 [Deploying the collector](/zh/clickstack/ingesting-data/collector#configuring-the-collector) 中的 Helm 路径进行安装。**请确保你已记录此 OTLP 端点**。
 
 <Steps>
-  <Step>
-    ## 准备前置条件
-
+  <Step title="准备前置条件" id="gather-prerequisites">
     你需要：
 
     * 一个 **Kubernetes 集群** (建议 v1.20+) ，并已配置好可连接该集群的 `kubectl`。
@@ -37,9 +35,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## 创建认证 Secret 和 ConfigMap
-
+  <Step title="创建认证 Secret 和 ConfigMap" id="create-secret-and-configmap">
     选择要让收集器运行的命名空间，然后创建一个用于存储 `OTLP_AUTH_TOKEN` 的 Secret，以及一个指向你的网关的 ConfigMap：
 
     ```shell
@@ -61,18 +57,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     下面两个采集器都通过 `extraEnvs` 读取这些配置值，因此可共用同一个 Secret 和 ConfigMap。
   </Step>
 
-  <Step>
-    ## 添加 OpenTelemetry Helm 仓库
-
+  <Step title="添加 OpenTelemetry Helm 仓库" id="add-otel-helm-repo">
     ```shell
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
     helm repo update
     ```
   </Step>
 
-  <Step>
-    ## 部署集群级采集器
-
+  <Step title="部署集群级采集器" id="deploy-cluster-collector">
     这是一个单副本部署，用于收集 **Kubernetes 事件** 和 **集群级指标** (节点数量、pod 阶段、Deployment 状态等) 。如果运行多个副本，就会产生重复数据。
 
     将以下内容保存为 `k8s_deployment.yaml`：
@@ -141,9 +133,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 部署节点采集器
-
+  <Step title="部署节点采集器" id="deploy-node-collector">
     这是一个运行在每个节点上的 DaemonSet 守护进程集，用于收集**容器日志**、**主机指标**和 **kubelet 指标** (按 pod 和容器统计的 CPU 与内存利用率，相对于 requests 和 limits) 。
 
     将以下内容保存为 `k8s_daemonset.yaml`：
@@ -260,9 +250,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     你应该会看到 1 个部署 pod (容器组) 和每个节点 1 个 DaemonSet 守护进程集 pod (容器组) ，它们都处于 `Running` 状态。
   </Step>
 
-  <Step>
-    ## 将 Kubernetes 属性转发到应用 (推荐)
-
+  <Step title="将 Kubernetes 属性转发到应用 (推荐)" id="forward-k8s-attributes">
     要将应用的日志、指标和链路追踪与 Kubernetes 元数据 (pod 名称、命名空间、节点、部署) 关联起来，请通过 `OTEL_RESOURCE_ATTRIBUTES` 将这些元数据传递给应用。随后，DaemonSet 守护进程集的 `k8sattributes` 处理器会为传入的遥测数据补充匹配的 pod (容器组) 和节点属性。
 
     ```yaml
@@ -311,9 +299,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 在 ClickStack UI 中确认
-
+  <Step title="在 ClickStack UI 中确认" id="confirm-in-ui">
     在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud)中打开你的服务，然后从左侧菜单中选择 **ClickStack**。
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="启动 ClickStack" border />
@@ -333,9 +319,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     * 检查 Secret 中的 `OTLP_AUTH_TOKEN` 是否与网关采集器上设置的值一致。
   </Step>
 
-  <Step>
-    ## 延伸阅读
-
+  <Step title="延伸阅读" id="further-reading">
     * [Kubernetes 集成参考](/zh/clickstack/integration-examples/kubernetes)，了解完整的 receivers、processors 和调优选项。
     * [将资源标签转发到 pod (容器组) ](/zh/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods)，深入了解应用侧富集。
     * [保护 collector](/zh/clickstack/ingesting-data/collector#securing-the-collector)，了解如何在 OTLP 端点上启用 TLS，并为摄取用户配置最小权限。

@@ -8,10 +8,6 @@ keywords: ['Cliente de ClickHouse', 'Cambiar prompt']
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-{frontMatter.description}
-
-{/* truncate */}
-
 Si no te gusta cómo `clickhouse client` y clickhouse-local muestran el prompt en la ventana de tu terminal, puedes cambiarlo para añadirle un prefijo.
 En este artículo se explica cómo cambiar el prompt por el que quieras.
 
@@ -93,7 +89,7 @@ Esto solo tiene sentido cuando se utiliza `clickhouse-client`.
 <config>
     <connections_credentials>
         <connection>
-            <n>prod<n>
+            <n>prod</n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>
@@ -101,7 +97,7 @@ Esto solo tiene sentido cuando se utiliza `clickhouse-client`.
             <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
         </connection>
         <connection>
-            <n>dev<n>
+            <n>dev</n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>
@@ -126,7 +122,7 @@ O la de `prod`:
 clickhouse client -C connections.xml --connection prod
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="Indicador del cliente de ClickHouse con conexión de producción" />
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="Prompt del cliente de ClickHouse con conexión de producción" />
 
 Y aquí tienes una versión en YAML:
 

@@ -317,6 +317,43 @@ public:
             || which == Types::Decimal256;
     }
 
+    /// Whether values of the type are single scalar values with a plain value comparison, as opposed
+    /// to composite values (Array, Tuple, Map, Object — compared element-wise, where elements of
+    /// different types are ordered by type index rather than by value) and opaque values
+    /// (AggregateFunctionState, CustomType).
+    static bool isScalar(Types::Which which)
+    {
+        switch (which)
+        {
+            case Types::Null:
+            case Types::UInt64:
+            case Types::Int64:
+            case Types::Float64:
+            case Types::UInt128:
+            case Types::Int128:
+            case Types::String:
+            case Types::Decimal32:
+            case Types::Decimal64:
+            case Types::Decimal128:
+            case Types::Decimal256:
+            case Types::UInt256:
+            case Types::Int256:
+            case Types::UUID:
+            case Types::Bool:
+            case Types::IPv4:
+            case Types::IPv6:
+                return true;
+            case Types::Array:
+            case Types::Tuple:
+            case Types::Map:
+            case Types::Object:
+            case Types::CustomType:
+            case Types::AggregateFunctionState:
+                return false;
+        }
+        UNREACHABLE();
+    }
+
     Field() : Field(Null{}) {}
 
     /** Despite the presence of a template constructor, this constructor is still needed,
@@ -875,12 +912,25 @@ Field readFieldBinary(ReadBuffer & buf);
 
 String fieldToString(const Field & x);
 
+/// Rewrite every `Bool`-tagged `Field` inside `field`, recursively through `Tuple`/`Array`/`Map`, as
+/// the `UInt64` form `IColumn::get` produces: a boolean has both representations, and `Field`
+/// comparison and hashing read the tag before the value, so the two forms neither compare equal nor
+/// hash alike. An `Object` is deliberately not entered, because its paths disagree: a dynamic path
+/// keeps the `Bool` form on both sides, since `ColumnDynamic::get` rebuilds it, while a typed path is
+/// read from its declared column as `UInt64`. Entering it needs path-aware handling, not this rewrite.
+void normalizeBoolFields(Field & field);
+
 /// Check if a Field contains a NaN value.
 /// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
 inline bool isNaNField(const Field & f)
 {
     return f.isNaN();
 }
+
+/// True when `field`, or any Field nested inside it at any depth, satisfies `predicate`.
+/// The predicates above answer for a single value, while `Array`, `Tuple`, `Map` and `Object` hold Fields,
+/// so they say nothing about what a container carries.
+bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &));
 
 }
 

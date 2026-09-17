@@ -108,11 +108,56 @@ void registerOutputFormatODBCDriver2(FormatFactory & factory)
 
     factory.setDocumentation("ODBCDriver2", Documentation{
         .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
 ## Description {#description}
+
+The `ODBCDriver2` format is a binary, output-only format used to transfer query results over HTTP to the
+[ClickHouse driver for `ODBC`](/concepts/features/interfaces/odbc). The driver requests it by setting `default_format` to
+`ODBCDriver2`; users normally don't select it directly.
+
+All integers in the stream are signed 32-bit values encoded in little-endian byte order. A string is encoded as its byte
+length followed by its bytes. The output has the following structure:
+
+1. The value `2`, indicating that two header rows follow.
+2. A names header containing the value `number_of_columns + 1`, the string `name`, and each column name.
+3. A types header containing the value `number_of_columns + 1`, the string `type`, and each ClickHouse data type name.
+   `LowCardinality` wrappers are removed from these type names.
+4. The data rows. Each row contains one text-serialized, length-prefixed value for every result column. Data rows don't
+   include their own row or column count, and the stream ends at `EOF`.
+
+A `NULL` value is encoded with the length `-1`; an empty non-null string has length `0`. Totals, when present, use the
+same row encoding and follow the ordinary rows.
 
 ## Example usage {#example-usage}
 
+The following query is representative of the values covered by the format's tests:
+
+```sql
+SELECT
+    1 AS x,
+    [2, 3] AS y,
+    'Hello' AS z,
+    NULL AS a
+FORMAT ODBCDriver2
+```
+
+Because the result is binary, direct it to a file rather than a terminal:
+
+```shell
+clickhouse-client --query \
+    "SELECT 1 AS x, [2, 3] AS y, 'Hello' AS z, NULL AS a FORMAT ODBCDriver2" \
+    > result.bin
+```
+
+In normal use, the driver adds `default_format=ODBCDriver2` to its HTTP requests and decodes the response.
+
 ## Format settings {#format-settings}
+
+`ODBCDriver2` uses the standard text-serialization settings for individual values. It has no settings specific to the
+format itself.
 )DOCS_MD"});
 }
 

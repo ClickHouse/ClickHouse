@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -50,7 +50,7 @@ Nessie は、データレイク向けのオープンソースのトランザク�
   ### ローカル Nessie Catalog のセットアップ
 </div>
 
-Nessie、インメモリのバージョンストア、オブジェクトストレージ用の MinIO を含む完全な環境を提供する公式の [Nessie docker-compose setup](https://projectnessie.org/guides/setting-up/) を使用できます。
+Nessie、インメモリのバージョンストア、オブジェクトストレージ用の MinIO を含む完全な環境を提供する公式の [Nessie 用 docker-compose セットアップ](https://projectnessie.org/guides/) を使用できます。
 
 **ステップ 1:** 例を実行するための新しいフォルダーを作成し、続いて以下の内容で `docker-compose.yml` ファイルを作成します。
 
@@ -108,13 +108,13 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:head
     container_name: nessie-clickhouse
-    user: '0:0'  # ルート権限を確保する
+    user: '0:0'  # Ensures root permissions
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # データセットフォルダをマウントする
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
     networks:
       - iceberg_net
     environment:

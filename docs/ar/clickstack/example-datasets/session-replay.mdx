@@ -43,26 +43,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### استنسخ المستودع
-
+  <Step title="استنسخ المستودع" id="clone-repository">
     ```shell
     git clone https://github.com/ClickHouse/clickstack-session-replay-demo
     cd clickstack-session-replay-demo
     ```
   </Step>
 
-  <Step>
-    ### ابدأ ClickStack
-
+  <Step title="ابدأ ClickStack" id="start-clickstack">
     ```shell
     docker-compose up -d clickstack
     ```
   </Step>
 
-  <Step>
-    ### احصل على مفتاح API الخاص بك
-
+  <Step title="احصل على مفتاح API الخاص بك" id="get-api-key">
     1. افتح HyperDX على [http://localhost:8080](http://localhost:8080)
     2. أنشئ حسابًا أو سجّل الدخول إذا لزم الأمر
     3. انتقل إلى **Team Settings → API Keys**
@@ -77,9 +71,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ### ابدأ التطبيق التجريبي
-
+  <Step title="ابدأ التطبيق التجريبي" id="start-demo-app">
     ```shell
     docker-compose --profile demo up demo-app
     ```
@@ -90,21 +82,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     افتح [http://localhost:3000](http://localhost:3000) في متصفحك وتفاعل مع التطبيق — ابحث عن الموضوعات، وصفِّ حسب الفئة، واستعرض أمثلة الشيفرة، وأضف العناصر إلى الإشارات المرجعية.
 
-    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="التطبيق التجريبي لإعادة تشغيل الجلسة" />
+    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="التطبيق التجريبي لإعادة تشغيل الجلسات" />
 
     تُلتقط جميع التفاعلات تلقائيًا بواسطة ClickStack Browser SDK.
   </Step>
 
-  <Step>
-    ### شاهد إعادة تشغيل جلستك
-
+  <Step title="شاهد إعادة تشغيل جلستك" id="view-session-replay">
     ارجع إلى HyperDX على [http://localhost:8080](http://localhost:8080) وانتقل إلى **Client Sessions** من الشريط الجانبي الأيسر.
 
-    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="البحث في إعادة تشغيل الجلسة" />
+    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="البحث في إعادة تشغيل الجلسات" />
 
     يُفترض أن تظهر جلستك في القائمة مع مدتها وعدد الأحداث فيها. انقر على الزر ▶️ لإعادة تشغيلها.
 
-    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="إعادة تشغيل الجلسة" />
+    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="إعادة تشغيل الجلسات" />
 
     بدّل بين وضعي **Highlighted** و**All Events** لضبط مستوى التفاصيل في المخطط الزمني.
   </Step>
@@ -192,7 +182,7 @@ docker-compose down -v
   ## تعرّف على المزيد
 </div>
 
-* [إعادة تشغيل الجلسة](/ar/clickstack/features/session-replay) — نظرة عامة على الميزة، وخيارات SDK، وضوابط الخصوصية
+* [Session Replay](/ar/clickstack/features/session-replay) — نظرة عامة على الميزة، وخيارات SDK، وعناصر التحكّم في الخصوصية
 * [مرجع Browser SDK](/ar/clickstack/ingesting-data/sdks/browser) — خيارات SDK الكاملة والتهيئة المتقدمة
 * [بدء استخدام ClickStack](/ar/clickstack/getting-started/index) — انشر ClickStack وأدخِل أولى بياناتك
-* [جميع مجموعات البيانات النموذجية](/ar/clickstack/example-datasets/index) — مجموعات بيانات نموذجية وأدلة أخرى
+* [جميع مجموعات البيانات التجريبية](/ar/clickstack/example-datasets/index) — مجموعات بيانات تجريبية وأدلّة أخرى

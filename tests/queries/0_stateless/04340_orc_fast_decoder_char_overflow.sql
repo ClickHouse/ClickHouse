@@ -7,7 +7,6 @@
 -- a heap buffer; now they are rejected with INCORRECT_DATA. The crafted files were produced by writing
 -- a benign String column with a standard ORC writer and surgically patching the ORC metadata.
 
-SET input_format_orc_use_fast_decoder = 1;
 SET input_format_orc_dictionary_as_low_cardinality = 1;
 
 -- A dictionary-encoded CHAR(1) column whose dictionary entry is 2 bytes long: the decoder allocated

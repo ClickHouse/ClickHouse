@@ -10,6 +10,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -33,7 +34,6 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int NOT_IMPLEMENTED;
     extern const int INCOMPATIBLE_COLUMNS;
 }
 
@@ -72,9 +72,11 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 {
     DB::ColumnsWithTypeAndName names_and_types{
         {std::make_shared<DB::DataTypeString>(), "path"},
+        /// Partition values are nullable: Delta commits a JSON null for a null-equivalent
+        /// partition value (SQL NULL or empty string), distinct from the string "null".
         {std::make_shared<DB::DataTypeMap>(
             std::make_shared<DB::DataTypeString>(),
-            std::make_shared<DB::DataTypeString>()), "partitionValues"},
+            std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
         {std::make_shared<DB::DataTypeTuple>(
@@ -129,8 +131,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 
 static constexpr auto engine_info = "ClickHouse";
 
-WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_)
+WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_, DB::NamesAndTypesList table_schema_)
     : kernel_helper(kernel_helper_)
+    , table_schema(std::move(table_schema_))
     , log(getLogger("WriteTransaction"))
 {
 }
@@ -147,7 +150,13 @@ const std::string & WriteTransaction::getDataPath() const
     return path_prefix;
 }
 
-void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
+const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
+{
+    assertTransactionCreated();
+    return write_schema;
+}
+
+void WriteTransaction::create(const DB::Names & partition_columns)
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -171,51 +180,23 @@ void WriteTransaction::create(const DB::Names & partition_columns, const DB::Nam
             ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
             "get_unpartitioned_write_context");
         write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
-
-        std::unique_ptr<std::string> write_path_raw(static_cast<std::string *>(
-            ffi::get_write_path(unpartitioned_write_context.get(), DeltaLake::KernelUtils::allocateString)));
-        if (!write_path_raw)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
-
-        write_path = *write_path_raw;
     }
     else
     {
         /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
-        /// write schema and path directly; per-partition values are handled when committing.
+        /// write schema directly; per-partition values are handled when committing.
         write_schema = table_schema;
-        write_path = kernel_helper->getTableLocation();
     }
 
-    auto pos = write_path.find("://");
-    if (pos == std::string::npos)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unexpected path format: {}", write_path);
-    }
-    auto storage_type_str = write_path.substr(0, pos);
-    if (storage_type_str == "s3" || storage_type_str == "gcs")
-    {
-        auto pos_to_bucket = pos + std::strlen("://");
-        auto pos_to_path = write_path.substr(pos_to_bucket).find('/');
-        path_prefix = write_path.substr(pos_to_bucket + pos_to_path + 1);
-    }
-    else if (storage_type_str == "file")
-    {
-        auto pos_to_file = pos + std::strlen("://");
-        path_prefix = write_path.substr(pos_to_file);
-    }
-    else
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}",
-            storage_type_str);
-    }
+    /// The reader resolves every committed `add.path` against `getDataPath`, so write under it too.
+    /// `ffi::get_write_path` would add nothing here: it returns the table root the transaction
+    /// was opened with (i.e. `getTableLocation`), and exists only for the unpartitioned context.
+    path_prefix = kernel_helper->getDataPath();
+    /// `add.path` is the written file path with the prefix cut off, which needs the separator.
+    if (!path_prefix.empty() && !path_prefix.ends_with('/'))
+        path_prefix += '/';
 
-    LOG_TEST(
-        log, "Write path: {}, data prefix: {} schema: {}",
-        write_path, path_prefix, write_schema.toString());
+    LOG_TEST(log, "Data prefix: {}, schema: {}", path_prefix, write_schema.toString());
 }
 
 void WriteTransaction::validateSchema(const DB::Block & header) const
@@ -273,6 +254,61 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     auto version = ffi::committed_transaction_version(&committed_handle);
 
     LOG_TEST(log, "Commit version: {}", version);
+}
+
+void WriteTransaction::createTable()
+{
+    /// Reject non-round-tripping column types before the kernel FFI, so unsupported types raise a normal exception.
+    DeltaLake::validateSchemaForDeltaCreate(table_schema);
+
+    /// The kernel needs the table location's root directory to exist; create it up front. No-op for object stores (S3/Azure).
+    kernel_helper->prepareForTableCreation();
+
+    auto * engine_builder = kernel_helper->createBuilder();
+    engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+
+    DeltaLake::KernelCreateSchemaState schema_state;
+    schema_state.schema_list = &table_schema;
+    auto engine_schema = DeltaLake::buildKernelEngineSchema(schema_state);
+
+    using KernelCreateTableBuilder = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTableBuilder, ffi::free_create_table_builder>;
+    using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTransaction, ffi::create_table_free_transaction>;
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+
+    auto builder_result = ffi::get_create_table_builder(
+        DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
+        &engine_schema,
+        DeltaLake::KernelUtils::toDeltaString(engine_info),
+        engine.get());
+    /// Unwrap inside a `try` -- it must run either way, since it is what
+    /// consumes `builder_result` -- and prefer the visitor's exception when there is one.
+    KernelCreateTableBuilder builder;
+    try
+    {
+        builder = DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder");
+    }
+    catch (...)
+    {
+        if (schema_state.exception)
+            std::rethrow_exception(schema_state.exception);
+        throw;
+    }
+    if (schema_state.exception)
+        std::rethrow_exception(schema_state.exception);
+
+    /// `create_table_builder_build` consumes the builder on both success and failure, so release() is correct here.
+    KernelCreateTransaction create_txn(DeltaLake::KernelUtils::unwrapResult(
+        ffi::create_table_builder_build(builder.release(), engine.get()),
+        "create_table_builder_build"));
+
+    /// `create_table_commit` likewise consumes the transaction handle.
+    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
+        ffi::create_table_commit(create_txn.release(), engine.get()),
+        "create_table_commit"));
+    auto * committed_handle = committed.get();
+    auto version = ffi::committed_transaction_version(&committed_handle);
+
+    LOG_TRACE(log, "Created table at version {}", version);
 }
 
 }

@@ -17,46 +17,34 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Kafka ClickPipes можно развертывать и настраивать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 
 <Steps>
-  <Step>
-    ## Перейдите к источникам данных
-
+  <Step title="Перейдите к источникам данных" id="1-load-sql-console">
     В левом меню выберите кнопку `Data Sources` и нажмите &quot;Set up a ClickPipe&quot;.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выберите импорт" size="md" />
   </Step>
 
-  <Step>
-    ## Выберите источник данных
-
+  <Step title="Выберите источник данных" id="2-select-data-source">
     Выберите в списке источник данных Kafka.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Выберите тип источника данных" size="md" />
   </Step>
 
-  <Step>
-    ## Настройте источник данных
-
+  <Step title="Настройте источник данных" id="3-configure-data-source">
     Заполните форму: укажите имя для ClickPipe, описание (необязательно), учетные данные и другие сведения о подключении.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="Заполните сведения о подключении" size="md" />
   </Step>
 
-  <Step>
-    ## Настройте реестр схем (необязательно)
-
+  <Step title="Настройте реестр схем (необязательно)" id="4-configure-your-schema-registry">
     Для топиков Avro и Protobuf требуется корректная схема. Подробнее о том, как настроить реестр схем, см. в разделе [Реестры схем](/ru/integrations/clickpipes/kafka/schema-registries).
   </Step>
 
-  <Step>
-    ## Настройте обратную частную конечную точку (необязательно)
-
+  <Step title="Настройте обратную частную конечную точку (необязательно)" id="5-configure-reverse-private-endpoint">
     Настройте обратную частную конечную точку, чтобы ClickPipes могли подключаться к вашему кластеру Kafka через AWS PrivateLink.
-    Подробнее см. в нашей [документации по AWS PrivateLink](/ru/integrations/clickpipes/aws-privatelink).
+    Подробнее см. в нашей [документации по AWS PrivateLink](/ru/integrations/clickpipes/networking/aws-privatelink).
   </Step>
 
-  <Step>
-    ## Настройка SSH-туннелирования (необязательно)
-
+  <Step title="Настройка SSH-туннелирования (необязательно)" id="6-configure-ssh-tunneling">
     Вы можете использовать SSH-туннелирование, если ваш брокер Kafka недоступен из интернета. Вместо прямого подключения ClickPipes устанавливает SSH-соединение с бастион-хостом (сервером в вашей сети, который имеет публичный доступ), а затем перенаправляет через него трафик к вашему брокеру Kafka в частной сети.
 
     1. Включите переключатель &quot;SSH Tunnel&quot;.
@@ -71,21 +59,17 @@ Kafka ClickPipes можно развертывать и настраивать �
     4. Нажмите &quot;Verify Connection&quot;, чтобы проверить подключение.
 
     <Note>
-      Убедитесь, что вы добавили [ClickPipes IP addresses](/ru/integrations/clickpipes/home#list-of-static-ips) в правила брандмауэра для SSH-бастиона, чтобы ClickPipes могли установить SSH-туннель.
+      Убедитесь, что вы добавили [ClickPipes IP addresses](/ru/integrations/clickpipes/networking/static-ips) в правила брандмауэра для SSH-бастиона, чтобы ClickPipes могли установить SSH-туннель.
     </Note>
   </Step>
 
-  <Step>
-    ## Выберите топик
-
+  <Step title="Выберите топик" id="7-select-your-topic">
     Выберите топик, и интерфейс отобразит пример документа из этого топика.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Выберите топик" size="md" />
   </Step>
 
-  <Step>
-    ## Настройте целевую таблицу
-
+  <Step title="Настройте целевую таблицу" id="8-configure-your-destination-table">
     На следующем шаге вы можете выбрать, выполнять ли приём данных в новую таблицу ClickHouse или использовать существующую. Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и настройки. Вверху страницы вы увидите предварительный просмотр изменений в таблице-образце в реальном времени.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Задайте таблицу, схему и настройки" size="md" />
@@ -95,9 +79,7 @@ Kafka ClickPipes можно развертывать и настраивать �
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="Задайте дополнительные параметры" size="md" />
   </Step>
 
-  <Step>
-    ## Настройка разрешений
-
+  <Step title="Настройка разрешений" id="9-configure-permissions">
     ClickPipes создаст отдельного пользователя для записи данных в целевую таблицу. Для этого внутреннего пользователя можно выбрать пользовательскую роль или одну из предопределённых ролей:
 
     * `Full access`: полный доступ к кластеру. Это может быть полезно, если вы используете Materialized View или словарь с целевой таблицей.
@@ -106,9 +88,7 @@ Kafka ClickPipes можно развертывать и настраивать �
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Разрешения" size="md" />
   </Step>
 
-  <Step>
-    ## Завершение настройки
-
+  <Step title="Завершение настройки" id="10-complete-setup">
     После нажатия на &quot;Create ClickPipe&quot; будет создан и запущен ваш ClickPipe. После этого он появится в разделе Data Sources.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Обзор" size="md" />
