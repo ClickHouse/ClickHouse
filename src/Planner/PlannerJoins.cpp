@@ -1414,8 +1414,6 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const JoinAlgorithmParams & params)
 {
     if (table_join->getMixedJoinExpression() && !table_join->isHashFamilyEnabled()
-        /// It does not support mixed conditions itself, and falls back to `hash` at plan time.
-        && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -1452,8 +1450,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (isCrossOrComma(table_join->kind()) || table_join->isJoinWithConstant())
         return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
-    if (!table_join->oneDisjunct() && !table_join->isHashFamilyEnabled()
-        && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARTITIONED_HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+    if (!table_join->oneDisjunct() && !table_join->isHashFamilyEnabled() && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Only `hash`, `parallel_hash` and `partitioned_hash` joins support multiple ORs for keys in JOIN ON section");

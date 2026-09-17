@@ -1340,8 +1340,7 @@ bool allowHashJoinCacheKeys(
     bool is_special_storage,
     bool one_disjunct)
 {
-    /// `partitioned_hash` publishes and consumes the same `HashJoinEntry` statistics as the hash family.
-    if (!TableJoin::isHashFamilyEnabled(join_algorithms) && !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARTITIONED_HASH))
+    if (!TableJoin::isHashFamilyEnabled(join_algorithms))
         return false;
     if (!parallelLayoutKindSupported(kind))
         return false;

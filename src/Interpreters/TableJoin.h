@@ -311,10 +311,15 @@ public:
 
     static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val);
 
+    /// The algorithms that build a hash table over the right side and share its planning: `hash` and `parallel_hash`
+    /// are one implementation, and `partitioned_hash` belongs to the family too - it publishes and consumes the same
+    /// hash table statistics, and the mixed ON conditions and the several ORs the family's planning produces fall
+    /// back to `hash` at plan time when its own implementation declines them.
     static bool isHashFamilyEnabled(const std::vector<JoinAlgorithm> & join_algorithms)
     {
         return isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
-            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH);
+            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH)
+            || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARTITIONED_HASH);
     }
 
     bool isHashFamilyEnabled() const
