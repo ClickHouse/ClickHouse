@@ -1855,10 +1855,9 @@ void HashJoin::parallelDestroyRightTableData()
 
 /// Appends one hash map cell's not-joined rows: as a flat run of encoded ref words for the
 /// columnar columns, and resolved to row pointers for the row store. Returns the rows appended.
-/// Always inlined: it runs once per map key inside the `fillColumns` scan, and whether the compiler
-/// inlines it on its own depends on the size of `RowRefList::ForwardIterator`, which the run and
-/// chain tags pushed over the threshold (an out-of-line call per key cost the RIGHT ALL non-joined
-/// emission 10-14 %).
+/// Always inlined: it runs once per map key in the `fillColumns` scan. The run and chain tags grew
+/// `RowRefList::ForwardIterator` past the inlining threshold. An out-of-line call per key cost the
+/// RIGHT ALL non-joined emission 10-14 %.
 template <typename Mapped>
 struct CollectorNonJoined
 {
