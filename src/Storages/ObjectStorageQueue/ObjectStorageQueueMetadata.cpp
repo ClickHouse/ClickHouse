@@ -17,6 +17,7 @@
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 #include <Common/DimensionalMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
@@ -73,8 +74,52 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
 }
 
+namespace FailPoints
+{
+    extern const char object_storage_queue_unregister_without_remove_recursive[];
+    extern const char object_storage_queue_unregister_after_drop_lock[];
+    extern const char object_storage_queue_unregister_before_final_multi[];
+}
+
 namespace
 {
+    /// Written to `zookeeper_path` while its metadata is removed without `REMOVE_RECURSIVE`, and
+    /// gone with the path itself. A path carrying it was abandoned by such a removal, which is what
+    /// tells it apart from any other node at a `keeper_path` a query happens to name.
+    constexpr std::string_view drop_marker = "ObjectStorageQueue: dropped";
+
+    enum class RootRemoval
+    {
+        Gone,
+        Removed,
+        NotOurs,
+    };
+
+    /// Removes `zookeeper_path` while it still carries the marker, at the version it was read at, so
+    /// a node recreated at that path since is left alone rather than removed with it.
+    RootRemoval tryRemoveMarkedRoot(ZooKeeperWithFaultInjection & zk_client, const std::string & zookeeper_path)
+    {
+        std::string root_data;
+        Coordination::Stat root_stat;
+        if (!zk_client.tryGet(zookeeper_path, root_data, &root_stat))
+            return RootRemoval::Gone;
+
+        if (root_data != drop_marker)
+            return RootRemoval::NotOurs;
+
+        /// Hardware errors throw, so the only failures left are `ZNOTEMPTY`, something lives under
+        /// the path again, and `ZBADVERSION`, it changed between the read and the removal.
+        switch (zk_client.tryRemove(zookeeper_path, root_stat.version))
+        {
+            case Coordination::Error::ZOK:
+                return RootRemoval::Removed;
+            case Coordination::Error::ZNONODE:
+                return RootRemoval::Gone;
+            default:
+                return RootRemoval::NotOurs;
+        }
+    }
+
     UInt64 getCurrentTime()
     {
         return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -585,11 +630,14 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
     zk_retries.retryLoop([&] { getZooKeeper(log, zookeeper_name)->createAncestors(zookeeper_path); });
 
+    bool last_occupied = false;
+
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
         Coordination::Responses responses;
         std::optional<Coordination::Error> code;
+        bool occupied = false;
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
@@ -627,6 +675,17 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
                 }
             }
+
+            /// No `metadata` means no table lives here, but the path itself can, and a path this
+            /// table may not take over is not a path it may create at either.
+            const auto root_removal = tryRemoveMarkedRoot(*zk_client, zookeeper_path);
+            if (root_removal == RootRemoval::NotOurs)
+            {
+                occupied = true;
+                return;
+            }
+            if (root_removal == RootRemoval::Removed)
+                LOG_INFO(log, "Removed path {} left by an interrupted metadata removal", zookeeper_path.string());
 
             requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
             requests.emplace_back(zkutil::makeCreateRequest(
@@ -671,6 +730,11 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
             code = zk_client->tryMulti(requests, responses);
         });
+        if (occupied)
+        {
+            last_occupied = true;
+            continue;
+        }
         if (code.has_value())
         {
             if (*code == Coordination::Error::ZNODEEXISTS)
@@ -681,6 +745,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                         "It looks like the table {} was created by another server at the same moment, "
                         "will retry",
                         *code, exception.getPathForFirstFailedOp(), zookeeper_path.string());
+                last_occupied = false;
                 continue;
             }
             if (*code != Coordination::Error::ZOK)
@@ -689,6 +754,17 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
         return table_metadata;
     }
+
+    if (last_occupied)
+        throw Exception(
+            ErrorCodes::REPLICA_ALREADY_EXISTS,
+            "Cannot create table: keeper path {} has no `metadata` node, but it is not this table's "
+            "to take either: it has children, or data that no interrupted `S3Queue`/`AzureQueue` "
+            "metadata removal left there. Its children can be another table's `keeper_path` nested "
+            "under it, leftovers of an incomplete drop, or a removal still in progress; the path "
+            "itself can belong to something else entirely. Retry if a drop is in progress, otherwise "
+            "use another `keeper_path`; check what is there before removing anything",
+            zookeeper_path.string());
 
     throw Exception(
         ErrorCodes::REPLICA_ALREADY_EXISTS,
@@ -868,10 +944,10 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
                     registry_path,
                     self.serialize(),
                     zkutil::CreateMode::Persistent));
-
-                if (!zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
-                    zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(), drop_lock_path);
             }
+
+            /// A drop holds `drop` until the whole subtree is gone, so a registration added in that window would be removed with it.
+            zkutil::addCheckNotExistsRequest(requests, *zk_client, drop_lock_path);
 
             code = zk_client->tryMulti(requests, responses);
         });
@@ -953,6 +1029,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
 
     bool is_retry = false;
     bool allow_remove_recursive = true;
+    bool removal_started = false;
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
@@ -968,6 +1045,9 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
         {
             zk_client = getZooKeeper();
             supports_remove_recursive = allow_remove_recursive && zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE);
+            fiu_do_on(FailPoints::object_storage_queue_unregister_without_remove_recursive, {
+                supports_remove_recursive = false;
+            });
 
             Coordination::Stat stat;
             std::string registry_str;
@@ -980,9 +1060,11 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 }
                 else
                 {
-                    LOG_WARNING(log, "Cannot unregister: registry does not exist");
-                    chassert(false);
+                    LOG_WARNING(log, "Cannot unregister {}: registry {} does not exist", self.table_id, registry_path.string());
                 }
+
+                if (removal_started && tryRemoveMarkedRoot(*zk_client, zookeeper_path) == RootRemoval::NotOurs)
+                    LOG_WARNING(log, "Did not remove {}: it has children, or it is not the node this removal marked", zookeeper_path.string());
                 return;
             }
 
@@ -1030,8 +1112,12 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 }
                 else
                 {
+                    /// The removal below is not atomic, so it can be interrupted with the root still
+                    /// there. The marker outlives the session that writes it, unlike `drop`.
+                    removal_started = true;
                     requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
                     requests.push_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
+                    requests.push_back(zkutil::makeSetRequest(zookeeper_path, std::string(drop_marker), -1));
                 }
                 code = zk_client->tryMulti(requests, responses);
             }
@@ -1073,7 +1159,29 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zk_client->getKeeper());
                 try
                 {
-                    zk_client->removeRecursive(zookeeper_path);
+                    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_unregister_after_drop_lock);
+
+                    /// `drop` must outlive the subtree it guards, so it is kept here and removed together with the root below.
+                    zk_client->tryRemoveChildrenRecursive(
+                        zookeeper_path, /* probably_flat */false, zkutil::RemoveException{drop_lock_path.filename().native()});
+
+                    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_unregister_before_final_multi);
+
+                    Coordination::Requests drop_requests{
+                        zkutil::makeRemoveRequest(drop_lock_path, -1),
+                        zkutil::makeRemoveRequest(zookeeper_path, -1)};
+                    Coordination::Responses drop_responses;
+                    const auto drop_code = zk_client->tryMulti(drop_requests, drop_responses, /* check_session_valid */true);
+                    if (drop_code == Coordination::Error::ZOK)
+                        drop_lock->setAlreadyRemoved();
+                    else if (drop_code == Coordination::Error::ZNONODE)
+                    {
+                        /// The lock is already gone, so the multi could not remove the root with it.
+                        if (tryRemoveMarkedRoot(*zk_client, zookeeper_path) == RootRemoval::NotOurs)
+                            LOG_WARNING(log, "Did not remove {}: it has children, or it is not the node this removal marked", zookeeper_path.string());
+                    }
+                    else
+                        zkutil::KeeperMultiException::check(drop_code, drop_requests, drop_responses);
                 }
                 catch (const zkutil::KeeperMultiException & e)
                 {
