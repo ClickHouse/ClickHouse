@@ -1,7 +1,6 @@
 #include <optional>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/Expect404ResponseScope.h>
-#include <Common/FailPoint.h>
 
 #if USE_AWS_S3
 
@@ -13,14 +12,6 @@ namespace ProfileEvents
     extern const Event DiskS3HeadObject;
 }
 
-
-namespace DB
-{
-namespace FailPoints
-{
-    extern const char s3_head_omit_etag[];
-}
-}
 
 namespace DB::S3
 {
@@ -85,8 +76,6 @@ namespace
         object_info.is_size_known = result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
-        /// An S3-compatible endpoint that reports no `ETag` in the response to a `HeadObject`.
-        fiu_do_on(FailPoints::s3_head_omit_etag, { object_info.etag.clear(); });
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
