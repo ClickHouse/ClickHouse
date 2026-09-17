@@ -2931,11 +2931,11 @@ static BlockIO executeQueryImpl(
 
                     auto sample_block = input_metadata_snapshot->getSampleBlock();
                     Names column_names = sample_block.getNames();
-                    
+
                     /// For input('auto'), make sure that Context::insertion_table_info is set.
                     if (insert_table && !context->hasInsertionTableColumnsDescription())
                         InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table, column_names);
-                    
+
                     auto pipe = getSourceFromASTInsertQuery(
                         out_ast, true, sample_block, context, input_function);
 
