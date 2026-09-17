@@ -1,6 +1,6 @@
 -- A `Variant` value carries which alternative it occupies, and a `Field` does not. Building the set of
 -- an `IN` rebuilt every element from a `Field`, so a value stored as `UInt64` was re-selected into the
--- `Date` alternative and stopped matching the row it was built from. 15 of the 29 rows below answer
+-- `Date` alternative and stopped matching the row it was built from. 24 of the 38 rows below answer
 -- differently without the fix; the last two are controls that must not move. Every `OR` chain is asserted
 -- against the same chain un-rewritten as ground truth, and four of them against the plan as well, so a
 -- decline cannot pass for a fix.
@@ -13,6 +13,20 @@ SELECT 'in-typed-alternative', count() FROM (SELECT materialize(1::UInt64::Varia
 SELECT 'in-typed-alternative-other-row', count() FROM (SELECT materialize(toDate(1)::Variant(Date, UInt64)) AS v) WHERE v IN (1::UInt64);
 SELECT 'in-variant-constant', count() FROM (SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v) WHERE v IN (1::UInt64::Variant(Date, UInt64), 5::UInt64::Variant(Date, UInt64));
 SELECT 'in-variant-constant-nested', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a) WHERE a IN ([1::UInt64]::Array(Variant(Date, UInt64)), [5::UInt64]::Array(Variant(Date, UInt64)));
+
+-- `Array`, `Map` and `Tuple` are converted element-wise, so an element type that names an alternative
+-- keeps it at any depth, and a row holding another alternative stops matching.
+SELECT 'in-nested-typed-alternative', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a) WHERE a IN ([1::UInt64]);
+SELECT 'in-nested-typed-alternative-other-row', count() FROM (SELECT materialize([toDate(1)]::Array(Variant(Date, UInt64))) AS a) WHERE a IN ([1::UInt64]);
+SELECT 'in-nested-variant-source-extension', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a) WHERE a IN ([1::UInt64::Variant(UInt64)]);
+SELECT 'in-map-value-typed-alternative', count() FROM (SELECT materialize(map('k', 1::UInt64)::Map(String, Variant(Date, UInt64))) AS m) WHERE m IN (map('k', 1::UInt64));
+SELECT 'in-map-value-typed-alternative-other-row', count() FROM (SELECT materialize(map('k', toDate(1))::Map(String, Variant(Date, UInt64))) AS m) WHERE m IN (map('k', 1::UInt64));
+SELECT 'in-tuple-element-typed-alternative', count() FROM (SELECT materialize(tuple(1::UInt64)::Tuple(Variant(Date, UInt64))) AS t) WHERE t IN (tuple(1::UInt64));
+SELECT 'in-nested-twice', count() FROM (SELECT materialize([[1::UInt64]]::Array(Array(Variant(Date, UInt64)))) AS a) WHERE a IN ([[1::UInt64]]);
+SELECT 'in-nested-nullable-element', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a) WHERE a IN (CAST([1], 'Array(Nullable(UInt64))'));
+-- ... while a nested source type that names no alternative is one `CAST` refuses outright, so it stays on
+-- the `Field` path instead of becoming a conversion error.
+SELECT 'in-nested-no-such-alternative', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a) WHERE a IN ([1::UInt8]);
 
 -- The `OR` chain the optimizer turns into such an `IN`, with a `Variant` nested in an `Array`.
 SELECT 'or-chain-nested', count() FROM (SELECT materialize([1::UInt64]::Array(Variant(Date, UInt64))) AS a)

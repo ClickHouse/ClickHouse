@@ -147,28 +147,61 @@ bool carriesAmbiguousVariant(const IDataType & type)
 /// extension `createVariantToVariantWrapper` allows). By name, not `equals`: `equals` conflates types the
 /// lookup does not (a `DateTime` timezone, an `AggregateFunction`'s serialization version). The source is
 /// normalized as `createColumnToVariantWrapper` normalizes it, so an ordinary `LowCardinality` survives -
-/// it can be an alternative itself. A non-identity conversion into a NESTED `Variant` is not admitted,
-/// even where `CAST` would manage it: it stays on the `Field` path below.
+/// it can be an alternative itself. `Array`/`Map`/`Tuple` are converted element-wise, so the same question
+/// is asked of each element pair and one pair that does not qualify keeps the whole conversion on the
+/// `Field` path. Two tuples that both name their elements are paired by NAME by `CAST` (dropping and
+/// default-filling what does not match) and positionally by `convertFieldToType`, so they are admitted
+/// only where the two pairings are the same one.
 bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePtr & to)
 {
     if (from->getName() == to->getName())
         return true;
 
-    const auto * to_variant = typeid_cast<const DataTypeVariant *>(to.get());
-    if (!to_variant)
-        return false;
-
     const DataTypePtr source = removeNullableOrLowCardinalityNullable(from);
 
-    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(source.get()))
+    if (const auto * to_variant = typeid_cast<const DataTypeVariant *>(to.get()))
     {
-        for (const auto & alternative : from_variant->getVariants())
-            if (!to_variant->tryGetVariantDiscriminator(alternative->getName()))
+        if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(source.get()))
+        {
+            for (const auto & alternative : from_variant->getVariants())
+                if (!to_variant->tryGetVariantDiscriminator(alternative->getName()))
+                    return false;
+            return true;
+        }
+
+        return to_variant->tryGetVariantDiscriminator(source->getName()).has_value();
+    }
+
+    if (const auto * to_array = typeid_cast<const DataTypeArray *>(to.get()))
+    {
+        const auto * from_array = typeid_cast<const DataTypeArray *>(source.get());
+        return from_array && variantAlternativeIsChosenByType(from_array->getNestedType(), to_array->getNestedType());
+    }
+
+    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
+    {
+        const auto * from_map = typeid_cast<const DataTypeMap *>(source.get());
+        return from_map && variantAlternativeIsChosenByType(from_map->getKeyType(), to_map->getKeyType())
+            && variantAlternativeIsChosenByType(from_map->getValueType(), to_map->getValueType());
+    }
+
+    if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
+    {
+        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(source.get());
+        if (!from_tuple || from_tuple->getElements().size() != to_tuple->getElements().size())
+            return false;
+
+        if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+            && from_tuple->getElementNames() != to_tuple->getElementNames())
+            return false;
+
+        for (size_t i = 0; i < to_tuple->getElements().size(); ++i)
+            if (!variantAlternativeIsChosenByType(from_tuple->getElements()[i], to_tuple->getElements()[i]))
                 return false;
         return true;
     }
 
-    return to_variant->tryGetVariantDiscriminator(source->getName()).has_value();
+    return false;
 }
 
 /// A `Field` cannot express a `Variant` result: `convertFieldToType` returns the value unchanged, and the

@@ -2,6 +2,15 @@ in-typed-alternative	1
 in-typed-alternative-other-row	0
 in-variant-constant	1
 in-variant-constant-nested	1
+in-nested-typed-alternative	1
+in-nested-typed-alternative-other-row	0
+in-nested-variant-source-extension	1
+in-map-value-typed-alternative	1
+in-map-value-typed-alternative-other-row	0
+in-tuple-element-typed-alternative	1
+in-nested-twice	1
+in-nested-nullable-element	1
+in-nested-no-such-alternative	0
 or-chain-nested	1
 or-chain-nested-unrewritten	1
 or-chain-nested-is-declined	0
