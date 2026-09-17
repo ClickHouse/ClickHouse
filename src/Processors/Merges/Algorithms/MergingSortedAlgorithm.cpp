@@ -94,7 +94,8 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     WriteBuffer * out_row_sources_buf_,
     const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
-    bool apply_virtual_row_conversions_)
+    bool apply_virtual_row_conversions_,
+    bool forward_virtual_rows_)
     : header(std::move(header_))
     , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , description(description_)
@@ -102,6 +103,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , out_row_sources_buf(out_row_sources_buf_)
     , filter_column_position(filter_column_name_ ? header->getPositionByName(filter_column_name_.value()) : -1)
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
+    , forward_virtual_rows(forward_virtual_rows_)
     , current_inputs(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
@@ -133,14 +135,21 @@ void MergingSortedAlgorithm::addInput()
     current_inputs.emplace_back();
     cursors.emplace_back();
     virtual_row_boundary.emplace_back();
+    pending_virtual_rows.emplace_back();
 }
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
-    for (auto & input : inputs)
+    pending_virtual_rows.resize(inputs.size());
+
+    for (size_t i = 0; i < inputs.size(); ++i)
     {
+        auto & input = inputs[i];
         if (!isVirtualRow(input.chunk))
             continue;
+
+        if (forward_virtual_rows)
+            pending_virtual_rows[i] = input.chunk.getChunkInfos().clone();
 
         auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
         if constexpr (do_debug_checks)
@@ -188,7 +197,6 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             queue = QueueType(cursors);
         });
     }
-
 }
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
@@ -196,6 +204,9 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     bool is_virtual_row = isVirtualRow(input.chunk);
     if (is_virtual_row)
     {
+        if (forward_virtual_rows)
+            pending_virtual_rows[source_num] = input.chunk.getChunkInfos().clone();
+
         auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
         if constexpr (do_debug_checks)
             checkVirtualRowCoversSortDescription(pk_block, description);
@@ -230,6 +241,37 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
             queue.push(cursors[source_num]);
         });
     }
+}
+
+IMergingAlgorithm::Status MergingSortedAlgorithm::passVirtualRow(size_t source_num)
+{
+    if (forward_virtual_rows && !pending_virtual_rows[source_num].empty())
+    {
+        /// The merged rows are below the announced key and must leave first.
+        if (merged_data.mergedRows() != 0)
+            return Status(merged_data.pull());
+
+        /// Same shape as `VirtualRowTransform` emits: an empty chunk, the key in the info.
+        Chunk boundary(header->cloneEmptyColumns(), 0);
+        boundary.setChunkInfos(std::move(pending_virtual_rows[source_num]));
+        pending_virtual_rows[source_num].clear();
+        return Status(std::move(boundary));
+    }
+
+    return requestSource(source_num);
+}
+
+IMergingAlgorithm::Status MergingSortedAlgorithm::requestSource(size_t source_num)
+{
+    /// Nothing has left this merge yet: the next merge waits for the first rows to move on, so do
+    /// not hold them back until a whole block is merged.
+    if (forward_virtual_rows && merged_data.mergedRows() != 0 && merged_data.mergedRows() == merged_data.totalMergedRows())
+    {
+        Status result(merged_data.pull());
+        result.required_source = source_num;
+        return result;
+    }
+    return Status(source_num);
 }
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
@@ -369,8 +411,10 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
         if (current.impl->isLast() && current_inputs[current.impl->order].skip_last_row)
         {
             /// Get the next block from the corresponding source, if there is one.
-            queue.removeTop();
-            return Status(current.impl->order);
+            auto status = passVirtualRow(current.impl->order);
+            if (status.required_source >= 0)
+                queue.removeTop();
+            return status;
         }
 
         if (current.impl->isFirst()
@@ -427,7 +471,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeImpl(TSortingHeap & queue
         {
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
-            return Status(current.impl->order);
+            return requestSource(current.impl->order);
         }
     }
 
@@ -455,8 +499,10 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
             if (initial_batch_size == 1)
             {
                 /// Get the next block from the corresponding source, if there is one.
-                queue.removeTop();
-                return Status(current.impl->order);
+                auto status = passVirtualRow(current.impl->order);
+                if (status.required_source >= 0)
+                    queue.removeTop();
+                return status;
             }
         }
 
@@ -537,7 +583,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::mergeBatchImpl(TSortingQueue &
         {
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
-            return Status(current.impl->order);
+            return requestSource(current.impl->order);
         }
     }
 
