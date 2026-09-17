@@ -1,6 +1,7 @@
 #include <DataTypes/setMembershipEquivalence.h>
 
 #include <Common/NaNUtils.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -24,19 +25,48 @@ bool hasFloat(const DataTypePtr & type)
     return found;
 }
 
-bool constantMayHoldFloatNaNOrZero(const Field & constant_value)
+std::optional<bool> scalarNumberIsNaNOrZero(const Field & value)
 {
-    switch (constant_value.getType())
+    switch (value.getType())
     {
         case Field::Types::Float64:
         {
-            const Float64 value = constant_value.safeGet<Float64>();
-            return isNaN(value) || value == 0.0;
+            const Float64 number = value.safeGet<Float64>();
+            return isNaN(number) || number == 0.0;
         }
         case Field::Types::UInt64:
-            return constant_value.safeGet<UInt64>() == 0;
+        case Field::Types::Bool:
+            return value.safeGet<UInt64>() == 0;
         case Field::Types::Int64:
-            return constant_value.safeGet<Int64>() == 0;
+            return value.safeGet<Int64>() == 0;
+        case Field::Types::UInt128:
+            return value.safeGet<UInt128>() == 0;
+        case Field::Types::Int128:
+            return value.safeGet<Int128>() == 0;
+        case Field::Types::UInt256:
+            return value.safeGet<UInt256>() == 0;
+        case Field::Types::Int256:
+            return value.safeGet<Int256>() == 0;
+        case Field::Types::Decimal32:
+            return value.safeGet<DecimalField<Decimal32>>().getValue().value == 0;
+        case Field::Types::Decimal64:
+            return value.safeGet<DecimalField<Decimal64>>().getValue().value == 0;
+        case Field::Types::Decimal128:
+            return value.safeGet<DecimalField<Decimal128>>().getValue().value == 0;
+        case Field::Types::Decimal256:
+            return value.safeGet<DecimalField<Decimal256>>().getValue().value == 0;
+        default:
+            return std::nullopt;
+    }
+}
+
+bool constantMayHoldFloatNaNOrZero(const Field & constant_value)
+{
+    if (const auto scalar = scalarNumberIsNaNOrZero(constant_value))
+        return *scalar;
+
+    switch (constant_value.getType())
+    {
         case Field::Types::Tuple:
         {
             for (const auto & element : constant_value.safeGet<Tuple>())

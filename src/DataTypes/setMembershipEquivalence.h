@@ -3,6 +3,8 @@
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -27,6 +29,12 @@ bool comparisonWithConstantMatchesSetMembership(const DataTypePtr & expression_t
   * comparison as `+0.0` as well; only a value that is provably a non-zero number is reported as safe.
   */
 bool constantMayHoldFloatNaNOrZero(const Field & constant_value);
+
+/** Whether a scalar numeric `Field` (an integer of any width, a `Bool`, a `Decimal` or a `Float64`) is NaN
+  * or exactly zero, which is the value class where `equals` and set membership disagree once it reaches a
+  * floating-point comparison. `std::nullopt` for a value that is not a scalar number.
+  */
+std::optional<bool> scalarNumberIsNaNOrZero(const Field & value);
 
 /// Whether a floating-point type appears anywhere in the type, including nested inside Array/Tuple/Map.
 bool hasFloat(const DataTypePtr & type);
