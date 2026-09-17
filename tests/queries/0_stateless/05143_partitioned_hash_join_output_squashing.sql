@@ -6,6 +6,8 @@
 -- Inside `SpillingHashJoin` the decision is made at run time: while the join stays in memory the blocks
 -- pass through. After a switch to `GraceHashJoin` they are squashed again, because grace emits one
 -- bucket's part of each probe block.
+-- The squashing is capped at `max_joined_block_size_rows`, so the block sizes cannot tell it from the
+-- pass-through here; the pipeline shape can.
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET enable_parallel_replicas = 0;
@@ -45,15 +47,17 @@ SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1
 SELECT max(bs) <= 5, count() FROM (SELECT blockSize() AS bs, * FROM t_sq_left AS l FULL JOIN t_sq_right AS r ON l.a = r.a)
 SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000000;
 
-SELECT '-- switched to grace during the build: the bucket output is squashed again (one stream, so one block)';
-SELECT max(bs) > 5, count() FROM (SELECT blockSize() AS bs, * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a)
+SELECT '-- switched to grace during the build: the blocks stay within the cap and the rows match';
+SELECT max(bs) <= 5, count() FROM (SELECT blockSize() AS bs, * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a)
 SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1, max_threads = 1, log_comment = '05143 grace';
 
-SELECT '-- the bare join decides at plan time and has no squashing; the wrapper keeps it for the run-time decision';
-SELECT countIf(explain LIKE '%SimpleSquashingTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 0);
-SELECT countIf(explain LIKE '%SimpleSquashingTransform%') > 0
-FROM (EXPLAIN PIPELINE SELECT * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000000);
+-- The build and probe inputs of the join are squashed too, so the counts are compared, not tested for zero.
+SELECT '-- the bare join has no squashing after the join; the wrapper keeps it for the run-time decision, as hash has';
+WITH
+    (SELECT countIf(explain LIKE '%SimpleSquashingTransform%') FROM (EXPLAIN PIPELINE SELECT * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 0)) AS bare,
+    (SELECT countIf(explain LIKE '%SimpleSquashingTransform%') FROM (EXPLAIN PIPELINE SELECT * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000000)) AS wrapped,
+    (SELECT countIf(explain LIKE '%SimpleSquashingTransform%') FROM (EXPLAIN PIPELINE SELECT * FROM t_sq_left AS l JOIN t_sq_right AS r ON l.a = r.a SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0)) AS h
+SELECT bare < wrapped, wrapped = h;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] > 0
