@@ -52684,6 +52684,10 @@
     "source": "/integrations/airflow"
   },
   {
+    "destination": "/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin",
+    "source": "/integrations/airflow/migrating-from-airflow-clickhouse-plugin"
+  },
+  {
     "destination": "/concepts/features/interfaces/documentation-search",
     "source": "/interfaces/documentation-search"
   },
