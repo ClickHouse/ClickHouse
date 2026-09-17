@@ -78,19 +78,23 @@ public:
         if (!isResultTypeSupported(args[0]->getResultType(), is_suffix))
             return;
 
-        /// Only rewrite for perfect prefix or suffix
-        /// Suffix is prefix in reverse
+        LikePatternFixedPrefix affix;
         if (is_suffix)
-            std::reverse(pattern.begin(), pattern.end());
+        {
+            std::string_view suffix_pattern = pattern;
+            while (suffix_pattern.starts_with('%'))
+                suffix_pattern.remove_prefix(1);
 
-        /// Only perfect-affix patterns ('Prefix%') are rewritten here; exact (wildcard-free) patterns keep
-        /// is_perfect == false and are left as LIKE for KeyCondition to optimize into an exact point range.
-        auto affix = extractFixedPrefixFromLikePattern(pattern, true);
-        if (!affix.is_perfect || affix.prefix.empty())
-            return;
-
-        if (is_suffix)
-            std::reverse(affix.prefix.begin(), affix.prefix.end());
+            affix = extractFixedPrefixFromLikePattern(suffix_pattern, true);
+            if (!affix.is_exact || affix.prefix.empty())
+                return;
+        }
+        else
+        {
+            affix = extractFixedPrefixFromLikePattern(pattern, true);
+            if (!affix.is_perfect || affix.prefix.empty())
+                return;
+        }
 
         auto affix_constant = std::make_shared<ConstantNode>(std::move(affix.prefix));
 

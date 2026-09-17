@@ -13,6 +13,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -225,6 +226,12 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
 void KeeperDispatcher::shutdown(bool closed_all_connections)
 {
+    shutdownBeforeConnectionsFinish();
+    shutdownAfterConnectionsFinish(closed_all_connections);
+}
+
+void KeeperDispatcher::shutdownBeforeConnectionsFinish()
+{
     /// Armed once the shutdown is committed to. setShutdownCalled is one-shot, so no later
     /// shutdown reaches the waiters and they must be completed even if a step below throws.
     scope_guard fail_session_id_waiters;
@@ -233,6 +240,7 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
     {
         {
             signalShutdown();
+            waitForFourLetterCommands();
 
             if (!keeper_context || !keeper_context->setShutdownCalled())
                 return;
@@ -272,19 +280,33 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
         if (server)
             server->shutdown();
 
-        /// Only now is nuraft's commit thread joined, so no thread can produce responses anymore
-        /// and the queues can be drained and checked.
-        if (dispatcher)
-            dispatcher->drainAndCheckQueues(closed_all_connections);
+        /// Only now is nuraft's commit thread joined, so no thread can produce responses anymore.
+        /// TCP handlers can still own responses until they finish.
+        ready_to_finish_shutdown.store(true, std::memory_order_release);
 
         /// On the normal path, run here rather than leaving it to the guard: until the commit
         /// thread is joined a late commit can still complete a waiter itself.
         fail_session_id_waiters.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void KeeperDispatcher::shutdownAfterConnectionsFinish(bool closed_all_connections)
+{
+    if (shutdown_finished.exchange(true))
+        return;
+
+    try
+    {
+        if (ready_to_finish_shutdown.load(std::memory_order_acquire) && dispatcher)
+            dispatcher->drainAndCheckQueues(closed_all_connections);
 
         snapshot_s3.shutdown();
 
         CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
-
     }
     catch (...)
     {
@@ -426,18 +448,52 @@ void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size, UInt64
 void KeeperDispatcher::interruptibleSleep(std::chrono::milliseconds period)
 {
     std::unique_lock lock(early_shutdown_wait_mutex);
-    early_shutdown_wait_cv.wait_for(lock, period, [&] { return shutting_down.load(); });
+    early_shutdown_wait_cv.wait_for(lock, saturatedWaitMilliseconds(period.count()), [&] { return shutting_down.load(); });
 }
 
 void KeeperDispatcher::signalShutdown()
 {
-    if (shutting_down.exchange(true))
-        return; // already called
+    {
+        std::lock_guard lock(four_letter_command_mutex);
+        if (shutting_down.exchange(true))
+            return; // already called
+    }
 
     {
         std::lock_guard lock(early_shutdown_wait_mutex);
     }
     early_shutdown_wait_cv.notify_all();
+}
+
+void KeeperDispatcher::beginTCPConnectionDrain()
+{
+    tcp_connections_draining.store(true, std::memory_order_release);
+}
+
+bool KeeperDispatcher::tryBeginFourLetterCommand()
+{
+    std::lock_guard lock(four_letter_command_mutex);
+    if (isTCPConnectionDrainStarted() || shutting_down.load(std::memory_order_relaxed))
+        return false;
+
+    ++running_four_letter_commands;
+    return true;
+}
+
+void KeeperDispatcher::finishFourLetterCommand()
+{
+    {
+        std::lock_guard lock(four_letter_command_mutex);
+        chassert(running_four_letter_commands > 0);
+        --running_four_letter_commands;
+    }
+    four_letter_command_cv.notify_all();
+}
+
+void KeeperDispatcher::waitForFourLetterCommands()
+{
+    std::unique_lock lock(four_letter_command_mutex);
+    four_letter_command_cv.wait(lock, [this] { return running_four_letter_commands == 0; });
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
@@ -590,9 +646,19 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 
     {
         std::lock_guard lock(new_session_id_mutex);
+        if (isShuttingDown())
+            throw Exception(ErrorCodes::ABORTED, "Not issuing new session ID because of shutdown");
+
         auto [it, inserted] = new_session_id_requests.try_emplace(request->internal_id);
         chassert(inserted);
         future = it->second.get_future();
+    }
+
+    if (isShuttingDown())
+    {
+        std::lock_guard lock(new_session_id_mutex);
+        new_session_id_requests.erase(request->internal_id);
+        throw Exception(ErrorCodes::ABORTED, "Not issuing new session ID because of shutdown");
     }
 
     try
@@ -610,7 +676,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         throw;
     }
 
-    if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
+    if (future.wait_for(saturatedWaitMilliseconds(session_timeout_ms)) != std::future_status::ready)
     {
         {
             std::lock_guard lock(new_session_id_mutex);
@@ -722,7 +788,7 @@ bool KeeperDispatcher::reconfigEnabled() const
 
 bool KeeperDispatcher::isServerActive() const
 {
-    return checkInit() && hasLeader() && !server->isRecovering();
+    return !isShuttingDown() && checkInit() && hasLeader() && !server->isRecovering();
 }
 
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
@@ -820,8 +886,8 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
         LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
         while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
         {
-            if (keeper_context->isShutdownCalled())
-                throw Exception(ErrorCodes::ABORTED, "Shutdown called, aborting configuration update");
+            if (isShuttingDown() || keeper_context->isShutdownCalled())
+                throw Exception(ErrorCodes::ABORTED, "Shutdown started, aborting configuration update");
 
             if (check_callback(server.get()))
             {
@@ -829,7 +895,7 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
                 return;
             }
 
-            std::this_thread::sleep_for(1000ms);
+            interruptibleSleep(1000ms);
         }
         LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
     }
