@@ -1,0 +1,96 @@
+-- conversion Int32
+-- conversion Int64
+-- conversion negative range
+-- no conversion when the setting is off
+05228 convert i32	1
+05228 convert i64	1
+05228 convert neg	1
+05228 convert off	0
+-- ALL INNER Int32, conversion on and off
+0	l0	r0
+2	l2	r2
+4	l4	r4
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ALL INNER Int64
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ALL INNER negative
+-2	l-2	r-2
+0	l0	r0
+2	l2	r2
+-- ALL LEFT Int32
+-5	l-5	
+-4	l-4	
+-3	l-3	
+-2	l-2	
+-1	l-1	
+0	l0	r0
+1	l1	
+2	l2	r2
+3	l3	
+4	l4	r4
+-- ALL RIGHT Int32
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ALL FULL Int32
+-5	0	l-5	
+-4	0	l-4	
+-3	0	l-3	
+-2	0	l-2	
+-1	0	l-1	
+0	0	l0	r0
+1	0	l1	
+2	2	l2	r2
+3	0	l3	
+4	4	l4	r4
+-- ANY INNER Int32
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ANY LEFT Int32
+-5	l-5	
+-4	l-4	
+-3	l-3	
+-2	l-2	
+-1	l-1	
+0	l0	r0
+1	l1	
+2	l2	r2
+3	l3	
+4	l4	r4
+-- ANY RIGHT Int32
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- SEMI LEFT Int32
+0	l0
+2	l2
+4	l4
+-- SEMI RIGHT Int32
+0	r0
+2	r2
+4	r4
+-- ANTI LEFT Int32
+-5	l-5
+-4	l-4
+-3	l-3
+-2	l-2
+-1	l-1
+1	l1
+3	l3
+-- ANTI RIGHT Int32
+-- the exact runtime filter of a fixed table
+u8 on	2500
+u8 off	2500
+range on	2500
+range off	2500
+range on, conversion off	2500
+05228 rf range off	0
+05228 rf range on	1
+05228 rf range unconverted	0
+05228 rf u8 off	0
+05228 rf u8 on	1
