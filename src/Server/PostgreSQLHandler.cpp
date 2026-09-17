@@ -1990,17 +1990,17 @@ std::vector<String> splitPostgreSQLStatements(const String & text)
 
 void PostgreSQLHandler::processQuery()
 {
-    /// A malformed or truncated frontend frame leaves the transport stream desynchronized. Read the
-    /// complete frame before entering the recoverable query-error path, so deserialization errors close
-    /// the connection instead of emitting `ReadyForQuery` on a corrupt stream.
-    std::unique_ptr<PostgreSQLProtocol::Messaging::Query> query =
-        message_transport->receive<PostgreSQLProtocol::Messaging::Query>();
-
     /// Output position before the currently executing statement. If a statement
     /// fails when nothing has been sent for it yet, the session can be kept alive.
     size_t out_bytes_before_statement = out->count();
     try
     {
+        /// The declared message length is a frame boundary (`deserializePayload` reads the frame through
+        /// a `LimitReadBuffer` and keeps the stream aligned even when a field throws), so a malformed
+        /// frame is answered with an `ErrorResponse` like any other failed statement.
+        std::unique_ptr<PostgreSQLProtocol::Messaging::Query> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::Query>();
+
         if (isEmptyQuery(query->query))
         {
             message_transport->send(PostgreSQLProtocol::Messaging::EmptyQueryResponse());
@@ -2229,11 +2229,11 @@ bool PostgreSQLHandler::processDeallocate(const String & query)
 
 void PostgreSQLHandler::processParseQuery()
 {
-    std::unique_ptr<PostgreSQLProtocol::Messaging::ParseQuery> query =
-        message_transport->receive<PostgreSQLProtocol::Messaging::ParseQuery>();
-
     try
     {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::ParseQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::ParseQuery>();
+
         /// Extended-protocol `COPY` needs the dedicated CopyIn/CopyOut message exchange. It is currently
         /// implemented only for the simple-query path, so reject it during `Parse` rather than executing it
         /// later through the generic wire output path and desynchronizing the frontend/backend stream.
@@ -2279,11 +2279,11 @@ void PostgreSQLHandler::processParseQuery()
 
 void PostgreSQLHandler::processBindQuery()
 {
-    std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query =
-        message_transport->receive<PostgreSQLProtocol::Messaging::BindQuery>();
-
     try
     {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::BindQuery>();
+
         prepared_statements_manager.attachBindQuery(std::move(query));
         message_transport->send(PostgreSQLProtocol::Messaging::BindQueryComplete(), true);
     }
@@ -2304,29 +2304,39 @@ void PostgreSQLHandler::processBindQuery()
 
 void PostgreSQLHandler::processDescribeQuery()
 {
-    /// The message is received outside any recoverable path: a malformed or truncated frame
-    /// desynchronizes the stream and must close the session.
-    std::unique_ptr<PostgreSQLProtocol::Messaging::DescribeQuery> query =
-        message_transport->receive<PostgreSQLProtocol::Messaging::DescribeQuery>();
+    try
+    {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::DescribeQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::DescribeQuery>();
 
-    /// PostgreSQL answers `Describe` with `ParameterDescription` and `RowDescription`. ClickHouse
-    /// cannot derive the result header of a statement without executing it, so `Describe` is
-    /// accepted silently and the `RowDescription` is sent when `Execute` produces the result -
-    /// clients driving the extended protocol (psycopg, Npgsql, the JDBC driver) accept it there.
-    /// Failing `Describe` instead would fail every prepared statement those clients issue.
+        /// PostgreSQL answers `Describe` with `ParameterDescription` and `RowDescription`. ClickHouse
+        /// cannot derive the result header of a statement without executing it, so `Describe` is
+        /// accepted silently and the `RowDescription` is sent when `Execute` produces the result -
+        /// clients driving the extended protocol (psycopg, Npgsql, the JDBC driver) accept it there.
+        /// Failing `Describe` instead would fail every prepared statement those clients issue.
+    }
+    catch (const Exception & e)
+    {
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
+            true);
+        /// Keep the connection alive and discard messages through `Sync`.
+        ignore_until_sync = true;
+    }
 }
 
 void PostgreSQLHandler::processExecuteQuery()
 {
-    std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
-        message_transport->receive<PostgreSQLProtocol::Messaging::ExecuteQuery>();
-
     /// Output position before the statement, mirroring `processQuery`: keeping
     /// the session alive after a failure is only safe while nothing has been
     /// sent for the failed statement.
     size_t out_bytes_before_statement = out->count();
     try
     {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::ExecuteQuery>();
+
         /// Only the unnamed portal is supported; the corresponding rejection
         /// for `Bind` lives in `PreparedStatemetsManager::attachBindQuery`.
         if (!query->portal_name.empty())
@@ -2379,11 +2389,11 @@ void PostgreSQLHandler::processExecuteQuery()
 
 void PostgreSQLHandler::processCloseQuery()
 {
-    std::unique_ptr<PostgreSQLProtocol::Messaging::CloseQuery> query =
-        message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
-
     try
     {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::CloseQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
+
         /// 'S' means close a prepared statement, 'P' means close a portal.
         /// Closing a portal must not deallocate the prepared statement,
         /// otherwise a later Bind/Execute on the same statement would fail.
@@ -2442,18 +2452,29 @@ void PostgreSQLHandler::processCloseQuery()
 
 void PostgreSQLHandler::processSyncQuery()
 {
-    /// The message is received outside any recoverable path: `Sync` is fixed-size, and a frame with a
-    /// different length leaves its trailing bytes in the stream, so the connection must close without
-    /// an `ErrorResponse` - the stream is already desynchronized.
-    std::unique_ptr<PostgreSQLProtocol::Messaging::SyncQuery> query =
-        message_transport->receive<PostgreSQLProtocol::Messaging::SyncQuery>();
+    try
+    {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::SyncQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::SyncQuery>();
 
-    /// Per PostgreSQL protocol, `Sync` ends the current extended-query cycle
-    /// and destroys the unnamed portal. We only support the unnamed portal
-    /// (see `attachBindQuery`), so resetting the single bind slot is
-    /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
-    prepared_statements_manager.resetBindQuery();
-    ignore_until_sync = false;
+        /// Per PostgreSQL protocol, `Sync` ends the current extended-query cycle
+        /// and destroys the unnamed portal. We only support the unnamed portal
+        /// (see `attachBindQuery`), so resetting the single bind slot is
+        /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
+        prepared_statements_manager.resetBindQuery();
+        ignore_until_sync = false;
+    }
+    catch (const Exception & e)
+    {
+        /// A `Sync` frame with a payload is malformed: the frame is consumed whole, so the client is
+        /// told why, and then the connection is closed - a `Sync` that cannot be trusted cannot end
+        /// the cycle either.
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
+            true);
+        throw;
+    }
 }
 
 bool PostgreSQLHandler::isEmptyQuery(const String & query)
