@@ -1359,9 +1359,8 @@ bool MergeTask::isVerticalLightweightDelete(const GlobalRuntimeContext & global_
 
 bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
 {
-    /// The filter column is read on the rows the merge emits, matching `TTLTransform` only where an
-    /// output row is one of the input rows. `Summing` and friends synthesize the output row from a
-    /// whole key group, so the filter would apply to the constituents, not to the aggregate.
+    /// The filter is read on the row the merge emits, which matches `TTLTransform` only where that
+    /// row is one of the input rows. `Summing` and friends synthesize it from the whole key group.
     switch (global_ctx.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:

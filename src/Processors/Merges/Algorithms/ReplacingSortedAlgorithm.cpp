@@ -80,9 +80,8 @@ void ReplacingSortedAlgorithm::initialize(Inputs inputs)
     skip_runs_of_equal_keys = can_skip_to_run_end && batch_detection_enabled;
 }
 
-/// A whole key group is skipped when its winning row must not reach the output: `CLEANUP` skips a
-/// tombstone, and a row filter skips a row it rejects. The losing rows of the group were already
-/// skipped, so this is what a horizontal merge produces when it filters the merged stream.
+/// True when the group's winning row must not reach the output: a `CLEANUP` tombstone, or a row
+/// the filter rejects.
 bool ReplacingSortedAlgorithm::isSelectedRowSkipped() const
 {
     if (cleanup && is_deleted_column_number != -1
@@ -92,14 +91,13 @@ bool ReplacingSortedAlgorithm::isSelectedRowSkipped() const
     return isRowFiltered(selected_row);
 }
 
-/// The gather stage replays one row source per input row, so a skipped key group is still written
-/// out in full - the file must stay in step with the rows that were read, not with the rows kept.
+/// One row source per input row, so a skipped group is still written out in full: the file tracks
+/// the rows read, not the rows kept.
 void ReplacingSortedAlgorithm::flushCurrentRowSources(bool keep_selected_row)
 {
     if (!out_row_sources_buf)
         return;
 
-    /// Every entry of the group was pre-marked skipped; the winner is the only one to unskip.
     if (keep_selected_row)
         current_row_sources[max_pos].setSkipFlag(false);
 
@@ -110,8 +108,7 @@ void ReplacingSortedAlgorithm::flushCurrentRowSources(bool keep_selected_row)
 
 void ReplacingSortedAlgorithm::insertRow()
 {
-    /// Leave `selected_row` alone when the group is skipped: `saveChunkForSkippingFinalFromSelectedRow`
-    /// below still needs it to decide whether the chunk it owns can be emitted.
+    /// Leave `selected_row` alone: `saveChunkForSkippingFinalFromSelectedRow` below still reads it.
     if (isSelectedRowSkipped())
         flushCurrentRowSources(/*keep_selected_row=*/ false);
     else
@@ -145,10 +142,9 @@ void ReplacingSortedAlgorithm::insertRowImpl()
     selected_row.clear();
 }
 
-/// Emit a chunk whose keys are known to be free of duplicates, so it needs no merging at all.
-/// A row filter still applies per row, exactly as in `MergingSortedAlgorithm::insertChunk`.
-/// Only reachable while the source chunks still carry their part level; without it the merge falls
-/// back to the per-row path, which returns the same rows more slowly.
+/// Emit a chunk already known to be free of duplicate keys; the filter still applies per row.
+/// Reachable only while the source chunks carry their part level, else the merge takes the slower
+/// per-row path for the same rows.
 void ReplacingSortedAlgorithm::insertChunk(size_t source_num, Chunk chunk)
 {
     const size_t num_rows = chunk.getNumRows();

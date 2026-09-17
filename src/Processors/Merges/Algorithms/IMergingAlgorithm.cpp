@@ -12,8 +12,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
-/// Type-checks the column here, once, so every algorithm reading it can `assert_cast` to `ColumnUInt8`
-/// without repeating the check.
+/// Type-checked once here, so readers can `assert_cast` to `ColumnUInt8`.
 ssize_t resolveFilterColumnPosition(const Block & header, const std::optional<String> & filter_column_name)
 {
     if (!filter_column_name)

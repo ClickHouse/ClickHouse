@@ -138,7 +138,6 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 
     if (keeps_a_selected_row && count_positive <= count_negative && !only_positive_sign)
     {
-        /// Unconditional: the buffered rows precede this one whether or not it survives the filter.
         insertBufferedInvalidSignRowsBefore(first_negative_pos);
 
         if (!isRowFiltered(first_negative_row))
@@ -275,16 +274,14 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             /// Do not return it for SELECT ... FINAL.
             if (!only_positive_sign)
             {
-                /// Counts the rows read, not the rows emitted: `insertRows` uses it to tell a key
-                /// group that produced nothing from one that was never there, and only the latter
-                /// may leave the row sources of the group unwritten.
+                /// Rows read, not emitted: `insertRows` tells a group that produced nothing from
+                /// one that was never there, and only the latter may leave its row sources unwritten.
                 ++count_invalid;
 
                 if (!isRowFiltered(current_row))
                 {
                     /// Buffer only what a vertical merge could have to reorder: its gather stage
-                    /// pairs the Nth unskipped row source with the Nth merged row. A horizontal
-                    /// merge has no such pairing, and nothing precedes the key's first selected row.
+                    /// pairs the Nth unskipped row source with the Nth merged row.
                     if (!out_row_sources_buf || (count_positive == 0 && count_negative == 0))
                         insertRow(current_row);
                     else

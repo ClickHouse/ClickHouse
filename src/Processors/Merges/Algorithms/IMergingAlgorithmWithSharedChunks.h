@@ -77,16 +77,14 @@ protected:
 
     std::unique_ptr<MergedData> merged_data;
 
-    /// The position of the row filter column if one is set, -1 otherwise.
     const ssize_t filter_column_position;
 
     bool hasFilter() const { return filter_column_position != -1; }
 
     using RowRef = detail::RowRefWithOwnedChunk;
 
-    /// A row the filter rejects must not reach the output, exactly as if `TTLTransform` had dropped
-    /// it from the merged stream of a horizontal merge. Its row source entry is still written, only
-    /// left skipped, so the gather stage stays in step with the rows that were read.
+    /// A rejected row still writes its row source entry, left skipped, so the gather stage stays
+    /// in step with the rows that were read.
     bool isRowFiltered(const RowRef & row) const;
 
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
