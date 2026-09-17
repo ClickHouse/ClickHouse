@@ -5,6 +5,7 @@
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
         <create_snapshot_on_exit>true</create_snapshot_on_exit>
 
         <coordination_settings>

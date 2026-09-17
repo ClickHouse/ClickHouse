@@ -20,6 +20,32 @@ namespace DB
 class IStreamingStorage;
 struct ObjectMetadata;
 
+/// Whether the `after_processing` step of the table acts on the generation of every object it
+/// ingested. An Azure `MOVE` copies and deletes exactly the generation that was read, an Azure
+/// `DELETE` deletes exactly that generation, and the copy of an S3 `MOVE` is pinned to it as well,
+/// so all of them have to know that generation - the `ETag` of the object - for every file before
+/// the file is committed as processed. Otherwise an object overwritten after it was read would be
+/// moved or deleted by path, and the newer generation would be gone without ever having been
+/// ingested. The read of such a file is pinned to that generation independently of
+/// `s3_validate_etag_on_read`: were it not, a read that served a newer generation `B` would still be
+/// recorded as an ingestion of the listed generation `A`, the post-processing pinned to `A` would
+/// refuse the object, and `B` would be ingested a second time on the next pass. An S3 `DELETE`
+/// is pinned as well (`If-Match` on the `DeleteObject`, the `ETag` element of a `DeleteObjects`),
+/// so it needs the ingested generation for the same reason.
+bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing);
+
+/// Makes `object_info` carry the generation (`etag`) that the read of the object is then pinned
+/// to (see `StorageObjectStorageSource::createReadBuffer`), so that the generation the read
+/// verified and the generation the post-processing acts on are one and the same. It is the
+/// generation the listing reported: a `HEAD` made after the object was listed and claimed could
+/// name a generation that replaced the listed one, and moving or deleting that one while the path
+/// is marked processed would skip the listed generation forever. The read is pinned through
+/// `RelativePathWithMetadata::require_read_pinned_to_generation`, so it does not depend on
+/// `s3_validate_etag_on_read`, which only governs plain reads. Returns whether the generation is
+/// known: it is not when the listing reports no `ETag`, and a table whose post-processing needs it
+/// must then refuse the file rather than read it.
+bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info);
+
 class ObjectStorageQueueSource final : public ISource, WithContext
 {
 public:
@@ -235,7 +261,8 @@ public:
         UInt64 commit_id,
         time_t commit_time,
         time_t transaction_start_time_,
-        const std::string & exception_message = {});
+        const std::string & exception_message = {},
+        const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths = {});
 
 private:
     Chunk generateImpl();
@@ -296,6 +323,16 @@ private:
         FileState state;
         FileMetadataPtr metadata;
         std::string exception_during_read;
+        int exception_during_read_code = 0;
+        /// The object's own last-modified time, if object storage reported one.
+        /// Used to update the "newest object committed" pipeline-lag watermark.
+        time_t last_modified = 0;
+        /// The generation of the object the reader was opened on: the size and the `ETag` of its
+        /// listing entry. The `after_processing` step is pinned to exactly this generation, so an
+        /// object overwritten after it was ingested is neither moved nor deleted as if the newer
+        /// generation had been ingested.
+        uint64_t bytes_size = StoredObject::UnknownSize;
+        String etag;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;

@@ -53,19 +53,19 @@ Vous pouvez utiliser le paramètre [log&#95;queries&#95;probability](/fr/referen
 * `current_database` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de la base de données courante.
 * `query` ([String](/fr/reference/data-types/string)) — Texte de la requête.
 * `normalized_query_hash` ([UInt64](/fr/reference/data-types/int-uint)) — Hachage de la requête normalisée — avec les constantes effacées, etc.
-* `is_initial_query` ([UInt8](/fr/reference/data-types/int-uint)) — Type de requête. Valeurs possibles : 1 — la requête a été initiée par le client, 0 — la requête a été initiée par une autre requête pour l’exécution distribuée des requêtes.
+* `is_initial_query` ([UInt8](/fr/reference/data-types/int-uint)) — Indique si la requête est initiale. Valeurs possibles : 1 — une requête initiale (de niveau supérieur), 0 — une requête enfant initiée par une autre requête, y compris les requêtes pour l’exécution distribuée et les sous-requêtes internes.
 * `connection_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP du client depuis laquelle la connexion a été établie. En cas de connexion via un proxy, il s’agira de l’adresse du proxy.
 * `connection_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port du client depuis lequel la connexion a été établie. En cas de connexion via un proxy, il s’agira du port du proxy.
 * `user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a initié la requête en cours.
 * `query_id` ([String](/fr/reference/data-types/string)) — ID de la requête.
 * `address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP utilisée pour effectuer la requête. En cas de connexion via un proxy et si `auth_use_forwarded_address` est défini, il s’agira de l’adresse du client au lieu de celle du proxy.
 * `port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client utilisé pour effectuer la requête. En cas de connexion via un proxy, si `auth_use_forwarded_address` est défini, il s’agit du port du client plutôt que de celui du proxy.
-* `initial_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a exécuté la requête initiale (pour l’exécution distribuée des requêtes).
-* `initial_query_id` ([String](/fr/reference/data-types/string)) — ID de la requête initiale (pour l’exécution distribuée des requêtes).
-* `initial_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP depuis laquelle la requête parente a été lancée.
-* `initial_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client utilisé pour effectuer la requête parente.
-* `initial_query_start_time` ([DateTime](/fr/reference/data-types/datetime)) — Heure de début d’exécution de la requête initiale.
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/fr/reference/data-types/datetime64)) — Heure de début d’exécution de la requête initiale
+* `initial_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur qui a exécuté la requête initiale dans la même chaîne de requêtes.
+* `initial_query_id` ([String](/fr/reference/data-types/string)) — ID de la requête initiale dans la même chaîne de requêtes.
+* `initial_address` ([IPv6](/fr/reference/data-types/ipv6)) — Adresse IP depuis laquelle la requête initiale de la même chaîne de requêtes a été lancée.
+* `initial_port` ([UInt16](/fr/reference/data-types/int-uint)) — Port client depuis lequel la requête initiale de la même chaîne de requêtes a été lancée.
+* `initial_query_start_time` ([DateTime](/fr/reference/data-types/datetime)) — Heure de début de la requête initiale dans la même chaîne de requêtes.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/fr/reference/data-types/datetime64)) — Heure de début de la requête initiale dans la même chaîne de requêtes, avec une précision à la microseconde.
 * `authenticated_user` ([LowCardinality(String)](/fr/reference/data-types/lowcardinality)) — Nom de l’utilisateur authentifié dans la session.
 * `interface` ([UInt8](/fr/reference/data-types/int-uint)) — Interface depuis laquelle la requête a été lancée. Valeurs possibles : 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/fr/reference/data-types/int-uint)) — Indicateur précisant si la connexion était sécurisée.

@@ -102,7 +102,7 @@ merge. مع القيمة الافتراضية `basic`، لا تحصل أعمدة
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "إعداد جديد يحدّ من التجميع إلى حدّ أقصى يبلغ `LIMIT` من المفاتيح المميزة لاستعلامات `SELECT key_expr FROM t GROUP BY key_expr LIMIT n`."}]}]} />
 
-يؤدي هذا الإعداد إلى تمكين تحسين الاستعلام البسيط `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` أو تعطيله (من دون دوال تجميع في الإسقاط، ومن دون بنود `HAVING`/`ORDER BY`/`LIMIT BY`/window، ومن دون معدِّلات `GROUP BY`) وذلك عبر تعيين `max_rows_to_group_by = n + offset` و`group_by_overflow_mode = 'any'`. ويتوقف التجميع بمجرد إنتاج `n + offset` من المفاتيح المميزة.
+يؤدي هذا الإعداد إلى تمكين تحسين الاستعلام البسيط `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` أو تعطيله (من دون دوال تجميع أو دوال نوافذ أو `arrayJoin` في الإسقاط، ومن دون بنود `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/`DISTINCT`/window، ومن دون معدِّلات `GROUP BY`) وذلك عبر تعيين `max_rows_to_group_by = n + offset` و`group_by_overflow_mode = 'any'`. ويتوقف التجميع بمجرد إنتاج `n + offset` من المفاتيح المميزة.
 
 يُلغى هذا التحسين عندما يكون المستخدم قد عيّن `group_by_overflow_mode` صراحةً إلى قيمة غير `any` (للحفاظ على سلوك `throw`/`break` الذي حدّده صراحةً)، وكذلك عندما يكون قد عيّن مسبقًا قيمة أكثر تقييدًا لـ `max_rows_to_group_by` (إذ يصبح التحسين عندئذٍ بلا تأثير).
 

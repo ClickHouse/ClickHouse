@@ -3,10 +3,14 @@
 #include <Core/Settings.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -14,6 +18,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -65,6 +70,7 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool transform_null_in;
 }
 
 namespace ErrorCodes
@@ -197,6 +203,39 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
         return "globalNotNullInIgnoreSet";
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
+}
+
+std::string_view getNullInFunctionName(std::string_view function_name)
+{
+    if (function_name == "in")
+        return "nullIn";
+    if (function_name == "notIn")
+        return "notNullIn";
+    if (function_name == "globalIn")
+        return "globalNullIn";
+    if (function_name == "globalNotIn")
+        return "globalNotNullIn";
+
+    return function_name;
+}
+
+std::optional<String> getInFunctionNameForPassCreatedNode(
+    const String & in_function_name, const DataTypePtr & left_argument_type, const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::transform_null_in])
+        return in_function_name;
+
+    const auto null_in_function_name = getNullInFunctionName(in_function_name);
+    if (null_in_function_name == in_function_name)
+        return in_function_name;
+
+    /// `canContainNull`, not `isNullable`: a `Variant` or `Dynamic` carries NULL via a discriminator
+    /// without being wrapped in `Nullable`. `hasDynamicStructure` covers a `Dynamic` nested in a
+    /// container, which both names reject alike.
+    if (canContainNull(*left_argument_type) || left_argument_type->hasDynamicStructure())
+        return {};
+
+    return String(null_in_function_name);
 }
 
 void makeUniqueColumnNamesInBlock(Block & block)
@@ -409,6 +448,29 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
+const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node)
+{
+    static const Names no_aliases;
+
+    QueryTreeNodePtr current = query_or_union_node;
+    while (current)
+    {
+        if (const auto * query_node = current->as<QueryNode>())
+            /// On a resolved node the stored list can be longer than the projection, because column
+            /// pruning shrinks the projection columns but not the list.
+            return query_node->isResolved() ? no_aliases : query_node->getProjectionAliasesToOverride();
+
+        const auto * union_node = current->as<UnionNode>();
+        if (!union_node)
+            return no_aliases;
+
+        const auto & queries = union_node->getQueries().getNodes();
+        current = queries.empty() ? nullptr : queries[0];
+    }
+
+    return no_aliases;
+}
+
 static ASTPtr convertIntoTableExpressionAST(
     const QueryTreeNodePtr & table_expression_node,
     const ConvertToASTOptions & convert_to_ast_options
@@ -446,6 +508,19 @@ static ASTPtr convertIntoTableExpressionAST(
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
         result_table_expression->subquery = result_table_expression->children.back();
+
+        /// Restore the subquery column alias list, e.g. `(SELECT 1) AS t(x)`.
+        const auto & column_aliases = getColumnAliasesToRestore(table_expression_node);
+        if (!column_aliases.empty())
+        {
+            auto column_aliases_ast = make_intrusive<ASTExpressionList>();
+            column_aliases_ast->children.reserve(column_aliases.size());
+            for (const auto & column_alias : column_aliases)
+                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(column_alias));
+
+            result_table_expression->column_aliases = std::move(column_aliases_ast);
+            result_table_expression->children.push_back(result_table_expression->column_aliases);
+        }
     }
     else if (node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::IDENTIFIER)
     {
@@ -1260,10 +1335,11 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context)
 {
     auto * function = expression->as<FunctionNode>();
-    if (!function)
-        return;
 
-    if (function->getFunctionName() != "and")
+    /// Anything that is not an `and` conjunction is kept or dropped as a whole, bare
+    /// columns and constants included: a column whose source is not `table_expression`
+    /// would be left with a dangling source.
+    if (!function || function->getFunctionName() != "and")
     {
         if (hasUnknownColumn(expression, table_expression))
             expression = nullptr;
@@ -1323,10 +1399,25 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 namespace
 {
 
-Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object)
+/// `datetime64_as_numbers` is only set while building the text of a JSON/Object constant for exact
+/// serialization (columnConstantToExactLiteralAST). When set, typed DateTime64/Time64 leaves are
+/// rendered as a bare number instead of local date-time text, which round-trips losslessly and is
+/// unambiguous across DST overlaps: the shard reads the number back through the leaf's declared type
+/// (`JSONExtractTree`'s `DateTime64Node`/`Time64Node`). The two types read a bare
+/// number differently - a DateTime64 path reads a Unix timestamp in seconds, a Time64 path reads the
+/// raw scaled ticks - so each leaf is written in the form its own parser expects. Reading a DateTime64
+/// number as ticks again is only possible under the legacy `input_format_read_datetime_number_as_raw_value`
+/// (`compatibility` of `26.7` or below), where the JSON leaf of such a constant is off by the scale.
+/// This must not leak into dynamic JSON paths or Variant/Dynamic, where the value's type is inferred
+/// from the JSON token and a bare number would be read as a number, not a date-time.
+///
+/// `date_time_as_numbers` is the same answer for a plain `DateTime` leaf, and it is set for every consumer
+/// that re-applies the leaf's declared type. It is cleared wherever the value's type is inferred from the
+/// literal instead: `Variant`, `Dynamic`, dynamic `JSON` paths, shared data and `JSON` object names.
+Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool datetime64_as_numbers, bool date_time_as_numbers)
 {
     if (isColumnConst(*column))
-        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object);
+        return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
 
     switch (data_type->getTypeId())
     {
@@ -1336,13 +1427,39 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
             if (nullable_column.isNullAt(row))
                 return Null();
-            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object, datetime64_as_numbers, date_time_as_numbers);
         }
-        case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::DateTime64:
+        case TypeIndex::DateTime64: [[fallthrough]];
+        case TypeIndex::Time64:
         {
+            /// DateTime64/Time64 are backed by a scaled Int64. Inside a JSON object the exact path renders
+            /// them as a bare number so the typed path parses them back losslessly (see above). The two
+            /// types read a bare number differently: a typed Time64 path reads an integer as the raw ticks,
+            /// while a typed DateTime64 path reads the number as a Unix timestamp in seconds and parses its
+            /// fractional part exactly (`readDateTime64AsNumber`), which is what the scaled decimal value
+            /// already spells out.
+            if (datetime64_as_numbers)
+            {
+                if (data_type->getTypeId() == TypeIndex::Time64)
+                    return Field(static_cast<Int64>((*column)[row].safeGet<DecimalField<Decimal64>>().getValue()));
+                return (*column)[row];
+            }
+            if (data_type->getTypeId() == TypeIndex::Time64)
+                return (*column)[row];
+            WriteBufferFromOwnString buf;
+            data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
+            return Field(buf.str());
+        }
+        case TypeIndex::DateTime:
+            /// A `DateTime` is backed by a Unix timestamp, which its declared type reads back exactly, while
+            /// local date-time text is shared by two instants across a DST overlap.
+            if (date_time_as_numbers)
+                return (*column)[row];
+            [[fallthrough]];
+        case TypeIndex::Date: [[fallthrough]];
+        case TypeIndex::Date32:
+        {
+            /// `Date`/`Date32` text is unambiguous, so it round-trips exactly.
             WriteBufferFromOwnString buf;
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
             return Field(buf.str());
@@ -1366,7 +1483,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             Array array;
             array.reserve(end - start);
             for (size_t i = start; i != end; ++i)
-                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, is_inside_object));
+                array.push_back(getFieldFromColumnForASTLiteralImpl(nested_column, i, nested_data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers));
             return array;
         }
         case TypeIndex::Map:
@@ -1384,8 +1501,9 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 Object object;
                 for (size_t i = start; i != end; ++i)
                 {
-                    auto key_field = convertFieldToString(getFieldFromColumnForASTLiteralImpl(key_column, i, map_type.getKeyType(), is_inside_object));
-                    auto value_field = getFieldFromColumnForASTLiteralImpl(value_column, i, map_type.getValueType(), is_inside_object);
+                    /// Keys become JSON object path names (always strings), so they keep the text form.
+                    auto key_field = convertFieldToString(getFieldFromColumnForASTLiteralImpl(key_column, i, map_type.getKeyType(), is_inside_object, false, false));
+                    auto value_field = getFieldFromColumnForASTLiteralImpl(value_column, i, map_type.getValueType(), is_inside_object, datetime64_as_numbers, date_time_as_numbers);
                     object[key_field] = value_field;
                 }
 
@@ -1394,7 +1512,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & nested_type = assert_cast<const DataTypeMap &>(*data_type).getNestedType();
             const auto & nested_column = assert_cast<const ColumnMap &>(*column).getNestedColumnPtr();
-            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(nested_column, row, nested_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
         }
         case TypeIndex::Tuple:
         {
@@ -1403,7 +1521,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             Tuple tuple;
             tuple.reserve(element_columns.size());
             for (size_t i = 0; i != element_types.size(); ++i)
-                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], is_inside_object));
+                tuple.push_back(getFieldFromColumnForASTLiteralImpl(element_columns[i], row, element_types[i], is_inside_object, datetime64_as_numbers, date_time_as_numbers));
             return tuple;
         }
         case TypeIndex::Variant:
@@ -1415,7 +1533,9 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 return Null();
             const auto & variant = variant_column.getVariantPtrByGlobalDiscriminator(global_discr);
             size_t variant_offset = variant_column.offsetAt(row);
-            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], is_inside_object);
+            /// The active type is not visible in the JSON token, and this walker emits no cast to the member
+            /// type, so keep the text form for date-times.
+            return getFieldFromColumnForASTLiteralImpl(variant, variant_offset, variant_types[global_discr], is_inside_object, false, false);
         }
         case TypeIndex::Dynamic:
         {
@@ -1423,7 +1543,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             const auto & variant_column = dynamic_column.getVariantColumn();
             auto global_discr = variant_column.globalDiscriminatorAt(row);
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
-                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, is_inside_object);
+                return getFieldFromColumnForASTLiteralImpl(dynamic_column.getVariantColumnPtr(), row, dynamic_column.getVariantInfo().variant_type, is_inside_object, false, false);
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
@@ -1432,18 +1552,21 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
             type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, {});
-            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, is_inside_object);
+            return getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, type, is_inside_object, false, false);
         }
         case TypeIndex::Object:
         {
             const auto & object_column = assert_cast<const ColumnObject &>(*column);
             const auto & typed_paths_types = assert_cast<const DataTypeObject &>(*data_type).getTypedPaths();
             Object object;
+            /// Typed paths have an explicit declared type, so DateTime64/Time64 leaves can be rendered as
+            /// exact ticks. Dynamic and shared-data paths infer their type from the JSON token and must
+            /// keep the text form (a bare integer there would be read back as an integer, not a date-time).
             for (const auto & [path, path_column] : object_column.getTypedPaths())
-                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true, datetime64_as_numbers, date_time_as_numbers);
 
             for (const auto & [path, path_column] : object_column.getDynamicPaths())
-                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true, false, false);
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();
             const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
@@ -1461,7 +1584,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
                 dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
-                object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
+                object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true, false, false);
             }
 
             return is_inside_object ? Field(object) : Field(convertObjectToString(object));
@@ -1473,9 +1596,272 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
 }
 
-Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type)
+Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers)
 {
-    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false);
+    return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false, false, date_time_as_numbers);
+}
+
+/// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
+/// a static `Decimal`/`DateTime64`/`Time64` anywhere (all scaled decimals), a `Variant` anywhere (a literal
+/// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
+bool typeNeedsExactLiteralSerialization(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+    };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
+namespace
+{
+
+UInt32 decimalFieldScale(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32: return field.safeGet<DecimalField<Decimal32>>().getScale();
+        case Field::Types::Decimal64: return field.safeGet<DecimalField<Decimal64>>().getScale();
+        case Field::Types::Decimal128: return field.safeGet<DecimalField<Decimal128>>().getScale();
+        case Field::Types::Decimal256: return field.safeGet<DecimalField<Decimal256>>().getScale();
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
+    }
+}
+
+/// Bare textual form of a decimal value (digits and decimal point, no quotes), independent of how
+/// FieldVisitorToString chooses to render decimals.
+String decimalFieldToText(const Field & field)
+{
+    WriteBufferFromOwnString wb;
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32: { const auto & d = field.safeGet<DecimalField<Decimal32>>(); writeText(d.getValue(), d.getScale(), wb); break; }
+        case Field::Types::Decimal64: { const auto & d = field.safeGet<DecimalField<Decimal64>>(); writeText(d.getValue(), d.getScale(), wb); break; }
+        case Field::Types::Decimal128: { const auto & d = field.safeGet<DecimalField<Decimal128>>(); writeText(d.getValue(), d.getScale(), wb); break; }
+        case Field::Types::Decimal256: { const auto & d = field.safeGet<DecimalField<Decimal256>>(); writeText(d.getValue(), d.getScale(), wb); break; }
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
+    }
+    return wb.str();
+}
+
+ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
+{
+    auto function = make_intrusive<ASTFunction>();
+    function->name = name;
+    function->arguments = make_intrusive<ASTExpressionList>();
+    function->children.push_back(function->arguments);
+    function->arguments->children = std::move(children);
+    return function;
+}
+
+/// Serialize a decimal value as an exact `String -> Decimal` cast, with a carrier Decimal type wide
+/// enough to hold every significant digit (e.g. a DateTime64(9)/Time64(9) value can need 19 digits,
+/// overflowing Decimal64). String -> Decimal parses the digits exactly, avoiding Float64 rounding.
+ASTPtr makeExactDecimalCarrierAST(const Field & field)
+{
+    const String text = decimalFieldToText(field);
+    const UInt32 scale = decimalFieldScale(field);
+
+    /// Required precision is the number of integer-part digits plus the scale. Counting all digit
+    /// characters of the (trailing-zero-stripped) text would undercount when the fractional part is
+    /// zero, e.g. "1698543000" with scale 9 needs precision 19, not 10.
+    size_t integer_digits = 0;
+    for (char c : text)
+    {
+        if (c == '.')
+            break;
+        if (c >= '0' && c <= '9')
+            ++integer_digits;
+    }
+    const size_t needed_precision = (integer_digits != 0 ? integer_digits : 1) + scale;
+    const char * decimal_type_name = "Decimal256";
+    if (needed_precision <= 9)
+        decimal_type_name = "Decimal32";
+    else if (needed_precision <= 18)
+        decimal_type_name = "Decimal64";
+    else if (needed_precision <= 38)
+        decimal_type_name = "Decimal128";
+
+    const String carrier_type_name = String(decimal_type_name) + "(" + std::to_string(scale) + ")";
+    return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
+}
+
+ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
+{
+    /// Subtrees the default literal path already serializes exactly are left unchanged.
+    if (!typeNeedsExactLiteralSerialization(*type))
+        return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
+
+    if (isColumnConst(*column))
+        return columnConstantToExactLiteralASTImpl(assert_cast<const ColumnConst &>(*column).getDataColumnPtr(), 0, type, date_time_as_numbers);
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+        {
+            const auto & nullable_column = assert_cast<const ColumnNullable &>(*column);
+            if (nullable_column.isNullAt(row))
+                return make_intrusive<ASTLiteral>(Null());
+            return columnConstantToExactLiteralASTImpl(
+                nullable_column.getNestedColumnPtr(), row, assert_cast<const DataTypeNullable &>(*type).getNestedType(), date_time_as_numbers);
+        }
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            /// Reconstruct with the value's exact decimal type so it stays a valid Variant member.
+            return makeASTFunction(
+                "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
+                make_intrusive<ASTLiteral>(type->getName()));
+        case TypeIndex::DateTime64:
+        case TypeIndex::Time64:
+            /// DateTime64/Time64 are backed by a scaled decimal. Serialize the exact (UTC-based) decimal
+            /// ticks via the carrier and cast back to the original type. Local date-time text would be
+            /// ambiguous across DST overlaps in non-UTC time zones (two UTC instants format alike, and
+            /// parsing picks one side), and a bare numeric literal would round through Float64.
+            return makeASTFunction(
+                "_CAST", makeExactDecimalCarrierAST((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
+        case TypeIndex::Array:
+        {
+            const auto & array_column = assert_cast<const ColumnArray &>(*column);
+            const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+            const auto & offsets = array_column.getOffsets();
+            const auto & nested_column = array_column.getDataPtr();
+            size_t start = offsets[static_cast<ssize_t>(row) - 1];
+            size_t end = offsets[row];
+            ASTs elements;
+            for (size_t i = start; i < end; ++i)
+                elements.push_back(columnConstantToExactLiteralASTImpl(nested_column, i, nested_type, date_time_as_numbers));
+            return makeASTFunctionFromList("array", std::move(elements));
+        }
+        case TypeIndex::Tuple:
+        {
+            const auto & element_types = assert_cast<const DataTypeTuple &>(*type).getElements();
+            const auto & element_columns = assert_cast<const ColumnTuple &>(*column).getColumns();
+            ASTs elements;
+            for (size_t i = 0; i != element_types.size(); ++i)
+                elements.push_back(columnConstantToExactLiteralASTImpl(element_columns[i], row, element_types[i], date_time_as_numbers));
+            return makeASTFunctionFromList("tuple", std::move(elements));
+        }
+        case TypeIndex::Map:
+        {
+            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
+            const auto & map_column = assert_cast<const ColumnMap &>(*column);
+            const auto & offsets = map_column.getNestedColumn().getOffsets();
+            const auto & keys = map_column.getNestedData().getColumnPtr(0);
+            const auto & values = map_column.getNestedData().getColumnPtr(1);
+            size_t start = offsets[static_cast<ssize_t>(row) - 1];
+            size_t end = offsets[row];
+            /// An empty map has no leaf to serialize, and an argumentless `map` is inferred as
+            /// `Map(Nothing, Nothing)`, which cannot be converted to a map type carrying a `Variant`. The
+            /// empty literal is inferred as `Array(Nothing)`, so name the map type on it as well, or a
+            /// non-empty sibling in the same parent resolves against an array instead of a map.
+            if (start == end)
+                return makeCastToTypeNameAST(
+                    make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers)),
+                    type->getName());
+            ASTs elements;
+            for (size_t i = start; i < end; ++i)
+            {
+                elements.push_back(columnConstantToExactLiteralASTImpl(keys, i, map_type.getKeyType(), date_time_as_numbers));
+                elements.push_back(columnConstantToExactLiteralASTImpl(values, i, map_type.getValueType(), date_time_as_numbers));
+            }
+            return makeASTFunctionFromList("map", std::move(elements));
+        }
+        case TypeIndex::Variant:
+        {
+            const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
+            const auto & variant_column = assert_cast<const ColumnVariant &>(*column);
+            auto global_discr = variant_column.globalDiscriminatorAt(row);
+            /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
+            /// literal does not keep that name (a `Point` is inferred back as `Tuple(Float64, Float64)`, an
+            /// `Array(UInt64)` as `Array(UInt8)`), so name the member type. Name the whole `Variant` too:
+            /// `array` and `map` resolve their result type from their arguments before an enclosing cast runs.
+            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                return makeCastToTypeNameAST(make_intrusive<ASTLiteral>(Null()), type->getName());
+            const auto & member_type = variant_types[global_discr];
+            auto member_ast = makeCastToTypeNameAST(
+                columnConstantToExactLiteralASTImpl(
+                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
+                    date_time_as_numbers),
+                member_type->getName());
+            /// A string-like member needs more: conversion of a string to a `Variant` with several members
+            /// parses the text and picks whichever member it parses as, so `'42'` under
+            /// `Variant(String, UInt64)` would arrive as a `UInt64`. A single-member `Variant` is not parsed.
+            if (variant_types.size() > 1 && isStringOrFixedString(removeNullable(removeLowCardinality(member_type))))
+                member_ast = makeCastToTypeNameAST(
+                    std::move(member_ast), std::make_shared<DataTypeVariant>(DataTypes{member_type})->getName());
+            return makeCastToTypeNameAST(std::move(member_ast), type->getName());
+        }
+        case TypeIndex::Dynamic:
+        {
+            const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*column);
+            const auto & variant_column = dynamic_column.getVariantColumn();
+            auto global_discr = variant_column.globalDiscriminatorAt(row);
+            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                return make_intrusive<ASTLiteral>(Null());
+
+            if (global_discr != dynamic_column.getSharedVariantDiscriminator())
+            {
+                /// Recurse into the active member itself rather than through the `Variant` branch above:
+                /// `Dynamic` accepts a value of any type, so its member type must not be named, and doing so
+                /// would change the stored subtype of values whose literal is inferred back as a wider or
+                /// narrower type than the initiator's.
+                const auto & variant_types
+                    = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
+                return columnConstantToExactLiteralASTImpl(
+                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
+                    variant_types[global_discr], /*date_time_as_numbers=*/false);
+            }
+
+            /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
+            /// and value and recurse, so a decimal-backed shared value is still serialized exactly.
+            const auto & shared_variant = dynamic_column.getSharedVariant();
+            auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
+            ReadBufferFromMemory buf(value_data);
+            auto decoded_type = decodeDataType(buf);
+            auto tmp_column = decoded_type->createColumn();
+            tmp_column->reserve(1);
+            decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
+            return columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, /*date_time_as_numbers=*/false);
+        }
+        case TypeIndex::Object:
+        {
+            /// JSON has no per-leaf literal syntax, so it is serialized as a JSON-text String cast to the
+            /// object type. Render typed DateTime64/Time64 leaves as bare numbers (datetime64_as_numbers) so
+            /// the shard reparses each into the exact stored value, instead of through the DST-ambiguous
+            /// local date-time text used by the default String path. Dynamic/shared-data paths keep the text
+            /// form because their value type is inferred from the JSON token.
+            return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteralImpl(
+                column, row, type, /*is_inside_object=*/false, /*datetime64_as_numbers=*/true, date_time_as_numbers));
+        }
+        default:
+            return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
+    }
+}
+
+}
+
+ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
+{
+    return columnConstantToExactLiteralASTImpl(column, row, type, date_time_as_numbers);
+}
+
+ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name)
+{
+    if (const auto * func = value->as<ASTFunction>();
+        func && func->name == "_CAST" && func->arguments && func->arguments->children.size() == 2)
+    {
+        if (const auto * type_literal = func->arguments->children[1]->as<ASTLiteral>();
+            type_literal && type_literal->value.getType() == Field::Types::String
+            && type_literal->value.safeGet<String>() == type_name)
+            return value;
+    }
+    return makeASTFunction("_CAST", std::move(value), make_intrusive<ASTLiteral>(type_name));
 }
 
 /// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection

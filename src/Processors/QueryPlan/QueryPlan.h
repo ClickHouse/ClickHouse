@@ -14,7 +14,9 @@
 #include <list>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
+
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
@@ -80,6 +82,8 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
+    /// Show estimates
+    bool estimates = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
     /// For EXPLAIN ANALYZE: make joins do the extra per-row bookkeeping needed for the matched
@@ -90,6 +94,12 @@ struct ExplainPlanOptions
     SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
+
+struct CostEstimationInfo
+{
+    Float64 cost = 0.0;
+    Float64 rows = 0.0;
+};
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -131,10 +141,22 @@ public:
 
     void resolveStorages(const ContextPtr & context);
 
+    /// Optimizes the query. Make sure you have called applyDistributedPlanFallbackToLocal
+    /// or call buildQueryPipeline which does it inherently.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
+
+    /// The single decision function for `make_distributed_plan`. When this plan cannot be
+    /// distributed: throws under `distributed_plan_fallback_to_local_execution = 0`, otherwise
+    /// logs, flips `settings.make_distributed_plan` to false and returns true. The plan is
+    /// verified at most once and the outcome is recorded in `distributed_plan_decision`.
+    bool applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSettings & settings);
+
+    /// True once `applyDistributedPlanFallbackToLocal` accepted this plan for distributed execution.
+    bool staysDistributed() const { return distributed_plan_decision == DistributedPlanDecision::Distributed; }
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -187,6 +209,7 @@ public:
     {
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
+        std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
     using Nodes = std::list<Node>;
@@ -209,6 +232,9 @@ public:
     /// standalone plan. Unlike building a plan with `addStep`, this preserves branching subtrees
     /// (multiple sources / multi-input steps).
     static QueryPlan cloneSubtree(Node * subplan_root);
+
+    /// Same as above, preserving the execution limits and resources from the plan that owns the subtree.
+    static QueryPlan cloneSubtree(Node * subplan_root, const QueryPlan & source_plan);
 
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
@@ -243,7 +269,22 @@ private:
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+
+    enum class DistributedPlanDecision
+    {
+        Undecided,
+        Distributed,
+        FellBack,
+    };
+
+    /// The outcome of `applyDistributedPlanFallbackToLocal` for this plan. Later calls do not
+    /// re-verify the plan, they only re-apply the recorded outcome to the settings. This is correct
+    /// only while every caller passes the same settings as the inputs of the decision
+    /// (`enable_cascades_optimizer`, the `distributed_plan_default_*_bucket_count` values, the
+    /// projection force flags). It holds today because they all come from the same query context.
+    DistributedPlanDecision distributed_plan_decision = DistributedPlanDecision::Undecided;
 };
+
 
 /// This is a structure which contains a query plan and a list of sets.
 /// The reason is that StorageSet is specified by name,
