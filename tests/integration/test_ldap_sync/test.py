@@ -128,6 +128,7 @@ node_stale = cluster.add_instance(
         "configs/sync_logger.xml",
         "configs/ldap_server.xml",
         "configs/directories_stale.xml",
+        "configs/remote_servers.xml",
     ],
     user_configs=["configs/users_stale.xml"],
     stay_alive=True,
@@ -1164,6 +1165,21 @@ def test_staleness_gate_refuses_synced_users_only(janedoe_in_role_a):
         assert "LDAP_ERROR" in error and "has not been synchronised for" in error, error
         assert "refusing to resolve user 'janedoe'" in error, error
 
+        # The interserver path goes through the same gate: a fanout from node1 under the cluster
+        # secret reaches node_stale as janedoe (`AlwaysAllowCredentials`) and is refused there.
+        admin(node1, "GRANT REMOTE ON *.* TO role_a")
+        refusals = count_in_log(node_stale, "refusing to authenticate user 'janedoe'")
+        error = node1.query_and_get_error(
+            "SELECT count() FROM clusterAllReplicas('test_ldap_cluster_stale', system.one)",
+            user="janedoe",
+            password="qwerty",
+        )
+        assert "Authentication failed" in error, error
+        assert (
+            count_in_log(node_stale, "refusing to authenticate user 'janedoe'")
+            > refusals
+        )
+
         # Gate order: the local user behind the directory and an unknown name are unaffected.
         assert login(node_stale, "local_after", "local") == TSV([["local_after"]])
         login_error(node_stale, "nosuchuser")
@@ -1763,6 +1779,36 @@ def test_interserver_materialised_user_promoted_by_a_run_needs_no_lookup(
         ldap_delete(user_dn("promoted"), ignore_missing=True)
         restore_node_bad()
         admin(node_bad, "DROP ROLE IF EXISTS role_a, role_b")
+
+
+def test_interserver_authentication_refuses_a_name_outside_the_snapshot(
+    janedoe_in_role_a,
+):
+    """`only_synced_users` gates the interserver path too: `outside` exists on `node1` only, and a
+    fanout under the cluster secret reaches `node_bad` as `outside` (`AlwaysAllowCredentials`), where
+    the directory reports the name as not found instead of materialising it, so the query fails.
+    """
+    admin(node1, "CREATE USER outside IDENTIFIED BY 'local'")
+    try:
+        admin(node1, "GRANT REMOTE ON *.* TO outside")
+        restart_node_bad_with(
+            directories_bad_config(), server_config=read_config("ldap_server.xml")
+        )
+        admin(node_bad, "SYSTEM RELOAD USERS")
+
+        error = node1.query_and_get_error(
+            "SELECT count() FROM clusterAllReplicas('test_ldap_cluster_bad', system.one)",
+            user="outside",
+            password="local",
+        )
+        assert "Authentication failed" in error or "There is no user" in error, error
+        assert node_bad.contains_in_log(
+            "User outside is not in the synchronised snapshot of directory .ldap."
+        )
+        assert admin(node_bad, ldap_users_query("outside")) == "0\n"
+    finally:
+        admin(node1, "DROP USER IF EXISTS outside")
+        restore_node_bad()
 
 
 def test_renamed_role_follows_name_resolution(janedoe_in_role_a):
