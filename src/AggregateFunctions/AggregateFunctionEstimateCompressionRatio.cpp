@@ -453,7 +453,7 @@ ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO compression_estimate_strings
-SELECT toString(rand() % 50) FROM system.numbers LIMIT 100_000;
+SELECT toString(number % 50) FROM system.numbers LIMIT 100_000;
 
 SELECT
     estimateCompressionRatio('ZSTD')(str) AS plain,
@@ -461,9 +461,9 @@ SELECT
 FROM compression_estimate_strings
         )",
         R"(
-┌──────────────plain─┬─as_low_cardinality─┐
-│ 2.7504860661049904 │  3.886824394643724 │
-└────────────────────┴────────────────────┘
+┌─plain─┬─as_low_cardinality─┐
+│  2000 │ 1147.5409836065573 │
+└───────┴────────────────────┘
         )"
     }
     };
