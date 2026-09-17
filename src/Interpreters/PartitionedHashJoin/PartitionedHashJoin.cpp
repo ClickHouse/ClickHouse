@@ -28,7 +28,6 @@ extern const Event HashJoinPartitionedBuildFillMicroseconds;
 extern const Event HashJoinPartitionedBuildInsertMicroseconds;
 extern const Event HashJoinPartitionedProbeMicroseconds;
 extern const Event HashJoinPartitions;
-extern const Event HashJoinInsertedRows;
 extern const Event HashJoinTableBytes;
 extern const Event HashJoinPartitionOverflowRows;
 extern const Event HashJoinDuplicateRunBytes;
