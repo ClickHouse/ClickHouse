@@ -26,6 +26,8 @@ DROP TABLE IF EXISTS rmt;
 DROP TABLE IF EXISTS rp;
 DROP TABLE IF EXISTS jl;
 DROP TABLE IF EXISTS jr;
+DROP TABLE IF EXISTS gl;
+DROP TABLE IF EXISTS gr;
 DROP TABLE IF EXISTS cols;
 DROP TABLE IF EXISTS proj;
 DROP TABLE IF EXISTS smp;
@@ -90,6 +92,13 @@ CREATE TABLE jl (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granul
 INSERT INTO jl SELECT number FROM numbers(120);
 CREATE TABLE jr (id UInt64, bucket UInt8) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 10;
 INSERT INTO jr SELECT number, number % 2 FROM numbers(120);
+
+-- Sixteen buckets of 1000 rows, of which arm 37 fuses eight: one branch builds 1000 right rows and
+-- the fused OR builds 8000, while buckets 8 to 15 keep that OR a proper subset of the table.
+CREATE TABLE gl (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO gl SELECT number FROM numbers(16000);
+CREATE TABLE gr (id UInt64, bucket UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO gr SELECT number, number % 16 FROM numbers(16000);
 
 CREATE TABLE cols (c1 UInt8, c2 UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO cols SELECT number % 2, number % 3 FROM numbers(100);
@@ -406,6 +415,16 @@ SELECT '36 fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TRE
 SELECT '36a fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x, (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, cross_to_inner_join_rewrite = 1);
 SELECT '36b fused', countIf(explain LIKE '%countIf%') > 0 FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS a FROM t WHERE v > 10 AND k = 300) AS x CROSS JOIN (SELECT count() AS b FROM t WHERE v > 10 AND k = 500) AS y SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, cross_to_inner_join_rewrite = 2);
 
+SELECT '-- 37 the fused residual widens the join build side, and a grace hash join raises rather than pass grace_hash_join_max_buckets';
+-- The two arms differ in nothing but the pass. max_bytes_before_external_join is the geometric mean of
+-- the two measured switch boundaries (77258 bytes for one branch, 334264 for the fused eight), so each
+-- arm has a factor of two of headroom; the settings that move those byte counts are pinned because CI
+-- randomizes them. max_bytes_ratio_before_external_join feeds the same threshold and is defaulted on,
+-- which is what makes this reachable without setting the absolute one.
+SELECT '37', c0, c1, c2, c3, c4, c5, c6, c7 FROM (SELECT count() AS c0 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 0) AS t0, (SELECT count() AS c1 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 1) AS t1, (SELECT count() AS c2 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 2) AS t2, (SELECT count() AS c3 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 3) AS t3, (SELECT count() AS c4 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 4) AS t4, (SELECT count() AS c5 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 5) AS t5, (SELECT count() AS c6 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 6) AS t6, (SELECT count() AS c7 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 7) AS t7 SETTINGS optimize_fuse_sibling_aggregate_subqueries = 0, join_algorithm = 'hash', max_bytes_before_external_join = 160000, max_bytes_ratio_before_external_join = 0, grace_hash_join_initial_buckets = 1, grace_hash_join_max_buckets = 1, query_plan_join_swap_table = false, max_threads = 1, max_block_size = 65505, max_joined_block_size_rows = 65505;
+SELECT '37', c0, c1, c2, c3, c4, c5, c6, c7 FROM (SELECT count() AS c0 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 0) AS t0, (SELECT count() AS c1 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 1) AS t1, (SELECT count() AS c2 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 2) AS t2, (SELECT count() AS c3 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 3) AS t3, (SELECT count() AS c4 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 4) AS t4, (SELECT count() AS c5 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 5) AS t5, (SELECT count() AS c6 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 6) AS t6, (SELECT count() AS c7 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 7) AS t7 SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1, join_algorithm = 'hash', max_bytes_before_external_join = 160000, max_bytes_ratio_before_external_join = 0, grace_hash_join_initial_buckets = 1, grace_hash_join_max_buckets = 1, query_plan_join_swap_table = false, max_threads = 1, max_block_size = 65505, max_joined_block_size_rows = 65505; -- { serverError LIMIT_EXCEEDED }
+SELECT '37 fused', countIf(explain LIKE '%countIf%') FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT count() AS c0 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 0) AS t0, (SELECT count() AS c1 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 1) AS t1, (SELECT count() AS c2 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 2) AS t2, (SELECT count() AS c3 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 3) AS t3, (SELECT count() AS c4 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 4) AS t4, (SELECT count() AS c5 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 5) AS t5, (SELECT count() AS c6 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 6) AS t6, (SELECT count() AS c7 FROM gl AS l, gr AS r WHERE l.id = r.id AND r.bucket = 7) AS t7 SETTINGS optimize_fuse_sibling_aggregate_subqueries = 1);
+
 DROP TABLE t;
 DROP TABLE tn;
 DROP TABLE m;
@@ -421,6 +440,8 @@ DROP TABLE rmt;
 DROP TABLE rp;
 DROP TABLE jl;
 DROP TABLE jr;
+DROP TABLE gl;
+DROP TABLE gr;
 DROP TABLE cols;
 DROP TABLE proj;
 DROP TABLE smp;

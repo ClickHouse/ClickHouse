@@ -6393,7 +6393,10 @@ the rows instead.
 - When the branches join more than one table, the fused residual widens the join build side by up to
 the number of fused branches, so a query close to an external-join spill threshold (see
 `max_bytes_ratio_before_external_join`, which defaults to `0.5`) can spill to disk where the unfused
-branches did not. Spilling is a graceful fallback rather than an error, but it costs.
+branches did not. Spilling costs, and it is not always graceful: a grace hash join doubles its bucket
+count as its build side grows and raises `LIMIT_EXCEEDED` rather than passing
+`grace_hash_join_max_buckets`, so a fused build wide enough to need more buckets than that fails where
+the unfused branches answered.
 
 A query tree cannot see access paths, hence the opt-in default.
 

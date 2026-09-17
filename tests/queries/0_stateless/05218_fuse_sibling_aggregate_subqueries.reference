@@ -202,3 +202,6 @@
 36 fused	0
 36a fused	1
 36b fused	1
+-- 37 the fused residual widens the join build side, and a grace hash join raises rather than pass grace_hash_join_max_buckets
+37	1000	1000	1000	1000	1000	1000	1000	1000
+37 fused	8
