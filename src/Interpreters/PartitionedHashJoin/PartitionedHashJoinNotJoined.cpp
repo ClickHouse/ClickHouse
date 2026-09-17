@@ -83,7 +83,7 @@ public:
                                     type);
                         }
                     },
-                    parent.table_maps->maps);
+                    parent.clause.tableMaps().maps);
 
                 fillNullsFromBlocks<with_row_store, with_columns>(columns_right, rows_added);
             });

@@ -323,12 +323,12 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
     constexpr bool flat_lookup_supported = can_prefetch && is_hash_join_table<MapNonConst>;
     bool use_amac = false;
     if constexpr (amac_supported)
-        use_amac = amac_enabled && added_columns.enable_prefetch && ht_total_bytes >= getMinBytesForPrefetchInJoin() && rows >= amac_min_rows;
+        use_amac = clause.amacEnabled() && added_columns.enable_prefetch && clause.tableBytes() >= getMinBytesForPrefetchInJoin() && rows >= amac_min_rows;
 
     /// Mutually exclusive with the find pass, on the same threshold.
     bool use_prefetch = false;
     if constexpr (can_prefetch)
-        use_prefetch = !use_amac && added_columns.enable_prefetch && ht_total_bytes >= getMinBytesForPrefetchInJoin();
+        use_prefetch = !use_amac && added_columns.enable_prefetch && clause.tableBytes() >= getMinBytesForPrefetchInJoin();
 
     /// Used only by `loop`'s plain path; `flat_loop` builds its own over the flat lookup.
     auto prefetcher = makeJoinPrefetcher(
@@ -816,17 +816,17 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     join.materializeColumnsFromLeftBlock(block);
     ScatteredBlock scattered_block{std::move(block)};
 
-    if (!table_maps && scattered_block.rows() > 0)
+    if (!clause.hasTable() && scattered_block.rows() > 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: probe started before the build phase finished");
 
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
 
-    const auto & clause = table_join->getOnlyClause();
+    const auto & on_clause = table_join->getOnlyClause();
     std::vector<JoinOnKeyColumns> join_on_keys;
     join_on_keys.emplace_back(
         scattered_block,
-        clause.key_names_left,
-        clause.condColumnNames().first,
+        on_clause.key_names_left,
+        on_clause.condColumnNames().first,
         join.key_sizes[0],
         HashJoin::isLowCardinalityType(join.data->type));
 
@@ -856,7 +856,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
         /// Lookups and match bookkeeping only. No column value is gathered yet - that is deferred to
         /// the lazy `HashJoinResult::next`, whose events are shared with the other hash-join algorithms.
         ProfileEventTimeIncrement<Microseconds> lookup_watch(ProfileEvents::HashJoinPartitionedProbeLookupMicroseconds);
-        const auto & tables = std::get<HashJoinTables>(table_maps->maps);
+        const auto & tables = std::get<HashJoinTables>(clause.tableMaps().maps);
         switch (join.data->type)
         {
 #define M(TYPE) \

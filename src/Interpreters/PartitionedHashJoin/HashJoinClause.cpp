@@ -1,9 +1,11 @@
+#include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
+
 #include <Columns/ColumnsScatter.h>
 #include <Interpreters/HashJoin/HashJoinMethodsImpl.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/PartitionedHashJoin/AmacRing.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
 #include <base/getL1CacheSize.h>
@@ -19,6 +21,8 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <base/unaligned.h>
+
+#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <array>
@@ -51,6 +55,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_JOIN_KEYS;
@@ -157,7 +162,7 @@ struct InsertTarget
     UInt32 asof_block_no = 0;
     const HashJoin * join = nullptr;
 
-    PartitionedHashJoin * owner = nullptr;
+    HashJoinClause * owner = nullptr;
     /// Distinct keys claimed so far, per partition. `foldClaimed` adds this target's new claims to
     /// slot `partition`, and to `drain_claimed` when the target is the drain.
     std::vector<UInt64> * claimed_per_partition = nullptr;
@@ -703,7 +708,7 @@ void forHashJoinTable(HashJoinTableMaps & maps, HashJoin::Type type, F && f)
 /// `[starts[p * workers + w], + worker_hist[w][p])`, in worker order. The last bucket is the drop
 /// bucket: null-key and ON-filtered rows land there, are scattered like any other rows and are freed
 /// before the inserts, so a partition only ever sees insertable rows.
-struct PartitionedHashJoin::PostBuildContext
+struct HashJoinClause::PostBuildContext
 {
     size_t workers = 0;
     size_t fanout = 0; /// pass-1 partitions + 1 (the drop bucket); == partitions + 1 on single-pass plans
@@ -830,15 +835,119 @@ struct PartitionedHashJoin::PostBuildContext
     }
 };
 
-void PartitionedHashJoin::decideAmacEngagement()
+HashJoinClause::HashJoinClause(
+    HashJoin & hash_join_,
+    const TableJoin & table_join,
+    bool any_take_last_row_,
+    size_t num_threads_,
+    std::vector<FillBlock> & build_blocks_,
+    std::atomic<size_t> & accumulated_bytes_,
+    LoggerPtr log_)
+    : hash_join(hash_join_)
+    , any_take_last_row(any_take_last_row_)
+    , num_threads(num_threads_)
+    , build_blocks(build_blocks_)
+    , accumulated_bytes(accumulated_bytes_)
+    , maps_variant_index(hash_join.data->maps.empty() ? 1 : hash_join.data->maps.front().index())
+    , max_fanout_per_pass(table_join.partitionedHashJoinMaxFanoutPerPass())
+    , cap_partitions_by_l1_descriptors(table_join.partitionedHashJoinCapPartitionsByL1Descriptors())
+    , parallel_hash_join_threshold(table_join.parallelHashJoinThreshold())
+    , log(std::move(log_))
+{
+    /// A ceiling above 2^15 would let a 16-bit plan wrap the drop bucket onto partition 0 and insert
+    /// the skipped rows there; see `max_plan_bits`.
+    if (max_fanout_per_pass < 2 || max_fanout_per_pass > 32768)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting partitioned_hash_join_max_fanout_per_pass must be between 2 and 32768, got {}",
+            max_fanout_per_pass);
+}
+
+HashJoinClause::~HashJoinClause() = default;
+
+void HashJoinClause::computeRoutes(FillBlock & fill, DenseHyperLogLog & sketch) const
+{
+    /// One map hash per row: the top 16 bits of its placement word saved as the route, the top 32 bits
+    /// of its mix fed to the sketch, for every insertable row. Skipped rows are never inserted and so do
+    /// not reach the sketch, but their routes are still written - the scatter's bucket derivation reads
+    /// them. ASOF hashes the equi-key prefix only; its inequality column is not part of the table key.
+    const size_t rows = fill.rows;
+    fill.routes.resize_exact(rows);
+    const Sizes & key_sizes = hash_join.key_sizes[0];
+    if (hash_join.getStrictness() == JoinStrictness::Asof)
+    {
+        ColumnRawPtrs equi_columns(fill.key_columns.begin(), fill.key_columns.end() - 1);
+        Sizes equi_sizes(key_sizes.begin(), key_sizes.end() - 1);
+        computeJoinRoutesForFill(hash_join.data->type, equi_columns, equi_sizes, rows, fill.skipData(), fill.routes.data(), sketch);
+    }
+    else
+        computeJoinRoutesForFill(hash_join.data->type, fill.key_columns, key_sizes, rows, fill.skipData(), fill.routes.data(), sketch);
+}
+
+bool HashJoinClause::postBuild(size_t rows)
+{
+    /// Typical pipelines deliver blocks under 65536 rows, so the packed encoding usually applies and
+    /// halves the locator transient.
+    narrow_locators = build_blocks.size() <= (1uz << 16);
+    for (const auto & fill : build_blocks)
+        narrow_locators = narrow_locators && fill.block_no < (1u << 16) && fill.rows <= (1uz << 16);
+
+    if (bits == 0)
+    {
+        /// Single-partition has no histogram or scatter stage - every row is inserted straight from the
+        /// stored blocks - so all of it charges to the insert sub-phase.
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::HashJoinPartitionedBuildInsertMicroseconds);
+        return postBuildSinglePartition(rows);
+    }
+    return postBuildPartitioned();
+}
+
+void HashJoinClause::releaseBuildScratch()
+{
+    post_build_ctx.reset();
+    post_build_pool.reset();
+}
+
+void HashJoinClause::releaseTable()
+{
+    post_build_ctx.reset();
+    post_build_pool.reset();
+    table_maps.reset();
+    build_arenas.clear();
+}
+
+size_t HashJoinClause::tableAndArenaBytes() const
+{
+    size_t res = 0;
+    if (table_maps)
+        res += table_maps->getBufferSizeInBytes(hash_join.data->type);
+    for (const auto & arena : build_arenas)
+        res += arena.allocatedBytes();
+    return res;
+}
+
+HashJoinClause::BuildStats HashJoinClause::buildStats() const
+{
+    BuildStats res = stats;
+    res.bits = bits;
+    res.partitions = partitions;
+    res.pass_bits = pass_bits;
+    res.hll_estimate = hll_estimate;
+    res.ht_total_bytes = ht_total_bytes;
+    res.amac_build_engaged = amac_build_engaged;
+    return res;
+}
+
+void HashJoinClause::decideAmacEngagement()
 {
     /// The same heuristics that enable the standard loops' software prefetch: the user toggle plus
     /// the table size past the L2 threshold, below which the cell reads hit anyway and pipelining them
     /// costs more than it saves.
-    amac_build_engaged = amac_enabled && bits > 0 && hash_join->enableSoftwarePrefetch() && ht_total_bytes > getMinBytesForPrefetchInJoin();
+    amac_build_engaged = amac_enabled && bits > 0 && hash_join.enableSoftwarePrefetch() && ht_total_bytes > getMinBytesForPrefetchInJoin();
 }
 
-void PartitionedHashJoin::insertPartitionSection(
+void HashJoinClause::insertPartitionSection(
     PostBuildContext & ctx,
     size_t worker,
     size_t partition,
@@ -849,8 +958,8 @@ void PartitionedHashJoin::insertPartitionSection(
     UInt32 block_no,
     const UInt8 * skip_bytes)
 {
-    const Sizes & key_sizes = hash_join->key_sizes[0];
-    const bool enable_prefetch = hash_join->enableSoftwarePrefetch();
+    const Sizes & key_sizes = hash_join.key_sizes[0];
+    const bool enable_prefetch = hash_join.enableSoftwarePrefetch();
     auto & state = ctx.worker_state[worker];
     Arena & arena = build_arenas[worker];
     const bool wrap = partition == single_partition;
@@ -861,7 +970,7 @@ void PartitionedHashJoin::insertPartitionSection(
     std::visit(
         [&](auto & shape_maps)
         {
-            switch (hash_join->data->type)
+            switch (hash_join.data->type)
             {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
@@ -878,7 +987,7 @@ void PartitionedHashJoin::insertPartitionSection(
                 .range_end = wrap ? table.cellCount() : table.rangeEnd(partition), \
                 .wrap = wrap, \
                 .any_take_last_row = any_take_last_row, \
-                .join = hash_join.get(), \
+                .join = &hash_join, \
                 .owner = this, \
                 .claimed_per_partition = &ctx.claimed_per_partition, \
                 .drain_claimed = nullptr, \
@@ -887,7 +996,7 @@ void PartitionedHashJoin::insertPartitionSection(
                 .partition = slot, \
                 .fold_base = claimed, \
                 .claimed = claimed, \
-                .grow_at_max_fill = single_fill_thread}; \
+                .grow_at_max_fill = grow_at_max_fill}; \
             target.grow_threshold = target.growBound(); \
             insertSectionShared<KeyGetter, Table>( \
                 target, \
@@ -908,7 +1017,7 @@ void PartitionedHashJoin::insertPartitionSection(
         { \
             insertSectionFixed<KeyGetter, Table>( \
                 table, \
-                *hash_join, \
+                hash_join, \
                 key_columns, \
                 key_sizes, \
                 rows, \
@@ -930,18 +1039,18 @@ void PartitionedHashJoin::insertPartitionSection(
                     throw Exception(
                         ErrorCodes::UNSUPPORTED_JOIN_KEYS,
                         "Unsupported JOIN keys for the partitioned join (type: {})",
-                        hash_join->data->type);
+                        hash_join.data->type);
             }
         },
         table_maps->maps);
 }
 
-size_t PartitionedHashJoin::finishPassScratch(PassScratch & scratch, SpanWriter & writer)
+size_t HashJoinClause::finishPassScratch(PassScratch & scratch, SpanWriter & writer)
 {
     if (scratch.empty())
         return 0;
     const size_t used = scratch.usedBytes();
-    const HashJoin::Type type = hash_join->data->type;
+    const HashJoin::Type type = hash_join.data->type;
     std::visit(
         [&](auto & shape_maps)
         {
@@ -975,7 +1084,7 @@ size_t PartitionedHashJoin::finishPassScratch(PassScratch & scratch, SpanWriter 
                     throw Exception(
                         ErrorCodes::UNSUPPORTED_JOIN_KEYS,
                         "Unsupported JOIN keys for the partitioned join (type: {})",
-                        hash_join->data->type);
+                        hash_join.data->type);
             }
         },
         table_maps->maps);
@@ -983,7 +1092,7 @@ size_t PartitionedHashJoin::finishPassScratch(PassScratch & scratch, SpanWriter 
 }
 
 template <typename Target>
-bool PartitionedHashJoin::growBeforeLastFreeCell(Target & target)
+bool HashJoinClause::growBeforeLastFreeCell(Target & target)
 {
     if (target.claimed < target.growBound())
         return false;
@@ -1015,7 +1124,7 @@ void placeMapped(Mapped & dest, Mapped && src)
 }
 
 template <typename Table>
-void PartitionedHashJoin::growHashJoinTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason)
+void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason)
 {
     using Cell = typename Table::cell_type;
     using Key = typename Table::key_type;
@@ -1153,21 +1262,21 @@ void PartitionedHashJoin::growHashJoinTable(Table & table, UInt64 occupied, UInt
     decideAmacEngagement();
 }
 
-void PartitionedHashJoin::grow(UInt64 occupied, UInt64 projected, GrowReason reason)
+void HashJoinClause::grow(UInt64 occupied, UInt64 projected, GrowReason reason)
 {
     if (!table_maps || !post_build_ctx)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: grow called without a table");
 
     forHashJoinTable(
-        *table_maps, hash_join->data->type, [&](auto & table) { growHashJoinTable(table, occupied, projected, reason); });
+        *table_maps, hash_join.data->type, [&](auto & table) { growHashJoinTable(table, occupied, projected, reason); });
 }
 
-void PartitionedHashJoin::maybeGrowForLoadFactor(UInt64 projected)
+void HashJoinClause::maybeGrowForLoadFactor(UInt64 projected)
 {
     const UInt64 occupied = claimedBufferCells();
     forHashJoinTable(
         *table_maps,
-        hash_join->data->type,
+        hash_join.data->type,
         [&](auto & table)
         {
             if (projected > table.maxFill())
@@ -1175,20 +1284,19 @@ void PartitionedHashJoin::maybeGrowForLoadFactor(UInt64 projected)
         });
 }
 
-void PartitionedHashJoin::decidePartitionPlan()
+void HashJoinClause::decidePartitionPlan(size_t rows)
 {
-    const HashJoin::Type type = hash_join->data->type;
+    const HashJoin::Type type = hash_join.data->type;
 
     /// The table is sized from the sketch over the whole input at the standard 50% max fill; it may
     /// grow during post-build when the estimate was low.
-    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
     size_degree = sizeDegreeFor(reserveFor(rows, hll_estimate));
 
     /// ASOF stays single-partition: its mapped values are per-key sorted vectors whose insert wants the
     /// original row order, and that sorting dominates the build, so partitioning the equi-key table
     /// would pay a scattered insert order for nothing. The fixed-size maps have no ranges to split.
     bits = 0;
-    if (!HashJoinTableMaps::isFixedSizeType(type) && hash_join->getStrictness() != JoinStrictness::Asof)
+    if (!HashJoinTableMaps::isFixedSizeType(type) && hash_join.getStrictness() != JoinStrictness::Asof)
     {
         /// The fewest bits whose range - `2^(size_degree - bits)` cells - fits the private L2 budget, so
         /// an owner's inserts stay cache-resident while it streams its chunk.
@@ -1251,11 +1359,24 @@ void PartitionedHashJoin::decidePartitionPlan()
     /// When the plan wants a wider fanout than one scatter pass sustains, the bits split into MSB-first
     /// passes rather than the fanout being capped. Empty for a single partition.
     pass_bits = ColumnsScatter::computePassBits(partitions, max_fanout_per_pass);
+
+    LOG_TRACE(
+        log,
+        "Partition plan: table of 2^{} cells, bits = {}, partitions = {}, {} scatter pass(es) (bits per pass [{}]), {} rows in {} "
+        "blocks, estimated {} distinct keys",
+        size_degree,
+        bits,
+        partitions,
+        std::max<size_t>(pass_bits.size(), 1),
+        fmt::join(pass_bits, ", "),
+        rows,
+        build_blocks.size(),
+        static_cast<size_t>(hll_estimate));
 }
 
-void PartitionedHashJoin::createHashJoinTable()
+void HashJoinClause::createHashJoinTable()
 {
-    const HashJoin::Type type = hash_join->data->type;
+    const HashJoin::Type type = hash_join.data->type;
     /// From the degree, not the reserve: the partition floor may have widened the table past what the
     /// reserve alone asks for, and the exactness check compares against what was actually created.
     ht_total_bytes = HashJoinTableMaps::bufferBytesForDegree(maps_variant_index, type, size_degree);
@@ -1269,9 +1390,9 @@ void PartitionedHashJoin::createHashJoinTable()
     decideAmacEngagement();
 }
 
-size_t PartitionedHashJoin::sizeDegreeFor(size_t reserve) const
+size_t HashJoinClause::sizeDegreeFor(size_t reserve) const
 {
-    const size_t degree = HashJoinTableMaps::sizeDegree(maps_variant_index, hash_join->data->type, reserve);
+    const size_t degree = HashJoinTableMaps::sizeDegree(maps_variant_index, hash_join.data->type, reserve);
     if (degree > 32)
         throw Exception(
             ErrorCodes::LIMIT_EXCEEDED,
@@ -1280,7 +1401,7 @@ size_t PartitionedHashJoin::sizeDegreeFor(size_t reserve) const
     return degree;
 }
 
-UInt64 PartitionedHashJoin::insertableRows() const
+UInt64 HashJoinClause::insertableRows() const
 {
     UInt64 rows = 0;
     for (UInt64 partition_rows : total_bucket_rows)
@@ -1288,7 +1409,7 @@ UInt64 PartitionedHashJoin::insertableRows() const
     return rows;
 }
 
-size_t PartitionedHashJoin::KeyLayout::scatteredKeyWidth() const
+size_t HashJoinClause::KeyLayout::scatteredKeyWidth() const
 {
     if (generic)
         return sizeof(UInt64) * fixed_widths.size();
@@ -1298,7 +1419,7 @@ size_t PartitionedHashJoin::KeyLayout::scatteredKeyWidth() const
     return width;
 }
 
-PartitionedHashJoin::KeyLayout PartitionedHashJoin::keyLayout() const
+HashJoinClause::KeyLayout HashJoinClause::keyLayout() const
 {
     KeyLayout layout;
     if (build_blocks.empty())
@@ -1315,7 +1436,7 @@ PartitionedHashJoin::KeyLayout PartitionedHashJoin::keyLayout() const
     return layout;
 }
 
-size_t PartitionedHashJoin::keyColumnBytes() const
+size_t HashJoinClause::keyColumnBytes() const
 {
     size_t bytes = 0;
     for (const auto & fill : build_blocks)
@@ -1324,7 +1445,7 @@ size_t PartitionedHashJoin::keyColumnBytes() const
     return bytes;
 }
 
-std::unique_ptr<ThreadPool> PartitionedHashJoin::makePostBuildPool(size_t workers)
+std::unique_ptr<ThreadPool> HashJoinClause::makePostBuildPool(size_t workers)
 {
     return std::make_unique<ThreadPool>(
         CurrentMetrics::HashJoinPostBuildThreads,
@@ -1335,7 +1456,7 @@ std::unique_ptr<ThreadPool> PartitionedHashJoin::makePostBuildPool(size_t worker
         /*queue_size_*/ workers);
 }
 
-size_t PartitionedHashJoin::reserveFor(size_t rows, double distinct_estimate) const
+size_t HashJoinClause::reserveFor(size_t rows, double distinct_estimate) const
 {
     /// The safety factor covers the sketch's error; the row clamp says a table cannot hold more keys
     /// than rows. Above 2^31 estimated words the 32-bit sketch is saturating, so the exact upper bound
@@ -1349,19 +1470,20 @@ size_t PartitionedHashJoin::reserveFor(size_t rows, double distinct_estimate) co
     return std::clamp<size_t>(static_cast<size_t>(scaled), 1, rows_bound);
 }
 
-bool PartitionedHashJoin::postBuildSinglePartition()
+bool HashJoinClause::postBuildSinglePartition(size_t rows)
 {
     /// One partition over the whole build, with no scatter: rows go in straight from the stored blocks
     /// with plain `RowRef(block_no, row)` refs, the walk wraps at the buffer end, and nothing overflows.
     chassert(bits == 0 && !post_build_ctx);
-    beginSinglePartitionInsert(reserveFor(accumulated_rows.load(std::memory_order_relaxed), hll_estimate));
+    beginSinglePartitionInsert(reserveFor(rows, hll_estimate), rows, /*grow_at_max_fill_=*/false);
     for (auto & fill : build_blocks)
         insertSingleLaneBlock(fill);
     return finishSinglePartitionInsert();
 }
 
-void PartitionedHashJoin::beginSinglePartitionInsert(size_t reserve)
+void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, bool grow_at_max_fill_)
 {
+    grow_at_max_fill = grow_at_max_fill_;
     /// The barrier's plan already derived these for the post-build path; the single fill thread has no
     /// plan and derives them here, from the hint, before its first block.
     size_degree = sizeDegreeFor(reserve);
@@ -1380,18 +1502,17 @@ void PartitionedHashJoin::beginSinglePartitionInsert(size_t reserve)
 
     createHashJoinTable();
     measureGenericKeyBytes();
-    const size_t insertable_rows = accumulated_rows.load(std::memory_order_relaxed);
     chassert(build_arenas.empty());
-    emplaceSizedBuildArena(build_arenas, predictedArenaBytes(insertable_rows));
+    emplaceSizedBuildArena(build_arenas, predictedArenaBytes(rows));
     emplaceSizedBuildArena(build_arenas, 0);
     ctx.worker_state[0].writer.emplace(build_arenas[0]);
     ctx.drain_writer.emplace(build_arenas[1]);
 
-    forHashJoinTable(*table_maps, hash_join->data->type, [](auto & table) { table.commitAll(); });
+    forHashJoinTable(*table_maps, hash_join.data->type, [](auto & table) { table.commitAll(); });
     ctx.range_committed[0] = 1;
 }
 
-void PartitionedHashJoin::insertSingleLaneBlock(FillBlock & fill)
+void HashJoinClause::insertSingleLaneBlock(FillBlock & fill)
 {
     auto & ctx = *post_build_ctx;
     insertPartitionSection(
@@ -1409,7 +1530,7 @@ void PartitionedHashJoin::insertSingleLaneBlock(FillBlock & fill)
     fill.releaseInputs();
 }
 
-bool PartitionedHashJoin::finishSinglePartitionInsert()
+bool HashJoinClause::finishSinglePartitionInsert()
 {
     auto & ctx = *post_build_ctx;
     auto & worker0 = ctx.worker_state[0];
@@ -1424,9 +1545,9 @@ bool PartitionedHashJoin::finishSinglePartitionInsert()
     return worker0.all_values_unique;
 }
 
-void PartitionedHashJoin::publishTableSize(const PostBuildContext & ctx)
+void HashJoinClause::publishTableSize(const PostBuildContext & ctx)
 {
-    const HashJoin::Type type = hash_join->data->type;
+    const HashJoin::Type type = hash_join.data->type;
     UInt64 distinct = 0;
     for (UInt64 claimed : ctx.claimed_per_partition)
         distinct += claimed;
@@ -1466,7 +1587,7 @@ void PartitionedHashJoin::publishTableSize(const PostBuildContext & ctx)
 /// finished its scratch) and its duplicate layout must account for every inserted row. A leaked
 /// `TAG_COUNT` / `TAG_FILL*` would otherwise read as an empty key in the release build - silent row loss.
 template <typename Table>
-void PartitionedHashJoin::verifyPublishedTable(const Table & table) const
+void HashJoinClause::verifyPublishedTable(const Table & table) const
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     using Mapped = typename Table::mapped_type;
@@ -1501,11 +1622,11 @@ void PartitionedHashJoin::verifyPublishedTable(const Table & table) const
 #endif
 }
 
-size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t distinct) const
+size_t HashJoinClause::predictedTableAndArenaBytes(size_t rows, size_t distinct) const
 {
     const size_t distinct_keys = std::max(distinct, 1uz);
     const size_t reserve = reserveFor(rows, static_cast<double>(distinct_keys));
-    size_t bytes = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, hash_join->data->type, reserve);
+    size_t bytes = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, hash_join.data->type, reserve);
 
     /// `maps_variant_index == 1` is `MapsAll` (`RowRefList`). Unique keys stay inline in the cell
     /// word; only this shape keeps duplicate spans in the arena, at 8 bytes per row of a duplicated
@@ -1531,25 +1652,25 @@ size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t dist
     return bytes;
 }
 
-size_t PartitionedHashJoin::predictedArenaBytes(size_t insertable_rows) const
+size_t HashJoinClause::predictedArenaBytes(size_t insertable_rows) const
 {
     /// Variable-length keys are copied into the arena; that total is measured once before the
     /// first range is scattered, because a consumed range has dropped its key columns.
     const size_t distinct = distinctEstimate();
     const size_t tables_and_spans = predictedTableAndArenaBytes(insertable_rows, distinct);
-    const size_t tables = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, hash_join->data->type, reserveFor(insertable_rows, static_cast<double>(distinct)));
+    const size_t tables = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, hash_join.data->type, reserveFor(insertable_rows, static_cast<double>(distinct)));
     chassert(tables_and_spans >= tables);
     return tables_and_spans - tables + generic_key_bytes;
 }
 
 /// Variable-length keys are copied into the arena, so their bytes join the arena term. Measured while
 /// every block still holds its keys.
-void PartitionedHashJoin::measureGenericKeyBytes()
+void HashJoinClause::measureGenericKeyBytes()
 {
     generic_key_bytes = keyLayout().generic ? keyColumnBytes() : 0;
 }
 
-void PartitionedHashJoin::reduceWorkerHistogram()
+void HashJoinClause::reduceWorkerHistogram()
 {
     auto & ctx = *post_build_ctx;
     ctx.bucket_rows.assign(ctx.fanout, 0);
@@ -1558,7 +1679,7 @@ void PartitionedHashJoin::reduceWorkerHistogram()
             ctx.bucket_rows[p] += ctx.worker_hist[w * ctx.fanout + p];
 }
 
-void PartitionedHashJoin::resetWorkerHistogram(PostBuildContext & ctx)
+void HashJoinClause::resetWorkerHistogram(PostBuildContext & ctx)
 {
     /// `resize_fill` only fills what it grows, so a reused same-sized array would histogram
     /// on top of the previous range's counts.
@@ -1566,7 +1687,7 @@ void PartitionedHashJoin::resetWorkerHistogram(PostBuildContext & ctx)
     ctx.worker_hist.resize_fill(ctx.workers * ctx.fanout, 0);
 }
 
-void PartitionedHashJoin::preparePostBuildContext()
+void HashJoinClause::preparePostBuildContext()
 {
     if (post_build_ctx)
         return;
@@ -1653,7 +1774,7 @@ void PartitionedHashJoin::preparePostBuildContext()
     emplaceSizedBuildArena(build_arenas, /*predicted_bytes=*/0); /// the drain's arena
 }
 
-void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
+void HashJoinClause::runGroupStages(size_t block_begin, size_t block_end)
 {
     auto & ctx = *post_build_ctx;
     ctx.block_begin = block_begin;
@@ -1768,7 +1889,7 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
         ProfileEvents::HashJoinPartitionedBuildInsertMicroseconds, insert_thread_us.load(std::memory_order_relaxed) + drain_wall_us);
 }
 
-bool PartitionedHashJoin::postBuildPartitioned()
+bool HashJoinClause::postBuildPartitioned()
 {
     preparePostBuildContext();
     auto & ctx = *post_build_ctx;
@@ -1803,13 +1924,13 @@ bool PartitionedHashJoin::postBuildPartitioned()
     return all_values_unique;
 }
 
-void PartitionedHashJoin::commitRange(size_t partition)
+void HashJoinClause::commitRange(size_t partition)
 {
-    forHashJoinTable(*table_maps, hash_join->data->type, [&](auto & table) { table.commitRange(partition); });
+    forHashJoinTable(*table_maps, hash_join.data->type, [&](auto & table) { table.commitRange(partition); });
     post_build_ctx->range_committed[partition] = 1;
 }
 
-UInt64 PartitionedHashJoin::claimedBufferCells() const
+UInt64 HashJoinClause::claimedBufferCells() const
 {
     UInt64 claimed = 0;
     for (UInt64 c : post_build_ctx->claimed_per_partition)
@@ -1817,21 +1938,21 @@ UInt64 PartitionedHashJoin::claimedBufferCells() const
     return claimed;
 }
 
-bool PartitionedHashJoin::tableHasZero() const
+bool HashJoinClause::tableHasZero() const
 {
     bool has_zero = false;
-    forHashJoinTable(*table_maps, hash_join->data->type, [&](const auto & table) { has_zero = table.hasZero(); });
+    forHashJoinTable(*table_maps, hash_join.data->type, [&](const auto & table) { has_zero = table.hasZero(); });
     return has_zero;
 }
 
-UInt64 PartitionedHashJoin::claimedTotal() const
+UInt64 HashJoinClause::claimedTotal() const
 {
     return claimedBufferCells() + (tableHasZero() ? 1 : 0);
 }
 
-void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx)
+void HashJoinClause::drainOverflow(PostBuildContext & ctx)
 {
-    const HashJoin::Type type = hash_join->data->type;
+    const HashJoin::Type type = hash_join.data->type;
     UInt64 drained = 0;
     for (size_t partition = 0; partition < partitions; ++partition)
     {
@@ -1854,7 +1975,7 @@ void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx)
                     .range_end = table.cellCount(),
                     .wrap = true,
                     .any_take_last_row = any_take_last_row,
-                    .join = hash_join.get(),
+                    .join = &hash_join,
                     .owner = this,
                     .claimed_per_partition = &ctx.claimed_per_partition,
                     .drain_claimed = &ctx.drain_claimed,
@@ -1874,7 +1995,7 @@ void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx)
     stats.overflow_rows += drained;
 }
 
-void PartitionedHashJoin::histogramWorker(PostBuildContext & ctx, size_t worker) const
+void HashJoinClause::histogramWorker(PostBuildContext & ctx, size_t worker) const
 {
     UInt64 * hist = ctx.worker_hist.data() + worker * ctx.fanout;
 
@@ -1899,7 +2020,7 @@ void PartitionedHashJoin::histogramWorker(PostBuildContext & ctx, size_t worker)
         ColumnsScatter::reduceHistogramLanes(hist, hist_lanes, ctx.fanout);
 }
 
-void PartitionedHashJoin::allocateWorker(PostBuildContext & ctx, size_t worker) const
+void HashJoinClause::allocateWorker(PostBuildContext & ctx, size_t worker) const
 {
     /// Fuses the parallel prefix sum over the per-worker histograms with one exact uninitialized
     /// allocation per (bucket, scattered column), leaving the scatter writes to first-touch the pages.
@@ -1932,7 +2053,7 @@ void PartitionedHashJoin::allocateWorker(PostBuildContext & ctx, size_t worker) 
     }
 }
 
-void PartitionedHashJoin::scatterWorker(PostBuildContext & ctx, size_t worker)
+void HashJoinClause::scatterWorker(PostBuildContext & ctx, size_t worker)
 {
     auto & state = ctx.worker_state[worker];
     const auto [begin, end] = ctx.blockStripe(worker);
@@ -2103,7 +2224,7 @@ void PartitionedHashJoin::scatterWorker(PostBuildContext & ctx, size_t worker)
         release_block_inputs(build_blocks[i]);
 }
 
-void PartitionedHashJoin::refinePassWave(
+void HashJoinClause::refinePassWave(
     PostBuildContext & ctx, size_t refine_bits, size_t bits_done, std::atomic<UInt64> & stage_thread_us)
 {
     /// Buckets are claimed dynamically because their sizes can be skewed, and each bucket's inputs are
@@ -2284,7 +2405,7 @@ void PartitionedHashJoin::refinePassWave(
     ctx.refined = true;
 }
 
-void PartitionedHashJoin::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
+void HashJoinClause::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
 {
     auto & state = ctx.worker_state[worker];
 
@@ -2386,7 +2507,7 @@ void PartitionedHashJoin::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
     }
 }
 
-void PartitionedHashJoin::PostBuildContextDeleter::operator()(PostBuildContext * ctx) const
+void HashJoinClause::PostBuildContextDeleter::operator()(PostBuildContext * ctx) const
 {
     delete ctx;
 }
