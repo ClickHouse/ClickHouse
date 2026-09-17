@@ -7,5 +7,7 @@ Asia/Tokyo
 -- the values, Tokyo first
 1590980400	12
 1591005600	12
--- one entry per distinct time zone
-2	2
+-- one entry shared by all time zones
+1	1
+America/New_York
+1

@@ -7,12 +7,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # An inferred `DateTime` without an explicit time zone latches the effective time zone of the
 # session that inferred it (`DateLUT::instance` resolves `session_timezone`), and the schema
 # inference cache stores the type objects themselves. A session with another `session_timezone`
-# must not be served that schema: it would parse the values in its own zone but format and
-# compute them in the inferring session's zone.
+# must not be served that type as is: it would parse the values in its own zone but format and
+# compute them in the inferring session's zone. The cache re-binds an implicit zone to the
+# reading session's zone on every hit.
 #
 # Every probe runs in BOTH orders, because an order-insensitive probe cannot detect a missing
-# cache-key field: whichever query runs first decides the cached type. Every order gets its own
-# file so the two orders never share a cache entry.
+# re-bind: whichever query runs first decides the cached type. Every order gets its own file so
+# the two orders never share a cache entry.
 #
 # The fixtures are aged with `touch -d`: `SchemaCache::tryGetImpl` drops an entry when the
 # source's mtime is >= the entry's registration time, and both are whole seconds, so a file
@@ -43,14 +44,16 @@ $CLICKHOUSE_LOCAL -m -q "
     SELECT toUnixTimestamp(c1), toHour(c1) FROM file('${T}_c.csv') SETTINGS session_timezone = 'Asia/Tokyo';
     SELECT toUnixTimestamp(c1), toHour(c1) FROM file('${T}_c.csv') SETTINGS session_timezone = 'Europe/Berlin';"
 
-# Two sessions with the same `session_timezone` must keep sharing one entry, and a session that
-# does not set it must not get an entry of its own: the key of a default session is unchanged.
-echo "-- one entry per distinct time zone"
+# The time zone is not part of the cache key: sessions with different `session_timezone` keep
+# sharing one entry per source (and the cached number of rows with it), and the re-bound type
+# is served from that single entry without re-reading the file.
+echo "-- one entry shared by all time zones"
 $CLICKHOUSE_LOCAL -m -q "
     SELECT c1 FROM file('${T}_d.csv') SETTINGS session_timezone = 'Asia/Tokyo' FORMAT Null;
-    SELECT c1 FROM file('${T}_d.csv') SETTINGS session_timezone = 'Asia/Tokyo' FORMAT Null;
+    SELECT c1 FROM file('${T}_d.csv') SETTINGS session_timezone = 'Europe/Berlin' FORMAT Null;
     SELECT c1 FROM file('${T}_d.csv') FORMAT Null;
-    SELECT c1 FROM file('${T}_d.csv') FORMAT Null;
-    SELECT count(), countDistinct(additional_format_info) FROM system.schema_inference_cache;"
+    SELECT count(), countDistinct(additional_format_info) FROM system.schema_inference_cache;
+    SELECT timeZoneOf(c1) FROM file('${T}_d.csv') SETTINGS session_timezone = 'America/New_York';
+    SELECT count() FROM system.schema_inference_cache;"
 
 rm -f "${T}"_*
