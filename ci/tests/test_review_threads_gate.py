@@ -52,7 +52,6 @@ from ci.jobs.scripts.workflow_hooks.review_threads import (
 from ci.defs.job_configs import JobConfigs
 from ci.praktika.gh import GH
 from ci.praktika.result import Result
-from ci.praktika.workflow import Workflow
 
 # The 80-character truncation applied by GH.post_commit_status.
 STATUS_DESCRIPTION_LIMIT = 80
@@ -895,8 +894,7 @@ def test_mergeable_check_is_claimed_only_when_the_gate_owns_it():
 def test_review_thread_gate_never_widens_the_coverage_family(monkeypatch, fake_info):
     """The gate may only shrink the pipeline. The coverage build is on the
     limited-pipeline allowlist, so it must still honour the skip that the
-    coverage-family rules would give it in a full run, and it must never gain
-    the `ci-coverage` exemption from the later changed-files pass."""
+    coverage-family rules would give it in a full run."""
     coverage_build = JobConfigs.build_llvm_coverage_job[0].name
     assert coverage_build in filter_job.REVIEW_THREADS_BUILD_JOBS
 
@@ -918,19 +916,8 @@ def test_review_thread_gate_never_widens_the_coverage_family(monkeypatch, fake_i
     filter_job._pipeline_note_labels = set()
     assert filter_job.should_skip_job(coverage_build)[0]
 
-    # `ci-coverage` runs the job (a full run would too), but the gate must not
-    # hand out `FILTER_HOOK_FORCE_JOB`: exempting the job from the changed-files
-    # pass would run it where a plain limited run does not.
-    fake_info.kv["changed_files"] = ["tests/queries/0_stateless/00001_x.sql"]
-    fake_info.pr_labels = [Labels.CI_COVERAGE]
+    # A build-affecting change without the label runs the allowlisted coverage
+    # build under the gate, exactly as a full run would.
+    fake_info.pr_labels = []
     filter_job._pipeline_note_labels = set()
-    skip, reason = filter_job.should_skip_job(coverage_build)
-    assert not skip
-    assert reason != Workflow.FILTER_HOOK_FORCE_JOB
-
-    # Without the gate, the same label forces the job.
-    fake_info.kv[KV_UNRESOLVED_COUNT] = 0
-    filter_job._pipeline_note_labels = set()
-    skip, reason = filter_job.should_skip_job(coverage_build)
-    assert not skip
-    assert reason == Workflow.FILTER_HOOK_FORCE_JOB
+    assert filter_job.should_skip_job(coverage_build) == (False, "")

@@ -94,12 +94,6 @@ class Labels:
     CI_NO_COVERAGE = "ci-no-coverage"
     # Disables the unresolved-review-threads CI gate (see review_threads.py)
     IGNORE_UNRESOLVED_THREADS = "ignore-unresolved-threads"
-    # Gates the Darwin (macOS) "Fast test" job in PRs; it is skipped unless this
-    # label is applied. See DARWIN_FAST_TEST_JOBS in filter_job.py.
-    CI_MACOS = "ci-macos"
-    # Forces the LLVM coverage family to run on a PR where it would be
-    # auto-skipped as having no build-affecting changes (e.g. a tests-only PR).
-    CI_COVERAGE = "ci-coverage"
 
     # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
     COMP_PROMQL = "comp-promql"

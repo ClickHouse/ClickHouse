@@ -29,6 +29,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestListPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 
 namespace DB
 {
@@ -40,13 +42,16 @@ class DataFileEntriesStream
 {
 public:
     using CreateManifestIterator = std::function<ManifestIteratorPtr(const ManifestFileCacheKey &, const std::atomic<bool> *)>;
+    /// Called on the producer thread, after `prepare`, for every data manifest of the snapshot.
+    using SkipManifest = std::function<bool(const ManifestFileCacheKey &)>;
 
     DataFileEntriesStream(
         size_t queue_size_,
         size_t decode_concurrency_,
         IcebergDataSnapshotPtr data_snapshot_,
         std::function<void()> prepare_,
-        CreateManifestIterator create_manifest_iterator_);
+        CreateManifestIterator create_manifest_iterator_,
+        SkipManifest skip_manifest_);
 
     ~DataFileEntriesStream();
 
@@ -79,6 +84,7 @@ private:
 
     const std::function<void()> prepare;
     const CreateManifestIterator create_manifest_iterator;
+    const SkipManifest skip_manifest;
     ConcurrentBoundedQueue<ProcessedManifestFileEntryPtr> queue;
     std::atomic<bool> stopped{false};
     mutable std::mutex exception_mutex;
@@ -127,6 +133,8 @@ private:
     std::mutex deletes_mutex;
     bool deletes_ready TSA_GUARDED_BY(deletes_mutex) = false;
     std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
+    /// Built on the producer thread of `data_files_stream` and read only there.
+    std::unique_ptr<Iceberg::ManifestListPruner> manifest_list_pruner;
     /// Declared last: its tasks call back into `createManifestIterator`, so it must be destroyed
     /// (producer joined, tasks drained) before any other member.
     std::unique_ptr<Iceberg::DataFileEntriesStream> data_files_stream;
