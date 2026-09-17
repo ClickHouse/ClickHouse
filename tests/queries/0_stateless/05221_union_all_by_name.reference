@@ -31,6 +31,9 @@ missing nullable value
 missing LowCardinality Nullable
 hello	\N	Nullable(String)	Nullable(UInt8)
 \N	1	Nullable(String)	Nullable(UInt8)
+missing LowCardinality
+hello	\N	Nullable(String)	Nullable(UInt8)
+\N	1	Nullable(String)	Nullable(UInt8)
 missing Variant
 hello	\N	Variant(String, UInt64)	Nullable(UInt8)
 \N	1	Variant(String, UInt64)	Nullable(UInt8)
@@ -39,6 +42,17 @@ hello	\N	Dynamic	Nullable(UInt8)
 \N	1	Dynamic	Nullable(UInt8)
 AST JSON roundtrip
 SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a
+normalized AST JSON roundtrip
+SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a
 duplicate output names
 missing non-nullable-capable type
 recursive CTE
+UNION BY NAME with INTERSECT
+1
+2
+EXCEPT with UNION BY NAME
+1
+3
+UNION BY NAME with reordered INTERSECT operands
+1	x
+2	y

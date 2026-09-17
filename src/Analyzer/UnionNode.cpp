@@ -197,15 +197,16 @@ NamesAndTypes UnionNode::computeProjectionColumns(bool apply_projection_aliases)
     {
         if (present_in_branches[column_index] != projections.size())
         {
+            auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             for (const auto & type : column_types[column_index])
             {
-                if (!canContainNull(*type) && !type->canBeInsideNullable())
+                if (!tryGetLeastSupertype(DataTypes{type, null_type}))
                     throw Exception(ErrorCodes::TYPE_MISMATCH,
                         "Column '{}' is absent in one UNION ALL BY NAME operand, but type '{}' cannot represent NULL",
                         result_names[column_index], type->getName());
             }
 
-            column_types[column_index].push_back(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()));
+            column_types[column_index].push_back(std::move(null_type));
         }
 
         auto result_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type]

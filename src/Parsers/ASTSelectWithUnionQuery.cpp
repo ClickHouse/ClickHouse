@@ -94,6 +94,7 @@ void ASTSelectWithUnionQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
     /// see it: without hashing the modes, `a UNION ALL b` and `a UNION DISTINCT b` hash equally.
     hash_state.update(union_mode);
     hash_state.update(column_match_mode);
+    hash_state.update(is_normalized);
     hash_state.update(list_of_modes.size());
     for (auto mode : list_of_modes)
         hash_state.update(mode);
@@ -268,6 +269,7 @@ void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
 
     w.writeString("union_mode", toString(union_mode));
     w.writeString("column_match_mode", toString(column_match_mode));
+    w.writeBool("is_normalized", is_normalized);
 
     if (!list_of_modes.empty())
     {
@@ -315,6 +317,7 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
 
     union_mode = parseSelectUnionMode(r.getString("union_mode", "UNION_DEFAULT"));
     column_match_mode = parseSetOperationColumnMatchMode(r.getString("column_match_mode", "POSITION"));
+    is_normalized = r.getBool("is_normalized");
 
     auto modes_arr = r.readStringArray("list_of_modes");
     for (const auto & mode_str : modes_arr)
@@ -365,6 +368,11 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
             "`SelectWithUnionQuery` AST has {} entries in 'list_of_column_match_modes' but expected {} for {} selects "
             "during AST JSON deserialization",
             list_of_column_match_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
+
+    if (list_of_modes.empty() && !list_of_column_match_modes.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SelectWithUnionQuery` AST cannot have 'list_of_column_match_modes' without 'list_of_modes' "
+            "during AST JSON deserialization");
 
     /// Restore output options (`INTO OUTFILE` / `FORMAT` / `SETTINGS` / compression and flags)
     /// through the shared helper so the validation of their interdependencies stays in one place
