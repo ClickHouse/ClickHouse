@@ -795,14 +795,14 @@ void AlterCommand::apply(
     }
     else if (type == DROP_COLUMN)
     {
-        metadata.dropImplicitIndicesForColumn(column_name);
-
-        /// Otherwise just clear data on disk
+        /// `CLEAR COLUMN` and `CLEAR COLUMN ... IN PARTITION` keep the column definition, so they
+        /// also keep `auto_minmax_index_<column>`. Only a full metadata drop removes the index.
         if (!clear && !partition)
         {
             /// Nested parent `n` exists as flattened `n.*`; `has` is exact-only.
             if (if_exists && !columnExists(metadata.columns, column_name, share_nested_offsets))
                 return;
+            metadata.dropImplicitIndicesForColumn(column_name);
             /// `remove()` deletes the whole `n.*` range, so drop the implicit indices of all these columns too.
             for (const auto & removed_column : metadata.columns.getNested(column_name))
                 metadata.dropImplicitIndicesForColumn(removed_column.name);
