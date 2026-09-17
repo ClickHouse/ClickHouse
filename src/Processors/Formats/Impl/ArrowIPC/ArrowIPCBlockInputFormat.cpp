@@ -954,52 +954,16 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                 auto extractor_it = nested_extractors.find(search_nested);
                 if (extractor_it == nested_extractors.end())
                 {
-                    /// Collect the requested subcolumns into a single `Nested` type and reshape the decoded
-                    /// column to it, so `Nested::flatten` (used by the extractor) recognises and splits it
-                    /// — mirroring how the library reader reads the field with this type hint.
-                    NamesAndTypesList nested_columns;
-                    for (const auto & name_and_type : header.getNamesAndTypesList())
-                    {
-                        if (name_and_type.name.starts_with(nested_table_name + "."))
-                            nested_columns.push_back(name_and_type);
-                    }
-
                     auto & src = decoded[nested_it->second];
                     ColumnWithTypeAndName nested_column(src.column, src.type, nested_table_name);
 
-                    /// Arrow's default nullable schema yields `Array(Nullable(Tuple(...)))`. `Nested::flatten`
-                    /// cannot split a Nullable tuple, and casting it onto the non-nullable Nested tuple would
-                    /// fail on struct-level nulls. Unwrap the nullable tuple, propagating the struct null map
-                    /// down to each element (matching the library reader), so it becomes `Array(Tuple(...))`.
-                    if (const auto * arr_type = typeid_cast<const DataTypeArray *>(nested_column.type.get());
-                        arr_type && typeid_cast<const DataTypeTuple *>(removeNullable(arr_type->getNestedType()).get()))
-                    {
-                        const auto & arr_col = assert_cast<const ColumnArray &>(*nested_column.column);
-                        auto unwrapped = Nested::unwrapNullableTuple(
-                            {arr_col.getDataPtr(), arr_type->getNestedType(), nested_table_name});
-                        nested_column.column = ColumnArray::create(unwrapped.column, arr_col.getOffsetsPtr());
-                        nested_column.type = std::make_shared<DataTypeArray>(unwrapped.type);
-                    }
-
-                    const auto collected = Nested::collect(nested_columns);
-                    if (!collected.empty())
-                    {
-                        const DataTypePtr & nested_table_type = collected.front().type;
-                        if (case_insensitive)
-                            nested_column.type = alignStructFieldNamesCaseInsensitive(nested_column.type, nested_table_type);
-                        /// The decoder may have converted raw-byte leaves under the flattened subcolumns'
-                        /// type hints; reconcile the declared types (and convert leaves the hints did not
-                        /// reach) before the cast, exactly as the non-nested path does.
-                        reinterpretRawByteColumns(nested_column, nested_table_type);
-                        nested_column = prepareArrowColumnForCast(std::move(nested_column), nested_table_type, format_settings);
-                        nested_column.column = castColumn(nested_column, nested_table_type);
-                        nested_column.type = nested_table_type;
-                    }
                     auto block = std::make_shared<Block>(Block({std::move(nested_column)}));
                     auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
                     extractor_it = nested_extractors.emplace(search_nested, std::make_pair(block, helper)).first;
                 }
-                if (auto nested_column = extractor_it->second.second->extractColumn(search_name))
+                /// The requested spelling, not the lower-cased one: the helper matches names
+                /// case-insensitively itself, and an exact element name outranks a folded match.
+                if (auto nested_column = extractor_it->second.second->extractColumn(header_column.name))
                 {
                     column = *nested_column;
                     if (case_insensitive)
@@ -1428,6 +1392,8 @@ cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMA
 | `output_format_arrow_compression_method`                                                                                 | Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, none (uncompressed) | `lz4_frame`  |
 | `output_format_arrow_fixed_string_as_fixed_byte_array`                                                                   | Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.                        | `1`          |
 | `output_format_arrow_low_cardinality_as_dictionary`                                                                      | Enable output LowCardinality type as Dictionary Arrow type                                         | `0`          |
+| `output_format_arrow_record_batch_size`                                                                                  | Target rows per record batch when combining small blocks. Buffering can increase memory use and delay the first batch until the query finishes. `0` disables the row target. | `0`          |
+| `output_format_arrow_record_batch_size_bytes`                                                                            | Target bytes of accumulated block data per record batch. Buffering can increase memory use and delay the first batch until the query finishes. `0` disables the byte target.              | `0`          |
 | `output_format_arrow_string_as_string`                                                                                   | Use Arrow String type instead of Binary for String columns                                         | `1`          |
 | `output_format_arrow_unsupported_types_as_binary`                                                                        | Output a type that has no Arrow equivalent (e.g. `BFloat16`, `AggregateFunction`) as raw binary data. If false, such a type raises an exception. | `1`          |
 | `output_format_arrow_use_64_bit_indexes_for_dictionary`                                                                  | Always use 64 bit integers for dictionary indexes in Arrow format                                  | `0`          |
@@ -1562,6 +1528,8 @@ the blog post
 | `output_format_arrow_date_as_uint16`                                         | Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32). | `0`         |
 | `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.                                                                | `1`         |
 | `output_format_arrow_low_cardinality_as_dictionary`                          | Enable output LowCardinality type as Dictionary Arrow type                                                                                 | `0`         |
+| `output_format_arrow_record_batch_size`                                      | Target rows per record batch when combining small blocks. Buffering can increase memory use and delay the first batch until the query finishes. `0` disables the row target. | `0`         |
+| `output_format_arrow_record_batch_size_bytes`                                | Target bytes of accumulated block data per record batch. Buffering can increase memory use and delay the first batch until the query finishes. `0` disables the byte target.                                                      | `0`         |
 | `output_format_arrow_string_as_string`                                       | Use Arrow String type instead of Binary for String columns                                                                                 | `1`         |
 | `output_format_arrow_unsupported_types_as_binary`                            | Output a type that has no Arrow equivalent (e.g. `BFloat16`, `AggregateFunction`) as raw binary data. If false, such a type raises an exception. | `1`         |
 | `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Always use 64 bit integers for dictionary indexes in Arrow format                                                                          | `0`         |

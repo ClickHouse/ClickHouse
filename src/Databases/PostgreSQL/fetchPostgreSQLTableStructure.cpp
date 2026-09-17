@@ -435,8 +435,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "{} as generated, " /// if column has GENERATED
            "{} as element_not_null " /// ClickHouse emulation only: nullability of the array elements
            "FROM pg_attribute "
-           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) {}"
-           "AND NOT attisdropped AND attnum > 0 "
+           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}){}"
+           " AND NOT attisdropped AND attnum > 0 "
            "ORDER BY attnum ASC", generated, element_not_null, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
     auto postgres_table_with_schema = postgres_schema.empty()
