@@ -604,13 +604,16 @@ protected:
     /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
     bool current_query_parsed_as_json_dialect = false;
 
-    /// The `dialect`, `enable_json_ast_dialect` and `enable_trino_dialect` values the current query text was accepted with,
-    /// captured before any in-query `SET` is applied. `pinOutboundDialect` restores them for the
-    /// outbound settings, so a query-local `SETTINGS dialect = ...` cannot change how this very query
-    /// text is parsed on the other side.
-    Field current_query_parse_dialect;
-    Field current_query_parse_json_ast_gate;
-    Field current_query_parse_trino_gate;
+    /// The `dialect`, `enable_json_ast_dialect` and `enable_trino_dialect` values the current query
+    /// text was accepted with, kept only when the query's own `SETTINGS` clause changed them.
+    /// `pinOutboundDialect` restores them for the outbound settings, so a query-local
+    /// `SETTINGS dialect = ...` cannot change how this very query text is parsed on the other side.
+    /// Empty when the query left the setting alone: the client must not override values that arrive
+    /// from elsewhere in the meantime, such as the user's profile applied by
+    /// `applySettingsFromServerIfNeeded`, which the server is entitled to parse with.
+    std::optional<Field> current_query_parse_dialect;
+    std::optional<Field> current_query_parse_json_ast_gate;
+    std::optional<Field> current_query_parse_trino_gate;
 
     /// True when the current query is a SQL `SET` escape parsed with `ParserQuery` while a
     /// non-ClickHouse dialect was active. Its outbound transport dialect must be `clickhouse`.
