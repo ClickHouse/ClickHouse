@@ -123,6 +123,9 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         && !isParsedAsLiteral(s)
         && !isCaseInsensitiveEqual(s, "distinct")
         && !isCaseInsensitiveEqual(s, "all")
+        /// The parser can consume a bare `SOME` as the array-quantifier keyword, which rewrites the
+        /// node at parse time, so a function of that name has to stay quoted to survive a re-parse.
+        && !isCaseInsensitiveEqual(s, "some")
         && !isCaseInsensitiveEqual(s, "table")
         /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
         /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which

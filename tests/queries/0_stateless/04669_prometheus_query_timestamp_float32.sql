@@ -29,7 +29,7 @@ ENGINE = MergeTree ORDER BY (id, timestamp);
 
 CREATE TABLE promql_timestamp_float32
 (
-    time_series Array(Tuple(DateTime64(3, 'UTC'), Float32))
+    samples Array(Tuple(DateTime64(3, 'UTC'), Float32))
 )
 ENGINE = TimeSeries
 SAMPLES promql_timestamp_float32_samples
@@ -77,7 +77,7 @@ FROM prometheusQueryRange(
     toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'),
     toDateTime64('2025-11-30 10:30:20.250', 3, 'UTC'),
     5)
-ARRAY JOIN time_series AS sample
+ARRAY JOIN samples AS sample
 ORDER BY sample.1;
 
 -- A series-backed range exercises VECTOR_GRID and retains every fractional grid timestamp.
@@ -88,7 +88,7 @@ FROM prometheusQueryRange(
     toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'),
     toDateTime64('2025-11-30 10:30:20.250', 3, 'UTC'),
     5)
-ARRAY JOIN time_series AS sample
+ARRAY JOIN samples AS sample
 ORDER BY sample.1;
 
 -- Wrappers that rebuild a scalar-backed piece must materialize it with the carried `value_data_type`

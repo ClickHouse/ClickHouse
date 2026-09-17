@@ -59,7 +59,7 @@ ColumnsDescription getResultColumns(
                         DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}))});
             columns.add(
                 ColumnDescription{
-                    ColumnNames::TimeSeries,
+                    ColumnNames::getOuterSamples(settings.time_series_version),
                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_data_type, scalar_data_type}))});
             return columns;
         }
