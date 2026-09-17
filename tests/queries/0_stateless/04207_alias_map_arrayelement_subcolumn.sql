@@ -237,7 +237,7 @@ SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_f
 
 INSERT INTO t_alias_nullable (id, n) VALUES (1, 'a'), (2, NULL), (3, 'b');
 
-SELECT '-- isNull(n_alias) rewrites to n.null';
+SELECT '-- isNull(n_alias) rewrites to not(not(n.null))';
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT isNull(n_alias) FROM t_alias_nullable) WHERE explain LIKE '%n.null%';
 
 SELECT '-- isNotNull(n_chain) rewrites to not(n.null) through chain';
