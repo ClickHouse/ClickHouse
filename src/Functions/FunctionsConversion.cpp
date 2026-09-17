@@ -2935,13 +2935,11 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
     const DataTypePtr to_nested_type = removeNullable(to_type);
 
     /// A text conversion asked for a Nullable result reports a value the target cannot represent as a NULL
-    /// indistinguishable from one the source carried; `CastType::accurate` promises the opposite, so ask for
-    /// the non-Nullable result and attach nullability afterwards.
+    /// indistinguishable from one the source carried; `CastType::accurate` must throw instead.
     const bool strict_text_conversion = result_is_nullable && cast_type == CastType::accurate
         && isStringOrFixedString(from_nested_type);
 
-    /// An identity conversion can neither reject a value nor produce a NULL, so the rows a source NULL masks
-    /// cannot reach anything that cares and are cheaper left in place.
+    /// An identity conversion can neither reject a value nor produce a NULL, so a source NULL needs no filtering.
     const bool nested_types_equal = from_nested_type->equals(*to_nested_type);
 
     auto wrapper = prepareImpl(from_nested_type, to_nested_type, result_is_nullable && !strict_text_conversion);
@@ -2975,8 +2973,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
 
             if (exclude_source_nulls)
             {
-                /// The nested column of a NULL row holds a default, not a value to convert, and an accurate
-                /// conversion throws on the ones its target cannot represent.
+                /// The nested column of a NULL row holds a default, not a value to convert.
                 const auto & nullable_column = assert_cast<const ColumnNullable &>(*arguments.front().column);
                 const auto & null_map = nullable_column.getNullMapData();
                 const size_t rows_with_nulls = countBytesInFilter(null_map.data(), 0, input_rows_count);
