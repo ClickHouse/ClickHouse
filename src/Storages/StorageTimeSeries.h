@@ -144,6 +144,8 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
+    void resetInsertCache();
+
     MultiVersion<TimeSeriesSettings> storage_settings;
 
     std::vector<Target> targets;

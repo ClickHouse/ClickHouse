@@ -2,7 +2,9 @@ SET allow_experimental_time_series_table = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS ts;
+DROP TABLE IF EXISTS ts2;
 DROP TABLE IF EXISTS ext_metric_families;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
 CREATE TABLE ts ENGINE = TimeSeries
 SETTINGS recent_samples_ttl_seconds = 0;
@@ -17,6 +19,33 @@ INSERT INTO ts (metric_family, type, unit, help)
 VALUES ('m', 'counter', 'bytes', 'second');
 SELECT count() FROM timeSeriesMetricFamilies(ts);
 SELECT type, unit, help FROM timeSeriesMetricFamilies(ts) ORDER BY type;
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 0
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree
+ORDER BY metric_family_name;
+
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+TRUNCATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.metricfamilies.ts`;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.metricfamilies.ts`;
+
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.ts (metric_family, type, unit, help)
+VALUES ('m2', 'gauge', 'seconds', 'second');
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.metricfamilies.ts`;
+OPTIMIZE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.metricfamilies.ts` FINAL;
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.metricfamilies.ts`;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.metricfamilies.ts`;
+
+ALTER TABLE ts MODIFY SETTING insert_cache_max_size_bytes = 0;
+INSERT INTO ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies(ts);
 
 DROP TABLE ts;
 CREATE TABLE ts ENGINE = TimeSeries
@@ -48,6 +77,18 @@ SELECT count() FROM timeSeriesMetricFamilies(ts);
 DROP TABLE ts;
 CREATE TABLE ts ENGINE = TimeSeries
 SETTINGS recent_samples_ttl_seconds = 0, insert_cache_max_size_bytes = 150
+METRIC FAMILIES INNER COLUMNS (extra String DEFAULT '')
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+
+INSERT INTO ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+INSERT INTO ts (metric_family, type, unit, help)
+VALUES ('m', 'gauge', 'seconds', 'first');
+SELECT count() FROM timeSeriesMetricFamilies(ts);
+
+DROP TABLE ts;
+CREATE TABLE ts ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 0, insert_cache_max_size_bytes = 150
 METRIC FAMILIES INNER ENGINE = MergeTree ORDER BY metric_family_name;
 
 INSERT INTO ts (metric_family, type, unit, help)
@@ -71,32 +112,17 @@ CREATE TABLE ts ENGINE = TimeSeries
 SETTINGS recent_samples_ttl_seconds = 0
 METRIC FAMILIES ext_metric_families;
 
+CREATE TABLE ts2 ENGINE = TimeSeries
+SETTINGS recent_samples_ttl_seconds = 0
+METRIC FAMILIES ext_metric_families;
+
 INSERT INTO ts (metric_family, type, unit, help)
 VALUES ('m', 'gauge', 'seconds', 'first');
-INSERT INTO ts (metric_family, type, unit, help)
+INSERT INTO ts2 (metric_family, type, unit, help)
 VALUES ('m', 'gauge', 'seconds', 'first');
 SELECT count() FROM ext_metric_families;
 
-SYSTEM STOP MERGES ext_metric_families;
-
-INSERT INTO FUNCTION timeSeriesMetricFamilies(currentDatabase(), 'ts')
-VALUES ('m', 'counter', 'bytes', 'function');
-INSERT INTO ts (metric_family, type, unit, help)
-VALUES ('m', 'gauge', 'seconds', 'first');
-SELECT count() FROM ext_metric_families WHERE metric_family_name = 'm';
-
-INSERT INTO ext_metric_families
-VALUES ('m', 'counter', 'bytes', 'inner');
-INSERT INTO ts (metric_family, type, unit, help)
-VALUES ('m', 'gauge', 'seconds', 'first');
-SELECT count() FROM ext_metric_families WHERE metric_family_name = 'm';
-
-SYSTEM START MERGES ext_metric_families;
-ALTER TABLE ext_metric_families DELETE WHERE metric_family_name = 'm' SETTINGS mutations_sync = 2;
-SYSTEM STOP MERGES ext_metric_families;
-INSERT INTO ts (metric_family, type, unit, help)
-VALUES ('m', 'gauge', 'seconds', 'first');
-SELECT count() FROM ext_metric_families WHERE metric_family_name = 'm';
-
 DROP TABLE ts;
+DROP TABLE ts2;
 DROP TABLE ext_metric_families;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

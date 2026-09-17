@@ -402,6 +402,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
+            clearTimeSeriesMetricFamiliesCaches(table);
             if (!partition_commands_pipe.empty())
                 res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
         }

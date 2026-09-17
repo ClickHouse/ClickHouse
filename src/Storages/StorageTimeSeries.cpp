@@ -22,6 +22,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesInsertCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
@@ -80,10 +81,11 @@ namespace
         return copy;
     }
 
-    /// We allow altering only two settings: `id_generator` and `filter_by_min_time_and_max_time`.
     void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
     {
-        if ((setting_name != "id_generator") && (setting_name != "filter_by_min_time_and_max_time"))
+        if ((setting_name != "id_generator")
+            && (setting_name != "filter_by_min_time_and_max_time")
+            && (setting_name != "insert_cache_max_size_bytes"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
@@ -241,18 +243,25 @@ UInt64 StorageTimeSeries::getVersion() const
 
 StorageTimeSeries::~StorageTimeSeries()
 {
-    if (!insert_cache)
-        return;
+    resetInsertCache();
+}
 
+void StorageTimeSeries::resetInsertCache()
+{
     std::lock_guard lock(metric_families_caches_mutex);
-    for (auto it = metric_families_caches.begin(); it != metric_families_caches.end(); ++it)
+    if (insert_cache)
     {
-        if (it->second == insert_cache.get())
+        for (auto it = metric_families_caches.begin(); it != metric_families_caches.end(); ++it)
         {
-            metric_families_caches.erase(it);
-            break;
+            if (it->second == insert_cache.get())
+            {
+                metric_families_caches.erase(it);
+                break;
+            }
         }
     }
+    insert_cache.reset();
+    insert_cache_initialized = false;
 }
 
 TimeSeriesInsertCache * StorageTimeSeries::getInsertCache(const ContextPtr & local_context)
@@ -268,9 +277,24 @@ TimeSeriesInsertCache * StorageTimeSeries::getInsertCache(const ContextPtr & loc
         return nullptr;
     }
 
+    if (!isInnerTable(ViewTarget::MetricFamilies))
+    {
+        insert_cache_initialized = true;
+        return nullptr;
+    }
+
     const auto metric_families_table = getTargetTable(ViewTarget::MetricFamilies, local_context);
     insert_cache_initialized = true;
-    if (!metric_families_table->getName().ends_with("ReplacingMergeTree"))
+    if (metric_families_table->getName() != "ReplacingMergeTree")
+        return nullptr;
+
+    const Names expected_columns{
+        TimeSeriesColumnNames::MetricFamilyName,
+        TimeSeriesColumnNames::Type,
+        TimeSeriesColumnNames::Unit,
+        TimeSeriesColumnNames::Help};
+    const auto metadata = metric_families_table->getInMemoryMetadataPtr(local_context, false);
+    if (metadata->columns.getNamesOfPhysical() != expected_columns)
         return nullptr;
 
     insert_cache = std::make_unique<TimeSeriesInsertCache>(insert_cache_max_size_bytes);
@@ -656,7 +680,14 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
     setInMemoryMetadata(new_metadata);
 
     if (new_settings)
+    {
+        const bool reset_insert_cache
+            = ((*storage_settings.get())[TimeSeriesSetting::insert_cache_max_size_bytes]
+                != (*new_settings)[TimeSeriesSetting::insert_cache_max_size_bytes]);
         storage_settings.set(std::move(new_settings));
+        if (reset_insert_cache)
+            resetInsertCache();
+    }
 }
 
 
