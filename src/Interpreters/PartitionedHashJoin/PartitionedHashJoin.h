@@ -183,7 +183,6 @@ private:
 
     FillLane & getFillLane();
     FillLane & getFillLane(size_t worker_id);
-    void storeBlocksInRowStore();
     /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and
     /// filtered rows for RIGHT/FULL output.
     void storeBlockInRowStore(FillBlock & fill);

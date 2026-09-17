@@ -911,8 +911,7 @@ void HashJoinClause::releaseBuildScratch()
 
 void HashJoinClause::releaseTable()
 {
-    post_build_ctx.reset();
-    post_build_pool.reset();
+    releaseBuildScratch();
     table_maps.reset();
     build_arenas.clear();
 }

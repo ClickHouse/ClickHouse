@@ -367,12 +367,6 @@ const Block & PartitionedHashJoin::getTotals() const
     return totals;
 }
 
-void PartitionedHashJoin::storeBlocksInRowStore()
-{
-    for (auto & fill : build_blocks)
-        storeBlockInRowStore(fill);
-}
-
 void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
 {
     auto & data = *hash_join->data;
@@ -479,7 +473,8 @@ void PartitionedHashJoin::onBuildPhaseFinish()
     }
 
     clause.setDistinctEstimate(merged.estimate());
-    storeBlocksInRowStore();
+    for (auto & fill : build_blocks)
+        storeBlockInRowStore(fill);
     clause.decidePartitionPlan(accumulated_rows.load(std::memory_order_relaxed));
     ProfileEvents::increment(ProfileEvents::HashJoinPartitions, clause.partitionCount());
 }
