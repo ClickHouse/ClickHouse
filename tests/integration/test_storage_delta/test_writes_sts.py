@@ -107,8 +107,9 @@ def test_write_after_credentials_rotation(started_cluster):
     node.query(f"CREATE TABLE {path} (id Int32) ENGINE = DeltaLake({table_function(started_cluster, path)[len('deltaLake(') : -1]})")
     node.query(f"INSERT INTO {path} SELECT number FROM numbers(5)")
 
-    # Simulate an STS rotation between the two INSERTs: the kernel engine must be rebuilt with
-    # the new credentials fingerprint, and the second commit must land.
+    # Simulate an STS rotation between the two INSERTs. The write path opens a fresh kernel
+    # transaction per INSERT (no cached snapshot state to rebuild), so the contract is that the
+    # second commit lands with the rotated credentials.
     query_id = f"{path}_rotated"
     node.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
     try:
@@ -117,9 +118,6 @@ def test_write_after_credentials_rotation(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
     assert log_versions(started_cluster, path) == [0, 1, 2]
     assert node.query(f"SELECT count(), uniqExact(id) FROM {path}").strip() == "10\t10"
-    node.query("SYSTEM FLUSH LOGS")
-    rebuilt = node.query(f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' AND message ILIKE '%Rebuilding kernel snapshot state%'").strip()
-    logging.info("kernel rebuild log lines on the write path: %s", rebuilt)
     node.query(f"DROP TABLE {path}")
 
 
@@ -127,11 +125,14 @@ def test_stale_token_during_write_fails_closed(started_cluster):
     node = started_cluster.instances["node"]
     path = new_table(started_cluster, "test_sts_stale")
     node.query(f"CREATE TABLE {path} (id Int32) ENGINE = DeltaLake({table_function(started_cluster, path)[len('deltaLake(') : -1]})")
+    # The stale-token error fires when the kernel state is rebuilt, so force a rebuild too.
+    node.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
     node.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_stale_token_error")
     try:
         _, error = node.query_and_get_answer_with_error(f"INSERT INTO {path} SELECT number FROM numbers(5)")
     finally:
         node.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_stale_token_error")
+        node.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
     logging.info("stale token during write: %s", (error or "refreshed and committed").splitlines()[0][:200])
     versions = log_versions(started_cluster, path)
     if error:

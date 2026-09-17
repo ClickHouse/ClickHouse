@@ -236,12 +236,8 @@ def test_delta_lake_cluster_table_function_insert(started_cluster):
     create_empty_delta_table(started_cluster, "s3", path, pa.schema([("id", pa.int32(), False)]))
     url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{path}/"
 
-    _, error = node1.query_and_get_answer_with_error(f"INSERT INTO TABLE FUNCTION deltaLakeCluster('cluster', '{url}', 'minio', '{minio_secret_key}') SELECT number AS id FROM numbers(10)")
-    if error:
-        assert "NOT_IMPLEMENTED" in error or "BAD_ARGUMENTS" in error, error
-        assert log_versions(started_cluster, path) == [0]
-        return
-    # Accepted: exactly one commit, visible from every node, through the plain and the cluster function.
+    node1.query(f"INSERT INTO TABLE FUNCTION deltaLakeCluster('cluster', '{url}', 'minio', '{minio_secret_key}') SELECT number AS id FROM numbers(10)")
+    # Exactly one commit, visible from every node, through the plain and the cluster function.
     assert log_versions(started_cluster, path) == [0, 1]
     for node in (node1, node2):
         assert node.query(f"SELECT count() FROM deltaLake('{url}', 'minio', '{minio_secret_key}')").strip() == "10"

@@ -98,7 +98,7 @@ FEATURES = {
     "append_only": ("TBLPROPERTIES (delta.appendOnly = true)", None, None),
     "not_null": (None, None, "(NULL, 'x')"),
     "check_constraint": (None, "ALTER TABLE {t} ADD CONSTRAINT positive CHECK (id > 0)", "(-1, 'x')"),
-    "generated_column": (None, None, None),
+    "generated_column": (None, None, "(3, 'bad', 999)"),
     "change_data_feed": ("TBLPROPERTIES (delta.enableChangeDataFeed = true)", None, None),
     "deletion_vectors": ("TBLPROPERTIES (delta.enableDeletionVectors = true)", None, None),
     "liquid_clustering": ("CLUSTER BY (id)", None, None),
@@ -124,7 +124,21 @@ def create_feature_table(spark, name, path):
     spark.sql(f"INSERT INTO {table} VALUES (1, 'spark'" + (", TIMESTAMP_NTZ '2024-01-01 00:00:00'" if name == "timestamp_ntz" else "") + ")")
 
 
-@pytest.mark.parametrize("feature", sorted(FEATURES))
+@pytest.mark.parametrize(
+    "feature",
+    [
+        pytest.param(
+            f,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="https://github.com/ClickHouse/ClickHouse/issues/120653: the written timestamp is UTC-adjusted, Spark cannot read a timestamp_ntz column",
+            ),
+        )
+        if f == "timestamp_ntz"
+        else f
+        for f in sorted(FEATURES)
+    ],
+)
 def test_write_to_table_with_writer_feature(started_cluster, feature):
     node = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -166,6 +180,9 @@ def test_write_to_table_with_writer_feature(started_cluster, feature):
     assert [(r.id, r.v) for r in rows] == [(1, "spark"), (2, "clickhouse")], rows
     if feature == "generated_column":
         assert spark.sql(f"SELECT id2 FROM {table} WHERE id = 2").collect()[0].id2 == 3
+    if feature == "timestamp_ntz":
+        assert str(spark.sql(f"SELECT ts FROM {table} WHERE id = 2").collect()[0].ts) == "2024-06-01 12:00:00"
+        assert node.query(f"SELECT ts FROM {table_name} WHERE id = 2").strip() == "2024-06-01 12:00:00.000000"
     assert node.query(f"SELECT count() FROM {table_name}").strip() == "2"
 
     violating = FEATURES[feature][2]
@@ -243,63 +260,69 @@ def mock_engine_definition(started_cluster, path):
     return f"DeltaLake('http://resolver:{MOCK_PORT}/{started_cluster.minio_bucket}/{path}/', 'minio', '{minio_secret_key}')"
 
 
-def _new_mock_table(started_cluster, node, name):
+def _new_mock_table(started_cluster, node, name, partitioned):
     path = randomize_table_name(name)
-    create_empty_delta_table(started_cluster, "s3", path, pa.schema([("id", pa.int32(), False)]))
-    node.query(f"CREATE TABLE {path} (id Int32) ENGINE = {mock_engine_definition(started_cluster, path)}")
-    node.query(f"INSERT INTO {path} SELECT number AS id FROM numbers(5)")
-    assert node.query(f"SELECT count() FROM {path}").strip() == "5"
-    assert log_versions(started_cluster, path) == [0, 1]
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    create_empty_delta_table(started_cluster, "s3", path, schema, partition_by=["part"] if partitioned else None)
+    node.query(f"CREATE TABLE {path} (id Int32, part Int32) ENGINE = {mock_engine_definition(started_cluster, path)}")
+    node.query(f"INSERT INTO {path} SELECT number AS id, number % 2 AS part FROM numbers(6)")
+    _assert_consistent(started_cluster, node, path, 1, partitioned)
     return path
 
 
-def _insert_through_fault(started_cluster, node, path, stage, action, count, settings=""):
+def _insert_through_fault(started_cluster, node, path, stage, action, count, partitioned):
     broken_s3 = started_cluster.broken_s3
     broken_s3.reset()
-    # The data file is the first single-object PUT of an INSERT, the commit JSON the second.
-    broken_s3.setup_at_object_upload(count=count, after=0 if stage == "data_file" else 1, action=action)
+    # The data files are the first single-object PUTs of an INSERT (one per partition), the commit
+    # JSON the one after them.
+    data_files_per_insert = 2 if partitioned else 1
+    broken_s3.setup_at_object_upload(count=count, after=0 if stage == "data_file" else data_files_per_insert, action=action)
     try:
-        _, error = node.query_and_get_answer_with_error(f"INSERT INTO {path} SELECT number + 100 AS id FROM numbers(5) {settings}")
+        _, error = node.query_and_get_answer_with_error(f"INSERT INTO {path} SELECT number + 100 AS id, number % 2 AS part FROM numbers(6)")
     finally:
         broken_s3.reset()
     logging.info("%s/%s/%s: %s", stage, action, count, (error or "no error").splitlines()[0][:200])
     return error
 
 
-def _assert_consistent(started_cluster, node, path, committed_inserts):
+def _assert_consistent(started_cluster, node, path, committed_inserts, partitioned):
     assert log_versions(started_cluster, path) == list(range(committed_inserts + 1))
-    assert len(list_delta_data_files(started_cluster, "s3", path)) == committed_inserts
-    assert node.query(f"SELECT count() FROM {path}").strip() == str(committed_inserts * 5)
+    files_per_insert = 2 if partitioned else 1
+    assert len(list_delta_data_files(started_cluster, "s3", path)) == committed_inserts * files_per_insert
+    assert node.query(f"SELECT count() FROM {path}").strip() == str(committed_inserts * 6)
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
 @pytest.mark.parametrize("stage", ["data_file", "commit"])
 @pytest.mark.parametrize("action", ["connection_reset_by_peer", "slow_down"])
-def test_transient_s3_fault(started_cluster, stage, action):
+def test_transient_s3_fault(started_cluster, stage, action, partitioned):
     node = started_cluster.instances["node1"]
-    path = _new_mock_table(started_cluster, node, f"test_transient_{stage}_{action}")
-    error = _insert_through_fault(started_cluster, node, path, stage, action, count=1)
+    path = _new_mock_table(started_cluster, node, f"test_transient_{stage}_{action}", partitioned)
+    error = _insert_through_fault(started_cluster, node, path, stage, action, 1, partitioned)
     # Retried past the fault, or failed closed: never a half-committed table.
-    _assert_consistent(started_cluster, node, path, 1 if error else 2)
+    _assert_consistent(started_cluster, node, path, 1 if error else 2, partitioned)
     node.query(f"DROP TABLE {path}")
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
 @pytest.mark.parametrize("stage", ["data_file", "commit"])
-def test_persistent_s3_fault_fails_closed(started_cluster, stage):
+def test_persistent_s3_fault_fails_closed(started_cluster, stage, partitioned):
     node = started_cluster.instances["node1"]
-    path = _new_mock_table(started_cluster, node, f"test_persistent_{stage}")
-    error = _insert_through_fault(started_cluster, node, path, stage, "connection_reset_by_peer", count=100000)
+    path = _new_mock_table(started_cluster, node, f"test_persistent_{stage}", partitioned)
+    error = _insert_through_fault(started_cluster, node, path, stage, "connection_reset_by_peer", 100000, partitioned)
     assert error, "the INSERT succeeded although every upload was reset"
-    _assert_consistent(started_cluster, node, path, 1)
+    _assert_consistent(started_cluster, node, path, 1, partitioned)
     # The table keeps working once the fault is gone.
-    node.query(f"INSERT INTO {path} SELECT number + 200 AS id FROM numbers(5)")
-    _assert_consistent(started_cluster, node, path, 2)
+    node.query(f"INSERT INTO {path} SELECT number + 200 AS id, number % 2 AS part FROM numbers(6)")
+    _assert_consistent(started_cluster, node, path, 2, partitioned)
     node.query(f"DROP TABLE {path}")
 
 
-def test_concurrent_writers_through_slow_s3(started_cluster):
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_concurrent_writers_through_slow_s3(started_cluster, partitioned):
     node = started_cluster.instances["node1"]
     broken_s3 = started_cluster.broken_s3
-    path = _new_mock_table(started_cluster, node, "test_slow_concurrent")
+    path = _new_mock_table(started_cluster, node, "test_slow_concurrent", partitioned)
     broken_s3.reset()
     broken_s3.setup_slow_answers(minimal_length=0, timeout=1, probability=0.3)
     writers = 5
@@ -309,7 +332,7 @@ def test_concurrent_writers_through_slow_s3(started_cluster):
     def writer(i):
         barrier.wait()
         try:
-            node.query(f"INSERT INTO {path} SELECT number + {(i + 1) * 100} AS id FROM numbers(5)")
+            node.query(f"INSERT INTO {path} SELECT number + {(i + 1) * 100} AS id, number % 2 AS part FROM numbers(6)")
             outcomes[i] = "ok"
         except Exception as e:  # pylint: disable=broad-except
             outcomes[i] = str(e)
@@ -324,5 +347,5 @@ def test_concurrent_writers_through_slow_s3(started_cluster):
         if o != "ok":
             assert "commit conflict at version" in o, o
     successes = sum(1 for o in outcomes if o == "ok")
-    _assert_consistent(started_cluster, node, path, 1 + successes)
+    _assert_consistent(started_cluster, node, path, 1 + successes, partitioned)
     node.query(f"DROP TABLE {path}")
