@@ -92,8 +92,7 @@ public:
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
     std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
     bool canFilterTokensByLiterals() const;
-    /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on the tokens that contain
-    /// some pattern's mandatory literal, which is a superset of the ones it can accept.
+    /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
     void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();

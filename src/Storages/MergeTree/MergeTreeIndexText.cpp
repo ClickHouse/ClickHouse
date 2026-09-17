@@ -485,7 +485,7 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 
 using DictionaryBlockRanges = std::vector<std::pair<size_t, size_t>>;
 
-/// Ascending, non-overlapping, half-open block ranges; absent key ranges mean the whole dictionary, an empty result none.
+/// Ascending, non-overlapping, half-open block ranges.
 DictionaryBlockRanges blocksMatchingTokenKeyRanges(
     const DictionarySparseIndex & sparse_index, const std::optional<std::vector<TextIndexAnalyzer::TokenKeyRange>> & key_ranges)
 {
@@ -502,7 +502,6 @@ DictionaryBlockRanges blocksMatchingTokenKeyRanges(
         if (range_begin != 0)
             --range_begin;
 
-        /// Every token of a block starting after `end` is greater than every token the key range covers.
         size_t range_end = key_range.end.empty() ? sparse_index.size() : sparse_index.upperBound(key_range.end);
 
         if (range_begin < range_end)
