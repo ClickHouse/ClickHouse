@@ -11,8 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-user_ins="${CLICKHOUSE_DATABASE}_ins_05061"
-user_del="${CLICKHOUSE_DATABASE}_del_05061"
+user_ins="${CLICKHOUSE_DATABASE}_ins_05227"
+user_del="${CLICKHOUSE_DATABASE}_del_05227"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS src, dst;
