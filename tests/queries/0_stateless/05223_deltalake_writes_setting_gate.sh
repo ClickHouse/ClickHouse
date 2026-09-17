@@ -62,8 +62,10 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=0 --query "
 "
 state
 
-echo "-- a read-only session cannot write even with the setting on"
-${CLICKHOUSE_LOCAL} --readonly=1 --allow_delta_lake_writes=1 --query "
+echo "-- a read-only session cannot write even with the setting on (enabled before entering readonly)"
+${CLICKHOUSE_LOCAL} --query "
+    SET allow_delta_lake_writes = 1;
+    SET readonly = 1;
     INSERT INTO FUNCTION deltaLakeLocal('${TABLE}') VALUES (4);
 " 2>&1 | grep -o "READONLY"
 state
