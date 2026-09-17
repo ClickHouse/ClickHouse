@@ -1117,6 +1117,79 @@ def test_move_forged_destination_provenance(started_cluster, destination_token):
     assert read_s3_object(started_cluster, bucket, destination_key) == sentinel
 
 
+def test_move_token_is_scoped_to_the_keeper_name(started_cluster):
+    """The same Keeper path under two Keeper names is two queues: neither may take the
+    other's archive for its own committed copy and delete its source behind it."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    # The one string both queues are configured with; only the Keeper name qualifying it differs.
+    shared_keeper_path = f"/clickhouse/test_move_aux_{token}"
+    files_path = f"move_aux_{token}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    data = b"1,2,3\n"
+    put_s3_file_content(started_cluster, source_key, data)
+
+    # The queue on the auxiliary Keeper copies the object and then fails before the delete, so the
+    # destination carries its stamp while the generation it stamped is still there to be read again.
+    first = f"move_aux_first_{token}"
+    create_table(
+        started_cluster,
+        node,
+        first,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": f"{AUXILIARY_ZOOKEEPER_NAME}:{shared_keeper_path}",
+            "after_processing_retries": 0,
+        },
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+    try:
+        create_mv(node, first, f"{first}_dst")
+        wait_until(
+            lambda: move_counts(
+                started_cluster, "S3Queue", None, files_path, processed_prefix
+            )
+            == (1, 1)
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
+
+    # Both queues name the same path, so the first one's Keeper state has to be gone before the
+    # second one exists, or the second would see the object as already processed and never read it.
+    node.query(f"DROP TABLE {first}_mv SYNC")
+    node.query(f"DROP TABLE {first} SYNC")
+
+    second = f"move_aux_second_{token}"
+    create_table(
+        started_cluster,
+        node,
+        second,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": shared_keeper_path},
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    collisions_before = move_collisions(node)
+    create_mv(node, second, f"{second}_dst")
+
+    wait_until(lambda: int(node.query(f"SELECT count() FROM {second}_dst")) == 1)
+    # The destination is the other queue's archive, not this one's committed copy.
+    wait_until(lambda: move_collisions(node) > collisions_before)
+    assert move_counts(
+        started_cluster, "S3Queue", None, files_path, processed_prefix
+    ) == (1, 1)
+    assert (
+        read_s3_object(started_cluster, started_cluster.minio_bucket, destination_key)
+        == data
+    )
+
+
 def test_move_does_not_remove_rewritten_source(started_cluster):
     """The delete that ends a move must not remove a generation the copy never consumed: it is
     pinned to the generation that was copied, so a source replaced in between is left in place."""

@@ -88,19 +88,20 @@ constexpr auto move_source_last_modified_attribute = "clickhouse_move_source_las
 constexpr auto move_source_version_id_attribute = "clickhouse_move_source_version_id";
 /// The source generation alone does not prove who copied it: anything a `HeadObject` of the source shows
 /// can be restamped onto other bytes. The token is a digest of that generation keyed by the queue's Keeper
-/// path, so every attempt of the same queue (after a restart, on another replica) stamps the same token,
-/// while another queue moving the same key, or a restamp from public data, does not.
+/// identity, so every attempt of the same queue (after a restart, on another replica) stamps the same token,
+/// while another queue moving the same key, or a restamp from public data, does not. The identity carries the
+/// Keeper name as well as the path: the same path on two Keeper clusters is two queues, not one.
 constexpr auto move_token_attribute = "clickhouse_move_token";
 
 String makeMoveToken(
-    const String & keeper_path,
+    const String & keeper_identity,
     const String & source_path,
     const String & source_etag,
     time_t source_last_modified,
     const String & source_version_id)
 {
     SipHash hash;
-    hash.update(keeper_path);
+    hash.update(keeper_identity);
     hash.update(source_path);
     hash.update(source_etag);
     hash.update(source_last_modified);
@@ -110,7 +111,7 @@ String makeMoveToken(
 
 std::optional<ObjectAttributes> makeMoveProvenance(
     ObjectAttributes source_attributes,
-    const String & keeper_path,
+    const String & keeper_identity,
     const String & source_path,
     const String & source_etag,
     time_t source_last_modified,
@@ -122,7 +123,7 @@ std::optional<ObjectAttributes> makeMoveProvenance(
     source_attributes[move_source_etag_attribute] = source_etag;
     source_attributes[move_source_last_modified_attribute] = toString(size_t(source_last_modified));
     source_attributes[move_token_attribute]
-        = makeMoveToken(keeper_path, source_path, source_etag, source_last_modified, source_version_id);
+        = makeMoveToken(keeper_identity, source_path, source_etag, source_last_modified, source_version_id);
     if (!source_version_id.empty())
         source_attributes[move_source_version_id_attribute] = source_version_id;
     return source_attributes;
@@ -153,13 +154,13 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ObjectStoragePtr object_storage_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     AfterProcessingSettings settings_,
-    String keeper_path_)
+    String keeper_identity_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
     , table_metadata(table_metadata_)
     , settings(std::move(settings_))
-    , keeper_path(std::move(keeper_path_))
+    , keeper_identity(std::move(keeper_identity_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
 
@@ -541,7 +542,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                                     consumed.version_id = source_metadata->version_id;
                                     provenance = makeMoveProvenance(
                                         source_metadata->attributes,
-                                        keeper_path,
+                                        keeper_identity,
                                         source_object.remote_path,
                                         source_metadata->etag,
                                         source_metadata->last_modified.epochTime(),
@@ -737,7 +738,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         const auto provenance = move_if_none_match.empty() ? std::optional<ObjectAttributes>{}
                                                                            : makeMoveProvenance(
                                                                                  source_info.metadata,
-                                                                                 keeper_path,
+                                                                                 keeper_identity,
                                                                                  object_from.remote_path,
                                                                                  source_info.etag,
                                                                                  source_info.last_modification_time,
@@ -918,7 +919,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             ? std::optional<ObjectAttributes>{}
                             : makeMoveProvenance(
                                   ObjectAttributes{properties.Metadata.begin(), properties.Metadata.end()},
-                                  keeper_path,
+                                  keeper_identity,
                                   object_from.remote_path,
                                   current_etag,
                                   std::chrono::system_clock::to_time_t(

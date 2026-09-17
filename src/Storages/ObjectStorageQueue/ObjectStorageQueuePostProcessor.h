@@ -31,14 +31,15 @@ public:
         String after_processing_tag_value;
     };
 
-    /// `keeper_path_` identifies the queue (shared by its replicas) that stamps and recognizes its own moves.
+    /// `keeper_identity_` identifies the queue (shared by its replicas) that stamps and recognizes its
+    /// own moves: the Keeper path, qualified by the Keeper name when it is not the default one.
     ObjectStorageQueuePostProcessor(
         ContextPtr context_,
         ObjectStorageType type_,
         ObjectStoragePtr object_storage_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         AfterProcessingSettings settings_,
-        String keeper_path_);
+        String keeper_identity_);
 
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// The method intercepts exceptions caused by remote storage interaction and reports them to the log,
@@ -113,7 +114,7 @@ private:
     const ObjectStoragePtr object_storage;
     const ObjectStorageQueueTableMetadata & table_metadata;
     const AfterProcessingSettings settings;
-    const String keeper_path;
+    const String keeper_identity;
 
     LoggerPtr log;
 };

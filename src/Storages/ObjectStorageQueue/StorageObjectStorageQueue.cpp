@@ -1210,11 +1210,17 @@ void StorageObjectStorageQueue::postProcess(
     std::optional<ObjectStorageQueuePostProcessor> post_processor;
 
     LOG_TEST(log, "Executing post process for {} objects", successful_objects.size());
+    /// The path alone does not identify the queue: the same path under two Keeper names is two
+    /// queues, and neither may take the other's archived object for its own committed copy.
+    const auto & keeper_name = metadata.getZooKeeperName();
+    const auto keeper_identity = keeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME
+        ? metadata.getPath()
+        : keeper_name + ":" + metadata.getPath();
     {
         std::lock_guard lock(mutex);
         post_processor.emplace(
             getContext(), type, object_storage, metadata.getTableMetadata(), after_processing_settings,
-            metadata.getPath());
+            keeper_identity);
     }
 
     if (post_processor)
