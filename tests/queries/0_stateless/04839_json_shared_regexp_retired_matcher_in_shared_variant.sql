@@ -11,13 +11,16 @@ DROP TABLE IF EXISTS retired_matcher_shared_variant_04839;
 -- next widening ALTER promotes it out and the retired name absorbs values written after the
 -- policy was retired. The column then has no row on the type it declares, and a read naming the
 -- declared type comes back empty rather than failing.
+-- Re-promotion opted in, so a merge writes the table's own rule-free type instead of retaining the
+-- retired rule as placement provenance; only then is a name left behind observably wrong.
 CREATE TABLE retired_matcher_shared_variant_04839
 (
     id UInt64,
     j JSON(max_dynamic_paths=10, max_dynamic_types=2, SHARED REGEXP '^tag_')
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_json_shared_data_paths_repromotion = 1;
 
 -- Two frequent scalar types fill max_dynamic_types, so the rare nested object spills.
 INSERT INTO retired_matcher_shared_variant_04839 SELECT number, concat('{"arr": ', toString(number), '}') FROM numbers(10);
@@ -58,7 +61,8 @@ CREATE TABLE retired_matcher_regular_variant_04839
     j JSON(max_dynamic_paths=10, max_dynamic_types=2, SHARED REGEXP '^tag_')
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_json_shared_data_paths_repromotion = 1;
 
 INSERT INTO retired_matcher_regular_variant_04839 VALUES (1, '{"arr": [{"tag_x": 1}]}');
 OPTIMIZE TABLE retired_matcher_regular_variant_04839 FINAL;
