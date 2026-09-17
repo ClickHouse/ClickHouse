@@ -2876,7 +2876,7 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
 
-        DETACH TABLE test.{kafka_table};
+        DETACH TABLE test.{kafka_table} SYNC;
         ATTACH TABLE test.{kafka_table};
         """
     )
@@ -2964,7 +2964,7 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
                _error AS error
                FROM test.{kafka_table} WHERE length(_error) > 0;
 
-        DETACH TABLE test.{kafka_table};
+        DETACH TABLE test.{kafka_table} SYNC;
         ATTACH TABLE test.{kafka_table};
     """)
 
