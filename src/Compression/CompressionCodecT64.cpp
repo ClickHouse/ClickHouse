@@ -225,17 +225,16 @@ TypeIndex baseType(TypeIndex type_idx)
     return TypeIndex::Nothing;
 }
 
-/** Compression-side transposes. Both exchange the two indices of an 8x8 tile: the byte transpose moves
-  * the byte at 8 * j + b to 8 * b + j across eight consecutive lanes, and the bit transpose does the same
-  * one level down, within a lane. The scalar loops below carry out either exchange one byte (or one bit)
-  * at a time. The byte exchange instead becomes a single whole-vector byte shuffle, and the bit exchange
-  * three mask-and-shift delta swaps per lane.
+/** Both transposes exchange the two indices of an 8x8 tile: the byte transpose moves the byte at
+  * 8 * j + b to 8 * b + j across eight consecutive lanes, and the bit transpose does the same one
+  * level down, within a lane. The scalar loops below carry out either exchange one byte (or one
+  * bit) at a time. The byte exchange instead becomes a single whole-vector byte shuffle, and the
+  * bit exchange three mask-and-shift delta swaps per lane.
   *
-  * The kernels are written with generic clang vectors, so no arch-specific code or runtime dispatch is
-  * needed: the compiler lowers each permutation to the target's own shuffle sequence. Bytes are addressed
-  * in native order, so the fast path also requires a little-endian build to match the little-endian
-  * on-disk format; others fall back to the scalar loops. Decompression uses `reverseTranspose64x8` below,
-  * which reads only the stored planes.
+  * The kernels are written with generic clang vectors, so no arch-specific code or runtime
+  * dispatch is needed: the compiler lowers each permutation to the target's own shuffle sequence.
+  * Bytes are addressed in native order, so the fast path also requires a little-endian build to
+  * match the little-endian on-disk format; others fall back to the scalar loops.
   */
 #if (((defined(__x86_64__) || defined(__i386__)) && defined(__SSE2__)) || (defined(__aarch64__) && defined(__ARM_NEON))) \
     && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -280,8 +279,9 @@ ALWAYS_INLINE UInt64 transposeBitsInLane(UInt64 lane)
 ALWAYS_INLINE void transpose64x8(UInt64 * src_dst)
 {
 #if T64_CODEC_SIMD_TRANSPOSE
-    /// A 64x8 bit transpose is the per-lane bit transpose followed by the byte transpose across lanes.
-    /// The byte pass is shared with `transposeMatrixBytes`.
+    /// A 64x8 bit transpose is the per-lane bit transpose followed by the byte transpose across
+    /// lanes; applying the two passes in the opposite order inverts it, which is what
+    /// `reverseTranspose64x8` below does. The byte pass is shared with the matrix transposes.
     for (UInt32 lane = 0; lane < 8; ++lane)
         src_dst[lane] = transposeBitsInLane(src_dst[lane]);
     transposeByteLanes(src_dst);
@@ -306,9 +306,38 @@ ALWAYS_INLINE void transpose64x8(UInt64 * src_dst)
 #endif
 }
 
-/// Inverse of `transpose64x8`. Bit i of plane p (UInt64) becomes bit p of byte i. Reads only the first `num_bits` planes (the rest are 0).
+ALWAYS_INLINE void reverseTranspose64x8(UInt64 * src_dst)
+{
+#if T64_CODEC_SIMD_TRANSPOSE
+    transposeByteLanes(src_dst);
+    UInt64 lanes[8];
+    memcpy(lanes, src_dst, sizeof(lanes));
+    for (auto & lane : lanes)
+        lane = transposeBitsInLane(lane);
+    memcpy(src_dst, lanes, sizeof(lanes));
+#else
+    UInt8 dst8[64];
+
+    for (UInt32 i = 0; i < 64; ++i)
+    {
+        dst8[i] = static_cast<UInt8>(
+            ((src_dst[0] >> i) & 0x1)
+            | (((src_dst[1] >> i) & 0x1) << 1)
+            | (((src_dst[2] >> i) & 0x1) << 2)
+            | (((src_dst[3] >> i) & 0x1) << 3)
+            | (((src_dst[4] >> i) & 0x1) << 4)
+            | (((src_dst[5] >> i) & 0x1) << 5)
+            | (((src_dst[6] >> i) & 0x1) << 6)
+            | (((src_dst[7] >> i) & 0x1) << 7));
+    }
+
+    memcpy(src_dst, dst8, 8 * sizeof(UInt64));
+#endif
+}
+
+/// Inverse of `transpose64x8` reading only the first `num_bits` planes (the rest are 0): bit i of plane p becomes bit p of byte i.
 /// Please do not touch this function unless you really know what you are doing – it's tightly vectorised.
-ALWAYS_INLINE void reverseTranspose64x8(UInt64 * matrix, UInt32 num_bits)
+ALWAYS_INLINE void reverseTransposePlanes(UInt64 * matrix, UInt32 num_bits)
 {
     /// pattern[i] = 1 << (i % 8): the bit of output byte i inside its plane byte.
     static constexpr UInt8 pattern[64] = {
@@ -444,6 +473,54 @@ ALWAYS_INLINE void transposeMatrixBytes(const T * src, UInt64 * matrix, UInt32 t
         transposeBytes(src[col], matrix, col);
 }
 
+template <typename T>
+T restoreUpperBits(T value, T upper_min, T upper_max, T sign_bit)
+{
+    if constexpr (is_signed_v<T>)
+    {
+        if (sign_bit && !(value & sign_bit))
+            return static_cast<T>(value | upper_max);
+    }
+
+    return static_cast<T>(value | upper_min);
+}
+
+/// Inverse of `transposeMatrixBytes`, fused with `restoreUpperBits` and the stores. A full matrix of 8-byte values goes
+/// through the byte shuffle eight values at a time, about twice as fast as `reverseTransposeBytes` on NEON. A separate
+/// helper because `#if` cannot sit inside `MULTITARGET_FUNCTION_BODY`.
+template <typename T>
+ALWAYS_INLINE void reverseTransposeMatrixBytes(const UInt64 * matrix, char * dst, UInt32 tail, T upper_min, T upper_max, T sign_bit)
+{
+#if T64_CODEC_SIMD_TRANSPOSE
+    if constexpr (sizeof(T) == sizeof(UInt64))
+    {
+        if (tail == 64)
+        {
+            for (UInt32 group = 0; group < 8; ++group)
+            {
+                UInt64 rows[8];
+                for (UInt32 byte = 0; byte < 8; ++byte)
+                    rows[byte] = matrix[8 * byte + group];
+                transposeByteLanes(rows);
+                for (UInt32 row = 0; row < 8; ++row)
+                {
+                    T value = restoreUpperBits(static_cast<T>(rows[row]), upper_min, upper_max, sign_bit);
+                    unalignedStore<T>(dst + row * sizeof(T), value);
+                }
+                dst += 8 * sizeof(T);
+            }
+            return;
+        }
+    }
+#endif
+    for (UInt32 col = 0; col < tail; ++col)
+    {
+        T value = reverseTransposeBytes<T>(matrix, col);
+        value = restoreUpperBits(value, upper_min, upper_max, sign_bit);
+        unalignedStore<T>(dst + col * sizeof(T), value);
+    }
+}
+
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
@@ -490,18 +567,6 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
     {
         transposeImpl<T, full>(src, dst, num_bits, tail);
     }
-}
-
-template <typename T>
-T restoreUpperBits(T value, T upper_min, T upper_max, T sign_bit)
-{
-    if constexpr (is_signed_v<T>)
-    {
-        if (sign_bit && !(value & sign_bit))
-            return static_cast<T>(value | upper_max);
-    }
-
-    return static_cast<T>(value | upper_min);
 }
 
 /// one_bit_expansion[b][j] = bit j of byte b.
@@ -567,8 +632,9 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
         UInt64 matrix[8] = {};
         memcpy(matrix, src, num_bits * sizeof(UInt64));
 
+        /// Always the plane loop. The shuffle measured slower here even at six to eight planes.
         if (full || part_bits)
-            reverseTranspose64x8(matrix, num_bits);
+            reverseTransposePlanes(matrix, num_bits);
 
         const auto * values = reinterpret_cast<const unsigned char *>(matrix);
         for (UInt32 col = 0; col < tail; ++col)
@@ -589,21 +655,20 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
     {
         UInt64 * matrix_line = matrix;
         for (UInt32 byte = 0; byte < full_bytes; ++byte, matrix_line += 8)
-            reverseTranspose64x8(matrix_line, /* num_bits */ 8);
+            reverseTranspose64x8(matrix_line);
     }
 
     if (part_bits)
     {
         UInt64 * matrix_line = &matrix[full_bytes * 8];
-        reverseTranspose64x8(matrix_line, part_bits);
+        /// The shuffle wins from four planes in the bit variant (`full`) and loses at every count in the byte variant.
+        if (full && part_bits >= 4)
+            reverseTranspose64x8(matrix_line);
+        else
+            reverseTransposePlanes(matrix_line, part_bits);
     }
 
-    for (UInt32 col = 0; col < tail; ++col)
-    {
-        T value = reverseTransposeBytes<T>(matrix, col);
-        value = restoreUpperBits(value, upper_min, upper_max, sign_bit);
-        unalignedStore<T>(dst + col * sizeof(T), value);
-    }
+    reverseTransposeMatrixBytes(matrix, dst, tail, upper_min, upper_max, sign_bit);
 })
 )
 
