@@ -111,14 +111,6 @@ bool tokenEqualsKeyword(const Token & token, Keyword keyword)
                                     toStringView(keyword));
 }
 
-bool isActionLeadingToken(const Token & token)
-{
-    return tokenEqualsKeyword(token, Keyword::MODIFY)
-        || tokenEqualsKeyword(token, Keyword::PAGE)
-        || tokenEqualsKeyword(token, Keyword::ONELINE)
-        || tokenEqualsKeyword(token, Keyword::MULTILINE);
-}
-
 bool canFollowExplainTextActions(const Token & token)
 {
     if (token.type == TokenType::EndOfStream
@@ -137,6 +129,14 @@ bool canFollowExplainTextActions(const Token & token)
         || equalsCaseInsensitive(text, toStringView(Keyword::SETTINGS))
         || equalsCaseInsensitive(text, "INTO");
 }
+}
+
+bool isExplainTextActionLeadingToken(const Token & token)
+{
+    return tokenEqualsKeyword(token, Keyword::MODIFY)
+        || tokenEqualsKeyword(token, Keyword::PAGE)
+        || tokenEqualsKeyword(token, Keyword::ONELINE)
+        || tokenEqualsKeyword(token, Keyword::MULTILINE);
 }
 
 bool ParserExplainTextActions::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -170,7 +170,7 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
         if (at_top_level && (scan->type == TokenType::Semicolon || scan->type == TokenType::VerticalDelimiter || scan->type == TokenType::ClosingRoundBracket))
             break;
 
-        if (at_top_level && previous_type != TokenType::Comma && isActionLeadingToken(*scan))
+        if (at_top_level && previous_type != TokenType::Comma && isExplainTextActionLeadingToken(*scan))
             candidates.push_back(scan);
 
         switch (scan->type)
@@ -214,7 +214,7 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
         ASTPtr candidate_actions;
         const bool parsed_actions = actions_parser.parse(pos, candidate_actions, expected);
         const bool valid_actions_end = parsed_actions && canFollowExplainTextActions(*pos);
-        const bool missing_comma = parsed_actions && isActionLeadingToken(*pos);
+        const bool missing_comma = parsed_actions && isExplainTextActionLeadingToken(*pos);
         auto actions_end = pos;
 
         /// Return to the source beginning and charge the candidate

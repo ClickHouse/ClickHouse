@@ -21,6 +21,7 @@
 #include <Parsers/registerStatements.h>
 
 #include <algorithm>
+#include <string_view>
 
 #if !defined(CLICKHOUSE_PARSER_NO_DCL)
 #include <Parsers/Access/ASTExecuteAsQuery.h>
@@ -31,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -242,7 +244,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             /// actions are optional. upon failing the parser restores `pos` while keeping
             /// diagnostics for improper action leading input in `expected`.
             ParserExplainTextActions actions_parser;
-            actions_parser.parse(pos, actions, expected);
+            if (actions_parser.parse(pos, actions, expected) && isExplainTextActionLeadingToken(*pos))
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Missing comma between EXPLAIN TEXT actions before '{}'", std::string_view(pos->begin, pos->size()));
         }
         else if (!parseExplainTextBareSourceAndActions(pos, query, actions, expected, end, allow_settings_after_format_in_insert))
         {
@@ -506,9 +509,9 @@ In the bare form with actions, output options before the first action belong to 
 
 `SETTINGS` parsed as part of the source `SELECT` remain source settings. To apply settings to `EXPLAIN TEXT`, put them after the source's closing parenthesis or after the action list.
 
-Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, even when values for those parameters have been supplied. Outer settings are applied normally.
+Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, even when values for those parameters have been supplied. Outer settings are applied normally, except the query-construction settings (`select`, `filter`, `order`, `sort`, `limit`, `offset` and `page`), which are rejected because `EXPLAIN TEXT` does not execute its source; use `MODIFY LIMIT`, `MODIFY OFFSET` and `PAGE` actions instead.
 
-In bare syntax, action keywords take precedence over implicit aliases. For example, `EXPLAIN TEXT SELECT 1 ONELINE` requests single-line formatting. Use `AS`, quote the alias, or parenthesize the source when `ONELINE` is intended as an alias.
+In bare syntax, action keywords take precedence over implicit aliases when they form a complete action. For example, `EXPLAIN TEXT SELECT 1 ONELINE` requests single-line formatting, while `EXPLAIN TEXT SELECT 1 PAGE` (no page number) formats `SELECT 1 AS PAGE`. Use `AS`, quote the alias, or parenthesize the source when `ONELINE` is intended as an alias.
 
 **Examples**
 

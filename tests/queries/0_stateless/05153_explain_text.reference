@@ -25,7 +25,6 @@ SELECT 1 LIMIT multiply({explain_text_size:UInt64}, 2), {explain_text_size:UInt6
 {"text":"SELECT {explain_text_format:String}"}
 SELECT 1 SETTINGS max_threads = \'not-a-number\'
 SELECT 1 SETTINGS max_threads = {explain_text_threads:UInt64}
-SELECT 1
 SELECT 1 SETTINGS filter = \'0\'
 SELECT * FROM (SELECT 1 SETTINGS filter = \'0\')
 SELECT 1 SETTINGS filter = \'0\' UNION ALL SELECT 2

@@ -64,8 +64,8 @@ SETTINGS output_format = {explain_text_format:String};
 EXPLAIN TEXT (SELECT 1 SETTINGS max_threads = 'not-a-number') ONELINE;
 EXPLAIN TEXT (SELECT 1 SETTINGS max_threads = {explain_text_threads:UInt64}) ONELINE;
 
--- Construction settings must not rewrite the source.
-EXPLAIN TEXT SELECT 1 ONELINE SETTINGS filter = '0';
+ -- Outer construction settings are rejected; source ones stay preserved text.
+EXPLAIN TEXT SELECT 1 ONELINE SETTINGS filter = '0'; -- { serverError BAD_ARGUMENTS }
 EXPLAIN TEXT (SELECT 1 SETTINGS filter = '0') ONELINE;
 EXPLAIN TEXT (SELECT * FROM (SELECT 1 SETTINGS filter = '0')) ONELINE;
 EXPLAIN TEXT (SELECT 1 SETTINGS filter = '0' UNION ALL SELECT 2) ONELINE;

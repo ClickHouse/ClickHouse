@@ -209,9 +209,20 @@ protected:
                                             && !dynamic_cast<const ASTQueryWithOutput *>(query.get())
                                             && query->getQueryKind() != QueryKind::Insert
                                             && query->getQueryKind() != QueryKind::AsyncInsertFlush);
+
+            /// the `EXPLAIN TEXT` wrapper already separates the source from the trailing output
+            /// options so the source must not parenthesize itself again for them. otherwise a
+            /// trailing `SETTINGS` makes `ASTSelectWithUnionQuery` wrap its `SELECT` a second time
+            auto source_frame = frame;
+            if (kind == FormattedQuery)
+            {
+                source_frame.has_trailing_output_options = false;
+                source_frame.parent_has_trailing_settings = false;
+            }
+
             if (need_parens)
                 ostr << "(";
-            query->format(ostr, settings, state, frame);
+            query->format(ostr, settings, state, source_frame);
             if (need_parens)
                 ostr << ")";
         }
