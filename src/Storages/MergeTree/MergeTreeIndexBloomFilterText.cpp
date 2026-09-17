@@ -412,7 +412,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
 
                 Field rewritten_field(likePatternWithCustomEscapeToLikePattern(
                     pattern_field.safeGet<String>(), escape_str[0]));
-                if (traverseTreeEquals(function_name, lhs_argument, pattern_type, rewritten_field, out))
+                if (traverseTreeEquals(function_name, lhs_argument, pattern_type, rewritten_field, out, /*reversed=*/ false))
                     return true;
             }
             return false;
@@ -463,13 +463,13 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
 
             if (right_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseTreeEquals(function_name, left_argument, const_type, const_value, out))
+                if (traverseTreeEquals(function_name, left_argument, const_type, const_value, out, /*reversed=*/ false))
                     return true;
             }
             else if (left_argument.tryGetConstant(const_value, const_type) &&
                 (function_name == "equals" || function_name == "has" || function_name == "hasAny" || function_name == "notEquals"))
             {
-                if (traverseTreeEquals(function_name, right_argument, const_type, const_value, out))
+                if (traverseTreeEquals(function_name, right_argument, const_type, const_value, out, /*reversed=*/ true))
                     return true;
             }
         }
@@ -528,7 +528,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
-    RPNElement & out)
+    RPNElement & out,
+    bool reversed)
 {
     /// Try JSON subcolumn detection early, before the string-type check.
     /// JSON path comparison values may not be strings (e.g., json.a.b = 1 where value is UInt8),
@@ -688,6 +689,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
     if (map_key_index)
     {
+        /// The index holds the terms of each key of the map, never a term per whole map.
+        if (reversed)
+            return false;
+
         if (function_name == "has" || function_name == "mapContainsKey" || function_name == "mapContains")
         {
             out.key_column = *map_key_index;
