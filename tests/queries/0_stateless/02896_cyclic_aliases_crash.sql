@@ -2,6 +2,13 @@
 SET max_ast_depth = 10_000_000;
 
 -- Old analyzer hits cyclic alias recursion on this pattern
+SELECT
+    val,
+    val + 1 as prev,
+    val + prev as val
+FROM ( SELECT 1 as val )
+SETTINGS enable_analyzer = 0
+; -- { serverError CYCLIC_ALIASES, UNKNOWN_IDENTIFIER, TOO_DEEP_RECURSION }
 
 -- Analyzer resolves this pattern without a cycle (aliases bind differently. val binds to the original column, not the alias)
 SELECT

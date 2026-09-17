@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -84,9 +83,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
 
 Block StorageSystemDatabases::getFilterSampleBlock() const
 {
-    /// Must list every column of the block passed to filterBlockWithPredicate in getFilteredDatabases.
     return {
-        { {}, std::make_shared<DataTypeString>(), "name" },
         { {}, std::make_shared<DataTypeString>(), "engine" },
         { {}, std::make_shared<DataTypeUUID>(), "uuid" },
     };
@@ -166,6 +163,3 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabases) }

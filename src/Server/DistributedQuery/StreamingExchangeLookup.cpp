@@ -1,4 +1,4 @@
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#ifdef OS_LINUX
 
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
@@ -23,12 +23,10 @@ public:
     explicit StreamingExchangeLookup(
         const String & query_id_,
         ExchangeConnectionsPtr connections_,
-        const ExchangeStreamSources & exchange_stream_sources_,
-        DistributedQueryCancellationPtr cancellation_)
+        const ExchangeStreamSources & exchange_stream_sources_)
         : query_id(query_id_)
         , connections(connections_)
         , exchange_stream_sources(exchange_stream_sources_)
-        , cancellation(std::move(cancellation_))
     {
     }
 
@@ -48,24 +46,21 @@ public:
         if (it->second.port == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "No streaming exchange port for exchange stream {} on host {}", stream_name, it->second.host);
-        return std::make_shared<StreamingExchangeSource>(
-            output_header, query_id, stream_name, it->second.host, it->second.port, cancellation);
+        return std::make_shared<StreamingExchangeSource>(output_header, query_id, stream_name, it->second.host, it->second.port);
     }
 
 private:
     const String query_id;
     const ExchangeConnectionsPtr connections;
     const ExchangeStreamSources exchange_stream_sources;
-    const DistributedQueryCancellationPtr cancellation;
 };
 
 ExchangeLookupPtr createStreamingExchangeLookup(
     const String & query_id,
     ExchangeConnectionsPtr connections,
-    const ExchangeStreamSources & exchange_stream_sources,
-    DistributedQueryCancellationPtr cancellation)
+    const ExchangeStreamSources & exchange_stream_sources)
 {
-    return std::make_shared<StreamingExchangeLookup>(query_id, connections, exchange_stream_sources, std::move(cancellation));
+    return std::make_shared<StreamingExchangeLookup>(query_id, connections, exchange_stream_sources);
 }
 
 }
