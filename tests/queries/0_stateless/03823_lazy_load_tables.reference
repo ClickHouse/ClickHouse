@@ -6,6 +6,7 @@ t1	MergeTree	1
 v1	View	1
 t2	MergeTree	0
 0
+al	Alias	1
 mv	MaterializedView	1
 src	MergeTree	0
 dict

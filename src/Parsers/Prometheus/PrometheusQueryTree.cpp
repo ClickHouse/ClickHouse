@@ -162,7 +162,6 @@ namespace
     NodeType * cloneNodeImpl(const NodeType * node, std::vector<std::unique_ptr<Node>> & node_list)
     {
         auto new_node = std::make_unique<NodeType>(*node);
-        auto * ptr = new_node.get();
         for (const auto * & child : new_node->children)
         {
             auto * new_child = child->clone(node_list);
@@ -171,7 +170,7 @@ namespace
         }
         new_node->parent = nullptr;
         node_list.emplace_back(std::move(new_node));
-        return ptr;
+        return static_cast<NodeType *>(node_list.back().get());
     }
 }
 
