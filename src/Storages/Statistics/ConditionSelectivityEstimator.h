@@ -28,7 +28,6 @@ class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
@@ -64,8 +63,6 @@ public:
     RelationProfile estimateRelationProfile() const;
 
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Same check against a query's analyzed part set, without materializing a parts vector.
-    bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement
     {
@@ -104,9 +101,6 @@ public:
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
-
-    UInt64 getTotalRows() const { return total_rows; }
-
 private:
     friend class ColumnStatistics;
 
@@ -120,6 +114,13 @@ private:
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+
+    /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
+    /// the share of rows inside the set's bounding range, capped by the share of distinct values the set
+    /// can possibly cover. Costs one pass for the bounds and a single statistics probe, where turning the
+    /// set into ranges costs a `Field` per element, a sort and one probe per element.
+    Selectivity estimateSelectivityFromSetSize(
+        const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.

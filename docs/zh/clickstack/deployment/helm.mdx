@@ -51,13 +51,17 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
 <br />
 
 <Steps>
-  <Step title="前置条件" id="prerequisites">
+  <Step>
+    ### 前置条件
+
     * [Helm](https://helm.sh/) v3+
     * Kubernetes 集群 (推荐使用 v1.20+)
     * 已配置为与集群交互的 `kubectl`
   </Step>
 
-  <Step title="添加 ClickStack Helm 仓库" id="add-the-clickstack-helm-repository">
+  <Step>
+    ### 添加 ClickStack Helm 仓库
+
     添加 ClickStack Helm 仓库：
 
     ```shell
@@ -66,7 +70,9 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     ```
   </Step>
 
-  <Step title="安装 Operator" id="install-the-operators">
+  <Step>
+    ### 安装 Operator
+
     请先安装 operator chart。这会注册主 chart 所需的 CRD：
 
     ```shell
@@ -80,7 +86,9 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     ```
   </Step>
 
-  <Step title="安装 ClickStack" id="installing-clickstack">
+  <Step>
+    ### 安装 ClickStack
+
     operator 运行起来后，安装主 Chart：
 
     ```shell
@@ -88,7 +96,9 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     ```
   </Step>
 
-  <Step title="验证安装" id="verify-the-installation">
+  <Step>
+    ### 验证安装
+
     请验证安装是否成功：
 
     ```shell
@@ -98,7 +108,9 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     当所有 Pod (容器组) 都处于就绪状态后，请继续。
   </Step>
 
-  <Step title="端口转发" id="forward-ports">
+  <Step>
+    ### 端口转发
+
     端口转发可让我们访问并配置 HyperDX。部署到生产环境时，用户应改为通过入口或负载均衡器暴露该服务，以确保合适的网络访问、TLS 终止和可扩展性。端口转发更适合本地开发或一次性的管理操作，不适用于长期运行或高可用环境。
 
     ```shell
@@ -114,7 +126,9 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     </Tip>
   </Step>
 
-  <Step title="进入 UI" id="navigate-to-the-ui">
+  <Step>
+    ### 进入 UI
+
     访问 [http://localhost:8080](http://localhost:8080) 以访问 HyperDX UI。
 
     创建用户，并输入符合要求的用户名和密码。
@@ -130,7 +144,9 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     </Info>
   </Step>
 
-  <Step title="自定义值 (可选)" id="customizing-values">
+  <Step>
+    ### 自定义值 (可选)
+
     您可以使用 `--set` 参数来自定义设置。例如：
 
     ```shell
@@ -172,7 +188,9 @@ v2.x 图表 采用**两阶段安装**。首先通过 `clickstack-operators` 图�
     ```
   </Step>
 
-  <Step title="使用 secrets (可选)" id="using-secrets">
+  <Step>
+    ### 使用 secrets (可选)
+
     v2.x chart 使用一个统一的 secret (`clickstack-secret`) ，其内容从 values 中的 `hyperdx.secrets` 填充。所有敏感环境变量——包括 ClickHouse 密码、MongoDB 密码和 HyperDX API key——都会通过这一个 secret 统一传递。
 
     如需覆盖 secret 中的值：

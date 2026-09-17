@@ -41,7 +41,7 @@ namespace bg = boost::geometry;
 using BPoint = CartesianPoint;
 using BBox = bg::model::box<BPoint>;
 
-/// Global discriminators of the `Geometry` Variant. The order is fixed and new geo types are appended.
+/// Global discriminator order of the `Geometry` Variant: alternatives are sorted alphabetically by type name.
 namespace GeoDisc
 {
     constexpr UInt8 LineString = 0;
@@ -50,7 +50,6 @@ namespace GeoDisc
     constexpr UInt8 Point = 3;
     constexpr UInt8 Polygon = 4;
     constexpr UInt8 Ring = 5;
-    constexpr UInt8 MultiPoint = 6;
 }
 
 /// The Web Mercator projection spans 2^32 units on each axis (the standard XYZ tile scheme).
@@ -214,7 +213,6 @@ Ring<BPoint> clipRingToBox(const Ring<BPoint> & ring, Float64 lo_x, Float64 lo_y
 struct GeometryVariantBuilder
 {
     PointSerializer<BPoint> point;
-    MultiPointSerializer<BPoint> multi_point;
     LineStringSerializer<BPoint> line_string;
     MultiLineStringSerializer<BPoint> multi_line_string;
     PolygonSerializer<BPoint> polygon;
@@ -228,12 +226,6 @@ struct GeometryVariantBuilder
     {
         point.add(p);
         discriminators->insertValue(GeoDisc::Point);
-    }
-
-    void addMultiPoint(const MultiPoint<BPoint> & value)
-    {
-        multi_point.add(value);
-        discriminators->insertValue(GeoDisc::MultiPoint);
     }
 
     void addMultiLineString(const MultiLineString<BPoint> & value)
@@ -257,7 +249,6 @@ struct GeometryVariantBuilder
         columns.push_back(point.finalize());              /// 3 Point
         columns.push_back(polygon.finalize());            /// 4 Polygon
         columns.push_back(ring.finalize());               /// 5 Ring
-        columns.push_back(multi_point.finalize());        /// 6 MultiPoint
         return ColumnVariant::create(std::move(discriminators), columns);
     }
 };
@@ -303,7 +294,7 @@ public:
         if (geometry_type->getName() != "Geometry" && !getGeometryColumnTypeFromDataType(geometry_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function {} must be a geometry (Point, MultiPoint, LineString, MultiLineString, Ring, Polygon, "
+                "The first argument of function {} must be a geometry (Point, LineString, MultiLineString, Ring, Polygon, "
                 "MultiPolygon or Geometry), got {}",
                 getName(),
                 arguments[0].type->getName());
@@ -413,29 +404,6 @@ public:
                 return;
             }
             builder.addPoint(p);
-        };
-
-        auto process_multipoint = [&](const MultiPoint<BPoint> & points, const Projection & projection, const BBox & box, bool clip)
-        {
-            /// Snap to the integer pixel grid before clipping (see process_point). Clipping a point set
-            /// keeps the points inside the window and drops the rest.
-            MultiPoint<BPoint> result;
-            result.reserve(points.size());
-            for (BPoint p : points)
-            {
-                projection(p);
-                bg::set<0>(p, roundCoordinate(bg::get<0>(p)));
-                bg::set<1>(p, roundCoordinate(bg::get<1>(p)));
-                if (clip && !bg::covered_by(p, box))
-                    continue;
-                result.push_back(p);
-            }
-            if (result.empty())
-            {
-                builder.addNull();
-                return;
-            }
-            builder.addMultiPoint(result);
         };
 
         auto process_lines = [&](MultiLineString<BPoint> lines, const Projection & projection, const BBox & box, bool clip)
@@ -552,7 +520,6 @@ public:
             process_lines(std::move(m), pr, b, c);
         };
         auto dispatch_mline = [&](const MultiLineString<BPoint> & g, const Projection & pr, const BBox & b, bool c) { process_lines(g, pr, b, c); };
-        auto dispatch_mpoint = [&](const MultiPoint<BPoint> & g, const Projection & pr, const BBox & b, bool c) { process_multipoint(g, pr, b, c); };
         auto dispatch_ring = [&](const Ring<BPoint> & g, const Projection & pr, const BBox & b, bool c)
         {
             Polygon<BPoint> poly;
@@ -583,7 +550,6 @@ public:
             auto points = convert_sub(GeoDisc::Point, [](ColumnPtr c) { return c ? ColumnToPointsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<BPoint>{}; });
             auto lines = convert_sub(GeoDisc::LineString, [](ColumnPtr c) { return c ? ColumnToLineStringsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<LineString<BPoint>>{}; });
             auto mlines = convert_sub(GeoDisc::MultiLineString, [](ColumnPtr c) { return c ? ColumnToMultiLineStringsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<MultiLineString<BPoint>>{}; });
-            auto mpoints = convert_sub(GeoDisc::MultiPoint, [](ColumnPtr c) { return c ? ColumnToMultiPointsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<MultiPoint<BPoint>>{}; });
             auto rings = convert_sub(GeoDisc::Ring, [](ColumnPtr c) { return c ? ColumnToRingsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<Ring<BPoint>>{}; });
             auto polygons = convert_sub(GeoDisc::Polygon, [](ColumnPtr c) { return c ? ColumnToPolygonsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<Polygon<BPoint>>{}; });
             auto mpolygons = convert_sub(GeoDisc::MultiPolygon, [](ColumnPtr c) { return c ? ColumnToMultiPolygonsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<MultiPolygon<BPoint>>{}; });
@@ -609,7 +575,6 @@ public:
                     case GeoDisc::Point: dispatch(points[off], projection, box, clip); break;
                     case GeoDisc::LineString: dispatch_line(lines[off], projection, box, clip); break;
                     case GeoDisc::MultiLineString: dispatch_mline(mlines[off], projection, box, clip); break;
-                    case GeoDisc::MultiPoint: dispatch_mpoint(mpoints[off], projection, box, clip); break;
                     case GeoDisc::Ring: dispatch_ring(rings[off], projection, box, clip); break;
                     case GeoDisc::Polygon: dispatch_polygon(polygons[off], projection, box, clip); break;
                     case GeoDisc::MultiPolygon: dispatch_mpolygon(mpolygons[off], projection, box, clip); break;
@@ -638,8 +603,6 @@ public:
                         dispatch_line(geometries[row], projection, box, clip);
                     else if constexpr (std::is_same_v<Converter, ColumnToMultiLineStringsConverter<BPoint>>)
                         dispatch_mline(geometries[row], projection, box, clip);
-                    else if constexpr (std::is_same_v<Converter, ColumnToMultiPointsConverter<BPoint>>)
-                        dispatch_mpoint(geometries[row], projection, box, clip);
                     else if constexpr (std::is_same_v<Converter, ColumnToRingsConverter<BPoint>>)
                         dispatch_ring(geometries[row], projection, box, clip);
                     else if constexpr (std::is_same_v<Converter, ColumnToPolygonsConverter<BPoint>>)
@@ -668,12 +631,12 @@ y axis pointing downwards (the Mapbox Vector Tile convention). When `clip` is en
 clipped to the tile expanded by `buffer` pixels, and geometries that fall entirely outside become `NULL`. The result is
 intended to be passed to the aggregate function `MVTEncode`. This function is the analogue of PostGIS `ST_AsMVTGeom`.
 
-Supported input geometry types are `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon` and the
+Supported input geometry types are `Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon` and the
 `Geometry` variant.
     )";
     FunctionDocumentation::Syntax syntax = "MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry in longitude/latitude degrees.", {"Point", "MultiPoint", "LineString", "MultiLineString", "Ring", "Polygon", "MultiPolygon", "Geometry"}},
+        {"geometry", "Geometry in longitude/latitude degrees.", {"Point", "LineString", "MultiLineString", "Ring", "Polygon", "MultiPolygon", "Geometry"}},
         {"zoom", "Slippy-map zoom level, in the range `[0, 32]`.", {"UInt8"}},
         {"tile_x", "Tile column index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},
         {"tile_y", "Tile row index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},

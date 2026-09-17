@@ -204,10 +204,7 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
         if (log)
         {
             this->finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(time.time_since_epoch()).count();
-            log->add([&](OpenTelemetrySpanLogElement & element)
-            {
-                element.span = *this;
-            });
+            log->add(OpenTelemetrySpanLogElement(*this));
         }
     }
     catch (...)
@@ -466,10 +463,7 @@ TracingContextHolder::~TracingContextHolder()
             this->root_span.finish_time_us
                 = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-            shared_span_log->add([&](OpenTelemetrySpanLogElement & element)
-            {
-                element.span = this->root_span;
-            });
+            shared_span_log->add(OpenTelemetrySpanLogElement(this->root_span));
         }
     }
     catch (...)

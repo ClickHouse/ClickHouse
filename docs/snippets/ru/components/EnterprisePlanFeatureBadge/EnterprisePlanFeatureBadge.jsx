@@ -10,5 +10,3 @@ export const EnterprisePlanFeatureBadge = ({feature='Эта возможност
         </div>
     )
 }
-
-export default EnterprisePlanFeatureBadge;

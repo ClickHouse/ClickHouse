@@ -30,7 +30,9 @@ ClickHouse предоставляет полный датасет с векто�
 </div>
 
 <Steps>
-  <Step title="Создание таблицы" id="create-table">
+  <Step>
+    ### Создание таблицы
+
     Создайте таблицу `hackernews` для хранения публикаций, их эмбеддингов &amp; связанных с ними атрибутов:
 
     ```sql
@@ -61,7 +63,9 @@ ClickHouse предоставляет полный датасет с векто�
     как поиск векторов по сходству сочетается с постфильтрацией/префильтрацией, как описано в [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step title="Загрузка данных" id="load-table">
+  <Step>
+    ### Загрузка данных
+
     Чтобы загрузить данные из файла в формате `Parquet`, выполните следующий оператор SQL:
 
     ```sql
@@ -71,7 +75,9 @@ ClickHouse предоставляет полный датасет с векто�
     Вставка 28,74 миллиона строк в таблицу займет несколько минут.
   </Step>
 
-  <Step title="Создайте индекс векторного сходства" id="build-vector-similarity-index">
+  <Step>
+    ### Создайте индекс векторного сходства
+
     Выполните следующий SQL-запрос, чтобы определить и создать индекс векторного сходства на столбце `vector` таблицы `hackernews`:
 
     ```sql
@@ -88,7 +94,9 @@ ClickHouse предоставляет полный датасет с векто�
     Построение и сохранение индекса для полного набора данных из 28,74 млн записей может занять от нескольких минут до часа — в зависимости от количества доступных ядер CPU и пропускной способности хранилища.
   </Step>
 
-  <Step title="Выполните ANN-поиск" id="perform-ann-search">
+  <Step>
+    ### Выполните ANN-поиск
+
     После построения индекса векторного сходства запросы векторного поиска будут автоматически использовать этот индекс:
 
     ```sql title="Query"
@@ -102,7 +110,9 @@ ClickHouse предоставляет полный датасет с векто�
     Первичная загрузка векторного индекса в память может занять от нескольких секунд до нескольких минут.
   </Step>
 
-  <Step title="Генерация эмбеддингов для поискового запроса" id="generating-embeddings-for-search-query">
+  <Step>
+    ### Генерация эмбеддингов для поискового запроса
+
     [Sentence Transformers](https://www.sbert.net/) — это локальные, простые в использовании модели векторных представлений для захвата семантического смысла предложений и абзацев.
 
     Этот набор данных HackerNews содержит векторные эмбеддинги, сгенерированные моделью
@@ -124,39 +134,38 @@ ClickHouse предоставляет полный датасет с векто�
     chclient = clickhouse_connect.get_client() # ClickHouse credentials here
 
     while True:
-        # Take the search query from user
+        # Получить поисковый запрос от пользователя
         print("Enter a search query :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Run the model and obtain search vector
+        # Запустить модель и получить вектор поиска
         print("Generating the embedding for ", input_query);
         embeddings = model.encode(texts)
 
-        print("Querying ClickHouse...")
+        print("Выполняется запрос к ClickHouse...")
         params = {'v1':list(embeddings[0]), 'v2':20}
         result = chclient.query("SELECT id, title, text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
         print("Results :")
         for row in result.result_rows:
             print(row[0], row[2][:100])
             print("---------")
-
     ```
 
     Ниже приведён пример запуска указанного выше Python-скрипта и результаты поиска по сходству
     (выводятся только первые 100 символов из каждого из 20 наиболее релевантных постов):
 
     ```text
-    Initializing...
+    Инициализация...
 
-    Enter a search query :
+    Введите поисковый запрос :
     Are OLAP cubes useful
 
-    Generating the embedding for  "Are OLAP cubes useful"
+    Генерация эмбеддинга для  "Are OLAP cubes useful"
 
-    Querying ClickHouse...
+    Запрос к ClickHouse...
 
-    Results :
+    Результаты :
 
     27742647 smartmic:
     slt2021: OLAP Cube is not dead, as long as you use some form of:<p>1. GROUP BY multiple fi
@@ -289,12 +298,12 @@ ClickHouse предоставляет полный датасет с векто�
     chclient = clickhouse_connect.get_client(compress=False) # ClickHouse credentials here
 
     while True:
-        # Take the search query from user
+        # Получить поисковый запрос от пользователя
         print("Enter a search topic :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Run the model and obtain search or reference vector
+        # Запустить модель и получить поисковый или эталонный вектор
         print("Generating the embedding for ----> ", input_query);
         embeddings = model.encode(texts)
 
@@ -302,7 +311,7 @@ ClickHouse предоставляет полный датасет с векто�
         params = {'v1':list(embeddings[0]), 'v2':100}
         result = chclient.query("SELECT id,title,text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
 
-        # Just join all the search results
+        # Объединить все результаты поиска
         doc_results = ""
         for row in result.result_rows:
             doc_results = doc_results + "\n" + row[2]

@@ -160,7 +160,7 @@ public:
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
-    virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
+    virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
@@ -292,26 +292,6 @@ public:
         return true;
     }
 
-    /// Whether LIMIT lazy materialization can be used (see optimizeLazyMaterialization2).
-    /// It requires that the physical row numbers of the main read match a later positional
-    /// re-read of the same files, which for data lakes depends on how deletes and schema
-    /// evolution are applied.
-    virtual bool supportsLazyMaterialization(StorageMetadataPtr /*storage_metadata_snapshot*/, ContextPtr /*context*/) const
-    {
-        return true;
-    }
-
-    /// Whether the data files that back this configuration are immutable, i.e. an existing data
-    /// file is never overwritten in place (a change writes a new file). This holds for data lakes
-    /// (a new snapshot references new files) but not for plain object storage, where the object at
-    /// a given path can be overwritten. Lazy materialization rereads the surviving files in a
-    /// second pass; with immutable files that reread is race-free even on backends that cannot pin
-    /// a read to a captured object generation (see ReadFromObjectStorageStep::canUseLazyMaterialization).
-    virtual bool dataFilesAreImmutable() const
-    {
-        return false;
-    }
-
     virtual void drop(ContextPtr) {}
 
     virtual bool isBackgroundExecutable() const
@@ -364,12 +344,9 @@ public:
     /// table's bootstrap re-credentials the client afterwards.
     bool force_anonymous_load_fallback = false;
 
-    /// Set when a base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from a named
-    /// collection. `initialize` materializes it back into the engine args so that the persisted
-    /// DDL does not depend on the setting at attach time.
-    String url_overridden_by_base_setting;
-
 protected:
+    void checkFormat() const;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;

@@ -132,15 +132,21 @@ struct SnapshotDeserializationResult
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
-/// captured by a lock-free MVCC-style read view. This operation is fast and KeeperStorageSnapshot
+/// turned into snapshot mode. This operation is fast and KeeperStorageSnapshot
 /// class does it in constructor. It also copies iterators from storage hash table
-/// up to some log index with lock. In destructor this class retires the read view.
+/// up to some log index with lock. In destructor this class turns off snapshot
+/// mode for KeeperStorage.
 ///
 /// This representation of snapshot has to be serialized into NuRaft
 /// buffer and sent over network or saved to file.
 ///
-/// During the constructor call, storage contents must not change, and up_to_log_idx_ must match
-/// the storage's commit idx. In keeper server, this means that nuraft's commit_lock_ must be held.
+/// Tricky to use correctly:
+///  * During the constructor call, storage contents must not change, and up_to_log_idx_ must match
+///    the storage's commit idx. In keeper server, this means that nuraft's commit_lock_ must be held.
+///  * At most one instance of KeeperStorageSnapshot can exist at a time, for a given KeeperStorage.
+///    NuRaft guarantees that at most one snapshotting operation can be in progress (create_snapshot
+///    is not called again until when_done callback is called).
+///  * Destructor must be called with storage mutex held (for the finishWritingSnapshot() call).
 struct KeeperStorageSnapshot
 {
 public:
@@ -152,6 +158,8 @@ public:
     KeeperStorageSnapshot(const KeeperStorageSnapshot &) = delete;
     KeeperStorageSnapshot(KeeperStorageSnapshot &&) = default;
 
+    ~KeeperStorageSnapshot();
+
     static void serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
 
     KeeperStorage * storage;
@@ -161,8 +169,7 @@ public:
     SnapshotMetadataPtr snapshot_meta;
     /// Max session id
     int64_t session_id;
-    /// Lock-free MVCC-style read view of the storage container.
-    std::unique_ptr<KeeperNodesReadView> view;
+    std::unique_ptr<KeeperNodeStreamForSnapshot> node_stream;
     /// Active sessions and their timeouts
     SessionAndTimeout session_and_timeout;
     /// Sessions credentials

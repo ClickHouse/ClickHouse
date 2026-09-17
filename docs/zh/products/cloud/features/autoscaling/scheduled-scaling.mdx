@@ -7,7 +7,7 @@ title: '定时扩缩容'
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
@@ -32,8 +32,8 @@ ClickHouse Cloud 服务会根据 CPU 和内存利用率自动扩缩容，但许�
 
 每条规则都需要：
 
-* **时间：** 扩缩容操作执行的时间 (按你的本地时区) 
-* **重复周期：** 规则重复的频率 (例如每个工作日、每周日) 
+* **时间：** 扩缩容操作执行的时间 (按你的本地时区)
+* **重复周期：** 规则重复的频率 (例如每个工作日、每周日)
 * **目标规模：** 要扩缩容到的副本数或内存分配量
 
 可以组合多条规则来形成完整的每周计划。例如，你可以设置为在每个工作日上午 6 点扩容到 5 个副本，并在晚上 8 点缩容回 2 个副本。

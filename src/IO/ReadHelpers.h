@@ -687,7 +687,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
     else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
         return false;
 
-    /// A calendar-invalid date (e.g. month 13) yields 1900-01-01 (-getDayNumOffsetEpoch(), -25567) for Date32 and 1970-01-01 for Date.
+    /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
     date = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
@@ -1434,22 +1434,6 @@ inline bool tryReadTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, c
 {
     return readTimeTextImpl<bool>(time64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
-
-/// Reading a `DateTime`/`DateTime64` column from an unquoted number in the `JSON`, `Values` and similar text
-/// formats (see `SerializationDateTime`/`SerializationDateTime64`). The number is a Unix timestamp (seconds
-/// since the epoch, with optional sub-second precision for `DateTime64`), consistent with `CAST`,
-/// `toDateTime64` and the `Values` format. Parsing stops at the first character that is not part of the
-/// number (e.g. the `,` or `}` following the value in JSON). The `AsRawValue` variants implement the legacy
-/// behavior, where the number is the raw underlying value.
-void readDateTimeAsNumber(time_t & x, ReadBuffer & buf);
-bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf);
-void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf);
-bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf);
-
-void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
-bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
-void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
-bool tryReadDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {

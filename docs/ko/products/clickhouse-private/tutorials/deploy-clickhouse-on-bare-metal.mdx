@@ -27,7 +27,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
 ***
 
 <Steps>
-  <Step title="단계 1: Terraform 설치" id="phase-1-install-terraform">
+  <Step>
+    ## 단계 1: Terraform 설치
+
     ```text
     dnf install -y unzip git
     ```
@@ -60,7 +62,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 2: 예시 스크립트 다운로드" id="phase-2-download-example-scripts">
+  <Step>
+    ## 단계 2: 예시 스크립트 다운로드
+
     ClickHouse에서 제공하는 예시 스크립트를 다운로드한 다음 압축을 해제합니다.
 
     ```text
@@ -73,7 +77,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 3: AWS 자격 증명 구성" id="phase-3-configure-aws-credentials">
+  <Step>
+    ## 단계 3: AWS 자격 증명 구성
+
     AWS IAM 액세스 키와 시크릿 키를 사용해 자격 증명 파일을 생성하세요:
 
     ```bash
@@ -95,7 +101,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 4: Terraform 초기화 및 적용" id="phase-4-initialize-and-apply-terraform">
+  <Step>
+    ## 단계 4: Terraform 초기화 및 적용
+
     RKE2 Terraform 모듈을 초기화합니다. Terraform 상태를 로컬에서 S3로 옮기는 경우 `-migrate-state`를 추가합니다.
 
     ```text
@@ -121,7 +129,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 5: Ansible 의존성 설치" id="phase-5-install-ansible-dependencies">
+  <Step>
+    ## 단계 5: Ansible 의존성 설치
+
     Ansible 디렉터리로 이동하여 필요한 Galaxy 역할과 컬렉션을 설치합니다:
 
     ```bash
@@ -139,7 +149,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 6: RKE2 프로비저닝" id="phase-6-provision-rke2">
+  <Step>
+    ## 단계 6: RKE2 프로비저닝
+
     ### 노드 준비 상태 확인
 
     ```text
@@ -177,7 +189,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 7: cert-manager 및 인증서 구성" id="phase-7-configure-cert-manager-and-certificates">
+  <Step>
+    ## 단계 7: cert-manager 및 인증서 구성
+
     Ansible 플레이북을 사용해 cert-manager와 trust-manager를 설치하고 ClickHouse용 인증서를 생성합니다:
 
     ```bash
@@ -206,7 +220,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 8: 로컬 스토리지 설치" id="phase-8-install-local-storage">
+  <Step>
+    ## 단계 8: 로컬 스토리지 설치
+
     ### local-path-provisioner 설치
 
     ```bash
@@ -252,7 +268,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 9: 노드에 레이블 지정" id="phase-9-label-nodes">
+  <Step>
+    ## 단계 9: 노드에 레이블 지정
+
     연산자에 필요한 ClickHouse 그룹 및 토폴로지 영역 레이블을 노드에 지정합니다.
 
     ```bash
@@ -268,7 +286,9 @@ description: "이 자습서에서는 Kubernetes 배포판으로 RKE2를 사용�
     ***
   </Step>
 
-  <Step title="단계 10: ClickHouse Operator 및 클러스터 설치" id="phase-10-install-clickhouse-operator-and-cluster">
+  <Step>
+    ## 단계 10: ClickHouse Operator 및 클러스터 설치
+
     ### 환경 변수 설정
 
     Helm 변수 스크립트를 생성하고 소싱하십시오. 모든 placeholder 값을 실제 값으로 업데이트하십시오:

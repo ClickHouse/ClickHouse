@@ -10,6 +10,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -52,6 +53,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
@@ -495,13 +497,6 @@ void TCPHandler::runImpl()
             LOG_INFO(log, "Client has gone away.");
             return;
         }
-
-        /// An interserver peer that failed authentication has not proven knowledge of the
-        /// cluster secret, so nothing is serialized back to it (an exception would disclose
-        /// error details, including whether the named cluster exists); the connection is just
-        /// closed. The failure is recorded in `system.session_log`.
-        if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
-            throw;
 
         try
         {
@@ -1195,7 +1190,15 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
 
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
-            processUnexpectedData();
+            /// The payload is deliberately left unread: nothing consumes it here (the connection
+            /// closes with no reply), and in interserver mode the connection is not authenticated
+            /// until the Query packet, so reading it would deserialize a peer-chosen type.
+            ///
+            /// Name that case for what it is: an unauthenticated peer, so that `runImpl` answers it
+            /// the way it answers every other interserver authentication failure.
+            if (is_interserver_mode && !is_interserver_authenticated)
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Unexpected data packet received before interserver authentication");
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
 
         case Protocol::Client::Ping:
@@ -2089,39 +2092,6 @@ void TCPHandler::receiveHello()
             LOG_WARNING(LogFrequencyLimiter(log, 10),
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         processClusterNameAndSalt();
-
-        /// Reject interserver mode unless the cluster has a `<secret>`; otherwise any client
-        /// could enter interserver mode and exercise pre-auth protocol packets. An unknown
-        /// cluster (`getCluster` throws) is rejected the same way, so an unauthenticated peer
-        /// cannot distinguish the two cases. The failure is recorded in `system.session_log`
-        /// via `onAuthenticationFailure`, and the connection is closed without serializing
-        /// the exception back to the unauthenticated peer (see the handshake catch block).
-        try
-        {
-            String cluster_secret;
-            try
-            {
-                cluster_secret = server.context()->getCluster(cluster)->getSecret();
-            }
-            catch (const Exception & e)
-            {
-                throw Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
-            }
-
-            if (cluster_secret.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "Interserver authentication failed: cluster '{}' is not configured with a secret", cluster);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::AUTHENTICATION_FAILED)
-                throw;
-
-            session = makeSession();
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), e);
-            throw;
-        }
-
         return;
     }
 
@@ -2482,13 +2452,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         const auto & config_ref = Context::getGlobalContextInstance()->getServerSettings();
         if (config_ref[ServerSetting::validate_tcp_client_information])
             validateClientInfo(session->getClientInfo(), client_info);
-
-        /// An older peer can forward a server-initiated query whose context was never filled with
-        /// a version, so `client_info.read` above overwrote the session seed with 0.0.0. Take the
-        /// peer's version from the connection hello instead: otherwise the version-gated
-        /// compatibility decisions below would wrongly downgrade, and a second distributed hop
-        /// would trip the zero-version check in `RemoteQueryExecutor` during a rolling upgrade.
-        client_info.setClientVersionFromConnectionIfUnknown();
     }
 
     /// Per query settings are also passed via TCP.
@@ -2629,7 +2592,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             /// the query was come, since the real address is the address of
             /// the initiator server, while we are interested in client's
             /// address.
-            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, client_info.current_address, external_roles);
+            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, *client_info.current_address, external_roles);
         }
 
         is_interserver_authenticated = true;
@@ -2856,6 +2819,22 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(state.query_context, false);
+
+        /// The block is self-describing and comes from the client, while the schema of an external table
+        /// is bound once, by its first block (see the branch above). Every block after that one must match
+        /// that schema: the columns are written to the table as a `Chunk`, which carries no types at all,
+        /// and `MemorySink::consume` labels them with the table header again. A block declaring other
+        /// types would therefore not be rejected anywhere, and its data would later be read as the type
+        /// the header names - a type confusion on data the client controls, not a data error.
+        if (resolved && !isCompatibleHeader(block, metadata_snapshot->getSampleBlock()))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Structure of the block for external table {} does not match the structure of the table. "
+                "Received:\n{}\nExpected:\n{}",
+                backQuoteIfNeed(temporary_id.table_name),
+                block.dumpStructure(),
+                metadata_snapshot->getSampleBlock().dumpStructure());
+
         /// The data will be written directly to the table.
         QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, state.query_context, /*async_insert=*/false));
         PushingPipelineExecutor executor(temporary_table_out);
@@ -3405,21 +3384,12 @@ bool TCPHandler::connectionLimitReached()
 
 Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_info)
 {
-    const bool use_forwarded_address = server.config().getBool("auth_use_forwarded_address", false);
-    if (!use_forwarded_address || client_info.forwarded_for.empty())
-        return socket().peerAddress();
-
-    /// Extract the last entry from the comma-separated list. Only the last proxy can be trusted (if any).
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
     auto forwarded_address = client_info.getLastForwardedFor();
-
-    /// With `auth_use_forwarded_address` enabled, consider an invalid address an error
-    /// instead of silently authenticating with the proxy's address.
-    if (!forwarded_address)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Invalid forwarded client address: expected an IP literal with an optional numeric port");
-
-    return *forwarded_address;
+    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
+        return *forwarded_address;
+    return socket().peerAddress();
 }
 
 }

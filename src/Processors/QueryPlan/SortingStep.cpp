@@ -116,7 +116,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LIMIT_EXCEEDED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
@@ -322,30 +321,19 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
-/// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
-/// (threads * streams) connections in the pipeline. Bound this by a sane value so that a large
-/// `max_threads` cannot explode the port/processor count.
-static void checkScatterConnectionLimit(size_t threads, size_t streams)
-{
-    const size_t connection_count_limit = 1000000;
-    if (threads * streams > connection_count_limit)
-        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
-            threads, streams, connection_count_limit);
-}
-
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
-    /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
-    /// both sides of the join scatter into the same number of shards even if they read a different number
-    /// of streams; otherwise fall back to the pipeline's thread count (window-frame partitioned sort).
-    size_t threads = scatter_partitions > 0 ? scatter_partitions : pipeline.getNumThreads();
+    size_t threads = pipeline.getNumThreads();
     size_t streams = pipeline.getNumStreams();
 
     if (!partition_by_description.empty() && threads > 1)
     {
         /// We are going to shuffle the data from streams to threads. This will create (threads * streams) connections in the pipeline.
         /// Let's limit this by some sane value to avoid explosion.
-        checkScatterConnectionLimit(threads, streams);
+        const size_t connection_count_limit = 1000000;
+        if (threads * streams > connection_count_limit)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
+                threads, streams, connection_count_limit);
 
         auto stream_header = pipeline.getSharedHeader();
 
@@ -596,10 +584,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::PartitionedFinishSorting)
     {
-        /// The input is already partitioned upstream: the primary-key-range join sharding path
-        /// (`convertToPartitionedFinishSorting`) feeds one pre-sorted stream per shard, so each stream only
-        /// needs its sort suffix finished. No scatter is inserted here - an order-preserving scatter feeding
-        /// the selective per-shard merge consumers can deadlock (see `optimizeParallelFullSortingMergeJoin`).
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
@@ -698,47 +682,27 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     sort_settings.updatePlanSettings(settings);
 }
 
-static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
-
 void SortingStep::serialize(Serialization & ctx) const
 {
-    if (type != Type::Full && type != Type::FinishSorting)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Serialization of SortingStep is implemented only for Full and FinishSorting");
+    if (type != Type::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of SortingStep is implemented only for Full sorting");
 
-    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Serialization of SortingStep requires query plan serialization version >= {}; "
-            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
+    /// Do not serialize type here; Later we can use different names if needed.\
 
     /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
+
     serializeSortDescription(result_description, ctx.out);
 
-    serializeSortDescription(partition_by_description, ctx.out);
+    /// Later
+    if (!partition_by_description.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
 
-    /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
-    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
-    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
-    /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
-    /// bit is set), so a plain full sort always writes a plain 0.
-    UInt8 flags = 0;
-    if (type == Type::FinishSorting)
-    {
-        flags |= 1;
-        if (use_buffering)
-            flags |= 2;
-        if (apply_virtual_row_conversions)
-            flags |= 4;
-    }
-    writeIntBinary(flags, ctx.out);
-
-    if (type == Type::FinishSorting)
-        serializeSortDescription(prefix_description, ctx.out);
+    writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
 QueryPlanStepPtr SortingStep::clone() const
@@ -753,39 +717,17 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
 
-    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Deserialization of SortingStep requires query plan serialization version >= {}; "
-            "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
-
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    SortDescription partition_by_description;
-    deserializeSortDescription(partition_by_description, ctx.in);
+    UInt64 partition_desc_size = 0;
+    readVarUInt(partition_desc_size, ctx.in);
 
-    UInt8 flags = 0;
-    readIntBinary(flags, ctx.in);
-    bool finish_sorting = flags & 1;
-    bool use_buffering = flags & 2;
-    bool apply_virtual_row_conversions = flags & 4;
+    if (partition_desc_size)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
 
-    SortDescription prefix_description;
-    if (finish_sorting)
-        deserializeSortDescription(prefix_description, ctx.in);
-
-    std::unique_ptr<SortingStep> step;
-    if (partition_by_description.empty())
-        step = std::make_unique<SortingStep>(
-            ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
-    else
-        step = std::make_unique<SortingStep>(
-            ctx.input_headers.front(), std::move(result_description), std::move(partition_by_description), 0, sort_settings);
-
-    if (finish_sorting)
-        step->convertToFinishSorting(std::move(prefix_description), use_buffering, apply_virtual_row_conversions);
-
-    return step;
+    return std::make_unique<SortingStep>(
+        ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
 std::vector<size_t> SortingStep::getStepGroups() const

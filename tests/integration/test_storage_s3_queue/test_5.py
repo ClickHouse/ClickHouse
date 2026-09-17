@@ -66,6 +66,7 @@ def started_cluster():
                 "configs/s3queue_log.xml",
                 "configs/remote_servers.xml",
                 "configs/disable_streaming.xml",
+                "configs/plain_rewritable_disk.xml",
             ],
             user_configs=[
                 "configs/users.xml",
@@ -1294,6 +1295,137 @@ def test_failed_startup(started_cluster):
     )
 
     assert len(zk.get(f"{keeper_path}")) > 0
+
+
+LOGICAL_ERROR_MARKER = "Logical error: 'Files metadata is empty'"
+
+
+def assert_reports_table_is_dropped(node, table_name, database_name="default"):
+    """Every user-facing entry point that needs the queue metadata must report
+    TABLE_IS_DROPPED, and none of them may abort the server."""
+    qualified = f"{database_name}.{table_name}"
+    for query in (
+        f"SELECT count() FROM {qualified} SETTINGS stream_like_engine_allow_direct_select=1",
+        f"SYSTEM FLUSH OBJECT STORAGE QUEUE {qualified} PATH 'x'",
+        f"ALTER TABLE {qualified} MODIFY SETTING polling_min_timeout_ms=555",
+    ):
+        error = node.query_and_get_error(query)
+        assert "TABLE_IS_DROPPED" in error, f"{query} -> {error}"
+
+    assert node.query("SELECT 1") == "1\n"
+    # A query-level error alone is satisfied by many unrelated failures, so pin the
+    # absence of the abort itself. The table name is unique per invocation, and the
+    # log is shared, so match the marker together with it.
+    assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
+    assert not node.contains_in_log("Received signal Segmentation fault")
+
+
+def test_select_after_failed_startup(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_select_after_failed_startup_{generate_random_string()}"
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+    try:
+        assert "Failed to startup" in create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            f"{table_name}_data",
+            format="column1 UInt32, column2 String",
+            expect_error=True,
+            additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+
+    # startup() reset the metadata handle, but nothing rolled the catalog entry back.
+    assert (
+        node.query(f"SELECT count() FROM system.tables WHERE name = '{table_name}'")
+        == "1\n"
+    )
+
+    assert_reports_table_is_dropped(node, table_name)
+
+
+def test_select_after_failed_drop(started_cluster):
+    node = started_cluster.instances["instance"]
+    suffix = generate_random_string()
+    table_name = f"test_select_after_failed_drop_{suffix}"
+    database_name = f"db_{table_name}"
+
+    node.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS disk = 'plain_rw'"
+    )
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        f"{table_name}_data",
+        format="column1 UInt32, column2 String",
+        database_name=database_name,
+        additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+    )
+
+    # DROP shuts the table down before the database detaches it, so a failure in
+    # between leaves the table attached with its metadata handle already gone.
+    node.query(
+        "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_create"
+    )
+    try:
+        assert "FAULT_INJECTED" in node.query_and_get_error(
+            f"DROP TABLE {database_name}.{table_name}"
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_create"
+        )
+
+    assert (
+        node.query(
+            f"SELECT count() FROM system.tables "
+            f"WHERE database = '{database_name}' AND name = '{table_name}'"
+        )
+        == "1\n"
+    )
+
+    assert_reports_table_is_dropped(node, table_name, database_name)
+
+
+def test_select_racing_drop(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    for i in range(10):
+        table_name = f"test_select_racing_drop_{generate_random_string()}"
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            f"{table_name}_data",
+            format="column1 UInt32, column2 String",
+            additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+        )
+
+        # DROP shuts the storage down without waiting for readers, so it can drop the
+        # metadata handle while this SELECT is still building its query plan. The
+        # subquery sleeps for 3 seconds, so the DROP lands while the plan is still open.
+        select = node.get_query_request(
+            f"SELECT count() FROM {table_name} "
+            f"WHERE column1 > (SELECT sum(sleepEachRow(0.2)) FROM numbers(15)) "
+            f"SETTINGS stream_like_engine_allow_direct_select=1"
+        )
+        time.sleep(1.2)
+        node.query(f"DROP TABLE {table_name} SYNC")
+
+        # Also accepting a clean result would make this arm pass against the unfixed
+        # server: a SELECT that finished first never reads the dropped metadata.
+        _, error = select.get_answer_and_error()
+        assert "TABLE_IS_DROPPED" in error, f"iteration {i}: {error}"
+
+        assert node.query("SELECT 1") == "1\n"
+        assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
 
 
 def test_create_or_replace_table(started_cluster):

@@ -6,7 +6,6 @@
 #include "config.h"
 
 #include <Coordination/CoordinationSettings.h>
-#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -49,7 +48,6 @@
 #include <chrono>
 #include <mutex>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -95,7 +93,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
-    extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
@@ -259,6 +256,22 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
             ErrorCodes::INVALID_CONFIG_PARAMETER, "Incorrect superdigest in keeper_server config. Must be 'super:base64string'");
 
     return user_and_digest;
+}
+
+int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name, LoggerPtr log)
+{
+    if (value > std::numeric_limits<int32_t>::max())
+    {
+        LOG_WARNING(
+            log,
+            "Got {} value for setting '{}' which is bigger than int32_t max value, lowering value to {}.",
+            value,
+            name,
+            std::numeric_limits<int32_t>::max());
+        return std::numeric_limits<int32_t>::max();
+    }
+
+    return static_cast<int32_t>(value);
 }
 
 }
@@ -437,47 +450,6 @@ KeeperServer::RespondingCounts KeeperServer::KeeperRaftServer::getRespondingCoun
     return counts;
 }
 
-void KeeperServer::KeeperRaftServer::applyPeerHealthToMembers(
-    std::vector<KeeperClusterMemberInfo> & members, uint64_t self_log_idx)
-{
-    auto params = get_current_params();
-    const uint64_t expiry_us
-        = static_cast<uint64_t>(params.heart_beat_interval_) * raft_server::raft_limits_.response_limit_ * 1000;
-    /// Prefer coordination settings: raft params may not always reflect the configured gap.
-    const uint64_t stale_gap = keeper_context
-        ? static_cast<uint64_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::stale_log_gap])
-        : static_cast<uint64_t>(params.stale_log_gap_);
-
-    std::unordered_map<int32_t, nuraft::raft_server::peer_info> peer_infos;
-    for (const auto & peer : get_peer_info_all())
-        peer_infos.emplace(peer.id_, peer);
-
-    for (auto & info : members)
-    {
-        if (info.is_self)
-        {
-            info.is_alive = true;
-            info.is_synced = true;
-            continue;
-        }
-
-        if (auto it = peer_infos.find(info.server_id); it != peer_infos.end())
-        {
-            const auto & peer = it->second;
-            info.is_alive = peer.last_succ_resp_us_ <= expiry_us;
-            info.is_synced = self_log_idx <= peer.last_log_idx_ + stale_gap;
-            info.peer_last_log_index = peer.last_log_idx_;
-            info.last_succ_resp_ms = peer.last_succ_resp_us_ / 1000;
-        }
-        else
-        {
-            /// Configured member with no peer_info yet — treat as unreachable.
-            info.is_alive = false;
-            info.is_synced = false;
-        }
-    }
-}
-
 void KeeperServer::loadLatestConfig()
 {
     auto latest_snapshot_config = state_machine->getClusterConfig();
@@ -547,8 +519,10 @@ void KeeperServer::forceRecovery()
     raft_instance->update_params(params);
 }
 
-nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_settings, LoggerPtr log)
+void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+
     nuraft::raft_params params;
     params.parallel_log_appending_ = true;
     params.heart_beat_interval_
@@ -594,6 +568,9 @@ nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_se
     params.client_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds(), "operation_timeout_ms", log);
     params.auto_forwarding_ = coordination_settings[CoordinationSetting::auto_forwarding];
+    params.auto_forwarding_req_timeout_ = std::max<int32_t>(
+        static_cast<int32_t>(coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds() * 2),
+        std::numeric_limits<int32_t>::max());
     params.auto_forwarding_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
@@ -610,23 +587,8 @@ nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_se
         coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
         "nuraft_append_entries_backward_probe_throttle_threshold",
         log);
-    /// 0 leaves NuRaft deriving the budget from `raft_limits_response_limit` * `heart_beat_interval_ms`, which is a
-    /// per-round-trip responsiveness budget rather than an allowance for the time a follower needs to apply a snapshot.
-    params.snapshot_sync_ctx_timeout_ = getValueOrMaxInt32AndLogWarning(
-        coordination_settings[CoordinationSetting::nuraft_snapshot_sync_ctx_timeout_ms].totalMilliseconds(),
-        "nuraft_snapshot_sync_ctx_timeout_ms",
-        log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
-
-    return params;
-}
-
-void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
-{
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
-
-    nuraft::raft_params params = buildRaftParams(coordination_settings, log);
 
     nuraft::asio_service::options asio_opts{};
 
@@ -1488,8 +1450,8 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
-    /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we issue the read
-    /// view on storage in the state that corresponds to `log_idx`, rather than a
+    /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we call
+    /// beginWritingSnapshot() on storage in the state that corresponds to `log_idx`, rather than a
     /// more recent state.
     nuraft::raft_server::create_snapshot_options options;
     options.serialize_commit_ = true;
@@ -1563,10 +1525,6 @@ std::vector<KeeperClusterMemberInfo> KeeperServer::getClusterMembersInfo() const
             info.last_log_index = self_log_idx;
         result.push_back(std::move(info));
     }
-
-    if (raft_instance->is_leader())
-        raft_instance->applyPeerHealthToMembers(result, self_log_idx);
-
     return result;
 }
 

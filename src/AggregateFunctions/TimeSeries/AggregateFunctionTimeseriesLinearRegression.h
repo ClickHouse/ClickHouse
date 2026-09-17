@@ -95,10 +95,9 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
         TimestampType base;
         Float64 predict_offset;
-        TimestampType timestamp_scale_multiplier;
 
-        Aggregator(size_t stack_size, TimestampType base_, Float64 predict_offset_, TimestampType timestamp_scale_multiplier_)
-            : sliding_sum(stack_size), base(base_), predict_offset(predict_offset_), timestamp_scale_multiplier(timestamp_scale_multiplier_)
+        Aggregator(size_t stack_size, TimestampType base_, Float64 predict_offset_)
+            : sliding_sum(stack_size), base(base_), predict_offset(predict_offset_)
         {
         }
 
@@ -133,7 +132,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
 
             const Float64 slope = combined.c_xy / combined.m2_x;
             if (!is_predict)
-                return static_cast<ValueType>(slope * static_cast<Float64>(timestamp_scale_multiplier));
+                return static_cast<ValueType>(slope);
 
             /// Line y = slope * x + intercept with x centered on `base`; extrapolate to `grid_timestamp +
             /// predict_offset`, expressed in the same centered coordinates (subtract `base` in `Int128`).
@@ -211,7 +210,7 @@ public:
         /// Reserve at most `buckets_per_window`, but capped by `num_populated_buckets` - else a huge window
         /// (forced onto two-stacks by the hard cap) would `reserve(~INT64_MAX)` and fail to allocate.
         const size_t stack_size = use_two_stacks ? std::min(Base::buckets_per_window, num_populated_buckets) : 0;
-        return Aggregator{stack_size, Base::start_timestamp, predict_offset, Base::timestamp_scale_multiplier};
+        return Aggregator{stack_size, Base::start_timestamp, predict_offset};
     }
 
     static constexpr UInt16 FORMAT_VERSION = 2;

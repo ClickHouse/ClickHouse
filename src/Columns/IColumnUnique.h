@@ -187,11 +187,6 @@ public:
         throwNotImplementedForColumnUnique("compareColumn");
     }
 
-    [[nodiscard]] Int64 compareTrackAt(size_t, size_t, const IColumn &, int) const override
-    {
-        throwNotImplementedForColumnUnique("compareTrackAt");
-    }
-
     bool hasEqualValues() const override
     {
         throwNotImplementedForColumnUnique("hasEqualValues");

@@ -12,6 +12,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -37,14 +38,16 @@ class JoinUsedFlags;
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods;
 
-/** Data structure for implementation of hash JOIN.
-  * It is a hash table: keys -> rows of joined ("right") table.
+/** Data structure for implementation of JOIN.
+  * It is just a hash table: keys -> rows of joined ("right") table.
+  * Additionally, CROSS JOIN is supported: instead of hash table, it use just set of blocks without keys.
   *
   * JOIN-s could be of these types:
   * - ALL × LEFT/INNER/RIGHT/FULL
   * - ANY × LEFT/INNER/RIGHT
   * - SEMI/ANTI x LEFT/RIGHT
   * - ASOF x LEFT/INNER
+  * - CROSS
   *
   * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
   * ANY uses one line per unique key from right table. For LEFT JOIN it would be any row (with needed joined key) from the right table,
@@ -66,7 +69,7 @@ class HashJoinMethods;
   *
   * Thus, LEFT and RIGHT JOINs are not symmetric in terms of implementation.
   *
-  * All JOINs are done by equality condition on keys (equijoin).
+  * All JOINs (except CROSS) are done by equality condition on keys (equijoin).
   * Non-equality and other conditions are not supported.
   *
   * Implementation:
@@ -137,8 +140,7 @@ public:
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
-
-    using IJoin::addBlockToJoin;
+    bool addBlockToJoin(const Block & source_block_, size_t num_rows, bool check_limits) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
@@ -201,7 +203,7 @@ public:
     JoinStrictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
-    bool anyTakeLastRow() const override { return any_take_last_row; }
+    bool anyTakeLastRow() const { return any_take_last_row; }
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
@@ -241,8 +243,6 @@ public:
     /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
     /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
     /// they are read back the same way (the output key column is the parent LowCardinality type).
-    /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
-    /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
         M(key8)                                \
         M(key16)                               \
@@ -250,10 +250,6 @@ public:
         M(key64)                               \
         M(key_string)                          \
         M(key_fixed_string)                    \
-        M(keys32)                              \
-        M(keys64)                              \
-        M(keys128)                             \
-        M(keys256)                             \
         M(low_cardinality_key_string)          \
         M(low_cardinality_key_fixed_string)
 
@@ -271,6 +267,8 @@ public:
 
     enum class Type : uint8_t
     {
+        EMPTY,
+        CROSS,
         #define M(NAME) NAME,
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -359,6 +357,9 @@ public:
 
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
+
+                default:
+                    break;
             }
         }
 
@@ -366,6 +367,9 @@ public:
         {
             switch (which)
             {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->size() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -377,6 +381,9 @@ public:
         {
             switch (which)
             {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -388,6 +395,9 @@ public:
         {
             switch (which)
             {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -426,7 +436,7 @@ public:
 
     struct RightTableData
     {
-        Type type = Type::hashed;
+        Type type = Type::EMPTY;
 
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>
@@ -530,6 +540,7 @@ public:
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
+    friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -558,8 +569,14 @@ private:
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
+    bool have_compressed = false;
 
     std::vector<Sizes> key_sizes;
+
+    /// Needed to do external cross join
+    TemporaryDataOnDiskScopePtr tmp_data;
+    std::optional<TemporaryBlockStreamHolder> tmp_stream;
+    mutable std::once_flag finish_writing;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -609,7 +626,11 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
+    JoinResultPtr joinBlockImplCross(Block block) const;
+
     bool preferUseMapsAll() const;
+
+    bool empty() const;
 
     bool isUsedByAnotherAlgorithm() const;
     bool canRemoveColumnsFromLeftBlock() const;

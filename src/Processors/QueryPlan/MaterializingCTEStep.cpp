@@ -41,7 +41,7 @@ constexpr ITransformingStep::Traits getMaterializingCTETraits()
 
 MaterializingCTEStep::MaterializingCTEStep(
     SharedHeader input_header_,
-    MaterializedCTEWeakPtr materialized_cte_
+    MaterializedCTEPtr materialized_cte_
 )
     : ITransformingStep(std::move(input_header_), std::make_shared<const Block>(Block{}), getMaterializingCTETraits())
     , materialized_cte(std::move(materialized_cte_))
@@ -50,12 +50,7 @@ MaterializingCTEStep::MaterializingCTEStep(
 
 void MaterializingCTEStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto cte = materialized_cte.lock();
-    if (!cte)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Materialized CTE was destroyed before a pipeline was built for its plan");
-
-    pipeline.addMaterializingCTETransform(getOutputHeader(), std::move(cte));
+    pipeline.addMaterializingCTETransform(getOutputHeader(), materialized_cte);
 }
 
 void MaterializingCTEStep::describeActions([[maybe_unused]] JSONBuilder::JSONMap & map) const
@@ -66,8 +61,8 @@ void MaterializingCTEStep::describeActions([[maybe_unused]] FormatSettings & set
 {
 }
 
-MaterializingCTEsStep::MaterializingCTEsStep(SharedHeaders input_headers_, std::vector<MaterializedCTEPtr> ctes_)
-    : ctes(std::move(ctes_))
+MaterializingCTEsStep::MaterializingCTEsStep(SharedHeaders input_headers_)
+    : IQueryPlanStep()
 {
     input_headers = std::move(input_headers_);
     output_header = input_headers.front();
@@ -143,9 +138,9 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
     }
 }
 
-std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
+std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
 {
-    std::vector<ClaimedCTE> claimed;
+    std::vector<std::unique_ptr<QueryPlan>> plans;
     for (auto & materialized_cte : step.ctes)
     {
         if (materialized_cte->is_materialization_planned.exchange(true))
@@ -157,14 +152,9 @@ std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsSt
         /// the right place to do it — by the time we reach this point any
         /// safety-net `DelayedMaterializingCTEsStep` inside an IN-subquery
         /// plan that actually needed to claim the CTE has already done so.
-        ///
-        /// The CTE handle travels with its plan so that the step which
-        /// attaches the plan also becomes the CTE's owner: the plan holds
-        /// only a weak back-reference (`MaterializingCTEStep`), and CTEs
-        /// claimed elsewhere must stay out of this list.
-        claimed.push_back({materialized_cte, std::move(materialized_cte->plan)});
+        plans.emplace_back(std::move(materialized_cte->plan));
     }
-    return claimed;
+    return plans;
 }
 
 /// Strip *every* `DelayedMaterializingCTEsStep` node from `plan`'s tree,

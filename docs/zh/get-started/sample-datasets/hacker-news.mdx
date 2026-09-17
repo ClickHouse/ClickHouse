@@ -15,7 +15,9 @@ keywords: ['示例数据集', 'Hacker News', '样本数据', '文本分析', '�
 </div>
 
 <Steps>
-  <Step title="下载 CSV" id="download">
+  <Step>
+    ### 下载 CSV
+
     可从我们的公开 [S3 存储桶](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz) 下载该数据集的 CSV 版本，或运行以下命令：
 
     ```bash
@@ -25,7 +27,9 @@ keywords: ['示例数据集', 'Hacker News', '样本数据', '文本分析', '�
     该压缩文件大小为 4.6GB，包含 2800 万行，下载大约需要 5–10 分钟。
   </Step>
 
-  <Step title="对数据进行采样" id="sampling">
+  <Step>
+    ### 对数据进行采样
+
     [`clickhouse-local`](/zh/concepts/features/tools-and-utilities/clickhouse-local) 可让你快速处理本地文件，而无需
     部署和配置 ClickHouse 服务器。
 
@@ -91,7 +95,9 @@ keywords: ['示例数据集', 'Hacker News', '样本数据', '文本分析', '�
     这里使用 `Vertical` 格式，以便更直观地查看每一列的数据。
   </Step>
 
-  <Step title="通过 schema inference 加载数据" id="loading-the-data">
+  <Step>
+    ### 通过 schema inference 加载数据
+
     用于加载数据的最简单且最强大的工具是 `clickhouse-client`：一款功能丰富的原生命令行客户端。
     要加载数据，你也可以再次利用 schema inference，由 ClickHouse 自动确定各列的类型。
 
@@ -142,7 +148,9 @@ keywords: ['示例数据集', 'Hacker News', '样本数据', '文本分析', '�
     你已成功用一条命令将 2800 万行数据插入 ClickHouse！
   </Step>
 
-  <Step title="查看数据" id="explore">
+  <Step>
+    ### 查看数据
+
     运行以下查询，对 Hacker News 的新闻条目和特定列进行采样：
 
     ```sql title="Query"
@@ -195,7 +203,9 @@ keywords: ['示例数据集', 'Hacker News', '样本数据', '文本分析', '�
     虽然 schema inference 是初期数据探索的利器，但它只是一种“尽力而为”的方法，不能作为长期方案来替代为您的数据定义最佳 schema。
   </Step>
 
-  <Step title="定义 schema" id="define-a-schema">
+  <Step>
+    ### 定义 schema
+
     一个显而易见的优化方式，就是为每个字段定义类型。
     除了将时间字段声明为 `DateTime` 类型之外，在删除现有数据集后，我们还将为下列每个字段定义合适的类型。
     在 ClickHouse 中，数据的主键 id 是通过 `ORDER BY` 子句定义的。
@@ -238,13 +248,14 @@ keywords: ['示例数据集', 'Hacker News', '样本数据', '文本分析', '�
     ```
   </Step>
 
-  <Step title="运行示例查询" id="run-sample-queries">
+  <Step>
+    ### 运行示例查询
+
     以下提供了一些示例查询，希望能为您编写自己的查询提供参考。
 
     #### &quot;ClickHouse&quot; 在 Hacker News 上是一个多热门的话题？
 
-    score 字段提供了衡量故事热度的指标，而 `id` 字段与 `||`
-    拼接运算符可用于生成原始帖子的链接。
+    score 字段提供了衡量故事热度的指标，而 `id` 字段与 `||` 拼接运算符可用于生成原始帖子的链接。
 
     ```sql title="Query"
     SELECT
@@ -450,7 +461,9 @@ Parquet 的类型很少，ClickHouse 必须遵循这些类型，而且这些类�
 对 Parquet 文件进行类型推断，得到的 schema 往往会与 CSV 文件的 schema 略有不同。
 
 <Steps>
-  <Step title="插入数据" id="insert-the-data">
+  <Step>
+    ### 插入数据
+
     运行以下查询，以 Parquet 格式读取相同的数据，并再次使用 url 函数读取远程数据：
 
     ```sql
@@ -542,7 +555,9 @@ Parquet 的类型很少，ClickHouse 必须遵循这些类型，而且这些类�
     ```
   </Step>
 
-  <Step title="添加数据跳过索引以加快查询速度" id="add-skipping-index">
+  <Step>
+    ### 添加数据跳过索引以加快查询速度
+
     要查看有多少条评论提到了 &quot;ClickHouse&quot;，请运行以下查询：
 
     ```sql title="Query"

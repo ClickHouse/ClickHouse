@@ -2,12 +2,14 @@
 title: 'JupySQL and chDB'
 sidebarTitle: 'JupySQL'
 slug: /chdb/guides/jupysql
-description: 'How to query chDB with JupySQL in Jupyter notebooks and IPython'
+description: 'How to install chDB for Bun'
 keywords: ['chdb', 'JupySQL']
 doc_type: 'guide'
 ---
 
-[JupySQL](https://github.com/ploomber/jupysql) is a Python library that lets you run SQL in Jupyter notebooks and the IPython shell.
+import { Image } from "/snippets/components/Image.jsx";
+
+[JupySQL](https://jupysql.readthedocs.io/en/latest/quick-start.html) is a Python library that lets you run SQL in Jupyter notebooks and the IPython shell.
 In this guide, we're going to learn how to query data using chDB and JupySQL.
 
 <div class='vimeo-container'>
@@ -49,19 +51,20 @@ If you're using Jupyter Lab, you'll need to create a notebook before following t
 
 ## Downloading a dataset {#downloading-a-dataset}
 
-We're going to use the New York City taxi dataset, which contains around 3 million taxi rides along with the fare, tip, and pickup neighborhood of each one.
-The trips are split across several TSV files, so let's start by downloading those:
+We're going to use one of [Jeff Sackmann's tennis_atp](https://github.com/JeffSackmann/tennis_atp) dataset, which contains metadata about players and their rankings over time.
+Let's start by downloading the rankings files:
 
 ```python
 from urllib.request import urlretrieve
 ```
 
 ```python
-base = "https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi"
-for n in range(3):
+files = ['00s', '10s', '20s', '70s', '80s', '90s', 'current']
+base = "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master"
+for file in files:
   _ = urlretrieve(
-    f"{base}/trips_{n}.gz",
-    f"trips_{n}.gz",
+    f"{base}/atp_rankings_{file}.csv",
+    f"atp_rankings_{file}.csv",
   )
 ```
 
@@ -74,10 +77,10 @@ from chdb import dbapi
 ```
 
 And we'll create a chDB connection.
-Any data that we persist will be saved to the `taxi.chdb` directory:
+Any data that we persist will be saved to the `atp.chdb` directory:
 
 ```python
-conn = dbapi.connect(path="taxi.chdb")
+conn = dbapi.connect(path="atp.chdb")
 ```
 
 Let's now load the `sql` magic and create a connection to chDB:
@@ -93,179 +96,214 @@ Next, we'll display the display limit so that results of queries won't be trunca
 %config SqlMagic.displaylimit = None
 ```
 
-## Querying data in TSV files {#querying-data-in-tsv-files}
+## Querying data in CSV files {#querying-data-in-csv-files}
 
-We've downloaded a bunch of files with the `trips_` prefix.
+We've downloaded a bunch of files with the `atp_rankings` prefix.
 Let's use the `DESCRIBE` clause to understand the schema:
 
 ```python
 %%sql
-DESCRIBE file('trips_*.gz')
+DESCRIBE file('atp_rankings*.csv')
 SETTINGS describe_compact_output=1,
          schema_inference_make_columns_nullable=0
 ```
 
 ```text
-+--------------------+----------+
-|        name        |   type   |
-+--------------------+----------+
-|      trip_id       |  Int64   |
-|     vendor_id      |  Int64   |
-|    pickup_date     |   Date   |
-|  pickup_datetime   | DateTime |
-|    dropoff_date    |   Date   |
-|  dropoff_datetime  | DateTime |
-| store_and_fwd_flag |  Int64   |
-|    rate_code_id    |  Int64   |
-+--------------------+----------+
-(40 more rows)
++--------------+-------+
+|     name     |  type |
++--------------+-------+
+| ranking_date | Int64 |
+|     rank     | Int64 |
+|    player    | Int64 |
+|    points    | Int64 |
++--------------+-------+
 ```
 
 We can also write a `SELECT` query directly against these files to see what the data looks like:
 
 ```python
+%sql SELECT * FROM file('atp_rankings*.csv') LIMIT 1
+```
+
+```text
++--------------+------+--------+--------+
+| ranking_date | rank | player | points |
++--------------+------+--------+--------+
+|   20000110   |  1   | 101736 |  4135  |
++--------------+------+--------+--------+
+```
+
+The format of the data is a bit weird.
+Let's clean that date up and use the `REPLACE` clause to return the cleaned up `ranking_date`:
+
+```python
 %%sql
-SELECT trip_id, pickup_datetime, pickup_ntaname,
-       trip_distance, fare_amount, tip_amount
-FROM file('trips_*.gz')
-LIMIT 3
+SELECT * REPLACE (
+  toDate(parseDateTime32BestEffort(toString(ranking_date))) AS ranking_date
+)
+FROM file('atp_rankings*.csv')
+LIMIT 10
 SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 ```text
-+------------+---------------------+----------------------------------------+---------------+-------------+------------+
-|  trip_id   |   pickup_datetime   |             pickup_ntaname             | trip_distance | fare_amount | tip_amount |
-+------------+---------------------+----------------------------------------+---------------+-------------+------------+
-| 1199999902 | 2015-07-07 19:45:07 |      Lenox Hill-Roosevelt Island       |      2.59     |     14.5    |    3.26    |
-| 1199999919 | 2015-07-07 20:26:29 |                Airport                 |      2.4      |      9      |     0      |
-| 1199999944 | 2015-07-07 21:25:09 | SoHo-TriBeCa-Civic Center-Little Italy |      5.13     |      20     |     3      |
-+------------+---------------------+----------------------------------------+---------------+-------------+------------+
++--------------+------+--------+--------+
+| ranking_date | rank | player | points |
++--------------+------+--------+--------+
+|  2000-01-10  |  1   | 101736 |  4135  |
+|  2000-01-10  |  2   | 102338 |  2915  |
+|  2000-01-10  |  3   | 101948 |  2419  |
+|  2000-01-10  |  4   | 103017 |  2184  |
+|  2000-01-10  |  5   | 102856 |  2169  |
+|  2000-01-10  |  6   | 102358 |  2107  |
+|  2000-01-10  |  7   | 102839 |  1966  |
+|  2000-01-10  |  8   | 101774 |  1929  |
+|  2000-01-10  |  9   | 102701 |  1846  |
+|  2000-01-10  |  10  | 101990 |  1739  |
++--------------+------+--------+--------+
 ```
 
-If we look back at the schema, a few of the money-related columns — `trip_distance`, `fare_amount`, and `tip_amount` — were inferred as `String` rather than a numeric type.
-We'll clean those up when we import the data into a table.
+## Importing CSV files into chDB {#importing-csv-files-into-chdb}
 
-## Importing TSV files into chDB {#importing-tsv-files-into-chdb}
-
-Now we're going to store the data from these TSV files in a table.
+Now we're going to store the data from these CSV files in a table.
 The default database doesn't persist data on disk, so we need to create another database first:
 
 ```python
-%sql CREATE DATABASE taxi
+%sql CREATE DATABASE atp
 ```
 
-And now we're going to create a table called `trips` whose schema will be derived from the structure of the data in the TSV files.
-We'll use the `REPLACE` clause to cast the money-related columns to `Float64`, and the [`transform`](/sql-reference/functions/other-functions#transform) function to turn the numeric `pickup_borocode` column into a human-readable borough name:
+And now we're going to create a table called `rankings` whose schema will be derived from the structure of the data in the CSV files:
 
 ```python
 %%sql
-CREATE TABLE taxi.trips
-ENGINE = MergeTree
-ORDER BY pickup_datetime AS
+CREATE TABLE atp.rankings
+ENGINE=MergeTree
+ORDER BY ranking_date AS
 SELECT * REPLACE (
-    toFloat64OrZero(trip_distance) AS trip_distance,
-    toFloat64OrZero(fare_amount) AS fare_amount,
-    toFloat64OrZero(tip_amount) AS tip_amount,
-    toFloat64OrZero(total_amount) AS total_amount
-  ),
-  transform(pickup_borocode, [1, 2, 3, 4, 5],
-            ['Manhattan', 'Bronx', 'Brooklyn', 'Queens', 'Staten Island'],
-            'Unknown') AS pickup_borough
-FROM file('trips_*.gz')
+  toDate(parseDateTime32BestEffort(toString(ranking_date))) AS ranking_date
+)
+FROM file('atp_rankings*.csv')
 SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 Let's do a quick check on the data in our table:
 
 ```python
-%sql SELECT count() AS trips FROM taxi.trips
+%sql SELECT * FROM atp.rankings LIMIT 10
 ```
 
 ```text
-+---------+
-|  trips  |
-+---------+
-| 3000317 |
-+---------+
++--------------+------+--------+--------+
+| ranking_date | rank | player | points |
++--------------+------+--------+--------+
+|  2000-01-10  |  1   | 101736 |  4135  |
+|  2000-01-10  |  2   | 102338 |  2915  |
+|  2000-01-10  |  3   | 101948 |  2419  |
+|  2000-01-10  |  4   | 103017 |  2184  |
+|  2000-01-10  |  5   | 102856 |  2169  |
+|  2000-01-10  |  6   | 102358 |  2107  |
+|  2000-01-10  |  7   | 102839 |  1966  |
+|  2000-01-10  |  8   | 101774 |  1929  |
+|  2000-01-10  |  9   | 102701 |  1846  |
+|  2000-01-10  |  10  | 101990 |  1739  |
++--------------+------+--------+--------+
 ```
 
-Just over 3 million trips — let's also bring in a second table.
-New York City's Taxi & Limousine Commission divides the city into taxi zones, and a lookup file maps each zone to its borough.
-Let's download that file:
+Looks good - the output, as expected, is the same as when querying the CSV files directly.
+
+We're going to follow the same process for the player metadata.
+This time the data is all in a single CSV file, so let's download that file:
 
 ```python
 _ = urlretrieve(
-    f"{base}/taxi_zone_lookup.csv",
-    "taxi_zone_lookup.csv",
+    f"{base}/atp_players.csv",
+    "atp_players.csv",
 )
 ```
 
-And then create a table called `zones` based on the content of the CSV file:
+And then create a table called `players` based on the content of the CSV file.
+We'll also clean up the `dob` field so that its a `Date32` type.
+
+> In ClickHouse, the `Date` type only supports dates from 1970 onwards. Since the `dob` column contains dates from before 1970, we'll use the `Date32` type instead.
 
 ```python
 %%sql
-CREATE TABLE taxi.zones
-ENGINE = MergeTree
-ORDER BY LocationID AS
-SELECT * FROM file('taxi_zone_lookup.csv')
+CREATE TABLE atp.players
+Engine=MergeTree
+ORDER BY player_id AS
+SELECT * REPLACE (
+  makeDate32(
+    toInt32OrNull(substring(toString(dob), 1, 4)),
+    toInt32OrNull(substring(toString(dob), 5, 2)),
+    toInt32OrNull(substring(toString(dob), 7, 2))
+  )::Nullable(Date32) AS dob
+)
+FROM file('atp_players.csv')
 SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 Once that's finished running, we can have a look at the data we've ingested:
 
 ```python
-%sql SELECT * FROM taxi.zones LIMIT 5
+%sql SELECT * FROM atp.players LIMIT 10
 ```
 
 ```text
-+------------+---------------+-------------------------+--------------+
-| LocationID |    Borough    |           Zone          | service_zone |
-+------------+---------------+-------------------------+--------------+
-|     1      |      EWR      |      Newark Airport     |     EWR      |
-|     2      |     Queens    |       Jamaica Bay       |  Boro Zone   |
-|     3      |     Bronx     | Allerton/Pelham Gardens |  Boro Zone   |
-|     4      |   Manhattan   |      Alphabet City      | Yellow Zone  |
-|     5      | Staten Island |      Arden Heights      |  Boro Zone   |
-+------------+---------------+-------------------------+--------------+
++-----------+------------+-----------+------+------------+-----+--------+-------------+
+| player_id | name_first | name_last | hand |    dob     | ioc | height | wikidata_id |
++-----------+------------+-----------+------+------------+-----+--------+-------------+
+|   100001  |  Gardnar   |   Mulloy  |  R   | 1913-11-22 | USA |  185   |    Q54544   |
+|   100002  |   Pancho   |   Segura  |  R   | 1921-06-20 | ECU |  168   |    Q54581   |
+|   100003  |   Frank    |  Sedgman  |  R   | 1927-10-02 | AUS |  180   |   Q962049   |
+|   100004  |  Giuseppe  |   Merlo   |  R   | 1927-10-11 | ITA |   0    |   Q1258752  |
+|   100005  |  Richard   |  Gonzalez |  R   | 1928-05-09 | USA |  188   |    Q53554   |
+|   100006  |   Grant    |   Golden  |  R   | 1929-08-21 | USA |  175   |   Q3115390  |
+|   100007  |    Abe     |   Segal   |  L   | 1930-10-23 | RSA |   0    |   Q1258527  |
+|   100008  |    Kurt    |  Nielsen  |  R   | 1930-11-19 | DEN |   0    |   Q552261   |
+|   100009  |   Istvan   |   Gulyas  |  R   | 1931-10-14 | HUN |   0    |    Q51066   |
+|   100010  |    Luis    |   Ayala   |  R   | 1932-09-18 | CHI |  170   |   Q1275397  |
++-----------+------------+-----------+------+------------+-----+--------+-------------+
 ```
 
 ## Querying chDB {#querying-chdb}
 
 Data ingestion is done, now it's time for the fun part - querying the data!
 
-Each borough is divided into a different number of taxi zones.
-We're going to write a query that joins the two tables to find out how many trips were picked up in each borough, and how many trips that works out to per taxi zone:
+Tennis players receive points based on how well they perform in the tournaments they play.
+The points for each player over a 52 week rolling period.
+We're going to write a query that finds the maximum points accumulate by each player along with their ranking at the time:
 
 ```python
 %%sql
-SELECT pickup_borough AS borough,
-       zone_count,
-       count() AS trips,
-       round(count() / zone_count) AS trips_per_zone
-FROM taxi.trips
-JOIN (
-    SELECT Borough, count() AS zone_count
-    FROM taxi.zones
-    GROUP BY Borough
-) AS zones ON pickup_borough = zones.Borough
-GROUP BY borough, zone_count
-ORDER BY trips DESC
+SELECT name_first, name_last,
+       max(points) as maxPoints,
+       argMax(rank, points) as rank,
+       argMax(ranking_date, points) as date
+FROM atp.players
+JOIN atp.rankings ON rankings.player = players.player_id
+GROUP BY ALL
+ORDER BY maxPoints DESC
+LIMIT 10
 ```
 
 ```text
-+---------------+------------+---------+----------------+
-|    borough    | zone_count |  trips  | trips_per_zone |
-+---------------+------------+---------+----------------+
-|   Manhattan   |     69     | 2713990 |    39333.0     |
-|     Queens    |     69     |  187737 |     2721.0     |
-|    Brooklyn   |     61     |  52445  |     860.0      |
-|    Unknown    |     2      |  43802  |    21901.0     |
-|     Bronx     |     43     |   2300  |      53.0      |
-| Staten Island |     20     |    43   |      2.0       |
-+---------------+------------+---------+----------------+
++------------+-----------+-----------+------+------------+
+| name_first | name_last | maxPoints | rank |    date    |
++------------+-----------+-----------+------+------------+
+|   Novak    |  Djokovic |   16950   |  1   | 2016-06-06 |
+|   Rafael   |   Nadal   |   15390   |  1   | 2009-04-20 |
+|    Andy    |   Murray  |   12685   |  1   | 2016-11-21 |
+|   Roger    |  Federer  |   12315   |  1   | 2012-10-29 |
+|   Daniil   |  Medvedev |   10780   |  2   | 2021-09-13 |
+|   Carlos   |  Alcaraz  |    9815   |  1   | 2023-08-21 |
+|  Dominic   |   Thiem   |    9125   |  3   | 2021-01-18 |
+|   Jannik   |   Sinner  |    8860   |  2   | 2024-05-06 |
+|  Stefanos  | Tsitsipas |    8350   |  3   | 2021-09-20 |
+| Alexander  |   Zverev  |    8240   |  4   | 2021-08-23 |
++------------+-----------+-----------+------+------------+
 ```
 
-Manhattan and Queens have the same number of taxi zones, but Manhattan generates over 14 times as many pickups.
+It's quite interesting that some of the players in this list accumulated a lot of points without being number 1 with that points total.
 
 ## Saving queries {#saving-queries}
 
@@ -273,37 +311,44 @@ We can save queries using the `--save` parameter on the same line as the `%%sql`
 The `--no-execute` parameter means that query execution will be skipped.
 
 ```python
-%%sql --save tips_by_neighborhood --no-execute
-SELECT pickup_ntaname AS neighborhood,
-       count() AS trips,
-       round(avg(tip_amount), 2) AS avg_tip
-FROM taxi.trips
-WHERE fare_amount > 0 AND pickup_ntaname != ''
-GROUP BY neighborhood
-ORDER BY avg_tip DESC
+%%sql --save best_points --no-execute
+SELECT name_first, name_last,
+       max(points) as maxPoints,
+       argMax(rank, points) as rank,
+       argMax(ranking_date, points) as date
+FROM atp.players
+JOIN atp.rankings ON rankings.player = players.player_id
+GROUP BY ALL
+ORDER BY maxPoints DESC
 ```
 
 When we run a saved query it will be converted into a Common Table Expression (CTE) before executing.
-In the following query we compute the neighborhoods with the highest average tip:
+In the following query we compute the maximum points achieved by players when they were ranked 1:
 
 ```python
-%sql SELECT * FROM tips_by_neighborhood ORDER BY avg_tip DESC LIMIT 5
+%sql select * FROM best_points WHERE rank=1
 ```
 
 ```text
-+-----------------------------------+-------+---------+
-|            neighborhood           | trips | avg_tip |
-+-----------------------------------+-------+---------+
-| New Springville-Bloomfield-Travis |   2   |   35.0  |
-|       New Dorp-Midland Beach      |   2   |  23.74  |
-|      New Brighton-Silver Lake     |   3   |  16.67  |
-|           Newark Airport          |  201  |  11.89  |
-|   Grymes Hill-Clifton-Fox Hills   |   1   |   11.3  |
-+-----------------------------------+-------+---------+
++-------------+-----------+-----------+------+------------+
+|  name_first | name_last | maxPoints | rank |    date    |
++-------------+-----------+-----------+------+------------+
+|    Novak    |  Djokovic |   16950   |  1   | 2016-06-06 |
+|    Rafael   |   Nadal   |   15390   |  1   | 2009-04-20 |
+|     Andy    |   Murray  |   12685   |  1   | 2016-11-21 |
+|    Roger    |  Federer  |   12315   |  1   | 2012-10-29 |
+|    Carlos   |  Alcaraz  |    9815   |  1   | 2023-08-21 |
+|     Pete    |  Sampras  |    5792   |  1   | 1997-08-11 |
+|    Andre    |   Agassi  |    5652   |  1   | 1995-08-21 |
+|   Lleyton   |   Hewitt  |    5205   |  1   | 2002-08-12 |
+|   Gustavo   |  Kuerten  |    4750   |  1   | 2001-09-10 |
+| Juan Carlos |  Ferrero  |    4570   |  1   | 2003-10-20 |
+|    Stefan   |   Edberg  |    3997   |  1   | 1991-02-25 |
+|     Jim     |  Courier  |    3973   |  1   | 1993-08-23 |
+|     Ivan    |   Lendl   |    3420   |  1   | 1990-02-26 |
+|     Ilie    |  Nastase  |     0     |  1   | 1973-08-27 |
++-------------+-----------+-----------+------+------------+
 ```
-
-The top entries are neighborhoods with only a handful of trips, so a single generous ride skews the average.
-Let's filter those out.
 
 ## Querying with parameters {#querying-with-parameters}
 
@@ -311,52 +356,57 @@ We can also use parameters in our queries.
 Parameters are just normal variables:
 
 ```python
-min_trips = 10000
+rank = 10
 ```
 
 And then we can use the `{{variable}}` syntax in our query.
-The following query finds the neighborhoods with the highest average tip among those with more than 10,000 trips:
+The following query finds the players who had the least number of days between when they first had a ranking in the top 10 and last had a ranking in the top 10:
 
 ```python
 %%sql
-SELECT * FROM tips_by_neighborhood
-WHERE trips >= {{min_trips}}
-ORDER BY avg_tip DESC
+SELECT name_first, name_last,
+       MIN(ranking_date) AS earliest_date,
+       MAX(ranking_date) AS most_recent_date,
+       most_recent_date - earliest_date AS days,
+       1 + (days/7) AS weeks
+FROM atp.rankings
+JOIN atp.players ON players.player_id = rankings.player
+WHERE rank <= {{rank}}
+GROUP BY ALL
+ORDER BY days
 LIMIT 10
 ```
 
 ```text
-+----------------------------------------+--------+---------+
-|              neighborhood              | trips  | avg_tip |
-+----------------------------------------+--------+---------+
-|                Airport                 | 151171 |   4.92  |
-|   Battery Park City-Lower Manhattan    | 89110  |   2.16  |
-|         North Side-South Side          | 11152  |   1.79  |
-| SoHo-TriBeCa-Civic Center-Little Italy | 144887 |   1.65  |
-|               Chinatown                | 54780  |   1.65  |
-|            Lower East Side             | 15753  |   1.64  |
-|              East Village              | 99881  |   1.61  |
-|  Hunters Point-Sunnyside-West Maspeth  | 10054  |   1.58  |
-|        Turtle Bay-East Midtown         | 197035 |   1.57  |
-|              West Village              | 210369 |   1.54  |
-+----------------------------------------+--------+---------+
++------------+-----------+---------------+------------------+------+-------+
+| name_first | name_last | earliest_date | most_recent_date | days | weeks |
++------------+-----------+---------------+------------------+------+-------+
+|    Alex    | Metreveli |   1974-06-03  |    1974-06-03    |  0   |   1   |
+|   Mikael   |  Pernfors |   1986-09-22  |    1986-09-22    |  0   |   1   |
+|   Felix    |  Mantilla |   1998-06-08  |    1998-06-08    |  0   |   1   |
+|   Wojtek   |   Fibak   |   1977-07-25  |    1977-07-25    |  0   |   1   |
+|  Thierry   |  Tulasne  |   1986-08-04  |    1986-08-04    |  0   |   1   |
+|   Lucas    |  Pouille  |   2018-03-19  |    2018-03-19    |  0   |   1   |
+|    John    | Alexander |   1975-12-15  |    1975-12-15    |  0   |   1   |
+|  Nicolas   |   Massu   |   2004-09-13  |    2004-09-20    |  7   |   2   |
+|   Arnaud   |  Clement  |   2001-04-02  |    2001-04-09    |  7   |   2   |
+|  Ernests   |   Gulbis  |   2014-06-09  |    2014-06-23    |  14  |   3   |
++------------+-----------+---------------+------------------+------+-------+
 ```
-
-Airport pickups tip the most by a wide margin — those long rides into the city add up.
 
 ## Plotting histograms {#plotting-histograms}
 
 JupySQL also has limited charting functionality.
 We can create box plots or histograms.
 
-We're going to create a histogram, but first let's write (and save) a query that returns the distance of each trip under 20 miles.
-We'll be able to use this to create a histogram that counts how many trips fall into each distance bucket:
+We're going to create a histogram, but first let's write (and save) a query that computes the rankings within the top 100 that each player has achieved.
+We'll be able to use this to create a histogram that counts how many players achieved each ranking:
 
 ```python
-%%sql --save trip_distances --no-execute
-SELECT trip_distance
-FROM taxi.trips
-WHERE trip_distance > 0 AND trip_distance < 20
+%%sql --save players_per_rank --no-execute
+select distinct player, rank
+FROM atp.rankings
+WHERE rank <= 100
 ```
 
 We can then create a histogram by running the following:
@@ -366,14 +416,11 @@ from sql.ggplot import ggplot, geom_histogram, aes
 
 plot = (
   ggplot(
-    table="trip_distances",
-    with_="trip_distances",
-    mapping=aes(x="trip_distance", fill="#69f0ae", color="#fff"),
-  ) + geom_histogram(bins=50)
+    table="players_per_rank",
+    with_="players_per_rank",
+    mapping=aes(x="rank", fill="#69f0ae", color="#fff"),
+  ) + geom_histogram(bins=100)
 )
 ```
 
-Most trips are short hops of one to three miles, with a long tail stretching out towards the airport runs.
-
-## Related {#related}
-- [Intro to JupySQL with chDB (YouTube)](https://www.youtube.com/watch?v=2wjl3OijCto)
+<Image img="/images/chdb/guides/players_per_rank.webp" size="md" alt="Histogram of player rankings in ATP dataset" />

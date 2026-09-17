@@ -17,7 +17,6 @@
 
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <optional>
 #include <base/defines.h>
@@ -47,13 +46,9 @@ public:
         IcebergDataSnapshotPtr data_snapshot_,
         PersistentTableComponents persistent_components);
 
-    ~SingleThreadIcebergKeysIterator();
-
     std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
 
 private:
-    void schedulePrefetchIfPossible();
-
     ObjectStoragePtr object_storage;
     std::shared_ptr<const ActionsDAG> filter_dag;
     ContextPtr local_context;
@@ -66,14 +61,6 @@ private:
     Iceberg::ManifestIteratorPtr current_manifest_file_iterator;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
-
-    struct PrefetchedManifest
-    {
-        size_t manifest_list_index;
-        std::future<Iceberg::ManifestFileCacheableInfo> future;
-    };
-    std::optional<PrefetchedManifest> prefetched_manifest;
-    ThreadPoolCallbackRunnerUnsafe<Iceberg::ManifestFileCacheableInfo> prefetch_runner;
 };
 
 }

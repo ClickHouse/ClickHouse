@@ -268,7 +268,7 @@ static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, 
     res.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`.
+        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`
         if (columns[i])
             res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
     }
@@ -311,7 +311,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         if (dataflow_cache_update_cb)
             dataflow_cache_update_cb(
                 toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
-                first_reader.getReader()->getPartiallyReadColumns(),
                 read_result.num_bytes_read,
                 should_continue_sampling);
 
@@ -349,7 +348,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 // is already set to false, because we still need to update the total bytes seen.
                 dataflow_cache_update_cb(
                     toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
-                    range_readers[i].getReader()->getPartiallyReadColumns(),
                     read_result.num_bytes_read - num_bytes_read_so_far,
                     should_continue_sampling);
             }
@@ -449,8 +447,12 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// `prewhere_info->columns_overwritten_by_chain` is the set of columns the chain
     /// will overwrite. Null those out around `performRequiredConversions` so they are
     /// skipped, then restore them so the step's action sees them in their on-disk form.
-    /// An empty skip set means the chain has nothing to skip, so the conversion is a
-    /// no-op for this step and we leave the columns untouched.
+    /// When the skip set is empty (e.g. a metadata-only / lazy `ALTER MODIFY COLUMN` with no
+    /// chained UPDATE/DELETE) the loop below is a pass-through and every read column is
+    /// converted. Not converting here would leave an on-disk column (e.g. a lazy JSON
+    /// type-hint path still stored as `Dynamic`) advertising the post-`MODIFY` metadata type,
+    /// which later trips `materialize` in `evaluateMissingDefaults` when the column is read
+    /// through the text-index paths (exact-equals direct read or the LIKE fallback).
     ///
     /// A column is exempt from conversion ONLY when its on-disk value is about to be
     /// discarded and replaced before anything genuinely reads it. If a mutation step consumes
@@ -463,7 +465,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     {
         merge_tree_reader->performRequiredConversions(read_columns);
     }
-    else if (!prewhere_info->columns_overwritten_by_chain.empty())
+    else
     {
         const auto & reader_columns = merge_tree_reader->getColumns();
         const auto & skip = prewhere_info->columns_overwritten_by_chain;

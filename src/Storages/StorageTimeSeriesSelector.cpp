@@ -2,7 +2,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -37,26 +36,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-namespace
-{
-
-/// Read a required String literal argument as a value, without materializing a `Field`.
-String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
-{
-    auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-    /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
-    /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
-    /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
-    /// NULL value as before.
-    if (!isStringOrFixedString(removeLowCardinalityAndNullable(type)))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, type->getName());
-    if (column->isNullAt(0))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
-    return String(column->getDataAt(0));
-}
-
 }
 
 namespace TimeSeriesSetting
@@ -103,13 +82,27 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
         if (args.size() == min_num_args)
         {
             /// timeSeriesSelector( 'my_time_series_table', ... )
-            time_series_storage_id.table_name = getStringConstArgument(args[argument_index++], context, "table_name");
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
         }
         else
         {
             /// timeSeriesSelector( 'mydb', 'my_time_series_table', ... )
-            time_series_storage_id.database_name = getStringConstArgument(args[argument_index++], context, "database_name");
-            time_series_storage_id.table_name = getStringConstArgument(args[argument_index++], context, "table_name");
+            auto database_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (database_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a literal with type String, got {}", database_name_field.getType());
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.database_name = database_name_field.safeGet<String>();
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
         }
     }
 
@@ -125,7 +118,11 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
-    PrometheusQueryTree selector{getStringConstArgument(args[argument_index++], context, "selector")};
+    auto selector_field = evaluateConstantExpression(args[argument_index++], context).first;
+    if (selector_field.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'selector' must be a literal with type String, got {}", selector_field.getType());
+
+    PrometheusQueryTree selector{selector_field.safeGet<String>()};
 
     auto [min_time_field, min_time_type] = evaluateConstantExpression(args[argument_index++], context);
     auto [max_time_field, max_time_type] = evaluateConstantExpression(args[argument_index++], context);
@@ -328,13 +325,10 @@ namespace
     {
         ASTs conditions;
 
-        /// Emit the timestamp range BEFORE the `id IN <set>` condition: on the default schema
-        /// (ORDER BY (id, timestamp)) primary-key pruning already returns mostly granules of matched
-        /// series, so the `id IN <set>` check passes almost all read rows, while the timestamp range
-        /// is the selective condition (e.g. a few rows per 32768-row granule for a short lookback).
-        /// The PREWHERE optimizer keeps this order whenever its selectivity estimation is inconclusive,
-        /// and running the cheap timestamp comparison before the hash-set probe of `in` significantly
-        /// reduces the scan CPU of short-window selectors.
+        /// id IN (SELECT id FROM (select_id_query))
+        /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
+        auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
+        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
         /// timestamp >= min_time
         conditions.push_back(makeASTFunction(
@@ -348,11 +342,6 @@ namespace
             make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
             timeSeriesTimestampToAST(max_time, timestamp_data_type)));
 
-        /// id IN (SELECT id FROM (select_id_query))
-        /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
-        auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
-
         return makeASTForLogicalAnd(std::move(conditions));
     }
 
@@ -360,25 +349,27 @@ namespace
                                         ASTPtr select_query_from_tags_table,
                                         DateTime64 min_time,
                                         DateTime64 max_time,
-                                        const DataTypePtr & timestamp_data_type)
+                                        const DataTypePtr & id_data_type,
+                                        const DataTypePtr & timestamp_data_type,
+                                        const DataTypePtr & scalar_data_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         /// SELECT id, timestamp, value
-        ///
-        /// The columns are read as is, without casts to the data types declared by this storage.
-        /// A cast aliased in the SELECT list (e.g. `toDateTime64(timestamp, 3) AS timestamp`) would
-        /// shadow the raw column, and the WHERE conditions below would wrap the primary key
-        /// columns, degrading the index analysis and the ordering of the PREWHERE conditions.
-        /// The casts to the declared types are applied by an outer SELECT instead
-        /// (see `makeSelectQuery`).
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+            select_list.push_back(makeASTFunction(
+                "CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
+            select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+
+            select_list.push_back(
+                timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), timestamp_data_type));
+            select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+
+            select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
+            select_list.back()->setAlias(TimeSeriesColumnNames::Value);
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -398,83 +389,13 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// WHERE (timestamp >= min_time) AND (timestamp <= max_time) AND (id IN <select_query_from_tags_table>)
+        /// WHERE (id IN <select_query_from_tags_table>) AND (timestamp >= min_time) AND (timestamp <= max_time)
         ///
         /// where <select_query_from_tags_table> is roughly:
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
             auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
-        }
-
-        /// Wrap the select query into ASTSelectWithUnionQuery.
-        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-        select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
-        auto list_of_selects = make_intrusive<ASTExpressionList>();
-        list_of_selects->children.push_back(std::move(select_query));
-        select_with_union_query->children.push_back(std::move(list_of_selects));
-        select_with_union_query->list_of_selects = select_with_union_query->children.back();
-
-        return select_with_union_query;
-    }
-
-    /// Makes the final select query by wrapping the select query from the data table into an outer
-    /// SELECT which casts the columns to the data types expected by this storage:
-    ///
-    /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
-    /// FROM (select_query_from_data_table)
-    ///
-    /// The inner query reads the samples table columns as is (see makeSelectQueryFromDataTable()),
-    /// so its result types are the physical column types, which can differ from the expected ones
-    /// (e.g. a samples table can store `timestamp` with a different timezone). Casting in an outer
-    /// SELECT keeps the WHERE conditions of the inner query on the bare primary key columns, and
-    /// the casts run only for the rows which passed the filter. The internal `_CAST` is used here
-    /// because it returns exactly the specified type (`CAST` and conversion functions like
-    /// `toDateTime64` keep the timezone of the casted expression), and it is free when the type
-    /// already matches.
-    ASTPtr makeSelectQuery(ASTPtr select_query_from_data_table,
-                           const DataTypePtr & id_data_type,
-                           const DataTypePtr & timestamp_data_type,
-                           const DataTypePtr & scalar_data_type)
-    {
-        auto select_query = make_intrusive<ASTSelectQuery>();
-
-        /// SELECT _CAST(id, 'UInt64') AS id, _CAST(timestamp, 'DateTime64(3)') AS timestamp, _CAST(value, 'Float64') AS value
-        {
-            auto select_list_exp = make_intrusive<ASTExpressionList>();
-            auto & select_list = select_list_exp->children;
-
-            select_list.push_back(makeASTFunction(
-                "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::ID);
-
-            select_list.push_back(makeASTFunction(
-                "_CAST",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                make_intrusive<ASTLiteral>(timestamp_data_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
-
-            select_list.push_back(makeASTFunction(
-                "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>(scalar_data_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Value);
-
-            select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
-        }
-
-        /// FROM (select_query_from_data_table)
-        {
-            auto table_exp = make_intrusive<ASTTableExpression>();
-            table_exp->subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_data_table));
-            table_exp->children.push_back(table_exp->subquery);
-
-            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-            table->table_expression = table_exp;
-            table->children.push_back(table->table_expression);
-
-            auto tables = make_intrusive<ASTTablesInSelectQuery>();
-            tables->children.push_back(table);
-
-            select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.
@@ -542,20 +463,16 @@ void StorageTimeSeriesSelector::readImpl(
         select_query_from_tags_table,
         config.min_time,
         config.max_time,
-        config.timestamp_data_type);
-
-    ASTPtr select_query = makeSelectQuery(
-        std::move(select_query_from_data_table),
         config.id_data_type,
         config.timestamp_data_type,
         config.scalar_data_type);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
-    LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
+    LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    InterpreterSelectQueryAnalyzer interpreter(select_query, context, options, column_names);
+    InterpreterSelectQueryAnalyzer interpreter(select_query_from_data_table, context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
 }

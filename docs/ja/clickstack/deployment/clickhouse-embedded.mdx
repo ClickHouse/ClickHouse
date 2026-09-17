@@ -36,7 +36,9 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
 <Tabs>
   <Tab title="Docker">
     <Steps>
-      <Step title="ClickHouse を起動する" id="start-clickhouse-docker">
+      <Step>
+        ### ClickHouse を起動する
+
         パスワードを設定して、ClickHouse server イメージを取得し、起動します。
 
         ```shell
@@ -54,7 +56,9 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
         </Tip>
       </Step>
 
-      <Step title="ClickStack UI を開く" id="open-clickstack-ui-docker">
+      <Step>
+        ### ClickStack UI を開く
+
         ブラウザで [http://localhost:8123](http://localhost:8123) を開き、**ClickStack** をクリックします。
 
         ユーザー名 `default` とパスワード `password` を入力して、ローカルインスタンスに接続します。
@@ -62,7 +66,9 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
         <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="認証" size="lg" />
       </Step>
 
-      <Step title="ログソースを作成する" id="create-a-source-docker">
+      <Step>
+        ### ログソースを作成する
+
         既存の OpenTelemetry テーブルがある場合、ClickStack がそれらを検出し、自動的にログソースを作成します。
 
         新規インストールの場合は、ログソースの作成を求められます。**Table** フィールドに適切なテーブル名 (例: `otel_logs`) を入力し、**Save New Source** をクリックします。
@@ -76,7 +82,9 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
 
   <Tab title="バイナリ">
     <Steps>
-      <Step title="ClickHouse を起動する" id="start-clickhouse-binary">
+      <Step>
+        ### ClickHouse を起動する
+
         ClickHouse をダウンロードして起動します。
 
         ```shell
@@ -131,11 +139,15 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
         ```
       </Step>
 
-      <Step title="ClickStack UI を開く" id="open-clickstack-ui-binary">
+      <Step>
+        ### ClickStack UI を開く
+
         ブラウザで [http://localhost:8123](http://localhost:8123) を開き、**ClickStack** をクリックします。ローカルインスタンスへの接続は自動的に作成されます。
       </Step>
 
-      <Step title="ログソースを作成する" id="create-a-source-binary">
+      <Step>
+        ### ログソースを作成する
+
         既存の OpenTelemetry テーブルがある場合、ClickStack がそれらを検出し、自動的にログソースを作成します。
 
         まだデータがない場合は、利用可能なオプションについて [Ingesting data](/ja/clickstack/ingesting-data/index) を参照してください。
@@ -150,9 +162,9 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
   ## 次のステップ
 </div>
 
-評価段階を終えて次に進む準備ができたら、本番運用に対応したデプロイメントを検討してください。
+評価段階を終えて次に進む準備ができている場合は、本番運用に対応したデプロイを検討してください。
 
 * [All-in-One](/ja/clickstack/deployment/all-in-one) — 永続化と認証を含む、すべてのコンポーネントを備えた単一コンテナー
-* [Docker Compose](/ja/clickstack/deployment/docker-compose) — より細かく制御できる個別コンポーネント構成
-* [Helm](/ja/clickstack/deployment/helm) — 本番 Kubernetes デプロイメントに推奨
+* [Docker Compose](/ja/clickstack/deployment/docker-compose) — より細かく制御するための個別コンポーネント構成
+* [Helm](/ja/clickstack/deployment/helm) — 本番 Kubernetes デプロイに推奨
 * [Managed ClickStack](/ja/clickstack/getting-started/managed) — ClickHouse Cloud 上で提供される完全マネージド型

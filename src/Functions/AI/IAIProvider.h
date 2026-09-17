@@ -17,7 +17,7 @@ public:
     AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg);
 
     AIProviderHTTPException * clone() const override { return new AIProviderHTTPException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
 
@@ -139,8 +139,5 @@ public:
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
-
-/// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
-String formatProviderError(int status_code, const String & response_body);
 
 }

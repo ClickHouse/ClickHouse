@@ -97,7 +97,6 @@ def main():
         # --remap-legacy (the default) must NOT be blocked. Stub generate() so the
         # dry run does not need a binary; it should simply skip every page.
         mod.generate = lambda *a, **k: (None, None)
-        mod._settings_manifest_from_artifacts = lambda *a, **k: {}
         with redirect_stdout(io.StringIO()):
             rc = mod.main(["--docs-dir", docs])  # remap default, dry run
         assert rc == 0, f"remap dry run should return 0, got {rc}"

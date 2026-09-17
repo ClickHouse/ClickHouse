@@ -246,14 +246,6 @@ enum class CleanDeletedRows : uint8_t
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
-enum class UniqueKeyProbeImplementation : uint8_t
-{
-    Auto = 0, /// Pick the default; currently the simple baseline.
-    Simple,   /// Single-threaded baseline probe.
-};
-
-DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
-
 enum class MySQLDataTypesSupport : uint8_t
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
@@ -323,7 +315,6 @@ enum class Dialect : uint8_t
     prql,
     promql,
     polyglot,
-    clickhouse_json,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -539,6 +530,17 @@ enum class TextIndexPostingListCodec : uint8_t
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
 
+/// On-disk serialization format version of text indexes.
+/// These are the on-disk version numbers and must remain stable.
+enum class MergeTreeTextIndexSerializationVersion : uint8_t
+{
+    V0_Initial = 0,
+    V1_WithCodec = 1,
+    V2_WithPositions = 2,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeTextIndexSerializationVersion)
+
 /// NOTE: Part level min-max index depends on strict columns order.
 ///       That means if you want to add new columns segment to index - it will not be materialized until
 ///       previous segment will be materialized in all data parts via mutation or merge.
@@ -554,7 +556,6 @@ DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 enum class MergeCoordinatorDistributionAlgorithm : uint64_t
 {
     WATER_FILLING = 0,
-    SAINTE_LAGUE = 1,
 };
 
 DECLARE_SETTING_ENUM(MergeCoordinatorDistributionAlgorithm)

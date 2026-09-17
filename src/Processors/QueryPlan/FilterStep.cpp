@@ -298,9 +298,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
         {
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-
-            /// Each split atom gets the same query condition cache key.
-            return std::make_shared<FilterTransform>(header, expression, and_atom.name, true, on_totals, nullptr, condition);
+            return std::make_shared<FilterTransform>(header, expression, and_atom.name, true, on_totals);
         });
     }
 

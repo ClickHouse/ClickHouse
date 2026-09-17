@@ -38,7 +38,9 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
 * Você tem o Docker instalado na sua máquina
 
 <Steps>
-  <Step title="Configurar a estrutura de diretórios e o ambiente de teste" id="set-up">
+  <Step>
+    ## Configurar a estrutura de diretórios e o ambiente de teste
+
     <ExampleFiles />
 
     Neste tutorial, você usará o [Docker compose](https://docs.docker.com/compose/) para
@@ -51,12 +53,12 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     mkdir cluster_2S_1R
     cd cluster_2S_1R
 
-    # Create clickhouse-keeper directories
+    # Criar diretórios do clickhouse-keeper
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Create clickhouse-server directories
+    # Criar diretórios do clickhouse-server
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -162,12 +164,14 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     <ConfigExplanation />
   </Step>
 
-  <Step title="Configurar nós do ClickHouse" id="configure-clickhouse-servers">
+  <Step>
+    ## Configurar nós do ClickHouse
+
     ### Configuração do servidor
 
     Agora modifique cada arquivo de configuração vazio `config.xml` localizado em
-    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas que estão
-    destacadas abaixo precisam ser alteradas para serem específicas de cada nó:
+    `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. As linhas destacadas
+    abaixo precisam ser ajustadas para cada nó específico:
 
     ```xml highlight={9,54-57}
     <clickhouse replace="true">
@@ -396,7 +400,9 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     </Note>
   </Step>
 
-  <Step title="Configurar o ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
+  <Step>
+    ## Configurar o ClickHouse Keeper
+
     ### Configuração do ClickHouse Keeper
 
     <KeeperConfig />
@@ -412,7 +418,9 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     <CloudTip />
   </Step>
 
-  <Step title="Teste a configuração" id="test-the-setup">
+  <Step>
+    ## Teste a configuração
+
     Certifique-se de que o Docker esteja em execução na sua máquina.
     Inicie o cluster usando o comando `docker-compose up` na raiz do diretório `cluster_2S_1R`:
 
@@ -437,7 +445,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     consulta a seguir. O comando para se conectar ao primeiro nó é mostrado abaixo:
 
     ```bash
-    # Connect to any node
+    # Conecte-se a qualquer nó
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -491,7 +499,9 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     Na próxima etapa, você criará uma tabela no cluster.
   </Step>
 
-  <Step title="Criar um banco de dados" id="creating-a-database">
+  <Step>
+    ## Criar um banco de dados
+
     Agora que você verificou que o cluster está configurado corretamente e em execução,
     você vai recriar a mesma tabela usada no tutorial do conjunto de dados de exemplo [UK property prices](/pt-BR/get-started/sample-datasets/uk-price-paid).
     Ela contém cerca de 30 milhões de linhas com preços pagos
@@ -548,7 +558,9 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
   </Step>
 
-  <Step title="Criar uma tabela no cluster" id="creating-a-table">
+  <Step>
+    ## Criar uma tabela no cluster
+
     Agora que o banco de dados foi criado, você vai criar uma tabela.
     Execute a consulta a seguir em qualquer um dos hosts cliente:
 
@@ -627,13 +639,13 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     Agora, em `clickhouse-01` ou `clickhouse-02`, execute a seguinte consulta:
 
     ```sql
-    -- from clickhouse-01
+    -- de clickhouse-01
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Clicky McClickface │
     --   └────┴────────────────────┘
 
-    --from clickhouse-02
+    --de clickhouse-02
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Alexey Milovidov   │
@@ -651,7 +663,9 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     o motor de tabela [`Distributed`](/pt-BR/reference/engines/table-engines/special/distributed). Vamos ver como ela funciona.
   </Step>
 
-  <Step title="Criar uma tabela distribuída" id="create-distributed-table">
+  <Step>
+    ## Criar uma tabela distribuída
+
     Crie uma tabela distribuída com a seguinte consulta:
 
     ```sql
@@ -687,7 +701,9 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
   </Step>
 
-  <Step title="Inserir dados em uma tabela distribuída" id="inserting-data-into-distributed-table">
+  <Step>
+    ## Inserir dados em uma tabela distribuída
+
     Agora conecte-se a um dos hosts e insira os dados:
 
     ```sql
@@ -738,8 +754,8 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
 
     ```response title="Response"
-       ┌──count()─┐
-    1. │ 30212555 │ -- 30.21 million
+    ┌──count()─┐
+    1. │ 30212555 │ -- 30,21 milhões
        └──────────┘
     ```
 
@@ -752,14 +768,14 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15107353 │ -- 15.11 million
+    -- 1. │ 15107353 │ -- 15,11 milhões
     --    └──────────┘
 
     --from clickhouse-02
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15105202 │ -- 15.11 million
+    -- 1. │ 15105202 │ -- 15,11 milhões
     --    └──────────┘
     ```
 
@@ -785,7 +801,7 @@ A arquitetura do cluster que você vai configurar é mostrada abaixo:
     ```
 
     Agora, a partir do `clickhouse-02`, execute a mesma consulta select que executamos antes na tabela
-    distribuída:
+    Distributed:
 
     ```sql
     SELECT count(*)
