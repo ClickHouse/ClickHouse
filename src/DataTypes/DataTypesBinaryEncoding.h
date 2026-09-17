@@ -195,6 +195,12 @@ Aggregate function parameter binary encoding (binary encoding of a Field, see sr
 String encodeDataType(const DataTypePtr & type);
 void encodeDataType(const DataTypePtr & type, WriteBuffer & buf);
 
+/// Full binary type encoding with deterministic ordering for unordered JSON
+/// type metadata. Intended for canonical identity only; the ordinary encoding
+/// above preserves its legacy iteration order and cost.
+String encodeCanonicalDataType(const DataTypePtr & type);
+void encodeCanonicalDataType(const DataTypePtr & type, WriteBuffer & buf);
+
 /// Special version of type encoding that is used for generic hash calculation.
 /// It can skip serializing some data types parameters.
 void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & buf);

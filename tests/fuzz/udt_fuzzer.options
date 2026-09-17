@@ -1,0 +1,7 @@
+[libfuzzer]
+seed = 424242
+max_len = 64
+len_control = 0
+timeout = 10
+rss_limit_mb = 1024
+malloc_limit_mb = 64

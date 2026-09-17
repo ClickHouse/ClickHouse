@@ -38,6 +38,9 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 
+#include <algorithm>
+#include <vector>
+
 namespace DB
 {
 
@@ -265,10 +268,10 @@ DataTypePtr decodeDecimal(ReadBuffer & buf)
 }
 
 
-template <bool encode_for_hash_calculation>
+template <bool encode_for_hash_calculation, bool canonical_json_order>
 void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf);
 
-template <bool encode_for_hash_calculation>
+template <bool encode_for_hash_calculation, bool canonical_json_order>
 void encodeAggregateFunction(const String & function_name, const Array & parameters, const DataTypes & arguments_types, WriteBuffer & buf)
 {
     writeStringBinary(function_name, buf);
@@ -277,7 +280,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeField(param, buf);
     writeVarUInt(arguments_types.size(), buf);
     for (const auto & argument_type : arguments_types)
-        encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
+        encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(argument_type, buf);
 }
 
 std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
@@ -308,7 +311,7 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     return {function, parameters, arguments_types};
 }
 
-template <bool encode_for_hash_calculation>
+template <bool encode_for_hash_calculation, bool canonical_json_order>
 void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
 {
     /// First, write the BinaryTypeIndex byte.
@@ -383,7 +386,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*type);
-            encodeDataTypeImpl<encode_for_hash_calculation>(array_type.getNestedType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(array_type.getNestedType(), buf);
             break;
         }
         case BinaryTypeIndex::NamedTuple:
@@ -395,7 +398,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             for (size_t i = 0; i != types.size(); ++i)
             {
                 writeStringBinary(names[i], buf);
-                encodeDataTypeImpl<encode_for_hash_calculation>(types[i], buf);
+                encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(types[i], buf);
             }
             break;
         }
@@ -405,20 +408,20 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & element_types = tuple_type.getElements();
             writeVarUInt(element_types.size(), buf);
             for (const auto & element_type : element_types)
-                encodeDataTypeImpl<encode_for_hash_calculation>(element_type, buf);
+                encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(element_type, buf);
             break;
         }
         case BinaryTypeIndex::QBit:
         {
             const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
-            encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(qbit_type.getElementType(), buf);
             writeVarUInt(qbit_type.getDimension(), buf);
             break;
         }
         case BinaryTypeIndex::QBitWithStride:
         {
             const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
-            encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(qbit_type.getElementType(), buf);
             writeVarUInt(qbit_type.getDimension(), buf);
             writeVarUInt(qbit_type.getStride(), buf);
             break;
@@ -432,7 +435,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::Nullable:
         {
             const auto & nullable_type = assert_cast<const DataTypeNullable &>(*type);
-            encodeDataTypeImpl<encode_for_hash_calculation>(nullable_type.getNestedType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(nullable_type.getNestedType(), buf);
             break;
         }
         case BinaryTypeIndex::Function:
@@ -442,21 +445,21 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & return_type = function_type.getReturnType();
             writeVarUInt(arguments_types.size(), buf);
             for (const auto & argument_type : arguments_types)
-                encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
-            encodeDataTypeImpl<encode_for_hash_calculation>(return_type, buf);
+                encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(argument_type, buf);
+            encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(return_type, buf);
             break;
         }
         case BinaryTypeIndex::LowCardinality:
         {
             const auto & low_cardinality_type = assert_cast<const DataTypeLowCardinality &>(*type);
-            encodeDataTypeImpl<encode_for_hash_calculation>(low_cardinality_type.getDictionaryType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(low_cardinality_type.getDictionaryType(), buf);
             break;
         }
         case BinaryTypeIndex::Map:
         {
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            encodeDataTypeImpl<encode_for_hash_calculation>(map_type.getKeyType(), buf);
-            encodeDataTypeImpl<encode_for_hash_calculation>(map_type.getValueType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(map_type.getKeyType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(map_type.getValueType(), buf);
             break;
         }
         case BinaryTypeIndex::Variant:
@@ -465,7 +468,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & variants = variant_type.getVariants();
             writeVarUInt(variants.size(), buf);
             for (const auto & variant : variants)
-                encodeDataTypeImpl<encode_for_hash_calculation>(variant, buf);
+                encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(variant, buf);
             break;
         }
         case BinaryTypeIndex::Dynamic:
@@ -483,13 +486,21 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
         {
             const auto & aggregate_function_type = assert_cast<const DataTypeAggregateFunction &>(*type);
             writeVarUInt(aggregate_function_type.getVersion(), buf);
-            encodeAggregateFunction<encode_for_hash_calculation>(aggregate_function_type.getFunctionName(), aggregate_function_type.getParameters(), aggregate_function_type.getArgumentsDataTypes(), buf);
+            encodeAggregateFunction<encode_for_hash_calculation, canonical_json_order>(
+                aggregate_function_type.getFunctionName(),
+                aggregate_function_type.getParameters(),
+                aggregate_function_type.getArgumentsDataTypes(),
+                buf);
             break;
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
         {
             const auto & simple_aggregate_function_type = assert_cast<const DataTypeCustomSimpleAggregateFunction &>(*type->getCustomName());
-            encodeAggregateFunction<encode_for_hash_calculation>(simple_aggregate_function_type.getFunctionName(), simple_aggregate_function_type.getParameters(), simple_aggregate_function_type.getArgumentsDataTypes(), buf);
+            encodeAggregateFunction<encode_for_hash_calculation, canonical_json_order>(
+                simple_aggregate_function_type.getFunctionName(),
+                simple_aggregate_function_type.getParameters(),
+                simple_aggregate_function_type.getArgumentsDataTypes(),
+                buf);
             break;
         }
         case BinaryTypeIndex::Nested:
@@ -501,7 +512,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             for (size_t i = 0; i != elements.size(); ++i)
             {
                 writeStringBinary(names[i], buf);
-                encodeDataTypeImpl<encode_for_hash_calculation>(elements[i], buf);
+                encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(elements[i], buf);
             }
             break;
         }
@@ -525,15 +536,47 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             writeBinary(UInt8(object_type.getMaxDynamicTypes()), buf);
             const auto & typed_paths = object_type.getTypedPaths();
             writeVarUInt(typed_paths.size(), buf);
-            for (const auto & [path, path_type] : typed_paths)
+            if constexpr (canonical_json_order)
             {
-                writeStringBinary(path, buf);
-                encodeDataTypeImpl<encode_for_hash_calculation>(path_type, buf);
+                std::vector<const std::unordered_map<String, DataTypePtr>::value_type *> sorted_typed_paths;
+                sorted_typed_paths.reserve(typed_paths.size());
+                for (const auto & typed_path : typed_paths)
+                    sorted_typed_paths.push_back(&typed_path);
+                std::sort(
+                    sorted_typed_paths.begin(),
+                    sorted_typed_paths.end(),
+                    [](const auto * lhs, const auto * rhs) { return lhs->first < rhs->first; });
+                for (const auto * typed_path : sorted_typed_paths)
+                {
+                    writeStringBinary(typed_path->first, buf);
+                    encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(typed_path->second, buf);
+                }
+            }
+            else
+            {
+                for (const auto & [path, path_type] : typed_paths)
+                {
+                    writeStringBinary(path, buf);
+                    encodeDataTypeImpl<encode_for_hash_calculation, canonical_json_order>(path_type, buf);
+                }
             }
             const auto & paths_to_skip = object_type.getPathsToSkip();
             writeVarUInt(paths_to_skip.size(), buf);
-            for (const auto & path : paths_to_skip)
-                writeStringBinary(path, buf);
+            if constexpr (canonical_json_order)
+            {
+                std::vector<std::string_view> sorted_paths_to_skip;
+                sorted_paths_to_skip.reserve(paths_to_skip.size());
+                for (const auto & path : paths_to_skip)
+                    sorted_paths_to_skip.push_back(path);
+                std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
+                for (const auto path : sorted_paths_to_skip)
+                    writeStringBinary(path, buf);
+            }
+            else
+            {
+                for (const auto & path : paths_to_skip)
+                    writeStringBinary(path, buf);
+            }
             const auto & path_regexps_to_skip = object_type.getPathRegexpsToSkip();
             writeVarUInt(path_regexps_to_skip.size(), buf);
             for (const auto & regexp : path_regexps_to_skip)
@@ -549,18 +592,30 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
 
 void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
 {
-    encodeDataTypeImpl<false>(type, buf);
+    encodeDataTypeImpl<false, false>(type, buf);
 }
 
 void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & buf)
 {
-    encodeDataTypeImpl<true>(type, buf);
+    encodeDataTypeImpl<true, false>(type, buf);
 }
 
 String encodeDataType(const DataTypePtr & type)
 {
     WriteBufferFromOwnString buf;
-    encodeDataTypeImpl<false>(type, buf);
+    encodeDataTypeImpl<false, false>(type, buf);
+    return buf.str();
+}
+
+void encodeCanonicalDataType(const DataTypePtr & type, WriteBuffer & buf)
+{
+    encodeDataTypeImpl<false, true>(type, buf);
+}
+
+String encodeCanonicalDataType(const DataTypePtr & type)
+{
+    WriteBufferFromOwnString buf;
+    encodeDataTypeImpl<false, true>(type, buf);
     return buf.str();
 }
 

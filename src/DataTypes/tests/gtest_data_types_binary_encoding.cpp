@@ -1,26 +1,32 @@
-#include <gtest/gtest.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeSet.h>
-#include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeDynamic.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/registerAggregateFunctions.h>
-#include <IO/WriteBufferFromString.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <gtest/gtest.h>
+#include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_register.h>
+
+#include <array>
 
 using namespace DB;
 
@@ -130,4 +136,165 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("JSON"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
+}
+
+namespace
+{
+
+DataTypePtr makeJSONTypeWithInsertionOrder(bool reverse)
+{
+    std::unordered_map<String, DataTypePtr> typed_paths;
+    typed_paths.reserve(reverse ? 7 : 32);
+    const std::array<std::pair<String, DataTypePtr>, 3> typed_path_values{{
+        {"z.path", std::make_shared<DataTypeUInt8>()},
+        {"a.path", std::make_shared<DataTypeString>()},
+        {"middle.path", std::make_shared<DataTypeUInt64>()},
+    }};
+    if (reverse)
+    {
+        for (auto it = typed_path_values.rbegin(); it != typed_path_values.rend(); ++it)
+            typed_paths.emplace(it->first, it->second);
+    }
+    else
+    {
+        for (const auto & [path, type] : typed_path_values)
+            typed_paths.emplace(path, type);
+    }
+
+    std::unordered_set<String> paths_to_skip;
+    paths_to_skip.reserve(reverse ? 7 : 32);
+    const std::array<String, 3> paths_to_skip_values{"z.skip", "a.skip", "middle.skip"};
+    if (reverse)
+    {
+        for (auto it = paths_to_skip_values.rbegin(); it != paths_to_skip_values.rend(); ++it)
+            paths_to_skip.emplace(*it);
+    }
+    else
+    {
+        for (const auto & path : paths_to_skip_values)
+            paths_to_skip.emplace(path);
+    }
+
+    return std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::move(typed_paths),
+        std::move(paths_to_skip),
+        std::vector<String>{"skip_z.*", "skip_a.*"},
+        17,
+        23);
+}
+
+void readJSONEncodingHeader(ReadBuffer & input)
+{
+    UInt8 type_index = 0;
+    UInt8 version = 0;
+    UInt64 max_dynamic_paths = 0;
+    UInt8 max_dynamic_types = 0;
+    readBinary(type_index, input);
+    readBinary(version, input);
+    readVarUInt(max_dynamic_paths, input);
+    readBinary(max_dynamic_types, input);
+    EXPECT_EQ(type_index, static_cast<UInt8>(BinaryTypeIndex::JSON));
+    EXPECT_EQ(version, 0);
+    EXPECT_EQ(max_dynamic_paths, 17);
+    EXPECT_EQ(max_dynamic_types, 23);
+}
+
+}
+
+GTEST_TEST(DataTypesBinaryEncoding, CanonicalJSONEncodingOrdersUnorderedPathCollections)
+{
+    const auto type = makeJSONTypeWithInsertionOrder(false);
+
+    WriteBufferFromOwnString encoded;
+    encodeCanonicalDataType(type, encoded);
+    ReadBufferFromString input(encoded.str());
+
+    readJSONEncodingHeader(input);
+
+    UInt64 typed_path_count = 0;
+    readVarUInt(typed_path_count, input);
+    ASSERT_EQ(typed_path_count, 3);
+    const std::array<std::pair<String, String>, 3> expected_typed_paths{{
+        {"a.path", "String"},
+        {"middle.path", "UInt64"},
+        {"z.path", "UInt8"},
+    }};
+    for (const auto & [expected_path, expected_type] : expected_typed_paths)
+    {
+        String path;
+        readStringBinary(path, input);
+        EXPECT_EQ(path, expected_path);
+        EXPECT_EQ(decodeDataType(input)->getName(), expected_type);
+    }
+
+    UInt64 skip_path_count = 0;
+    readVarUInt(skip_path_count, input);
+    ASSERT_EQ(skip_path_count, 3);
+    for (const String & expected_path : {"a.skip", "middle.skip", "z.skip"})
+    {
+        String path;
+        readStringBinary(path, input);
+        EXPECT_EQ(path, expected_path);
+    }
+
+    UInt64 regexp_count = 0;
+    readVarUInt(regexp_count, input);
+    ASSERT_EQ(regexp_count, 2);
+    for (const String & expected_regexp : {"skip_z.*", "skip_a.*"})
+    {
+        String regexp;
+        readStringBinary(regexp, input);
+        EXPECT_EQ(regexp, expected_regexp);
+    }
+    EXPECT_TRUE(input.eof());
+}
+
+GTEST_TEST(DataTypesBinaryEncoding, CanonicalJSONEncodingPropagatesRecursivelyAndIgnoresInsertionOrder)
+{
+    const auto first = std::make_shared<DataTypeArray>(makeJSONTypeWithInsertionOrder(false));
+    const auto second = std::make_shared<DataTypeArray>(makeJSONTypeWithInsertionOrder(true));
+
+    EXPECT_EQ(encodeCanonicalDataType(first), encodeCanonicalDataType(second));
+}
+
+GTEST_TEST(DataTypesBinaryEncoding, OrdinaryJSONEncodingPreservesLegacyContainerIterationOrder)
+{
+    const auto type = makeJSONTypeWithInsertionOrder(false);
+    const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+    const String ordinary_encoding = encodeDataType(type);
+    ReadBufferFromString input(ordinary_encoding);
+    readJSONEncodingHeader(input);
+
+    UInt64 typed_path_count = 0;
+    readVarUInt(typed_path_count, input);
+    ASSERT_EQ(typed_path_count, object_type.getTypedPaths().size());
+    for (const auto & [expected_path, expected_type] : object_type.getTypedPaths())
+    {
+        String path;
+        readStringBinary(path, input);
+        EXPECT_EQ(path, expected_path);
+        EXPECT_TRUE(decodeDataType(input)->equals(*expected_type));
+    }
+
+    UInt64 skip_path_count = 0;
+    readVarUInt(skip_path_count, input);
+    ASSERT_EQ(skip_path_count, object_type.getPathsToSkip().size());
+    for (const auto & expected_path : object_type.getPathsToSkip())
+    {
+        String path;
+        readStringBinary(path, input);
+        EXPECT_EQ(path, expected_path);
+    }
+
+    UInt64 regexp_count = 0;
+    readVarUInt(regexp_count, input);
+    ASSERT_EQ(regexp_count, object_type.getPathRegexpsToSkip().size());
+    for (const auto & expected_regexp : object_type.getPathRegexpsToSkip())
+    {
+        String regexp;
+        readStringBinary(regexp, input);
+        EXPECT_EQ(regexp, expected_regexp);
+    }
+    EXPECT_TRUE(input.eof());
 }
