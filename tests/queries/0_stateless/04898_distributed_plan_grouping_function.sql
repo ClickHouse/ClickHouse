@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- `grouping` under `make_distributed_plan`. The analyzer resolves it into a specialization
 -- (`__groupingForRollup` etc.) whose parameters travel as trailing constant arguments, so a
 -- serialized plan can rebuild the function from its name and arguments alone. One of the
