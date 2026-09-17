@@ -6,14 +6,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The Play UI mirrors the live IO meter of clickhouse-client: it sums `NetworkSendBytes`, which over
-# HTTP also carries the framed `progress` / `log` / `profile_events` packets the meter itself needs -
-# a floor the meter would otherwise generate for itself and show as IO on an idle query.
-# `NativeProtocolServiceBytes` accounts for those packets on the native protocol only, so framing
-# needs its own counter; this pins the one `play.html` subtracts.
+# Over HTTP, `NetworkSendBytes` also carries the framed `progress` / `log` / `profile_events` packets a
+# live IO meter itself needs. `NativeProtocolServiceBytes` accounts for those packets on the native
+# protocol only, so framing needs its own counter; this pins it. (The Play UI only ever sees the
+# compressed path below, where nothing is counted, so it leaves `NetworkSendBytes` out of its meter.)
 
 query_id_prefix="05026_framing_io_protocol_overhead_${CLICKHOUSE_DATABASE}"
+# `http_response_buffer_size` / `http_wait_end_of_query` (both randomized) put a `CascadeWriteBuffer`
+# between the framing and the socket, which is exactly the case the counter stays zero for - pin them off.
 framing_url="${CLICKHOUSE_URL}&framing_output_format=EventStream&send_logs_level=trace"
+framing_url="${framing_url}&http_response_buffer_size=0&http_wait_end_of_query=0"
 
 # `FORMAT Null` sends no data to the client, so every byte the framing writes during these two
 # seconds belongs to a service packet.
@@ -28,8 +30,8 @@ ${CLICKHOUSE_CURL} -sS -H 'Accept-Encoding: gzip' -o /dev/null -D - \
     "${framing_url}&enable_http_compression=1&query_id=${query_id_prefix}_gzip" \
     -d "SELECT sleepEachRow(0.4) FROM numbers(5) FORMAT Null" | grep -i '^Content-Encoding:' | tr -d '\r'
 
-# A compressed framed query that does stream result bytes: the meter (network bytes minus the
-# service bytes) must stay positive while the data flows.
+# A compressed framed query that does stream result bytes: the response carries real data bytes and
+# still counts none of them - nor of its service packets - as `FramingServiceBytes`.
 ${CLICKHOUSE_CURL} -sS -H 'Accept-Encoding: gzip' \
     "${framing_url}&enable_http_compression=1&query_id=${query_id_prefix}_gzip_data" \
     -d "SELECT number FROM numbers(1000000) FORMAT TSV" > /dev/null

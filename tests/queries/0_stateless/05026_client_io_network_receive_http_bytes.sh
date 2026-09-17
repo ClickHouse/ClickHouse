@@ -48,10 +48,12 @@ echo "url() write streams WriteBufferFromHTTPBytes to the client: $(( ${http_wri
 echo "url() write logs WriteBufferFromHTTPBytes: $(query_log_counter_positive "${query_id_prefix}_http_write" WriteBufferFromHTTPBytes)"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'url() write rows', count() FROM t_05026_io_http_write"
 
-# (c) A read through url(): the response body comes in through ReadWriteBufferFromHTTP.
+# (c) A read through url(): the response body comes in through ReadWriteBufferFromHTTP. Parallel
+# replicas would rewrite url() to urlCluster() and move the read - and its counter - to a replica.
 http_read_bytes=$(${CLICKHOUSE_CLIENT} --query_id "${query_id_prefix}_http_read" \
     --print-profile-events --profile-events-delay-ms=-1 \
-    -q "SELECT count() FROM url('${http_url}&query=SELECT+number+FROM+numbers(100000)+FORMAT+TSV', 'TSV', 'x UInt64') FORMAT Null" \
+    -q "SELECT count() FROM url('${http_url}&query=SELECT+number+FROM+numbers(100000)+FORMAT+TSV', 'TSV', 'x UInt64')
+        SETTINGS enable_parallel_replicas = 0 FORMAT Null" \
     2>&1 | client_total ReadWriteBufferFromHTTPBytes)
 echo "url() read streams ReadWriteBufferFromHTTPBytes to the client: $(( ${http_read_bytes:-0} > 0 ))"
 echo "url() read logs ReadWriteBufferFromHTTPBytes: $(query_log_counter_positive "${query_id_prefix}_http_read" ReadWriteBufferFromHTTPBytes)"
