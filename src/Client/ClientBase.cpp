@@ -1466,9 +1466,17 @@ bool ClientBase::initLogsOutputStream(bool wait_for_sink)
             }
             else if (server_logs_file == "-")
             {
-                /// Use stdout if --server_logs_file=- specified
+                /// Use stdout if --server_logs_file=- specified.
+                /// Same classification as for the other two sinks: std_out is already armed for the
+                /// query as the result-set sink (and that hook is a no-op for a sink that cannot
+                /// block), so the only effect of tracking it here is the epilogue best-effort budget
+                /// on the deferred `ProfileEvents` flush. When stdout is redirected to a regular file
+                /// or to a non-terminal character device such as `/dev/full`, that budget would
+                /// swallow a real write error (`ENOSPC`, `EIO`) and drop the last diagnostics block,
+                /// so such a sink is not tracked at all.
                 wb = std_out.get();
-                logs_out_terminal_buf = std_out.get();
+                if (isBlockingCapableSink(stdout_fd))
+                    logs_out_terminal_buf = std_out.get();
                 color_logs = stdout_is_a_tty;
             }
             else
