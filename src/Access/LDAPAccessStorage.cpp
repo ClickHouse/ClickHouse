@@ -485,6 +485,7 @@ void LDAPAccessStorage::removeUserNoLock(const String & user_name) const
     /// Mirror of the cleanup `assignRolesNoLock` performs for roles a user lost, for every role of the user.
     users_external_roles.erase(user_name);
     synced_user_names.erase(user_name);
+    unverified_user_names.erase(user_name);
 
     const auto it = roles_per_users.find(user_name);
     if (it == roles_per_users.end())
@@ -807,6 +808,19 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
         if (id)
         {
             checkNotStale(name, "resolve");
+            /// An entry the interserver path materialised (possible without `only_synced_users`) is confirmed
+            /// upstream before it is impersonated; the next run removes it anyway if the directory does not
+            /// know the name. Roles are not touched: in a synced directory they come from the runs only.
+            if (unverified_user_names.contains(name))
+            {
+                if (!access_control.getExternalAuthenticators().findLDAPUser(ldap_server_name, name, nullptr, nullptr))
+                {
+                    LOG_DEBUG(getLogger(), "User {} was materialised in LDAP directory {} by an interserver query and the directory does not confirm the name; not resolving it",
+                        name, backQuote(getStorageName()));
+                    return {};
+                }
+                unverified_user_names.erase(name);
+            }
             return id;
         }
 
@@ -826,32 +840,37 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
 
     const bool has_role_mapping = !role_search_params.empty();
 
-    /// An entry may exist in memory yet have been materialized without resolving role
-    /// mapping -- notably the interserver `AlwaysAllowCredentials` path in distributed
-    /// `EXECUTE AS`, which caches the user with empty `external_roles`. Such incomplete
-    /// entries have fewer `users_external_roles[name]` entries than `role_search_params`
-    /// (a real login always leaves one per search param, even if empty); refresh them
-    /// via the service bind.
-    if (id && has_role_mapping)
+    /// Two kinds of cached entries are not taken at face value. One was materialised by the interserver
+    /// `AlwaysAllowCredentials` path of a distributed query (`unverified_user_names`): the initiator vouched
+    /// for the name, the directory never did, so a phantom or an offboarded user could be impersonated
+    /// through it. The other has fewer `users_external_roles[name]` entries than `role_search_params`
+    /// (a real login always leaves one per search parameter, even if empty), which is what that same path
+    /// leaves behind. Both are looked up under the service bind: a name the directory does not confirm is
+    /// not resolved, and a confirmed entry gets the roles the interserver path could not resolve.
+    if (id)
     {
         const auto eit = users_external_roles.find(name);
-        const bool needs_refresh = (eit == users_external_roles.end()) || (eit->second.size() != role_search_params.size());
-        if (needs_refresh)
+        const bool roles_incomplete = has_role_mapping
+            && ((eit == users_external_roles.end()) || (eit->second.size() != role_search_params.size()));
+        if (unverified_user_names.contains(name) || roles_incomplete)
         {
             LDAPClient::SearchResultsList external_roles;
-            if (access_control.getExternalAuthenticators().findLDAPUser(
+            if (!access_control.getExternalAuthenticators().findLDAPUser(
                     ldap_server_name,
                     name,
-                    &role_search_params,
-                    &external_roles))
+                    has_role_mapping ? &role_search_params : nullptr,
+                    has_role_mapping ? &external_roles : nullptr))
             {
-                updateAssignedRolesNoLock(*id, name, external_roles);
+                LOG_DEBUG(getLogger(), "User {} is cached in LDAP directory {} without a confirmation by the directory, and the lookup does not confirm the name; not resolving it",
+                    name, backQuote(getStorageName()));
+                return {};
             }
+            if (has_role_mapping)
+                updateAssignedRolesNoLock(*id, name, external_roles);
+            unverified_user_names.erase(name);
         }
-    }
-
-    if (id)
         return id;
+    }
 
     LDAPClient::SearchResultsList external_roles;
     if (!access_control.getExternalAuthenticators().findLDAPUser(
@@ -970,6 +989,8 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
             return {};
     }
 
+    const bool interserver = typeid_cast<const AlwaysAllowCredentials *>(&credentials) != nullptr;
+
     if (new_user)
     {
         // TODO: if these were AlwaysAllowCredentials, then mapped external roles are not available here,
@@ -977,8 +998,14 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
 
         assignRolesNoLock(*new_user, external_roles);
         id = memory_storage.insert(new_user);
+
+        /// The initiator of a distributed query vouched for the name; the directory has not been asked, and
+        /// the name may not exist there at all. Remembered so that `EXECUTE AS` (`findImpl` with
+        /// `force_external_lookup`) confirms the user upstream before impersonating it.
+        if (interserver)
+            unverified_user_names.insert(user_name);
     }
-    else if (!typeid_cast<const AlwaysAllowCredentials *>(&credentials) && !sync_params)
+    else if (!interserver && !sync_params)
     {
         // Just in case external_roles are changed. This will be no-op if they are not.
         // Interserver `AlwaysAllowCredentials` skip the LDAP round-trip (see `areLDAPCredentialsValidNoLock`),
@@ -987,6 +1014,10 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
         // In a synced directory the roles come from the synchronisation only (see `areLDAPCredentialsValidNoLock`).
         updateAssignedRolesNoLock(*id, user->getName(), external_roles);
     }
+
+    /// A password the directory verified confirms the name, whatever materialised the entry.
+    if (!interserver)
+        unverified_user_names.erase(user_name);
 
     if (id)
         return AuthResult{ .user_id = *id, .authentication_data = AuthenticationData(AuthenticationType::LDAP), .user_name = user_name };
@@ -1383,18 +1414,50 @@ std::shared_ptr<IAccessStorage> LDAPAccessStorage::selectRolesStorage()
 
 size_t LDAPAccessStorage::createMissingRoles(const std::set<String> & role_names, IAccessStorage & storage)
 {
+    /// The name of a storage other than `storage` that holds a role of this name, if any.
+    auto find_elsewhere = [&](const String & role_name) -> std::optional<String>
+    {
+        for (const auto & other : access_control.getStorages())
+        {
+            if (other.get() != &storage && other->find(AccessEntityType::ROLE, role_name))
+                return other->getStorageName();
+        }
+        return {};
+    };
+
     size_t created = 0;
     for (const auto & role_name : role_names)
     {
+        /// The guard `CREATE ROLE` gets from `MultipleAccessStorage::insertImpl`: the role must not exist in any
+        /// storage, not only in the one written to. Checked right before the write, and again right after it,
+        /// because another session can create the role through `AccessControl` in between; the name would then
+        /// resolve to whichever storage comes first in `user_directories` while the other copy lingers. The copy
+        /// this run wrote has no grants yet, so it is the one to give up.
+        if (const auto elsewhere = find_elsewhere(role_name))
+        {
+            LOG_DEBUG(getLogger(), "Role '{}' exists in storage {}; LDAP directory {} does not create it",
+                role_name, backQuote(*elsewhere), backQuote(getStorageName()));
+            continue;
+        }
+
         auto role = std::make_shared<Role>();
         role->setName(role_name);
 
         /// `CREATE ROLE IF NOT EXISTS` semantics: a node that lost the race against another node gets nullopt.
-        if (storage.tryInsert(role))
+        const auto id = storage.tryInsert(role);
+        if (!id)
+            continue;
+
+        if (const auto elsewhere = find_elsewhere(role_name))
         {
-            ++created;
-            LOG_INFO(getLogger(), "Created role '{}' in storage {} for LDAP directory {}", role_name, backQuote(storage.getStorageName()), backQuote(getStorageName()));
+            storage.tryRemove(*id);
+            LOG_WARNING(getLogger(), "Role '{}' was created in storage {} while LDAP directory {} was creating it in storage {}; the latter copy was removed",
+                role_name, backQuote(*elsewhere), backQuote(getStorageName()), backQuote(storage.getStorageName()));
+            continue;
         }
+
+        ++created;
+        LOG_INFO(getLogger(), "Created role '{}' in storage {} for LDAP directory {}", role_name, backQuote(storage.getStorageName()), backQuote(getStorageName()));
     }
 
     if (created > 0)

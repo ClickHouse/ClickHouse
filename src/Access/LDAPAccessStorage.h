@@ -179,6 +179,7 @@ private: // IAccessStorage implementations.
     std::set<String> excluded_user_names;                       // user names this storage never serves (`exclude_users`)
     std::optional<SyncParams> sync_params;                      // set iff the directory has a `<sync>` section
     mutable std::map<String, LDAPClient::SearchResultsList> users_external_roles; // user name -> LDAPClient::SearchResultsList (most recently retrieved and processed)
+    mutable std::set<String> unverified_user_names;             // user names materialised by interserver `AlwaysAllowCredentials` and not confirmed by the directory yet
     mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)
     mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
     mutable std::map<UUID, String> granted_role_names;          // (currently granted) role id -> its name

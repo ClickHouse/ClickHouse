@@ -277,9 +277,10 @@ def test_execute_as_ldap_user_after_login_still_works(started_cluster):
     not regressed by the fix.
     """
     # First log `johndoe` in so they are materialized in the LDAP storage cache.
-    assert node.query(
-        "SELECT currentUser()", user="johndoe", password="qwertz"
-    ).strip() == "johndoe"
+    assert (
+        node.query("SELECT currentUser()", user="johndoe", password="qwertz").strip()
+        == "johndoe"
+    )
 
     # Now impersonate as `admin`. This already worked before the fix.
     result = node.query(
@@ -513,9 +514,7 @@ def test_execute_as_role_mapping_user_dn_filter(started_cluster):
         )
         assert current_roles.strip() == "pre_login_role_user_dn", current_roles
     finally:
-        delete_ldap_group(
-            started_cluster, group_cn="clickhouse-pre_login_role_user_dn"
-        )
+        delete_ldap_group(started_cluster, group_cn="clickhouse-pre_login_role_user_dn")
         node_with_role_mapping_user_dn.query(
             "DROP ROLE IF EXISTS pre_login_role_user_dn",
             user="admin",
@@ -612,6 +611,49 @@ def test_execute_as_refreshes_distributed_cache_poisoned_entry(started_cluster):
             )
 
 
+def test_execute_as_refuses_a_name_the_interserver_path_materialised_without_the_directory(
+    started_cluster,
+):
+    """The receiving shard of a fanout under `<secret>` authenticates
+    `AlwaysAllowCredentials{initial_user}` without an LDAP round-trip, so it
+    materialises whatever name the initiator vouches for: here a user that exists
+    only in the local storage of `shard1_node` and nowhere in LDAP. A local
+    `EXECUTE AS` of that name on the receiving shard must not impersonate the
+    cached entry. The service-bind lookup does not confirm the name, and the
+    resolution ends with the canonical `UNKNOWN_USER` error like for any unknown
+    user; the same holds for a user offboarded from LDAP after such a fanout.
+    """
+    shard1_node.query(
+        "CREATE USER ghost IDENTIFIED BY 'ghostpwd'", user="admin", password="qwerty"
+    )
+    try:
+        shard1_node.query(
+            "GRANT SELECT, SHOW COLUMNS, REMOTE ON *.* TO ghost",
+            user="admin",
+            password="qwerty",
+        )
+        # The fanout reaches `shard2_node` as `ghost`; whether the remote half is then allowed
+        # to read is irrelevant, the name is materialised at authentication, before any check.
+        shard1_node.query_and_get_answer_with_error(
+            "SELECT count() FROM clusterAllReplicas('ldap_cluster', system.one)",
+            user="ghost",
+            password="ghostpwd",
+        )
+        materialised = shard2_node.query(
+            "SELECT count() FROM system.users WHERE name = 'ghost' AND storage = 'ldap'",
+            user="admin",
+            password="qwerty",
+        )
+        assert materialised.strip() == "1", materialised
+
+        error = shard2_node.query_and_get_error(
+            "EXECUTE AS ghost SELECT currentUser()", user="admin", password="qwerty"
+        )
+        assert "There is no user `ghost`" in error, error
+    finally:
+        shard1_node.query("DROP USER IF EXISTS ghost", user="admin", password="qwerty")
+
+
 def test_execute_as_already_materialized_ldap_user_when_ldap_first(started_cluster):
     """`@tiandiwonder` wording-precision nit on `src/Interpreters/Access/InterpreterExecuteAsQuery.cpp`:
     the two-pass lookup does not make a local user win regardless of
@@ -632,9 +674,12 @@ def test_execute_as_already_materialized_ldap_user_when_ldap_first(started_clust
          This is identical to the pre-PR `getID<User>` resolution order.
     """
     # Materialize `janedoe` in the LDAP storage on this instance.
-    assert node_with_local_user_precedence.query(
-        "SELECT currentUser()", user="janedoe", password="qwerty"
-    ).strip() == "janedoe"
+    assert (
+        node_with_local_user_precedence.query(
+            "SELECT currentUser()", user="janedoe", password="qwerty"
+        ).strip()
+        == "janedoe"
+    )
 
     pre_ldap_count = node_with_local_user_precedence.query(
         "SELECT count() FROM system.users "
@@ -797,7 +842,9 @@ def test_execute_as_static_user_dn_detection_is_rejected(started_cluster):
     assert "UNKNOWN_USER" not in error, error
 
 
-def test_execute_as_user_dn_detection_base_dn_substitution_unknown_user(started_cluster):
+def test_execute_as_user_dn_detection_base_dn_substitution_unknown_user(
+    started_cluster,
+):
     """`clickhouse-gh[bot]` blocker on `src/Access/LDAPClient.cpp`: with
     target-specific `user_dn_detection` whose `{user_name}` token sits in
     `base_dn` rather than `search_filter` (e.g.
