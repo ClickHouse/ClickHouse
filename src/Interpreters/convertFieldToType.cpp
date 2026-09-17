@@ -231,6 +231,45 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 }
 
 
+/// Rescales a `Decimal64` `Field` holding a `DateTime64` or `Time64` value to the scale of `to_type`
+/// (`DateTime64(a)` -> `DateTime64(b)`, `Time64(a)` -> `Time64(b)`).
+///
+/// Reducing the scale drops sub-tick digits, so under `strict` a value whose fractional part does not
+/// survive the rescaling is rejected (Null) instead of being truncated, honoring the Decimal -> Decimal
+/// contract in convertFieldToType.h: `Time64(0) IN (CAST('00:00:00.5', 'Time64(1)'))` must not match.
+template <typename T, typename ToDataType>
+Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool strict)
+{
+    const auto & from_type = src.safeGet<Decimal64>();
+
+    const auto scale_from = from_type.getScale();
+    const auto scale_to = to_type.getScale();
+    const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
+                                                             : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+
+    if (scale_multiplier_diff == 1) /// Already in needed type.
+        return src;
+
+    Int64 value = from_type.getValue().value;
+
+    if (scale_from > scale_to)
+    {
+        if (strict && value % scale_multiplier_diff.value != 0)
+            return {};
+        value /= scale_multiplier_diff;
+    }
+    else if (scale_from < scale_to)
+    {
+        Int64 result = 0;
+        if (common::mulOverflow(value, scale_multiplier_diff.value, result))
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
+                src.getTypeName(), to_type.getName(), value, scale_multiplier_diff.value);
+        value = result;
+    }
+
+    return DecimalField<T>(DecimalUtils::decimalFromComponentsWithMultiplier<T>(value, 0, 1), scale_to);
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     if (from_type_hint && from_type_hint->equals(type))
@@ -445,14 +484,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (which_type.isDateTime64() && which_from_type.isTime64())
     {
         /// `Time64` and `DateTime64` use the same decimal representation. Drop the type hint so the
-        /// regular decimal rescaling below preserves the fractional component.
-        Field result = convertFieldToTypeImpl(src, type, nullptr, format_settings, strict, convert_inexact_floats);
-        /// The rescaling truncates when the target scale is lower, so apply the same exactness
-        /// gate as `convertDecimalType`: a value that does not survive the round-trip cannot
-        /// match anything under `strict`.
-        if (strict && !result.isNull() && !accurateEquals(src, result))
-            return {};
-        return result;
+        /// regular decimal rescaling below (`rescaleDecimal64Field`) preserves the fractional
+        /// component; under `strict` it rejects values that do not survive a scale reduction.
+        return convertFieldToTypeImpl(src, type, nullptr, format_settings, strict, convert_inexact_floats);
     }
     if (which_type.isTime() && which_from_type.isDate())
     {
@@ -590,68 +624,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
-        {
-            const auto & from_type = src.safeGet<Decimal64>();
-            const auto & to_type = static_cast<const DataTypeDateTime64 &>(type);
-
-            const auto scale_from = from_type.getScale();
-            const auto scale_to = to_type.getScale();
-            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
-                                                                     : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
-
-            if (scale_multiplier_diff == 1) /// Already in needed type.
-                return src;
-
-            /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
-            Int64 value = from_type.getValue().value;
-
-            if (scale_from > scale_to)
-            {
-                value /= scale_multiplier_diff;
-            }
-            else if (scale_from < scale_to)
-            {
-                Int64 result = 0;
-                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
-                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
-                value = result;
-            }
-
-            return DecimalField<DateTime64>(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
-        }
+            return rescaleDecimal64Field<DateTime64>(src, static_cast<const DataTypeDateTime64 &>(type), strict);
 
         if (which_type.isTime64() && src.getType() == Field::Types::Decimal64)
-        {
-            const auto & from_type = src.safeGet<Decimal64>();
-            const auto & to_type = static_cast<const DataTypeTime64 &>(type);
-
-            const auto scale_from = from_type.getScale();
-            const auto scale_to = to_type.getScale();
-            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
-                                                                     : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
-
-            if (scale_multiplier_diff == 1) /// Already in needed type.
-                return src;
-
-            /// in case if we need to make Time64(a) from Time64(b), a != b, we need to convert time value to the right scale
-            Int64 value = from_type.getValue().value;
-
-            if (scale_from > scale_to)
-            {
-                value /= scale_multiplier_diff;
-            }
-            else if (scale_from < scale_to)
-            {
-                Int64 result = 0;
-                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
-                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
-                value = result;
-            }
-
-            return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
-        }
+            return rescaleDecimal64Field<Time64>(src, static_cast<const DataTypeTime64 &>(type), strict);
 
         /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
         /// range-check so out-of-range integers don't get silently truncated
