@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemZeros.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Processors/ISource.h>
@@ -145,6 +144,3 @@ Pipe StorageSystemZeros::read(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZeros) }

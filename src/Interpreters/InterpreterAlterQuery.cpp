@@ -14,14 +14,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -34,11 +32,9 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -65,7 +61,6 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ServerSetting
@@ -87,35 +82,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
-{
-    for (const auto & child : alter.command_list->children)
-    {
-        auto * command = child->as<ASTAlterCommand>();
-
-        /// Every slot that reaches table metadata, so that a reload re-derives the same spelling the
-        /// statement resolved. Mutation expressions (`predicate`, `update_assignments`, the
-        /// `IN PARTITION` value in `partition`) need it too: they are persisted in mutation entries
-        /// and resolved by the background executor and by replicas with the server default settings,
-        /// not with the settings of this session.
-        for (IAST * payload : {command->col_decl,
-                               command->order_by,
-                               command->sample_by,
-                               command->index_decl,
-                               command->constraint_decl,
-                               command->projection_decl,
-                               command->ttl,
-                               command->select,
-                               command->predicate,
-                               command->update_assignments,
-                               command->partition})
-        {
-            if (payload)
-                replaceLegacyToTime(*payload);
-        }
-    }
-}
 
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
@@ -337,32 +303,17 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
-BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
+BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context)
 {
     BlockIO res;
     const auto & settings = context->getSettingsRef();
 
-    /// Each segment takes its own locks, a multi-segment ALTER is not atomic against concurrent DDL.
     for (auto & segment : segments)
     {
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
-            /// DDLGuard before the table locks, same order as RENAME/EXCHANGE/DROP take them. Re-acquiring
-            /// it after a released wait inverts this order, both sides are bounded by lock_acquire_timeout.
-            DDLGuardPtr ddl_guard;
-            if (!no_ddl_lock)
-                ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(table, settings[Setting::lock_acquire_timeout]);
-            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-            /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
-            /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
-            /// then all repopulate from the metadata committed as of holding the lock.
-            if (auto metadata_cache = context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             alter_commands->validate(table, context);
 
             bool share_nested = true;
@@ -371,13 +322,12 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
-            table->alter(*alter_commands, context, alter_lock, ddl_guard);
+            table->alter(*alter_commands, context, alter_lock);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
-                auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Replicated-storage non-determinism check must always run, even when
@@ -396,7 +346,6 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
         {
-            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
@@ -405,7 +354,6 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
-            auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
@@ -428,8 +376,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextM
 BlockIO InterpreterAlterQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
-    auto & alter = query_ptr->as<ASTAlterQuery &>();
-
+    const auto & alter = query_ptr->as<ASTAlterQuery &>();
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
     {
         return executeToDatabase(alter);
@@ -461,9 +408,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
-    if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
-
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
@@ -478,25 +422,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
-        /// Substitute the database of the altered table into table functions that use the current database
-        /// implicitly, e.g. `merge('tables_regexp')` in a mutation, so that they read the same tables
-        /// as in the non-clustered case. It has to be done before `executeDDLQueryOnCluster`,
-        /// which replaces `currentDatabase()` with the database of the session.
-        /// The table identifiers are not qualified here: they are qualified with the database
-        /// of the altered table when the query is interpreted on each host.
-        if (table_id)
-        {
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-            visitor.substituteDatabaseInTableFunctions(*alter.command_list);
-        }
-
         DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess(table);
+        params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    if (!skip_access_check)
-        getContext()->checkAccess(getRequiredAccess(table));
+    getContext()->checkAccess(getRequiredAccess());
 
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
@@ -516,13 +447,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
-    /// Re-resolve by name: the resolution above pins a UUID, and a concurrent EXCHANGE can move it
-    /// to another name, making the UUID lookup return nothing. Temporary tables cannot be renamed.
-    /// Queries with an explicit UUID (internal ones, e.g. the fill step of CREATE) address exactly
-    /// that table, and it may not be visible by name yet, so keep the storage resolved above.
-    if (alter.uuid == UUIDHelpers::Nil && table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        table = database->tryGetTable(table_id.table_name, getContext());
-
     if (!table)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
 
@@ -540,6 +464,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+
     if (modify_query)
     {
         // Expand CTE before filling default database
@@ -556,29 +482,23 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateMutationsAllowed(segments, database, getContext());
     validateReplicatedDatabaseSegments(segments, database);
 
+    if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
     {
-        auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-        if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
-        {
-            /// The patch part is committed while the pipeline runs, so the share lock must outlive this
-            /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
-            QueryPlanResourceHolder update_resources;
-            update_resources.table_locks.emplace_back(std::move(table_lock));
-            lightweight_result->pipeline.addResources(std::move(update_resources));
-            return std::move(lightweight_result.value());
-        }
-        /// Released here: holding a share lock across the segments' DDLGuard acquisition
-        /// would invert the lock order of RENAME/EXCHANGE/DROP.
+        /// The patch part is committed while the pipeline runs, so the share lock must outlive this
+        /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
+        QueryPlanResourceHolder update_resources;
+        update_resources.table_locks.emplace_back(std::move(table_lock));
+        lightweight_result->pipeline.addResources(std::move(update_resources));
+        return std::move(lightweight_result.value());
     }
 
-    return runCommandSegments(segments, table, getContext(), alter.no_ddl_lock);
+    return runCommandSegments(segments, table, getContext());
 }
 
 BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
-    /// ALTER DATABASE has no table and no UPDATE commands, so the `_row_exists` marker check never applies.
-    getContext()->checkAccess(getRequiredAccess(nullptr));
+    getContext()->checkAccess(getRequiredAccess());
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -593,7 +513,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     if (!alter.cluster.empty())
     {
         DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess(nullptr);
+        params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -640,74 +560,40 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     return res;
 }
 
-bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_)
-{
-    /// `_row_exists` is the hidden lightweight-delete marker only on storages that register it as a
-    /// virtual column (the MergeTree family). Testing merely for the absence of a physical `_row_exists`
-    /// column is too broad: on e.g. a `Memory` table `_row_exists` is not the marker, yet has no
-    /// physical column either, so a user could `ADD COLUMN _row_exists, UPDATE _row_exists = 0` and edit
-    /// a real physical column with only `ALTER DELETE`. `isVirtualColumn` is true only when `_row_exists`
-    /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
-    /// A null storage (non-local ON CLUSTER target) fails closed -> treated as a regular column.
-    if (!storage)
-        return false;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
-    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
-}
-
-AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
+AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
     for (const auto & child : alter.command_list->children)
-        required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+        required_access.append_range(getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable()));
 
     return required_access;
 }
 
-AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
-    const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker)
+AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table)
 {
     AccessRightsElements required_access;
 
     auto column_name = [&]() -> String { return getIdentifierName(command.column); };
     auto column_name_from_col_decl = [&]() -> std::string_view { return command.col_decl->as<ASTColumnDeclaration &>().name; };
+    auto column_names_from_update_assignments = [&]() -> std::vector<std::string_view>
+    {
+        std::vector<std::string_view> column_names;
+        for (const ASTPtr & assignment_ast : command.update_assignments->children)
+            column_names.emplace_back(assignment_ast->as<const ASTAssignment &>().column_name);
+        return column_names;
+    };
 
     switch (command.type)
     {
         case ASTAlterCommand::UPDATE:
         {
-            /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update:
-            /// `DELETE FROM` rewrites to `ALTER ... UPDATE _row_exists = 0`. Govern that exact form by
-            /// ALTER DELETE so `DELETE FROM` needs only the documented ALTER DELETE privilege. Any other
-            /// assignment - including `_row_exists = <expr>` that resurrects/edits the deletion mask -
-            /// stays a real update requiring ALTER UPDATE. The shortcut applies only when `_row_exists`
-            /// is the hidden virtual marker (not an ordinary physical column on some other engine).
-            std::vector<std::string_view> updated_columns;
-            bool deletes_via_row_exists = false;
-            for (const ASTPtr & assignment_ast : command.update_assignments->children)
-            {
-                const auto & assignment = assignment_ast->as<const ASTAssignment &>();
-                if (row_exists_is_lightweight_marker && isLightweightDeleteAssignment(assignment))
-                    deletes_via_row_exists = true;
-                else
-                    updated_columns.emplace_back(assignment.column_name);
-            }
-            if (!updated_columns.empty())
-                required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, updated_columns);
-            if (deletes_via_row_exists)
-                required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
+            required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, column_names_from_update_assignments());
             break;
         }
         case ASTAlterCommand::ADD_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS adds statistics like the dedicated ADD STATISTICS command does,
-            /// so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_COLUMN:
@@ -721,10 +607,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS replaces the explicit statistics of the column like the dedicated
-            /// MODIFY STATISTICS command does, so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::COMMENT_COLUMN:
@@ -801,19 +683,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             required_access.emplace_back(AccessType::ALTER_DROP_CONSTRAINT, database, table);
             break;
         }
-        case ASTAlterCommand::MODIFY_CONSTRAINT:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_CONSTRAINT, database, table);
-            break;
-        }
         case ASTAlterCommand::ADD_PROJECTION:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_PROJECTION, database, table);
-            break;
-        }
-        case ASTAlterCommand::MODIFY_PROJECTION:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_PROJECTION, database, table);
             break;
         }
         case ASTAlterCommand::DROP_PROJECTION:

@@ -4,7 +4,6 @@
 #include <string>
 
 #include <Core/Defines.h>
-#include <IO/SnappyMode.h>
 
 namespace DB
 {
@@ -58,7 +57,6 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     std::unique_ptr<ReadBuffer> nested,
     CompressionMethod method,
     int zstd_window_log_max = 0,
-    SnappyMode snappy_mode = SnappyMode::Basic,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0);
@@ -68,7 +66,6 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log = 0,
-    SnappyMode snappy_mode = SnappyMode::Basic,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,
@@ -79,7 +76,6 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log,
-    SnappyMode snappy_mode = SnappyMode::Basic,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,
