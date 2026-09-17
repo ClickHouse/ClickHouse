@@ -20,7 +20,26 @@ CREATE TABLE rf_clone_probe (a UInt64, s String) ENGINE = MergeTree ORDER BY a S
 CREATE TABLE rf_clone_build (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024;
 INSERT INTO rf_clone_probe SELECT number, toString(number) FROM numbers(300000);
 -- Only the first 1000 of the 300000 probe keys match, so a correct filter prunes almost every granule.
-INSERT INTO rf_clone_build SELECT number FROM numbers(1000);
+-- The build side is the coordinated read, and the coordinator assigns each mark segment to a replica by
+-- a consistent hash of the part name (`DefaultCoordinator::computeConsistentHash`). With a single
+-- one-mark part `all_1_1_0` the segment belongs to replica 1, and the initiator (replica 0) only gets the
+-- build rows when it steals that segment before replica 1 announces itself. When a remote replica wins
+-- that race, the initiator's hash table is empty, the `RIGHT JOIN` skips its probe read altogether and
+-- nothing is pruned locally. Spread the build rows over ten one-mark parts instead: `all_10_10_0` is
+-- both owned by replica 0 and, by the second-level hash, stealable by replica 0 only, and remote
+-- replicas never steal from another live replica's queue, so the initiator always reads at least that
+-- part and its hash table is never empty.
+SYSTEM STOP MERGES rf_clone_build;
+INSERT INTO rf_clone_build SELECT number FROM numbers(0, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(100, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(200, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(300, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(400, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(500, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(600, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(700, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(800, 100);
+INSERT INTO rf_clone_build SELECT number FROM numbers(900, 100);
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
