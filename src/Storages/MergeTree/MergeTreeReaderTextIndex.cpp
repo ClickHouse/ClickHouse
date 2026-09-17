@@ -68,6 +68,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
+    , main_reader_can_read_incomplete_granules(main_reader_->canReadIncompleteGranules())
     , condition_text(std::dynamic_pointer_cast<MergeTreeIndexConditionText>(index.condition_template->generateUnsubstituted()))
 {
     search_queries.reserve(columns_.size());
@@ -483,13 +484,19 @@ size_t MergeTreeReaderTextIndex::readRows(
     }
 
     size_t fallback_offset = 0;
+    std::optional<size_t> last_processed_mark;
 
     while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
-        /// When the number of rows in a part is smaller than `index_granularity`,
-        /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
-        /// contains no more data rows than actually exist in the part
-        size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
+        /// Postings are addressed per mark, and `from_row` is not necessarily the first row of
+        /// `from_mark`: a previous read can stop inside a mark. Rows past this mark's last row
+        /// belong to the next mark and would resolve against the wrong posting lists.
+        size_t mark_end_row = index_granularity.getMarkStartingRow(from_mark) + index_granularity.getMarkRows(from_mark);
+        size_t rows_left_in_mark = mark_end_row > from_row ? mark_end_row - from_row : 0;
+        if (rows_left_in_mark == 0)
+            break;
+
+        size_t rows_to_read = std::min(rows_left_in_mark, max_rows_to_read - read_rows);
 
         /// In lazy mode skip per-mark Roaring Bitmap materialization — cursors decode on demand.
         PostingList range_posting;
@@ -532,15 +539,23 @@ size_t MergeTreeReaderTextIndex::readRows(
             }
         }
 
-        ++from_mark;
         from_row += rows_to_read;
         read_rows += rows_to_read;
         fallback_offset += rows_to_read;
+        last_processed_mark = from_mark;
+
+        /// An unfinished mark stays current: its remaining rows resolve against its own postings.
+        if (from_row == mark_end_row)
+            ++from_mark;
     }
 
-    /// Remove blocks that are no longer needed.
-    if (auto rows_range = getRowsRangeForMark(from_mark - 1))
-        cleanupPostingsBlocks(*rows_range);
+    /// Remove blocks that are no longer needed. The retained blocks must still cover the mark the
+    /// next read continues in, which is the last mark processed here.
+    if (last_processed_mark)
+    {
+        if (auto rows_range = getRowsRangeForMark(*last_processed_mark))
+            cleanupPostingsBlocks(*rows_range);
+    }
 
     current_mark = from_mark;
     current_row = from_row;
