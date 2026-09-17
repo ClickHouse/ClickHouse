@@ -4130,71 +4130,32 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
 namespace
 {
 
-/// Whether `field`, or any element nested in it, satisfies `predicate`. `Field::isNull` and
-/// `Field::isNaN` only look at the top level, while a whole-tuple comparison carries its `NULL`s and
-/// `NaN`s inside a `Tuple`.
-template <typename Predicate>
-bool anyNestedField(const Field & field, Predicate && predicate)
+/// A real NULL or a NaN. A `Null` field also carries the `-inf`/`+inf` stand-ins of a key range,
+/// which neither a constant nor a key value ever is, so ask for a real NULL.
+bool isRealNullOrNaN(const Field & field)
 {
-    if (predicate(field))
-        return true;
-
-    switch (field.getType())
-    {
-        case Field::Types::Tuple:
-        {
-            for (const auto & element : field.safeGet<Tuple>())
-                if (anyNestedField(element, predicate))
-                    return true;
-            return false;
-        }
-        case Field::Types::Array:
-        {
-            for (const auto & element : field.safeGet<Array>())
-                if (anyNestedField(element, predicate))
-                    return true;
-            return false;
-        }
-        case Field::Types::Map:
-        {
-            for (const auto & element : field.safeGet<Map>())
-                if (anyNestedField(element, predicate))
-                    return true;
-            return false;
-        }
-        default:
-            return false;
-    }
+    const bool is_real_null = field.isNull() && !field.isPositiveInfinity() && !field.isNegativeInfinity();
+    return is_real_null || field.isNaN();
 }
 
-/// A `NULL` or a `NaN` inside a constant makes the comparison against it "not true" for every row -
-/// `NULL` for a `NULL` element and false for a `NaN` one - whatever the key values are. In key order
-/// both have a definite position instead, so the range built from such a constant covers granules
-/// whose rows the predicate rejects.
-bool constantHasNullOrNaNInside(const Field & field)
+/// Whether a `NULL` or a `NaN` sits anywhere inside `field`. `Field::isNull` and `Field::isNaN` only
+/// look at the top level, while a whole-tuple comparison carries its `NULL`s and `NaN`s inside a
+/// `Tuple`.
+///
+/// In a constant either makes the comparison against it "not true" for every row - `NULL` for a `NULL`
+/// element and false for a `NaN` one - whatever the key values are. In key order both have a definite
+/// position instead, so the range built from such a constant covers granules whose rows the predicate
+/// rejects.
+///
+/// In a key bound it is the mirror case: a granule whose bound holds one cannot be proven wholly inside
+/// a comparison range, because the row-level comparison of such a value is false (for a `NaN`) or
+/// `NULL` (for a `NULL`), and `WHERE` rejects both, while key order gives the value a definite position.
+///
+/// A bound comes from stored key data, so the walk is `anyFieldSatisfies`, whose explicit worklist keeps
+/// the nesting depth of the value off the native stack.
+bool hasNullOrNaNInside(const Field & field)
 {
-    return anyNestedField(field, [](const Field & element)
-    {
-        /// A `Null` field also carries the `-inf`/`+inf` stand-ins of a key range, which a constant
-        /// never is, so ask for a real NULL.
-        const bool is_real_null = element.isNull() && !element.isPositiveInfinity() && !element.isNegativeInfinity();
-        return is_real_null || element.isNaN();
-    });
-}
-
-/// The same for a key bound. A `NaN` or a `NULL` nested in a `Tuple` bound is invisible to
-/// `Field::isNaN` and `Field::isNull`, and a granule whose bound holds one cannot be proven wholly
-/// inside a comparison range: the row-level comparison of such a value is false (for a `NaN`) or
-/// `NULL` (for a `NULL`), and `WHERE` rejects both, while key order gives the value a definite
-/// position.
-bool boundHasNaNOrNullInside(const Field & field)
-{
-    return anyNestedField(field, [](const Field & element)
-    {
-        /// A `Null` field is also how a `Range` spells `-inf`/`+inf`, which is not a NULL key value.
-        const bool is_real_null = element.isNull() && !element.isPositiveInfinity() && !element.isNegativeInfinity();
-        return is_real_null || element.isNaN();
-    });
+    return anyFieldSatisfies(field, isRealNullOrNaN);
 }
 
 }
@@ -4520,7 +4481,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// range anyway, and the exact-count optimization would count those rows without ever
             /// evaluating the filter. The same holds once a key transform maps the constant into key
             /// space, which is where the nested value stops being visible at all.
-            if (constantHasNullOrNaNInside(const_value))
+            if (hasNullOrNaNInside(const_value))
                 return false;
 
             bool condition_is_relaxed = false;
@@ -6410,7 +6371,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             {
                 contains = false;
             }
-            else if (unlikely(boundHasNaNOrNullInside(key_range.left) || boundHasNaNOrNullInside(key_range.right)))
+            else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
             {
                 contains = false;
             }
@@ -6854,7 +6815,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     {
                         contains = false;
                     }
-                    else if (unlikely(boundHasNaNOrNullInside(key_range.left) || boundHasNaNOrNullInside(key_range.right)))
+                    else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
                     {
                         contains = false;
                     }

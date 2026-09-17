@@ -55,3 +55,61 @@ SELECT count() FROM t_pk_tuple_null_transform WHERE t != (NULL, 1);
 SELECT count() FROM t_pk_tuple_null_transform WHERE t = (2, 2);
 
 DROP TABLE t_pk_tuple_null_transform;
+
+SELECT 'IN and NOT IN agree with the rows they return';
+
+-- A set atom is a different path from a range atom: both the set index and the row-level `IN` compare
+-- whole tuples by hash, so a nested `NULL` or `NaN` matches its identical copy on both sides, and an
+-- unpacked set literal drops the element whose top-level `Nullable` column is `NULL` on both sides too.
+-- Pin that `count()` keeps agreeing with the real read either way.
+
+CREATE TABLE t_pk_tuple_null_in (t Tuple(Nullable(Int32), Int32), x Int32) ENGINE = MergeTree ORDER BY t
+SETTINGS index_granularity = 1, allow_nullable_key = 1;
+
+INSERT INTO t_pk_tuple_null_in VALUES ((NULL,3),1),((1,3),1),((2,3),1);
+
+SELECT count(), sum(x) FROM t_pk_tuple_null_in WHERE t IN ((NULL, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in WHERE t NOT IN ((NULL, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in WHERE t IN ((NULL, 3), (1, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in WHERE t NOT IN ((NULL, 3), (1, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in WHERE t IN (SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)'));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in WHERE t NOT IN (SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)'));
+
+DROP TABLE t_pk_tuple_null_in;
+
+CREATE TABLE t_pk_tuple_nan_in (t Tuple(Float64, Int32), x Int32) ENGINE = MergeTree ORDER BY t
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_pk_tuple_nan_in VALUES ((nan,3),1),((1.,3),1),((2.,3),1);
+
+SELECT count(), sum(x) FROM t_pk_tuple_nan_in WHERE t IN ((nan, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_nan_in WHERE t NOT IN ((nan, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_nan_in WHERE t NOT IN ((nan, 3), (1., 3));
+
+DROP TABLE t_pk_tuple_nan_in;
+
+-- The same through a key transform and through partition pruning.
+
+CREATE TABLE t_pk_tuple_null_in_transform (t Tuple(Nullable(Int32), Int32), x Int32) ENGINE = MergeTree ORDER BY toString(t)
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_pk_tuple_null_in_transform VALUES ((NULL,3),1),((1,3),1),((2,3),1);
+
+SELECT count(), sum(x) FROM t_pk_tuple_null_in_transform WHERE t IN ((NULL, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in_transform WHERE t NOT IN ((NULL, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in_transform WHERE t IN (SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)'));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in_transform WHERE t NOT IN (SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)'));
+
+DROP TABLE t_pk_tuple_null_in_transform;
+
+CREATE TABLE t_pk_tuple_null_in_partition (t Tuple(Nullable(Int32), Int32), x Int32) ENGINE = MergeTree PARTITION BY t ORDER BY x
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO t_pk_tuple_null_in_partition VALUES ((NULL,3),1),((1,3),1),((2,3),1);
+
+SELECT count(), sum(x) FROM t_pk_tuple_null_in_partition WHERE t IN ((NULL, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in_partition WHERE t NOT IN ((NULL, 3));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in_partition WHERE t IN (SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)'));
+SELECT count(), sum(x) FROM t_pk_tuple_null_in_partition WHERE t NOT IN (SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)'));
+
+DROP TABLE t_pk_tuple_null_in_partition;
