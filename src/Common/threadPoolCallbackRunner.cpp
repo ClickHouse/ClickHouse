@@ -78,8 +78,9 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
         }
         catch (...)
         {
-            /// Keep `queue` consistent with `queue_size`. Otherwise the callback would stay enqueued
-            /// after the caller saw the failure and may run later, when another worker starts.
+            /// Keep `queue` consistent with `queue_size` (as in `bulkSchedule`): the task must not
+            /// stay in the queue with no ticket for it, and the caller expects a task it failed to
+            /// schedule not to run.
             queue.pop_back();
             active_tasks.fetch_sub(1, std::memory_order_relaxed);
             throw;

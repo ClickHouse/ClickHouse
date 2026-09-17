@@ -117,7 +117,6 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsUInt64 background_download_threads;
-    extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
     extern const FileCacheSettingsUInt64 idle_client_check_interval_sec;
@@ -4057,16 +4056,17 @@ TEST_F(FileCacheTest, InitializeRetryAfterLateFailure)
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
     settings[FileCacheSetting::background_download_threads] = 2;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
-    /// With per-user directories `loadMetadata` opens an `fs::directory_iterator` on
-    /// every entry of the base directory except the "status" file, so a plain file
-    /// planted there makes it throw ENOTDIR deterministically.
-    settings[FileCacheSetting::write_cache_per_user_id_directory] = true;
 
-    /// The failure happens after the permanent background threads have started.
-    const fs::path garbage_file = cache_path / "garbage";
-    fs::create_directories(cache_path);
+    /// The failure happens after the permanent background threads have started:
+    /// `loadMetadata` walks `<base>/<key prefix>/<key>/` and parses every non-empty
+    /// key directory name with `Key::fromKeyString`, which throws `BAD_ARGUMENTS`
+    /// for a name that is not a 32-character hex string. Plant such a key directory
+    /// (it must be non-empty, otherwise it is silently removed).
+    const fs::path garbage_prefix_dir = cache_path / "gar";
+    const fs::path garbage_key_dir = garbage_prefix_dir / "bage";
+    fs::create_directories(garbage_key_dir);
     {
-        WriteBufferFromFile garbage(garbage_file.string());
+        WriteBufferFromFile garbage((garbage_key_dir / "0").string());
         writeString("garbage", garbage);
         garbage.finalize();
     }
@@ -4078,7 +4078,7 @@ TEST_F(FileCacheTest, InitializeRetryAfterLateFailure)
     /// Remove the obstacle and retry: the retried `initialize` must start from a clean
     /// state (in particular, re-enter `CacheMetadata::startup` with the previous
     /// permanent threads stopped and joined) and bring the cache up.
-    fs::remove(garbage_file);
+    fs::remove_all(garbage_prefix_dir);
     cache.initialize();
     EXPECT_TRUE(cache.isInitialized());
 }
