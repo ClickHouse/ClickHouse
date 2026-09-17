@@ -10,7 +10,7 @@ TRACE_MARKER='Stack trace (when copying this message'
 # One process covers both call sites: the symbol index is built once per process, and each site
 # contributes one error log line carrying the trace.
 echo -n 'both sites, client log reader: '
-[ "$($CLICKHOUSE_LOCAL --send_logs_level=error --ignore-error -n -q "
+[ "$($CLICKHOUSE_LOCAL --send_logs_level=error --ignore-error -q "
     SELECT * FROM does_not_exist_05223;
     SELECT throwIf(1);
 " 2>&1 | grep -cF "$TRACE_MARKER")" = 2 ] && echo 1 || echo 0
@@ -36,13 +36,14 @@ cat > "${test_dir}/config.xml" <<EOF
 </clickhouse>
 EOF
 
-echo -n 'query_log reader: '
-$CLICKHOUSE_LOCAL --config-file="${test_dir}/config.xml" --ignore-error -n -q "
+echo -n 'query_log reader, both sites: '
+$CLICKHOUSE_LOCAL --config-file="${test_dir}/config.xml" --ignore-error -q "
+    SELECT * FROM does_not_exist_05223;
     SELECT throwIf(1);
     SYSTEM FLUSH LOGS query_log;
-    SELECT length(stack_trace) > 100 FROM system.query_log
-        WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
-        ORDER BY event_time_microseconds DESC LIMIT 1;
+    SELECT count() FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing') AND length(stack_trace) > 100;
 " 2>/dev/null
 
 rm -rf "${test_dir}"

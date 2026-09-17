@@ -379,7 +379,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 /// and a client can additionally ask for server logs through `send_logs_level`.
 static bool errorMessageWillBeLogged(const LoggerPtr & logger)
 {
-    /// `currentThreadHasGroup()` must stay first: `currentThreadLogsLevel()` throws without a thread status.
+    /// `currentThreadHasGroup` must stay first: `currentThreadLogsLevel` throws without a thread status.
     return (currentThreadHasGroup() && currentThreadLogsLevel() >= LogsLevel::error)
         || logger->is(Poco::Message::PRIO_ERROR);
 }
@@ -1060,8 +1060,12 @@ void logExceptionBeforeStart(
     /// Unlike in `logQueryException`, a configured `query_log` here receives the trace even for a
     /// cancelled query. That asymmetry is pre-existing.
     auto query_log = context->getQueryLog();
+    const bool query_log_will_read = query_log && settings[Setting::log_queries]
+        && elem.type >= settings[Setting::log_queries_min_type]
+        && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds();
+
     if (settings[Setting::calculate_text_stack_trace]
-        && (query_log || (log_error && errorMessageWillBeLogged(getLogger("executeQuery")))))
+        && (query_log_will_read || (log_error && errorMessageWillBeLogged(getLogger("executeQuery")))))
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
 
     elem.is_internal = log_as_internal;
@@ -1083,8 +1087,7 @@ void logExceptionBeforeStart(
 
     if (query_log)
     {
-        if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
-            && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        if (query_log_will_read)
         {
             if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
                 LOG_TRACE(
