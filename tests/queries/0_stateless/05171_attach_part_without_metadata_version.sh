@@ -35,6 +35,50 @@ SELECT 'still detached', count() FROM system.detached_parts WHERE database = cur
 SELECT 'nothing attached', count() FROM renamed;
 "
 
+# A rename into a name freed by a drop leaves the set of names looking plausible: the part holds
+# `a, b`, the table holds `a`, and only the table's own record of the rename tells that the part's `b`
+# is the table's current `a`. Reading the part at the current version would serve the stale `a`.
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE reused (id UInt64, a UInt32, b UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO reused SELECT number, 0, number FROM numbers(1000);
+ALTER TABLE reused DETACH PARTITION tuple();
+ALTER TABLE reused DROP COLUMN a;
+ALTER TABLE reused RENAME COLUMN b TO a;
+"
+
+drop_metadata_version all_1_1_0
+
+echo -n 'reused name refused: '
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "ALTER TABLE reused ATTACH PARTITION tuple()" 2>&1 |
+    grep -c -m1 'renamed to a'
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+SELECT 'still detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'reused';
+SELECT 'nothing attached', count() FROM reused;
+"
+
+# A swap of two columns leaves the set of names identical (one `ALTER` refuses transitive renames,
+# so the swap takes three).
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+CREATE TABLE swapped (id UInt64, a UInt32, b UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO swapped SELECT number, 0, number FROM numbers(1000);
+ALTER TABLE swapped DETACH PARTITION tuple();
+ALTER TABLE swapped RENAME COLUMN a TO tmp;
+ALTER TABLE swapped RENAME COLUMN b TO a;
+ALTER TABLE swapped RENAME COLUMN tmp TO b;
+"
+
+drop_metadata_version all_1_1_0
+
+echo -n 'swapped names refused: '
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "ALTER TABLE swapped ATTACH PARTITION tuple()" 2>&1 |
+    grep -c -m1 'renamed to'
+
+${CLICKHOUSE_LOCAL} --path "${workdir}" -q "
+SELECT 'still detached', count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 'swapped';
+SELECT 'nothing attached', count() FROM swapped;
+"
+
 # The same missing file over an unchanged schema: the part's columns match the table's, so reading it
 # at the current version is the same as reading it at its own.
 ${CLICKHOUSE_LOCAL} --path "${workdir}" -q "

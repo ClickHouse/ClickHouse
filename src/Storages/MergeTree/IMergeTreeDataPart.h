@@ -50,6 +50,7 @@ class Block;
 struct ColumnSize;
 class DeserializationPrefixesCache;
 class MergeTreeData;
+struct StorageInMemoryMetadata;
 struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -938,6 +939,10 @@ private:
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
+
+    /// For a part with no `metadata_version.txt`, which is read at the table's current metadata version:
+    /// throws when its columns prove that it has not applied a metadata-only `ALTER` of the table.
+    void assertColumnsReadableAtCurrentMetadataVersion(const NamesAndTypesList & part_columns, const StorageInMemoryMetadata & current_metadata) const;
 
     /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams(bool validate_against_loaded_columns = true);
