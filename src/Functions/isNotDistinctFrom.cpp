@@ -87,4 +87,7 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals, true /* is null safe cmp*/>::
         input_rows_count);
 }
 
+/// Explicit instantiation definition, see the comment in equals.cpp. Must come after the member specializations above.
+template class FunctionComparison<EqualsOp, NameEquals, true>;
+
 }
