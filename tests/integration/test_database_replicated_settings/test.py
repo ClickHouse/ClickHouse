@@ -8,7 +8,9 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.database_disk import (
     get_database_disk_name,
+    read_file,
     read_metadata,
+    replace_text_in_file,
     replace_text_in_metadata,
 )
 
@@ -27,11 +29,12 @@ node1 = cluster.add_instance(
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/config.xml", "configs/backups_disk.xml"],
     user_configs=["configs/users.xml"],
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "2"},
     with_zookeeper=True,
+    external_dirs=["/backups/"],
 )
 node3 = cluster.add_instance(
     "node3",
@@ -292,6 +295,51 @@ def test_logs_to_keep_replay_of_out_of_range_metadata(started_cluster):
         ).strip()
         == "1"
     )
+
+    node.query(f"DROP DATABASE {db_name} SYNC")
+
+
+def test_logs_to_keep_restore_of_out_of_range_backup(started_cluster):
+    node = node2
+    db_name = "test_" + get_random_string()
+    backup_name = f"{db_name}_backup"
+    # Relative to the root of the `backups` disk, see `configs/backups_disk.xml`.
+    backup_metadata_file = f"{backup_name}/metadata/{db_name}.sql"
+
+    # A backup ships the database definition as the metadata file holds it, so a backup made by an
+    # older server may carry `logs_to_keep` above `UInt32::max`. RESTORE replays that definition and
+    # must clamp it the way server startup does; rejecting would make such backups unrestorable.
+    # Every writer now validates the value, so the legacy backup is fabricated by editing the
+    # definition inside the backup. The `Disk` reader does not check a file against the manifest, so
+    # neither the recorded size nor the checksum needs a fix-up.
+    node.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}') "
+        + "SETTINGS logs_to_keep = 1000"
+    )
+    node.query(f"BACKUP DATABASE {db_name} TO Disk('backups', '{backup_name}')")
+
+    # A value no other test uses, so the log assertion below cannot match another clamp. The
+    # `assert` guards against the stored formatting of the SETTINGS clause drifting from the pattern.
+    replace_text_in_file(
+        node, "backups", backup_metadata_file, "logs_to_keep = 1000", "logs_to_keep = 8888888888"
+    )
+    assert "logs_to_keep = 8888888888" in read_file(node, "backups", backup_metadata_file)
+
+    # Dropping the last replica removes the whole database path from Keeper, so the restore creates
+    # the path anew and the `logs_to_keep` node reflects the value the restored database uses.
+    node.query(f"DROP DATABASE {db_name} SYNC")
+    node.query(f"RESTORE DATABASE {db_name} FROM Disk('backups', '{backup_name}')")
+
+    logs_to_keep_in_keeper = node.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/test/{db_name}' AND name = 'logs_to_keep'"
+    ).strip()
+    assert logs_to_keep_in_keeper == "4294967295"
+    assert node.contains_in_log(
+        "`logs_to_keep` of a Replicated database is 8888888888"
+    )
+    # The clamp applies to the value in use only; the definition of record is written as restored.
+    assert "logs_to_keep = 8888888888" in read_metadata(node, f"metadata/{db_name}.sql")
 
     node.query(f"DROP DATABASE {db_name} SYNC")
 

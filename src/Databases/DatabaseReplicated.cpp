@@ -3112,12 +3112,12 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         DatabaseReplicatedSettings database_replicated_settings{initial_storage_settings};
         if (engine_define->settings)
         {
-            /// Whether the definition is replayed from metadata this server already accepted (server
-            /// startup and RESTORE run with `internal`, short-syntax ATTACH re-reads the metadata file)
-            /// rather than supplied by the user now. A full-syntax ATTACH carries a user-written
-            /// definition and is validated the same way as CREATE.
-            const bool loading_from_existing_metadata = args.internal
+            /// Whether the definition is replayed from stored metadata (startup, short-syntax ATTACH, RESTORE)
+            /// rather than supplied by the user now. A full-syntax ATTACH is user input, validated like CREATE.
+            /// Not `args.internal`: wrappers such as `PARALLEL WITH` run fresh user statements as internal queries.
+            const bool loading_from_existing_metadata = args.is_metadata_replay
                 || args.create_query.attach_short_syntax
+                || args.is_restore_from_backup
                 || isLoadingFromExistingMetadata(args.mode);
             database_replicated_settings.loadFromQuery(*engine_define, loading_from_existing_metadata);
         }
