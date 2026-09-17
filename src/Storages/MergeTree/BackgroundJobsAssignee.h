@@ -60,7 +60,12 @@ public:
     };
     Type type{Type::DataProcessing};
 
-    void start();
+    /// Allocates the scheduling task if needed and activates it. Idempotent.
+    /// Returns true if the task was created by this call, so that the caller can `finish` exactly
+    /// the assignees it started when the operation that started them is rolled back.
+    /// All or nothing: if activating a task created by this call throws, the task is destroyed
+    /// again before the exception leaves, so the assignee is exactly as it was before the call.
+    bool start();
     void trigger();
     void postpone();
     void finish();
@@ -103,6 +108,9 @@ private:
     BackgroundTaskSchedulingSettings sleep_settings;
 
     static String toString(Type type);
+
+    /// Must be called under `holder_mutex`. Returns true if the task was created by this call.
+    bool createHolderIfNeeded();
 
     /// Function that executes in background scheduling pool
     void threadFunc();

@@ -122,6 +122,7 @@ public:
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
@@ -345,6 +346,7 @@ private:
     std::unique_ptr<PlainCommittingBlockHolder> fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
+    bool areBackgroundWorkersEnabled() const override { return background_workers_enabled; }
 
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
@@ -357,6 +359,54 @@ private:
 
     bool isTableReadonly() const;
     void assertNotReadonly() const;
+
+    /// Starts every background worker that only a writable table runs. Called on startup of a writable
+    /// table and again when `table_readonly` is turned back off, so that a table that was attached
+    /// read-only regains merges, moves, cleanup, and outdated part loading without a restart.
+    /// The statistics refresh and the streaming assignee only read parts; `startup` starts them for
+    /// every table, read-only or not, so they are not part of this set.
+    ///
+    /// Starting allocates and enqueues the scheduling tasks, so it may throw. A started worker
+    /// runs nothing while `background_workers_enabled` is unset, which lets the `table_readonly`
+    /// 1 -> 0 `ALTER` be exception-safe as a unit: `startBackgroundWorkers` runs before the
+    /// metadata commit inside its rollback unit, and `enableBackgroundWorkers` is the only step
+    /// after the commit, a plain flag flip that cannot fail. Starting is idempotent.
+    ///
+    /// `started` receives which assignees the call created, as opposed to found already running,
+    /// updated after each one so that it is accurate even when the call throws partway through.
+    /// `BackgroundJobsAssignee::start` itself is all or nothing, so an assignee whose activation
+    /// threw has no task left behind and is correctly not recorded here.
+    /// The rollback of the `ALTER` passes it to `finishBackgroundWorkers`, which tears down exactly
+    /// those assignees: a table that had no workers before the failed `ALTER` has none after it,
+    /// while the workers of a table that started writable are left as they were.
+    struct StartedBackgroundWorkers
+    {
+        bool operations = false;
+        bool moves = false;
+    };
+    void startBackgroundWorkers(StartedBackgroundWorkers * started = nullptr);
+    void finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept;
+    void enableBackgroundWorkers() noexcept;
+    void disableBackgroundWorkers() noexcept;
+    /// Schedules the merge/mutate and move assignees and the cleanup thread to run now instead of
+    /// after their backoff. Used after a `table_readonly` 1 -> 0 commit, and after the rollback of a
+    /// failed 0 -> 1 commit, whose temporary `table_readonly = 1` may have sent a worker that woke
+    /// up in the commit window into its backoff with work pending. Best effort, never throws.
+    void wakeupBackgroundWorkers() noexcept;
+
+    /// Whether the started background workers may do work. Every worker entry point
+    /// (`scheduleDataProcessingJob`, `scheduleDataMovingJob`, the cleanup iteration, the outdated and
+    /// unexpected part loaders) checks it in addition to `isTableReadonly`, so a worker that wakes up
+    /// while a settings `ALTER` has made the table writable in memory but not yet durably cannot queue
+    /// a merge, mutation, move, disk cleanup, or part detach/removal that would survive a rolled-back
+    /// commit. `startBackgroundMovesIfNeeded` starts nothing while it is unset: the toggle starts the
+    /// move assignee itself.
+    ///
+    /// Set exactly when the table is durably writable: on the startup of a writable table and after
+    /// the commit of a `table_readonly` 1 -> 0 `ALTER`; unset after the commit of a 0 -> 1 `ALTER`, so
+    /// that the outdated part loader of a table that started writable, whose only guard this is,
+    /// stops modifying the disk once the table is read-only.
+    std::atomic<bool> background_workers_enabled {false};
 
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;
