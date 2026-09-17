@@ -6,6 +6,7 @@
 
 /// musl defines stderr as (stderr) which is a self-referential macro
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -30,11 +31,20 @@
 #include <Common/formatReadable.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/Ask.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+
+#include <Parsers/Access/ASTSetRoleQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTUseQuery.h>
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
@@ -52,6 +62,8 @@
 #include <Poco/Util/Application.h>
 #include <Poco/URI.h>
 
+#include <algorithm>
+#include <charconv>
 #include <filesystem>
 
 #include "config.h"
@@ -84,6 +96,7 @@ namespace ErrorCodes
     extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int USER_EXPIRED;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
 Client::Client()
@@ -93,6 +106,324 @@ Client::Client()
 
 
 Client::~Client() = default;
+
+namespace
+{
+
+std::optional<BackgroundQueryManager::JobId> parseBackgroundJobId(std::string_view argument)
+{
+    BackgroundQueryManager::JobId id = 0;
+    const auto [end, error] = std::from_chars(argument.data(), argument.data() + argument.size(), id);
+    if (error != std::errc{} || end != argument.data() + argument.size() || id == 0)
+        return {};
+    return id;
+}
+
+bool containsSetting(const ASTPtr & ast, std::string_view setting_name)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * set_query = ast->as<ASTSetQuery>())
+    {
+        if (std::any_of(set_query->changes.begin(), set_query->changes.end(), [&](const auto & change)
+            { return boost::iequals(change.name, setting_name); }))
+            return true;
+        if (std::any_of(set_query->default_settings.begin(), set_query->default_settings.end(), [&](const auto & name)
+            { return boost::iequals(name, setting_name); }))
+            return true;
+    }
+
+    return std::any_of(ast->children.begin(), ast->children.end(), [&](const auto & child)
+        { return containsSetting(child, setting_name); });
+}
+
+}
+
+bool Client::tryProcessInteractiveClientCommand(std::string_view input)
+{
+    const auto name_end = std::find_if(input.begin(), input.end(), [](char character) { return isWhitespaceASCII(character); });
+    const size_t name_size = static_cast<size_t>(name_end - input.begin());
+    const std::string_view name = input.substr(0, name_size);
+    if (!boost::iequals(name, "\\bg")
+        && !boost::iequals(name, "\\jobs")
+        && !boost::iequals(name, "\\fg")
+        && !boost::iequals(name, "\\cancel"))
+        return false;
+
+    std::string_view argument = input.substr(name_size);
+    while (!argument.empty() && isWhitespaceASCII(argument.front()))
+        argument.remove_prefix(1);
+
+    if (boost::iequals(name, "\\bg"))
+    {
+        if (argument.empty())
+        {
+            error_stream << "Usage: \\bg <query>" << std::endl;
+            return true;
+        }
+
+        String query(argument);
+        const char * query_position = query.data();
+        const char * query_end = query_position + query.size();
+        const auto parsed_query = parseQuery(query_position, query_end, client_context->getSettingsRef(), false);
+        if (!parsed_query)
+        {
+            error_stream << "A background job must contain one SQL statement" << std::endl;
+            return true;
+        }
+
+        const auto * set_role = parsed_query->as<ASTSetRoleQuery>();
+        const bool changes_only_session_state = parsed_query->as<ASTSetQuery>() || parsed_query->as<ASTUseQuery>()
+            || parsed_query->as<ASTTransactionControl>()
+            || (set_role && set_role->kind != ASTSetRoleQuery::Kind::SET_DEFAULT_ROLE);
+        const auto * table_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(parsed_query.get());
+        if (changes_only_session_state || (table_query && table_query->isTemporary()))
+        {
+            error_stream << "A background job cannot run a statement whose effects are limited to its private session" << std::endl;
+            return true;
+        }
+
+        if (containsSetting(parsed_query, "run_query_in_background"))
+        {
+            error_stream << "The run_query_in_background server setting cannot be combined with a client background job" << std::endl;
+            return true;
+        }
+        if (containsSetting(parsed_query, "profile"))
+        {
+            error_stream << "A query-level settings profile cannot be combined with a client background job" << std::endl;
+            return true;
+        }
+
+        if (!external_tables.empty() || !external_scalars.empty())
+        {
+            error_stream << "Background jobs do not support command-line external tables or scalars" << std::endl;
+            return true;
+        }
+
+        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+        {
+            ASTPtr input_function;
+            if (insert->select)
+                insert->tryFindInputFunction(input_function);
+
+            if (!insert->select || input_function)
+            {
+                error_stream << "A background job supports INSERT only as INSERT ... SELECT" << std::endl;
+                return true;
+            }
+        }
+
+        BackgroundQueryManager::Snapshot snapshot(
+            client_context,
+            connection_parameters,
+            getClientConfiguration(),
+            default_database,
+            max_client_network_bandwidth,
+            client_local_timezone,
+            default_output_format,
+            is_default_format,
+            default_output_compression_method,
+            has_vertical_output_suffix,
+            inline_insert_data,
+            allow_merge_tree_settings,
+            query_processing_stage,
+            query_kind);
+        const auto id = background_queries.start(
+            std::move(query), parsed_query->formatForLogging(/* max_length = */ 80), std::move(snapshot));
+        output_stream << "Background job " << id << " started" << std::endl;
+        return true;
+    }
+
+    if (boost::iequals(name, "\\jobs"))
+    {
+        if (!argument.empty())
+        {
+            error_stream << "Usage: \\jobs" << std::endl;
+            return true;
+        }
+
+        const auto jobs = background_queries.list();
+        if (jobs.empty())
+        {
+            output_stream << "No background jobs." << std::endl;
+            return true;
+        }
+
+        for (const auto & job : jobs)
+        {
+            output_stream << '[' << job.id << "] " << BackgroundQueryManager::stateName(job.state)
+                          << "  " << fmt::format("{:.1f}", static_cast<double>(job.elapsed.count()) / 1000.0) << " sec"
+                          << "  " << formatReadableSizeWithBinarySuffix(job.spool_bytes)
+                          << "  " << job.query_id << "  " << job.query << std::endl;
+        }
+        return true;
+    }
+
+    const auto id = parseBackgroundJobId(argument);
+    if (!id)
+    {
+        error_stream << "Usage: " << name << " <job_id>" << std::endl;
+        return true;
+    }
+
+    if (boost::iequals(name, "\\fg"))
+    {
+        const auto job = background_queries.get(*id);
+        if (!job)
+        {
+            error_stream << "Background job " << *id << " does not exist" << std::endl;
+            return true;
+        }
+        if (job->state == BackgroundQueryManager::State::Starting || job->state == BackgroundQueryManager::State::Running)
+        {
+            output_stream << "Background job " << *id << " is still "
+                          << BackgroundQueryManager::stateName(job->state) << std::endl;
+            return true;
+        }
+
+        if (!job->output_is_tty_friendly && stdin_is_a_tty && stdout_is_a_tty)
+        {
+            const auto question = fmt::format(
+                "The background job uses binary output format `{}`, which can produce side-effects when written to the terminal. "
+                "Replay it anyway? [y/N] ",
+                job->output_format);
+            const bool replay = ask(question, *std_in, *std_out);
+            *std_out << '\n';
+            std_out->next();
+            if (!replay)
+            {
+                output_stream << "Background job " << *id << " was not replayed; use \\cancel " << *id
+                              << " to discard it" << std::endl;
+                return true;
+            }
+        }
+
+        std::unique_ptr<ShellCommand> background_pager;
+        bool pager_signals_changed = false;
+        auto finish_background_pager = [&](bool wait_for_pager)
+        {
+            std::exception_ptr cleanup_error;
+            if (background_pager)
+            {
+                try
+                {
+                    background_pager->in.close();
+                    if (wait_for_pager)
+                        background_pager->wait();
+                }
+                catch (...)
+                {
+                    cleanup_error = std::current_exception();
+                }
+                background_pager.reset();
+            }
+
+            if (pager_signals_changed)
+            {
+                auto restore_signal = [&](int signal_number, const char * signal_name)
+                {
+                    try
+                    {
+                        if (SIG_ERR == signal(signal_number, SIG_DFL))
+                            throw ErrnoException(
+                                ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot restore signal handler for {}", signal_name);
+                    }
+                    catch (...)
+                    {
+                        if (!cleanup_error)
+                            cleanup_error = std::current_exception();
+                    }
+                };
+                restore_signal(SIGPIPE, "SIGPIPE");
+                restore_signal(SIGQUIT, "SIGQUIT");
+                pager_signals_changed = false;
+
+                try
+                {
+                    setupSignalHandler();
+                }
+                catch (...)
+                {
+                    if (!cleanup_error)
+                        cleanup_error = std::current_exception();
+                }
+            }
+
+            if (cleanup_error)
+                std::rethrow_exception(cleanup_error);
+        };
+
+        WriteBuffer * result_output = std_out.get();
+        BackgroundQueryManager::ForegroundResult result;
+        try
+        {
+            if (!pager.empty())
+            {
+                if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
+                    throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
+                pager_signals_changed = true;
+                if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
+                    throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+
+                ShellCommand::Config config(pager);
+                config.pipe_stdin_only = true;
+                config.terminate_in_destructor_strategy.terminate_in_destructor = true;
+                config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
+                background_pager = ShellCommand::execute(config);
+                result_output = &background_pager->in;
+            }
+
+            WriteBufferFromFileDescriptor diagnostics(stderr_fd);
+            result = background_queries.foreground(*id, *result_output, diagnostics, true);
+            finish_background_pager(true);
+        }
+        catch (...)
+        {
+            auto exception = std::current_exception();
+            try
+            {
+                finish_background_pager(false);
+            }
+            catch (...)
+            {
+            }
+            std::rethrow_exception(exception);
+        }
+
+        switch (result.status)
+        {
+            case BackgroundQueryManager::ForegroundStatus::NotFound:
+                error_stream << "Background job " << *id << " does not exist" << std::endl;
+                break;
+            case BackgroundQueryManager::ForegroundStatus::Running:
+                output_stream << "Background job " << *id << " is still "
+                              << BackgroundQueryManager::stateName(result.job->state) << std::endl;
+                break;
+            case BackgroundQueryManager::ForegroundStatus::UnsafeOutput:
+                UNREACHABLE();
+            case BackgroundQueryManager::ForegroundStatus::Replayed:
+                output_stream << "Background job " << *id << ' '
+                              << BackgroundQueryManager::stateName(result.job->state) << std::endl;
+                break;
+        }
+        return true;
+    }
+
+    switch (background_queries.cancel(*id))
+    {
+        case BackgroundQueryManager::CancelStatus::NotFound:
+            error_stream << "Background job " << *id << " does not exist" << std::endl;
+            break;
+        case BackgroundQueryManager::CancelStatus::Requested:
+            output_stream << "Cancellation requested for background job " << *id << std::endl;
+            break;
+        case BackgroundQueryManager::CancelStatus::Discarded:
+            output_stream << "Discarded background job " << *id << std::endl;
+            break;
+    }
+    return true;
+}
 
 void Client::processError(std::string_view query) const
 {

@@ -1122,6 +1122,7 @@ try
         bool logs_into_stdout = server_logs_file == "-";
         bool extras_into_stdout = need_render_progress || logs_into_stdout;
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
+        onOutputFormatSelected(current_format, !select_only_into_file);
 
         if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
             out_file_buf = wrapWriteBufferWithCompressionMethod(
@@ -1801,6 +1802,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         {
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
+            if (isQueryCancellationRequested())
+            {
+                query_interrupt_handler.stop();
+                return;
+            }
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
@@ -1907,6 +1913,16 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
         while (true)
         {
+            /// A client that owns a disposable connection may prefer to stop
+            /// draining immediately after its persistent cancellation request
+            /// has been sent. This also bounds shutdown when the server stops
+            /// responding after it receives the cancellation packet.
+            if (cancelled && isQueryCancellationRequested())
+            {
+                connection->disconnect();
+                return;
+            }
+
             /// Has the Ctrl+C been pressed and thus the query should be cancelled?
             /// If this is the case, inform the server about it and receive the remaining packets
             /// to avoid losing sync.
@@ -2401,6 +2417,11 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
+    if (isQueryCancellationRequested())
+    {
+        query_interrupt_handler.stop();
+        return;
+    }
 
     /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
     /// before sending so the server parses it the same way the client did.
@@ -3741,6 +3762,9 @@ bool ClientBase::processQueryText(const String & text)
 
     if (exit_strings.contains(trimmed_input))
         return false;
+
+    if (is_interactive && tryProcessInteractiveClientCommand(trimmed_input))
+        return true;
 
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
     /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch

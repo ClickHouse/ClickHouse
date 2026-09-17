@@ -1,0 +1,277 @@
+#!/usr/bin/expect -f
+
+# Exercise the interactive clickhouse-client background-job commands. A long-running job must use
+# its own connection: the normal prompt stays usable, its output is not interleaved with foreground
+# output, and asking for its result is nonblocking. A short job covers successful spooling/replay;
+# long jobs cover listing and asynchronous cancellation; the final cases cover input validation,
+# binary-output confirmation, spool sizes, and discarding a terminal job.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# Give replxx time to consume the text before submitting it. Sending the text and carriage return
+# together is racy on a loaded machine: replxx can interpret the carriage return as a newline in
+# one multiline input instead of as submission.
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+# A finished job's result is kept out of the terminal until `\fg` replays it. Construct the marker
+# from separate literals so neither the command echo nor the `\jobs` query preview contains the full
+# marker, then guard every expect until replay. This also catches a result that leaks asynchronously
+# after the client has already returned the prompt.
+expect_before -ex {background-result-05227} { exit 1 }
+submit {\bg SELECT concat('background-', 'result-05227') FORMAT TabSeparatedRaw}
+expect -re {(?i)(job[^\r\n]*1[^\r\n]*start|start[^\r\n]*job[^\r\n]*1)}
+expect ":) "
+
+submit {SELECT sleep(1) FORMAT Null}
+expect ":) "
+
+# `\jobs` is the synchronization point for completion. Normally one iteration is sufficient, but
+# retry to stay deterministic under thread fuzzing and heavy CI load.
+set succeeded 0
+for {set attempt 0} {$attempt < 200 && !$succeeded} {incr attempt} {
+    submit {\jobs}
+    expect {
+        -re {(?i)\[1\][^\r\n]*(succeeded|completed)[^\r\n]*[0-9]+\.[0-9]+[[:space:]]+([KMGTPE]i)?B} {
+            set succeeded 1
+            expect ":) "
+        }
+        -re {(?i)\[1\][^\r\n]*(starting|running)} {
+            expect ":) "
+            after 100
+        }
+        -re {(?i)\[1\][^\r\n]*(failed|cancelled)} {
+            exit 1
+        }
+    }
+}
+if {!$succeeded} {
+    exit 1
+}
+
+expect_before -i $spawn_id
+submit {\fg 1}
+expect -ex {background-result-05227}
+expect ":) "
+
+# Replaying a terminal job consumes it and releases its spool files.
+submit {\jobs}
+expect -ex {No background jobs.}
+expect ":) "
+
+# Keep the second job alive long enough to prove that foreground work and `\fg` do not wait for it.
+# max_block_size=1 makes the sleep duration independent of block sizing.
+submit {\bg SELECT sleepEachRow(0.05) FROM numbers(600) SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 60000000 FORMAT Null}
+expect -re {(?i)(job[^\r\n]*2[^\r\n]*start|start[^\r\n]*job[^\r\n]*2)}
+expect ":) "
+
+# Synchronize on the job actually executing, rather than assuming that its worker gets scheduled
+# before the next input. This makes the foreground query below a real concurrent-connection check.
+set running 0
+for {set attempt 0} {$attempt < 200 && !$running} {incr attempt} {
+    submit {\jobs}
+    expect {
+        -re {(?i)\[2\][^\r\n]*running} {
+            set running 1
+            expect ":) "
+        }
+        -re {(?i)\[2\][^\r\n]*starting} {
+            expect ":) "
+            after 100
+        }
+        -re {(?i)\[2\][^\r\n]*(succeeded|completed|failed|cancel+ed)} {
+            exit 1
+        }
+    }
+}
+if {!$running} {
+    exit 1
+}
+
+submit {SELECT 'main-connection-responsive-05227' FORMAT TabSeparatedRaw}
+expect -ex {main-connection-responsive-05227}
+expect ":) "
+
+submit {\fg 2}
+expect -re {(?i)(running|not[^\r\n]*finished)}
+expect ":) "
+
+# Cancellation is asynchronous. Poll the user-visible job status instead of assuming that the
+# worker observes the cancellation before `\cancel` returns.
+submit {\cancel 2}
+expect ":) "
+
+set cancelled 0
+for {set attempt 0} {$attempt < 200 && !$cancelled} {incr attempt} {
+    submit {\jobs}
+    expect {
+        -re {(?i)\[2\][^\r\n]*cancel+ed} {
+            set cancelled 1
+            expect ":) "
+        }
+        -re {(?i)\[2\][^\r\n]*(starting|running)} {
+            expect ":) "
+            after 100
+        }
+        -re {(?i)\[2\][^\r\n]*(succeeded|completed|failed)} {
+            exit 1
+        }
+    }
+}
+if {!$cancelled} {
+    exit 1
+}
+
+# Consume job 2 so that its terminal status cannot satisfy the checks for the next job.
+submit {\fg 2}
+expect -re {(?i)background job[[:space:]]+2[[:space:]]+cancel+ed}
+expect ":) "
+
+# Regression for cancellation racing with worker startup: request it immediately after the start
+# acknowledgement, without first waiting for the worker to install its active query handler. The
+# query takes about 60 seconds without cancellation, while the cancellation deadline below is 10
+# seconds. A request lost when the per-query interrupt handler is armed therefore cannot pass
+# merely because the worker labels the job `cancelled` after executing the whole query.
+submit {\bg SELECT sleepEachRow(0.05) FROM numbers(1200) SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 60000000 FORMAT Null}
+expect -re {(?i)(job[^\r\n]*3[^\r\n]*start|start[^\r\n]*job[^\r\n]*3)}
+
+# Do not even wait for the prompt to be drawn. The line editor will consume the already-buffered
+# command as soon as it is ready, which maximizes coverage of the startup window.
+set previous_timeout $timeout
+set timeout 3
+set cancellation_deadline [expr {[clock milliseconds] + 10000}]
+submit {\cancel 3}
+expect ":) "
+
+set cancelled_during_start 0
+while {!$cancelled_during_start && [clock milliseconds] < $cancellation_deadline} {
+    submit {\jobs}
+    expect {
+        -re {(?i)\[3\][^\r\n]*cancel+ed} {
+            set cancelled_during_start 1
+            expect ":) "
+        }
+        -re {(?i)\[3\][^\r\n]*(starting|running)} {
+            expect ":) "
+            after 100
+        }
+        -re {(?i)\[3\][^\r\n]*(succeeded|completed|failed)} {
+            exit 1
+        }
+    }
+}
+set timeout $previous_timeout
+if {!$cancelled_during_start} {
+    exit 1
+}
+
+# `\cancel` on a terminal job discards the retained job and its spools instead of replaying them.
+submit {\cancel 3}
+expect -ex {Discarded background job 3}
+expect ":) "
+
+submit {\jobs}
+expect -ex {No background jobs.}
+expect ":) "
+
+# Inputs that cannot form a meaningful independent client session are rejected without allocating a
+# job ID. In particular, client-managed and server-managed background execution cannot be combined.
+submit {\bg -- comment only}
+expect -ex {A background job must contain one SQL statement}
+expect ":) "
+
+submit {\bg SET max_threads = 1}
+expect -ex {A background job cannot run a statement whose effects are limited to its private session}
+expect ":) "
+
+submit {\bg USE system}
+expect -ex {A background job cannot run a statement whose effects are limited to its private session}
+expect ":) "
+
+submit {\bg SELECT 1 SETTINGS run_query_in_background = 1}
+expect -ex {The run_query_in_background server setting cannot be combined with a client background job}
+expect ":) "
+
+submit {\bg SELECT 1 SETTINGS profile = 'default'}
+expect -ex {A query-level settings profile cannot be combined with a client background job}
+expect ":) "
+
+submit {\bg INSERT INTO nonexistent VALUES (1)}
+expect -ex {A background job supports INSERT only as INSERT ... SELECT}
+expect ":) "
+
+# Binary output must not be written to an interactive terminal without confirmation. Refusing the
+# replay emits no RowBinary payload (the value 1 is the single byte 0x01) and retains the job. Its
+# listing also pins the new spool-size field. The rejected commands above must not allocate IDs, so
+# this is job 4. Cancelling the terminal job then discards the spool.
+expect_before -ex "\x01" { exit 1 }
+submit {\bg SELECT 1 FORMAT RowBinary}
+expect -re {(?i)(job[^\r\n]*4[^\r\n]*start|start[^\r\n]*job[^\r\n]*4)}
+expect ":) "
+
+set binary_succeeded 0
+for {set attempt 0} {$attempt < 200 && !$binary_succeeded} {incr attempt} {
+    submit {\jobs}
+    expect {
+        -re {(?i)\[4\][^\r\n]*succeeded[^\r\n]*1\.00 B[^\r\n]*SELECT 1 FORMAT RowBinary} {
+            set binary_succeeded 1
+            expect ":) "
+        }
+        -re {(?i)\[4\][^\r\n]*(starting|running)} {
+            expect ":) "
+            after 100
+        }
+        -re {(?i)\[4\][^\r\n]*(failed|cancel+ed)} {
+            exit 1
+        }
+    }
+}
+if {!$binary_succeeded} {
+    exit 1
+}
+
+submit {\fg 4}
+expect -ex {The background job uses binary output format `RowBinary`, which can produce side-effects when written to the terminal. Replay it anyway? [y/N] }
+send -- "n\r"
+expect -ex {Background job 4 was not replayed; use \cancel 4 to discard it}
+expect ":) "
+
+submit {\jobs}
+expect -re {(?i)\[4\][^\r\n]*succeeded[^\r\n]*1\.00 B[^\r\n]*SELECT 1 FORMAT RowBinary}
+expect ":) "
+
+submit {\cancel 4}
+expect -ex {Discarded background job 4}
+expect ":) "
+
+submit {\jobs}
+expect -ex {No background jobs.}
+expect ":) "
+expect_before -i $spawn_id
+
+send -- "\4"
+expect eof
+
+file delete -force $history_file

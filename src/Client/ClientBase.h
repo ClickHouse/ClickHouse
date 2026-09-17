@@ -258,6 +258,21 @@ protected:
     /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
 
+    /// Give a concrete interactive client a chance to consume an application-specific
+    /// meta-command before the text is parsed as SQL. The base client commands live in
+    /// `processQueryText`; commands that only make sense for a remote client (and would be
+    /// misleading in clickhouse-local or the embedded client) belong in this hook.
+    virtual bool tryProcessInteractiveClientCommand(std::string_view) { return false; }
+
+    /// A client whose query is owned by another thread can use this to close the
+    /// race between publishing itself and arming the per-query interrupt handler.
+    virtual bool isQueryCancellationRequested() const { return false; }
+
+    /// Called after the effective result format is resolved but before any
+    /// result bytes are written. Specialized clients can use this to defer a
+    /// terminal-safety decision until the result is consumed elsewhere.
+    virtual void onOutputFormatSelected(std::string_view, bool) { }
+
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
     /// Used to check certain things that are considered unsafe for the embedded client
