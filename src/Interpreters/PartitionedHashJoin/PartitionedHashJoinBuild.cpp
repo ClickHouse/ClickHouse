@@ -6,6 +6,8 @@
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
+#include <base/getL1CacheSize.h>
+#include <base/getL2CacheSize.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -20,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <deque>
 #include <limits>
@@ -33,10 +36,6 @@ extern const Event HashJoinPartitionedBuildHistogramMicroseconds;
 extern const Event HashJoinPartitionedBuildScatterMicroseconds;
 extern const Event HashJoinPartitionedBuildInsertMicroseconds;
 extern const Event HashJoinInsertedRows;
-extern const Event HashJoinTableBytes;
-extern const Event HashJoinPartitionOverflowRows;
-extern const Event HashJoinDuplicateRunBytes;
-extern const Event HashJoinTeardownMicroseconds;
 extern const Event HashJoinTableResizes;
 }
 
@@ -59,6 +58,10 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 
 namespace
 {
+
+/// The saved routes are 16 bits and the per-row bucket ids of the scatter are 16 bits too, with one drop
+/// bucket past the partitions, so a plan can address at most 2^15 partitions.
+constexpr size_t max_plan_bits = 15;
 
 constexpr size_t locator_piece_rows = 32768; /// locator synthesis scratch stays L2-resident
 
@@ -1172,107 +1175,82 @@ void PartitionedHashJoin::maybeGrowForLoadFactor(UInt64 projected)
         });
 }
 
-void PartitionedHashJoin::runPostBuildPhase()
+void PartitionedHashJoin::decidePartitionPlan()
 {
-    chassert(!build_phase_finished);
+    const HashJoin::Type type = hash_join->data->type;
 
-    if (delegate_mode)
+    /// The table is sized from the sketch over the whole input at the standard 50% max fill; it may
+    /// grow during post-build when the estimate was low.
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    size_degree = sizeDegreeFor(reserveFor(rows, hll_estimate));
+
+    /// ASOF stays single-partition: its mapped values are per-key sorted vectors whose insert wants the
+    /// original row order, and that sorting dominates the build, so partitioning the equi-key table
+    /// would pay a scattered insert order for nothing. The fixed-size maps have no ranges to split.
+    bits = 0;
+    if (!HashJoinTableMaps::isFixedSizeType(type) && hash_join->getStrictness() != JoinStrictness::Asof)
     {
-        /// Already built during the fill and the barrier. Its single-map post-build optimizations
-        /// stay off, as they do on the partitioned path.
-        build_phase_finished = true;
-        return;
-    }
+        /// The fewest bits whose range - `2^(size_degree - bits)` cells - fits the private L2 budget, so
+        /// an owner's inserts stay cache-resident while it streams its chunk.
+        const size_t cell_bytes = HashJoinTableMaps::cellBytes(maps_variant_index, type);
+        const size_t l2_bytes = std::max<size_t>(getL2CacheSize(), 1 << 20);
+        const auto budget_bytes = static_cast<size_t>(0.8 * static_cast<double>(l2_bytes));
+        size_t range_bits = 0;
+        while ((2uz << range_bits) * cell_bytes <= budget_bytes)
+            ++range_bits;
+        bits = size_degree > range_bits ? size_degree - range_bits : 0;
 
-    bool all_values_unique = true;
-    if (single_fill_thread)
-    {
-        /// The rows went in during the fill; only the scratch finish and the publication remain.
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
-        ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::HashJoinPartitionedBuildInsertMicroseconds);
-        all_values_unique = finishSinglePartitionInsert();
-    }
-    else if (bits == 0)
-    {
-        /// Single-partition has no histogram or scatter stage - every row is inserted straight from the
-        /// stored blocks - so all of it charges to the insert sub-phase.
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
-        ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::HashJoinPartitionedBuildInsertMicroseconds);
-        all_values_unique = postBuildSinglePartition();
-    }
-    else
-        all_values_unique = postBuildPartitioned();
-
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
-
-    /// The routes and prepared key columns were already dropped as the scatter consumed them; this
-    /// is the block shells and the lane bookkeeping, freed before the probe starts.
-    build_blocks.clear();
-    build_blocks.shrink_to_fit();
-    /// From here the byte count tracks only the stored blocks.
-    accumulated_bytes.store(hash_join->data->allocated_size, std::memory_order_relaxed);
-
-    ProfileEvents::increment(ProfileEvents::HashJoinTableBytes, ht_total_bytes);
-    ProfileEvents::increment(ProfileEvents::HashJoinPartitionOverflowRows, stats.overflow_rows);
-    ProfileEvents::increment(
-        ProfileEvents::HashJoinDuplicateRunBytes, stats.owner_duplicates.arena_bytes + stats.drain_duplicates.arena_bytes);
-
-    /// For the next run of this query: join reordering, `rhs_size_estimation` and the runtime-filter
-    /// sizing read `HashJoinEntry` whatever algorithm produced it, and the exact distinct count is what
-    /// `ht_size` means. Never read to size this build: a grow during post-build has already happened,
-    /// and a cached count would not depend on the data. `hash_join` holds no stats params, so nothing
-    /// else writes this key for this join.
-    if (stats_collecting_params.isCollectionAndUseEnabled() && stats.distinct_keys)
-        getHashTablesStatistics<HashJoinEntry>().update(
-            {.ht_size = stats.distinct_keys, .source_rows = hash_join->data->rows_to_join}, stats_collecting_params);
-
-    post_build_ctx.reset();
-    post_build_pool.reset();
-
-    finishBuildPhase(all_values_unique);
-
-    LOG_TRACE(
-        log,
-        "Built one shared hash table of {} cells in {} partitions: {} keys from {} rows, {} of right-table data including the table "
-        "({} committed, {} overflow rows drained, {} bytes of duplicate runs)",
-        stats.table_cells,
-        partitions,
-        stats.distinct_keys,
-        stats.inserted_rows,
-        ReadableSize(getTotalByteCount()),
-        ReadableSize(ht_total_bytes),
-        stats.overflow_rows,
-        ReadableSize(stats.owner_duplicates.arena_bytes + stats.drain_duplicates.arena_bytes));
-}
-
-void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
-{
-    /// The leaf join's own barrier: used-flags init over its empty map, the ALL -> RightAny promotion
-    /// when every build key turned out unique - the probe dispatches on the promoted strictness - and
-    /// the non-joined status. The flags are then resized to span the whole table.
-    hash_join->all_values_unique = all_values_unique;
-    hash_join->onBuildPhaseFinish();
-    reinitUsedFlags();
-    hash_join->data->keys_to_join = getTotalRowCount();
-    build_phase_finished = true;
-}
-
-void PartitionedHashJoin::reinitUsedFlags()
-{
-    /// One per-offset space of `cells + 1`, offset 0 being the zero-value cell, exactly the
-    /// `getBufferSizeInCells() + 1` the standard join sizes. `reinit` only grows, and does nothing for
-    /// shapes without right-side flags. It has to run after the leaf join's barrier, which sized the
-    /// flags to its own empty map.
-    const size_t flags = table_maps->getBufferSizeInCells(hash_join->data->type) + 1;
-    joinDispatch(
-        hash_join->getKind(),
-        hash_join->getStrictness(),
-        hash_join->data->maps.front(),
-        hash_join->getMapsKind(),
-        [&](auto kind_, auto strictness_, auto & map_)
+        /// A cap on the partition count at one partition per 64 bytes of L1 (1024 on a 64 KiB L1). It
+        /// dates from a layout with a 16-byte descriptor per partition that had to fit a quarter of L1.
+        /// The shared table has no descriptors, but deeper fanouts measured no better, and the cap
+        /// bounds the per-partition overflow and scratch buffers.
+        std::optional<size_t> descriptor_cap_bits;
+        if (cap_partitions_by_l1_descriptors)
         {
-            hash_join->used_flags->reinit<kind_, strictness_, mapsKindOf<decltype(map_)>()>(flags);
-        });
+            constexpr size_t bytes_per_partition = 16;
+            const size_t l1_bytes = l1_cache_bytes_for_tests.value_or(std::max<size_t>(getL1CacheSize(), 32 << 10));
+            const size_t max_partitions = std::max<size_t>(1, l1_bytes / 4 / bytes_per_partition);
+            descriptor_cap_bits = static_cast<size_t>(std::bit_width(max_partitions) - 1);
+            bits = std::min(bits, *descriptor_cap_bits);
+        }
+
+        const auto parallelism_floor = static_cast<size_t>(std::bit_width(std::bit_ceil(num_threads) - 1));
+        if (bits > 0)
+        {
+            /// Once partitioning pays for itself, at least one range per worker, so the owner wave
+            /// parallelizes. A small build stays single-partition.
+            bits = std::max(bits, parallelism_floor);
+        }
+        else if (rows >= parallel_hash_join_threshold)
+        {
+            /// A large build over few distinct keys: the table is small, so the L2 rule wants one
+            /// partition, and one worker would insert every row after the barrier. Above the threshold
+            /// the planner reserves for parallel builds, give the insert one partition per worker, as
+            /// `parallel_hash` has one table per slot, but never more partitions than distinct keys.
+            const size_t distinct = distinctEstimate();
+            const size_t partitions_wanted = std::min(std::bit_ceil(num_threads), std::bit_ceil(distinct));
+            size_t floor_bits = static_cast<size_t>(std::bit_width(partitions_wanted) - 1);
+            if (descriptor_cap_bits)
+                floor_bits = std::min(floor_bits, *descriptor_cap_bits);
+            /// Every range keeps at least 2^10 cells, so the table widens for the floor where the
+            /// estimate alone sized it smaller (2^12 cells over 1024 keys become 2^13 for 8 workers).
+            constexpr size_t min_range_bits = 10;
+            bits = floor_bits;
+            size_degree = std::max(size_degree, floor_bits + min_range_bits);
+        }
+
+        if (forced_bits_for_tests)
+            bits = *forced_bits_for_tests;
+
+        /// Every range holds at least one cell; see `max_plan_bits`.
+        bits = std::min({bits, size_degree, max_plan_bits});
+    }
+
+    partitions = 1uz << bits;
+
+    /// When the plan wants a wider fanout than one scatter pass sustains, the bits split into MSB-first
+    /// passes rather than the fanout being capped. Empty for a single partition.
+    pass_bits = ColumnsScatter::computePassBits(partitions, max_fanout_per_pass);
 }
 
 void PartitionedHashJoin::createHashJoinTable()
@@ -2411,37 +2389,6 @@ void PartitionedHashJoin::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
 void PartitionedHashJoin::PostBuildContextDeleter::operator()(PostBuildContext * ctx) const
 {
     delete ctx;
-}
-
-PartitionedHashJoin::~PartitionedHashJoin()
-{
-    /// Explicit destruction inside the timer, in dependency order: cells point into the arenas and the
-    /// row store, so the table goes first.
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinTeardownMicroseconds);
-
-    /// The planner's row store decision for the next run of this query reads the matched count, as it
-    /// does for the other hash joins, which publish it from their destructors too.
-    if (build_phase_finished && probe_phase_finished && hash_table_matches.has_value()
-        && match_stats_collecting_params.isCollectionAndUseEnabled())
-    {
-        try
-        {
-            getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = *hash_table_matches}, match_stats_collecting_params);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    post_build_ctx.reset();
-    post_build_pool.reset();
-    table_maps.reset();
-    build_arenas.clear();
-    hash_join.reset();
-    probe_scratch_pool.clear();
-    for (auto & slot : probe_scratch_slots)
-        delete slot.load(std::memory_order_acquire);
 }
 
 }
