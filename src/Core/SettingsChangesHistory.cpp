@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"text_index_like_max_postings_rows_to_read", std::numeric_limits<UInt64>::max(), 1000000, "New setting bounding the total posting rows read by the text index LIKE dictionary scan; previous_value is unlimited so `compatibility` below 26.9 restores the old no-budget scan."},
+            {"use_text_index_like_pattern_bypass", false, true, "New setting to skip reading posting lists for a LIKE pattern whose matched tokens cover every row; previous_value=false so `compatibility` below 26.9 keeps reading them."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
         });
@@ -113,8 +115,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
             {"iceberg_compaction_max_rows_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max rows of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
-            {"text_index_like_max_postings_rows_to_read", std::numeric_limits<UInt64>::max(), 1000000, "New setting bounding the total posting rows read by the text index LIKE dictionary scan; previous_value is unlimited so `compatibility` below 26.9 restores the old no-budget scan."},
-            {"use_text_index_like_pattern_bypass", false, true, "New setting to skip reading posting lists for a LIKE pattern whose matched tokens cover every row; previous_value=false so `compatibility` below 26.9 keeps reading them."},
             {"enable_json_lazy_type_hints", false, false, "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."},
             {"s3_upload_checksum_algorithm", "", "", "New setting to choose the checksum algorithm for S3 uploads."},
             {"network_compression_method", "LZ4", "ZSTD", "Switched the default compression method for client/server and server/server communication from `LZ4` to `ZSTD` to reduce network traffic."},
