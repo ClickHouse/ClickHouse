@@ -168,19 +168,33 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 static constexpr size_t HASH_BATCH_SIZE = 1024;
 
-namespace
+bool detail::RuntimeFilterIndexAnalysis::supportsDataType(const DataTypePtr & data_type)
 {
-bool typeSupportsMinMaxRange(const DataTypePtr & type)
-{
-    if (!type)
+    if (!data_type)
         return false;
 
-    DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(type));
+    DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(data_type));
     WhichDataType which(inner);
     return which.isInteger() || which.isDateOrDate32OrDateTimeOrDateTime64();
 }
 
-void extendRange(bool & has_range, Field & range_min, Field & range_max, const Field & new_min, const Field & new_max)
+detail::RuntimeFilterIndexAnalysis::RuntimeFilterIndexAnalysis(const DataTypePtr & data_type, bool positive_filter_)
+    : range_supported(supportsDataType(data_type))
+    , positive_filter(positive_filter_)
+{
+}
+
+void detail::RuntimeFilterIndexAnalysis::setRange(const Range & range)
+{
+    if (!enabled || !range_supported || !positive_filter)
+        return;
+
+    range_min = range.left;
+    range_max = range.right;
+    has_range = true;
+}
+
+void detail::RuntimeFilterIndexAnalysis::extendRange(const Field & new_min, const Field & new_max)
 {
     if (!has_range)
     {
@@ -195,6 +209,34 @@ void extendRange(bool & has_range, Field & range_min, Field & range_max, const F
     if (accurateLess(range_max, new_max))
         range_max = new_max;
 }
+
+void detail::RuntimeFilterIndexAnalysis::insert(const IColumn & values)
+{
+    if (!enabled || !range_supported || !positive_filter || values.empty())
+        return;
+
+    Field column_min;
+    Field column_max;
+    values.getExtremes(column_min, column_max, 0, values.size());
+    if (!column_min.isNull() && !column_max.isNull())
+        extendRange(column_min, column_max);
+}
+
+void detail::RuntimeFilterIndexAnalysis::mergeFrom(const RuntimeFilterIndexAnalysis & source)
+{
+    if (enabled && range_supported && positive_filter && source.has_range)
+        extendRange(source.range_min, source.range_max);
+}
+
+std::optional<Range> detail::RuntimeFilterIndexAnalysis::getRange() const
+{
+    if (!enabled || !range_supported || !positive_filter || !has_range || range_min.isNull() || range_max.isNull())
+        return {};
+    return Range(range_min, true, range_max, true);
+}
+
+namespace
+{
 
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
 {
@@ -670,16 +712,9 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & 
 
 RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
     : filter_column_target_type(std::visit([](const auto & filter) { return filter.getTargetType(); }, data_.filter))
-    , range_supported(typeSupportsMinMaxRange(filter_column_target_type))
-    , range_positive(!std::holds_alternative<ExactNotContains>(data_.filter))
     , evaluation_state(std::move(config_))
     , data(std::move(data_))
 {
-    if (!range_supported)
-    {
-        std::lock_guard lock(mutex);
-        data.has_range = false;
-    }
 }
 
 void RuntimeFilter::insert(ColumnPtr values)
@@ -692,14 +727,7 @@ void RuntimeFilter::insert(ColumnPtr values)
             if constexpr (!FilterType::is_prebuilt)
             {
                 data.build_state.assertCanInsert();
-                if (data.index_analysis_enabled && range_supported && range_positive && !values->empty())
-                {
-                    Field column_min;
-                    Field column_max;
-                    values->getExtremes(column_min, column_max, 0, values->size());
-                    if (!column_min.isNull() && !column_max.isNull())
-                        extendRange(data.has_range, data.range_min, data.range_max, column_min, column_max);
-                }
+                data.index_analysis.insert(*values);
                 filter.insert(std::move(values));
             }
         },
@@ -768,8 +796,7 @@ void RuntimeFilter::merge(const RuntimeFilter & source)
         },
         data.filter,
         source.data.filter);
-    if (data.index_analysis_enabled && range_supported && range_positive && source.data.has_range)
-        extendRange(data.has_range, data.range_min, data.range_max, source.data.range_min, source.data.range_max);
+    data.index_analysis.mergeFrom(source.data.index_analysis);
     data.build_state.finishMerge();
 }
 
@@ -777,29 +804,23 @@ void RuntimeFilter::enableIndexAnalysis()
 {
     std::lock_guard lock(mutex);
     data.build_state.assertCanInsert();
-    data.index_analysis_enabled = true;
+    data.index_analysis.enable();
 }
 
 ColumnPtr RuntimeFilter::getRecordedKeyValues() const
 {
-    if (!range_positive)
-        return nullptr;
-
     SharedLockGuard lock(mutex);
-    if (!data.index_analysis_enabled || !data.build_state.isFinished())
+    if (!data.index_analysis.canUseExactValues() || !data.build_state.isFinished())
         return nullptr;
     return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, data.filter);
 }
 
 std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
 {
-    if (!range_supported || !range_positive)
-        return {};
-
     SharedLockGuard lock(mutex);
-    if (!data.has_range || !data.build_state.isFinished() || data.range_min.isNull() || data.range_max.isNull())
+    if (!data.build_state.isFinished())
         return {};
-    return Range(data.range_min, true, data.range_max, true);
+    return data.index_analysis.getRange();
 }
 
 template class ExactSetRuntimeFilter<false>;
