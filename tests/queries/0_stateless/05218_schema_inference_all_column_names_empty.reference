@@ -5,4 +5,9 @@ c1	Nullable(Int64)
 a	Nullable(Int64)					
 a	Nullable(Int64)					
 1
+a Nullable(Int64)
+0
+x	Nullable(Int64)					
+x	Nullable(Int64)					
+0
 0

@@ -283,7 +283,7 @@ try
                     if (mode == SchemaInferenceMode::DEFAULT)
                         break;
 
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(columns_to_cache, read_buffer_iterator.getLastFilePath());
                 }
                 catch (...)
                 {
@@ -435,9 +435,10 @@ try
                         read_buffer_iterator.setFormatName(*format_name);
                 }
 
+                NamesAndTypesList columns_to_cache;
                 if (format_name)
                 {
-                    auto columns_to_cache = names_and_types;
+                    columns_to_cache = names_and_types;
                     removeColumnsWithEmptyNames(columns_to_cache);
                     if (!columns_to_cache.empty())
                         read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(columns_to_cache));
@@ -451,7 +452,7 @@ try
                     if (!format_name)
                         throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(columns_to_cache, read_buffer_iterator.getLastFilePath());
                 }
 
                 if (format_name && mode == SchemaInferenceMode::DEFAULT)

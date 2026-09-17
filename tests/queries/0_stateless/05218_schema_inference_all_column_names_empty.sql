@@ -41,6 +41,28 @@ DESCRIBE file(currentDatabase() || '_05218_one_empty.csv');
 -- is the strongest assertion in this file.
 SELECT * FROM file(currentDatabase() || '_05218_one_empty.csv');
 
+-- The reads above expect the same answer whether or not the cache was consulted, so they cannot tell a
+-- hit from a miss. These two look at the cache itself. `number_of_rows` is cached even for a file whose
+-- structure is not, so a row with a NULL schema is legitimate and must not be counted.
+SELECT DISTINCT schema FROM system.schema_inference_cache
+WHERE storage = 'File' AND source LIKE '%_05218_one_empty.csv%' ORDER BY 1;
+SELECT count() FROM system.schema_inference_cache
+WHERE storage = 'File' AND source LIKE '%_05218_all_empty.csv%' AND schema IS NOT NULL;
+
+-- UNION mode merges the per-file structures by column name and rejects a name whose types have no
+-- common type, and that merge runs before empty names are dropped. A file taken from the cache
+-- contributes the stored structure, so a cached file and a freshly inferred one must contribute the
+-- same way: otherwise the same query fails on a cold cache and succeeds on a warm one. Below, `''` is
+-- the only name the two files share and its two types have no common type, so a contribution that
+-- still carries `''` collides over a column that is about to be dropped anyway. The first read is cold
+-- (nothing is cached yet) and, because it runs a second after the files were written, it leaves usable
+-- entries behind, which makes the second read a hit.
+INSERT INTO FUNCTION file(currentDatabase() || '_05218_union/A', 'RawBLOB') SELECT '{"": [1], "x": [1]}' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file(currentDatabase() || '_05218_union/B', 'RawBLOB') SELECT '{"": [[1]]}' SETTINGS engine_file_truncate_on_insert = 1;
+SELECT sleep(1) FORMAT Null;
+DESCRIBE file(currentDatabase() || '_05218_union/*', 'JSONColumns') SETTINGS schema_inference_mode = 'union';
+DESCRIBE file(currentDatabase() || '_05218_union/*', 'JSONColumns') SETTINGS schema_inference_mode = 'union';
+
 -- A caller that passes its own structure needs only the detected format name, so an inferred
 -- structure that is unusable on its own must not fail the read. The `DESCRIBE` pins that this file's
 -- detected format does infer nothing but empty names, so the case cannot rot into a vacuous one.
@@ -49,3 +71,6 @@ DESCRIBE file(currentDatabase() || '_05218_format_only'); -- { serverError CANNO
 -- The read is wrapped in a subquery to keep it off the count-from-metadata fast paths, which answer
 -- from the cached row count of the whole file rather than from the requested column.
 SELECT count() FROM (SELECT * FROM file(currentDatabase() || '_05218_format_only', auto, 'a Nullable(Int64)'));
+-- The `*Cluster` twin resolves the format name the same way, through a separate call site.
+SELECT count() FROM (SELECT * FROM fileCluster('test_cluster_two_shards_localhost',
+    currentDatabase() || '_05218_format_only', auto, 'a Nullable(Int64)'));
