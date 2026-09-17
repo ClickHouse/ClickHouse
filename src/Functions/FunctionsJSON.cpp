@@ -482,7 +482,7 @@ public:
 
             auto read_merged_for_path = [&](const String & p)
             {
-                String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + p + "`";
+                String combined_name = DataTypeObject::getCombinedSubcolumnName(p);
                 auto merged_type = data_type_object.getSubcolumnType(combined_name);
 
                 /// When `skip_null_typed_paths` is enabled for a non-typed parent path (e.g. `a` when `a.b`
