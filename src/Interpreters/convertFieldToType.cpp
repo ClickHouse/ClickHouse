@@ -294,22 +294,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// Conversion between Date and DateTime, Time and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
-        const auto & time_zone = static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone();
-        const auto value = src.safeGet<UInt64>();
-        const auto day = time_zone.toDayNum(value);
-        /// The time of day is dropped as `CAST` does; a strict conversion is an exact bound and rejects it.
-        if (strict && static_cast<UInt64>(time_zone.fromDayNum(day)) != value)
-            return {};
-        return static_cast<UInt16>(day.toUnderType());
+        return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
     }
     if (which_type.isDate32() && which_from_type.isDateTime())
     {
-        const auto & time_zone = static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone();
-        const auto value = src.safeGet<UInt64>();
-        const auto day = time_zone.toDayNum(value);
-        if (strict && static_cast<UInt64>(time_zone.fromDayNum(day)) != value)
-            return {};
-        return static_cast<Int32>(day.toUnderType());
+        return static_cast<Int32>(
+            static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
     }
     if (which_type.isDateTime() && which_from_type.isDate())
     {

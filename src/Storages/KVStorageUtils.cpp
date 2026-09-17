@@ -151,7 +151,7 @@ bool traverseDAGFilterSingleColumn(
         /// The lookup is exact, so the conversion is strict.
         auto converted_field = tryConvertFieldToType(value->column->getField(), *primary_key_type, value_type.get(), {}, /*strict=*/ true);
 
-        /// A literal the key type cannot represent - `Date = <a DateTime with a time of day>`, or a
+        /// A literal the key type cannot represent - `DateTime = <a DateTime64 with a sub-second part>`, or a
         /// value out of the key type's range - is not a key filter: the condition is left to be
         /// evaluated over a full scan, instead of looking up an empty set of keys and answering no rows.
         if (converted_field.isNull())

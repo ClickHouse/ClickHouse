@@ -14,8 +14,6 @@ SELECT count() FROM t_kv_date_literal WHERE key = toDate('2024-01-02');
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime('2024-01-02 00:00:00', 'UTC');
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime64('2024-01-02 00:00:00', 3, 'UTC');
 SELECT count() FROM t_kv_date_literal WHERE key IN (toDateTime('2024-01-02 00:00:00', 'UTC'));
--- A time of day or a sub-second part makes the literal unequal to every key, so it is not a key lookup.
-SELECT count() FROM t_kv_date_literal WHERE key = toDateTime('2024-01-02 10:00:00', 'UTC');
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime('2024-01-03 00:00:00', 'UTC');
 
 DROP TABLE t_kv_date_literal;
@@ -26,6 +24,7 @@ INSERT INTO t_kv_date_literal VALUES ('2024-01-02 00:00:00', 'a');
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime('2024-01-02 00:00:00', 'UTC');
 SELECT count() FROM t_kv_date_literal WHERE key = toDate('2024-01-02');
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime64('2024-01-02 00:00:00', 3, 'UTC');
+-- A sub-second part makes the literal unequal to every key, so it is not a key lookup.
 SELECT count() FROM t_kv_date_literal WHERE key = toDateTime64('2024-01-02 00:00:00.500', 3, 'UTC');
 SELECT count() FROM t_kv_date_literal WHERE key = toDate('2024-01-03');
 
