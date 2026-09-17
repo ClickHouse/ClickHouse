@@ -189,6 +189,10 @@ protected:
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     bool isSystemColumnInvalidated(size_t pos) const;
 
+    /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without
+    /// building a serialization of it when the part already holds one.
+    bool hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const;
+
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
@@ -196,10 +200,30 @@ private:
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
     std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
+
+    /// The column and its serialization as they are in the part, both of which can differ from table metadata.
+    struct ColumnAndSerializationInPart
+    {
+        NameAndTypePair column;
+        SerializationPtr serialization;
+    };
+
+    /// Resolves both at once: they share the lookup of the column in the part and, for a subcolumn, the
+    /// enumeration of its parent.
+    ColumnAndSerializationInPart getColumnAndSerializationInPart(const NameAndTypePair & required_column) const;
+
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
+
+    /// The column of the part under the given (column name, subcolumn name), or nothing when it has no such
+    /// column or subcolumn.
+    std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const;
+
+    /// The serialization of @column_in_part the part holds (composed for a subcolumn), or null when the part holds
+    /// none for it or when it is not safe to share with the other readers.
+    SerializationPtr tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const;
 
     /// Columns that are requested to read.
     NamesAndTypesList original_requested_columns;
