@@ -374,7 +374,7 @@ template <typename T>
 T reverseTransposeBytes(const UInt64 * matrix, UInt32 col)
 {
     T value = 0;
-    const auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
+    const auto * matrix8 = reinterpret_cast<const unsigned char *>(matrix);
 
     if constexpr (sizeof(T) > 4)
     {
@@ -570,7 +570,7 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
         if (full || part_bits)
             reverseTranspose64x8(matrix, num_bits);
 
-        const auto * values = reinterpret_cast<const UInt8 *>(matrix);
+        const auto * values = reinterpret_cast<const unsigned char *>(matrix);
         for (UInt32 col = 0; col < tail; ++col)
         {
             T value = static_cast<T>(values[col]);
