@@ -19,15 +19,15 @@ namespace DB
 /// Current join-in-memory and join-on-disk are JoinAlgorithm::HASH and JoinAlgorithm::PARTIAL_MERGE joins respectively.
 ///
 /// The hash phase uses the same `parallel_hash_join_threshold` layout as a bare `HashJoin`.
-/// Concurrent fill takes a shared lock; draining onto `MergeJoin` takes an exclusive lock
+/// Concurrent fill takes a shared lock. Draining onto `MergeJoin` takes an exclusive lock
 /// because `MergeJoin::addBlockToJoin` is not concurrent.
 ///
 /// Unmatched RIGHT/FULL rows: `supportParallelNonJoinedBlocksProcessing` is captured from
 /// the inner `HashJoin` so the pipeline wires `NonJoinedBlocksTransform`. After a drain
-/// the 5-arg `getNonJoinedBlocks` still forwards; `MergeJoin` does not override it, so
+/// the 5-arg `getNonJoinedBlocks` still forwards. `MergeJoin` does not override it, so
 /// `IJoin`'s default puts every unmatched row on stream 0.
 ///
-/// Every access to `join` after construction takes `switch_mutex`. Totals live on this wrapper:
+/// Every access to `join` after construction takes `switch_mutex`. Totals live on this wrapper.
 /// `FillingRightJoinSideTransform` calls `setTotals` on every filler at EOF, including while
 /// another filler is still inserting and may replace `join`.
 class JoinSwitcher : public IJoin
@@ -92,8 +92,8 @@ public:
         return IJoin::getTotals().empty() && join->alwaysReturnsEmptySet();
     }
 
-    /// After a drain, a live `ExclusiveJoinResult` holds `switch_mutex` for as long as the pipeline
-    /// takes to consume it, which spans scheduling points. Waiting for it from `prepare` hangs the
+    /// After a drain, a live `ExclusiveJoinResult` holds `switch_mutex` while the pipeline
+    /// consumes it. That spans scheduling points. Waiting for it from `prepare` hangs the
     /// executor, so report "cannot say" instead.
     std::optional<bool> tryAlwaysReturnsEmptySet() const override
     {

@@ -846,9 +846,9 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
     /// `max_threads` still matters even though inserts here are serialized: the fill streams
     /// address worker slots by their own id.
     ///
-    /// The serial layout is deliberate: 256 buckets of empty buffers would count against
-    /// `max_bytes_before_external_join` and not shrink as Grace adds file buckets, so a small
-    /// remainder could rehash past `grace_hash_join_max_buckets`.
+    /// The serial layout is deliberate. 256 buckets of empty buffers would count against
+    /// `max_bytes_before_external_join` and would not shrink as Grace adds file buckets.
+    /// A small remainder could then rehash past `grace_hash_join_max_buckets`.
     auto join = std::make_shared<HashJoin>(
         table_join,
         right_sample_block,

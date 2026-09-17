@@ -136,9 +136,10 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
 
     AggregationDataWithNullKeyTwoLevel() = default;
 
-    /// Constrained like the converting constructor of `TwoLevelHashTable`. Overload resolution
-    /// prefers the more constrained candidate, so without this the inherited constructor would win
-    /// and `convertToTwoLevel` would copy the cells but drop the NULL key group.
+    /// Constrained like the converting constructor of `TwoLevelHashTable`.
+    /// Overload resolution prefers the more constrained candidate.
+    /// Without this the inherited constructor would win.
+    /// Then `convertToTwoLevel` would copy the cells but drop the NULL key group.
     template <typename Other>
     requires(!std::is_arithmetic_v<Other>)
     explicit AggregationDataWithNullKeyTwoLevel(const Other & other) : Base(other)
