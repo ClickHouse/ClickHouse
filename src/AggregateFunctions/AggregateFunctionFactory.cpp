@@ -11,8 +11,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 
-static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
-
 
 namespace DB
 {

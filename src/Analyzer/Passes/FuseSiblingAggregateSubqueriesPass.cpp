@@ -508,6 +508,9 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
             {
                 auto & function_node = aggregate->as<FunctionNode &>();
                 const auto conditional_function_name = function_node.getFunctionName() + "If";
+                /// Over the factory's length limit the lookup below throws instead of answering false.
+                if (conditional_function_name.size() > AggregateFunctionFactory::MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
+                    return {};
                 if (!AggregateFunctionFactory::instance().isAggregateFunctionName(conditional_function_name))
                     return {};
 

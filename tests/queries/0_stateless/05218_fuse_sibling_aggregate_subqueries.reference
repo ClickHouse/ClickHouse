@@ -36,13 +36,15 @@
 08	1	1
 08	1	1
 08 fused	1
--- 09 an empty branch, and the same under aggregate_functions_null_for_empty
+-- 09 an empty branch, and the same for an argument-less aggregate that carries a combinator suffix
 09a	1	0
 09a	1	0
-09b	1	0
-09b	1	0
 09a fused	1
+09b	1	\N
+09b	1	\N
 09b fused	1
+09b tables off	2
+09b tables on	1
 -- 10 with empty_result_for_aggregation_by_empty_set an empty branch empties the whole join, which one fused aggregation cannot reproduce
 10	1	1
 10	1	1
@@ -185,3 +187,7 @@
 34a	5	5
 34a fused	0
 34b fused	1
+-- 35 a branch aggregate whose own name is at the factory length limit: appending If exceeds it, and the factory answers an over-long name by throwing rather than by not resolving
+35	1	1
+35	1	1
+35 tables	2
