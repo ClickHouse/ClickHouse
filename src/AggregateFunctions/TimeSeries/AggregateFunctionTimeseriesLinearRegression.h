@@ -40,7 +40,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = std::conditional_t<return_kind == TimeseriesLinearRegressionReturnKind::InterceptAndSlope, std::pair<ValueType, ValueType>, ValueType>;
+    using ResultType = std::conditional_t<return_kind == TimeseriesLinearRegressionReturnKind::InterceptAndSlope, std::pair<ValueType, ValueType>, Float64>;
 
     static String getName()
     {
@@ -158,7 +158,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
             const Float64 slope_per_second = slope * static_cast<Float64>(timestamp_scale_multiplier);
             if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Slope)
             {
-                return static_cast<ValueType>(slope_per_second);
+                return slope_per_second;
             }
             else
             {
@@ -171,7 +171,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
                 {
                     /// Extrapolate to `grid_timestamp + predict_offset`.
                     const Float64 intercept_at_base = combined.mean_y - slope * combined.mean_x;
-                    return static_cast<ValueType>(slope * (grid_x + predict_offset) + intercept_at_base);
+                    return slope * (grid_x + predict_offset) + intercept_at_base;
                 }
                 else
                 {
