@@ -1,0 +1,4 @@
+-- the collection, the clause and the default are told apart
+connect_timeout	7	named_collection
+connection_pool_size	16	named_collection
+read_write_timeout	1234	definition

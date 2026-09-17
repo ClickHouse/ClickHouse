@@ -39,6 +39,13 @@ template <typename TStorageKafka>
 struct KafkaInterceptors;
 class ThreadStatus;
 
+namespace StorageKafkaUtils
+{
+/// `system.table_settings` for a table of either `Kafka` storage - see the definition.
+template <typename KafkaStorage>
+SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
+}
+
 /// Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
 /// or as a basic building block for creating pipelines with a continuous insertion / ETL.
 ///
@@ -57,12 +64,6 @@ class ThreadStatus;
 ///
 /// For the committed offsets we try to mimic the same behavior as Kafka does: if the last
 /// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
-namespace StorageKafkaUtils
-{
-/// `system.table_settings` for a table of either `Kafka` storage - see the definition.
-template <typename KafkaStorage>
-SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
-}
 
 class StorageKafka2 final : public IStreamingStorage, WithContext
 {

@@ -36,7 +36,8 @@ public:
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode,
         bool authentication_determined_by_table_,
-        bool fresh_definition_);
+        bool fresh_definition_,
+        String collection_name_);
 
     ~StorageNATS() override;
 
@@ -87,6 +88,9 @@ private:
 
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
+    /// The named collection the table was built from, empty when its arguments were positional. Kept so that
+    /// `system.table_settings` can say which of the settings the collection supplied.
+    String collection_name;
     std::vector<String> subjects;
 
     const String format_name;

@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -108,10 +109,12 @@ StorageNATS::StorageNATS(
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode,
     bool authentication_determined_by_table_,
-    bool fresh_definition_)
+    bool fresh_definition_,
+    String collection_name_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
+    , collection_name(std::move(collection_name_))
     , subjects(parseList(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_subjects]), ','))
     , format_name(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_format]))
     , schema_name(getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_schema]))
@@ -1244,10 +1247,14 @@ void registerStorageNATS(StorageFactory & factory)
         bool client_key_file_assigned_by_query = false;
         /// Whether the named collection is defined in the server configuration file rather than created by SQL.
         bool collection_defined_in_config = false;
+        String collection_name;
         auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id);
         if (named_collection)
         {
             nats_settings->loadFromNamedCollection(named_collection);
+            if (!args.engine_args.empty())
+                if (const auto * identifier = args.engine_args[0]->as<ASTIdentifier>())
+                    collection_name = identifier->name();
 
             credential_file_assigned_by_query = named_collection->isQueryOverridden("nats_credential_file");
             credentials_assigned_by_query = named_collection->isQueryOverridden("nats_credentials");
@@ -1352,7 +1359,8 @@ void registerStorageNATS(StorageFactory & factory)
             std::move(nats_settings),
             args.mode,
             authentication_determined_by_table,
-            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
+            collection_name);
     };
 
     factory.registerStorage(
@@ -1691,7 +1699,9 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
 {
     /// See `SettingOrigin::NamedCollection`.
-    auto settings = attributeSettingsStatedInDefinition(nats_settings->enumerateSettings(), query_context);
+    auto settings = nats_settings->enumerateSettings();
+    attributeSettingsFromNamedCollection(settings, collection_name);
+    settings = attributeSettingsStatedInDefinition(std::move(settings), query_context);
 
     /// What the table works with. The constructor expands macros in these and, when the table defines no
     /// authentication of its own, takes it from the `nats` server config section.

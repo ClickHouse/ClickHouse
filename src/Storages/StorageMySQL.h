@@ -41,7 +41,8 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        const MySQLSettings & mysql_settings_);
+        const MySQLSettings & mysql_settings_,
+        String collection_name_ = {});
 
     std::string getName() const override { return "MySQL"; }
 
@@ -83,7 +84,11 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id = nullptr);
+    /// `collection_name`, when given, receives the name of the named collection the configuration was built
+    /// from, and is left as it was when the arguments were positional.
+    static Configuration getConfiguration(
+        ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id = nullptr,
+        String * collection_name = nullptr);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
@@ -122,6 +127,9 @@ private:
     std::string on_duplicate_clause;
 
     std::unique_ptr<MySQLSettings> mysql_settings;
+    /// The named collection the table was built from, empty when its arguments were positional. Kept so that
+    /// `system.table_settings` can say which of the settings the collection supplied.
+    String collection_name;
 
     mysqlxx::PoolWithFailoverPtr pool;
 

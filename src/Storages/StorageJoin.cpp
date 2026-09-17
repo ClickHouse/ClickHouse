@@ -168,17 +168,17 @@ namespace
 /// is rendered through the same setting field the server's settings use, so the comparison with the default compares
 /// like with like. A value other than the default was set by something `Join` cannot name, such as a settings
 /// profile, which is what `Other` says; `StorageDistributed` reports what it copies from the server the same way.
-SettingDescription describeServerBackedJoinSetting(std::string_view name, String value)
+/// `metadata` is any `Settings` instance: what is read from it - the default, type, description and tier - is
+/// compiled in, so every instance answers alike, and the caller always has one at hand.
+SettingDescription describeServerBackedJoinSetting(const Settings & metadata, std::string_view name, String value)
 {
-    static const Settings core_settings;
-
     SettingDescription described;
     described.name = String{name};
     described.value = std::move(value);
-    described.default_value = core_settings.getDefaultValueString(name);
-    described.type = core_settings.getTypeName(name);
-    described.comment = core_settings.getDescription(name);
-    described.tier = core_settings.getTier(name);
+    described.default_value = metadata.getDefaultValueString(name);
+    described.type = metadata.getTypeName(name);
+    described.comment = metadata.getDescription(name);
+    described.tier = metadata.getTier(name);
     described.origin = described.value == described.default_value ? SettingOrigin::Default : SettingOrigin::Other;
     return described;
 }
@@ -191,14 +191,16 @@ SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) cons
     /// `SETTINGS` clause and, for what the clause leaves out, from the server's settings (`args.getContext`, the
     /// global context, not the creating session) - and passes the results to the constructor. Report what the
     /// table holds: a setting the clause leaves out is shown nowhere else, not even by `SHOW CREATE TABLE`.
+    const auto & metadata = query_context->getSettingsRef();
     SettingDescriptions settings{
-        describeServerBackedJoinSetting("join_use_nulls", SettingFieldBool{use_nulls}.toString()),
-        describeServerBackedJoinSetting("max_rows_in_join", SettingFieldUInt64{limits.max_rows}.toString()),
-        describeServerBackedJoinSetting("max_bytes_in_join", SettingFieldUInt64{limits.max_bytes}.toString()),
-        describeServerBackedJoinSetting("join_overflow_mode", SettingFieldOverflowMode{limits.overflow_mode}.toString()),
-        describeServerBackedJoinSetting("join_any_take_last_row", SettingFieldBool{overwrite}.toString()),
+        describeServerBackedJoinSetting(metadata, "join_use_nulls", SettingFieldBool{use_nulls}.toString()),
+        describeServerBackedJoinSetting(metadata, "max_rows_in_join", SettingFieldUInt64{limits.max_rows}.toString()),
+        describeServerBackedJoinSetting(metadata, "max_bytes_in_join", SettingFieldUInt64{limits.max_bytes}.toString()),
         describeServerBackedJoinSetting(
-            "any_join_distinct_right_table_keys", SettingFieldBool{any_join_distinct_right_table_keys}.toString()),
+            metadata, "join_overflow_mode", SettingFieldOverflowMode{limits.overflow_mode}.toString()),
+        describeServerBackedJoinSetting(metadata, "join_any_take_last_row", SettingFieldBool{overwrite}.toString()),
+        describeServerBackedJoinSetting(
+            metadata, "any_join_distinct_right_table_keys", SettingFieldBool{any_join_distinct_right_table_keys}.toString()),
     };
 
     /// These two have defaults of the engine's own rather than server settings behind them, so unless the
@@ -215,13 +217,14 @@ SettingDescriptions StorageJoin::enumerateEngineSettings(ContextPtr context)
     /// the creator reads from the global context, and the engine's own defaults for `disk` and `persistent`.
     const auto & server = context->getGlobalContext()->getSettingsRef();
     SettingDescriptions settings{
-        describeServerBackedJoinSetting("join_use_nulls", server[Setting::join_use_nulls].toString()),
-        describeServerBackedJoinSetting("max_rows_in_join", server[Setting::max_rows_in_join].toString()),
-        describeServerBackedJoinSetting("max_bytes_in_join", server[Setting::max_bytes_in_join].toString()),
-        describeServerBackedJoinSetting("join_overflow_mode", server[Setting::join_overflow_mode].toString()),
-        describeServerBackedJoinSetting("join_any_take_last_row", server[Setting::join_any_take_last_row].toString()),
+        describeServerBackedJoinSetting(server, "join_use_nulls", server[Setting::join_use_nulls].toString()),
+        describeServerBackedJoinSetting(server, "max_rows_in_join", server[Setting::max_rows_in_join].toString()),
+        describeServerBackedJoinSetting(server, "max_bytes_in_join", server[Setting::max_bytes_in_join].toString()),
+        describeServerBackedJoinSetting(server, "join_overflow_mode", server[Setting::join_overflow_mode].toString()),
         describeServerBackedJoinSetting(
-            "any_join_distinct_right_table_keys", server[Setting::any_join_distinct_right_table_keys].toString()),
+            server, "join_any_take_last_row", server[Setting::join_any_take_last_row].toString()),
+        describeServerBackedJoinSetting(
+            server, "any_join_distinct_right_table_keys", server[Setting::any_join_distinct_right_table_keys].toString()),
     };
 
     const auto defaults = persistenceSettingDefaults();

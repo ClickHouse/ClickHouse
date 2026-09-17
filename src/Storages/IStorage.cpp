@@ -3,6 +3,7 @@
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/StringUtils.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -289,6 +290,20 @@ NameSet getSettingNamesStatedInDefinition(const StorageID & table_id, ContextPtr
     return names;
 }
 
+}
+
+void IStorage::attributeSettingsFromNamedCollection(SettingDescriptions & settings, const String & collection_name)
+{
+    if (collection_name.empty())
+        return;
+
+    const auto collection = NamedCollectionFactory::instance().tryGet(collection_name);
+    if (!collection)
+        return;
+
+    for (auto & setting : settings)
+        if (collection->has(setting.name))
+            setting.origin = SettingOrigin::NamedCollection;
 }
 
 void IStorage::reportOriginByValue(SettingDescriptions & settings)

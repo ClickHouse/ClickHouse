@@ -140,13 +140,7 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr query_context
     /// Except for what a named collection supplied, which is neither the session's nor a default - and which
     /// the value cannot reveal, since a collection may well state the default. Looked up by name, as
     /// `StorageKafka` does: the collection is not kept, and may since have changed.
-    if (!collection_name.empty())
-    {
-        if (const auto collection = NamedCollectionFactory::instance().tryGet(collection_name))
-            for (auto & setting : descriptions)
-                if (collection->has(setting.name))
-                    setting.origin = SettingOrigin::NamedCollection;
-    }
+    attributeSettingsFromNamedCollection(descriptions, collection_name);
 
     return attributeSettingsStatedInDefinition(std::move(descriptions), query_context);
 }

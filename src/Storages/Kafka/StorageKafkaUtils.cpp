@@ -1193,13 +1193,7 @@ SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr qu
     ///
     /// Anything left as `Other` was set by the engine itself. Saying so is the point of that value -
     /// guessing `named_collection` for it would be wrong, and there is no source to name.
-    if (!storage.collection_name.empty())
-    {
-        if (const auto collection = NamedCollectionFactory::instance().tryGet(storage.collection_name))
-            for (auto & setting : settings)
-                if (collection->has(setting.name))
-                    setting.origin = SettingOrigin::NamedCollection;
-    }
+    KafkaStorage::attributeSettingsFromNamedCollection(settings, storage.collection_name);
 
     /// The `SETTINGS` clause is applied last and so wins over the collection.
     settings = storage.attributeSettingsStatedInDefinition(std::move(settings), query_context);

@@ -3832,3 +3832,39 @@ def test_rabbitmq_table_settings_report_effective_values(rabbitmq_cluster, db, u
         "rabbitmq_username\troot\t0\tconfig\n"
     )
 
+
+def test_rabbitmq_table_settings_report_the_named_collection(rabbitmq_cluster, db, unique):
+    """A table built from a named collection says so: a value the collection supplied is neither a default nor
+    something the table states, and the source has to tell them apart - including where the collection happens
+    to state the compiled-in default, which no comparison of values could reveal."""
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq_collection (key UInt64, value UInt64)
+            ENGINE = RabbitMQ(rabbit1)
+            SETTINGS rabbitmq_max_rows_per_message = 7;
+        """
+    )
+
+    # Stated by the clause, supplied by the collection (`named_collection.xml`), and left at the engine's default.
+    rows = instance.query(
+        f"SELECT name, value, source FROM system.table_settings "
+        f"WHERE database = '{db}' AND table = 'rabbitmq_collection' "
+        f"AND name IN ('rabbitmq_exchange_name', 'rabbitmq_skip_broken_messages', 'rabbitmq_max_rows_per_message') "
+        f"ORDER BY name"
+    )
+    assert TSV(rows) == TSV(
+        "rabbitmq_exchange_name\tnamed\tnamed_collection\n"
+        "rabbitmq_max_rows_per_message\t7\tdefinition\n"
+        "rabbitmq_skip_broken_messages\t111\tnamed_collection\n"
+    )
+
+    assert (
+        instance.query(
+            f"SELECT countIf(source = 'named_collection'), countIf(source = 'default') > 0 "
+            f"FROM system.table_settings WHERE database = '{db}' AND table = 'rabbitmq_collection'"
+        ).strip()
+        == "7\t1"
+    )
+
+    instance.query(f"DROP TABLE {db}.rabbitmq_collection")
+
