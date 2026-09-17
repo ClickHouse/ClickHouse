@@ -3689,6 +3689,23 @@ TEST_F(WallabyTest, CapsFullWidthDecimalRange)
     EXPECT_LT(wallabyCompressedSize(values), 3000u);
 }
 
+TEST_F(WallabyTest, CapsDeltaWhenAnAdjacentDeltaOverflows)
+{
+    /// A two-decimal ramp with an adjacent sign-crossing pair of huge exact values: their
+    /// quantized difference overflows `Int64`. Frame-of-Reference cannot help, because its
+    /// base is the minimum and the negative value is that minimum, so the offsets of the whole
+    /// ramp are 63 bits wide. The overflow must not suppress the capped delta search either:
+    /// the chain walk exiles the pair and packs the ramp in 2-bit lanes (~0.3 KiB, against
+    /// ~6.7 KiB for the XOR fallback).
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i) / 100;
+    values[512] = -5e16;
+    values[513] = 5e16;
+
+    EXPECT_LT(wallabyCompressedSize(values), 600u);
+}
+
 TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityMissedBySampling)
 {
     /// A 1-decimal bulk with a 7-decimal minority of 384 values placed only at positions

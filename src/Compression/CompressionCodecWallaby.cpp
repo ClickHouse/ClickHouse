@@ -825,6 +825,11 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         UInt32 delta_pair_width_histogram[Traits::width_bits + 1] = {};
         T max_zigzag = 0;
         bool delta_valid = true;
+        /// Some adjacent subtraction overflows the signed type (a sign-crossing pair of huge
+        /// values). Such a delta fits no lane width, but the chain walk simply exiles one of the
+        /// two values, so in the capped form it is one more violation of every cap rather than
+        /// a reason to give up the delta packing; only the uncapped shortcut is off the table.
+        bool delta_overflows = false;
         if (allow_capping)
         {
             UInt32 previous_counted = 0;
@@ -836,26 +841,26 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                     continue;
                 const T offset = static_cast<T>(quantized[i]) - static_cast<T>(min_q);
                 ++for_width_histogram[offset == 0 ? 0 : Traits::width_bits - std::countl_zero(offset)];
-                if (i > 0 && delta_valid)
+                if (i > 0)
                 {
                     SignedType delta;
+                    UInt8 zigzag_width = Traits::width_bits;
                     if (__builtin_sub_overflow(quantized[i], quantized[i - 1], &delta))
-                        delta_valid = false;
+                        delta_overflows = true;
                     else
                     {
                         const T zigzag = (static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1));
                         max_zigzag = std::max(max_zigzag, zigzag);
-                        const UInt8 zigzag_width
-                            = zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(zigzag));
-                        if (!is_quantization_exception[i - 1])
-                        {
-                            ++delta_width_histogram[zigzag_width];
-                            if (has_previous_counted && previous_counted + 1 == i)
-                                ++delta_pair_width_histogram[std::min(zigzag_width, previous_counted_width)];
-                            has_previous_counted = true;
-                            previous_counted = i;
-                            previous_counted_width = zigzag_width;
-                        }
+                        zigzag_width = zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(zigzag));
+                    }
+                    if (!is_quantization_exception[i - 1])
+                    {
+                        ++delta_width_histogram[zigzag_width];
+                        if (has_previous_counted && previous_counted + 1 == i)
+                            ++delta_pair_width_histogram[std::min(zigzag_width, previous_counted_width)];
+                        has_previous_counted = true;
+                        previous_counted = i;
+                        previous_counted_width = zigzag_width;
                     }
                 }
             }
@@ -871,7 +876,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                     max_zigzag = std::max(max_zigzag, (static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1)));
             }
         }
-        const UInt8 bits_delta_full = !delta_valid ? Traits::width_bits
+        const UInt8 bits_delta_full = (!delta_valid || delta_overflows) ? Traits::width_bits
             : (max_zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(max_zigzag)));
 
         const auto lanes_bytes = [](UInt8 w) { return Compression::FFOR::calculateBitpackedBytes(w); };
@@ -997,7 +1002,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 }
                 UInt32 walked_exceptions = 0;
                 SignedType walked_base = quantized[0];
-                if (w >= bits_delta_full)
+                /// At the full width every non-overflowing delta fits, so the walk would exile
+                /// exactly the quantization exceptions; an overflowing pair has to be walked.
+                if (w >= bits_delta_full && !delta_overflows)
                 {
                     for (UInt32 i = 0; i < count; ++i)
                         exile_scratch[i] = is_quantization_exception[i];
