@@ -175,6 +175,7 @@
                 "reference/statements/select/prewhere",
                 "reference/statements/select/qualify",
                 "reference/statements/select/replace_modifier",
+                "reference/statements/select/rename_modifier",
                 "reference/statements/select/sample",
                 "reference/statements/select/union",
                 "reference/statements/select/where",
