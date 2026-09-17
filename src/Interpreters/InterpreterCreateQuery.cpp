@@ -1,5 +1,6 @@
 #include <array>
 #include <memory>
+#include <unordered_set>
 
 #include <filesystem>
 
@@ -50,6 +51,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -2046,9 +2048,21 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
-        // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        /// Before the visitors and before the query is enqueued or forwarded, so an accepted definition is valid on
+        /// every replica; a replayed entry of an older initiator is not fresh and keeps the legacy expansion below.
+        if (create.is_materialized_view && isFreshTableDefinition(mode, create.attach_short_syntax))
+            SelectQueryDescription::checkSettingsAllowedInMatView(*create.select, getContext());
+
+        // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
+        // A loaded or replayed materialized view that fixes `enable_global_with_statement` keeps the legacy full expansion.
+        std::unordered_set<const IAST *> kept_cte_references;
+        if (create.is_materialized_view && !isFreshTableDefinition(mode, create.attach_short_syntax)
+            && SelectQueryDescription::fixesGlobalWithSetting(*create.select))
+            ApplyWithSubqueryVisitor::visit(*create.select);
+        else
+            kept_cte_references = ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.setKeptCTEReferences(std::move(kept_cte_references));
         visitor.visit(*create.select);
     }
 

@@ -2,9 +2,11 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 
 namespace DB
 {
@@ -12,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
+extern const int NOT_IMPLEMENTED;
 }
 
 SelectQueryDescription::SelectQueryDescription(const SelectQueryDescription & other)
@@ -95,6 +98,33 @@ void checkAllowedQueries(const ASTSelectWithUnionQuery & select)
     }
 }
 
+}
+
+bool SelectQueryDescription::fixesGlobalWithSetting(const IAST & select)
+{
+    if (const auto * set_query = select.as<ASTSetQuery>())
+    {
+        for (const auto & change : set_query->changes)
+            if (change.name == "enable_global_with_statement")
+                return true;
+        for (const auto & reset_name : set_query->default_settings)
+            if (reset_name == "enable_global_with_statement")
+                return true;
+    }
+    for (const auto & child : select.children)
+        if (child && fixesGlobalWithSetting(*child))
+            return true;
+    return false;
+}
+
+void SelectQueryDescription::checkSettingsAllowedInMatView(const IAST & select, const ContextPtr & context)
+{
+    auto txn = context->getZooKeeperMetadataTransaction();
+    const bool is_initial_query = !txn || txn->isInitialQuery();
+    if (is_initial_query && fixesGlobalWithSetting(select))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `enable_global_with_statement` is not supported in a materialized view definition: "
+            "the query of a materialized view is always analyzed and executed with it enabled.");
 }
 
 SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(const ASTPtr & select, bool refreshable, ContextPtr context)

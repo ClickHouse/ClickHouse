@@ -20,6 +20,13 @@ struct SelectQueryDescription
     /// validates query.
     static SelectQueryDescription getSelectQueryFromASTForMatView(const ASTPtr & select, bool refreshable, ContextPtr context);
 
+    /// Whether any SETTINGS clause of the query sets or resets `enable_global_with_statement`.
+    static bool fixesGlobalWithSetting(const IAST & select);
+    /// A materialized view's query is analyzed and executed with `enable_global_with_statement` always enabled
+    /// (the registered source table must not depend on the executing session). Rejects fixing it in a fresh
+    /// definition; a replayed Replicated database entry is not rejected (its initiator already accepted it).
+    static void checkSettingsAllowedInMatView(const IAST & select, const ContextPtr & context);
+
     SelectQueryDescription() = default;
     SelectQueryDescription(const SelectQueryDescription & other);
     SelectQueryDescription & operator=(const SelectQueryDescription & other);

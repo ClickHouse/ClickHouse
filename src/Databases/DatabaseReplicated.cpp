@@ -40,11 +40,13 @@
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageKeeperMap.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
@@ -2340,7 +2342,13 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor::visit(*create.select);
+    {
+        /// A materialized view that fixes `enable_global_with_statement` keeps the legacy full expansion.
+        if (create.is_materialized_view && SelectQueryDescription::fixesGlobalWithSetting(*create.select))
+            ApplyWithSubqueryVisitor::visit(*create.select);
+        else
+            ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(*create.select);
+    }
 
     return ast;
 }

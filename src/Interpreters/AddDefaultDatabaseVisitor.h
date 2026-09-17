@@ -24,6 +24,7 @@
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
 #include <set>
+#include <unordered_set>
 
 namespace DB
 {
@@ -119,12 +120,16 @@ public:
             substituteDatabaseInTableFunctions(*child);
     }
 
+    /// Identifiers `ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs` left as CTE references.
+    void setKeptCTEReferences(std::unordered_set<const IAST *> references) { kept_cte_references = std::move(references); }
+
 private:
 
     ContextPtr context;
 
     const String database_name;
     std::set<String> external_tables;
+    std::unordered_set<const IAST *> kept_cte_references;
     mutable std::unordered_set<String> with_aliases;
     mutable std::unordered_set<String> expression_aliases;
 
@@ -293,6 +298,9 @@ private:
         /// Already has database.
         if (identifier.compound())
             return;
+        /// A reference to a MATERIALIZED CTE kept in a stored view definition.
+        if (kept_cte_references.contains(&identifier))
+            return;
         /// A parameterized name is only known when the view is called, and it has no
         /// resolvable name to qualify here.
         if (identifier.isParam())
@@ -358,6 +366,9 @@ private:
                             /// Then it is not a table name and must not be qualified with the database
                             /// (the similar code in `MarkTableIdentifiersVisitor` also checks the aliases).
                             if (!identifier->as<ASTTableIdentifier>() && expression_aliases.contains(identifier->name()))
+                                continue;
+
+                            if (kept_cte_references.contains(identifier))
                                 continue;
 
                             /// If identifier is broken then we can do nothing and get an exception
