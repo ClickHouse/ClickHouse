@@ -747,28 +747,28 @@ namespace
 {
 
 template <typename T>
-ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets)
+ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets, size_t first_index)
 {
     auto result = ColumnVector<T>::create();
     auto & data = result->getData();
     data.reserve_exact(offsets.back());
     for (size_t i = 0; i != offsets.size(); ++i)
-        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(i));
+        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(first_index + i));
     return result;
 }
 
 }
 
-ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets)
+ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets, size_t first_index)
 {
-    size_t max_index = offsets.size();
+    size_t max_index = first_index + offsets.size();
     if (max_index <= std::numeric_limits<UInt8>::max())
-        return convertOffsetsToIndexesImpl<UInt8>(offsets);
+        return convertOffsetsToIndexesImpl<UInt8>(offsets, first_index);
     if (max_index <= std::numeric_limits<UInt16>::max())
-        return convertOffsetsToIndexesImpl<UInt16>(offsets);
+        return convertOffsetsToIndexesImpl<UInt16>(offsets, first_index);
     if (max_index <= std::numeric_limits<UInt32>::max())
-        return convertOffsetsToIndexesImpl<UInt32>(offsets);
-    return convertOffsetsToIndexesImpl<UInt64>(offsets);
+        return convertOffsetsToIndexesImpl<UInt32>(offsets, first_index);
+    return convertOffsetsToIndexesImpl<UInt64>(offsets, first_index);
 }
 
 bool isLazyReplicationUseful(const ColumnPtr & column)
