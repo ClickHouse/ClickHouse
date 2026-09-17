@@ -3467,6 +3467,26 @@ In case of ORDER BY with LIMIT, when memory usage is higher than specified thres
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
 )", 0) \
     \
+    DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
+Query memory threshold, in bytes, for spilling `DISTINCT` data to disk. Actual memory usage can exceed
+this threshold.
+
+`0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
+the smaller is used. Set both settings to `0` to disable spilling.
+
+See [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory).
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
+Fraction of available server or user memory used to calculate the external `DISTINCT` threshold at
+the start of execution. For example, `0.5` uses half of the available memory.
+
+Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
+server or user memory limit, the ratio has no effect.
+
+`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
+use `max_bytes_before_external_distinct`, leaving room for additional memory usage.
+)", 0) \
+    \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.
@@ -6350,6 +6370,9 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
+)", 0) \
+    DECLARE(Bool, optimize_rewrite_intersect_except_to_join, true, R"(
+Execute `INTERSECT DISTINCT` and `EXCEPT DISTINCT` as a `SEMI LEFT JOIN` or `ANTI LEFT JOIN` on all columns followed by `DISTINCT`, so that they use the join algorithms and their optimizations. `NULL` values match each other like in the set operations. The `ALL` modes are not affected, and neither are the `DISTINCT` modes when `join_algorithm` enables no algorithm that can execute a semi join (such as only `full_sorting_merge`).
 )", 0) \
     DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
 Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
