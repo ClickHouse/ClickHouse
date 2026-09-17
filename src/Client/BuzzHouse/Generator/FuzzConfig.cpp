@@ -23,7 +23,20 @@ const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
 const DB::Strings codecs
-    = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "ALP", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
+    = {"LZ4",
+       "LZ4HC",
+       "ZSTD",
+       "ZXC",
+       "Delta",
+       "DoubleDelta",
+       "Gorilla",
+       "T64",
+       "FPC",
+       "GCD",
+       "ALP",
+       "AES_128_GCM_SIV",
+       "AES_256_GCM_SIV",
+       "NONE"};
 
 String escapeSQLString(const String & s, const char escape_char)
 {
@@ -354,6 +367,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"paimonlocal", allow_paimonLocal},
            {"merge", allow_merge},
            {"distributed", allow_distributed},
+           {"remote", allow_remote},
            {"dictionary", allow_dictionary},
            {"generaterandom", allow_generaterandom},
            {"azureblobstorage", allow_AzureBlobStorage},
@@ -942,33 +956,24 @@ void FuzzConfig::loadServerConfigurations()
     /// terminate_with_exception, terminate_with_std_exception - Terminates the server
     /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
     ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
+    /// attach_to_group_failure, thread_group_switcher_post_attach_failure - Break the "a query thread has a thread
+    ///     group" invariant on whatever thread happens to hit them next. `ThreadGroupSwitcher` is `noexcept` and only
+    ///     logs the injected failure, so the thread continues with no group and the next `executeQuery` on it fails
+    ///     with the `No thread group attached to the thread` logical error. They are meant for the in-process unit
+    ///     test `gtest_thread_group_switcher`, which enables them around a single controlled switch.
+    /// pauseable, pauseable_once - Block the next thread to reach them until a NOTIFY or DISABLE names that same
+    ///     failpoint, with no timeout. Each statement below picks its name at random, so a resume rarely follows.
+    /// I am limiting the number of failpoints per run, so the WAIT and NOTIFY failpoint can suceed more
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
         "SELECT \"name\" FROM \"system\".\"fail_points\""
-        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
+        " WHERE \"type\" NOT IN ('pauseable', 'pauseable_once')"
+        " AND \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
-        "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup')");
+        "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup', 'attach_to_group_failure', "
+        "'thread_group_switcher_post_attach_failure') ORDER BY rand() LIMIT 10");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
-    /// Probe which function_implementation values the server supports. They depend on how the binary
-    /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an
-    /// unsupported value raises NO_SUITABLE_FUNCTION_IMPLEMENTATION, so test each candidate. Only
-    /// default, x86-64-v3 and x86-64-v4 implementations are registered in the server's source.
-    this->function_implementations.clear();
-    for (const auto & entry : {"default", "x86-64-v3", "x86-64-v4"})
-    {
-        if (processServerQuery(
-                false, fmt::format("SELECT ignore(sipHash64(materialize(1))) SETTINGS function_implementation = '{}' FORMAT Null;", entry)))
-        {
-            this->function_implementations.emplace_back(entry);
-        }
-    }
-    LOG_INFO(
-        log,
-        "Found {} entries for function implementations{}{}",
-        this->function_implementations.size(),
-        this->function_implementations.empty() ? "" : ": ",
-        fmt::join(this->function_implementations, ", "));
     loadFunctions();
 }
 

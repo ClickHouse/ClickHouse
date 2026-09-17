@@ -35,10 +35,6 @@ reject "SHOW CREATE ROW POLICY nopol ON t"
 reject "CREATE TABLE oops ON CLUSTER default (x Int32) ENGINE = Memory"
 reject "BACKUP TABLE t TO Null"
 
-echo "-- the scope requires the analyzer, entering and staying"
-$CLICKHOUSE_CLIENT --allow_experimental_table_namespaces=1 --enable_analyzer=0 -q "USE $DB.ns" 2>&1 | grep -m1 -c "SUPPORT_IS_DISABLED"
-$CH -m -q "USE $DB.ns; SET enable_analyzer = 0; SELECT * FROM t" 2>&1 | grep -m1 -c "SUPPORT_IS_DISABLED"
-
 echo "-- reads, writes and introspection keep working under the scope"
 $CH -m -q "
 USE $DB.ns;

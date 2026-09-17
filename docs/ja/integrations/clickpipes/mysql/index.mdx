@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.mdx';
 
 <BetaBadge />
 
@@ -76,7 +77,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 4. 前提条件の手順で設定したソース MySQL データベースの接続情報を入力します。
 
 <Info>
-  接続情報を入力する前に、ファイアウォールのルールで ClickPipes IP addresses を許可リストに追加してあることを確認してください。次のページで [ClickPipes IP addresses の一覧](/ja/integrations/clickpipes/home#list-of-static-ips) を確認できます。
+  接続情報を入力する前に、ファイアウォールのルールで ClickPipes IP addresses を許可リストに追加してあることを確認してください。次のページで [ClickPipes IP addresses の一覧](/ja/integrations/clickpipes/networking/static-ips) を確認できます。
   詳細については、[このページの上部](#prerequisites) にリンクされているソース MySQL のセットアップガイドを参照してください。
 </Info>
 
@@ -105,7 +106,7 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 4. 「Verify Connection」をクリックして接続を確認します。
 
 <Note>
-  ClickPipes が SSH トンネルを確立できるように、SSH 踏み台サーバーのファイアウォールルールで [ClickPipes IP addresses](/ja/integrations/clickpipes/home#list-of-static-ips) を許可リストに追加してください。
+  ClickPipes が SSH トンネルを確立できるように、SSH 踏み台サーバーのファイアウォールルールで [ClickPipes IP addresses](/ja/integrations/clickpipes/networking/static-ips) を許可リストに追加してください。
 </Note>
 
 接続情報の入力が完了したら、`Next` をクリックします。
@@ -133,11 +134,13 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 6. ソース MySQL データベースからレプリケートするテーブルを選択できます。テーブルの選択時には、宛先の ClickHouse データベースでテーブル名を変更したり、特定のカラムを除外したりすることもできます。
 
+7. <SettingPartitionBy />
+
 <div id="review-permissions-and-start-the-clickpipe">
   ### 権限を確認して ClickPipe を開始する
 </div>
 
-7. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
+8. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="権限の確認" size="lg" border />
 

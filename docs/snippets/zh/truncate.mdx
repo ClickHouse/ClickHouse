@@ -21,9 +21,9 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 | `ON CLUSTER cluster` | 在指定集群上执行该命令。                           |
 | `SYNC`               | 使用复制表时，使截断操作在各副本间同步执行。若省略，默认以异步方式执行截断。 |
 
-你可以使用 [alter&#95;sync](/zh/reference/settings/session-settings#alter_sync) 设置来配置等待副本上的操作执行完成。
+你可以使用 [alter&#95;sync](/zh/reference/settings/session-settings/alter#alter_sync) 设置来配置等待副本上的操作执行完成。
 
-你可以使用 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/zh/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 设置来指定等待非活动副本执行 `TRUNCATE` 查询的时长 (以秒为单位) 。
+你可以使用 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/zh/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 设置来指定等待非活动副本执行 `TRUNCATE` 查询的时长 (以秒为单位) 。
 
 <Info>
   如果 `alter_sync` 设置为 `2`，且某些副本非活动的时间超过 `replication_wait_for_inactive_replica_timeout` 设置指定的时长，则会抛出 `UNFINISHED` 异常。

@@ -275,6 +275,11 @@ public:
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
+        NameSet invalidated_columns_to_write = {};
+        /// fsync the cloned/frozen directories (the clone subtree plus the ancestor chain up to
+        /// the disk root) so the new hardlink directory entries survive a power loss. Only honored
+        /// by freeze() on a local disk, outside an external transaction.
+        bool fsync_part_directory = false;
     };
 
     /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever
@@ -372,6 +377,15 @@ public:
     virtual void beginTransaction() = 0;
     /// Commits a transaction of mutable operations.
     virtual void commitTransaction() = 0;
+
+    /// Commits the accumulated operations and starts a fresh transaction, keeping the storage
+    /// writable (commit->begin). Used mid-build to bound the volume of a single commit; a storage
+    /// that accumulates no per-file operations may make it a no-op.
+    virtual void checkpointTransaction()
+    {
+        commitTransaction();
+        beginTransaction();
+    }
     /// Prepares transaction to commit.
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;

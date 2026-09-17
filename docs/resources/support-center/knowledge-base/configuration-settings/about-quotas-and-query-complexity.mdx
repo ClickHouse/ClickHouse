@@ -6,9 +6,6 @@ keywords: ['Quotas', 'Query Complexity']
 description: 'Quotas and Query Complexity are powerful ways to limit and restrict what users can do in ClickHouse. This KB article shows examples on how to apply these two different approaches.'
 ---
 
-{frontMatter.description}
-{/* truncate */}
-
 ## About Quotas and Query complexity {#about-quotas-and-query-complexity}
 [Quotas](/concepts/features/configuration/server-config/quotas) and [query complexity](/concepts/features/configuration/settings/query-complexity) are powerful ways to limit and restrict what users can do in ClickHouse.
 
@@ -336,4 +333,3 @@ clickhouse-cloud :) SELECT * FROM default.test_table LIMIT 2;
 ```
 
 Whenever attempting to get more than 1 row in resultset the query complexity constraint will kick in.
-

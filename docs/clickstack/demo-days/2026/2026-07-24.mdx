@@ -1,0 +1,64 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-24
+title: 'Demo days - 2026-07-24'
+sidebarTitle: '2026-07-24'
+description: 'ClickStack demo days for 2026-07-24'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Metrics experience improvements {#metrics-experience-improvements}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/rukel6KVmPY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+This batch improves metrics and dashboard authoring, based on feedback from a customer migrating from Datadog. They have a well thought-through metrics workflow. We haven't covered all of their feedback yet, but most of it focused on charting and investigating dashboards with hundreds of time series on screen.
+
+One change isn't related to metrics, although it came out of the same conversation: dashboard tiles now snap to a visible grid while you're authoring. When you drag or resize a tile, the grid appears behind it and highlights the cells around its current position. Previously, it wasn't clear where a tile would land or whether moving it would push another tile out of the way. The grid makes both visible. It uses the same geometry as the layout engine, so the guides match the tile's final position, including along the right and bottom edges.
+
+The metrics changes focus on charts with a high series count, which is common when grouping by several dimensions. Hovering over a chart used to show every series at that timestamp. On a chart with 300 series, the tooltip could be taller than the chart itself, and the series under the cursor was rarely the one you needed.
+
+Charts with more than 10 series now show only the series nearest the cursor. That series is drawn on top while the others are dimmed. Charts with 10 series or fewer keep the full, sorted tooltip, so their behaviour hasn't changed. The legend is more compact and can be hidden entirely. When visible, it also works as a selection and quick-search control, making it easier to jump to a specific series.
+
+The largest change is in fullscreen, where people tend to go after spotting a deviation they want to investigate. Fullscreen is now available from a toolbar icon with one click instead of sitting inside the kebab menu. Once open, the legend switches to a more useful layout with summary details and a search box. Filtering by a substring in the series name can reduce 300 series to the handful you care about, ready to hover over and compare.
+
+One point changed after the call. The choice between single-series and multi-series tooltips will be configurable instead of relying on a fixed threshold. Comparing the absolute values of several series at the same point in time is useful when there aren't many of them, so users should be able to choose the behaviour that fits the chart.
+
+**Related PRs:** [#2715](https://github.com/hyperdxio/hyperdx/pull/2715) feat(dashboard): show a snap grid while dragging or resizing a tile, [#2722](https://github.com/hyperdxio/hyperdx/pull/2722) Improve time chart hover for dense charts, [#2720](https://github.com/hyperdxio/hyperdx/pull/2720) feat(dashboard): move tile fullscreen to a top-level toolbar icon, [#2719](https://github.com/hyperdxio/hyperdx/pull/2719) fix(dashboard): draw an isolated time-chart series beyond the line-render cap, [#2776](https://github.com/hyperdxio/hyperdx/pull/2776) Configurable time chart display settings (legend, tooltip, line style)
+
+## Trace viewer improvements {#trace-viewer-improvements}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/kmparH3U7Jc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Two small fixes to the redesigned trace viewer, both based directly on feedback about the new layout.
+
+The span detail panel recently moved to the right of the waterfall, and not everyone preferred it there. A new control next to the panel's close button lets you move it between the right side, which remains the default, and the bottom. When the panel is at the bottom, you can drag it to whatever height works for you.
+
+The same feedback thread also uncovered a wrapping bug. With wrapping enabled, long attribute values without natural break points were still being clipped. A `url.path` containing no spaces, hyphens or dashes was one example. Attribute values can now break at any character boundary, making the full value readable.
+
+**Related PRs:** [#2693](https://github.com/hyperdxio/hyperdx/pull/2693) feat(traces): break-word attribute wrapping + layout toggle
+
+## MCP server and eval improvements {#mcp-server-and-eval-improvements}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2NXRdBZcKMw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The smallest change here may have the biggest effect on adoption. Enabling the MCP server in ClickHouse Cloud was difficult to find, requiring users to follow instructions in the app and then locate the correct control plane setting. The button now opens the relevant modal directly, where the server can be switched on.
+
+Brandon continues to improve our evaluation framework for the MCP, building on [his recent work](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals). The evaluation framework can now use a different provider and model from the one being evaluated. Previously, the full evaluation had to use Anthropic models, which meant a model could end up grading its own output. You can now provide an OpenAI key and a provider-prefixed judge model spec to route grading through OpenAI.
+
+Comparing judges exposed some useful differences. Some apply the rubric much more strictly, failing a run when it doesn't use one specific key, while others accept an answer that is close enough. We also fixed a stale-grade bug found during this work. Re-grading a batch with a different judge now runs the new judge instead of returning the previous result.
+
+Brandon also added a new `clickstack_emerging_signals` MCP tool after asking the MCP server what it needed to score better on the service health check scenario. It is a two-window pattern novelty detector. The tool mines log and event patterns from a baseline window and a current window, then compares the two sets. It reports patterns that are new, have become significantly more frequent or have disappeared.
+
+This is in contrast to the existing tools - event patterns describe what is common within one window, while event deltas show which attributes changed. The new tool adds about 10 points to the service health check score.
+
+Source and webhook CRUD tools have also been added to the MCP following a request to set up ingestion from a skill. Agents can now create, update and delete sources and webhooks instead of only reading them.
+
+Work is underway to run the evals in CI for every pull request, replacing the current process of manually pasting scores into PR descriptions. S3 seeding is working. The remaining blocker is granting the GitHub Action access to the bucket. Once that is resolved, eval results should arrive much faster.
+
+**Related PRs:** [#2710](https://github.com/hyperdxio/hyperdx/pull/2710) feat(evals): independent judge provider/model + fix stale-grade skip on judge swap, [#2701](https://github.com/hyperdxio/hyperdx/pull/2701) feat(mcp): add clickstack_emerging_signals tool, [#2702](https://github.com/hyperdxio/hyperdx/pull/2702) feat(mcp): source & webhook CRUD tools, [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): M1 CI skeleton, run MCP evals end to end in GitHub Actions, [#2674](https://github.com/hyperdxio/hyperdx/pull/2674) feat(evals): M2 Parquet-snapshot fast seed

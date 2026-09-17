@@ -26,6 +26,7 @@
 #include <Access/MaskingPolicy.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -67,7 +68,7 @@ namespace
 
         for (const auto & authentication_method : user.authentication_methods)
         {
-            query->authentication_methods.push_back(authentication_method.toAST());
+            query->authentication_methods.push_back(authentication_method.toAST(attach_mode));
         }
 
         if (!user.settings.empty())

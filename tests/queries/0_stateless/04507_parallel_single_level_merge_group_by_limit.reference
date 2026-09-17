@@ -1,0 +1,8 @@
+throw mode, under the limit
+8000	1600000
+throw mode, merged total over the limit
+the limit is enforced with the parallel merge disabled
+break mode returns a partial result
+1	1
+any mode stays on the serial merge and returns a limited result
+1	1

@@ -1,0 +1,9 @@
+-- Remote http endpoint is rejected by default
+-- Remote https endpoint is allowed
+0
+-- Loopback http endpoint is allowed (localhost and 127.0.0.1)
+0
+0
+-- Setting ai_function_allow_insecure_endpoint permits a remote http endpoint
+0
+0

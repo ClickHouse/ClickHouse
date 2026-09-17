@@ -15,6 +15,6 @@ insert into t_hardware_error values (6), (7), (8), (9), (10);
 
 select count() from t_hardware_error;
 
-system disable failpoint replicated_commit_zk_fail_after_op;
+system disable failpoint replicated_merge_tree_commit_zk_fail_after_op;
 
 DROP TABLE t_hardware_error NO DELAY;

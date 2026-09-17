@@ -4,6 +4,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Access/Common/AccessFlags.h>
+#include <Common/SettingsChanges.h>
+#include <Common/SettingSource.h>
 #include <Common/typeid_cast.h>
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
@@ -47,10 +49,25 @@ BlockIO InterpreterUseQuery::execute()
     }
 
     getContext()->checkAccess(AccessType::SHOW_DATABASES, database_name);
+    auto session_context = getContext()->getSessionContext();
 
-    /// the current database stores the logical name ("db.ns"), setCurrentDatabase
-    /// validates that the namespace exists and resolution folds it into table names
-    getContext()->getSessionContext()->setCurrentDatabase(
+    /// `database` is a real setting that `executeQuery` applies as the documented equivalent of
+    /// `USE` on every statement. Enforce its constraints here too, so that a profile which makes
+    /// `database` `const` or restricts its values rejects `USE` consistently with `SET database = ...`,
+    /// the HTTP `?database=...` parameter, and the `X-ClickHouse-Database` header. Check before
+    /// changing the current database, so a rejected `USE` is a clean no-op.
+    /// The setting mirrors the logical name ("db.ns"), so that is what gets checked.
+    SettingsChanges database_change;
+    database_change.setSetting("database", logical_name);
+    session_context->checkSettingsConstraints(database_change, SettingSource::QUERY);
+
+    /// `setCurrentDatabase` also keeps the `database` setting in sync with the session's current
+    /// database; without that, an earlier `SET database = ...` would be re-applied on the next query
+    /// and silently override the database just selected by this `USE`. A query's own
+    /// `SETTINGS database = ...` is applied later and still takes precedence.
+    /// The current database stores the logical name ("db.ns"), setCurrentDatabase
+    /// validates that the namespace exists and resolution folds it into table names.
+    session_context->setCurrentDatabase(
         logical_name, getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces]);
     return {};
 }
