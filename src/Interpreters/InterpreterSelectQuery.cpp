@@ -17,6 +17,7 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -80,6 +81,7 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -150,7 +152,6 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
-    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -167,7 +168,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_analyze_depth;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -176,7 +176,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
-    extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
@@ -208,6 +207,7 @@ namespace Setting
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsUInt64 max_rows_to_group_by;
@@ -949,9 +949,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 const auto * where_function = query.where()->as<ASTFunction>();
                 const bool has_multiple_conditions = where_function && where_function->name == "and";
                 const bool has_statistics = storage_snapshot->metadata->hasStatistics();
-                auto estimator = (has_statistics && has_multiple_conditions)
-                                    ? storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context)
-                                    : nullptr;
+                ConditionSelectivityEstimatorPtr estimator;
+                if (has_statistics && has_multiple_conditions && context->getSettingsRef()[Setting::use_statistics])
+                {
+                    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+                    {
+                        auto filter = ExpressionAnalyzer(query.where()->clone(), syntax_analyzer_result, context).getActionsDAG(true);
+                        parts_for_estimator = ReadFromMergeTree::filterPartsForStatistics(
+                            parts_for_estimator, filter.getOutputs().front(), *merge_tree, storage_snapshot->metadata, context);
+                    }
+                    estimator = storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context);
+                }
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
@@ -1768,6 +1776,21 @@ static bool limitAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings
     return hasWithTotalsInAnySubqueryInFromClause(query);
 }
 
+/// LIMIT BY can be pushed into the sorted-stream pipeline before the final merge, so a direct
+/// WITH TOTALS query must drain its input even when it has ORDER BY. The final LIMIT has a weaker
+/// condition because sorting itself may already consume the full input before LIMIT runs.
+static bool limitByAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings & settings)
+{
+    if (settings[Setting::exact_rows_before_limit]
+        && (query.limitLength() || query.limitAfter() || query.limitUntil()))
+        return true;
+
+    if (query.group_by_with_totals)
+        return true;
+
+    return hasWithTotalsInAnySubqueryInFromClause(query);
+}
+
 template <size_t size>
 ALWAYS_INLINE void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const char (&description)[size])
 {
@@ -2065,9 +2088,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             join_pos);
                         creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos), max_len);
 
-                        auto * step_raw_ptr = creating_set_step.get();
                         plan.addStep(std::move(creating_set_step));
-                        return step_raw_ptr;
+                        return static_cast<CreateSetAndFilterOnTheFlyStep *>(plan.getRootNode()->step.get());
                     };
 
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped && expressions.join->getTableJoin().kind() != JoinKind::Paste)
@@ -2774,7 +2796,7 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
     /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
     /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
-    if (astContainsArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
+    if (expressionContainsArrayJoin(query.select()) || query.arrayJoinExpressionList().first)
         return 0;
 
     if (!query.distinct
@@ -3493,17 +3515,20 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
                 limit_for_distinct = lim_info.limit_length + lim_info.limit_offset;
         }
 
-        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
-
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
-            limits,
+            DistinctStep::Settings(settings),
             limit_for_distinct,
             columns,
             pre_distinct);
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");
+
+        /// The `DISTINCT` that runs after the `ORDER BY` sits above the sort in the plan: the sorted order
+        /// has to survive it up to the result.
+        if (!before_order && query.orderBy())
+            distinct_step->preserveInputOrder();
 
         query_plan.addStep(std::move(distinct_step));
     }
@@ -3604,10 +3629,13 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     if (fractional_limit > 0 || fractional_offset > 0)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
 
+    const bool always_read_till_end = limitByAlwaysReadsTillEnd(query, context->getSettingsRef());
+
     if (!is_limit_length_negative && !is_limit_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
-        auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
+        auto limit_by = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_length, limit_offset, columns, always_read_till_end);
         query_plan.addStep(std::move(limit_by));
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
@@ -3624,7 +3652,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         if (limit_offset > 0)
         {
             auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns, always_read_till_end);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
@@ -3639,7 +3667,8 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         auto step1 = std::make_unique<NegativeLimitByStep>(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
         query_plan.addStep(std::move(step1));
-        auto step2 = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
+        auto step2 = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_length, 0, columns, always_read_till_end);
         query_plan.addStep(std::move(step2));
     }
 }
