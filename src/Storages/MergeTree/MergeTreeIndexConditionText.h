@@ -199,6 +199,9 @@ private:
         RPNElement & out) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
+    /// See the definitions: how a `FixedString` needle (or a needle for a `FixedString` column) is spelled for the lookup.
+    std::optional<Field> needleForFixedStringComparison(const Field & value, const DataTypePtr & value_type, bool value_padding_ignored) const;
+    bool strippedTermsCoverPaddedSpellings(const String & stripped, size_t padding_size) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
 
