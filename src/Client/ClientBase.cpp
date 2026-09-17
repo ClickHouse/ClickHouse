@@ -3828,13 +3828,32 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         {
             if (effective_settings[Setting::dialect] == Dialect::kusto)
             {
-                /// `KQLLexer` never throws; on a malformed literal it stops, and the scan
-                /// judges by the tokens before it (an unclosed opener in front of the error
-                /// still counts, like the SQL check's early stop below).
+                /// `KQLLexer` never throws; on a malformed literal it produces an `Error`
+                /// token and stops. The bracket scan judges by the tokens before it (an
+                /// unclosed opener in front of the error still counts, like the SQL check's
+                /// early stop below), but the terminator scan must not stop there: in
+                /// `print (1x; SELECT 1` the `;` comes after the malformed `1x`, and the
+                /// user has still terminated the statement, so it is a syntax error to
+                /// submit rather than an unfinished one to keep open. Resume lexing right
+                /// after each `Error` token until the end of the buffer. A token produced
+                /// by resuming in the middle of a broken literal is not trustworthy, but
+                /// mistaking one for a `;` only submits the buffer, and the executor then
+                /// reports the real error.
                 const std::vector<KQLToken> kql_tokens = KQLLexer(statement_begin, end).tokenize();
                 for (const auto & token : kql_tokens)
                     if (token.type == KQLTokenType::Semicolon)
                         return false;
+                /// (`KQLLexer::makeError` makes an `Error` token cover at least one character,
+                /// so each round strictly advances.)
+                const char * resume_from = kql_tokens.back().isError() ? kql_tokens.back().end : end;
+                while (resume_from < end)
+                {
+                    const std::vector<KQLToken> resumed_tokens = KQLLexer(resume_from, end).tokenize();
+                    for (const auto & token : resumed_tokens)
+                        if (token.type == KQLTokenType::Semicolon)
+                            return false;
+                    resume_from = resumed_tokens.back().isError() ? resumed_tokens.back().end : end;
+                }
                 std::vector<KQLTokenType> openers;
                 for (const auto & token : kql_tokens)
                 {
