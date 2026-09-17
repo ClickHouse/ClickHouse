@@ -110,7 +110,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
 
             for (const auto & expanded_codec : expanded_codecs)
             {
-                if (only_generic && !expanded_codec->isGenericCompression())
+                if (only_generic && !expanded_codec->isGenericCompression() && !expanded_codec->isEncryption())
                     continue;
 
                 /// Lossy codecs (e.g. SZ3) reinterpret the raw bytes as floating-point values.
