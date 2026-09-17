@@ -368,6 +368,8 @@ public:
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
     void setJoinOperator(const JoinOperator & join_operator_) { join_operator = join_operator_; }
+    /// See `JoinOperator::multiset`.
+    bool isMultiset() const { return join_operator && join_operator->multiset; }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }

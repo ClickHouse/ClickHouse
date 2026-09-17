@@ -1486,6 +1486,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto locality = join_operator.locality;
     if (!optimization_settings.query_plan_optimize_join_order_limit
         || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
+        || join_operator.multiset
         || locality != JoinLocality::Unspecified
         || kind == JoinKind::Paste
         || !join_operator.residual_filter.empty()

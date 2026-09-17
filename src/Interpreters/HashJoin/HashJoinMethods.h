@@ -41,6 +41,13 @@ struct Inserter
         key_getter.emplaceKey(map, i, pool);
     }
 
+    /// A count map holds the number of right rows of the key. The build phase has the map to itself, so the
+    /// count is a plain increment here; only the probe phase touches it atomically.
+    static ALWAYS_INLINE void insertCount(HashMap & map, KeyGetter & key_getter, size_t i, Arena & pool)
+    {
+        ++key_getter.emplaceKey(map, i, pool).getMapped().remaining;
+    }
+
     static ALWAYS_INLINE bool
     insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool)
     {
@@ -80,7 +87,7 @@ struct Inserter
     }
 };
 
-/// MapsTemplate is one of MapsOne, MapsAll, MapsAsof and MapsSet
+/// MapsTemplate is one of MapsOne, MapsAll, MapsAsof, MapsSet and MapsCount
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
@@ -237,6 +244,8 @@ extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, Hash
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Asof, HashJoin::MapsAsof>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Semi, HashJoin::MapsSet>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsSet>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Semi, HashJoin::MapsCount>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsCount>;
 
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Any, HashJoin::MapsAll>;
