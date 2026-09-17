@@ -188,7 +188,8 @@ void IDatabase::createTable(
 void IDatabase::dropTable( /// NOLINT
     ContextPtr /*context*/,
     const String & /*name*/,
-    [[maybe_unused]] bool sync)
+    [[maybe_unused]] bool sync,
+    [[maybe_unused]] bool if_exists)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
 }

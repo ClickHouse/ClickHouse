@@ -71,16 +71,19 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
+    void validateCreateTableEngine(const ASTFunction & engine) const override;
+
     void createTable(
-        ContextPtr /*context*/,
-        const String & /*name*/,
+        ContextPtr context,
+        const String & name,
         const StoragePtr & /*table*/,
-        const ASTPtr & /*query*/) override {}
+        const ASTPtr & query) override;
 
     void dropTable( /// NOLINT
         ContextPtr context_,
         const String & name,
-        bool /*sync*/) override;
+        bool /*sync*/,
+        bool if_exists) override;
 
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
@@ -117,6 +120,11 @@ private:
     mutable String catalog_unavailable_reason TSA_GUARDED_BY(catalog_mutex);
 
     void validateSettings();
+
+    /// Reject engine arguments that `tryGetTableImpl` cannot reconstruct when it reopens the table: it
+    /// rebuilds the storage from the catalog location plus the database engine arguments, so anything
+    /// else given here would apply only to the `CREATE` itself.
+    void validateCreateTableEngineArguments(const ASTFunction & engine) const;
 
     /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
     /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),
