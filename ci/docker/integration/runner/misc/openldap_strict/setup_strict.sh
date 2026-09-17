@@ -78,23 +78,21 @@ if [[ -s "${WORK_DIR}/global.ldif" ]]; then
 fi
 
 echo "openldap_strict: step 2/5 - ACLs and limits on ${DB_RDN}"
-if ! grep -q "^olcAccess:" "${DB_LDIF}"; then
-    cat > "${WORK_DIR}/acl.ldif" <<LDIF
+# `replace` makes the step deterministic: whatever ACLs or limits the image or another init script installed,
+# the database ends up with exactly these, so no suite can pass because a looser rule was kept.
+cat > "${WORK_DIR}/acl.ldif" <<LDIF
 dn: ${DB_RDN},cn=config
 changetype: modify
-add: olcAccess
+replace: olcAccess
 olcAccess: {0}to attrs=userPassword by self write by anonymous auth by * none
 olcAccess: {1}to dn.subtree="ou=groups,${SUFFIX}" by dn.exact="${SVC_DN}" read by * none
 olcAccess: {2}to attrs=memberOf by dn.exact="${SVC_DN}" read by * none
 olcAccess: {3}to * by dn.exact="${SVC_DN}" read by users read by * none
 -
-add: olcLimits
+replace: olcLimits
 olcLimits: {0}dn.exact="${SVC_DN}" size=unlimited size.prtotal=unlimited
 LDIF
-    "${SBIN}/slapmodify" -F "${SLAPD_D}" -n 0 -l "${WORK_DIR}/acl.ldif"
-else
-    echo "olcAccess already present on ${DB_RDN}, not modifying."
-fi
+"${SBIN}/slapmodify" -F "${SLAPD_D}" -n 0 -l "${WORK_DIR}/acl.ldif"
 
 echo "openldap_strict: step 3/5 - memberof overlay on ${DB_RDN}"
 if [[ ! -d "${SLAPD_D}/cn=config/${DB_RDN}" ]] || ! ls "${SLAPD_D}/cn=config/${DB_RDN}" | grep -q memberof; then
