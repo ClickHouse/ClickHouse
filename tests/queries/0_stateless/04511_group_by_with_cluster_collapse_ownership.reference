@@ -1,0 +1,8 @@
+sum collapses to one cluster
+1
+sumDistinct collapses to one cluster
+1
+count collapses to one cluster
+1
+groupArray length after collapse
+1024
