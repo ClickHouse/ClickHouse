@@ -1,0 +1,28 @@
+basic alignment
+1	one	\N
+\N	two	3
+projection pruning: a
+1
+4
+projection pruning: b
+2
+3
+derived table aliases
+1
+2
+name then position
+1	one
+\N	two
+3	three
+position then name
+1	one
+2	two
+3	three
+missing nullable value
+1	10
+1	\N
+AST JSON roundtrip
+SELECT 1 AS a UNION ALL BY NAME SELECT 2 AS a
+duplicate output names
+missing non-nullable-capable type
+recursive CTE

@@ -464,6 +464,9 @@ const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_
         if (!union_node)
             return no_aliases;
 
+        if (!union_node->getProjectionAliasesToOverride().empty())
+            return union_node->getProjectionAliasesToOverride();
+
         const auto & queries = union_node->getQueries().getNodes();
         current = queries.empty() ? nullptr : queries[0];
     }

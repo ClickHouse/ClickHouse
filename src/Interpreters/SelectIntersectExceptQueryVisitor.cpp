@@ -40,25 +40,26 @@ void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
 
 void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Data & data)
 {
-    auto union_modes = ast.list_of_modes;
+    auto union_operations = ast.getSetOperations();
 
-    if (union_modes.empty())
+    if (union_operations.empty())
         return;
 
     auto selects = ast.list_of_selects->children;
 
-    if (union_modes.size() + 1 != selects.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect ASTSelectWithUnionQuery (modes: {}, selects: {})",
-                        union_modes.size(), selects.size());
+    if (union_operations.size() + 1 != selects.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect ASTSelectWithUnionQuery (operations: {}, selects: {})",
+                        union_operations.size(), selects.size());
 
     std::reverse(selects.begin(), selects.end());
 
     ASTs children = {selects.back()};
     selects.pop_back();
-    SelectUnionModes modes;
+    SetOperationDescriptors operations;
 
-    for (auto & mode : union_modes)
+    for (auto operation : union_operations)
     {
+        auto & mode = operation.mode;
         /// Rewrite intersect / except mode
         if (mode == SelectUnionMode::EXCEPT_DEFAULT)
         {
@@ -97,8 +98,8 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 left->children.push_back(left->list_of_selects);
                 left->list_of_selects->children = std::move(children);
 
-                left->list_of_modes = std::move(modes);
-                modes = {};
+                left->setSetOperations(operations);
+                operations = {};
 
                 auto right = selects.back();
                 selects.pop_back();
@@ -154,7 +155,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 auto right = selects.back();
                 selects.pop_back();
                 children.emplace_back(std::move(right));
-                modes.push_back(mode);
+                operations.push_back(operation);
                 break;
             }
         }
@@ -168,7 +169,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
     }
 
     ast.list_of_selects->children = std::move(children);
-    ast.list_of_modes = std::move(modes);
+    ast.setSetOperations(operations);
 }
 
 }
