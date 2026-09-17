@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
+            {"read_in_order_max_primary_key_ratio", 1.0, 1.0, "New setting to disable read-in-order optimization when primary key selectivity is poor, opt-in until the default threshold is tuned"},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -115,7 +116,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"enable_json_lazy_type_hints", false, false, "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."},
             {"s3_upload_checksum_algorithm", "", "", "New setting to choose the checksum algorithm for S3 uploads."},
-            {"read_in_order_max_primary_key_ratio", 1.0, 1.0, "New setting to disable read-in-order optimization when primary key selectivity is poor, opt-in until the default threshold is tuned"},
             {"network_compression_method", "LZ4", "ZSTD", "Switched the default compression method for client/server and server/server communication from `LZ4` to `ZSTD` to reduce network traffic."},
             {"network_zstd_compression_level", 1, 3, "Aligned the default network `ZSTD` compression level with the new default on-disk `ZSTD(3)` compression."},
             {"use_statistics_for_min_max_aggregation", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."},
