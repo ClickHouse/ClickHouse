@@ -190,9 +190,28 @@ SELECT '-- 15b WITH FILL inside the window ORDER BY: declines';
 SELECT '15b with fill', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC WITH FILL) AS rk FROM t_wtkp) WHERE rk <= 3) WHERE explain ILIKE '%Window top-K prefilter%';
 SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o DESC WITH FILL) AS rk FROM t_wtkp) WHERE rk <= 3 ORDER BY p, o, rk;
 
-SELECT '-- 16 max_rows_to_sort: the same error with the optimization on and off';
-SELECT count() FROM (SELECT rank() OVER (PARTITION BY number % 3 ORDER BY number DESC) AS rk FROM numbers(2000)) WHERE rk <= 3 SETTINGS max_rows_to_sort = 1000, query_plan_window_top_k_prefilter = 0; -- { serverError TOO_MANY_ROWS_OR_BYTES }
-SELECT count() FROM (SELECT rank() OVER (PARTITION BY number % 3 ORDER BY number DESC) AS rk FROM numbers(2000)) WHERE rk <= 3 SETTINGS max_rows_to_sort = 1000, query_plan_window_top_k_prefilter = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SELECT '-- 16 both sort size limits count the rows that reach the sort, so the pass declines and the error';
+SELECT '--     stays. The window ORDER BY ascends with the input, the shape where pruning does bite, and 16e';
+SELECT '--     measures on the same query that what the prefilter forwards is under both limits while the';
+SELECT '--     raw input is over them: that is what makes these four errors statements about the decline.';
+SELECT count() FROM (SELECT rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3 SETTINGS max_threads = 1, max_block_size = 8192, max_rows_to_sort = 1000, query_plan_window_top_k_prefilter = 0; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SELECT count() FROM (SELECT rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3 SETTINGS max_threads = 1, max_block_size = 8192, max_rows_to_sort = 1000, query_plan_window_top_k_prefilter = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SELECT count() FROM (SELECT rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3 SETTINGS max_threads = 1, max_block_size = 8192, max_bytes_to_sort = 10000, query_plan_window_top_k_prefilter = 0; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SELECT count() FROM (SELECT rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3 SETTINGS max_threads = 1, max_block_size = 8192, max_bytes_to_sort = 10000, query_plan_window_top_k_prefilter = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SELECT count() FROM (SELECT rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3
+SETTINGS max_threads = 1, max_block_size = 8192, log_processors_profiles = 1, log_queries = 1, log_comment = '05218_window_top_k_prefilter_sort_limits' FORMAT Null;
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+-- The transform sits directly below the partial sort the limits are checked on, so its input is what that
+-- check counts when the pass declines, and its output is what the check would count if it did not.
+SELECT '16e both limits sit between what the prefilter forwards and the raw input',
+    sum(input_rows) = 20000 AND sum(input_bytes) > 10000 AND sum(output_rows) < 1000 AND sum(output_bytes) < 10000
+FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND query_id IN
+(
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+        AND log_comment = '05218_window_top_k_prefilter_sort_limits' AND type = 'QueryFinish'
+);
 
 SELECT '-- the pipeline really carries the transform';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3) WHERE explain ILIKE '%WindowTopKPrefilterTransform%';
@@ -228,6 +247,19 @@ SELECT '35b control, exact mode off', count() FROM (EXPLAIN actions=1 SELECT p, 
 SELECT 1 AS one FROM (SELECT number % 3 AS p, rank() OVER (PARTITION BY number % 3 ORDER BY number ASC) AS rk FROM numbers(20000)) WHERE rk <= 3 LIMIT 5
 SETTINGS exact_rows_before_limit = 1, output_format_write_statistics = 0 FORMAT JSONCompact;
 
+SELECT '-- 37 with the storage ordering reused, the window sort is a FinishSorting (a `Prefix sort';
+SELECT '--     description` in the plan) rather than the full sort this prefilter can bound, so the pass';
+SELECT '--     declines and describeActions must not advertise a hint. Read-in-order is what makes that';
+SELECT '--     sort, so it and parallel replicas are pinned; 37b asserts it did, 37c differs in one setting.';
+DROP TABLE IF EXISTS t_wtkp_ord;
+CREATE TABLE t_wtkp_ord (p UInt8, o UInt8) ENGINE = MergeTree ORDER BY (p, o);
+INSERT INTO t_wtkp_ord VALUES (1,10),(1,9),(1,8),(1,8),(1,8),(1,7),(2,10),(2,9),(2,7),(2,7),(3,10),(3,9),(3,8),(3,6),(3,6),(3,6);
+SELECT '37 finish sorting declines', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o) AS rk FROM t_wtkp_ord) WHERE rk <= 3 SETTINGS enable_parallel_replicas = 0, optimize_read_in_order = 1, query_plan_reuse_storage_ordering_for_window_functions = 1) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT '37b the sort really is a FinishSorting', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o) AS rk FROM t_wtkp_ord) WHERE rk <= 3 SETTINGS enable_parallel_replicas = 0, optimize_read_in_order = 1, query_plan_reuse_storage_ordering_for_window_functions = 1) WHERE explain ILIKE '%Prefix sort description%';
+SELECT '37c control, ordering not reused', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, rank() OVER (PARTITION BY p ORDER BY o) AS rk FROM t_wtkp_ord) WHERE rk <= 3 SETTINGS enable_parallel_replicas = 0, optimize_read_in_order = 1, query_plan_reuse_storage_ordering_for_window_functions = 0) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT p, o, rk FROM (SELECT p, o, rank() OVER (PARTITION BY p ORDER BY o) AS rk FROM t_wtkp_ord) WHERE rk <= 3 ORDER BY p, o, rk SETTINGS enable_parallel_replicas = 0, optimize_read_in_order = 1, query_plan_reuse_storage_ordering_for_window_functions = 1;
+
+DROP TABLE t_wtkp_ord;
 DROP TABLE t_wtkp_var;
 DROP TABLE t_wtkp_ip;
 DROP TABLE t_wtkp_merge;
