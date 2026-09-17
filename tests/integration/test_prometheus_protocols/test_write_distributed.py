@@ -152,6 +152,29 @@ def start_cluster():
             "CREATE TABLE prom_column_granted_bad AS prom_column_granted "
             "ENGINE = Distributed(two_shards_column_granted, '', mt_bad, cityHash64(tags['host']))"
         )
+
+        # Wrappers retyped away from the outer schema a TimeSeries table generates for itself, over
+        # shard tables of their own, so the exact counts of the other tests are untouched.
+        node.query("CREATE TABLE shard_0.ts_retyped ENGINE=TimeSeries")
+        node.query("CREATE TABLE shard_1.ts_retyped ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE prom_retyped_name (metric_name Int64, tags Map(String, String), "
+            "samples Array(Tuple(DateTime64(3), Float64)), metric_family String, type String, "
+            "unit String, help String) "
+            "ENGINE = Distributed(two_shards_dist, '', ts_retyped, cityHash64(tags['host']))"
+        )
+        # Only `type` is retyped: the other three metadata columns are declared as the shards declare them.
+        node.query(
+            "CREATE TABLE prom_retyped_metadata (metric_name String, tags Map(String, String), "
+            "samples Array(Tuple(DateTime64(3), Float64)), metric_family String, type Int64, "
+            "unit String, help String) "
+            "ENGINE = Distributed(two_shards_dist, '', ts_retyped, cityHash64(tags['host']))"
+        )
+        # The same shards declared as they are: what the two above would be without the retyping.
+        node.query(
+            "CREATE TABLE prom_retyped_ok AS shard_0.ts_retyped "
+            "ENGINE = Distributed(two_shards_dist, '', ts_retyped, cityHash64(tags['host']))"
+        )
         yield cluster
     finally:
         cluster.shutdown()
@@ -214,6 +237,17 @@ def metadata_on_the_shards(metric_family, table="ts_local"):
         f"SELECT type, help, unit FROM timeSeriesMetrics(shard_1.{table})"
         f" WHERE metric_family_name = '{metric_family}'"
     )
+
+
+def rows_on_the_retyped_shards():
+    """Every series and every metric family the shard tables behind the retyped wrappers hold: a name or
+    a family a write corrupted is counted whatever the corruption turned it into."""
+    return node.query(
+        "SELECT (SELECT count() FROM timeSeriesTags(shard_0.ts_retyped))"
+        " + (SELECT count() FROM timeSeriesTags(shard_1.ts_retyped))"
+        " + (SELECT count() FROM timeSeriesMetrics(shard_0.ts_retyped))"
+        " + (SELECT count() FROM timeSeriesMetrics(shard_1.ts_retyped))"
+    ).strip()
 
 
 def test_remote_write_rejects_non_timeseries_shards():
@@ -589,3 +623,51 @@ def test_remote_write_metadata_needs_a_wrapper_declaring_its_columns():
     )
     assert on_the_narrow_shards == 1
     assert metadata_on_the_shards(METADATA_METRIC, table="ts_column_granted") == ""
+
+
+def test_remote_write_refuses_a_wrapper_retyping_the_metric_name():
+    """The block a write sends is filled with the types the table it names declares, and a Distributed
+    table declares its own: a `metric_name` no TimeSeries table would declare takes the label bytes to a
+    shard reinterpreted as an integer, under a 204."""
+    before = rows_on_the_retyped_shards()
+    response = write("/retyped_name/write", "retyped_name_metric")
+    assert response.status_code >= 500, response.text
+    assert "INCOMPATIBLE_SCHEMA" in response.text
+    assert "prom_retyped_name" in response.text
+    assert "declares column `metric_name` as Int64" in response.text
+    # Neither under the name that was sent nor under the integer it would have been reinterpreted into:
+    # the shards hold exactly what they held, and no batch is left to flush into them.
+    node.query("SYSTEM FLUSH DISTRIBUTED prom_retyped_name")
+    assert rows_on_the_retyped_shards() == before
+
+    # Not vacuous: the same request over the same shards, through a wrapper declaring them as they are.
+    assert write("/retyped_ok/write", "retyped_name_metric").status_code == 204
+    on_the_shards = count_on_the_shards(
+        "prom_retyped_ok", "retyped_name_metric", table="ts_retyped"
+    )
+    assert on_the_shards == 1
+
+
+def test_remote_write_refuses_a_wrapper_retyping_a_metadata_column():
+    """The same for the columns the metadata travels in, which are filled the same way. Only `type` is
+    retyped here, so the refusal has to name that column and not one of the three declared as the shards
+    declare them."""
+    before = rows_on_the_retyped_shards()
+    response = write_with_metadata("/retyped_metadata/write", "retyped_metadata_metric")
+    assert response.status_code >= 500, response.text
+    assert "INCOMPATIBLE_SCHEMA" in response.text
+    assert "prom_retyped_metadata" in response.text
+    assert "declares column `type` as Int64" in response.text
+    # Neither the samples nor the metadata sent with them reached a shard.
+    node.query("SYSTEM FLUSH DISTRIBUTED prom_retyped_metadata")
+    assert rows_on_the_retyped_shards() == before
+
+    # Not vacuous: that same request travels the well-formed wrapper over those shards, metadata and all.
+    response = write_with_metadata("/retyped_ok/write", "retyped_metadata_metric")
+    assert response.status_code == 204, response.text
+    on_the_shards = count_on_the_shards(
+        "prom_retyped_ok", "retyped_metadata_metric", table="ts_retyped"
+    )
+    assert on_the_shards == 1
+    stored = metadata_on_the_shards("retyped_metadata_metric", table="ts_retyped")
+    assert stored == f"gauge\t{METADATA_HELP}\t{METADATA_UNIT}\n", stored

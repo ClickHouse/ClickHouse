@@ -202,6 +202,43 @@ void checkTableAcceptsMetricsMetadata(const StorageInMemoryMetadata & metadata, 
     }
 }
 
+/// The type a TimeSeries table's outer columns are generated with (`generateOuterColumns`), or empty for the
+/// samples column, whose type varies per table and which the shard-target check holds every shard to.
+std::string_view timeSeriesOuterColumnType(const String & column_name)
+{
+    if (column_name == TimeSeriesColumnNames::Tags)
+        return "Map(String, String)";
+    if ((column_name == TimeSeriesColumnNames::MetricName) || (column_name == TimeSeriesColumnNames::MetricFamily)
+        || (column_name == TimeSeriesColumnNames::Type) || (column_name == TimeSeriesColumnNames::Unit)
+        || (column_name == TimeSeriesColumnNames::Help))
+        return "String";
+    return {};
+}
+
+/// The blocks below are filled with the types the table declares, and a Distributed table declares its own: a column
+/// retyped away from the outer schema would carry the reinterpreted bytes of a label or a metadata field to a shard.
+void checkTableDeclaresOuterColumnTypes(
+    const StorageInMemoryMetadata & metadata, const StorageID & storage_id, const Names & columns_to_write)
+{
+    for (const auto & column_name : columns_to_write)
+    {
+        const auto expected_type = timeSeriesOuterColumnType(column_name);
+        if (expected_type.empty())
+            continue;
+        /// A column the table has not got throws here as it would in `makeBlock`, which this runs before.
+        const auto & declared_type = metadata.columns.get(column_name).type;
+        if (declared_type->getName() != expected_type)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares column `{}` as {} while remote write fills it as {}: a Distributed table taking "
+                "remote write must declare the outer columns of a TimeSeries table",
+                storage_id.getNameForLogs(),
+                column_name,
+                declared_type->getName(),
+                expected_type);
+    }
+}
+
 Block makeMetricsMetadataBlock(
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
     size_t num_time_series_rows,
@@ -417,6 +454,10 @@ void PrometheusRemoteWriteProtocol::write(
     /// Refused before the shards are asked anything: no wrapper of that shape could take this request.
     if (!metrics_metadata.empty())
         checkTableAcceptsMetricsMetadata(*metadata, storage_id);
+
+    /// Refused there too: a TimeSeries table's outer columns are generated rather than declared, so this
+    /// holds only a Distributed wrapper to anything.
+    checkTableDeclaresOuterColumnTypes(*metadata, storage_id, columns_to_write);
 
     auto block = makeBlock(time_series, metrics_metadata, *metadata, samples_column_name);
     chassert(block.getNames() == columns_to_write);

@@ -82,6 +82,28 @@
                     <table>default.prom_column_granted_bad</table>
                 </handler>
             </column_granted_bad_write>
+            <!-- Wrappers retyped away from the outer schema of a TimeSeries table, and one declaring it. -->
+            <retyped_name_write>
+                <url>/retyped_name/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_retyped_name</table>
+                </handler>
+            </retyped_name_write>
+            <retyped_metadata_write>
+                <url>/retyped_metadata/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_retyped_metadata</table>
+                </handler>
+            </retyped_metadata_write>
+            <retyped_ok_write>
+                <url>/retyped_ok/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_retyped_ok</table>
+                </handler>
+            </retyped_ok_write>
             <dist_query>
                 <url>/api/v1/query</url>
                 <handler>
