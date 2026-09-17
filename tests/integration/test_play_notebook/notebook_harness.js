@@ -1041,12 +1041,20 @@ async function main() {
             const [a, b] = tab.cells;
             tab.activeCellId = b.id;
             a.view = 'result'; b.view = 'result';
-            /// Cell A's (multi-query) run hid the logo for A; B has an idle result showing it.
+            /// Cell A's (multi-query) run hid the logo for A; B has an idle result showing it,
+            /// with the finished stats its own run left ("7 rows in result").
             a.logoVisible = false; b.logoVisible = true;
+            b.progressPhase = 'done';
+            b.finalStats = { rowCount: 7, elapsedNs: 1000, incomplete: false };
             tab.inFlight = true; tab.runCell = a;
             a.progressPhase = 'running';
             syncActiveTabChrome();
             const running = { logo: logoEl.style.display };
+            /// What the shared widget is told from here on: the stop must leave it showing B's
+            /// stats, i.e. the last call must be the repaint of B's text, not a clear after it.
+            const widget_log = [];
+            progressEl.clear = () => widget_log.push('clear');
+            progressEl.updateText = (rows) => widget_log.push('text:' + rows);
             /// The Run->Stop button, pressed while the editor is on B.
             cancelTabRun(tab);
             const stopped = {
@@ -1054,6 +1062,7 @@ async function main() {
                 inFlight: tab.inFlight,
                 runCell: tab.runCell,
                 aPhase: a.progressPhase,
+                widget_last: widget_log[widget_log.length - 1],
             };
             /// A view toggle right after the stop must act on B, not on the stopped A.
             progressEl.dispatchEvent(new CustomEvent('set-view', { detail: { view: 'logs' } }));
@@ -1067,8 +1076,54 @@ async function main() {
               out.stopped.aPhase === 'idle', out.stopped);
         check(scenario, 'the shared row is repainted from the active cell immediately',
               out.stopped.logo === 'block', out.stopped);
+        check(scenario, "the stop leaves the active cell's stats on the shared widget",
+              out.stopped.widget_last === 'text:7', out.stopped);
         check(scenario, 'a toggle right after the stop acts on the active cell',
               out.bView === 'logs' && out.aView === 'result', { aView: out.aView, bView: out.bView });
+    }
+
+    /// Contract 3b: deleting the RUNNING cell while the editor is on another cell goes through the
+    /// same stop path. `endFlight` repaints the shared row from the surviving active cell; the
+    /// deletion must not clear the widget afterwards, or the active cell's stats vanish the moment
+    /// the running cell is removed (the delete path never re-renders the row for a non-active
+    /// deletion).
+    {
+        const scenario = 'delete-running-cell-keeps-active-chrome';
+        const r = await runScenario(js, { href: base });
+        const out = evalJSON(r.sandbox, `
+            const tab = getActiveTab();
+            addCell(tab, 'query', tab.cells.length);
+            const [a, b] = tab.cells;
+            tab.activeCellId = b.id;
+            a.view = 'result'; b.view = 'result';
+            a.logoVisible = false; b.logoVisible = true;
+            b.progressPhase = 'done';
+            b.finalStats = { rowCount: 7, elapsedNs: 1000, incomplete: false };
+            tab.inFlight = true; tab.runCell = a;
+            a.progressPhase = 'running';
+            syncActiveTabChrome();
+            const widget_log = [];
+            progressEl.clear = () => widget_log.push('clear');
+            progressEl.updateText = (rows) => widget_log.push('text:' + rows);
+            /// The header's X on the running cell A, while the editor is on B.
+            deleteCell(tab, a);
+            return {
+                cells: tab.cells.length,
+                a_gone: !tab.cells.includes(a),
+                inFlight: tab.inFlight,
+                runCell: tab.runCell,
+                active_is_b: activeCell(tab) === b,
+                logo: logoEl.style.display,
+                widget_last: widget_log[widget_log.length - 1],
+                widget_log,
+            };
+        `);
+        check(scenario, 'the running cell is deleted and its run ended',
+              out.a_gone && out.cells === 1 && out.inFlight === false && out.runCell === null, out);
+        check(scenario, 'the editor stays on the surviving cell', out.active_is_b, out);
+        check(scenario, 'the shared row is repainted from the surviving cell', out.logo === 'block', out);
+        check(scenario, "the deletion leaves the surviving cell's stats on the shared widget",
+              out.widget_last === 'text:7', out.widget_log);
     }
 
     /// Contract 4a: the same contract as Contract 1, driven through the REAL notebook run path
@@ -1364,6 +1419,96 @@ async function main() {
         check(scenario, 'the degraded entry keeps the notebook structure query-only',
               out.degraded_results === 0 && out.degraded_cells === 41 && out.degraded_query === 'SELECT 1',
               out);
+    }
+
+    /// Contract 6a: the entry budget covers the WHOLE cell payload, not just result snapshots. A
+    /// text-heavy notebook (large Markdown, every result small or absent) must still produce a
+    /// bounded entry; the trim strips results before it touches any text, cuts text largest first
+    /// and only by the excess, never cuts a query, and keeps every cell. When the browser rejects
+    /// even that, the degraded entry drops results and then text but keeps the structure and the
+    /// queries, so Back can recreate a closed notebook with all of its cells instead of the active
+    /// query alone.
+    {
+        const scenario = 'history-budget-covers-text';
+        const r = await runScenario(js, { href: base });
+        const out = evalJSON(r.sandbox, `
+            const tab = getActiveTab();
+            const budget = HISTORY_NOTEBOOK_BUDGET;
+            /// 30 Markdown cells of 100k characters (3 MB in total) around one query cell whose
+            /// result is small (and still goes first: results are re-runnable, text is not).
+            for (let i = 0; i < 30; ++i) addCell(tab, 'text', tab.cells.length);
+            const query_cell = tab.cells[0];
+            query_cell.query = 'SELECT 1';
+            query_cell.result = { ok: true, data: 'small' };
+            const text_cells = tab.cells.filter(c => c.type === 'text');
+            text_cells.forEach((c, i) => { c.text = String.fromCharCode(97 + (i % 26)).repeat(100000); });
+            writeHistoryEntry(tab);
+            const entry = history.state;
+            const entry_texts = entry.cells.filter(c => c.type === 'text');
+            const text_total = entry_texts.reduce((n, c) => n + c.text.length, 0);
+            const heavy = {
+                cells: entry.cells.length,
+                types_kept: entry.cells.every((c, i) => c.type === tab.cells[i].type && c.id === tab.cells[i].id),
+                size: JSON.stringify(entry.cells).length,
+                query: entry.cells[0].query,
+                result_kept: !!entry.cells[0].result,
+                untouched_texts: entry_texts.filter(c => c.text.length === 100000).length,
+                empty_texts: entry_texts.filter(c => c.text.length === 0).length,
+                text_total,
+                live_texts_intact: text_cells.every(c => c.text.length === 100000),
+            };
+
+            /// Results go first: with results large enough to push the payload over the budget and
+            /// texts small enough to fit once they are gone, no text is touched.
+            for (const c of text_cells) c.text = 'y'.repeat(1000);
+            for (let i = 0; i < 25; ++i) addCell(tab, 'query', tab.cells.length);
+            for (const c of tab.cells) if (c.type === 'query') { c.query = 'SELECT 2'; c.result = { ok: true, data: 'x'.repeat(90000) }; }
+            writeHistoryEntry(tab);
+            const mixed_entry = history.state;
+            const mixed = {
+                size: JSON.stringify(mixed_entry.cells).length,
+                results_kept: mixed_entry.cells.filter(c => c.result).length,
+                texts_intact: mixed_entry.cells.filter(c => c.type === 'text').every(c => c.text.length === 1000),
+                queries_intact: mixed_entry.cells.filter(c => c.type === 'query').every(c => c.query === 'SELECT 2'),
+            };
+
+            /// The browser rejecting every entry that still carries text or results: the degraded
+            /// entry keeps the structure and the queries.
+            const real_replace = history.replaceState.bind(history);
+            let rejected = 0;
+            history.replaceState = (st, title, url) => {
+                if (st && st.cells && st.cells.some(c => c.result || (c.type === 'text' && c.text))) { ++rejected; throw new Error('quota'); }
+                real_replace(st, title, url);
+            };
+            let threw = false;
+            try { writeHistoryEntry(tab, null, true); } catch (e) { threw = true; }
+            history.replaceState = real_replace;
+            const degraded_entry = history.state;
+            const degraded = {
+                threw, rejected,
+                cells: degraded_entry.cells.length,
+                types_kept: degraded_entry.cells.every((c, i) => c.type === tab.cells[i].type && c.id === tab.cells[i].id),
+                queries_intact: degraded_entry.cells.filter(c => c.type === 'query').every(c => c.query === 'SELECT 2'),
+                results: degraded_entry.cells.filter(c => c.result).length,
+                texts: degraded_entry.cells.filter(c => c.type === 'text' && c.text).length,
+            };
+            return { budget, heavy, mixed, degraded, live_cells: tab.cells.length };
+        `);
+        const h = out.heavy;
+        check(scenario, 'a text-heavy entry still carries every cell, in order', h.cells === 31 && h.types_kept, h);
+        check(scenario, 'a text-heavy payload is bounded by the notebook budget', h.size <= out.budget + 5000, h.size);
+        check(scenario, 'the query is kept in full, its result goes before any text',
+              h.query === 'SELECT 1' && h.result_kept === false, h);
+        check(scenario, 'text is cut largest first and only by the excess',
+              h.untouched_texts > 0 && h.untouched_texts < 30 && h.text_total >= out.budget - 200000 && h.empty_texts < 30, h);
+        check(scenario, 'the trim shortens text only in the entry', h.live_texts_intact, h);
+        const m = out.mixed;
+        check(scenario, 'results are stripped before any text is touched',
+              m.size <= out.budget + 5000 && m.results_kept > 0 && m.results_kept < 26 && m.texts_intact && m.queries_intact, m);
+        const d = out.degraded;
+        check(scenario, 'a rejected text-heavy write degrades instead of throwing', d.threw === false && d.rejected > 0, d);
+        check(scenario, 'the degraded entry keeps the structure and every query',
+              d.cells === out.live_cells && d.types_kept && d.queries_intact && d.results === 0 && d.texts === 0, d);
     }
 
     /// Contract 7: a run started on a cell that does not hold the editor waits for the editor to

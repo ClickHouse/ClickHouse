@@ -54,8 +54,10 @@ SCENARIOS = (
     "notebook-structure-round-trip",
     "delete-active-cell-reowns-history",
     "stop-after-editor-moved-repaints-chrome",
+    "delete-running-cell-keeps-active-chrome",
     "history-entry-keeps-off-active-cell-state",
     "history-payload-is-bounded",
+    "history-budget-covers-text",
     "superseded-activation-does-not-launch",
     "markdown-edit-backdrop-fences",
 )

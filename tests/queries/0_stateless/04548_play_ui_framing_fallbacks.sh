@@ -297,7 +297,7 @@ echo "$page" | grep -q -F 'return (tab.inFlight && tab.runCell) ? tab.runCell : 
 # in a cell's result, which re-runs that cell - end the tab's current run through the same path as
 # the Run/Stop button instead of starting a second request beside it. Two call sites each: one for a
 # cell that already holds the editor, one after handing it the editor first.
-[ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 4 ] && echo 'a cell run ends the tab run first: OK'
+[ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 5 ] && echo 'a cell run ends the tab run first: OK'
 echo "$page" | grep -q -F 'cancelTabRun(getActiveTab());' && echo 'Stop goes through the same path: OK'
 # An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
 # exception: the reader reports `saw_exception` only once the exception line reached its newline

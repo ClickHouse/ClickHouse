@@ -14530,8 +14530,10 @@ function deleteCell(tab, cell) {
     if (cell.type === 'query' && tab.cells.filter(c => c.type === 'query').length === 1) return;
     markBootstrapDirty();
     /// Deleting the cell a query is streaming into would leave the run writing to a detached
-    /// element: stop it first, exactly as the Stop button would.
-    if (tab.inFlight && tab.runCell === cell) { abortTabQuery(tab); endFlight(tab, cell); progressEl.clear(); }
+    /// element: stop it first, exactly as the Stop button would - through the same path, which
+    /// also decides whether the shared row is cleared (the stopped cell still owned it) or has
+    /// already been repainted from the cell the editor is on (`endFlight`).
+    if (tab.inFlight && tab.runCell === cell) cancelTabRun(tab);
     captureActiveTab();
     const was_active = activeCell(tab) === cell;
     tab.cells.splice(index, 1);
@@ -15553,34 +15555,56 @@ function serializeCell(cell) {
     };
 }
 
-/// The notebook payload of ONE history entry, bounded. IndexedDB keeps every cell's full result
-/// snapshot, but a history entry is structured-cloned by the browser into a budget that is per
-/// ENTRY (Firefox rejects writes past ~16 MiB) - and the per-result cap (~100 KB, see
-/// `saveHistory`) bounds each snapshot, not the notebook, so `history.state` would otherwise grow
-/// linearly with the cell count. Once the serialized results exceed the notebook-wide budget,
-/// strip result snapshots - largest first, so as few cells as possible degrade - leaving those
-/// cells query-only in this entry, exactly how an oversized single result is already persisted.
-/// A Back that recreates a closed tab from such an entry re-runs nothing: the stripped cells
-/// simply restore without their result, and IndexedDB (which carries the full notebook) remains
-/// the primary restore source everywhere else.
+/// The notebook payload of ONE history entry, bounded. IndexedDB keeps every cell in full, but a
+/// history entry is structured-cloned by the browser into a budget that is per ENTRY (Firefox
+/// rejects writes past ~16 MiB) - and the per-result cap (~100 KB, see `saveHistory`) bounds each
+/// snapshot, not the notebook, so `history.state` would otherwise grow linearly with the cell
+/// count. The budget covers the WHOLE serialized cell - query, parameters, Markdown text and
+/// result - not just the result snapshots: a text-heavy notebook exceeds the entry budget through
+/// its Markdown alone, with every snapshot small or absent. Once the payload exceeds the budget it
+/// is degraded in two steps, each largest first so as few cells as possible degrade:
+///  1. result snapshots are stripped, leaving those cells query-only in this entry, exactly how an
+///     oversized single result is already persisted;
+///  2. then Markdown text is trimmed, by no more than what is still over the budget.
+/// Queries are never cut: a truncated statement can be a different, still valid statement (a
+/// `DELETE FROM t WHERE ...` without its `WHERE`), and a Back must not put one into the editor. A
+/// notebook whose queries alone exceed the budget is written as is and left to the browser's own
+/// limit (`writeHistoryEntry` degrades further only when the write is rejected).
+/// A Back that recreates a closed tab from a degraded entry re-runs nothing: the stripped cells
+/// simply restore without their result (or with the shortened text), and IndexedDB (which carries
+/// the full notebook) remains the primary restore source everywhere else.
 const HISTORY_NOTEBOOK_BUDGET = 2000000;
 function serializeCellsForHistory(tab) {
     const cells = tab.cells.map(serializeCell);
+    const measure = (value) => {
+        if (value == null) return 0;
+        try { return JSON.stringify(value).length; } catch (e) { return HISTORY_NOTEBOOK_BUDGET; }
+    };
+    const largestFirst = (sizes) => cells.map((c, i) => i).sort((a, b) => sizes[b] - sizes[a]);
     let total = 0;
-    const sizes = cells.map(c => {
-        if (!c.result) return 0;
-        let size;
-        try { size = JSON.stringify(c.result).length; } catch (e) { size = HISTORY_NOTEBOOK_BUDGET; }
-        total += size;
-        return size;
-    });
+    for (const c of cells) total += measure(c);
     if (total <= HISTORY_NOTEBOOK_BUDGET) return cells;
-    const by_size_desc = cells.map((c, i) => i).sort((a, b) => sizes[b] - sizes[a]);
-    for (const i of by_size_desc) {
+
+    const result_sizes = cells.map(c => measure(c.result));
+    for (const i of largestFirst(result_sizes)) {
         if (total <= HISTORY_NOTEBOOK_BUDGET) break;
         if (!cells[i].result) continue;
-        total -= sizes[i];
+        total -= result_sizes[i];
         cells[i] = { ...cells[i], result: null };
+    }
+    if (total <= HISTORY_NOTEBOOK_BUDGET) return cells;
+
+    /// A character removed from the text removes at least one character from its serialization
+    /// (escapes only add), so cutting the excess in characters is enough, and `total` stays an
+    /// upper bound for what remains.
+    const text_sizes = cells.map(c => c.type === 'text' ? measure(c.text) : 0);
+    for (const i of largestFirst(text_sizes)) {
+        if (total <= HISTORY_NOTEBOOK_BUDGET) break;
+        const text = cells[i].text || '';
+        if (!text.length) continue;
+        const cut = Math.min(text.length, total - HISTORY_NOTEBOOK_BUDGET);
+        cells[i] = { ...cells[i], text: text.slice(0, text.length - cut) };
+        total -= cut;
     }
     return cells;
 }
@@ -15989,17 +16013,26 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     };
     /// Fail closed when the browser rejects the entry (its history-state budget, or history being
     /// unavailable under the 'file:' protocol): the run or tab operation that triggered this write
-    /// must not die on the history stamp. Degrade in two steps - first drop the result snapshots
-    /// (the only unbounded-ish payload; the notebook structure and queries survive), then the
-    /// whole notebook copy - and give up on the entry only when even that minimal state is
-    /// rejected. IndexedDB persistence (`scheduleSave` below) is unaffected either way.
+    /// must not die on the history stamp. Degrade in steps, each keeping as much of the notebook
+    /// as the previous one rejected: first drop the result snapshots (the notebook structure, the
+    /// queries and the Markdown survive), then the Markdown text as well (the structure and every
+    /// query still survive - the queries are the one payload never cut, see
+    /// `serializeCellsForHistory`), then the whole notebook copy - and give up on the entry only
+    /// when even that minimal state is rejected. A degraded entry that keeps the structure is what
+    /// lets Back recreate a closed text-heavy notebook with all of its cells instead of the active
+    /// query alone. IndexedDB persistence (`scheduleSave` below) is unaffected either way.
+    const without_results = (cells) => cells.map(c => c.result ? { ...c, result: null } : c);
+    const without_text = (cells) => cells.map(c => (c.type === 'text' && c.text) ? { ...c, text: '' } : c);
+    const degraded = [
+        () => ({ ...state, result: null, cells: without_results(state.cells) }),
+        () => ({ ...state, result: null, cells: without_text(without_results(state.cells)) }),
+        () => ({ ...state, result: null, cells: [] }),
+    ];
     try {
         write(state);
     } catch (e) {
-        try {
-            write({ ...state, result: null, cells: state.cells.map(c => c.result ? { ...c, result: null } : c) });
-        } catch (e2) {
-            try { write({ ...state, result: null, cells: [] }); } catch (e3) {}
+        for (const next of degraded) {
+            try { write(next()); break; } catch (e2) {}
         }
     }
     document.title = title;
@@ -16885,9 +16918,12 @@ function cancelTabRun(tab)
         cell.progress = null;
         updateCellStatus(cell);
     }
-    /// The shared progress widget still shows the running spinner, and it describes this tab only
-    /// while the tab is on screen; a background tab's own state was just reset above.
-    if (tab.id === activeTabId) progressEl.clear();
+    /// The shared progress widget still shows the running spinner - but only while it still
+    /// describes the stopped cell. When the editor had moved on to another cell, `endFlight` above
+    /// has already repainted the row from that cell (`syncActiveTabChrome`), and clearing here
+    /// would wipe that cell's own stats right after they were restored. A background tab's own
+    /// state was just reset above, and the widget does not describe it.
+    if (cellOwnsChrome(cell)) progressEl.clear();
 }
 
 /// Stop the ACTIVE tab's query (the Run→Stop button / Ctrl+Enter while running).
