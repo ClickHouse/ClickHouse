@@ -242,7 +242,7 @@ public:
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         size_t max_threads_ = 1,
         bool use_parallel_layout_ = true,
-        /// `PartitionedHashJoin` passes false: its shared table has no key-only counterpart.
+        /// `PartitionedHashJoin` passes false: its `HashJoinTable` has no key-only counterpart.
         bool allow_set_maps_ = true);
 
     ~HashJoin() override;

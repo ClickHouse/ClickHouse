@@ -10,7 +10,7 @@ namespace DB
 
 /** One allocation whose memory is accounted and zeroed range by range, not at allocation.
   *
-  * The partitioned join's shared hash table is one buffer. Its owner ranges are filled one at a time
+  * The partitioned join's `HashJoinTable` is one buffer. Its owner ranges are filled one at a time
   * by the workers, and each owner frees its scattered chunk in the same step. If the whole buffer
   * were charged to the memory tracker up front, the post-build peak would be the table plus the
   * whole chunk. Charging each range when its owner first touches it lets the table's charge rise as

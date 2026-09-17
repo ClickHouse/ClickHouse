@@ -42,7 +42,7 @@ extern const int LOGICAL_ERROR;
     M(low_cardinality_key_string) \
     M(low_cardinality_key_fixed_string)
 
-/// Turns a map hash into the bits the shared table addresses by. The home cell is the top `size_degree`
+/// Turns a map hash into the bits `HashJoinTable` addresses by. The home cell is the top `size_degree`
 /// bits of this word and a row's partition the top `partition_bits`, so every key's home cell lies
 /// inside its partition's range by construction, whatever table size the barrier later chooses.
 ///
@@ -323,7 +323,7 @@ inline constexpr bool is_hash_join_table<HashJoinTable<Key, Cell, Hash, Grower>>
 namespace HashJoinTableDetail
 {
 
-/// The table type for a standard join hash map type: the shared table over the same key, cell, hash and
+/// The table type for a standard join hash map type: the `HashJoinTable` over the same key, cell, hash and
 /// grower, or the unchanged `FixedHashMap` for the direct-index key types.
 template <typename Map>
 struct TableFor;
@@ -491,7 +491,7 @@ public:
         }
     }
 
-    /// Creates the one table: a shared table of `2^size_degree` cells in `2^partition_bits` ranges, or the
+    /// Creates the one table: a `HashJoinTable` of `2^size_degree` cells in `2^partition_bits` ranges, or the
     /// fixed map, whose partition count is always one.
     void create(HashJoin::Type which, size_t size_degree, size_t partition_bits)
     {
@@ -584,7 +584,7 @@ using HashJoinTableMapsAsof = HashJoinTableMapsTemplate<AsofRowRefs>;
 APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
 #undef M
 
-/// The shared counterpart of a standard maps type, for the `MapGetter` and `JoinFeatures` templates
+/// The `HashJoinTable` counterpart of a standard maps type, for the `MapGetter` and `JoinFeatures` templates
 /// that are written in terms of the standard one.
 template <typename StandardMaps>
 struct HashJoinTableMapsFor;

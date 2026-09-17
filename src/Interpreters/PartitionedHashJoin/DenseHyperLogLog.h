@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** Distinct-key estimate that sizes the one shared hash table. One sketch per fill thread; `add`
+/** Distinct-key estimate that sizes the one `HashJoinTable`. One sketch per fill thread; `add`
   * receives one 32-bit word per insertable build row (`computeJoinRoutesForFill`: the top 32 bits of
   * `hashJoinTableMix`, or the key itself for `key8`/`key16`), and the build merges the sketches when the
   * fill ends.

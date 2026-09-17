@@ -9,7 +9,7 @@ namespace DB
 
 struct DenseHyperLogLog;
 
-/** The build fill's per-row routing, from the same hash the shared table buckets by.
+/** The build fill's per-row routing, from the same hash `HashJoinTable` buckets by.
   *
   * For every row, the map hash of the build's `HashJoin::Type` is computed through that type's key
   * getter, so the fill and the table agree byte for byte on what the key is. `hashJoinTablePlacement`

@@ -16,7 +16,7 @@ namespace DB
   * the data-dependent misses of several rows overlap instead of serializing.
   *
   * Two pieces: a policy owns the per-row state as parallel arrays and the seed/step bodies over the
-  * shared table's cells; `amacRun` drives them. The ring has no cancellation point. The table grows
+  * `HashJoinTable` cells; `amacRun` drives them. The ring has no cancellation point. The table grows
   * only on wrapping inserts (the single-partition build and the overflow drain) or between waves, and
   * neither uses the ring, so no ring is ever in flight across a resize. A build ring's in-flight rows
   * all belong to the partition its worker holds, and besides claiming, appending or advancing, a visit
