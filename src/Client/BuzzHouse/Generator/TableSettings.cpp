@@ -472,19 +472,19 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"};
              return rg.pickRandomly(choices);
          },
-         {"'map'", "'map_with_buckets'", "'advanced'"},
+         {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"},
          false)},
     {"object_shared_data_serialization_version_for_zero_level_parts",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'"};
+             static const DB::Strings choices = {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"};
              return rg.pickRandomly(choices);
          },
-         {"'map'", "'map_with_buckets'", "'advanced'"},
+         {"'map'", "'map_with_buckets'", "'advanced'", "'advanced_chunked'"},
          false)},
     {"old_parts_lifetime",
      CHSetting(
@@ -577,10 +577,10 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices = {"'basic'", "'with_types'"};
+             static const DB::Strings choices = {"'basic'", "'with_types'", "'with_missing_columns'"};
              return rg.pickRandomly(choices);
          },
-         {"'basic'", "'with_types'"},
+         {"'basic'", "'with_types'", "'with_missing_columns'"},
          false)},
     {"share_nested_offsets", trueOrFalseSetting},
     {"shared_merge_tree_activate_coordinated_merges_tasks", trueOrFalseSetting},

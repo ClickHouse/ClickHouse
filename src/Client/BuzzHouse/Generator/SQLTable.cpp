@@ -1551,9 +1551,11 @@ void StatementGenerator::generateEngineDetails(
             /// The mode setting is mandatory
             SettingValues * svs = te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            /// `exclusive` tracks processed files in this server's memory instead of Keeper
+            static const DB::Strings queue_modes = {"'ordered'", "'unordered'", "'exclusive'"};
 
             sv->set_property("mode");
-            sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
+            sv->set_value(rg.pickRandomly(queue_modes));
 
             if (rg.nextSmallNumber() < 3)
             {

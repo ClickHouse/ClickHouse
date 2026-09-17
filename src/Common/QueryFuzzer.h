@@ -328,7 +328,7 @@ private:
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
     void swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list);
-    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
+    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
     void fuzzTableStorage(ASTStorage & storage);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);

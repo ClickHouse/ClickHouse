@@ -2059,6 +2059,7 @@ message RefreshableView {
     optional DependsList depends = 5;
     optional SettingValues setting_values = 6;
     optional bool append = 7;
+    optional bool incremental = 8;
 }
 
 message CreateMatViewTo {

@@ -525,10 +525,8 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"prefer_global_in_and_join", trueOrFalseSetting},
        {"prefer_localhost_replica", trueOrFalseSetting},
        {"query_plan_aggregation_in_order", trueOrFalseSetting},
-       {"query_plan_allow_derived_not_null_filters_execution", trueOrFalseSetting},
        {"query_plan_convert_any_join_to_semi_or_anti_join", trueOrFalseSetting},
        {"query_plan_convert_outer_join_to_inner_join", trueOrFalseSetting},
-       {"query_plan_derive_not_null_filters_from_joins", trueOrFalseSetting},
        {"query_plan_direct_read_from_text_index", trueOrFalseSetting},
        {"query_plan_enable_multithreading_after_window_functions", trueOrFalseSetting},
        {"query_plan_enable_optimizations", trueOrFalseSetting},
@@ -548,7 +546,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_lift_up_union", trueOrFalseSetting},
        {"query_plan_lower_array_join_function", trueOrFalseSetting},
        {"query_plan_max_limit_for_join_lazy_indexing", CHSetting(highRange, {}, false)},
-       {"query_plan_max_selectivity_for_not_null_filters_execution", probRangeSetting},
        {"query_plan_max_set_size_for_projection_match",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10000)); },
@@ -642,7 +639,11 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_iceberg_manifest_list_partition_pruning", trueOrFalseSetting},
        {"use_iceberg_partition_pruning", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
-       {"use_index_for_in_with_subqueries_max_values", trueOrFalseSetting},
+       {"use_index_for_in_with_subqueries_max_values",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10000)); },
+            {"0", "1", "100", "1000", "10000"},
+            false)},
        {"use_indexes_refiner_in_read_pools", trueOrFalseSetting},
        {"use_join_disjunctions_push_down", trueOrFalseSetting},
        {"use_lightweight_primary_key_index_analysis", trueOrFalseSetting},
@@ -1250,7 +1251,14 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 2)); }, {}, false)},
     {"intersect_default_mode", setSetting},
     {"interval_output_format",
-     CHSetting([](RandomGenerator &, FuzzConfig &) { return "'numeric'"; }, {}, false)},
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'numeric'", "'kusto'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"jemalloc_profile_text_collapsed_use_count", trueOrFalseSettingNoOracle},
     {"jemalloc_profile_text_output_format",
      CHSetting(
@@ -1413,7 +1421,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"mysql_datatypes_support_level",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
-         { return settingCombinations(rg, {"decimal", "datetime64", "date2Date32", "date2String"}); },
+         { return settingCombinations(rg, {"decimal", "datetime64", "date2Date32", "date2String", "geometry"}); },
          {},
          false)},
     {"mysql_map_fixed_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},

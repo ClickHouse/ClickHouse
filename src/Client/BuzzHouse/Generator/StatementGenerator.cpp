@@ -499,7 +499,7 @@ static void SetViewInterval(RandomGenerator & rg, RefreshInterval * ri)
     ri->set_unit(static_cast<RefreshInterval_RefreshUnit>(i_range(rg.generator)));
 }
 
-void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv)
+void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, const bool allow_incremental, RefreshableView * rv)
 {
     const RefreshableView_RefreshPolicy pol = rg.nextBool() ? RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY
                                                             : RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_AFTER;
@@ -557,6 +557,12 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
         SetViewInterval(rg, rv->mutable_randomize());
     }
     rv->set_append(rg.nextBool());
+    /// `INCREMENTAL` only parses after `APPEND`. The server also requires a single plain streaming
+    /// source, which is only known once the SELECT is generated, so many draws are still rejected.
+    if (rv->append() && allow_incremental && rg.nextSmallNumber() < 4)
+    {
+        rv->set_incremental(true);
+    }
     if (rg.nextSmallNumber() < 4)
     {
         generateSettingValues(rg, refreshSettings, rv->mutable_setting_values());
@@ -701,9 +707,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 next.cols.insert(col.getColumnName());
             }
         }
+        /// An incremental view starts from a fresh cursor, so a replacement would replay the source
+        /// into the target it shares with the view it replaces, and is refused outright.
         if (!next.isDeterministic() && (next.is_refreshable = rg.nextBool()))
         {
-            generateNextRefreshableView(rg, cv->mutable_refresh());
+            generateNextRefreshableView(rg, cv->create_opt() == CreateReplaceOption::Create, cv->mutable_refresh());
             cv->set_empty(rg.nextBool());
         }
         else
@@ -2345,8 +2353,10 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
                   AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
 
                   ati->set_paren(rg.nextSmallNumber() < 9);
+                  /// `checkAlterIsPossible` refuses any change of mode, so an ALTER can never
+                  /// introduce `INCREMENTAL` on a view that was not created with it.
                   rg.pickWeighted(
-                      {{alter_refresh, [&] { generateNextRefreshableView(rg, ati->mutable_refresh()); }},
+                      {{alter_refresh, [&] { generateNextRefreshableView(rg, false, ati->mutable_refresh()); }},
                        {alter_query,
                         [&]
                         {

@@ -1651,7 +1651,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         fuzz_setting("materialize_projections_on_insert", UInt64(fuzz_rand() % 2));
 }
 
-void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
+void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental)
 {
     /// Fuzz the refresh period; occasionally switch it to a calendar (months) interval.
     /// EVERY forbids mixing calendar and clock units, so set exactly one of the two.
@@ -1679,9 +1679,10 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
         strategy.set(strategy.spread, std::move(spread));
     }
 
-    /// Fuzz the refresh mode
+    /// Fuzz the refresh mode. `AppendIncremental` is the last of the three, so dropping it leaves
+    /// `Replace` and `AppendFull`; it is refused outright where the caller cannot introduce it.
     if (fuzz_rand() % 10 == 0)
-        strategy.mode = static_cast<RefreshMode>(fuzz_rand() % 3);
+        strategy.mode = static_cast<RefreshMode>(fuzz_rand() % (allow_incremental ? 3 : 2));
 
     /// Toggle schedule kind between EVERY and AFTER
     if (strategy.schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
@@ -1877,8 +1878,10 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         if (fuzz_rand() % 20 == 0)
             create.is_populate = !create.is_populate;
 
+        /// An incremental view starts from a fresh cursor, so a replacement would replay the source
+        /// into the target it shares with the view it replaces, and is refused outright.
         if (create.refresh_strategy)
-            fuzzRefreshStrategy(*create.refresh_strategy);
+            fuzzRefreshStrategy(*create.refresh_strategy, !create.create_or_replace && !create.replace_view);
     }
 
     /// Fuzz SQL SECURITY type for ordinary and materialized views
@@ -2645,6 +2648,7 @@ static const Strings text_index_tokenizers
        "chinese",
        "icu",
        "japanese",
+       "keyValuePairs",
        "keyword",
        "ngrambf_v1",
        "ngrams",
@@ -7643,10 +7647,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                         lit->value = fuzzField(lit->value);
                 break;
             case ASTAlterCommand::MODIFY_REFRESH:
-                /// The refresh member is an ASTRefreshStrategy — fuzz it the same way as at CREATE.
+                /// The refresh member is an ASTRefreshStrategy — fuzz it the same way as at CREATE,
+                /// except that `checkAlterIsPossible` refuses any change of mode, so an ALTER can
+                /// never introduce `INCREMENTAL` on a view that was not created with it.
                 if (alter_cmd->refresh)
                     if (auto * strategy = alter_cmd->refresh->as<ASTRefreshStrategy>())
-                        fuzzRefreshStrategy(*strategy);
+                        fuzzRefreshStrategy(*strategy, false);
                 break;
             /// MODIFY_QUERY: the new SELECT body is an owned child, so the recursive
             /// fuzz(alter_cmd->children) at the end of this branch mutates it directly.
