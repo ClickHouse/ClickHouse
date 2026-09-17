@@ -3845,11 +3845,11 @@ Chunks Aggregator::convertToBlockImplFinal(
     {
         if constexpr (prefilter)
         {
-            if (!havingPrefilterKeeps(*reinterpret_cast<const UInt64 *>(mapped + count_offset)))
+            if (!havingPrefilterKeeps(getCountState(mapped + count_offset)))
             {
                 ++skipped;
-                /// The bucket is not cleared after the conversion, so a rejected cell that kept its
-                /// states would hold one per rejected group until `~AggregatedDataVariants`.
+                /// The conversion clears the bucket, so a rejected cell's states are past the destructor
+                /// sweep; the null marks it destroyed for the sweep that does run if a materialization throws.
                 for (const auto i : nontrivial_destructors)
                     aggregate_functions[i]->destroy(mapped + offsets_of_aggregate_states[i]);
                 mapped = nullptr;
