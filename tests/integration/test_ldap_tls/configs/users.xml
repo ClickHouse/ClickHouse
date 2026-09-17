@@ -42,6 +42,16 @@
                 <server>unreachable</server>
             </ldap>
         </user_unreachable>
+        <user_stalled_bind>
+            <ldap>
+                <server>stalled_bind</server>
+            </ldap>
+        </user_stalled_bind>
+        <user_stalled_search>
+            <ldap>
+                <server>stalled_search</server>
+            </ldap>
+        </user_stalled_search>
         <user_bad_tls_range>
             <ldap>
                 <server>bad_tls_range</server>

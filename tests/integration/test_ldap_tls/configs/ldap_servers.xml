@@ -89,6 +89,36 @@
             <search_timeout>1</search_timeout>
         </unreachable>
 
+        <!-- Served by `fake_ldap_server.py` inside the node: the connection is established and the bind
+             request is sent, but nothing is ever answered, so only `operation_timeout` can end the wait
+             for the bind result; the other two timeouts are wide on purpose. -->
+        <stalled_bind>
+            <host>127.0.0.1</host>
+            <port>3890</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <operation_timeout>1</operation_timeout>
+            <network_timeout>20</network_timeout>
+            <search_timeout>20</search_timeout>
+        </stalled_bind>
+
+        <!-- Same server, other mode: the bind is answered with success and the `user_dn_detection`
+             search that follows is not, so only `search_timeout` can end the wait; `operation_timeout`
+             does not apply to searches. -->
+        <stalled_search>
+            <host>127.0.0.1</host>
+            <port>3891</port>
+            <bind_dn>cn=janedoe,ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(cn={user_name})</search_filter>
+            </user_dn_detection>
+            <operation_timeout>20</operation_timeout>
+            <network_timeout>20</network_timeout>
+            <search_timeout>1</search_timeout>
+        </stalled_search>
+
         <!-- Rejected at parse time: the maximum is lower than the minimum. -->
         <bad_tls_range>
             <host>openldap</host>

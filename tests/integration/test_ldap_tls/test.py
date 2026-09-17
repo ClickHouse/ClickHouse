@@ -14,6 +14,7 @@ failure cases look at the reason logged by `AccessControl::authenticate` in the 
 """
 
 import logging
+import os
 import re
 import time
 
@@ -68,11 +69,51 @@ def wait_ldaps_ready(timeout=180):
     raise Exception("Timed out waiting for the LDAPS listener")
 
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+FAKE_LDAP_SERVERS = {3890: "bind", 3891: "search"}
+
+
+def start_fake_ldap_servers(timeout=60):
+    """Runs `fake_ldap_server.py` inside the node, once per mode, and waits until both listen."""
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "fake_ldap_server.py"), "/fake_ldap_server.py"
+    )
+    for port, mode in FAKE_LDAP_SERVERS.items():
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"python3 /fake_ldap_server.py {port} {mode}"
+                f" > /var/log/clickhouse-server/fake_ldap_server_{port}.log 2>&1",
+            ],
+            detach=True,
+            user="root",
+        )
+    deadline = time.time() + timeout
+    for port in FAKE_LDAP_SERVERS:
+        while True:
+            listening = node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"grep -c 'listening on {port}' /var/log/clickhouse-server/fake_ldap_server_{port}.log",
+                ],
+                nothrow=True,
+            )
+            if listening.strip() == "1":
+                break
+            assert (
+                time.time() < deadline
+            ), f"fake LDAP server on port {port} did not start"
+            time.sleep(0.5)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
         wait_ldaps_ready()
+        start_fake_ldap_servers()
         yield cluster
     finally:
         cluster.shutdown()
@@ -88,9 +129,9 @@ def failed_logins_in_log(user):
 
 
 def assert_login_works(user):
-    assert node.query(
-        "SELECT currentUser()", user=user, password=LDAP_PASSWORD
-    ) == TSV([[user]])
+    assert node.query("SELECT currentUser()", user=user, password=LDAP_PASSWORD) == TSV(
+        [[user]]
+    )
 
 
 def assert_login_fails(user, password=LDAP_PASSWORD):
@@ -152,6 +193,30 @@ def test_network_timeout_bounds_unreachable_server():
     assert any(
         "LDAP_ERROR" in line and "Can't contact LDAP server" in line for line in lines
     ), lines
+
+
+def test_operation_timeout_bounds_a_stalled_bind():
+    """The fake server accepts the connection and never answers, so only `operation_timeout`
+    (1 second) can end the wait for the bind result; `network_timeout` and `search_timeout` are
+    20 seconds here and the libldap default would be 40. The bound is deliberately wide.
+    """
+    start = time.monotonic()
+    lines = assert_login_fails("user_stalled_bind")
+    elapsed = time.monotonic() - start
+    assert elapsed < 15, f"authentication took {elapsed:.1f}s"
+    assert any("LDAP_ERROR" in line and "Timed out" in line for line in lines), lines
+
+
+def test_search_timeout_bounds_a_stalled_search():
+    """The fake server answers the bind and never the `user_dn_detection` search that follows, so
+    only `search_timeout` (1 second) can end the wait: `operation_timeout` does not apply to
+    searches and is 20 seconds here, like `network_timeout`; without the client-side limit the
+    search would wait for the server forever."""
+    start = time.monotonic()
+    lines = assert_login_fails("user_stalled_search")
+    elapsed = time.monotonic() - start
+    assert elapsed < 15, f"authentication took {elapsed:.1f}s"
+    assert any("LDAP_ERROR" in line and "Timed out" in line for line in lines), lines
 
 
 def test_maximum_below_minimum_is_rejected_at_parse_time():
