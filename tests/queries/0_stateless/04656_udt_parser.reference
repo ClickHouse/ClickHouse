@@ -1,0 +1,24 @@
+create_unqualified	CREATE TYPE LocalId AS UInt64	1
+create_qualified_if_not_exists	CREATE TYPE IF NOT EXISTS app.UserId ON CLUSTER `cluster.name` AS UInt64	1
+template_all_kinds	CREATE TYPE app.AllKinds(T TYPE, B Bool, U8 UInt8, U16 UInt16, U32 UInt32, U64 UInt64, I8 Int8, I16 Int16, I32 Int32, I64 Int64, S String) AS app.Bundle(T, B, U8, U16, U32, U64, I8, I16, I32, I64, S)	1
+template_same_name_formal	CREATE TYPE app.T(T TYPE) AS T	1
+template_type_parameter	CREATE TYPE app.Pair(T TYPE) AS Tuple(left T, right T)	1
+template_value_parameter	CREATE TYPE ids.Raw(N UInt16) AS FixedString(N)	1
+template_checked_recursive_quoted	CREATE TYPE IF NOT EXISTS `analytics.db`.`Nested.Type`(`Type Arg` TYPE, `Depth-Value` UInt16) ON CLUSTER `cluster.name` DECREASES `Depth-Value` AS TYPE_IF(`Depth-Value` = 0, `Type Arg`, Tuple(head `Type Arg`, tail `analytics.db`.`Nested.Type`(`Type Arg`, `Depth-Value` - 1))) COMMENT 'owner\'s external\nidentifier'	1
+attach_internal_fields	ATTACH TYPE IF NOT EXISTS app.UserId UUID '01234567-89ab-cdef-0123-456789abcdef' REVISION 7 ON CLUSTER c AS UInt64 DEFINITION HASH 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' COMMENT 'restored'	1
+alter_rename	ALTER TYPE IF EXISTS `analytics.db`.`User.Type` ON CLUSTER `cluster.name` RENAME TO `Renamed.Type`	1
+drop_restrict_canonical	DROP TYPE IF EXISTS app.PrincipalId ON CLUSTER c RESTRICT	1
+show_types_like	SHOW TYPES LIKE '%Id'	1
+show_types_output	SHOW TYPES FROM `analytics.db` LIKE 'User.%' FORMAT JSONEachRow SETTINGS output_format_json_quote_64bit_integers = 0	1
+show_create_output	SHOW CREATE TYPE `analytics.db`.`User.Type` INTO OUTFILE 'create.sql' FORMAT JSONEachRow SETTINGS output_format_json_quote_64bit_integers = 0	1
+describe_output	DESCRIBE TYPE app.UserId FORMAT JSONEachRow SETTINGS output_format_json_quote_64bit_integers = 0	1
+physicalize_object	PHYSICALIZE TYPE REFERENCES OBJECT `TABLE` app.t ON CLUSTER c DROP UNUSED TYPES DRY RUN FORMAT JSONEachRow SETTINGS max_threads = 1	1
+physicalize_closure	PHYSICALIZE TYPE REFERENCES CLOSURE OF VIEW `analytics.db`.`v.name` DROP UNUSED TYPES DRY RUN	1
+physicalize_database	PHYSICALIZE TYPE REFERENCES DATABASE app ON CLUSTER c DRY RUN INTO OUTFILE 'plan.json'	1
+physicalize_apply_redacted	PHYSICALIZE TYPE REFERENCES APPLY TOKEN '<redacted>'	1
+cast_as_nested	SELECT CAST(1 AS Array(app.UserId))	1
+cast_comma_nested	SELECT CAST(1, 'Array(app.UserId)')	1
+cast_colon_nested	SELECT CAST('1' AS Array(Tuple(app.UserId, ids.Raw(16))))	1
+cast_quoted_arguments	SELECT CAST(1 AS Array(`analytics.db`.`User.Type`(16, 'external')))	1
+cast_empty_arguments	SELECT CAST(1 AS app.UserId)	1
+cast_built_in_control	SELECT CAST(1, 'UInt64')	1

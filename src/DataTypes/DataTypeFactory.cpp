@@ -1,22 +1,26 @@
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeCustom.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTDataType.h>
-#include <Parsers/ASTEnumDataType.h>
-#include <Parsers/ASTTupleDataType.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Common/typeid_cast.h>
-#include <Poco/String.h>
-#include <Common/StringUtils.h>
-#include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <Common/CurrentThread.h>
+#include <DataTypes/BuiltInDataTypeFamilyClassifier.h>
+#include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTTupleDataType.h>
+#include <Parsers/ASTUDTReference.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDataType.h>
+#include <Parsers/parseQuery.h>
+#include <Poco/String.h>
+#include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -32,8 +36,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+}
+
+namespace
+{
+#if defined(SANITIZER) || !defined(NDEBUG)
+constexpr size_t data_type_max_parse_depth = 150;
+#else
+constexpr size_t data_type_max_parse_depth = 300;
+#endif
 }
 
 template <typename FieldType>
@@ -106,9 +120,91 @@ static DataTypePtr createTupleFromAST(const ASTTupleDataType * tuple_ast)
     return std::make_shared<DataTypeTuple>(nested_types, tuple_ast->element_names);
 }
 
+static DataTypeFamilyClassification
+classifyBuiltInDataTypeFamily(const void *, std::string_view family_name, DataTypeFamilySyntaxKind syntax_kind) noexcept
+{
+    BuiltInDataTypeFamilyClassification classification;
+    switch (syntax_kind)
+    {
+        case DataTypeFamilySyntaxKind::Generic: classification = BuiltInDataTypeFamilyClassifier::classifyGeneric(family_name); break;
+        case DataTypeFamilySyntaxKind::SpecializedEnum:
+            classification = BuiltInDataTypeFamilyClassifier::classifySpecializedEnum(family_name);
+            break;
+        case DataTypeFamilySyntaxKind::SpecializedTuple:
+            classification = BuiltInDataTypeFamilyClassifier::classifySpecializedTuple(family_name);
+            break;
+        case DataTypeFamilySyntaxKind::QualifiedReference:
+            classification = BuiltInDataTypeFamilyClassifier::classifyQualifiedReference();
+            break;
+    }
+
+    return {
+        .is_built_in = static_cast<bool>(classification),
+        .is_qualified_reference = classification.admission == BuiltInDataTypeAdmissionPath::QualifiedUserType,
+    };
+}
+
+struct ClassifiedDataTypeSyntax
+{
+    ASTPtr ast;
+    DataTypeFamilyClassificationSummary summary;
+};
+
+static ClassifiedDataTypeSyntax parseClassifiedDataTypeSyntax(const String & full_name)
+{
+    ClassifiedDataTypeSyntax result;
+    ParserDataTypeWithFamilyClassification parser(
+        DataTypeFamilyClassifier{.context = nullptr, .callback = classifyBuiltInDataTypeFamily}, result.summary);
+    result.ast = parseQuery(
+        parser,
+        full_name.data(),
+        full_name.data() + full_name.size(),
+        "data type",
+        false,
+        data_type_max_parse_depth,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    return result;
+}
+
+static void rejectQualifiedUDTSyntaxImpl(const ClassifiedDataTypeSyntax & classified, const DataTypeFactory & factory)
+{
+    if (!classified.summary.hasQualifiedLogicalFamily())
+        return;
+
+    if (factory.hasQualifiedBuiltInCollision(*classified.ast))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "A qualified user-defined type reference cannot use a registered built-in family or alias");
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED, "Qualified UDT references are parsed but cannot be resolved by this execution path");
+}
+
 DataTypePtr DataTypeFactory::get(const String & full_name) const
 {
     return getImpl<false>(full_name);
+}
+
+DataTypePtr DataTypeFactory::getWithFamilyClassification(const String & full_name) const
+{
+    /// Parse exactly once and pass the resulting AST through the unchanged factory.
+    auto classified = parseClassifiedDataTypeSyntax(full_name);
+    rejectQualifiedUDTSyntaxImpl(classified, *this);
+
+    if (!classified.summary.allFamiliesAreBuiltIn())
+        return getClassifiedLogicalCandidate(classified.ast);
+
+    return getImpl<false>(classified.ast);
+}
+
+void DataTypeFactory::rejectQualifiedUDTSyntax(const String & full_name) const
+{
+    rejectQualifiedUDTSyntaxImpl(parseClassifiedDataTypeSyntax(full_name), *this);
+}
+
+[[gnu::noinline]] DataTypePtr DataTypeFactory::getClassifiedLogicalCandidate(const ASTPtr & ast) const
+{
+    /// The physical-only path has no logical resolver. Preserve today's factory result and
+    /// error exactly, while keeping the classifier's routing branch observable.
+    return getImpl<false>(ast);
 }
 
 DataTypePtr DataTypeFactory::tryGet(const String & full_name) const
@@ -123,12 +219,6 @@ DataTypePtr DataTypeFactory::getImpl(const String & full_name) const
     /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
     /// let's make the threshold significantly lower.
     /// It is impractical for user to have complex data types with this depth.
-
-#if defined(SANITIZER) || !defined(NDEBUG)
-    static constexpr size_t data_type_max_parse_depth = 150;
-#else
-    static constexpr size_t data_type_max_parse_depth = 300;
-#endif
 
     ParserDataType parser;
     ASTPtr ast;
@@ -286,10 +376,45 @@ DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomD
     return type;
 }
 
-void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness, Documentation documentation)
+void DataTypeFactory::registerAlias(const String & alias_name, const String & real_name, Case case_sensitiveness)
+{
+    const auto frozen_alias = BuiltInDataTypeFamilyClassifier::classifyGeneric(alias_name);
+    const auto frozen_creator = BuiltInDataTypeFamilyClassifier::classifyGeneric(real_name);
+    if (!frozen_alias || frozen_alias.match != BuiltInDataTypeFamilyMatch::Exact || !frozen_alias.family->alias
+        || frozen_alias.family->registered_name != alias_name || frozen_alias.family->canonical_creator_name != real_name
+        || frozen_alias.family->registration_case_insensitive != (case_sensitiveness == Case::Insensitive) || !frozen_creator
+        || frozen_creator.family->alias || frozen_alias.input_class != frozen_creator.input_class)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "DataTypeFactory alias registration for '{}' has drifted from the frozen built-in family classifier",
+            alias_name);
+    }
+
+    Base::registerAlias(alias_name, real_name, case_sensitiveness);
+}
+
+void DataTypeFactory::registerDataType(
+    const String & family_name,
+    Value creator,
+    Case case_sensitiveness,
+    Documentation documentation,
+    BuiltInDataTypeCreatorInputClass input_class)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
+
+    const auto frozen_family = BuiltInDataTypeFamilyClassifier::classifyGeneric(family_name);
+    if (!frozen_family || frozen_family.match != BuiltInDataTypeFamilyMatch::Exact || frozen_family.family->alias
+        || frozen_family.family->registered_name != family_name
+        || frozen_family.family->registration_case_insensitive != (case_sensitiveness == Case::Insensitive)
+        || frozen_family.input_class != input_class)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "DataTypeFactory registration for '{}' has drifted from the frozen built-in family classifier",
+            family_name);
+    }
 
     String family_name_lowercase = Poco::toLower(family_name);
 
@@ -307,39 +432,98 @@ void DataTypeFactory::registerDataType(const String & family_name, Value creator
     data_type_documentations.emplace(family_name, std::move(documentation));
 }
 
-void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness, Documentation documentation)
+void DataTypeFactory::registerSimpleDataType(
+    const String & name,
+    SimpleCreator creator,
+    Case case_sensitiveness,
+    Documentation documentation,
+    BuiltInDataTypeCreatorInputClass input_class)
 {
     if (creator == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
             name);
 
-    registerDataType(name, [name, creator](const ASTPtr & ast)
-    {
-        if (ast)
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
-        return creator();
-    }, case_sensitiveness, std::move(documentation));
+    registerDataType(
+        name,
+        [name, creator](const ASTPtr & ast)
+        {
+            if (ast)
+                throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
+            return creator();
+        },
+        case_sensitiveness,
+        std::move(documentation),
+        input_class);
 }
 
-void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness, Documentation documentation)
+void DataTypeFactory::registerDataTypeCustom(
+    const String & family_name,
+    CreatorWithCustom creator,
+    Case case_sensitiveness,
+    Documentation documentation,
+    BuiltInDataTypeCreatorInputClass input_class)
 {
-    registerDataType(family_name, [creator](const ASTPtr & ast)
-    {
-        auto res = creator(ast);
-        res.first->setCustomization(std::move(res.second));
+    registerDataType(
+        family_name,
+        [creator](const ASTPtr & ast)
+        {
+            auto res = creator(ast);
+            res.first->setCustomization(std::move(res.second));
 
-        return res.first;
-    }, case_sensitiveness, std::move(documentation));
+            return res.first;
+        },
+        case_sensitiveness,
+        std::move(documentation),
+        input_class);
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness, Documentation documentation)
+void DataTypeFactory::registerSimpleDataTypeCustom(
+    const String & name,
+    SimpleCreatorWithCustom creator,
+    Case case_sensitiveness,
+    Documentation documentation,
+    BuiltInDataTypeCreatorInputClass input_class)
 {
-    registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
-    {
-        if (ast)
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
-        return creator();
-    }, case_sensitiveness, std::move(documentation));
+    registerDataTypeCustom(
+        name,
+        [name, creator](const ASTPtr & ast)
+        {
+            if (ast)
+                throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
+            return creator();
+        },
+        case_sensitiveness,
+        std::move(documentation),
+        input_class);
+}
+
+bool DataTypeFactory::collidesWithRegisteredFamilyOrAlias(std::string_view family_name) const noexcept
+{
+    return BuiltInDataTypeFamilyClassifier::collidesWithRegisteredFamilyOrAlias(family_name);
+}
+
+bool DataTypeFactory::hasQualifiedBuiltInCollision(const IAST & ast) const
+{
+    checkStackSize();
+
+    if (const auto * reference = ast.as<ASTUDTReference>();
+        reference && collidesWithRegisteredFamilyOrAlias(reference->type_name))
+        return true;
+
+    for (const auto & child : ast.children)
+        if (hasQualifiedBuiltInCollision(*child))
+            return true;
+
+    return false;
+}
+
+BuiltInDataTypeCreatorInputClass DataTypeFactory::getCreatorInputClass(const String & family_name) const
+{
+    const auto classification = BuiltInDataTypeFamilyClassifier::classifyGeneric(family_name);
+    if (!classification)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Data type family '{}' is absent from the frozen built-in family classifier", family_name);
+    return classification.input_class;
 }
 
 Documentation DataTypeFactory::getDocumentation(const String & family_name) const

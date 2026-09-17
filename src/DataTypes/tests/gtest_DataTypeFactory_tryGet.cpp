@@ -6,6 +6,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+extern const int UNKNOWN_TYPE;
+}
+
 /// DataTypeFactory::tryGet promises to return nullptr (not throw) on invalid type text.
 /// The specialized ASTEnumDataType / ASTTupleDataType branches in getImpl(const ASTPtr &)
 /// construct the type directly, bypassing the registered-creator try/catch, so they have to
@@ -59,4 +64,40 @@ TEST(DataTypeFactoryTryGet, ValidEnumStillParses)
     auto get_type = factory.get("Enum8('a' = 100)");
     ASSERT_NE(get_type, nullptr);
     EXPECT_EQ(get_type->getName(), "Enum8('a' = 100)");
+}
+
+TEST(DataTypeFactoryTryGet, ReadOnlyCollisionAuthorityMatchesFrozenRegistrySemantics)
+{
+    const auto & factory = DataTypeFactory::instance();
+
+    EXPECT_TRUE(factory.collidesWithRegisteredFamilyOrAlias("UInt64"));
+    EXPECT_TRUE(factory.collidesWithRegisteredFamilyOrAlias("uInT64"));
+    EXPECT_TRUE(factory.collidesWithRegisteredFamilyOrAlias("VARCHAR"));
+    EXPECT_TRUE(factory.collidesWithRegisteredFamilyOrAlias("vArChAr"));
+    EXPECT_FALSE(factory.collidesWithRegisteredFamilyOrAlias("app.UserId"));
+    EXPECT_FALSE(factory.collidesWithRegisteredFamilyOrAlias(""));
+    EXPECT_FALSE(factory.collidesWithRegisteredFamilyOrAlias(String(1024, 'x')));
+}
+
+TEST(DataTypeFactoryTryGet, UDTCollisionAuthorityDoesNotChangeFactoryParsingSemantics)
+{
+    const auto & factory = DataTypeFactory::instance();
+
+    EXPECT_TRUE(factory.collidesWithRegisteredFamilyOrAlias("uInT64"));
+    EXPECT_EQ(factory.tryGet("uInT64"), nullptr);
+    try
+    {
+        static_cast<void>(factory.get("uInT64"));
+        FAIL() << "case-sensitive UInt64 miss must retain UNKNOWN_TYPE";
+    }
+    catch (const Exception & error)
+    {
+        EXPECT_EQ(error.code(), ErrorCodes::UNKNOWN_TYPE) << error.message();
+    }
+
+    EXPECT_TRUE(factory.collidesWithRegisteredFamilyOrAlias("vArChAr"));
+    const auto alias_from_try_get = factory.tryGet("vArChAr");
+    ASSERT_NE(alias_from_try_get, nullptr);
+    EXPECT_EQ(alias_from_try_get->getName(), "String");
+    EXPECT_EQ(factory.get("vArChAr")->getName(), "String");
 }

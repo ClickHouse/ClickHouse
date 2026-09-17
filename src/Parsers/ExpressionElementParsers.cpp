@@ -15,36 +15,39 @@
 #include <Common/typeid_cast.h>
 
 #include <Parsers/ASTAssignment.h>
-#include <Parsers/LiteralTokenInfo.h>
-#include <Parsers/CommonParsers.h>
-#include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTCastTarget.h>
 #include <Parsers/ASTCollation.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
-#include <Parsers/ASTWindowDefinition.h>
-#include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTUDTReference.h>
+#include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/DumpASTNode.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDataType.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 
@@ -591,31 +594,83 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 }
 
 
-std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expected)
+namespace
 {
-    ASTPtr type_ast;
-    IParser::Pos type_begin = pos;
-    if (!ParserDataType().parse(pos, type_ast, expected))
-        return {};
-
-    String text = astText(*type_ast, textBetween(type_begin, pos));
-
-    /// The type AST does not outlive this function, and the literals in it - the arguments of the
-    /// type, such as the scale of a `Decimal32(3)` - are recorded in the literal token map. Their
-    /// addresses become available for reuse the moment the AST goes, and the very next literal the
-    /// caller creates is likely to land on one of them: `CAST` keeps its type as a string, so
-    /// `36610.111::Decimal32(3)` builds two literals right here. One inheriting the token range of
-    /// the scale would make `ValuesBlockInputFormat` build a template that replaces the `3`.
-    forgetLiteralTokens(*type_ast, expected);
-
-    return text;
+DataTypeFamilyClassification classifyCastTypeSyntax(const void *, std::string_view, DataTypeFamilySyntaxKind syntax_kind) noexcept
+{
+    const bool is_qualified_reference = syntax_kind == DataTypeFamilySyntaxKind::QualifiedReference;
+    return {.is_built_in = !is_qualified_reference, .is_qualified_reference = is_qualified_reference};
+}
 }
 
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text)
+bool parseCastDataType(
+    IParser::Pos & pos, ParsedCastDataType & parsed_type, Expected & expected, CastDataTypeParseMode mode)
 {
-    /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = make_intrusive<ASTLiteral>(std::move(type_text));
-    return makeASTFunction("CAST", expr_ast, std::move(type_literal));
+    const IParser::Pos type_begin = pos;
+
+    /// In postfix syntax, a bare JSON target is immediately followed by its
+    /// first path component. Qualified UDT syntax made that same token sequence
+    /// look like database `JSON`, type `<component>`. Preserve the established
+    /// expression interpretation here only; CAST(... AS JSON.a) remains a
+    /// complete qualified target, while quoting `JSON` still forces UDT syntax.
+    if (mode == CastDataTypeParseMode::PostfixOperator && pos->type == TokenType::BareWord
+        && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "JSON"))
+    {
+        auto after_type = pos;
+        ++after_type;
+        if (after_type->type == TokenType::Dot)
+        {
+            ParsedCastDataType result;
+            result.ordinary_type_text.assign(pos->begin, pos->size());
+            ++pos;
+            parsed_type = std::move(result);
+            return true;
+        }
+    }
+
+    ASTPtr type_ast;
+    DataTypeFamilyClassificationSummary summary;
+    ParserDataTypeWithFamilyClassification parser(
+        DataTypeFamilyClassifier{.context = nullptr, .callback = classifyCastTypeSyntax}, summary);
+    if (!parser.parse(pos, type_ast, expected))
+        return false;
+
+    ParsedCastDataType result;
+    if (summary.hasQualifiedLogicalFamily())
+    {
+        /// Keep the original AST and its literal-token spans valid while the
+        /// structured UDT target remains part of the parsed expression.
+        result.structured_type = std::move(type_ast);
+    }
+    else
+    {
+        /// Preserve the latest upstream spelling rules for ordinary CAST targets.
+        result.ordinary_type_text = astText(*type_ast, textBetween(type_begin, pos));
+        forgetLiteralTokens(*type_ast, expected);
+    }
+
+    parsed_type = std::move(result);
+    return true;
+}
+
+void discardCastDataType(ParsedCastDataType & parsed_type, Expected & expected)
+{
+    if (parsed_type.structured_type)
+        forgetLiteralTokens(*parsed_type.structured_type, expected);
+    parsed_type = {};
+}
+
+ASTPtr createCastTypeArgument(ParsedCastDataType parsed_type)
+{
+    if (parsed_type.structured_type)
+        return make_intrusive<ASTCastTarget>(std::move(parsed_type.structured_type));
+
+    return make_intrusive<ASTLiteral>(std::move(parsed_type.ordinary_type_text));
+}
+
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, ParsedCastDataType parsed_type)
+{
+    return makeASTFunction("CAST", expr_ast, createCastTypeArgument(std::move(parsed_type)));
 }
 
 
@@ -1147,19 +1202,19 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!ParserToken(DoubleColon).ignore(pos, expected))
         return false;
 
-    std::optional<String> type_text = parseDataTypeAsText(pos, expected);
-    if (!type_text)
+    ParsedCastDataType parsed_type;
+    if (!parseCastDataType(pos, parsed_type, expected, CastDataTypeParseMode::PostfixOperator))
         return false;
 
     if (string_literal)
     {
-        node = createFunctionCast(string_literal, std::move(*type_text));
+        node = createFunctionCast(string_literal, std::move(parsed_type));
         return true;
     }
 
     size_t data_size = data_end - data_begin;
     auto literal = make_intrusive<ASTLiteral>(String(data_begin, data_size));
-    node = createFunctionCast(literal, std::move(*type_text));
+    node = createFunctionCast(literal, std::move(parsed_type));
     return true;
 }
 

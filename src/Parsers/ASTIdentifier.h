@@ -6,6 +6,8 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -31,6 +33,9 @@ public:
 
     /** Check if identifier is a parameter */
     bool isParam() const;
+    /// Returns clone-owned semantic String bytes only for state produced
+    /// directly by ParserIdentifier, including canonical compound names.
+    std::optional<size_t> getParserIdentifierSemanticStringBytes() const noexcept;
     /** Get the query param out of a non-compound identifier. */
     ASTPtr getParam() const;
 

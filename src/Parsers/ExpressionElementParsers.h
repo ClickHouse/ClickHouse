@@ -4,6 +4,7 @@
 #include <Core/MultiEnum.h>
 #include <Parsers/IParserBase.h>
 
+#include <cstdint>
 #include <optional>
 #include <string_view>
 
@@ -560,13 +561,27 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** Parses a data type and returns its text - see `astText` - or nothing if there is no data type at
-  * `pos`. The parsed AST is thrown away: every place that parses a type inside an expression needs
-  * only the text, because that is how `CAST` and `defaultValueOfTypeName` carry a type.
-  */
-std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expected);
+/// An ordinary CAST target is represented as text unless classification found a
+/// qualified UDT reference, in which case its structured AST
+/// must survive until analysis.
+struct ParsedCastDataType
+{
+    ASTPtr structured_type;
+    String ordinary_type_text;
+};
 
-/// `CAST(expr, 'type')`, the canonical form of every way of writing a cast.
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text);
+enum class CastDataTypeParseMode : uint8_t
+{
+    CompleteTarget,
+    PostfixOperator,
+};
 
+bool parseCastDataType(
+    IParser::Pos & pos,
+    ParsedCastDataType & parsed_type,
+    Expected & expected,
+    CastDataTypeParseMode mode = CastDataTypeParseMode::CompleteTarget);
+void discardCastDataType(ParsedCastDataType & parsed_type, Expected & expected);
+ASTPtr createCastTypeArgument(ParsedCastDataType parsed_type);
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, ParsedCastDataType parsed_type);
 }

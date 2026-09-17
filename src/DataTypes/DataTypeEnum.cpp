@@ -458,32 +458,34 @@ DataTypePtr createEnumAdd(const ASTPtr & arguments, bool is_enum16)
 
 void registerDataTypeEnum(DataTypeFactory & factory)
 {
-    factory.registerDataType("Enum8", [](const ASTPtr & arguments)
-    {
-        return createExact<DataTypeEnum8>(arguments, false);
-    }, DataTypeFactory::Case::Sensitive,
+    factory.registerDataType(
+        "Enum8",
+        [](const ASTPtr & arguments) { return createExact<DataTypeEnum8>(arguments, false); },
+        DataTypeFactory::Case::Sensitive,
         Documentation{
             .description = R"DOCS_MD(
 An enumeration type that stores values as 8-bit signed integers (`Int8`), allowing up to 256 named values in the range `[-128, 127]`. Each `'string' = integer` pair maps a human-readable name to its stored numeric value. Use it instead of `Enum16` when the set of values is small to save space.
 )DOCS_MD",
             .syntax = "Enum8('name1' = num1, 'name2' = num2, ...)",
             .related = {"Enum"},
-        });
-    factory.registerDataType("Enum16", [](const ASTPtr & arguments)
-    {
-        return createExact<DataTypeEnum16>(arguments, false);
-    }, DataTypeFactory::Case::Sensitive,
+        },
+        BuiltInDataTypeCreatorInputClass::CanonicalizeGenericEnumArguments);
+    factory.registerDataType(
+        "Enum16",
+        [](const ASTPtr & arguments) { return createExact<DataTypeEnum16>(arguments, false); },
+        DataTypeFactory::Case::Sensitive,
         Documentation{
             .description = R"DOCS_MD(
 An enumeration type that stores values as 16-bit signed integers (`Int16`), allowing up to 65536 named values in the range `[-32768, 32767]`. Each `'string' = integer` pair maps a human-readable name to its stored numeric value. Use it when the set of named values is too large to fit in `Enum8`.
 )DOCS_MD",
             .syntax = "Enum16('name1' = num1, 'name2' = num2, ...)",
             .related = {"Enum"},
-        });
-    factory.registerDataType("Enum", [](const ASTPtr & arguments)
-    {
-        return create(arguments, false);
-    }, DataTypeFactory::Case::Sensitive,
+        },
+        BuiltInDataTypeCreatorInputClass::CanonicalizeGenericEnumArguments);
+    factory.registerDataType(
+        "Enum",
+        [](const ASTPtr & arguments) { return create(arguments, false); },
+        DataTypeFactory::Case::Sensitive,
         Documentation{
             .description = R"DOCS_MD(
 Enumerated type consisting of named values.
@@ -666,7 +668,8 @@ SHOW CREATE TABLE enum;
 )DOCS_MD",
             .syntax = "Enum(...)",
             .related = {"Enum8", "Enum16"},
-        });
+        },
+        BuiltInDataTypeCreatorInputClass::CanonicalizeGenericEnumArguments);
 
     /// MySQL
     factory.registerAlias("ENUM", "Enum", DataTypeFactory::Case::Insensitive);

@@ -18,6 +18,7 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "ObjectTypedPath" + (delim + path); }
     ASTPtr clone() const override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override { f(nullptr, &type); }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -40,6 +41,13 @@ public:
     /** Get the text that identifies this element. */
     String getID(char) const override { return "ASTObjectTypeArgument"; }
     ASTPtr clone() const override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    {
+        f(nullptr, &path_with_type);
+        f(nullptr, &skip_path);
+        f(nullptr, &skip_path_regexp);
+        f(nullptr, &parameter);
+    }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -47,4 +55,3 @@ protected:
 
 
 }
-

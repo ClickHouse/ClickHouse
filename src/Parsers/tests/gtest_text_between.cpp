@@ -20,14 +20,16 @@ std::string spanOfWholeQuery(const std::string & query)
     return std::string(textBetween(begin, end));
 }
 
-/// What `CAST` and `defaultValueOfTypeName` store for a type written like this.
+/// What `CAST` and `defaultValueOfTypeName` store for an ordinary type written like this.
 std::string typeText(const std::string & type)
 {
     Tokens tokens(type.data(), type.data() + type.size());
     IParser::Pos pos(tokens, 1000, 1000);
     Expected expected;
-    auto text = parseDataTypeAsText(pos, expected);
-    return text ? *text : std::string("<no type>");
+    ParsedCastDataType parsed_type;
+    if (!parseCastDataType(pos, parsed_type, expected))
+        return "<no type>";
+    return parsed_type.ordinary_type_text;
 }
 
 }
@@ -55,7 +57,7 @@ TEST(TextBetween, SingleToken)
     EXPECT_EQ(spanOfWholeQuery("'a string'"), "'a string'");
 }
 
-TEST(ParseDataTypeAsText, IsTheFormattedSpellingAndNotTheSourceText)
+TEST(ParseCastDataType, IsTheFormattedSpellingAndNotTheSourceText)
 {
     /// This text is stored in the query - `CAST(x, 'T')` - and from there in table metadata, so it
     /// has to be the canonical spelling however the type was written.
@@ -68,7 +70,7 @@ TEST(ParseDataTypeAsText, IsTheFormattedSpellingAndNotTheSourceText)
     EXPECT_EQ(typeText("INT SIGNED"), "INT SIGNED");
 }
 
-TEST(ParseDataTypeAsText, NoTypeAtAll)
+TEST(ParseCastDataType, NoTypeAtAll)
 {
     EXPECT_EQ(typeText("'a string'"), "<no type>");
     EXPECT_EQ(typeText("123"), "<no type>");

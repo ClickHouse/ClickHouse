@@ -7,22 +7,23 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 
 
-#include <Common/quoteString.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/KnownObjectNames.h>
-#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTCastTarget.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/KnownObjectNames.h>
+#include <Common/SipHash.h>
+#include <Common/quoteString.h>
 
 
 using namespace std::literals;
@@ -75,6 +76,17 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     if (auto literal = toLiteral())
     {
         literal->appendColumnName(ostr);
+        return;
+    }
+
+    if (const auto * cast_target = tryGetStructuredCastTarget())
+    {
+        writeString(name, ostr);
+        writeChar('(', ostr);
+        arguments->children[0]->appendColumnName(ostr);
+        writeCString(" AS ", ostr);
+        writeString(cast_target->getType()->formatWithSecretsOneLine(), ostr);
+        writeChar(')', ostr);
         return;
     }
 
@@ -351,6 +363,14 @@ ASTPtr ASTFunction::clone() const
     return res;
 }
 
+const ASTCastTarget * ASTFunction::tryGetStructuredCastTarget() const
+{
+    if (name != "CAST" || parameters || !arguments || arguments->children.size() != 2)
+        return nullptr;
+
+    return arguments->children[1]->as<ASTCastTarget>();
+}
+
 void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
@@ -509,6 +529,24 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// it here; the argument-list loops below re-set it explicitly per argument when needed.
     nested_need_parens.list_element_index = 0;
     nested_dont_need_parens.list_element_index = 0;
+
+    if (const auto * cast_target = tryGetStructuredCastTarget())
+    {
+        ostr << name << '(';
+
+        auto source_frame = nested_dont_need_parens;
+        source_frame.current_function = this;
+        arguments->children[0]->format(ostr, settings, state, source_frame);
+
+        ostr << " AS ";
+        auto target_frame = nested_dont_need_parens;
+        target_frame.current_function = nullptr;
+        cast_target->getType()->format(ostr, settings, state, target_frame);
+        ostr << ')';
+
+        finishFormatWithWindow(ostr, settings, state, frame);
+        return;
+    }
 
     if (auto * query = tryGetQueryArgument())
     {

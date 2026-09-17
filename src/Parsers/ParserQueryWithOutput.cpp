@@ -1,35 +1,39 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ParserAlterQuery.h>
-#include <Parsers/ParserBackupQuery.h>
-#include <Parsers/ParserCheckQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserDescribeTableQuery.h>
-#include <Parsers/ParserDropQuery.h>
-#include <Parsers/ParserUndropQuery.h>
-#include <Parsers/ParserExplainQuery.h>
-#include <Parsers/ParserKillQueryQuery.h>
-#include <Parsers/ParserOptimizeQuery.h>
-#include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/ParserRenameQuery.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserSetQuery.h>
-#include <Parsers/ParserShowProcesslistQuery.h>
-#include <Parsers/ParserShowTablesQuery.h>
-#include <Parsers/ParserShowColumnsQuery.h>
-#include <Parsers/ParserShowEngineQuery.h>
-#include <Parsers/ParserShowFunctionsQuery.h>
-#include <Parsers/ParserShowIndexesQuery.h>
-#include <Parsers/ParserShowSettingQuery.h>
-#include <Parsers/ParserSnapshotQuery.h>
-#include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/ParserDescribeCacheQuery.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ParserShowAccessQuery.h>
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserBackupQuery.h>
+#include <Parsers/ParserCheckQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDescribeCacheQuery.h>
+#include <Parsers/ParserDescribeTableQuery.h>
+#include <Parsers/ParserDescribeTypeQuery.h>
+#include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserExplainQuery.h>
+#include <Parsers/ParserKillQueryQuery.h>
+#include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserPhysicalizeTypeReferencesQuery.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserShowColumnsQuery.h>
+#include <Parsers/ParserShowCreateTypeQuery.h>
+#include <Parsers/ParserShowEngineQuery.h>
+#include <Parsers/ParserShowFunctionsQuery.h>
+#include <Parsers/ParserShowIndexesQuery.h>
+#include <Parsers/ParserShowProcesslistQuery.h>
+#include <Parsers/ParserShowSettingQuery.h>
+#include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ParserShowTypesQuery.h>
+#include <Parsers/ParserSnapshotQuery.h>
+#include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/ParserUndropQuery.h>
 #include <Parsers/StatementFactory.h>
 #include <Parsers/registerStatements.h>
 #include <Common/Exception.h>
@@ -96,34 +100,26 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
     ParserBackupQuery backup_p;
     ParserSnapshotQuery snapshot_p;
+    ParserShowCreateTypeQuery show_create_type_p;
+    ParserShowTypesQuery show_types_p;
+    ParserDescribeTypeQuery describe_type_p;
+    ParserPhysicalizeTypeReferencesQuery physicalize_type_references_p;
 
     ASTPtr query;
 
-    bool parsed =
-           explain_p.parse(pos, query, expected)
-        || select_p.parse(pos, query, expected)
+    bool parsed = explain_p.parse(pos, query, expected) || select_p.parse(pos, query, expected)
         || parseShowCreateAccessEntityQuery(pos, query, expected) /// should be before `show_tables_p`
-        || show_tables_p.parse(pos, query, expected)
-        || show_columns_p.parse(pos, query, expected)
-        || show_engine_p.parse(pos, query, expected)
-        || show_functions_p.parse(pos, query, expected)
-        || show_indexes_p.parse(pos, query, expected)
-        || show_setting_p.parse(pos, query, expected)
-        || table_p.parse(pos, query, expected)
-        || describe_cache_p.parse(pos, query, expected)
-        || describe_table_p.parse(pos, query, expected)
-        || show_processlist_p.parse(pos, query, expected)
-        || create_p.parse(pos, query, expected)
-        || alter_p.parse(pos, query, expected)
-        || rename_p.parse(pos, query, expected)
-        || drop_p.parse(pos, query, expected)
-        || undrop_p.parse(pos, query, expected)
-        || check_p.parse(pos, query, expected)
-        || kill_query_p.parse(pos, query, expected)
-        || optimize_p.parse(pos, query, expected)
-        || parseShowAccessQuery(pos, query, expected)
-        || backup_p.parse(pos, query, expected)
-        || snapshot_p.parse(pos, query, expected);
+        || show_create_type_p.parse(pos, query, expected) || show_types_p.parse(pos, query, expected)
+        || show_tables_p.parse(pos, query, expected) || show_columns_p.parse(pos, query, expected)
+        || show_engine_p.parse(pos, query, expected) || show_functions_p.parse(pos, query, expected)
+        || show_indexes_p.parse(pos, query, expected) || show_setting_p.parse(pos, query, expected)
+        || describe_type_p.parse(pos, query, expected) || table_p.parse(pos, query, expected)
+        || describe_cache_p.parse(pos, query, expected) || describe_table_p.parse(pos, query, expected)
+        || show_processlist_p.parse(pos, query, expected) || create_p.parse(pos, query, expected) || alter_p.parse(pos, query, expected)
+        || rename_p.parse(pos, query, expected) || drop_p.parse(pos, query, expected) || undrop_p.parse(pos, query, expected)
+        || check_p.parse(pos, query, expected) || kill_query_p.parse(pos, query, expected) || optimize_p.parse(pos, query, expected)
+        || parseShowAccessQuery(pos, query, expected) || backup_p.parse(pos, query, expected)
+        || snapshot_p.parse(pos, query, expected) || physicalize_type_references_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;

@@ -1,9 +1,10 @@
 #pragma once
 
+#include <DataTypes/BuiltInDataTypeFamilyClassifier.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/Documentation.h>
 #include <Common/IFactoryWithAliases.h>
-#include <DataTypes/DataTypeCustom.h>
 
 
 #include <functional>
@@ -23,15 +24,23 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAliases<std::function<DataTypePtr(const ASTPtr & parameters)>>
 {
 private:
+    using Base = IFactoryWithAliases<std::function<DataTypePtr(const ASTPtr & parameters)>>;
     using SimpleCreator = std::function<DataTypePtr()>;
     using DataTypesDictionary = std::unordered_map<String, Value>;
     using CreatorWithCustom = std::function<std::pair<DataTypePtr, DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
-    using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
+    using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr, DataTypeCustomDescPtr>()>;
 
 public:
     static DataTypeFactory & instance();
 
     DataTypePtr get(const String & full_name) const;
+    /// Opt-in path for UDT-aware call sites. It classifies the already-parsed
+    /// family tree transiently, then preserves the existing AST factory path.
+    DataTypePtr getWithFamilyClassification(const String & full_name) const;
+    /// Parses and classifies syntax without constructing a physical type. It
+    /// returns for built-in-only syntax and throws the UDT boundary error
+    /// for a qualified logical reference (including built-in collisions).
+    void rejectQualifiedUDTSyntax(const String & full_name) const;
     DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr get(const ASTPtr & ast) const;
     DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
@@ -42,22 +51,59 @@ public:
     DataTypePtr tryGet(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr tryGet(const ASTPtr & ast) const;
 
+    /// Allocation-free, read-only collision authority for UDT admission.
+    /// It reserves every registered family/alias under ASCII case folding,
+    /// independently of the factory's parsing case policy, and intentionally
+    /// exposes neither the factory maps nor their values.
+    [[nodiscard]] bool collidesWithRegisteredFamilyOrAlias(std::string_view family_name) const noexcept;
+
+    /// Checks every structured qualified reference in an already bounded AST.
+    /// Used by UDT boundaries to reject `db.UInt64`-style shadowing before
+    /// the generic feature-disabled route.
+    [[nodiscard]] bool hasQualifiedBuiltInCollision(const IAST & ast) const;
+
+    BuiltInDataTypeCreatorInputClass getCreatorInputClass(const String & family_name) const;
+
+    void registerAlias(const String & alias_name, const String & real_name, Case case_sensitiveness = Case::Sensitive);
+
     /// Register a type family by its name.
-    void registerDataType(const String & family_name, Value creator, Case case_sensitiveness = Case::Sensitive, Documentation documentation = {});
+    void registerDataType(
+        const String & family_name,
+        Value creator,
+        Case case_sensitiveness = Case::Sensitive,
+        Documentation documentation = {},
+        BuiltInDataTypeCreatorInputClass input_class = BuiltInDataTypeCreatorInputClass::ReadOnly);
 
     /// Register a simple data type, that have no parameters.
-    void registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness = Case::Sensitive, Documentation documentation = {});
+    void registerSimpleDataType(
+        const String & name,
+        SimpleCreator creator,
+        Case case_sensitiveness = Case::Sensitive,
+        Documentation documentation = {},
+        BuiltInDataTypeCreatorInputClass input_class = BuiltInDataTypeCreatorInputClass::ReadOnly);
 
     /// Register a customized type family
-    void registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness = Case::Sensitive, Documentation documentation = {});
+    void registerDataTypeCustom(
+        const String & family_name,
+        CreatorWithCustom creator,
+        Case case_sensitiveness = Case::Sensitive,
+        Documentation documentation = {},
+        BuiltInDataTypeCreatorInputClass input_class = BuiltInDataTypeCreatorInputClass::ReadOnly);
 
     /// Register a simple customized data type
-    void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness = Case::Sensitive, Documentation documentation = {});
+    void registerSimpleDataTypeCustom(
+        const String & name,
+        SimpleCreatorWithCustom creator,
+        Case case_sensitiveness = Case::Sensitive,
+        Documentation documentation = {},
+        BuiltInDataTypeCreatorInputClass input_class = BuiltInDataTypeCreatorInputClass::ReadOnly);
 
     /// Returns the embedded documentation for a data type family (empty if none was registered).
     Documentation getDocumentation(const String & family_name) const;
 
 private:
+    using Base::registerAliasUnchecked;
+
     template <bool nullptr_on_error>
     DataTypePtr getImpl(const String & full_name) const;
     template <bool nullptr_on_error>
@@ -66,6 +112,8 @@ private:
     DataTypePtr getImpl(const ASTPtr & ast) const;
     template <bool nullptr_on_error>
     const Value * findCreatorByName(const String & family_name) const;
+
+    DataTypePtr getClassifiedLogicalCandidate(const ASTPtr & ast) const;
 
     DataTypesDictionary data_types;
 

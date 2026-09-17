@@ -1529,28 +1529,33 @@ public:
         /// expr AS type
         if (state == 0)
         {
-            std::optional<String> type_text;
+            ParsedCastDataType parsed_type;
 
             if (as_keyword_parser.ignore(pos, expected))
             {
                 auto old_pos = pos;
 
-                if (ParserIdentifier().parse(pos, alias, expected) &&
-                    as_keyword_parser.ignore(pos, expected) &&
-                    (type_text = parseDataTypeAsText(pos, expected)) &&
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                if (ParserIdentifier().parse(pos, alias, expected) && as_keyword_parser.ignore(pos, expected)
+                    && parseCastDataType(pos, parsed_type, expected) && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!insertAlias(alias))
+                    {
+                        discardCastDataType(parsed_type, expected);
                         return false;
+                    }
 
                     if (!mergeElement())
+                    {
+                        discardCastDataType(parsed_type, expected);
                         return false;
+                    }
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
+                    elements = {createFunctionCast(elements[0], std::move(parsed_type))};
                     finished = true;
                     return true;
                 }
 
+                discardCastDataType(parsed_type, expected);
                 pos = old_pos;
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
@@ -1569,17 +1574,20 @@ public:
 
                 pos = old_pos;
 
-                if ((type_text = parseDataTypeAsText(pos, expected)) &&
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                if (parseCastDataType(pos, parsed_type, expected) && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
+                    {
+                        discardCastDataType(parsed_type, expected);
                         return false;
+                    }
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
+                    elements = {createFunctionCast(elements[0], std::move(parsed_type))};
                     finished = true;
                     return true;
                 }
 
+                discardCastDataType(parsed_type, expected);
                 return false;
             }
 
@@ -4078,11 +4086,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (op.type == OperatorType::Cast)
     {
-        std::optional<String> type_text = parseDataTypeAsText(pos, expected);
-        if (!type_text)
+        ParsedCastDataType parsed_type;
+        if (!parseCastDataType(pos, parsed_type, expected, CastDataTypeParseMode::PostfixOperator))
             return Action::NONE;
 
-        layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
+        layers.back()->pushOperand(createCastTypeArgument(std::move(parsed_type)));
         return Action::OPERATOR;
     }
 

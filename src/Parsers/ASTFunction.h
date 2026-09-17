@@ -6,12 +6,14 @@
 #include <Parsers/NullsAction.h>
 
 #include <initializer_list>
+#include <limits>
 
 
 namespace DB
 {
 
 class ASTSelectWithUnionQuery;
+class ASTCastTarget;
 
 /** AST for function application or operator.
   */
@@ -105,6 +107,18 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
+    /// Returns the structured target carried by a parser-produced CAST, if any.
+    const ASTCastTarget * tryGetStructuredCastTarget() const;
+
+    /// Runtime-only locator assigned while a trusted stored View expression is
+    /// bound/replayed. It is deliberately absent from formatting, hashing and
+    /// JSON: durable identity lives in the V2 UDT sidecar, while AST clones
+    /// retain this ordinal only inside the current metadata generation.
+    bool hasUDTStoredExpressionOrdinal() const noexcept { return udt_stored_expression_ordinal != std::numeric_limits<UInt64>::max(); }
+    UInt64 getUDTStoredExpressionOrdinal() const noexcept { return udt_stored_expression_ordinal; }
+    void setUDTStoredExpressionOrdinal(UInt64 ordinal) noexcept { udt_stored_expression_ordinal = ordinal; }
+    void clearUDTStoredExpressionOrdinal() noexcept { udt_stored_expression_ordinal = std::numeric_limits<UInt64>::max(); }
+
     ASTSelectWithUnionQuery * tryGetQueryArgument() const;
 
     ASTPtr toLiteral() const;  // Try to convert functions like Array or Tuple to a literal form.
@@ -120,6 +134,8 @@ protected:
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
 private:
+    UInt64 udt_stored_expression_ordinal = std::numeric_limits<UInt64>::max();
+
     void finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 

@@ -6,6 +6,7 @@
 #    include <polyglot.h>
 #endif
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseQuery.h>
@@ -134,6 +135,9 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             ErrorCodes::SYNTAX_ERROR,
             "Multi-statement queries are not supported in polyglot dialect mode. "
             "Please submit one statement at a time.");
+
+    if (auto * create = node->as<ASTCreateQuery>())
+        create->markUDTDialectAdapterPhysicalOnly();
 
     return true;
 #endif

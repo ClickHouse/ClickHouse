@@ -64,6 +64,37 @@ bool ASTIdentifier::isParam() const
     return !children.empty();
 }
 
+std::optional<size_t> ASTIdentifier::getParserIdentifierSemanticStringBytes() const noexcept
+{
+    if (semantic->special || !semantic->can_be_alias || semantic->covered || semantic->membership || name_parts.empty() || full_name.empty()
+        || !children.empty())
+        return std::nullopt;
+
+    size_t offset = 0;
+    for (size_t index = 0; index < name_parts.size(); ++index)
+    {
+        const auto & part = name_parts[index];
+        if (part.empty() || offset > full_name.size() || part.size() > full_name.size() - offset
+            || full_name.compare(offset, part.size(), part) != 0)
+            return std::nullopt;
+        offset += part.size();
+        if (index + 1 != name_parts.size())
+        {
+            if (offset >= full_name.size() || full_name[offset] != '.')
+                return std::nullopt;
+            ++offset;
+        }
+    }
+    if (offset != full_name.size())
+        return std::nullopt;
+
+    if (name_parts.size() == 1)
+        return semantic->table.empty() ? std::optional<size_t>{0} : std::nullopt;
+    if (!semantic->legacy_compound || semantic->table != name_parts[name_parts.size() - 2])
+        return std::nullopt;
+    return semantic->table.size();
+}
+
 ASTPtr ASTIdentifier::getParam() const
 {
     chassert(full_name.empty() && children.size() == 1);

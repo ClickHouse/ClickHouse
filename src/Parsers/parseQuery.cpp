@@ -1,17 +1,20 @@
 #include <Parsers/parseQuery.h>
 
-#include <Parsers/ParserQuery.h>
-#include <Parsers/ASTInsertQuery.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/TokenIterator.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/StringUtils.h>
-#include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <Common/typeid_cast.h>
+
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -24,6 +27,22 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool isTypeDefinitionQueryPrefix(IParser::Pos pos)
+{
+    auto create = ParserKeyword::createDeprecated("CREATE");
+    auto attach = ParserKeyword::createDeprecated("ATTACH");
+    auto or_replace = ParserKeyword::createDeprecated("OR REPLACE");
+    auto type = ParserKeyword::createDeprecated("TYPE");
+
+    if (create.ignore(pos))
+    {
+        or_replace.ignore(pos);
+        return type.ignore(pos);
+    }
+
+    return attach.ignore(pos) && type.ignore(pos);
+}
 
 /** From position in (possible multiline) query, get line number and column number in line.
   * Used in syntax error message.
@@ -267,6 +286,22 @@ ASTPtr tryParseQuery(
     bool skip_insignificant)
 {
     const char * query_begin = _out_query_end;
+    out_error_message.clear();
+    SCOPE_EXIT({
+        if (!out_error_message.empty())
+        {
+            const size_t remaining_size = static_cast<size_t>(all_queries_end - query_begin);
+            size_t inspection_size = remaining_size;
+            if (max_query_size && max_query_size < remaining_size)
+                inspection_size = max_query_size + 1;
+            const std::string_view original_query(query_begin, inspection_size);
+            if (containsPhysicalizationApplyToken(original_query))
+                out_error_message = "Syntax error while parsing PHYSICALIZE TYPE REFERENCES APPLY TOKEN '[HIDDEN]'";
+            else
+                maskPhysicalizationApplyTokens(out_error_message);
+        }
+    });
+
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
@@ -314,6 +349,9 @@ ASTPtr tryParseQuery(
 
     Expected expected;
 
+    const bool is_type_definition_query = typeid_cast<ParserQuery *>(&parser) && isTypeDefinitionQueryPrefix(token_iterator);
+    tokens.reset();
+
     /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
       * But there are certain cases when invalid tokens are permitted:
       * 1. INSERT queries can have arbitrary data after the FORMAT clause, that is parsed by a different parser.
@@ -323,7 +361,7 @@ ASTPtr tryParseQuery(
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
     IParser::Pos lookahead(token_iterator);
-    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (!is_type_definition_query && !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {

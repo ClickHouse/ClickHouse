@@ -1,35 +1,39 @@
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
-#include <Parsers/ParserCreateWorkloadQuery.h>
-#include <Parsers/ParserCreateResourceQuery.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserCreateHandlerQuery.h>
 #include <Parsers/ParserCreateIndexQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserCreateResourceQuery.h>
+#include <Parsers/ParserCreateTypeQuery.h>
+#include <Parsers/ParserCreateWorkloadQuery.h>
+#include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
-#include <Parsers/ParserDropWorkloadQuery.h>
-#include <Parsers/ParserDropResourceQuery.h>
+#include <Parsers/ParserDropHandlerQuery.h>
 #include <Parsers/ParserDropIndexQuery.h>
 #include <Parsers/ParserDropNamedCollectionQuery.h>
-#include <Parsers/ParserAlterNamedCollectionQuery.h>
-#include <Parsers/ParserCreateHandlerQuery.h>
-#include <Parsers/ParserDropHandlerQuery.h>
 #include <Parsers/ParserDropQuery.h>
-#include <Parsers/ParserParallelWithQuery.h>
+#include <Parsers/ParserDropResourceQuery.h>
+#include <Parsers/ParserDropTypeQuery.h>
+#include <Parsers/ParserDropWorkloadQuery.h>
 #include <Parsers/ParserHypotheticalIndexQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserParallelWithQuery.h>
+#include <Parsers/ParserPhysicalizeTypeReferencesQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserRenameTypeQuery.h>
+#include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserSystemQuery.h>
-#include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserTransactionControl.h>
-#include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ParserUpdateQuery.h>
-#include <Parsers/ParserSelectQuery.h>
-#include <Parsers/ParserCopyQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ParserUseQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -128,32 +132,24 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDeleteQuery delete_p;
     ParserUpdateQuery update_p;
     ParserCopyQuery copy_p;
+    ParserCreateTypeQuery create_type_p;
+    ParserDropTypeQuery drop_type_p;
+    ParserRenameTypeQuery rename_type_p;
+    ParserApplyPhysicalizeTypeReferencesQuery apply_physicalize_type_references_p;
 
-    bool res = query_with_output_p.parse(pos, node, expected)
-        || insert_p.parse(pos, node, expected)
-        || use_p.parse(pos, node, expected)
-        || parseSetRoleQuery(pos, node, expected)
-        || set_p.parse(pos, node, expected)
-        || system_p.parse(pos, node, expected)
-        || parseCreateAccessEntityQuery(pos, node, expected)
-        || create_function_p.parse(pos, node, expected)
-        || drop_function_p.parse(pos, node, expected)
-        || create_workload_p.parse(pos, node, expected)
-        || drop_workload_p.parse(pos, node, expected)
-        || create_resource_p.parse(pos, node, expected)
-        || drop_resource_p.parse(pos, node, expected)
-        || create_named_collection_p.parse(pos, node, expected)
-        || drop_named_collection_p.parse(pos, node, expected)
-        || alter_named_collection_p.parse(pos, node, expected)
-        || create_handler_p.parse(pos, node, expected)
-        || drop_handler_p.parse(pos, node, expected)
-        || create_index_p.parse(pos, node, expected)
-        || drop_index_p.parse(pos, node, expected)
-        || hypothetical_index_p.parse(pos, node, expected)
-        || parseGrantOrDropAccessEntityQuery(pos, node, expected)
-        || transaction_control_p.parse(pos, node, expected)
-        || delete_p.parse(pos, node, expected)
-        || update_p.parse(pos, node, expected)
+    bool res = query_with_output_p.parse(pos, node, expected) || create_type_p.parse(pos, node, expected)
+        || drop_type_p.parse(pos, node, expected) || rename_type_p.parse(pos, node, expected)
+        || apply_physicalize_type_references_p.parse(pos, node, expected) || insert_p.parse(pos, node, expected)
+        || use_p.parse(pos, node, expected) || parseSetRoleQuery(pos, node, expected) || set_p.parse(pos, node, expected)
+        || system_p.parse(pos, node, expected) || parseCreateAccessEntityQuery(pos, node, expected)
+        || create_function_p.parse(pos, node, expected) || drop_function_p.parse(pos, node, expected)
+        || create_workload_p.parse(pos, node, expected) || drop_workload_p.parse(pos, node, expected)
+        || create_resource_p.parse(pos, node, expected) || drop_resource_p.parse(pos, node, expected)
+        || create_named_collection_p.parse(pos, node, expected) || drop_named_collection_p.parse(pos, node, expected)
+        || alter_named_collection_p.parse(pos, node, expected) || create_handler_p.parse(pos, node, expected)
+        || drop_handler_p.parse(pos, node, expected) || create_index_p.parse(pos, node, expected) || drop_index_p.parse(pos, node, expected)
+        || hypothetical_index_p.parse(pos, node, expected) || parseGrantOrDropAccessEntityQuery(pos, node, expected)
+        || transaction_control_p.parse(pos, node, expected) || delete_p.parse(pos, node, expected) || update_p.parse(pos, node, expected)
         || copy_p.parse(pos, node, expected);
 
 #if !defined(CLICKHOUSE_PARSER_NO_DCL)
