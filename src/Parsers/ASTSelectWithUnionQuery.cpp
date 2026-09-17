@@ -319,6 +319,9 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     column_match_mode = parseSetOperationColumnMatchMode(r.getString("column_match_mode", "POSITION"));
     is_normalized = r.getBool("is_normalized");
 
+    if (column_match_mode == SetOperationColumnMatchMode::Name && union_mode != SelectUnionMode::UNION_ALL)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`BY NAME` is supported only with `UNION ALL` during AST JSON deserialization");
+
     auto modes_arr = r.readStringArray("list_of_modes");
     for (const auto & mode_str : modes_arr)
         list_of_modes.push_back(parseSelectUnionMode(mode_str));
@@ -373,6 +376,14 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST cannot have 'list_of_column_match_modes' without 'list_of_modes' "
             "during AST JSON deserialization");
+
+    for (size_t i = 0; i < list_of_column_match_modes.size(); ++i)
+    {
+        if (list_of_column_match_modes[i] == SetOperationColumnMatchMode::Name
+            && list_of_modes[i] != SelectUnionMode::UNION_ALL)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`BY NAME` is supported only with `UNION ALL` during AST JSON deserialization");
+    }
 
     /// Restore output options (`INTO OUTFILE` / `FORMAT` / `SETTINGS` / compression and flags)
     /// through the shared helper so the validation of their interdependencies stays in one place
