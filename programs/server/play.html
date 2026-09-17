@@ -1815,7 +1815,7 @@
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="3" y1="12" x2="15" y2="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="9,6 3,12 9,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="20" y1="4" x2="20" y2="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
         <div id="databases"></div>
-        <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on macOS, Ctrl+click elsewhere) to open in a new tab or window">
+        <a id="terminal-icon" class="menu-icon" href="" target="_blank" rel="noopener noreferrer" title="Web Terminal (~) — middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on macOS, Ctrl+click elsewhere) to open in a new tab or window">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </a>
         <a id="docs-icon" class="menu-icon" href="/docs" target="_blank" rel="noopener noreferrer" title="Documentation">
@@ -19618,6 +19618,33 @@ document.getElementById('download-button').addEventListener('click', async funct
         }
     }
 
+    /// Whether the terminal at the configured server would accept the credentials this page posts
+    /// to it once it is embedded in the inline panel.
+    ///
+    /// `webterminal.html` takes a `webterminal-credentials` message only from a parent at its own
+    /// origin or at one of its exact `TRUSTED_PARENT_ORIGINS` - the same list as `TRUSTED_HOST_ORIGINS`
+    /// here - and applies that rule to the origin of THIS page. The configured server, on the other
+    /// hand, can be at any origin (`?url=`, a `clickhouse-credentials` handover and the address field
+    /// all name it), so a successful `HEAD` probe proves only that a terminal exists there. Loaded into
+    /// the inline panel, a terminal that drops the handover sits at `Waiting for credentials...` until
+    /// the user logs in by hand. The inline panel is therefore offered only when the handover is known
+    /// to be accepted; the terminal of any other server opens in a new tab through the icon's `href`,
+    /// where it reads `user` from its URL and prompts for the password.
+    function terminalAcceptsHandover() {
+        const terminal_url = getTerminalURL();
+        if (!terminal_url) return false;
+        const terminal_origin = new URL(terminal_url).origin;
+        return terminal_origin === location.origin || TRUSTED_HOST_ORIGINS.includes(location.origin);
+    }
+
+    /// The new-tab path of the icon, for the keyboard shortcut: a plain click reaches it through the
+    /// anchor's own `target="_blank"` navigation instead.
+    function openTerminalInNewTab() {
+        updateTerminalHref();
+        const href = terminalIcon.getAttribute('href');
+        if (href) window.open(href, '_blank', 'noopener');
+    }
+
     /// Keep the icon's `href` pointing at the current Web Terminal URL, so that a native
     /// middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on
     /// macOS, Ctrl+click elsewhere) opens the right address even after the user edits the
@@ -19696,6 +19723,14 @@ document.getElementById('download-button').addEventListener('click', async funct
         /// user edited `url_elem.value` to something unparsable between page load and this click.
         const terminalSrc = terminalIframe ? null : getTerminalURL();
         if (!terminalIframe && !terminalSrc) return;
+        /// A NEW session is embedded only when the terminal will take this page's credentials; the
+        /// terminal of any other server opens in a new tab instead (see `terminalAcceptsHandover`).
+        /// A hidden panel that already holds a session is simply shown again: that session was
+        /// opened against a server that accepted the handover.
+        if (!terminalIframe && !terminalAcceptsHandover()) {
+            openTerminalInNewTab();
+            return;
+        }
         terminalActive = true;
         terminalIcon.classList.add('active');
         terminalPanel.classList.add('active');
@@ -19762,6 +19797,11 @@ document.getElementById('download-button').addEventListener('click', async funct
         /// For a modified click, fall through to the anchor's native handling (a new tab or
         /// window, or the macOS Ctrl+click context menu) instead of toggling the terminal.
         if (wantsNewTab(e)) return;
+        /// The same for a plain click when the terminal of the configured server would drop the
+        /// credentials this page posts into an inline panel (see `terminalAcceptsHandover`): the
+        /// anchor opens it in a new tab, where the user logs in by hand. A hidden panel that already
+        /// holds a session is toggled as usual.
+        if (!terminalIframe && !terminalAcceptsHandover()) return;
         /// A plain left click toggles the inline terminal panel instead of navigating.
         e.preventDefault();
         e.stopPropagation();

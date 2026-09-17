@@ -182,7 +182,18 @@ terminal_probe=$(echo "$content" | grep -qF "url_elem.addEventListener('input', 
 docs_query=$(echo "$content" | sed -n '/function docsURL()/,/^}/p' | grep -qF "url.searchParams.delete('user');" \
     && ! echo "$content" | sed -n '/function docsURL()/,/^}/p' | grep -qF "url.search = '';" \
     && echo preserved || echo dropped)
-echo "play derived_url_scheme=${derived_url_scheme} relay_target_guard=${relay_target_guard} terminal_probe=${terminal_probe} docs_query=${docs_query}"
+# That probe proves that the configured server has a terminal, not that the terminal will accept the
+# credentials this page posts to it: `webterminal.html` takes them only from a parent at its own origin
+# or on its exact allowlist, and applies that rule to the origin of `/play`, while the configured server
+# can be at any origin. Embedding the terminal of any other server would leave it at `Waiting for
+# credentials...`, so the inline panel is gated on that same rule, and such a terminal opens in a new
+# tab through the icon's own link instead (which therefore has to carry `target="_blank"`).
+terminal_handover=$(echo "$content" | sed -n '/function terminalAcceptsHandover()/,/^    }$/p' \
+        | grep -qF "TRUSTED_HOST_ORIGINS.includes(location.origin)" \
+    && echo "$content" | sed -n '/function activateTerminal()/,/^    }$/p' | grep -qF "!terminalAcceptsHandover()" \
+    && echo "$content" | grep -qF 'id="terminal-icon" class="menu-icon" href="" target="_blank"' \
+    && echo gated || echo probe-only)
+echo "play derived_url_scheme=${derived_url_scheme} relay_target_guard=${relay_target_guard} terminal_probe=${terminal_probe} docs_query=${docs_query} terminal_handover=${terminal_handover}"
 
 # `/schema` persists a credential under the same rule, and additionally retrieves a remembered one on
 # open, which is the path that would fill a login saved for one endpoint into a page pointed at another.

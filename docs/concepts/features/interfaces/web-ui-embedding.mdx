@@ -89,4 +89,4 @@ A middle click, or the platform's new-tab modifier click, keeps the browser's ow
 
 ## The web terminal {#web-terminal}
 
-[`/webterminal`](/concepts/features/interfaces/web-terminal) implements an older variant of the same exchange — `webterminal-hello` and `webterminal-credentials` — because its credentials go into the established WebSocket connection rather than into a query string. `/play` embeds it with that protocol.
+[`/webterminal`](/concepts/features/interfaces/web-terminal) implements an older variant of the same exchange — `webterminal-hello` and `webterminal-credentials` — because its credentials go into the established WebSocket connection rather than into a query string. `/play` embeds it with that protocol, and only when the terminal would accept the handover: the terminal takes `webterminal-credentials` from a parent at its own origin or on the same fixed list of trusted hosts, so a `/play` page pointed at a server of another origin opens that server's terminal in a new tab instead of embedding one that could not be logged into.
