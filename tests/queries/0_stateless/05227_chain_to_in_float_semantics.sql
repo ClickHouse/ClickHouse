@@ -36,6 +36,24 @@ INSERT INTO t_chain_to_in_int VALUES (0), (1), (2), (5);
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_int WHERE (i = 0) OR (i = 1) OR (i = 2)) WHERE explain ILIKE '%function_name: in%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_int WHERE (i != 0) AND (i != 1) AND (i != 2)) WHERE explain ILIKE '%function_name: notIn%';
 
+-- A typed numeric constant that is not a zero is as safe as a plain literal: casts are constant-folded
+-- before the rewrite runs, and a wide integer or a `Bool` still has to be recognized as a non-zero number
+-- for the chain to reach the lossless-conversion check and be folded. (A `Decimal` constant is refused
+-- later by that conversion check, so only the agreement of the results is asserted for it.)
+SELECT count(), (SELECT count() FROM t_chain_to_in_float WHERE (f = CAST(1, 'Decimal64(1)')) OR (f = CAST(2, 'Decimal64(1)')) OR (f = CAST(5, 'Decimal64(1)')) SETTINGS optimize_min_equality_disjunction_chain_length = 100000)
+FROM t_chain_to_in_float WHERE (f = CAST(1, 'Decimal64(1)')) OR (f = CAST(2, 'Decimal64(1)')) OR (f = CAST(5, 'Decimal64(1)'));
+SELECT count(), (SELECT count() FROM t_chain_to_in_float WHERE (f = CAST(1, 'Int128')) OR (f = CAST(2, 'Int128')) OR (f = CAST(5, 'Int128')) SETTINGS optimize_min_equality_disjunction_chain_length = 100000)
+FROM t_chain_to_in_float WHERE (f = CAST(1, 'Int128')) OR (f = CAST(2, 'Int128')) OR (f = CAST(5, 'Int128'));
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float WHERE (f = CAST(1, 'Int128')) OR (f = CAST(2, 'Int128')) OR (f = CAST(5, 'Int128'))) WHERE explain ILIKE '%function_name: in%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float WHERE (f = CAST(1, 'UInt256')) OR (f = CAST(2, 'UInt256')) OR (f = CAST(5, 'UInt256'))) WHERE explain ILIKE '%function_name: in%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float WHERE (f = true) OR (f = CAST(2, 'Float64')) OR (f = CAST(5, 'Float64'))) WHERE explain ILIKE '%function_name: in%';
+-- ... while a typed zero is still kept out of the rewrite.
+SELECT count(), (SELECT count() FROM t_chain_to_in_float WHERE (f = CAST(0, 'Int128')) OR (f = CAST(1, 'Int128')) OR (f = CAST(2, 'Int128')) SETTINGS optimize_min_equality_disjunction_chain_length = 100000)
+FROM t_chain_to_in_float WHERE (f = CAST(0, 'Int128')) OR (f = CAST(1, 'Int128')) OR (f = CAST(2, 'Int128'));
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float WHERE (f = CAST(0, 'Int128')) OR (f = CAST(1, 'Int128')) OR (f = CAST(2, 'Int128'))) WHERE explain ILIKE '%function_name: in%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float WHERE (f = false) OR (f = CAST(1, 'Float64')) OR (f = CAST(2, 'Float64'))) WHERE explain ILIKE '%function_name: in%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float WHERE (f = CAST(0, 'Decimal64(1)')) OR (f = CAST(1, 'Decimal64(1)')) OR (f = CAST(2, 'Decimal64(1)'))) WHERE explain ILIKE '%function_name: in%';
+
 -- The same divergence is reachable through a compound carrier: `equals` on a `Tuple` or an `Array` is
 -- evaluated element-wise, while `IN` hashes the raw bits of every element.
 
@@ -56,10 +74,10 @@ FROM t_chain_to_in_float_tuple WHERE (t != (nan, 1.)) AND (t != (1., 2.)) AND (t
 SELECT count() FROM t_chain_to_in_float_tuple WHERE t IN ((nan, 1.), (1., 2.), (3., 4.));
 SELECT count() FROM t_chain_to_in_float_tuple WHERE t IN ((0., 7.), (1., 2.), (3., 4.));
 
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_tuple WHERE (t = (nan, 1.)) OR (t = (1., 2.)) OR (t = (3., 4.))) WHERE explain ILIKE '%function_name: in%' SETTINGS enable_analyzer = 1;
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_tuple WHERE (t = (0., 7.)) OR (t = (1., 2.)) OR (t = (3., 4.))) WHERE explain ILIKE '%function_name: in%' SETTINGS enable_analyzer = 1;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_tuple WHERE (t = (nan, 1.)) OR (t = (1., 2.)) OR (t = (3., 4.))) WHERE explain ILIKE '%function_name: in%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_tuple WHERE (t = (0., 7.)) OR (t = (1., 2.)) OR (t = (3., 4.))) WHERE explain ILIKE '%function_name: in%';
 -- A tuple chain without a NaN and without a zero keeps the conversion.
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_tuple WHERE (t = (9., 7.)) OR (t = (1., 2.)) OR (t = (3., 4.))) WHERE explain ILIKE '%function_name: in%' SETTINGS enable_analyzer = 1;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_tuple WHERE (t = (9., 7.)) OR (t = (1., 2.)) OR (t = (3., 4.))) WHERE explain ILIKE '%function_name: in%';
 
 DROP TABLE IF EXISTS t_chain_to_in_float_array;
 CREATE TABLE t_chain_to_in_float_array (arr Array(Float64)) ENGINE = MergeTree ORDER BY tuple();
@@ -70,33 +88,16 @@ FROM t_chain_to_in_float_array WHERE (arr = [0.]) OR (arr = [1.]) OR (arr = [2.]
 
 SELECT count() FROM t_chain_to_in_float_array WHERE arr IN ([0.], [1.], [2.]);
 
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_array WHERE (arr = [0.]) OR (arr = [1.]) OR (arr = [2.])) WHERE explain ILIKE '%function_name: in%' SETTINGS enable_analyzer = 1;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_array WHERE (arr = [0.]) OR (arr = [1.]) OR (arr = [2.])) WHERE explain ILIKE '%function_name: in%';
 -- An array chain without a NaN and without a zero keeps the conversion.
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_array WHERE (arr = [9.]) OR (arr = [1.]) OR (arr = [2.])) WHERE explain ILIKE '%function_name: in%' SETTINGS enable_analyzer = 1;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_float_array WHERE (arr = [9.]) OR (arr = [1.]) OR (arr = [2.])) WHERE explain ILIKE '%function_name: in%';
 
 -- A compound carrier without floating-point elements keeps the conversion as well.
 DROP TABLE IF EXISTS t_chain_to_in_int_tuple;
 CREATE TABLE t_chain_to_in_int_tuple (t Tuple(Int32, Int32)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_chain_to_in_int_tuple VALUES ((0, 1)), ((1, 2)), ((3, 4));
 
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_int_tuple WHERE (t = (0, 1)) OR (t = (1, 2)) OR (t = (3, 4))) WHERE explain ILIKE '%function_name: in%' SETTINGS enable_analyzer = 1;
-
--- The legacy `enable_analyzer = 0` rewrite (`LogicalExpressionsOptimizer`) folds the same chain and needs
--- the same guard.
-
-SELECT count(), (SELECT count() FROM t_chain_to_in_float WHERE (f = nan) OR (f = 1.) OR (f = 2.) SETTINGS enable_analyzer = 0, optimize_min_equality_disjunction_chain_length = 100000)
-FROM t_chain_to_in_float WHERE (f = nan) OR (f = 1.) OR (f = 2.) SETTINGS enable_analyzer = 0;
-
-SELECT count(), (SELECT count() FROM t_chain_to_in_float WHERE (f = 0.) OR (f = 1.) OR (f = 2.) SETTINGS enable_analyzer = 0, optimize_min_equality_disjunction_chain_length = 100000)
-FROM t_chain_to_in_float WHERE (f = 0.) OR (f = 1.) OR (f = 2.) SETTINGS enable_analyzer = 0;
-
-SELECT count(), (SELECT count() FROM t_chain_to_in_float WHERE (f = 0) OR (f = 1) OR (f = 2) SETTINGS enable_analyzer = 0, optimize_min_equality_disjunction_chain_length = 100000)
-FROM t_chain_to_in_float WHERE (f = 0) OR (f = 1) OR (f = 2) SETTINGS enable_analyzer = 0;
-
-SELECT count() FROM (EXPLAIN SYNTAX SELECT count() FROM t_chain_to_in_float WHERE (f = nan) OR (f = 1.) OR (f = 2.) SETTINGS enable_analyzer = 0) WHERE explain ILIKE '%in(%' SETTINGS enable_analyzer = 0;
--- A chain without a NaN and without a zero, and a chain on a non-floating-point column, are still folded.
-SELECT count() FROM (EXPLAIN SYNTAX SELECT count() FROM t_chain_to_in_float WHERE (f = 3.) OR (f = 1.) OR (f = 2.) SETTINGS enable_analyzer = 0) WHERE explain ILIKE '%in(%' SETTINGS enable_analyzer = 0;
-SELECT count() FROM (EXPLAIN SYNTAX SELECT count() FROM t_chain_to_in_int WHERE (i = 0) OR (i = 1) OR (i = 2) SETTINGS enable_analyzer = 0) WHERE explain ILIKE '%in(%' SETTINGS enable_analyzer = 0;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_to_in_int_tuple WHERE (t = (0, 1)) OR (t = (1, 2)) OR (t = (3, 4))) WHERE explain ILIKE '%function_name: in%';
 
 DROP TABLE t_chain_to_in_float_tuple;
 DROP TABLE t_chain_to_in_float_array;
