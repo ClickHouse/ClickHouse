@@ -16,3 +16,8 @@ BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/b
 SELECT lambda(tuple(), 1)
 SELECT arrayMap(() -> 1, [1])
 SELECT * APPLY lambda(1)(tuple(x), x + 1)
+SELECT * FROM view(SELECT 1)
+SELECT count() OVER (ORDER BY x ASC) FROM t
+SELECT any(x) IGNORE NULLS FROM t
+SELECT quantile(0.9)(x) FROM t
+1

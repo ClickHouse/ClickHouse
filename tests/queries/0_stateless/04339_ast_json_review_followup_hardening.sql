@@ -25,6 +25,10 @@ SELECT formatQueryFromJSON(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT lambda(tuple(), 1)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT arrayMap(() -> 1, [1])'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * APPLY(lambda(1)(tuple(x), x + 1))'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM view(SELECT 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY x) FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT any(x) IGNORE NULLS FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT quantile(0.9)(x) FROM t'));
 
 -- ---------------------------------------------------------------------------
 -- ASTAlterCommand: parser-owned children are restored by concrete type. `col_decl` must be an
@@ -110,3 +114,22 @@ SELECT formatQueryFromJSON('{"type":"Function","name":"f","is_lambda_function":t
 SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * APPLY(x -> (x + 1))'), '"name":"tuple"', '"name":"nottuple"')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","parameters":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":7}}]},"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ASTFunction: a bare select query argument is parser-producible only in the table functions
+-- `view(SELECT ...)` and `viewIfPermitted(SELECT ... ELSE f(...))`, and the formatter prints those
+-- two shapes through branches that emit the name and the select and then return, so parameters, a
+-- window and a NULLS action never reach the output; under any other name a bare select formats into
+-- text that does not parse back. One row per rejected carrier: another function name, an extra
+-- argument, a select in `parameters`, a select under a nested expression list, then the same
+-- parameters / window / NULLS action carriers under the name `view` itself. The `position()` row
+-- anchors the `replace()` rows, which would be vacuous if that serialization changed.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"Function","name":"any","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"foo","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}},{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"foo","parameters":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"foo","arguments":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT position(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"type":"Function","name":"view","arguments"') > 0;
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","parameters"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","is_window_function":true,"window_name":"w","arguments"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","nulls_action":"RESPECT_NULLS","arguments"')); -- { serverError BAD_ARGUMENTS }
