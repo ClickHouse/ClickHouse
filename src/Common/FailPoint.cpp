@@ -360,6 +360,9 @@ static struct InitFiu
     PAUSEABLE(transaction_after_commit_pause) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
     REGULAR(transaction_slow_resolve_removal_csn) \
+    PAUSEABLE(transaction_commit_pause_before_mutation_csn) \
+    PAUSEABLE(transaction_commit_pause_before_csn_cas) \
+    PAUSEABLE(kill_mutation_pause_after_transaction_resolve) \
     PAUSEABLE(mt_pause_before_register_mutation) \
     ONCE(transaction_rollback_reset_removal_tid_fail) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
