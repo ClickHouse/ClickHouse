@@ -30,6 +30,9 @@ namespace
     ///      role mapping by re-running `find` on THAT storage with `force_external_lookup`
     ///      (see `LDAPAccessStorage::findImpl`); never globally, which could materialize a
     ///      same-named user in an earlier LDAP storage and change which directory wins.
+    ///      If that storage refuses to resolve the entry (the directory does not confirm the
+    ///      name), the cached id is not used: the storages after it may define the name, else
+    ///      the user is unknown.
     ///   2. On a miss, `force_external_lookup=true` lets `LDAPAccessStorage` service-bind
     ///      the directory to resolve users not yet cached here. No-op for other storages.
     ///   3. Still nothing -> `getID` for the canonical `UNKNOWN_USER` error.
@@ -42,12 +45,19 @@ namespace
         if (auto id = access_control.find<User>(target_user_name))
         {
             const auto storage = access_control.findStorage(*id);
-            if (storage && storage->getStorageType() == LDAPAccessStorage::STORAGE_TYPE)
-            {
-                if (auto refreshed_id = storage->find<User>(target_user_name, /* force_external_lookup = */ true))
-                    return *refreshed_id;
-            }
-            return *id;
+            if (!storage || storage->getStorageType() != LDAPAccessStorage::STORAGE_TYPE)
+                return *id;
+
+            if (auto refreshed_id = storage->find<User>(target_user_name, /* force_external_lookup = */ true))
+                return *refreshed_id;
+
+            /// The directory does not confirm the cached entry: a name the interserver path materialised
+            /// without asking it, or a user offboarded meanwhile. The stale id must not be impersonated. The
+            /// forced pass asks the storages in order (this one refuses again, a later one may define the
+            /// name); `getID` cannot report the miss because it would find the cached entry.
+            if (auto later_id = access_control.find<User>(target_user_name, /* force_external_lookup = */ true))
+                return *later_id;
+            IAccessStorage::throwNotFound(AccessEntityType::USER, target_user_name, access_control.getStorageName());
         }
         if (auto id = access_control.find<User>(target_user_name, /* force_external_lookup = */ true))
             return *id;
