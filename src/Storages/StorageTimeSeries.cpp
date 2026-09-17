@@ -22,7 +22,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/TimeSeries/TimeSeriesInsertCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
@@ -34,6 +33,8 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
+#include <mutex>
+#include <unordered_map>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
@@ -67,6 +68,9 @@ namespace fs = std::filesystem;
 
 namespace
 {
+    std::mutex metric_families_caches_mutex;
+    std::unordered_multimap<UUID, TimeSeriesInsertCache *> metric_families_caches;
+
     /// Normalizes the create query.
     boost::intrusive_ptr<const ASTCreateQuery> makeNormalizedCreateQuery(
         const ASTCreateQuery & query, const ContextPtr & local_context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
@@ -220,17 +224,7 @@ StorageTimeSeries::StorageTimeSeries(
     }
 
     has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
-    const auto insert_cache_max_size_bytes = (*settings)[TimeSeriesSetting::insert_cache_max_size_bytes];
     storage_settings.set(std::move(settings));
-    const auto metric_families_table = getTargetTable(ViewTarget::MetricFamilies, local_context);
-    const auto * metric_families_merge_tree = dynamic_cast<const MergeTreeData *>(metric_families_table.get());
-    if (insert_cache_max_size_bytes
-        && metric_families_merge_tree
-        && metric_families_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Mode::Replacing)
-    {
-        insert_cache = std::make_unique<TimeSeriesInsertCache>(insert_cache_max_size_bytes);
-        DatabaseCatalog::instance().addDependencies(table_id, {metric_families_table->getStorageID()}, {}, {});
-    }
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -245,7 +239,44 @@ UInt64 StorageTimeSeries::getVersion() const
 }
 
 
-StorageTimeSeries::~StorageTimeSeries() = default;
+StorageTimeSeries::~StorageTimeSeries()
+{
+    if (!insert_cache)
+        return;
+
+    std::lock_guard lock(metric_families_caches_mutex);
+    for (auto it = metric_families_caches.begin(); it != metric_families_caches.end(); ++it)
+    {
+        if (it->second == insert_cache.get())
+        {
+            metric_families_caches.erase(it);
+            break;
+        }
+    }
+}
+
+TimeSeriesInsertCache * StorageTimeSeries::getInsertCache(const ContextPtr & local_context)
+{
+    std::lock_guard lock(metric_families_caches_mutex);
+    if (insert_cache_initialized)
+        return insert_cache.get();
+
+    const auto insert_cache_max_size_bytes = (*storage_settings.get())[TimeSeriesSetting::insert_cache_max_size_bytes];
+    if (!insert_cache_max_size_bytes)
+    {
+        insert_cache_initialized = true;
+        return nullptr;
+    }
+
+    const auto metric_families_table = getTargetTable(ViewTarget::MetricFamilies, local_context);
+    insert_cache_initialized = true;
+    if (!metric_families_table->getName().ends_with("ReplacingMergeTree"))
+        return nullptr;
+
+    insert_cache = std::make_unique<TimeSeriesInsertCache>(insert_cache_max_size_bytes);
+    metric_families_caches.emplace(metric_families_table->getStorageID().uuid, insert_cache.get());
+    return insert_cache.get();
+}
 
 
 const StorageTimeSeries::Target * StorageTimeSeries::tryGetTarget(ViewTarget::Kind target_kind) const
@@ -808,16 +839,12 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
         storage->getStorageID().getNameForLogs());
 }
 
-void clearTimeSeriesMetricFamiliesCaches(const StoragePtr & target_table, const ContextPtr & context)
+void clearTimeSeriesMetricFamiliesCaches(const StoragePtr & target_table)
 {
-    for (const auto & dependent_id : DatabaseCatalog::instance().getReferentialDependents(target_table->getStorageID()))
-    {
-        auto dependent = DatabaseCatalog::instance().tryGetTable(dependent_id, context);
-        auto time_series = std::dynamic_pointer_cast<StorageTimeSeries>(dependent);
-        if (time_series && time_series->tryGetTargetTable(ViewTarget::MetricFamilies, context) == target_table)
-            if (auto * cache = time_series->getInsertCache())
-                cache->clear();
-    }
+    std::lock_guard lock(metric_families_caches_mutex);
+    auto [begin, end] = metric_families_caches.equal_range(target_table->getStorageID().uuid);
+    for (auto it = begin; it != end; ++it)
+        it->second->clear();
 }
 
 

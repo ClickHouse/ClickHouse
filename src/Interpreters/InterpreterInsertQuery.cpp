@@ -132,19 +132,18 @@ namespace
 class TimeSeriesCacheInvalidator final : public ICustomResourceHolder
 {
 public:
-    TimeSeriesCacheInvalidator(StoragePtr target_table_, ContextPtr context_)
-        : target_table(std::move(target_table_)), context(std::move(context_))
+    explicit TimeSeriesCacheInvalidator(StoragePtr target_table_)
+        : target_table(std::move(target_table_))
     {
     }
 
     ~TimeSeriesCacheInvalidator() override
     {
-        clearTimeSeriesMetricFamiliesCaches(target_table, context);
+        clearTimeSeriesMetricFamiliesCaches(target_table);
     }
 
 private:
     StoragePtr target_table;
-    ContextPtr context;
 };
 }
 
@@ -1399,7 +1398,7 @@ BlockIO InterpreterInsertQuery::execute()
     QueryPlanResourceHolder insert_resources;
     insert_resources.table_locks.emplace_back(std::move(table_lock));
     if (invalidate_time_series_cache)
-        insert_resources.custom_resources.emplace_back(std::make_shared<TimeSeriesCacheInvalidator>(table, context));
+        insert_resources.custom_resources.emplace_back(std::make_shared<TimeSeriesCacheInvalidator>(table));
     res.pipeline.addResources(std::move(insert_resources));
 
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))

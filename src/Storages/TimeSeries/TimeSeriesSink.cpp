@@ -464,7 +464,7 @@ TimeSeriesSink::TimeSeriesSink(
     , log(getLogger("TimeSeriesSink"))
     , async_insert(async_insert_)
 {
-    insert_cache = time_series_storage.getInsertCache();
+    insert_cache = time_series_storage.getInsertCache(context_);
 
     /// Determine which target tables need pipelines based on the columns mentioned in the INSERT query.
     /// If insert_columns is empty (e.g. INSERT INTO mytable VALUES ...), all columns are being inserted.

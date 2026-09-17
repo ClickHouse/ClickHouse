@@ -393,7 +393,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                     MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
                 }
                 table->mutate(*mutation_commands, context);
-                clearTimeSeriesMetricFamiliesCaches(table, context);
+                clearTimeSeriesMetricFamiliesCaches(table);
             }
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))

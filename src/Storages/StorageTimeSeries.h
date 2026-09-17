@@ -55,7 +55,7 @@ public:
 
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
-    TimeSeriesInsertCache * getInsertCache() const { return insert_cache.get(); }
+    TimeSeriesInsertCache * getInsertCache(const ContextPtr & local_context);
 
     /// Whether this table has a target of the given kind (the RecentSamples target is optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
@@ -148,11 +148,12 @@ private:
 
     std::vector<Target> targets;
     bool has_inner_tables = false;
+    bool insert_cache_initialized = false;
     std::unique_ptr<TimeSeriesInsertCache> insert_cache;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
 std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
-void clearTimeSeriesMetricFamiliesCaches(const StoragePtr & target_table, const ContextPtr & context);
+void clearTimeSeriesMetricFamiliesCaches(const StoragePtr & target_table);
 
 }
