@@ -14,14 +14,75 @@
 namespace DB
 {
 
-/// Whether a file move must be done by changing the file lists of the directories instead of copying the blob.
-/// Used both when the transaction is planned and when it is committed.
-bool isMetadataOnlyMove(
-    const FsSnapshot & fs_tree,
-    const DirectoryRemoteInfo & directory_from,
-    const DirectoryRemoteInfo & directory_to,
-    const std::string & blob_key_from,
-    const std::optional<std::string> & blob_key_of_existing_target);
+/// A move of a file of a `plain_rewritable` disk is a copy of its blob followed by a delete of the
+/// blob it copied. Both requests address the blob by the path of the file, so on an object storage
+/// where a blob can be overwritten in place they may not be talking about the same content: another
+/// writer can replace the blob between them, and a delete by path alone would then take away a
+/// generation of the file that was never copied anywhere.
+///
+/// One `HEAD` names the generation before the copy. `copyObject` is then pinned to it (and needs no
+/// `HEAD` of its own any more), and so is the delete: both transfer and remove exactly the
+/// generation named here, or fail with `FILE_CHANGED_DURING_READ` and leave the file in place.
+///
+/// This is done for Azure and S3, the object storages whose `copyObject` honours the generation of
+/// the source (`If-Match` on the Azure copy and on every `GET` of its fallback,
+/// `x-amz-copy-source-if-match` on the S3 `CopyObject` and `UploadPartCopy`) and whose delete
+/// honours it too (`AzureObjectStorage::removeObjectImpl` and `S3ObjectStorage::removeObjectImpl`
+/// send it as `If-Match`; S3 evaluates it on general purpose and directory buckets, and an
+/// S3-compatible endpoint that ignores it on a `DELETE` deletes by key, as it did before). For the
+/// other object storages the object is returned as it was and not a single extra request is made.
+/// An endpoint that reports no generation for the blob cannot be pinned to one at
+/// all, and the move is refused with `AZURE_BLOB_STORAGE_ERROR` or `S3_ERROR` rather than made
+/// blind; a blob that the `HEAD` does not find at all is refused with `FILE_DOESNT_EXIST` for the
+/// same reason, because a blob recreated after that `HEAD` is a generation this operation has never
+/// named.
+StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
+
+/// A generation named by `pinToTheGenerationThatIsThereNow` carries its size, and the metadata of a
+/// `plain_rewritable` disk records a size for the file - the one the file was written with, or the
+/// one the listing reported when the tree was rebuilt. A move or a hard link records the target with
+/// that size, so the generation it copies has to be the one the size describes: a blob of another
+/// size is a generation written over the file out of band, and a target recorded with the old size
+/// would be read short of its end (or past it) from then on. Refuses such a generation with
+/// `FILE_CHANGED_DURING_READ`, before anything is written. A generation that is not named (an object
+/// storage that does not pin, see above) is not measured either, and passes.
+void refuseAGenerationOfAnotherSize(const StoredObject & generation, size_t recorded_size, const std::filesystem::path & path);
+
+/// Names the generation of a blob that a copy has just written, so that a rollback that takes it
+/// back out is pinned to it (`removeObjectIfExists` sends it as `If-Match`) and cannot take away a
+/// generation that somebody else has written since. `etag_the_copy_reported` is what `copyObject`
+/// returned: the `ETag` from the response to the request that created the blob, which names exactly
+/// the generation the copy wrote. No request is made here - a `HEAD` of the key after the copy
+/// would name whatever generation is there by then, and a writer that replaced the key between the
+/// copy and that `HEAD` would have its generation bound to the operation instead. `bytes_size` is
+/// the size of the generation that was copied, which is the size of the one written.
+///
+/// Nothing is returned when the blob is on Azure or on S3 and the copy reported no `ETag`, so the
+/// generation cannot be named at all. A delete by path alone is exactly the cross-generation loss
+/// the pinning exists to prevent, so the caller has to fail closed rather than fall back to one.
+/// For every other object storage the object is returned by its key, as it was.
+std::optional<StoredObject> nameTheGenerationThatWasJustWritten(
+    const IObjectStorage & object_storage, const std::filesystem::path & remote_path, const String & etag_the_copy_reported, size_t bytes_size);
+
+/// Puts the blob that a rollback saved aside at `remote_tmp_path` back at `remote_path`, without
+/// ever writing over what is at that key. Asking whether the key is free and then copying over it
+/// are two requests, and a writer that recreates the key in between the two would be overwritten by
+/// the copy - the very loss the pinning of the execute side exists to prevent. So on Azure and on
+/// S3 - the object storages whose moves are pinned, see `pinToTheGenerationThatIsThereNow` - the
+/// restore is a create-if-absent write (`If-None-Match: *`), which the endpoint refuses when a blob
+/// is at the key, and the bytes are read pinned to the generation of the saved blob (`If-Match`).
+///
+/// Returns whether the blob was restored. A restore that did not happen - the key was taken over,
+/// the saved blob cannot be named, the write did not go through - is reported rather than retried
+/// blind, and the caller then leaves the saved blob in the bucket, so that the generation this
+/// transaction took away is still there to be recovered by hand. Every other object storage
+/// restores by key, the way its execute side deletes and writes by key.
+bool restoreTheSavedBlobWithoutWritingOver(
+    IObjectStorage & object_storage,
+    const std::filesystem::path & remote_tmp_path,
+    const std::filesystem::path & remote_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings);
 
 class MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation final : public IMetadataOperation
 {
@@ -77,8 +138,8 @@ private:
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
     std::unordered_set<std::string> changed_paths;
 
-    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path);
-    void rewriteSingleDirectory(const std::filesystem::path & from, const std::filesystem::path & to, const DirectoryRemoteInfo & remote_info, WriteBuffer & buffer);
+    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_content);
+    void rewriteSingleDirectory(const std::filesystem::path & from, const std::filesystem::path & to, WriteBuffer & buffer);
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -117,40 +178,26 @@ public:
     void undo() override;
 };
 
-/// Records a file whose blob has already been written.
-/// The blob key is relative to the common key prefix; an empty key means the default location, `<directory remote path>/<file name>`.
-/// A blob at the default location only fits a directory with the implicit file list; a directory with the explicit file list
-/// gets its `prefix.path` rewritten with the new file, and a blob outside of the default location switches the directory to that form.
 class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMetadataOperation
 {
 private:
     const std::filesystem::path path;
     const StoredObject object;
-    const std::string blob_key;
     const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    StoredObjects & removed_objects;
-
-    std::optional<DirectoryRemoteInfo> previous_directory_info;
-    bool prefix_path_written = false;
-    std::optional<StoredObject> replaced_blob;
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
         std::string path_,
         StoredObject object_,
-        std::string blob_key_,
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_,
-        StoredObjects & removed_objects_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
-    void undo() override;
-    void finalize() override;
 };
 
 class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
@@ -164,19 +211,13 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     StoredObjects & removed_objects;
 
-    /// A file of a directory with the implicit file list, whose blob is not shared, is removed together with its blob:
-    /// otherwise the blob would be discovered as a file again when the metadata is loaded. To be able to undo the removal,
-    /// the blob is first copied to a temporary location.
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
     bool copy_started = false;
     bool remove_started = false;
-
-    /// Otherwise the file is removed from the explicit file list of the directory (switching the directory to that form
-    /// if needed), and the blob is removed after the commit if this was its last link.
-    std::optional<DirectoryRemoteInfo> previous_directory_info;
-    bool prefix_path_written = false;
-    std::optional<StoredObject> blob_to_remove;
+    /// The delete of the source found a generation it had not copied aside and left it in place, so
+    /// `undo` must not restore the copy over it.
+    bool source_was_left_in_place = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -193,8 +234,6 @@ public:
     void finalize() override;
 };
 
-/// Duplicates the blob of the source file. Used when hard links are disabled for the disk, so that the metadata
-/// stays in the form that older servers can read (see `MetadataStorageFromPlainRewritableObjectStorage`).
 /// Throws an exception if path_to_ already exists.
 class MetadataStorageFromPlainObjectStorageCopyFileOperation final : public IMetadataOperation
 {
@@ -208,41 +247,20 @@ private:
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
-    bool copy_attempted = false;
-    std::optional<DirectoryRemoteInfo> previous_directory_info;
-    bool prefix_path_written = false;
+    /// Set between the copy and everything that follows it: the blob is at the destination from
+    /// that point on, whatever happens next, so `undo` has to take it back out.
+    bool copied_to_destination = false;
+    /// The generation the copy wrote, as the response to the copy named it, so that the delete in
+    /// `undo` is pinned to it and cannot take away a generation another writer has put at the same
+    /// key since. When the endpoint names no generation for it, `destination` is the bare key, and
+    /// `undo` does not delete by it: the blob the copy wrote is left at the key and logged, although
+    /// a blob left under the key of a file is loaded as that file on the next start (see `load`),
+    /// because a delete by key alone could take away a generation another writer has put there.
+    StoredObject destination;
+    bool destination_generation_is_named = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCopyFileOperation(
-        std::filesystem::path path_from_,
-        std::filesystem::path path_to_,
-        std::shared_ptr<FsSnapshot> fs_tree_,
-        std::shared_ptr<IObjectStorage> object_storage_,
-        std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
-
-    void execute() override;
-    void undo() override;
-};
-
-/// Creates a hard link: a file in the target directory that shares the blob of the source file.
-/// The target directory is switched to the explicit file list form, and the number of links to the blob is incremented.
-/// Throws an exception if path_to_ already exists.
-class MetadataStorageFromPlainObjectStorageHardLinkOperation final : public IMetadataOperation
-{
-private:
-    const std::filesystem::path path_from;
-    const std::filesystem::path path_to;
-    const std::shared_ptr<FsSnapshot> fs_tree;
-    const std::shared_ptr<IObjectStorage> object_storage;
-    const std::shared_ptr<PlainRewritableLayout> layout;
-    const std::shared_ptr<PlainRewritableMetrics> metrics;
-
-    std::optional<DirectoryRemoteInfo> previous_directory_info;
-    bool prefix_path_written = false;
-
-public:
-    MetadataStorageFromPlainObjectStorageHardLinkOperation(
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
         std::shared_ptr<FsSnapshot> fs_tree_,
@@ -258,10 +276,6 @@ public:
  * @brief MetadataStorageFromPlainObjectStorageMoveFileOperation move file from {path_from, remote_path_from} to {path_to, remote_path_to}.
  *  If `replacable` is enabled, the target file will be replaced if exists. If disabled, the target file must not exist.
  *  Both source and target files must not be directories.
- *
- *  When both directories have the implicit file list and the blobs involved are not shared, the blob is moved by copying.
- *  Otherwise the move only changes the file lists of the two directories (switching them to the explicit form if needed),
- *  and the blob stays where it is.
  */
 class MetadataStorageFromPlainObjectStorageMoveFileOperation final : public IMetadataOperation
 {
@@ -275,21 +289,35 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     StoredObjects & removed_objects;
 
-    bool metadata_only_move{false};
-    std::optional<DirectoryRemoteInfo> previous_directory_info_from;
-    std::optional<DirectoryRemoteInfo> previous_directory_info_to;
-    bool prefix_path_written_from{false};
-    bool prefix_path_written_to{false};
-    std::optional<StoredObject> replaced_blob;
-
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
+    /// The source blob, pinned to the generation of it that this move carries.
+    StoredObject source;
     bool moved_existing_source_file{false};
     bool moved_existing_target_file{false};
-    bool moved_file{false};
+    /// A delete found a generation of the blob that this move had not copied aside and left it in
+    /// place, so `undo` must not restore the copy of the generation before it.
+    bool source_was_left_in_place{false};
+    bool target_was_left_in_place{false};
+    /// The copy to the destination succeeded. It is set before the delete of the source, which can
+    /// fail on its own, so that `undo` takes the blob it wrote back out even then: the object of a
+    /// move that was never committed is not harmless garbage, because
+    /// `MetadataStorageFromPlainRewritableObjectStorage::load` rebuilds the files of a directory
+    /// from the blobs that are in the bucket, so leaving it there resurrects `path_to` on restart.
+    bool copied_to_destination{false};
+    /// The generation of the destination blob that the copy wrote, as the response to the copy named
+    /// it, so that the delete in `undo` is pinned to it and cannot take away a generation written by
+    /// somebody else.
+    StoredObject destination;
+    /// Whether `destination` names a generation. The execute side refuses to go on without one, so
+    /// `undo` only ever sees it unset for a move that was refused for exactly that reason, and it
+    /// then leaves the blob the copy wrote at its key and logs it, rather than deleting by the key
+    /// alone whatever is there - even though `load` brings the uncommitted move back as `path_to`
+    /// on the next start: a delete by key could take away a generation another writer has put there.
+    bool destination_generation_is_named{false};
 
 public:
     MetadataStorageFromPlainObjectStorageMoveFileOperation(
@@ -312,10 +340,16 @@ public:
     void execute() override;
     /**
      * @brief Undo the `execute` logic:
-     *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to
-     *  2. Restore remote_path_from from tmp_remote_path_from if it is copied.
-     *  3. Restore remote_path_to from tmp_remote_path_to if it is copied.
+     *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to. The delete is
+     *     pinned to the generation that the copy wrote, and a generation that somebody else has
+     *     written since is left in place.
+     *  2. Restore remote_path_from from tmp_remote_path_from if it is copied, unless a blob that
+     *     this move never carried is at remote_path_from by then.
+     *  3. Restore remote_path_to from tmp_remote_path_to if it is copied, under the same condition.
      *  5. Update fs_tree
+     *
+     * A restore that is refused leaves the blob it would have restored in the bucket, at the
+     * temporary key named in the log, rather than destroying either generation.
      */
     void undo() override;
     /**
@@ -340,8 +374,7 @@ private:
 
     std::filesystem::path tmp_path;
     std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
-    /// The metadata objects of the removed directories and the blobs whose last links were inside the removed subtree.
-    StoredObjects objects_to_remove;
+    std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> subtree_remote_info;
     bool move_tried = false;
 
 public:

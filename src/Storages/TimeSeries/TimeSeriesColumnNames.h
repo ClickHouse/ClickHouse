@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
+
 
 namespace DB
 {
@@ -51,14 +53,15 @@ struct TimeSeriesColumnNames
     /// The outer column of a TimeSeries table with a "histograms" target: an array of histogram samples per row.
     static constexpr const char * Histograms = "histograms";
 
-    /// The "metrics" table contains general information (metadata) about metrics:
+    /// The "metric families" table contains general information (metadata) about metric families:
     static constexpr const char * MetricFamily = "metric_family";
     static constexpr const char * Type = "type";
     static constexpr const char * Unit = "unit";
     static constexpr const char * Help = "help";
 
-    /// Columns returned by the table function prometheusQuery().
-    /// The function can also output columns `tags`, `value`, and `timestamp`.
+    /// The outer column with (timestamp, value) pairs of a time series, also returned by `prometheusQuery` and `prometheusQueryRange`.
+    /// It's named `time_series` in tables of versions before 3, see `getOuterSamples`.
+    static constexpr const char * Samples = "samples";
     static constexpr const char * TimeSeries = "time_series";
 
     /// The column with native histogram samples returned by prometheusQuery() together with `value`/`time_series`
@@ -86,11 +89,17 @@ struct TimeSeriesColumnNames
 
     /// Old names kept for compatibility:
 
-    /// The old name of the "metric_family" column, still used in the "metrics" target table.
+    /// The old name of the "metric_family" column, still used in the "metric families" target table.
     static constexpr const char * MetricFamilyName = "metric_family_name";
 
     /// Older tables fill it ephemerally with all tags except `__name__`, so their identifiers for the same time series can differ.
     static constexpr const char * AllTags = "all_tags";
+
+    /// Returns the name of the outer column with samples for a TimeSeries table of the specified version.
+    static constexpr const char * getOuterSamples(UInt64 version)
+    {
+        return (version >= TimeSeriesVersion::MIN_WITH_SAMPLES_OUTER_COLUMN) ? Samples : TimeSeries;
+    }
 };
 
 }
