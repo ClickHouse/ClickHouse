@@ -2819,6 +2819,12 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
+    /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
+    /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
+    /// member list, which cannot name `Nothing`, so they need that path rather than the one below.
+    if (isNothing(from_type) && (isVariant(to_type) || isDynamic(to_type)))
+        return createNothingWrapper(to_type.get());
+
     /// Conversion from/to Variant/Dynamic data type is processed in a special way.
     /// We don't need to remove LowCardinality/Nullable.
     if (isDynamic(to_type) || isDynamic(from_type))
@@ -3485,6 +3491,12 @@ bool FunctionCast::isCompilable() const
 
     const auto & input_type = argument_types[0];
     const auto & result_type = getResultType();
+
+    /// Converting a NULL to a non-Nullable type raises CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+    /// and a compiled expression produces a value with no way to raise.
+    if (isNullableOrLowCardinalityNullable(input_type) && !isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
     auto denull_input_type = removeNullable(input_type);
     auto denull_result_type = removeNullable(result_type);
     if (!canBeNativeType(denull_input_type) || !canBeNativeType(denull_result_type))
