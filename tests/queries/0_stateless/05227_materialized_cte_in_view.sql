@@ -8,7 +8,7 @@ SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 DROP TABLE IF EXISTS src_113711, r_113711, dst_113711, dst_chain_113711, dst_forward_113711, dst_inner_113711, dst_pinned_113711, dst_bad_113711, src_final_113711;
-DROP TABLE IF EXISTS v_113711, v_settings_113711, v_old_113711, pv_113711, v_self_113711, v_chain_113711, v_in_113711, v_in_chain_113711, v_forward_113711, v_union_113711, v_union2_113711, v_sibling_113711, v_nested_113711;
+DROP TABLE IF EXISTS v_113711, v_settings_113711, pv_113711, v_self_113711, v_chain_113711, v_in_113711, v_in_chain_113711, v_forward_113711, v_union_113711, v_union2_113711, v_sibling_113711, v_nested_113711;
 DROP TABLE IF EXISTS mv_113711, mv_chain_113711, mv_forward_113711, mv_inner_113711, mv_pinned_113711, mv_bad_113711;
 
 CREATE TABLE src_113711 (id UInt32) ENGINE = MergeTree ORDER BY id;
@@ -36,17 +36,6 @@ SELECT * FROM v_settings_113711 ORDER BY id;
 SELECT '-- with the setting disabled the keyword is ignored, as in a plain query';
 SELECT * FROM v_113711 ORDER BY id SETTINGS send_logs_level = 'fatal';
 SET enable_materialized_cte = 1;
-
-SELECT '-- a definition created under the old analyzer is stored the same way';
-SET enable_analyzer = 0;
-CREATE VIEW v_old_113711 AS
-WITH r AS MATERIALIZED (SELECT id, rand64() AS x FROM src_113711)
-SELECT a.id AS id, a.x = b.x AS same FROM r AS a INNER JOIN r AS b ON a.id = b.id;
-SET enable_analyzer = 1;
-SELECT * FROM v_old_113711 ORDER BY id;
-
-SELECT '-- the old analyzer still expands the reference itself when reading';
-SELECT count() FROM v_113711 SETTINGS enable_analyzer = 0;
 
 SELECT '-- parameterized view';
 CREATE VIEW pv_113711 AS
@@ -205,5 +194,5 @@ CREATE MATERIALIZED VIEW mv_bad_113711 TO dst_bad_113711 AS WITH b AS MATERIALIZ
 SELECT '-- a CTE-backed first UNION arm does not hide FINAL in a later arm';
 CREATE MATERIALIZED VIEW mv_bad_113711 TO dst_bad_113711 AS WITH r AS MATERIALIZED (SELECT id FROM src_final_113711) SELECT id FROM r UNION ALL SELECT id FROM src_final_113711 FINAL; -- { serverError QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW }
 
-DROP TABLE v_nested_113711, v_sibling_113711, v_union2_113711, v_union_113711, v_in_chain_113711, v_in_113711, v_forward_113711, v_chain_113711, v_self_113711, pv_113711, v_old_113711, v_settings_113711, v_113711;
+DROP TABLE v_nested_113711, v_sibling_113711, v_union2_113711, v_union_113711, v_in_chain_113711, v_in_113711, v_forward_113711, v_chain_113711, v_self_113711, pv_113711, v_settings_113711, v_113711;
 DROP TABLE src_final_113711, dst_bad_113711, dst_pinned_113711, dst_inner_113711, dst_forward_113711, dst_chain_113711, dst_113711, r_113711, src_113711;

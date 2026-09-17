@@ -29,11 +29,11 @@ CREATE TABLE dst_refresh_113711 (id UInt32, same UInt8) ENGINE = MergeTree ORDER
 DEFINITION="WITH r_113711_sh AS MATERIALIZED (SELECT id, rand64() AS x FROM src_113711_sh) SELECT a.id AS id, a.x = b.x AS same FROM (SELECT id, x FROM r_113711_sh) AS a INNER JOIN r_113711_sh AS b ON a.id = b.id"
 
 echo "-- a full-definition ATTACH is fresh input: fixing enable_global_with_statement is rejected"
-${CLICKHOUSE_CLIENT} --send_logs_level fatal -q "ATTACH MATERIALIZED VIEW mv_attach_113711 UUID '$UUID' TO dst_attach_113711 AS $DEFINITION SETTINGS enable_global_with_statement = 0" 2>&1 | grep -oF 'NOT_IMPLEMENTED' | head -n 1
+${CLICKHOUSE_CLIENT} --send_logs_level fatal -q "ATTACH MATERIALIZED VIEW mv_attach_113711 UUID '$UUID' TO dst_attach_113711 (id UInt32, same UInt8) AS $DEFINITION SETTINGS enable_global_with_statement = 0" 2>&1 | grep -oF 'NOT_IMPLEMENTED' | head -n 1
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'mv_attach_113711'"
 
 echo "-- without the clause it is accepted and keeps the reference, so the nested reference reads the CTE, not the same-named table"
-${CLICKHOUSE_CLIENT} --send_logs_level fatal -q "ATTACH MATERIALIZED VIEW mv_attach_113711 UUID '$UUID' TO dst_attach_113711 AS $DEFINITION"
+${CLICKHOUSE_CLIENT} --send_logs_level fatal -q "ATTACH MATERIALIZED VIEW mv_attach_113711 UUID '$UUID' TO dst_attach_113711 (id UInt32, same UInt8) AS $DEFINITION"
 ${CLICKHOUSE_CLIENT} --enable_materialized_cte 1 -q "INSERT INTO src_113711_sh SETTINGS enable_global_with_statement = 0 VALUES (81), (82)"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM dst_attach_113711 ORDER BY id"
 
