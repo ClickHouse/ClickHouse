@@ -469,7 +469,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                         /// QueryConditionCache is a coordinator feature; concrete part present here.
                         data_part_info->getDataPart()->storage.getStorageID().uuid,
                         part_name,
-                        prewhere_condition_for_query_condition_cache->first,
+                        queryConditionCacheHash(prewhere_condition_for_query_condition_cache->first, reader_settings.query_condition_cache_settings_salt),
                         prewhere_condition_for_query_condition_cache->second,
                         task->getPrewhereUnmatchedMarks(),
                         data_part_info->getIndexGranularity().getMarksCount(),
