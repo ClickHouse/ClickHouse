@@ -290,10 +290,20 @@ void ManualSpan::finish() noexcept
     span.trace_id = UUID();
 }
 
+void ManualSpan::finish(SpanStatus status, String status_message) noexcept
+{
+    /// Already finished (or never traced): the recorded outcome stands.
+    if (!span.isTraceEnabled())
+        return;
+
+    span.status_code = status;
+    span.status_message = std::move(status_message);
+    finish();
+}
+
 ManualSpan::~ManualSpan()
 {
     finish();
-
 }
 
 ParentSpanGuard::ParentSpanGuard(UInt64 span_id_)

@@ -299,10 +299,9 @@ private:
     /// Span covering the whole fragment execution: establishing the connections, sending the query
     /// and reading the data until `EndOfStream`, an exception or a cancel. Owned and finished by the
     /// executor on both the synchronous and the asynchronous path; the read context fiber runs inside it.
-    std::unique_ptr<OpenTelemetry::Span> fragment_span TSA_GUARDED_BY(was_cancelled_mutex);
-    /// The context the fragment runs in: the query trace with `fragment_span` as the current span.
-    /// Seeds the read context fiber, and carries the span log for finishing the span from a thread
-    /// without a tracing context of its own.
+    /// Empty until the query is sent, and for a query that is not traced.
+    std::optional<OpenTelemetry::ManualSpan> fragment_span TSA_GUARDED_BY(was_cancelled_mutex);
+    /// The context the fragment runs in: the query trace with `fragment_span` as the current span. Seeds the read context fiber.
     OpenTelemetry::TracingContextOnThread fragment_trace_context TSA_GUARDED_BY(was_cancelled_mutex);
 
     std::optional<Extension> extension;

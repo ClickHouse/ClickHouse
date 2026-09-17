@@ -297,6 +297,16 @@ public:
     /// Emit the span to the span log. Only the first call emits, later calls are no-ops.
     void finish() noexcept;
 
+    /// Same, recording the outcome of the operation. The first call wins: a later call with another
+    /// status is a no-op, so a backstop cannot overwrite an outcome recorded on the main path.
+    void finish(SpanStatus status, String status_message = {}) noexcept;
+
+    /// For parenting spans created elsewhere under this one (`ParentSpanGuard`, a seeded `TracingContextOnThread`).
+    UInt64 getSpanId() const
+    {
+        return span.span_id;
+    }
+
 private:
     Span span;
 

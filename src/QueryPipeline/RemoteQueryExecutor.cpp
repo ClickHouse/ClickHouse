@@ -23,7 +23,6 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
@@ -491,20 +490,15 @@ void RemoteQueryExecutor::openFragmentSpan()
     if (fragment_span || !trace_context.isTraceEnabled())
         return;
 
-    fragment_span = std::make_unique<OpenTelemetry::Span>(OpenTelemetry::Span{
-        .trace_id = trace_context.trace_id,
-        .span_id = OpenTelemetry::TracingContext::generateSpanId(),
-        .parent_span_id = trace_context.span_id,
-        .operation_name = "RemoteQueryExecutor::execute",
-        .start_time_us = static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count()),
-        .kind = OpenTelemetry::SpanKind::INTERNAL,
-        .attributes = getFragmentSpanAttributes(),
-    });
+    /// A `ManualSpan` rather than a `SpanHolder`: the span is finished by whichever thread ends the
+    /// fragment (a pipeline thread, `finish`, `cancel` or the destructor), not necessarily the one that opened it.
+    fragment_span.emplace("RemoteQueryExecutor::execute");
+    for (auto & attribute : getFragmentSpanAttributes())
+        fragment_span->addAttribute(std::move(attribute));
 
     /// The read context fiber is seeded with this context, so the spans it opens nest under the fragment span.
     fragment_trace_context = trace_context;
-    fragment_trace_context.span_id = fragment_span->span_id;
+    fragment_trace_context.span_id = fragment_span->getSpanId();
 }
 
 void RemoteQueryExecutor::addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
@@ -515,26 +509,8 @@ void RemoteQueryExecutor::addFragmentSpanAttribute(OpenTelemetry::SpanAttribute 
 
 void RemoteQueryExecutor::finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message) noexcept
 {
-    if (!fragment_span)
-        return;
-
-    /// The span is detached from the ambient context, so it is timestamped and written to the log by hand.
-    auto span = std::move(fragment_span);
-    span->finish_time_us = static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
-    span->status_code = status;
-    span->status_message = std::move(status_message);
-
-    try
-    {
-        // now we write the span to the local table
-        if (auto span_log = fragment_trace_context.span_log.lock())
-            span_log->add([&](OpenTelemetrySpanLogElement & element) { element.span = *span; });
-    }
-    catch (...) /// Ok: noexcept, the span is dropped but the query must not be affected.
-    {
-        tryLogCurrentException(log);
-    }
+    if (fragment_span)
+        fragment_span->finish(status, std::move(status_message));
 }
 
 void RemoteQueryExecutor::finishFragmentSpanCancelled(std::string_view reason) noexcept
@@ -597,7 +573,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     /// Make the fragment span the current parent for the send, so the CLIENT span descends from it.
     /// Inside the fiber this already holds; on the synchronous path the thread's context still
     /// points at the query span.
-    OpenTelemetry::ParentSpanGuard fragment_parent_guard(fragment_span ? fragment_span->span_id : 0);
+    OpenTelemetry::ParentSpanGuard fragment_parent_guard(fragment_span ? fragment_span->getSpanId() : 0);
 
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
