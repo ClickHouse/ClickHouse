@@ -153,7 +153,16 @@ private:
     {
         if (auto * select = ast.as<ASTSelectQuery>())
         {
-            if (select->recursive_with)
+            /// A name defined by a `WITH` element is a common table expression and not a table,
+            /// recursive or not, so a table expression (or the right argument of `IN`) which refers
+            /// to it must not be qualified. Unlike the callers of the full traversal, the callers of
+            /// this pass do not inline the common table expressions first: the metadata of a view is
+            /// repaired for the dependency graphs as it is stored, `WITH cte AS (...) SELECT ... FROM cte`,
+            /// and qualifying `cte` there turned the dependency of the view on its source table into
+            /// a dependency on a nonexistent table. The names are visible in this select query and in
+            /// its subqueries, and are forgotten when the walk leaves it.
+            auto enclosing_with_aliases = with_aliases;
+            if (select->with())
             {
                 for (const auto & child : select->with()->children)
                 {
@@ -176,6 +185,7 @@ private:
                 visitTableExpressionsImpl(*child);
 
             expression_aliases = std::move(enclosing_query_aliases);
+            with_aliases = std::move(enclosing_with_aliases);
             return;
         }
 
