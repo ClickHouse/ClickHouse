@@ -1,0 +1,6 @@
+<clickhouse>
+    <processors_profile_log>
+        <database>system</database>
+        <table>processors_profile_log</table>
+    </processors_profile_log>
+</clickhouse>
