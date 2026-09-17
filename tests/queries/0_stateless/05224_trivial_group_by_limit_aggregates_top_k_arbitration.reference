@@ -1,0 +1,16 @@
+string key: top-K heap
+Sorting (Sorting for GROUP BY top-K)
+Top-K: limit=5, columns=1, directions=[1]
+low cardinality string key: top-K heap
+Sorting (Sorting for GROUP BY top-K)
+Top-K: limit=5, columns=1, directions=[1]
+mixed keys with a string: top-K heap
+Sorting (Sorting for GROUP BY top-K)
+Top-K: limit=5, columns=2, directions=[1,1]
+fixed-width keys: kept-keys cutoff, no top-K
+0
+string key with the heap disabled: kept-keys cutoff
+0
+05224_fixed_width_key	1	0
+05224_string_key	0	1
+05224_string_key_heap_off	1	0
