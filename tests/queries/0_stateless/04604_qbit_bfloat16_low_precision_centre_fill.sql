@@ -4,6 +4,9 @@
 -- 1-bit BFloat16 reconstruction collapse to +-0.0: the reconstructed vector was the zero vector, so the distance
 -- was the same for every row and carried no ranking information. With the centre fill, 1-bit reconstruction is a
 -- proper sign quantization, consistent with the QBit(Int8) Lloyd-Max path (LloydMax::transposedDequantLUT).
+-- At precision 1 the functions also reduce the reference vector to its signs and derive the result from the Hamming
+-- distance between the two sign vectors (a symmetric binary distance with elements +-2.0 for a float and +-64 for an
+-- Int8; see 05227_qbit_one_bit_hamming_distance), so the reference magnitudes below take no part at precision 1.
 
 DROP TABLE IF EXISTS qbit_recon;
 CREATE TABLE qbit_recon (id UInt32, bf QBit(BFloat16, 8)) ENGINE = MergeTree ORDER BY id;
@@ -35,27 +38,29 @@ DROP TABLE qbit_recon;
 
 -- Read out the reconstructed first coordinate through a dot product with a one-hot reference vector.
 -- BFloat16 1.0 is 0x3F80 (exponent bits E = 8). At precision 1 only the sign survives and the centre fill sets the
--- top exponent bit, giving a bounded +-2.0 (not the degenerate +-0.0). At precision 8 an exponent bit is still being
+-- top exponent bit, giving a bounded +-2.0 (not the degenerate +-0.0); as the reference is reduced to its signs too, a
+-- one-hot reference cannot read a coordinate out at precision 1, so the sign distance is checked instead: a reference with
+-- the same signs gives 2 * 2.0^2 = 8 and one with opposite signs gives -8. At precision 8 an exponent bit is still being
 -- truncated, so setting the most significant dropped bit would jump across binades; the bounded lower edge of the
 -- coarse cell is kept instead, reconstructing 0.5. At precision 9 the whole exponent is kept and only mantissa bits
 -- are dropped, so the most significant dropped mantissa bit is set (bounded midpoint within the binade), giving 1.5.
 -- Precision 16 keeps all bits.
 SELECT '-- BFloat16 reconstruction of +-1.0 at precisions 1, 8, 9, 16';
 WITH [1.0, -1.0]::QBit(BFloat16, 2) AS v, [1.0, 0.0]::Array(BFloat16) AS first, [0.0, 1.0]::Array(BFloat16) AS second
-SELECT dotProductTransposed(v, first, 1), dotProductTransposed(v, second, 1),
+SELECT dotProductTransposed(v, [1.0, -1.0]::Array(BFloat16), 1), dotProductTransposed(v, [-1.0, 1.0]::Array(BFloat16), 1),
        dotProductTransposed(v, first, 8), dotProductTransposed(v, second, 8),
        dotProductTransposed(v, first, 9), dotProductTransposed(v, second, 9),
        dotProductTransposed(v, first, 16), dotProductTransposed(v, second, 16);
 
 SELECT '-- Float32 and Float64 reconstruction of +-1.0 at precision 1';
-WITH [1.0, -1.0]::QBit(Float32, 2) AS v, [1.0, 0.0]::Array(Float32) AS first, [0.0, 1.0]::Array(Float32) AS second
-SELECT dotProductTransposed(v, first, 1), dotProductTransposed(v, second, 1);
-WITH [1.0, -1.0]::QBit(Float64, 2) AS v, [1.0, 0.0]::Array(Float64) AS first, [0.0, 1.0]::Array(Float64) AS second
-SELECT dotProductTransposed(v, first, 1), dotProductTransposed(v, second, 1);
+WITH [1.0, -1.0]::QBit(Float32, 2) AS v, [1.0, -1.0]::Array(Float32) AS same, [-1.0, 1.0]::Array(Float32) AS opposite
+SELECT dotProductTransposed(v, same, 1), dotProductTransposed(v, opposite, 1);
+WITH [1.0, -1.0]::QBit(Float64, 2) AS v, [1.0, -1.0]::Array(Float64) AS same, [-1.0, 1.0]::Array(Float64) AS opposite
+SELECT dotProductTransposed(v, same, 1), dotProductTransposed(v, opposite, 1);
 
-SELECT '-- Int8 reconstruction of 100 and -100 at precision 1 (cell centre +-64, not 0/-128)';
-WITH [100, -100]::QBit(Int8, 2) AS v, [1, 0]::Array(Int8) AS first, [0, 1]::Array(Int8) AS second
-SELECT dotProductTransposed(v, first, 1), dotProductTransposed(v, second, 1);
+SELECT '-- Int8 reconstruction of 100 and -100 at precision 1 (cell centre +-64, not 0/-128: 2 * 64^2 = 8192)';
+WITH [100, -100]::QBit(Int8, 2) AS v, [1, -1]::Array(Int8) AS same, [-1, 1]::Array(Int8) AS opposite
+SELECT dotProductTransposed(v, same, 1), dotProductTransposed(v, opposite, 1);
 
 -- A stored 0 must stay 0 at reduced precision, otherwise a naive centre fill of every cell turns an all-zero float
 -- cell into a positive constant, injecting a fake direction into zero or padded dimensions (so reduced-precision
@@ -67,7 +72,8 @@ SELECT '-- Zero cell: reduced-precision cosine of identical zero BFloat16 vector
 SELECT cosineDistanceTransposed([0.0]::QBit(BFloat16, 1), [0.0]::Array(BFloat16), 8) AS bf16_zero_cos_p8;
 
 -- The first coordinate is exactly 0: at precision >= 2 every float type reconstructs it to 0; at precision 1 (pure sign
--- quantization) it shares the positive sign and reconstructs to the positive centre, as sign quantization requires.
+-- quantization) it shares the positive sign and reconstructs to the positive centre, as sign quantization requires, so it
+-- agrees with both positive elements of the reference: 2 * 2.0^2 = 8.
 SELECT '-- Zero coordinate reconstructs to 0 at precision >= 2 (to +centre at precision 1) for BFloat16, Float32, Float64';
 WITH [0.0, 1.0]::QBit(BFloat16, 2) AS v, [1.0, 0.0]::Array(BFloat16) AS first
 SELECT dotProductTransposed(v, first, 1) AS bf16_p1, dotProductTransposed(v, first, 2) AS bf16_p2, dotProductTransposed(v, first, 8) AS bf16_p8;
@@ -119,11 +125,12 @@ SELECT dotProductTransposed([inf]::QBit(Float64, 1), [1.0]::Array(Float64), 12) 
 -- The centre fill must never reach the padded tail of a non-strided QBit whose dimension is not a multiple of 8. Such a
 -- QBit untransposes into a buffer padded up to the next multiple of 8, and the distance kernel is asked for exactly
 -- `dimension` elements. The reconstruction now centres only the real lanes, so the padded tail stays at the zero it was
--- initialised to and can never contribute to a distance. These odd-dimension (3 and 5) cases exercise the precision == 1
--- and raw-Int8 paths (which centre every real lane unconditionally) on the padded shape and pin the exact results:
---   - BFloat16 precision 1 is pure sign quantization: +value -> +2.0, -value -> -2.0.
---   - Int8 precision 1 keeps the sign and centres to +-64.
--- cosineDistanceTransposed of a vector against its own reconstruction is 0 only if the padded lanes add nothing to either
+-- initialised to and can never contribute to a distance. At precision 1 the Hamming path likewise excludes the padding
+-- bits of the sign plane from the count. These odd-dimension (3 and 5) cases exercise the precision == 1 and raw-Int8 paths
+-- on the padded shape and pin the exact results:
+--   - BFloat16 precision 1 is pure sign quantization: +value -> +2.0, -value -> -2.0, on both sides.
+--   - Int8 precision 1 keeps the sign and centres to +-64, on both sides.
+-- cosineDistanceTransposed of a vector against its own sign vector is 0 only if the padded lanes add nothing to either
 -- the dot product or the norm, so it is the sharpest guard against padding leaking into the accumulation.
 SELECT '-- Odd (non-multiple-of-8) dimensions: padded lanes never contribute';
 WITH [1.0, -1.0, 0.5]::QBit(BFloat16, 3) AS v
@@ -134,9 +141,10 @@ WITH [1.0, -1.0, 1.0, -1.0, 1.0]::QBit(BFloat16, 5) AS v
 SELECT dotProductTransposed(v, [1.0, 1.0, 1.0, 1.0, 1.0]::Array(BFloat16), 1) AS bf16_dim5_dot,
        round(cosineDistanceTransposed(v, [2.0, -2.0, 2.0, -2.0, 2.0]::Array(BFloat16), 1), 4) AS bf16_dim5_cos;
 WITH [100, -100, 50]::QBit(Int8, 3) AS v
-SELECT dotProductTransposed(v, [1, 0, 0]::Array(Int8), 1) AS int8_dim3_first,
-       dotProductTransposed(v, [0, 1, 0]::Array(Int8), 1) AS int8_dim3_second,
-       dotProductTransposed(v, [1, 1, 1]::Array(Int8), 1) AS int8_dim3_dot;
+SELECT dotProductTransposed(v, [1, -1, 1]::Array(Int8), 1) AS int8_dim3_same,
+       dotProductTransposed(v, [-1, 1, -1]::Array(Int8), 1) AS int8_dim3_opposite,
+       dotProductTransposed(v, [1, 1, 1]::Array(Int8), 1) AS int8_dim3_dot,
+       round(cosineDistanceTransposed(v, [64, -64, 64]::Array(Int8), 1), 4) AS int8_dim3_cos;
 
 -- Explicit, documented policy for the ambiguous non-finite cell in the mantissa-truncation regime. A truncated word with
 -- all exponent bits set and a zero *kept* mantissa is indistinguishable from `+-inf`: it could be a genuine `+-inf` or a

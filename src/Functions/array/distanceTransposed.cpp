@@ -17,11 +17,16 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Common/NaNUtils.h>
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
+#include <bit>
+#include <cmath>
+#include <cstring>
 #include <optional>
+#include <vector>
 
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if USE_SIMSIMD
@@ -41,12 +46,37 @@ extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
+namespace
+{
+
+/// Number of differing bits between two byte strings of `bytes` bytes.
+ALWAYS_INLINE size_t hammingDistance(const UInt8 * __restrict a, const UInt8 * __restrict b, size_t bytes)
+{
+    size_t result = 0;
+    size_t i = 0;
+    for (; i + sizeof(UInt64) <= bytes; i += sizeof(UInt64))
+    {
+        UInt64 x;
+        UInt64 y;
+        memcpy(&x, a + i, sizeof(UInt64));
+        memcpy(&y, b + i, sizeof(UInt64));
+        result += static_cast<size_t>(std::popcount(x ^ y));
+    }
+    for (; i < bytes; ++i)
+        result += static_cast<size_t>(std::popcount(static_cast<uint8_t>(a[i] ^ b[i])));
+    return result;
+}
+
+}
+
 /// Base kernel pattern for distance functions.
 /// Each kernel must provide:
 ///   - static constexpr auto name: function name
 ///   - static constexpr simsimd_metric_kind_t metric_kind (under USE_SIMSIMD): SimSIMD metric to resolve and call
 ///   - static void distance<T>(...): scalar distance, used when no SimSIMD kernel is available
 ///   - static void distanceScalar<InputType, AccumulatorType>(...): fallback scalar implementation
+///   - static Float64 fromHammingDistance(hamming, dims, scale): the distance between two sign vectors with elements +-scale
+///     that differ in sign in `hamming` of their `dims` dimensions, for the one-bit path (executeOneBitDistanceCalculation)
 
 struct L2DistanceTransposed
 {
@@ -83,6 +113,12 @@ struct L2DistanceTransposed
             d2 += (xi - yi) * (xi - yi);
         }
         *result = static_cast<Float64>(std::sqrt(d2));
+    }
+
+    /// Every dimension whose signs differ contributes (2 * scale)^2 to the squared distance, the rest contribute nothing.
+    static Float64 fromHammingDistance(size_t hamming, size_t /*dims*/, Float64 scale)
+    {
+        return 2.0 * scale * std::sqrt(static_cast<Float64>(hamming));
     }
 };
 
@@ -138,6 +174,13 @@ struct CosineDistanceTransposed
             *result = unclipped_result > 0 ? static_cast<Float64>(unclipped_result) : Float64{0};
         }
     }
+
+    /// Both sign vectors have the norm scale * sqrt(dims) and their dot product is scale^2 * (dims - 2 * hamming), so the
+    /// cosine distance is 2 * hamming / dims whatever the scale.
+    static Float64 fromHammingDistance(size_t hamming, size_t dims, Float64 /*scale*/)
+    {
+        return 2.0 * static_cast<Float64>(hamming) / static_cast<Float64>(dims);
+    }
 };
 
 struct DotProductTransposed
@@ -184,6 +227,12 @@ struct DotProductTransposed
         for (; i != array_size; ++i)
             ab += static_cast<AccumulatorType>(x[i]) * static_cast<AccumulatorType>(y[i]);
         *result = static_cast<Float64>(ab);
+    }
+
+    /// Each dimension with agreeing signs contributes scale^2, each dimension with differing signs contributes -scale^2.
+    static Float64 fromHammingDistance(size_t hamming, size_t dims, Float64 scale)
+    {
+        return scale * scale * (static_cast<Float64>(dims) - 2.0 * static_cast<Float64>(hamming));
     }
 };
 
@@ -499,10 +548,29 @@ public:
 
         if constexpr (Quantized)
         {
+            const bool ref_is_const = arguments.back().column->isConst();
+
+            /// A single bit plane reconstructs every code to the symmetric +-m prefix centroid of row 1 of the Lloyd-Max LUT, and
+            /// the sign bit of an Int8 reference code is the sign of the value it encodes, so the one-bit Hamming path applies
+            /// with the scale m. See executeOneBitDistanceCalculation.
+            if (precision == 1)
+            {
+                const Float64 scale = static_cast<Float64>(LloydMax::transposedDequantLUT()[1][0]);
+                auto execute_one_bit = [&]<typename RefT>() -> ColumnPtr
+                {
+                    return ref_is_const
+                        ? executeOneBitDistanceCalculation<RefT, true>(
+                              reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale)
+                        : executeOneBitDistanceCalculation<RefT, false>(
+                              reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale);
+                };
+                return type_y == TypeIndex::Int8 ? execute_one_bit.template operator()<Int8>()
+                                                 : execute_one_bit.template operator()<Float32>();
+            }
+
             /// The QBit is Int8 (Lloyd-Max codes) and the reference vector is Float32. Reconstruct each code with the
             /// precision-specific prefix centroid and compute the distance against the reference. See
             /// executeQuantizedDistanceCalculation.
-            const bool ref_is_const = arguments.back().column->isConst();
             return ref_is_const
                 ? executeQuantizedDistanceCalculation<true>(reference_vector, expanded_planes, precision, stride, used_dims, input_rows_count)
                 : executeQuantizedDistanceCalculation<false>(reference_vector, expanded_planes, precision, stride, used_dims, input_rows_count);
@@ -546,6 +614,19 @@ public:
 
         auto execute_with_type = [&]<typename T>() -> ColumnPtr
         {
+            /// A single bit plane keeps only the sign, and the general path would reconstruct every element to the `centre_fill`
+            /// of its sign cell: +-64 (0x40) for a raw Int8 and +-2.0 (the top exponent bit) for a float. The one-bit Hamming
+            /// path reproduces these magnitudes. See executeOneBitDistanceCalculation.
+            if (precision == 1)
+            {
+                constexpr Float64 scale = std::is_same_v<T, Int8> ? 64.0 : 2.0;
+                return ref_is_const
+                    ? executeOneBitDistanceCalculation<T, true>(
+                          reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale)
+                    : executeOneBitDistanceCalculation<T, false>(
+                          reference_vector, expanded_planes, stride, used_dims, input_rows_count, scale);
+            }
+
             return dispatch_by_accum_type.template operator()<T>(
                 [&]<typename RefT, typename CalcT>()
                 {
@@ -682,6 +763,104 @@ private:
         return std::bit_cast<simsimd_metric_dense_punned_t>(simd_kernel); /// NOLINT(bugprone-bitwise-pointer-cast)
     }
 #endif
+
+    /// One-bit (`precision == 1`) path, shared by the plain and the quantized functions.
+    ///
+    /// With a single bit plane only the sign of every stored element is known, and the general path would reconstruct each
+    /// element as +-scale (`centre_fill` gives +-2.0 for a float and +-64 for a raw Int8; the Lloyd-Max path gives the +-m prefix
+    /// centroid of row 1 of its LUT). The reference vector is reduced to its signs the same way, so both sides are sign vectors
+    /// of magnitude `scale` and the distance depends only on the number of dimensions whose signs differ: the Hamming distance
+    /// between the stored sign bit plane and the sign bit plane of the reference. It is computed with XOR and popcount directly
+    /// on the packed plane bytes, without untransposing anything, and the kernel's distance for every possible Hamming
+    /// distance in `[0, used_dims]` is precomputed once into a lookup table (`Kernel::fromHammingDistance`).
+    ///
+    /// This is a symmetric binary distance: unlike the general path, which compares the sign-only reconstruction against the
+    /// reference at full precision, the magnitudes of the reference elements take no part. With one bit per stored element only
+    /// the ranking by sign agreement carries information anyway, and this path is an order of magnitude cheaper.
+    ///
+    /// `planes` holds one sign bit plane per stride group: `num_groups` FixedString columns of `bytes_per_group` bytes per row.
+    template <typename RefT, bool ref_is_const>
+    ColumnPtr executeOneBitDistanceCalculation(
+        const ColumnArray & col_y,
+        const ColumnsWithTypeAndName & planes,
+        const size_t stride,
+        const size_t used_dims,
+        const size_t input_rows_count,
+        const Float64 scale) const
+    {
+        const size_t num_groups = used_dims / stride;
+        const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
+        const size_t plane_bytes = num_groups * bytes_per_group;
+
+        /// The distance as a function of the Hamming distance, which cannot exceed the number of compared dimensions.
+        std::vector<Float64> lut(used_dims + 1);
+        for (size_t hamming = 0; hamming <= used_dims; ++hamming)
+            lut[hamming] = Kernel::fromHammingDistance(hamming, used_dims, scale);
+
+        /// Dimension `d` of a group lives in bit `d % 8` of byte `bytes_per_group - 1 - d / 8` of that group's plane (see
+        /// SerializationQBit::transposeBits). When `stride` is not a multiple of 8 (a non-strided QBit of such a dimension) the
+        /// upper bits of byte 0 are padding. The serialization never sets them and the reference plane below leaves them zero,
+        /// but the internal calling convention accepts arbitrary FixedString planes, so a set padding bit of a stored plane is
+        /// explicitly kept out of the count.
+        const uint8_t padding_mask = stride % 8 == 0 ? 0 : static_cast<uint8_t>(0xFFu << (stride % 8));
+
+        const auto & ref_values = assert_cast<const ColumnVector<RefT> &>(col_y.getData()).getData();
+        [[maybe_unused]] const auto & ref_offsets = col_y.getOffsets();
+
+        /// The sign bit plane of the first `used_dims` elements of a reference vector, in the layout of the stored planes. The sign
+        /// is the one of the element's representation, i.e. the bit its own top bit plane would hold: `-0.0` counts as negative.
+        std::vector<UInt8> ref_plane(plane_bytes);
+        auto binarize_reference = [&](const RefT * ref)
+        {
+            std::fill(ref_plane.begin(), ref_plane.end(), 0);
+            for (size_t group = 0; group < num_groups; ++group)
+                for (size_t d = 0; d < stride; ++d)
+                    if (signBit(ref[group * stride + d]))
+                        ref_plane[group * bytes_per_group + (bytes_per_group - 1 - d / 8)] |= static_cast<UInt8>(1u << (d % 8));
+        };
+
+        auto stored_plane = [&](size_t group) -> const UInt8 *
+        {
+            return reinterpret_cast<const UInt8 *>(assert_cast<const ColumnFixedString &>(*planes[group].column).getChars().data());
+        };
+
+        /// The Hamming distance over one stride group. The reference plane has zero padding bits, so the set padding bits of the
+        /// stored plane are exactly the bits of the XOR that must not be counted.
+        auto group_hamming = [&](const UInt8 * stored, const UInt8 * ref) -> size_t
+        {
+            return hammingDistance(stored, ref, bytes_per_group)
+                - static_cast<size_t>(std::popcount(static_cast<uint8_t>(stored[0] & padding_mask)));
+        };
+
+        std::vector<size_t> hamming(input_rows_count, 0);
+        if constexpr (ref_is_const)
+        {
+            binarize_reference(ref_values.data());
+            /// Group-major, so that every stored plane is streamed sequentially.
+            for (size_t group = 0; group < num_groups; ++group)
+            {
+                const UInt8 * stored = stored_plane(group);
+                const UInt8 * ref = ref_plane.data() + group * bytes_per_group;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                    hamming[row] += group_hamming(stored + row * bytes_per_group, ref);
+            }
+        }
+        else
+        {
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                binarize_reference(ref_values.data() + (row == 0 ? 0 : ref_offsets[row - 1]));
+                for (size_t group = 0; group < num_groups; ++group)
+                    hamming[row] += group_hamming(stored_plane(group) + row * bytes_per_group, ref_plane.data() + group * bytes_per_group);
+            }
+        }
+
+        auto col_res = ColumnVector<Float64>::create(input_rows_count);
+        auto & result_data = col_res->getData();
+        for (size_t row = 0; row < input_rows_count; ++row)
+            result_data[row] = lut[hamming[row]];
+        return col_res;
+    }
 
     /// RefT is the type of the reference vector, CalcT is the type used for calculation.
     /// `planes` holds `num_groups * precision` FixedString bit-plane columns in group-major order (plane[g * precision + b]).
