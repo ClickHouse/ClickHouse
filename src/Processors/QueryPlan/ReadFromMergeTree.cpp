@@ -2769,7 +2769,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool keep_index_analysis) const
 {
-    /// An index analysis that already exists is reused either way; only a fresh one can be kept off the step.
+    /// An existing index analysis is reused even when `keep_index_analysis` is false. Only a fresh analysis
+    /// can be kept off the step.
     std::optional<Indexes> discarded_indexes;
 
     return selectRangesToRead(

@@ -10,8 +10,8 @@ namespace DB::QueryPlanOptimizations
 /// rooted at `node`, keyed by the subtree's output column names. `filter` is an optional predicate
 /// over these columns to account for.
 /// Pass `keep_index_analysis = false` when the plan under `node` is not optimized yet. Its
-/// `ReadFromMergeTree` steps have no pushed-down filter at that point, and an index analysis kept
-/// on a step from that state would make the executed read prune nothing.
+/// `ReadFromMergeTree` steps then have no pushed-down filter. If a step keeps an index analysis from
+/// that state, the executed read prunes nothing.
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool keep_index_analysis = true);
 
 }
