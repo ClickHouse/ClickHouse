@@ -1617,24 +1617,29 @@ def auto_statistics_generator():
 
 
 def randomize_external_sort_group_by():
-    """Returns a dict of 4 settings for external sort/group by.
+    """Returns a dict of 6 settings for external sort/group by/distinct.
     The Bytes-vs-Ratio choice is made per call (not per process),
-    so each test run gets an independent choice."""
+    so each test run gets an independent choice. Each family takes the
+    smaller of its two thresholds, so the unused one is pinned to 0."""
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
         return {
             "max_bytes_before_external_sort": generator(),
             "max_bytes_before_external_group_by": generator(),
+            "max_bytes_before_external_distinct": generator(),
             "max_bytes_ratio_before_external_sort": 0,
             "max_bytes_ratio_before_external_group_by": 0,
+            "max_bytes_ratio_before_external_distinct": 0,
         }
 
     generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
     return {
         "max_bytes_before_external_sort": 0,
         "max_bytes_before_external_group_by": 0,
+        "max_bytes_before_external_distinct": 0,
         "max_bytes_ratio_before_external_sort": round(generator(), 2),
         "max_bytes_ratio_before_external_group_by": round(generator(), 2),
+        "max_bytes_ratio_before_external_distinct": round(generator(), 2),
     }
 
 
@@ -1978,6 +1983,10 @@ class SettingsRandomizer:
         # subquery over a recursive CTE throws NOT_IMPLEMENTED "Cannot clone ReadFromRecursiveCTEStep".
         # "correlated_subqueries_use_in_memory_buffer": lambda: random.random() > 0.05,
         "use_parquet_metadata_cache": lambda: random.randint(0, 1),
+        # MD5 is the default for a non-S3Express bucket, CRC32/SHA256 send a flexible
+        # x-amz-checksum-* header instead. Spelled out rather than left empty, because an
+        # empty value would render as a bare `--setting` that swallows the next option.
+        "s3_upload_checksum_algorithm": lambda: random.choice(["MD5", "CRC32", "SHA256"]),
         # Iceberg manifest decode concurrency and the queue between the decode tasks and the
         # query. Both NonZeroUInt64, so never 0; 1 serializes, a small queue forces the
         # decoders to block on a full queue and a large one removes the backpressure.
@@ -2043,6 +2052,10 @@ class SettingsRandomizer:
         "enable_hash_join_row_store": lambda: random.random() > 0.05,
         # 0 always allows the row-store transformation, a huge ratio never does
         "min_rows_ratio_for_hash_join_row_store": lambda: random.choice([0.0, 5.0, 1000.0]),
+        # Reranges the right table by key in left/inner hash join, a pure performance rewrite,
+        # so any output change is a bug. Only arms when join_to_sort_minimum_perkey_rows and
+        # join_to_sort_maximum_table_rows are both met, so most joins are left alone.
+        "allow_join_right_table_sorting": lambda: random.random() < 0.3,
         "query_plan_fuse_filter_into_array_join": lambda: random.random() > 0.05,
         # Don't randomize: breaks rowNumberInAllBlocks() over arrayJoin() and throws on lazily
         # evaluated arguments. #117882 enables it by default and already carries those failures.
@@ -2204,7 +2217,9 @@ class MergeTreeSettingsRandomizer:
         "object_shared_data_buckets_for_wide_part": lambda: random.randint(1, 32),
         "dynamic_serialization_version": lambda: random.choice(["v2", "v3"]),
         "auto_statistics_types": auto_statistics_generator(),
-        "serialization_info_version": lambda: random.choice(["basic", "with_types"]),
+        # with_missing_columns is what skip_empty_columns_on_insert below needs: with a lower
+        # version it silently skips nothing, so leaving it out made that setting inert.
+        "serialization_info_version": lambda: random.choice(["basic", "with_types", "with_missing_columns"]),
         "string_serialization_version": lambda: random.choice(["single_stream", "with_size_stream"]),
         "nullable_serialization_version": lambda: random.choice(["basic", "allow_sparse"]),
         # Omits all-type-default columns from a written part, so reading one back has to
