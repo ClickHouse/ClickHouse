@@ -1,0 +1,16 @@
+alias column selected
+1	a!
+2	b!
+3	c!
+alias column: not using DirectKeyValueJoin
+0
+physical + alias columns selected
+1	a	a!
+2	b	b!
+3	c	c!
+physical column only
+1	a
+2	b
+3	c
+physical column only: using DirectKeyValueJoin
+1

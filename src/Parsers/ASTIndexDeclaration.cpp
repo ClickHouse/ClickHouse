@@ -88,6 +88,7 @@ ASTPtr ASTIndexDeclaration::clone() const
 
     auto res = make_intrusive<ASTIndexDeclaration>(expr, type, name);
     res->granularity = granularity;
+    res->is_lookup_index = is_lookup_index;
     /// The flag selects the `CREATE INDEX` formatting; a clone must keep it so it formats identically
     /// to the original (otherwise `clone()->format()` diverges from `format()`).
     res->part_of_create_index_query = part_of_create_index_query;
@@ -131,6 +132,8 @@ void ASTIndexDeclaration::writeJSON(WriteBuffer & out) const
     w.writeUInt("granularity", granularity);
     if (part_of_create_index_query)
         w.writeBool("part_of_create_index_query", true);
+    if (is_lookup_index)
+        w.writeBool("is_lookup_index", true);
     w.writeChild("expression", getExpression());
     w.writeChild("index_type", getType());
 }
@@ -142,6 +145,7 @@ void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
     name = r.getString("name");
     granularity = r.getUInt("granularity");
     part_of_create_index_query = r.getBool("part_of_create_index_query");
+    is_lookup_index = r.getBool("is_lookup_index");
 
     auto expression = r.readChild("expression");
     if (!expression)
@@ -216,8 +220,11 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         type->format(ostr, s, state, frame);
     }
 
-    /// Always emit so AST round-trip is invariant for every granularity (zero included).
-    ostr << " GRANULARITY " << granularity;
+    /// Lookup indexes never carry a GRANULARITY clause (the parser rejects it), so emitting
+    /// it would break the format/parse round-trip. For skip indexes always emit it, so the
+    /// AST round-trip is invariant for every granularity (zero included).
+    if (!is_lookup_index)
+        ostr << " GRANULARITY " << granularity;
 }
 
 UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)
