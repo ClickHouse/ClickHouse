@@ -9,6 +9,7 @@
 #include <iostream>
 #include <sstream>
 
+#include <Common/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
@@ -200,6 +201,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             ProfileEvents::AsyncLoggingErrorFileLogDroppedMessages);
     }
 
+    createAuditLog(config, now);
+
     if (config.getBool("logger.use_syslog", false))
     {
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
@@ -340,6 +343,52 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     }
 }
 
+void Loggers::createAuditLog(Poco::Util::AbstractConfiguration & config, time_t now)
+{
+    const auto auditlog_path_prop = config.getString("logger.auditlog", "");
+
+    /// Audit logging is experimental and gated by `allow_experimental_audit_log`. Only create and
+    /// open the writer when the feature is enabled, so that a staged-but-disabled configuration has
+    /// no startup side effects: no audit file is created or rotated, and an unwritable audit-log
+    /// path does not abort startup while the feature is off.
+    if (auditlog_path_prop.empty() || !config.getBool("allow_experimental_audit_log", false))
+        return;
+
+    /// Keep an already-created writer alive. It is torn down only at shutdown, never on reload,
+    /// so that concurrent LOG_AUDIT callers cannot use a freed writer. A consequence is that a
+    /// runtime change of the `logger.auditlog` path is not applied until a restart; removing or
+    /// emptying `logger.auditlog` still disables emission on reload, because
+    /// `Context::loadOrReloadAuditTypes` gates on the current config value.
+    if (audit_log)
+        return;
+
+    bool async = config.getBool("logger.async", true);
+    auto queue_size = config.getUInt("logger.async_queue_max_size", 65536);
+
+    /// Build the writer in a local variable and publish it only after it is fully initialized.
+    /// Otherwise a failing `configure`/`open` (for example, an unwritable `logger.auditlog` path)
+    /// would leave a half-initialized writer in `audit_log`, and the `if (audit_log)` check above
+    /// would make every subsequent `SYSTEM RELOAD CONFIG` return early, so the operator could not
+    /// recover audit logging by fixing the path without restarting the server.
+    auto new_audit_log = std::make_unique<DB::AuditLog>(async, static_cast<size_t>(queue_size));
+    const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
+    new_audit_log->configure(config, auditlog_path);
+    new_audit_log->open();
+
+    audit_log = std::move(new_audit_log);
+    DB::setGlobalAuditLog(audit_log.get());
+}
+
+void Loggers::updateAuditLog(Poco::Util::AbstractConfiguration & config)
+{
+    /// Called on configuration reload. Lazily create the audit writer the first time the
+    /// experimental feature is enabled, so it can be turned on without a server restart.
+    /// Disabling is handled by `Context::loadOrReloadAuditTypes`, which flips the runtime emission
+    /// gate off; the writer itself is intentionally kept alive to avoid a use-after-free with
+    /// in-flight LOG_AUDIT calls.
+    createAuditLog(config, std::time({}));
+}
+
 void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger)
 {
     int max_log_level = 0;
@@ -428,6 +477,8 @@ void Loggers::closeLogs(Poco::Logger & logger)
         log_file->close();
     if (error_log_file)
         error_log_file->close();
+    if (audit_log)
+        audit_log->closeFile();
     // Shouldn't syslog_channel be closed here too?
 
     if (!log_file)
@@ -469,6 +520,13 @@ void Loggers::closeAsyncLogging()
 
 void Loggers::stopLogging()
 {
+    DB::setGlobalAuditLog(nullptr);
+    if (audit_log)
+    {
+        audit_log->close();
+        audit_log.reset();
+    }
+
     if (split)
         split->close();
     split.reset();

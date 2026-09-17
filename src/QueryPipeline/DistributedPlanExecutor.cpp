@@ -915,11 +915,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         }
 
         logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
-            query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);
+            query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false, decideAuditLog(context, no_ast, /*internal*/ false));
     }
     catch (...)
     {
-        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true);
+        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true, decideAuditLog(context, no_ast, /*internal*/ false));
         throw;
     }
 }

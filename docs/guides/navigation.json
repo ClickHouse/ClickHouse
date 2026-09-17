@@ -132,7 +132,8 @@
               "group": "Monitoring",
               "pages": [
                 "guides/oss/deployment-and-scaling/monitoring/monitoring",
-                "guides/oss/deployment-and-scaling/monitoring/opentelemetry"
+                "guides/oss/deployment-and-scaling/monitoring/opentelemetry",
+                "guides/oss/deployment-and-scaling/monitoring/audit-log"
               ]
             },
             {
