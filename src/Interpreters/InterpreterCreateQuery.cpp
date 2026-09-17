@@ -873,6 +873,19 @@ void throwIfNestedTableFunctionDependsOnCurrentUserGrants(const ASTPtr & ast, co
     }
 }
 
+void checkFreshNestedDefinitionsAllowed(const ASTPtr & ast, const ContextPtr & context)
+{
+    for (const auto & child : ast->children)
+    {
+        if (const auto * function = child->as<ASTFunction>())
+        {
+            if (const auto nested_table_function = TableFunctionFactory::instance().tryGet(function->name, context))
+                nested_table_function->checkFreshDefinitionAllowed(context);
+        }
+        checkFreshNestedDefinitionsAllowed(child, context);
+    }
+}
+
 /// The veto for `CREATE TABLE ... AS f(...)` over a table function `f`. It has to run before the table function is
 /// resolved in any way: without a column list the structure is inferred from the function, and that
 /// resolution has side effects of its own (`remote(...)` connects to the shards, an `ELSE` arm of
@@ -2614,7 +2627,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        {
             table_function->checkFreshDefinitionAllowed(getContext());
+            checkFreshNestedDefinitionsAllowed(table_function_ast, getContext());
+        }
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -2636,6 +2652,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// predates this check still attaches instead of disappearing on server startup.
         if (create.storage && create.storage->engine && !isLoadingFromExistingMetadata(mode) && !create.attach_short_syntax)
             throwIfNestedTableFunctionDependsOnCurrentUserGrants(create.storage->engine->ptr(), getContext());
+
+        if (create.storage && create.storage->engine && isFreshTableDefinition(mode, create.attach_short_syntax))
+            checkFreshNestedDefinitionsAllowed(create.storage->engine->ptr(), getContext());
 
         res = StorageFactory::instance().get(create,
             data_path,
