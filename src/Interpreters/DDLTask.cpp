@@ -443,25 +443,24 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     }
 
     /// `entry.query` (and the `task.query_str` re-formatted from it) is SQL that *this server* produced with
-    /// `formatWithSecretsOneLine`, not text the user typed, so the language it is written in and its length
-    /// are not the caller's to choose. The initiator's changed settings travel with the entry, though, and
-    /// two of them would otherwise be applied to the replay parse in `DDLWorker::tryExecuteQuery`:
+    /// `formatWithSecretsOneLine`, not text the user typed, so the language it is written in is not the
+    /// caller's to choose. The initiator's changed settings travel with the entry, though, and `dialect` would
+    /// otherwise be applied to the replay parse in `DDLWorker::tryExecuteQuery`: a session that issues
+    /// `... ON CLUSTER ...` under `clickhouse_json` (or any other alternative dialect, e.g. through an HTTP
+    /// handler whose stored query is executed as ClickHouse SQL regardless of the request `dialect`) would
+    /// make every host feed the formatted ClickHouse SQL to the wrong parser. This mirrors
+    /// `prepareSecondaryQuerySettings`, which does the same for the interserver path.
     ///
-    /// - `dialect`: a session that issues `... ON CLUSTER ...` under `clickhouse_json` (or any other
-    ///   alternative dialect, e.g. through an HTTP handler whose stored query is executed as ClickHouse SQL
-    ///   regardless of the request `dialect`) would make every host feed the formatted ClickHouse SQL to the
-    ///   wrong parser.
-    /// - `max_query_size`: the initiator parsed the original text under it, but the entry text is the
-    ///   formatted AST and may well be longer; `DDLTaskBase::parseQueryFromEntry` already parses it with no
-    ///   size limit, so the execution parse has to agree, or a `?max_query_size=10` request turns into
-    ///   `Max query size exceeded` on the worker.
-    ///
-    /// This mirrors `prepareSecondaryQuerySettings`, which does the same for the interserver path. The
-    /// parser *depth* / *backtracks* limits are deliberately NOT reset here: unlike the two above they
-    /// bound the work the worker does on behalf of the initiator, so they keep coming from the entry
-    /// clamped to this host's constraints (see `parseQueryFromEntry`).
+    /// The same reasoning applies to the length of the entry text, but `max_query_size` is NOT reset here:
+    /// besides bounding the parse it also bounds the size of the table metadata an `ALTER` may produce
+    /// (`checkMetadataDoesNotExceedMaxQuerySize`, which re-validates the resulting definition as well), and
+    /// a zero there would silently disable that check on every worker. The replay parse alone is lifted with
+    /// `QueryFlags::parse_server_formatted_query_text` in `DDLWorker::tryExecuteQuery`, the same way
+    /// `DDLTaskBase::parseQueryFromEntry` parses the entry with no size limit. The parser *depth* /
+    /// *backtracks* limits are deliberately NOT lifted either: they bound the work the worker does on behalf
+    /// of the initiator, so they keep coming from the entry clamped to this host's constraints
+    /// (see `parseQueryFromEntry`).
     query_context->setSetting("dialect", String("clickhouse"));
-    query_context->setSetting("max_query_size", UInt64(0));
 
     return query_context;
 }

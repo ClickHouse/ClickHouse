@@ -11,6 +11,13 @@ struct QueryFlags
     /// If true, parse only the main query text without parser limits. Auxiliary expressions, such as
     /// query-construction settings, continue to use the limits from the query context.
     bool parse_server_owned_query_without_limits = false;
+    /// If true, the main query text is SQL that this server formatted from an already parsed AST (e.g. a
+    /// distributed DDL entry replayed by `DDLWorker`), so only the `max_query_size` limit is lifted for
+    /// parsing it: the formatted text may be longer than what the initiator typed, while the parser depth
+    /// and backtracks limits, the `dialect` and every other setting keep applying as they are.
+    /// Unlike `parse_server_owned_query_without_limits` this does not touch the query context's settings,
+    /// so `max_query_size` keeps its other meanings (e.g. the size limit of the resulting table metadata).
+    bool parse_server_formatted_query_text = false;
     bool background = false; /// If true, this query is the background run scheduled by executeQueryInBackground.
 };
 

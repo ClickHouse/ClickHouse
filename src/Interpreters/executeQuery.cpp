@@ -2332,7 +2332,9 @@ static BlockIO executeQueryImpl(
     /// propagates the lifted limits to the shards through the ordinary settings channel (see below, after the
     /// query-construction settings are applied), which the receiving node clamps to its own constraints.
     const bool parse_without_limits = parse_server_owned_query_without_limits;
-    size_t max_query_size_for_query_text = parse_without_limits ? 0 : max_query_size;
+    /// The text of a server-formatted query (see `QueryFlags::parse_server_formatted_query_text`) is not bounded
+    /// by `max_query_size` either, but the setting itself stays untouched.
+    size_t max_query_size_for_query_text = (parse_without_limits || flags.parse_server_formatted_query_text) ? 0 : max_query_size;
     size_t max_parser_depth_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_depth];
     size_t max_parser_backtracks_for_query_text = parse_without_limits ? 0 : settings[Setting::max_parser_backtracks];
 

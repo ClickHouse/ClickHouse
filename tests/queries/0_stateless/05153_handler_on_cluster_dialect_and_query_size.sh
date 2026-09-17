@@ -10,8 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # node the request reached. Both cross-node paths ship SQL the server formatted, not text the caller typed:
 #   * a `remote()` / `Distributed` fan-out sends `formatWithSecretsOneLine` output to the shard, and
 #     `prepareSecondaryQuerySettings` pins `dialect = 'clickhouse'` in the settings that travel with it;
-#   * an `ON CLUSTER` query is replayed from the DDL queue, and `DDLTaskBase::makeQueryContext` resets both
-#     `dialect` and `max_query_size` on the replay context.
+#   * an `ON CLUSTER` query is replayed from the DDL queue: `DDLTaskBase::makeQueryContext` resets `dialect`
+#     on the replay context, and `DDLWorker::tryExecuteQuery` parses the entry text with no size limit
+#     (`QueryFlags::parse_server_formatted_query_text`) while the `max_query_size` setting itself is kept.
 # Without those, `?dialect=clickhouse_json` or `?max_query_size=10` would still break a handler whose stored
 # query fans out, even though the initiator itself parses it fine.
 # `05052_handler_request_dialect` covers the initiator-local half of the `dialect` contract, and
