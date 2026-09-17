@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-msan
 
 # Deserialization of CrossTab-family aggregate function states (`contingency`, `cramersV`,
 # `cramersVBiasCorrected`, `theilsU`) must validate that the counts form a valid contingency table:

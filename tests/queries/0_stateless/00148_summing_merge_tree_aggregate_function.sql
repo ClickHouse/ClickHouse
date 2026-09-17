@@ -1,4 +1,3 @@
--- Tags: no-msan
 drop table if exists summing_merge_tree_aggregate_function;
 drop table if exists summing_merge_tree_null;
 
