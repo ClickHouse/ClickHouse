@@ -9,11 +9,11 @@ DROP TABLE IF EXISTS promql_count_subquery;
 
 CREATE TABLE promql_count_subquery
 (
-    time_series Array(Tuple(DateTime64(3, 'UTC'), Float32))
+    samples Array(Tuple(DateTime64(3, 'UTC'), Float32))
 )
 ENGINE = TimeSeries;
 
-INSERT INTO promql_count_subquery (metric_name, tags, time_series) VALUES
+INSERT INTO promql_count_subquery (metric_name, tags, samples) VALUES
     ('m', map('host', 'h1'), [(toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'), 7)]);
 
 -- `count` produces a `UInt64` grid via `countForEach`; the subquery feeds it into a `timeSeries*ToGrid` aggregate,
