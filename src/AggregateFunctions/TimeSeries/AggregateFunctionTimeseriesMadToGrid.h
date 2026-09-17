@@ -90,7 +90,8 @@ struct AggregateFunctionTimeseriesMadToGridTraits
 
         std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
         {
-            const Summary combined = sliding_sum.getCurrentSum();
+            /// `getCurrentSum` returns a reference valid until the next `add`/`removeBefore`; bind it to avoid copying the values.
+            const Summary & combined = sliding_sum.getCurrentSum();
             if (combined.values.empty())
                 return std::nullopt;
 
