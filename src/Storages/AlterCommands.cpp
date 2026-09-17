@@ -1196,7 +1196,9 @@ void AlterCommand::apply(
 
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), context);
+            auto mv_context = Context::createCopy(context);
+            mv_context->setSetting("enable_global_with_statement", Field{true});
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(select->clone(), mv_context);
         }
         else
         {

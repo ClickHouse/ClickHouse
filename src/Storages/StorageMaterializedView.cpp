@@ -746,6 +746,7 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     refresh_context->setClientInfo(client_info);
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setSetting("log_comment", log_comment);
+    refresh_context->setSetting("enable_global_with_statement", Field{true});
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
     /// The client info is inherited from the table's (global) context and has no client version.
     /// This server is the real initiator of the refresh query and of any distributed sub-query it
