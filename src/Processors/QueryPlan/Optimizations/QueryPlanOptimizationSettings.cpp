@@ -1,4 +1,4 @@
-#include <Client/Connection.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Core/ServerSettings.h>
