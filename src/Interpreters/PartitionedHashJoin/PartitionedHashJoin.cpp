@@ -430,18 +430,22 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     if (single_fill_thread)
     {
         /// One fill thread and no partition plan, so no routes and no sketch. The block is stored and
-        /// its rows go into the table right away. The table grows like `hash`'s when the hint was low.
+        /// its rows go into the table right away. The table grows like `hash`'s when it was sized low.
         /// The fill block stays alive through the insert because its key pointers point into its holders.
         accumulated_rows.fetch_add(rows, std::memory_order_relaxed);
         accumulated_bytes.fetch_add(fill.stored.allocatedBytes(), std::memory_order_relaxed);
         storeBlockInRowStore(fill);
-        /// The table is sized from the planner's estimate before the first block; a low or missing
-        /// estimate only costs doublings during the inserts, as `hash`'s table pays them.
+        /// The table is sized before the first block from a distinct-key count, never from the row
+        /// hint alone: the hint counts rows, and a build with many rows per key would get a table
+        /// oversized by that multiplicity. The count is the one a previous run of this query left in
+        /// the hash table statistics cache. Without one the table starts at the smallest degree and
+        /// doubles as the keys arrive, as `hash`'s does. The row hint only caps the reserve: a table
+        /// cannot hold more keys than rows.
         if (!clause.hasTable())
         {
-            const size_t estimated_rows = build_rows_hint.value_or(1);
+            const size_t keys = readDistinctKeysFromStatisticsCache() ? *cached_distinct_keys : 1;
             clause.beginSinglePartitionInsert(
-                clause.reserveFor(estimated_rows, static_cast<double>(estimated_rows)),
+                clause.reserveFor(build_rows_hint.value_or(keys), static_cast<double>(keys)),
                 accumulated_rows.load(std::memory_order_relaxed),
                 /*grow_at_max_fill_=*/true);
         }
@@ -856,17 +860,19 @@ size_t PartitionedHashJoin::predictedResidentBytes(bool at_barrier) const
             return getTotalByteCount() + 2 * clause.tableMaps().getBufferSizeInBytes(type);
         }
 
-        /// Before it, judged from the rows as the partitioned branch judges its build: the stored bytes
-        /// plus the table and arenas predicted for the keys seen so far - the exact claimed count, or the
-        /// planner's estimate when that is larger - sized as `reserveFor` sizes them, not the table this
-        /// thread happens to hold, which would charge three buffers of a pre-sized table from the first
-        /// block on. A table whose claimed keys are within one block of its maximum fill doubles when the
-        /// next block arrives, so then the doubled table is the prediction.
+        /// Before the barrier the prediction follows the rows, as the partitioned branch does: the stored
+        /// bytes plus the table and arenas `predictedTableAndArenaBytes` sizes for the keys seen so far.
+        /// The keys are the exact claimed count, or the cached count the table was sized for when that
+        /// is larger. The table this thread holds is not the measure: it starts at the smallest degree
+        /// and would charge three buffers to a handful of rows. The row hint takes no part either, since
+        /// it would charge a duplicate-heavy build the table of its row count. A table whose claimed keys
+        /// come within one block of its maximum fill doubles on the next block, so the doubled table is
+        /// the prediction then.
         const auto & data = storedData();
         const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
         const size_t stored = data.allocated_size + data.nullmaps_allocated_size;
         const size_t claimed = clause.hasTable() ? clause.claimedTotal() : 0;
-        const size_t keys = std::max(claimed, build_rows_hint.value_or(0));
+        const size_t keys = std::max(claimed, cached_distinct_keys.value_or(0));
         size_t predicted = stored + clause.predictedTableAndArenaBytes(std::max(rows, keys), keys, /*grouped=*/false);
         if (clause.hasTable())
         {

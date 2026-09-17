@@ -1647,7 +1647,8 @@ void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, boo
     grow_at_max_fill = grow_at_max_fill_;
     total_rows = rows;
     /// The barrier's plan already derived these for the post-build path. The single fill thread has no
-    /// plan and derives them here, from the hint, before its first block.
+    /// plan and derives them here, from the cached distinct count or the smallest degree, before its
+    /// first block.
     size_degree = sizeDegreeFor(reserve);
     bits = 0;
     partitions = 1;

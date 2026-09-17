@@ -77,10 +77,11 @@ class PartitionedHashJoin : public IJoin
 public:
     /// `build_rows_hint_` is the planner's right-side row estimate, when it has one. Below
     /// `parallel_hash_join_threshold`, and whenever the query has one thread, the join builds on one
-    /// fill thread. The pipeline keeps the `hash` shape. The table is sized from the hint, or starts
-    /// small without one, and grows like `hash`'s. Every block is inserted as it arrives, so nothing
-    /// is left for the barrier. One thread would pay the histogram and scatter passes of the
-    /// partitioned build and gain nothing from them.
+    /// fill thread and the pipeline keeps the `hash` shape. The table is sized from the distinct-key
+    /// count a previous run left in the hash table statistics cache, or starts small without one, and
+    /// grows like `hash`'s. Every block is inserted as it arrives, so nothing is left for the barrier.
+    /// One thread would pay the histogram and scatter passes of the partitioned build and gain nothing
+    /// from them.
     PartitionedHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
