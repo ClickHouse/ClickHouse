@@ -716,13 +716,13 @@ public:
 /// A declared time zone belongs to the value, so it wins; without one the value is read in the
 /// reading session's zone. Resolving it per use rather than holding it is what lets `DynamicNode`
 /// reuse a cached node in a later query.
-const DateLUTImpl & getTimeZoneToParseIn(
-    const TimezoneMixin & type_time_zone, const FormatSettings & format_settings, const DateLUTImpl & utc_time_zone)
+const DateLUTImpl & getTimeZoneToParseIn(const TimezoneMixin & type_time_zone, const FormatSettings & format_settings)
 {
     if (type_time_zone.hasExplicitTimeZone())
         return type_time_zone.getTimeZone();
 
-    return format_settings.session_time_zone ? *format_settings.session_time_zone : utc_time_zone;
+    /// Only default-constructed settings leave the zone unset, and no parser uses those.
+    return format_settings.session_time_zone ? *format_settings.session_time_zone : DateLUT::instance("UTC");
 }
 
 template <typename JSONParser>
@@ -806,7 +806,7 @@ public:
     bool tryParse(time_t & value, std::string_view data, const FormatSettings & format_settings) const
     {
         ReadBufferFromMemory buf(data);
-        const auto & parse_time_zone = getTimeZoneToParseIn(*this, format_settings, utc_time_zone);
+        const auto & parse_time_zone = getTimeZoneToParseIn(*this, format_settings);
         switch (format_settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -1059,7 +1059,7 @@ public:
     bool tryParse(DateTime64 & value, std::string_view data, const FormatSettings & format_settings) const
     {
         ReadBufferFromMemory buf(data);
-        const auto & parse_time_zone = getTimeZoneToParseIn(*this, format_settings, utc_time_zone);
+        const auto & parse_time_zone = getTimeZoneToParseIn(*this, format_settings);
         switch (format_settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
