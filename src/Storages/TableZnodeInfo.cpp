@@ -129,8 +129,10 @@ TableZnodeInfo TableZnodeInfo::resolve(
     const ContextPtr & context, bool validate_substitutions)
 {
     bool is_on_cluster = context->isDDLOrOnClusterInternal();
-    bool is_replicated_database = context->isDDLOrOnClusterInternal() &&
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
+    /// Decided by the engine, not by the DDL flag: the flag is set for a `CREATE` in a `Replicated` database
+    /// but not for the `ATTACH` on startup, and both must resolve the same path.
+    auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
+    bool is_replicated_database = database && database->getEngineName() == "Replicated";
 
     /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
     /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
@@ -187,11 +189,11 @@ TableZnodeInfo TableZnodeInfo::resolve(
 
     /// Expand other macros (such as {shard} and {replica}). We do not expand them on previous step
     /// to make possible copying metadata files between replicas.
+    /// A configured macro wins; the database arguments only fill in what the config lacks.
     Macros::MacroExpansionInfo info;
     info.table_id = table_id;
     if (is_replicated_database)
     {
-        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
         info.shard = getReplicatedDatabaseShardName(database);
         info.replica = getReplicatedDatabaseReplicaName(database);
     }
