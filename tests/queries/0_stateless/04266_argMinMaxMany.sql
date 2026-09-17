@@ -103,16 +103,20 @@ SELECT argMinManyMerge(1)(s) FROM
     SELECT argMinManyState(1)(arg, val) AS s FROM (SELECT 'b' AS arg, toFloat64(1) AS val)
 );
 
--- Error: Variant anywhere inside the arg type is rejected: arg values are stored in the state
--- as plain Fields, and SerializationVariant does not implement Field-based binary serialization,
--- so serializing the state (argMaxManyState, distributed merges) would throw. A Field also cannot
--- record which variant alternative was active, so the result could reconstruct a different one.
-SELECT argMaxMany(2)(number::Variant(UInt64), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMinMany(2)(number::Variant(UInt64), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMaxMany(2)(tuple(number::Variant(UInt64, String), number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMinMany(2)(tuple(number::Variant(UInt64, String), number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMaxMany(2)([number::Variant(UInt64, String)], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMinMany(2)([number::Variant(UInt64, String)], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Variant arg is supported, also nested inside another type: arg values are kept in a column of
+-- the arg type inside the state, so the active alternative is preserved, and the state is
+-- serialized with the column-based binary serialization of Variant.
+SELECT argMaxMany(2)(number::Variant(UInt64), number) FROM numbers(5);
+SELECT argMinMany(2)(number::Variant(UInt64), number) FROM numbers(5);
+SELECT argMaxMany(3)(v, number) FROM (SELECT number, CAST(if(number % 2 = 0, toString(number), 'x' || toString(number)), 'Variant(UInt64, String)') AS v FROM numbers(5));
+SELECT argMinMany(3)(v, number) FROM (SELECT number, CAST(if(number % 2 = 0, toString(number), 'x' || toString(number)), 'Variant(UInt64, String)') AS v FROM numbers(5));
+SELECT argMaxMany(2)(tuple(number::Variant(UInt64, String), number), number) FROM numbers(5);
+SELECT argMinMany(2)([number::Variant(UInt64, String)], number) FROM numbers(5);
+DROP TABLE IF EXISTS t_04266_argmaxmany_variant;
+CREATE TABLE t_04266_argmaxmany_variant (s AggregateFunction(argMaxMany(3), Variant(UInt64, String), UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_04266_argmaxmany_variant SELECT argMaxManyState(3)(v, number) FROM (SELECT number, CAST(if(number % 2 = 0, toString(number), 'x' || toString(number)), 'Variant(UInt64, String)') AS v FROM numbers(5)) GROUP BY number % 2;
+SELECT argMaxManyMerge(3)(s) FROM t_04266_argmaxmany_variant;
+DROP TABLE t_04266_argmaxmany_variant;
 
 -- Dynamic arg is supported, including through state serialization: SerializationDynamic encodes
 -- the value type together with the value. Round-trip the state through a MergeTree table to
@@ -125,17 +129,33 @@ INSERT INTO t_04266_argmaxmany_dynamic SELECT argMaxManyState(2)(number::Dynamic
 SELECT argMaxManyMerge(2)(s) FROM t_04266_argmaxmany_dynamic;
 DROP TABLE t_04266_argmaxmany_dynamic;
 
--- Error: JSON (Object) anywhere inside the arg type is rejected too. arg values are stored in the
--- state as plain Fields, and `ColumnObject::operator[]` collapses a dynamic path holding NULL into
--- "path absent", so a document round-tripped through a Field can silently lose paths and could
--- never be returned unchanged.
+-- JSON arg is supported, also nested inside another type, and the documents come back unchanged,
+-- including a typed path holding NULL, which a Field-based state used to collapse into "path absent".
 SET enable_json_type = 1;
-SELECT argMaxMany(2)(('{"a":' || toString(number) || '}')::JSON, number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMinMany(2)(('{"a":' || toString(number) || '}')::JSON, number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMaxMany(2)(tuple(('{"a":' || toString(number) || '}')::JSON, number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMinMany(2)(tuple(('{"a":' || toString(number) || '}')::JSON, number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMaxMany(2)([('{"a":' || toString(number) || '}')::JSON], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT argMinMany(2)([('{"a":' || toString(number) || '}')::JSON], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMaxMany(2)(('{"a":' || toString(number) || '}')::JSON, number) FROM numbers(5);
+SELECT argMinMany(2)(('{"a":' || toString(number) || '}')::JSON, number) FROM numbers(5);
+SELECT argMaxMany(2)(tuple(('{"a":' || toString(number) || '}')::JSON, number), number) FROM numbers(5);
+SELECT argMinMany(2)([('{"a":' || toString(number) || '}')::JSON], number) FROM numbers(5);
+SELECT argMaxMany(2)(j, number) FROM (SELECT number, if(number = 1, '{"b":2}', '{"a":1}')::JSON(a Nullable(Int64)) AS j FROM numbers(2));
+SELECT argMinMany(2)(j, number) FROM (SELECT number, if(number = 1, '{"b":2}', '{"a":1}')::JSON(a Nullable(Int64)) AS j FROM numbers(2));
+DROP TABLE IF EXISTS t_04266_argmaxmany_json;
+CREATE TABLE t_04266_argmaxmany_json (s AggregateFunction(argMinMany(2), JSON, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_04266_argmaxmany_json SELECT argMinManyState(2)(('{"a":' || toString(number) || '}')::JSON, number) FROM numbers(5) GROUP BY number % 2;
+SELECT argMinManyMerge(2)(s) FROM t_04266_argmaxmany_json;
+DROP TABLE t_04266_argmaxmany_json;
+
+-- Float32 arg round-trips bit-exactly, like in argMax/argMin. A Field widens Float32 to Float64,
+-- which quiets a signaling NaN payload; the state keeps arg in a column of the arg type instead.
+SELECT reinterpretAsUInt32(argMax(x, val)) = reinterpretAsUInt32(arrayElement(argMaxMany(1)(x, val), 1)), hex(reinterpretAsUInt32(arrayElement(argMaxMany(1)(x, val), 1))) FROM (SELECT reinterpretAsFloat32(toUInt32(0x7F800001)) AS x, 1 AS val);
+SELECT reinterpretAsUInt32(argMin(x, val)) = reinterpretAsUInt32(arrayElement(argMinMany(1)(x, val), 1)), hex(reinterpretAsUInt32(arrayElement(argMinMany(1)(x, val), 1))) FROM (SELECT reinterpretAsFloat32(toUInt32(0x7F800001)) AS x, 1 AS val);
+SELECT hex(reinterpretAsUInt32(arrayElement(argMaxMany(1)(x, val), 1).1)) FROM (SELECT tuple(reinterpretAsFloat32(toUInt32(0x7F800001))) AS x, 1 AS val);
+SELECT hex(reinterpretAsUInt32(arrayElement(argMaxManyMerge(1)(s), 1))) FROM (SELECT argMaxManyState(1)(x, val) AS s FROM (SELECT reinterpretAsFloat32(toUInt32(0x7F800001)) AS x, 1 AS val));
+
+-- Many more accepted rows than N: every row replaces the heap root, so the arg column of the state
+-- is compacted repeatedly, and the result must still be exact.
+SELECT argMaxMany(2)(toString(number), number) FROM numbers(100000);
+SELECT argMinMany(2)(toString(number), -toInt64(number)) FROM numbers(100000);
+SELECT argMaxMany(1)(number, number) FROM numbers(100000);
 
 -- NaN nested inside a composite val type follows the same rule as a top-level NaN: it is the worst
 -- candidate, so it is evicted in favor of any real value and sorts last in the output. Field's own

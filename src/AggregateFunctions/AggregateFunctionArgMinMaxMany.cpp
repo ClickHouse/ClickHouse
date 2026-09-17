@@ -28,9 +28,16 @@ namespace
 
 constexpr UInt64 aggregate_function_arg_min_max_many_max_element_size = 0xFFFFFF;
 
+/// One candidate kept by the state. `val` is what the candidates are ranked by, so it is kept as a
+/// `Field` for the `NaN`-aware comparison below. `arg` is what the function returns and it is never
+/// compared, so it is not converted to a `Field` at all: `arg_index` is a row of the state's `args`
+/// column, which has exactly the type of the `arg` argument. `Field` is not a lossless carrier for
+/// every type -- it widens `Float32` to `Float64` (which rewrites non-canonical `NaN` payloads),
+/// cannot record the active alternative of a `Variant`, and collapses `NULL` paths of a `JSON` --
+/// while a typed column round-trips all of them exactly, like `argMin`/`argMax` do.
 struct Entry
 {
-    Field arg;
+    size_t arg_index;
     Field val;
 };
 
@@ -137,6 +144,10 @@ struct MaxHeapComparator
 template <bool isMin>
 struct AggregateFunctionArgMinManyData
 {
+    /// The `arg` values of the entries, in a column of the `arg` type. Created on first use, because
+    /// the state does not know the type. Evicted entries leave their rows behind; `compactIfNeeded`
+    /// rebuilds the column from the live entries once the dead rows dominate.
+    MutableColumnPtr args;
     VectorWithMemoryTracking<Entry> entries;
     bool is_heap = false;
 };
@@ -154,50 +165,76 @@ class AggregateFunctionArgMinMaxMany final
     using Data = AggregateFunctionArgMinManyData<isMin>;
     using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMaxMany<isMin>>;
 
-    void addEntry(AggregateDataPtr __restrict place, Entry new_entry) const
+    using HeapComparator = std::conditional_t<isMin, MaxHeapComparator, MinHeapComparator>;
+
+    /// Whether a candidate with `new_val` should replace the root of a full heap, i.e. the worst
+    /// `val` kept so far. Same `NaN`-aware policy as the heap comparators, so that `add`, `merge`
+    /// and `deserialize` agree.
+    static bool isBetter(const Field & new_val, const Field & root_val)
+    {
+        if constexpr (isMin)
+            return valLess(new_val, root_val);
+        else
+            return valGreater(new_val, root_val);
+    }
+
+    IColumn & argsColumn(Data & data) const
+    {
+        if (!data.args)
+            data.args = data_type_arg->createColumn();
+        return *data.args;
+    }
+
+    /// Evicted entries leave their `arg` rows in `args`. Rebuild it from the live entries once the
+    /// dead rows outnumber them, so that the state stays O(N) regardless of the number of rows
+    /// processed while the rebuild cost stays O(1) amortized per accepted row.
+    void compactIfNeeded(Data & data) const
+    {
+        if (data.args->size() <= 2 * max_elems)
+            return;
+
+        auto compacted = data.args->cloneEmpty();
+        compacted->reserve(data.entries.size());
+        for (auto & entry : data.entries)
+        {
+            compacted->insertFrom(*data.args, entry.arg_index);
+            entry.arg_index = compacted->size() - 1;
+        }
+        data.args = std::move(compacted);
+    }
+
+    /// Offers a candidate to the state. `arg` is the row `arg_row` of `arg_column`, and it is copied
+    /// into the state only if the candidate is accepted, so that a rejected row never materializes
+    /// its `arg`. This is the single path for `add` and `merge`.
+    void addEntry(AggregateDataPtr __restrict place, const IColumn & arg_column, size_t arg_row, Field val) const
     {
         auto & data = this->data(place);
 
-        if (data.entries.size() < max_elems)
+        if (!data.is_heap)
         {
-            data.entries.push_back(std::move(new_entry));
+            auto & args = argsColumn(data);
+            args.insertFrom(arg_column, arg_row);
+            data.entries.push_back(Entry{args.size() - 1, std::move(val)});
             if (data.entries.size() == max_elems)
             {
-                if constexpr (isMin)
-                    std::make_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
-                else
-                    std::make_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
+                std::make_heap(data.entries.begin(), data.entries.end(), HeapComparator{});
                 data.is_heap = true;
             }
             return;
         }
 
-        if constexpr (isMin)
-        {
-            /// Max-heap: root is the largest val among the N smallest we keep.
-            /// Replace root if the new val is smaller. Use the same `NaN`-aware comparator policy
-            /// as `add`, otherwise the raw `Field` ordering (which treats `NaN` as the largest value)
-            /// would keep a `NaN` root and reject real values on the merge path.
-            if (valLess(new_entry.val, data.entries[0].val))
-            {
-                std::pop_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
-                data.entries.back() = std::move(new_entry);
-                std::push_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
-            }
-        }
-        else
-        {
-            /// Min-heap: root is the smallest val among the N largest we keep.
-            /// Replace root if the new val is larger. Use the same `NaN`-aware comparator policy
-            /// as `add`, otherwise the raw `Field` ordering (which treats `NaN` as the largest value)
-            /// would keep a `NaN` root and reject real values on the merge path.
-            if (valGreater(new_entry.val, data.entries[0].val))
-            {
-                std::pop_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
-                data.entries.back() = std::move(new_entry);
-                std::push_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
-            }
-        }
+        /// The heap is full and its root is the worst `val` kept so far: replace it only if the new
+        /// candidate is better. Checked first, so that the hot rejection path stays cheap.
+        if (!isBetter(val, data.entries[0].val))
+            return;
+
+        std::pop_heap(data.entries.begin(), data.entries.end(), HeapComparator{});
+        auto & args = argsColumn(data);
+        args.insertFrom(arg_column, arg_row);
+        data.entries.back() = Entry{args.size() - 1, std::move(val)};
+        std::push_heap(data.entries.begin(), data.entries.end(), HeapComparator{});
+
+        compactIfNeeded(data);
     }
 
 public:
@@ -234,33 +271,6 @@ public:
         };
         check_val_type(*data_type_val);
         data_type_val->forEachChild(check_val_type);
-
-        /// Reject `Variant` and `Object` anywhere inside the `arg` type. `arg` values are stored in
-        /// the state as plain `Field`s, which is lossy for both:
-        /// - `SerializationVariant` does not implement `Field`-based binary serialization, so
-        ///   serializing the state (e.g. `argMaxManyState` or distributed merges) would throw
-        ///   `NOT_IMPLEMENTED`. Moreover, a `Field` cannot record which variant alternative was
-        ///   active, so emitting the result could reconstruct a different alternative.
-        /// - `ColumnObject::operator[]` collapses a dynamic path holding `NULL` into "path absent"
-        ///   (`ColumnObject.cpp`), so a `JSON` document round-tripped through a `Field` can lose
-        ///   paths, and the original document could never be returned.
-        /// This is the same set of types for which `canUseFieldForValueData` (`SingleValueData.cpp`)
-        /// makes `argMin`/`argMax` switch to their column-backed representation. `Dynamic` is fine
-        /// here: its serialization encodes the value type together with the value, and
-        /// `ColumnDynamic` accepts `Field` insertion.
-        auto check_arg_type = [&](const IDataType & type)
-        {
-            if (isVariant(type) || isObject(type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of aggregate function {} because {} values cannot be losslessly stored in the "
-                    "aggregation state. Consider using typed subcolumns or cast column to a specific data type",
-                    data_type_arg->getName(),
-                    getName(),
-                    isObject(type) ? "Object" : "Variant");
-        };
-        check_arg_type(*data_type_arg);
-        data_type_arg->forEachChild(check_arg_type);
     }
 
     String getName() const override
@@ -276,49 +286,23 @@ public:
         if (columns[1]->isNullAt(row_num))
             return;
 
-        auto & data = this->data(place);
-
-        /// When the heap is full, check val first to avoid materializing arg on the hot rejection path.
-        if (data.is_heap)
-        {
-            Field new_val = (*columns[1])[row_num];
-            using Cmp = std::conditional_t<isMin, MaxHeapComparator, MinHeapComparator>;
-            Cmp cmp;
-            if (!cmp(Entry{Field{}, new_val}, data.entries[0]))
-                return;
-            std::pop_heap(data.entries.begin(), data.entries.end(), cmp);
-            data.entries.back() = Entry{(*columns[0])[row_num], std::move(new_val)};
-            std::push_heap(data.entries.begin(), data.entries.end(), cmp);
-            return;
-        }
-
-        /// Fill-up phase: heap not yet built, materialize both fields.
-        addEntry(place, Entry{(*columns[0])[row_num], (*columns[1])[row_num]});
+        addEntry(place, *columns[0], row_num, (*columns[1])[row_num]);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         const auto & rhs_data = this->data(rhs);
         for (const auto & entry : rhs_data.entries)
-            addEntry(place, entry);
+            addEntry(place, *rhs_data.args, entry.arg_index, entry.val);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        const auto & entries = this->data(place).entries;
-        writeVarUInt(entries.size(), buf);
-        for (const auto & entry : entries)
+        const auto & data = this->data(place);
+        writeVarUInt(data.entries.size(), buf);
+        for (const auto & entry : data.entries)
         {
-            if (entry.arg.isNull())
-            {
-                writeBinary(false, buf);
-            }
-            else
-            {
-                writeBinary(true, buf);
-                serialization_arg->serializeBinary(entry.arg, buf, {});
-            }
-
+            serialization_arg->serializeBinary(*data.args, entry.arg_index, buf, {});
             serialization_val->serializeBinary(entry.val, buf, {});
         }
     }
@@ -339,25 +323,19 @@ public:
         auto & data = this->data(place);
         data.entries.resize(size);
         data.is_heap = false;
+        data.args = data_type_arg->createColumn();
+        data.args->reserve(size);
 
         for (auto & entry : data.entries)
         {
-            bool has_arg = false;
-            readBinary(has_arg, buf);
-            if (has_arg)
-                serialization_arg->deserializeBinary(entry.arg, buf, {});
-            else
-                entry.arg = Field{};
-
+            serialization_arg->deserializeBinary(*data.args, buf, {});
+            entry.arg_index = data.args->size() - 1;
             serialization_val->deserializeBinary(entry.val, buf, {});
         }
 
         if (data.entries.size() == max_elems)
         {
-            if constexpr (isMin)
-                std::make_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
-            else
-                std::make_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
+            std::make_heap(data.entries.begin(), data.entries.end(), HeapComparator{});
             data.is_heap = true;
         }
     }
@@ -368,19 +346,19 @@ public:
         auto & offsets = col_array.getOffsets();
         auto & col_data = col_array.getData();
 
-        const auto & entries = this->data(place).entries;
+        const auto & data = this->data(place);
 
         /// Sort a copy: `insertResultInto` must not mutate the aggregate state, because window
         /// aggregation over a growing frame reuses the same state (and its heap invariant) across
         /// the rows of the frame after each result is written.
-        VectorWithMemoryTracking<Entry> sorted(entries.begin(), entries.end());
+        VectorWithMemoryTracking<Entry> sorted(data.entries.begin(), data.entries.end());
         if constexpr (isMin)
             std::sort(sorted.begin(), sorted.end(), [](const Entry & a, const Entry & b) { return valLess(a.val, b.val); });
         else
             std::sort(sorted.begin(), sorted.end(), [](const Entry & a, const Entry & b) { return valGreater(a.val, b.val); });
 
         for (const auto & entry : sorted)
-            col_data.insert(entry.arg);
+            col_data.insertFrom(*data.args, entry.arg_index);
 
         offsets.push_back(offsets.back() + sorted.size());
     }
@@ -455,7 +433,7 @@ A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
         {"N", "The maximum number of elements to return.", {"UInt64"}}
     };
     FunctionDocumentation::Arguments arguments_argMaxMany = {
-        {"arg", "Argument values to collect. Any type except `Variant` and `JSON` (also when nested inside another type).", {"Any"}},
+        {"arg", "Argument values to collect.", {"Any"}},
         {"val", "Values used to determine the top N rows. Any comparable type except `Dynamic`, `Variant` and `JSON` (also when nested inside another type).", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_argMaxMany = {
@@ -484,7 +462,7 @@ SELECT argMaxMany(2)(user, salary) FROM salary;
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_argMaxMany = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in_argMaxMany = {26, 10};
     FunctionDocumentation::Category category_argMaxMany = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_argMaxMany = {
         description_argMaxMany,
@@ -521,7 +499,7 @@ A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
         {"N", "The maximum number of elements to return.", {"UInt64"}}
     };
     FunctionDocumentation::Arguments arguments_argMinMany = {
-        {"arg", "Argument values to collect. Any type except `Variant` and `JSON` (also when nested inside another type).", {"Any"}},
+        {"arg", "Argument values to collect.", {"Any"}},
         {"val", "Values used to determine the bottom N rows. Any comparable type except `Dynamic`, `Variant` and `JSON` (also when nested inside another type).", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_argMinMany = {
@@ -550,7 +528,7 @@ SELECT argMinMany(2)(user, salary) FROM salary;
             )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_argMinMany = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in_argMinMany = {26, 10};
     FunctionDocumentation::Category category_argMinMany = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_argMinMany = {
         description_argMinMany,
