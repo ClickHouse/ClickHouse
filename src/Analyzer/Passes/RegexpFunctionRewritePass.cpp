@@ -165,10 +165,59 @@ private:
                 if (i + 1 >= regexp.size())
                     return giveUp(); /// A trailing backslash - the pattern is not even valid.
 
-                /// re2's zero-width escapes. Everything else, such as `\d` or `\.`, consumes a character.
+                /// re2's zero-width escapes. Everything else, such as `\d` or `\.`, consumes a character,
+                /// but not every escape is two bytes long: `\x{41}`, `\x41`, `\p{Greek}`, `\pL` and the
+                /// octal `\101` are single literals or classes that span more bytes. Reading only two
+                /// would leave `{41}` to be mistaken for a repetition and `?` for its non-greedy modifier.
                 const char escaped = regexp[i + 1];
                 atom.zero_width = escaped == 'b' || escaped == 'B' || escaped == 'A' || escaped == 'z' || escaped == 'Z';
                 i += 2;
+
+                if (escaped == 'x')
+                {
+                    if (i < regexp.size() && regexp[i] == '{')
+                    {
+                        /// `\x{HHHH}`.
+                        const size_t closing = regexp.find('}', i + 1);
+                        if (closing == std::string::npos)
+                            return giveUp(); /// Unterminated.
+                        i = closing + 1;
+                    }
+                    else
+                    {
+                        /// `\xHH`.
+                        if (i + 2 > regexp.size() || !isHexDigit(regexp[i]) || !isHexDigit(regexp[i + 1]))
+                            return giveUp(); /// Not a valid escape, re2 rejects it anyway.
+                        i += 2;
+                    }
+                }
+                else if (escaped == 'p' || escaped == 'P')
+                {
+                    /// A Unicode class: `\pL` or `\p{Greek}`, with `\P` for the negation.
+                    if (i >= regexp.size())
+                        return giveUp();
+                    if (regexp[i] == '{')
+                    {
+                        const size_t closing = regexp.find('}', i + 1);
+                        if (closing == std::string::npos)
+                            return giveUp(); /// Unterminated.
+                        i = closing + 1;
+                    }
+                    else
+                    {
+                        ++i;
+                    }
+                }
+                else if (escaped >= '0' && escaped <= '7')
+                {
+                    /// An octal character code of up to three digits.
+                    size_t digits = 1;
+                    while (digits < 3 && i < regexp.size() && regexp[i] >= '0' && regexp[i] <= '7')
+                    {
+                        ++digits;
+                        ++i;
+                    }
+                }
             }
             else if (c == '^' || c == '$')
             {

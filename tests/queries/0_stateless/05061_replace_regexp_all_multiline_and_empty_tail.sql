@@ -59,3 +59,37 @@ SELECT 'still rewritten';
 SELECT replaceRegexpAll(h, 'a\\Qxy\\E$', 'Z') FROM (SELECT 'axy' AS h);
 SELECT replaceRegexpAll(h, 'a\\Qxy\\E$', 'Z') FROM (SELECT 'axy' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('axy'), 'a\\Qxy\\E$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+
+-- Escapes longer than two bytes: `\x{41}`, `\x41`, `\p{Lu}`, `\pL` and the octal `\101` are single
+-- literals or classes. Read as two bytes, `\x{41}?$` would look like `\x` with a `{41}` repetition
+-- and a non-greedy `?`, hiding the nullable tail; the pattern is `A?$` and replaces twice over `A`.
+SELECT 'multi-byte escapes';
+SELECT replaceRegexpAll(h, '\\x{41}?$', 'Z') FROM (SELECT 'A' AS h);
+SELECT replaceRegexpAll(h, '\\x{41}?$', 'Z') FROM (SELECT 'A' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+
+SELECT replaceRegexpAll(h, '\\x41?$', 'Z') FROM (SELECT 'A' AS h);
+SELECT replaceRegexpAll(h, '\\x41?$', 'Z') FROM (SELECT 'A' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+
+SELECT replaceRegexpAll(h, '\\p{Lu}?$', 'Z') FROM (SELECT 'A' AS h);
+SELECT replaceRegexpAll(h, '\\p{Lu}?$', 'Z') FROM (SELECT 'A' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+
+SELECT replaceRegexpAll(h, '\\pL?$', 'Z') FROM (SELECT 'A' AS h);
+SELECT replaceRegexpAll(h, '\\pL?$', 'Z') FROM (SELECT 'A' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+
+SELECT replaceRegexpAll(h, '\\101?$', 'Z') FROM (SELECT 'A' AS h);
+SELECT replaceRegexpAll(h, '\\101?$', 'Z') FROM (SELECT 'A' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('A'), '\\x{41}?$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('A'), '\\x41?$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('A'), '\\p{Lu}?$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('A'), '\\pL?$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('A'), '\\101?$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+
+-- The same escapes without a quantifier have to consume a character, so the rewrite is kept.
+SELECT 'still rewritten';
+SELECT replaceRegexpAll(h, '\\x{41}$', 'Z') FROM (SELECT 'AA' AS h);
+SELECT replaceRegexpAll(h, '\\x{41}$', 'Z') FROM (SELECT 'AA' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+SELECT replaceRegexpAll(h, '\\p{Lu}$', 'Z') FROM (SELECT 'AA' AS h);
+SELECT replaceRegexpAll(h, '\\p{Lu}$', 'Z') FROM (SELECT 'AA' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('AA'), '\\x{41}$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('AA'), '\\p{Lu}$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
