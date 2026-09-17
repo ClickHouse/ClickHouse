@@ -1988,7 +1988,7 @@ def test_create_non_table_rejected(started_cluster):
         f"CREATE TABLE {CATALOG_NAME}.`ns.mem` (x Int32) ENGINE = Memory",
         settings={"allow_database_iceberg": 1},
     )
-    assert "only supports Iceberg-family table engines" in err
+    assert "stores Iceberg-family tables" in err
 
 
 def test_create_table_unsupported_clauses(started_cluster):

@@ -141,6 +141,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -1064,22 +1065,33 @@ void DatabaseDataLake::validateCreateTableEngine(const ASTFunction & engine) con
 {
     const String & engine_name = engine.name;
 
-    /// `Iceberg` picks its backend from the optional `disk` setting, which the storage factory resolves
-    /// only after this database-level validation, so a fixed-backend catalog cannot accept it here.
-    if (engine_name == "Iceberg" && getFixedStorageTypeForTableCreation(getCatalog()).has_value())
+    /// The table engine family of this catalog (`Iceberg`, `DeltaLake`, ...): `tryGetTableImpl` reopens
+    /// every table as that engine, so a table created with another family would be unreadable
+    /// immediately after creation. Backend-specific engines are named `<family><backend>`.
+    const String & family_name = table_engine_definition->as<ASTStorage &>().engine->name;
+    if (!engine_name.starts_with(family_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The generic 'Iceberg' engine is not supported for a DataLakeCatalog with a fixed storage backend. "
-            "Use the matching backend-specific Iceberg engine instead");
+            "This DataLakeCatalog stores {}-family tables; got table engine '{}'",
+            family_name, engine_name);
+
+    /// The family engine without a backend picks it from the optional `disk` setting, which the storage
+    /// factory resolves only after this database-level validation, so a fixed-backend catalog cannot
+    /// accept it here.
+    if (engine_name == family_name && getFixedStorageTypeForTableCreation(getCatalog()).has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The generic '{}' engine is not supported for a DataLakeCatalog with a fixed storage backend. "
+            "Use the matching backend-specific {} engine instead", family_name, family_name);
 
     /// Unrecognized names pin no backend and are accepted here; they are rejected by the storage factory.
     std::optional<DatabaseDataLakeStorageType> engine_backend;
-    if (engine_name == "IcebergS3")
+    const std::string_view backend_name = std::string_view(engine_name).substr(family_name.size());
+    if (backend_name == "S3")
         engine_backend = DatabaseDataLakeStorageType::S3;
-    else if (engine_name == "IcebergAzure")
+    else if (backend_name == "Azure")
         engine_backend = DatabaseDataLakeStorageType::Azure;
-    else if (engine_name == "IcebergHDFS")
+    else if (backend_name == "HDFS")
         engine_backend = DatabaseDataLakeStorageType::HDFS;
-    else if (engine_name == "IcebergLocal")
+    else if (backend_name == "Local")
         engine_backend = DatabaseDataLakeStorageType::Local;
 
     /// A catalog without a fixed backend reopens the table using its own location, so any backend fits.
@@ -1088,8 +1100,8 @@ void DatabaseDataLake::validateCreateTableEngine(const ASTFunction & engine) con
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table engine '{}' uses the {} storage backend, but this DataLakeCatalog stores tables on {}. "
             "The table would be reopened with the catalog's storage backend and become unreadable "
-            "immediately after creation. Use a matching Iceberg engine or the generic 'Iceberg' engine",
-            engine_name, *engine_backend, *catalog_storage_type);
+            "immediately after creation. Use a matching {} engine or the generic '{}' engine",
+            engine_name, *engine_backend, *catalog_storage_type, family_name, family_name);
 
     validateCreateTableEngineArguments(engine);
 }
@@ -1158,6 +1170,15 @@ void DatabaseDataLake::createTable(
     /// registered the table; a path there that registers nothing throws instead of returning.
     if (table)
         return;
+
+    /// Only Iceberg metadata is generated below. In a catalog of another family a table can be created
+    /// only with an explicit table engine, which writes that family's metadata itself.
+    const String & family_name = table_engine_definition->as<ASTStorage &>().engine->name;
+    if (family_name != "Iceberg")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "CREATE TABLE without a table engine is not implemented for a {} DataLakeCatalog; "
+            "give an explicit {}-family table engine with the table location",
+            family_name, family_name);
 
     auto catalog = getCatalog();
     const auto & create = query->as<ASTCreateQuery &>();
@@ -2072,7 +2093,9 @@ An Iceberg table in a `DataLakeCatalog` database can be created directly from Cl
 :::note
 `CREATE TABLE` and `DROP TABLE` require a catalog that can perform catalog mutations. They are supported
 for Iceberg REST catalogs (including OneLake, BigLake, and Delta Sharing) and for the AWS Glue catalog.
-Other catalog types (Unity, Hive Metastore, Paimon REST) are read-only and reject these statements.
+Other catalog types (Hive Metastore, Paimon REST) reject these statements. A Unity catalog stores Delta
+tables, which are created with an explicit `DeltaLake` table engine (see below) and cannot be dropped
+through the catalog.
 :::
 
 The location of a newly created table comes from `default_base_location` (a full `s3://bucket/prefix`) when
@@ -2110,12 +2133,12 @@ must use one of the following expressions:
 Composite partitioning is supported via `PARTITION BY (expr1, expr2, ...)`.
 Other expressions (e.g. `toYYYYMM`, `intDiv`) are rejected at `CREATE TABLE`.
 
-Only the column names and types, `PARTITION BY`, and `ORDER BY` are persisted into the Iceberg
+Only the column names and types, `PARTITION BY`, and `ORDER BY` are persisted into the
 table metadata. Anything else — the storage clauses `PRIMARY KEY`, `SAMPLE BY`, `TTL`, and
 `UNIQUE KEY`; indices, constraints, and projections; and the column modifiers `DEFAULT`,
 `MATERIALIZED`, `ALIAS`, `EPHEMERAL`, `COMMENT`, `CODEC`, `TTL`, `STATISTICS`, and `SETTINGS` —
 is rejected rather than silently dropped. This applies both with and without an explicit
-`ENGINE` clause. Engine `SETTINGS` are accepted only together with an explicit Iceberg engine,
+`ENGINE` clause. Engine `SETTINGS` are accepted only together with an explicit table engine,
 where they are the engine's storage settings (e.g. `iceberg_format_version`).
 
 An explicit `ENGINE` clause selects the location of the new table; every other engine argument must

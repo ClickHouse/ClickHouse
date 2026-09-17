@@ -1829,7 +1829,7 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
-/// Names the first storage clause an Iceberg table cannot represent, or nullptr if there is none.
+/// Names the first storage clause a data lake table cannot represent, or nullptr if there is none.
 /// Engine `SETTINGS` are left to the caller: they are real storage settings when the engine is explicit,
 /// and the source engine's defaults when they come from `CREATE TABLE ... AS`.
 const char * findUnsupportedDatalakeStorageClause(const ASTStorage & storage)
@@ -2224,14 +2224,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "views, dictionaries, ATTACH, CLONE AS, and REPLACE TABLE are not allowed");
 
         if (engine_user_specified)
-        {
-            if (!create.storage->engine->name.starts_with("Iceberg"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "DataLakeCatalog only supports Iceberg-family table engines; got '{}'",
-                    create.storage->engine->name);
-
             database->validateCreateTableEngine(*create.storage->engine);
-        }
 
         /// For `CREATE TABLE ... AS` the storage is later rebuilt to keep only PARTITION BY / ORDER BY, so
         /// these explicit clauses (captured before `setEngine`) can only be rejected here.
@@ -2264,7 +2257,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                     backQuoteIfNeed(as_table_saved), inherited_clause);
         }
 
-        /// Only column names and types (plus `PARTITION BY` / `ORDER BY`) reach the initial Iceberg
+        /// Only column names and types (plus `PARTITION BY` / `ORDER BY`) reach the initial table
         /// metadata, and the table is re-instantiated from the catalog on every access, so any other
         /// column property would be silently lost. `properties` also covers columns inherited via
         /// `CREATE TABLE ... AS`; `DatabaseDataLake::createTable` re-validates the engine-less path.
@@ -2290,7 +2283,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "DataLakeCatalog CREATE TABLE does not support PRIMARY KEY, indices, constraints, or projections");
 
-        /// The comment is not persisted in Iceberg metadata or catalog properties,
+        /// The comment is not persisted in the table metadata or catalog properties,
         /// so reject it instead of silently dropping it.
         if (create.comment)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
