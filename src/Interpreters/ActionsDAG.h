@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -195,6 +196,10 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
+    /// Convert a node used as a condition to `result_type` keeping its truth value, e.g. 256 and 0.5
+    /// stay true where a bare cast to `UInt8` would make them false. `context` is only needed to turn
+    /// a NULL into false, which happens when `result_type` cannot hold a NULL.
+    const Node & addBooleanCondition(const Node & node, const DataTypePtr & result_type, ContextPtr context);
     /// Same as `addCast`, but the values that cannot be represented in the destination type exactly
     /// are converted to NULL instead of being wrapped around, saturated or leading to an exception.
     /// The result type is always Nullable, so `cast_type` must be allowed inside Nullable.
@@ -302,9 +307,16 @@ public:
     bool hasCorrelatedColumns() const noexcept;
     bool hasArrayJoin() const noexcept;
     bool hasStatefulFunctions() const;
+    /// Returns true for stateful functions or functions non-deterministic within the query,
+    /// including functions in lambda bodies.
+    bool hasNonDeterministicOrStatefulFunctions() const;
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
+    /// A lambda keeps its body in an inner DAG that neither `getNodes()` nor a walk over `Node::children`
+    /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
+    /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
+    static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 
@@ -455,8 +467,7 @@ public:
 
     struct SplitArrayJoinResult;
 
-    /// Extract one `arrayJoin` function so it can become an ArrayJoinStep between `before` and `after`.
-    /// Picks an ARRAY_JOIN node whose argument does not itself contain an array join; returns nullopt if none.
+    /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
     std::optional<SplitArrayJoinResult> extractFirstArrayJoin() const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of
@@ -519,6 +530,8 @@ public:
       * to left and right streams.
       * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
+      * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
+      * key rather than a rename of an equal-typed column.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -529,7 +542,8 @@ public:
         const Block & right_stream_header,
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
+        const NameSet & cross_type_equivalent_columns);
 
     /** Build filter dag from multiple filter dags.
       *

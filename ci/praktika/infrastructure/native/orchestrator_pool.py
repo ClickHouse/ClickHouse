@@ -69,6 +69,14 @@ class OrchestratorPool:
     evidence to the `/{slug}/praktika-system` CloudWatch log group. Off by
     default; see docs/logging.md.
 
+    `ext["runtime_source"]` (str) makes the orchestrator install Praktika at
+    runtime instead of using the version baked into the AMI. It is surfaced as
+    the `praktika_runtime_source` instance tag; on every task the controller
+    reinstalls `<source>` into an overlay of the prebaked base venv, so it always
+    runs the current checkout. The value is a filesystem path: an absolute path
+    on the instance, or a path relative to the cloned repo. Off by default (AMI
+    base venv is used as-is).
+
     Registered into CloudInfrastructure.Config automatically via its
     orchestrator_pool field.
 
@@ -214,19 +222,18 @@ class OrchestratorPool:
         asg_name = self._asg_name()
 
         artifact_bucket = (Settings.S3_ARTIFACT_BUCKET or "").strip()
-        artifact_resources = (
-            [
-                f"arn:aws:s3:::{artifact_bucket}/runs/*/cancel-request",
-                f"arn:aws:s3:::{artifact_bucket}/pr/*/cancel-before*",
-                f"arn:aws:s3:::{artifact_bucket}/external-pr-approvals/*",
-            ]
-            if artifact_bucket
-            else [
-                "arn:aws:s3:::*/runs/*/cancel-request",
-                "arn:aws:s3:::*/pr/*/cancel-before*",
-                "arn:aws:s3:::*/external-pr-approvals/*",
-            ]
-        )
+        # Scope the webhook role by *area prefix*, not per-key: it may Get/Put any
+        # control object the lambda writes under runs/ (cancel-request,
+        # rerun-request, resume.lock, state.json, …), pr/ (cancel-before) and
+        # external-pr-approvals/. Prefix-level so adding a new per-run/per-PR
+        # signal key never needs an IAM redeploy. Still far tighter than the
+        # orchestrator EC2 role, which is bucket-wide (project_bucket_arns).
+        bucket = artifact_bucket or "*"
+        artifact_resources = [
+            f"arn:aws:s3:::{bucket}/runs/*",
+            f"arn:aws:s3:::{bucket}/pr/*",
+            f"arn:aws:s3:::{bucket}/external-pr-approvals/*",
+        ]
 
         self.ec2_role = IAMRole.Config(
             name=self.ec2_role_name,
@@ -262,10 +269,15 @@ class OrchestratorPool:
                             "Effect": "Allow",
                             "Action": [
                                 "s3:GetObject",
-                                "s3:HeadObject",
                                 "s3:ListBucket",
                                 "s3:GetBucketLocation",
                                 "s3:PutObject",
+                                # sweep_rerun consumes (deletes) rerun-request keys
+                                # and _reset_job deletes stale final.json/heartbeat;
+                                # without DeleteObject those deletes fail silently,
+                                # so a rerun-request is re-applied every wait() loop
+                                # and rerun_count climbs without bound.
+                                "s3:DeleteObject",
                                 "s3:AbortMultipartUpload",
                             ],
                             "Resource": iam_scope.project_bucket_arns(),
@@ -313,6 +325,12 @@ class OrchestratorPool:
             # Activates the baked praktika-system-logs streamer at boot so
             # kernel/OOM/systemd-kill evidence is shipped to CloudWatch.
             runtime_tags["praktika_system_logs"] = "1"
+        runtime_source = str(self.ext.get("runtime_source", "") or "").strip()
+        if runtime_source:
+            # Install Praktika at runtime from this path instead of using the
+            # version baked into the AMI (see praktika_controller.venv_manager).
+            # The pool always runs whatever the source currently points at.
+            runtime_tags["praktika_runtime_source"] = runtime_source
         self.launch_template = LaunchTemplate.Config(
             name=self._launch_template_name(),
             image_id=self.ami_id,

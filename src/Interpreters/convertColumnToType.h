@@ -29,17 +29,22 @@ namespace DB
   * column is a plain `ColumnUInt8`, so `get` yields `UInt64`), so the delegation path re-tags `Bool`
   * values before calling `convertFieldToType`. The differential test pins these cases.
   *
+  * A `Variant`/`Dynamic` source is faithful too. `IColumn::get` returns the active alternative's value
+  * without recording which alternative it came from, while the conversion is keyed on the source type, so
+  * the alternative's type is read back from the column and used in place of the carrier's. An ambiguous
+  * variant such as `Variant(Bool, UInt8)` is included, because the discriminator still distinguishes the
+  * alternatives where the `Field` no longer can. This is the one thing the legacy `Field` path
+  * (`convertFieldToType` on `(*column)[0]`) cannot do, the column being gone by then, so moving a caller
+  * onto this helper corrects such conversions rather than preserving them.
+  *
+  * Known limitation: a conversion whose `from` is itself a composite over the carrier - e.g.
+  * `Array(Dynamic)` to `Array(String)` - is NOT faithful, because `convertFieldToType` converts the
+  * elements of a composite with no element type at hand, so a per-element alternative is never reached.
+  *
   * A `Variant` target is the one deliberate divergence from `convertFieldToType`, which cannot express
   * such a result at all: it returns the value unchanged, and the alternative is chosen only when the
   * value is inserted into a `ColumnVariant`, by the first alternative that accepts it. `CAST` chooses the
   * alternative by type instead, so the discriminator survives here and not there.
-  *
-  * Known limitation, the same erasure in the other direction: a `Variant` SOURCE with a non-`Variant`
-  * target still goes through the `Field` path, and `ColumnVariant::get` erases the active alternative to
-  * the nested column's field (e.g. `UInt64` for a `Bool` or a `Date` alternative), so which alternative
-  * the value occupied is not recoverable. Recovering it would need a `ColumnVariant`-aware path before
-  * the generic `get`; the legacy `Field` path (`convertFieldToType` on `(*column)[0]`) has the same
-  * limitation, so migrating a caller from it to this helper does not change that behavior.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
