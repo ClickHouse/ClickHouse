@@ -147,6 +147,14 @@ void DeltaLakeSink::onFinish()
     }
     catch (...)
     {
+        if (delta_transaction->isCommitOutcomeUnknown())
+        {
+            /// `onException` -> `cancelBuffers()` and the destructor unlink whatever is still
+            /// tracked here, so clearing the list is what keeps the files on every path.
+            data_files.clear();
+            throw;
+        }
+
         for (const auto & [sink, written_bytes, written_rows] : data_files)
         {
             /// FIXME: this should be just removeObject,
