@@ -177,7 +177,6 @@ public:
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
 
-    /// See `windowTopKPrefilter`.
     void setWindowTopKPrefilter(
         SortDescription window_partition_description_,
         SortDescription window_order_description_,

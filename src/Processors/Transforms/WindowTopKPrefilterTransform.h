@@ -42,7 +42,6 @@ private:
     ColumnNumbers partition_positions;
     ColumnNumbers order_positions;
 
-    /// Rows to observe before the skip rate may freeze the transform into a pass-through.
     const UInt64 profitability_window;
     UInt64 observed_rows = 0;
     UInt64 skipped_rows = 0;

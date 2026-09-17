@@ -891,7 +891,6 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
     cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
-    /// The setter also sets the row-count trait the prefilter implies.
     if (window_top_k)
         cloned->setWindowTopKPrefilter(window_partition_description, window_order_description, window_top_k);
     return cloned;
