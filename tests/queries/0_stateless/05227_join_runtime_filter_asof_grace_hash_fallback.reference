@@ -1,0 +1,4 @@
+--- ASOF INNER JOIN falls back to full_sorting_merge instead of failing ---
+1	10	5	1000
+1	20	15	1001
+3	15	10	3000
