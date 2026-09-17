@@ -83,7 +83,7 @@ SELECT 'variant-source-extension-eq', count() FROM (SELECT materialize(1::UInt64
 
 -- Only what `CAST` can place by type goes down the column path, and it keeps an ordinary
 -- `LowCardinality` (which can be an alternative itself), so such a constant stays on the `Field` path
--- rather than becoming a conversion error. A `Nullable` wrapper is stripped the same way CAST strips it.
+-- rather than becoming a conversion error. A `Nullable` wrapper is stripped the same way `CAST` strips it.
 SELECT 'lc-constant-or-chain', count() FROM (SELECT materialize('a'::Variant(String, UInt64)) AS v)
 WHERE v = 'a'::LowCardinality(String) OR v = 'b'::LowCardinality(String) OR v = 'c'::LowCardinality(String);
 SELECT 'lc-constant-or-chain-unrewritten', count() FROM (SELECT materialize('a'::Variant(String, UInt64)) AS v)
