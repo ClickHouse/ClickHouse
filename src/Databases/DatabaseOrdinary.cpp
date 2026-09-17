@@ -583,9 +583,13 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     /// ask it for its disks would defeat `lazy_load_tables`. Resolve the policy from the CREATE query
     /// instead - the way `convertMergeTreeToReplicatedIfNeeded` did when it found the flag - so that both
     /// phases look at the same disk even when the table is on a non-default `storage_policy`.
+    ///
+    /// The query has to be read straight from the metadata file: `tryGetCreateTableQuery` goes through
+    /// `tryGetTable`, which waits for the table's startup job - the very job this function runs in - and
+    /// the loader reports the self-dependency as a logical error.
     auto storage_policy = table->getStoragePolicy();
     if (!storage_policy)
-        if (auto create_query = tryGetCreateTableQuery(name.table, getContext()))
+        if (auto create_query = getCreateQueryFromMetadata(name.table, /* throw_on_error = */ false))
             storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>());
 
     DiskPtr checking_disk = getDisk();
