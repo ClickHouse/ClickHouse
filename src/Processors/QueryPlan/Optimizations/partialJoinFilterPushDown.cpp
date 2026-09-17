@@ -116,6 +116,8 @@ bool dependsOnSomeColumn(const ActionsDAG::Node & node)
 /// it for an unfolded expression such as `materialize(0)` would be strictly worse: it buys only
 /// symmetry with the folded case, and it costs the `NOT_IMPLEMENTED` above for one more class of
 /// queries, because the filter it lets through is the very `Filter` that hides the key-value side.
+/// For the same reason the caller does not offer a side whose push-down is disabled at all, even
+/// though a column-free conjunct passes the column check for it vacuously.
 bool isUsefulToPreFilterWith(const ActionsDAG::Node & node)
 {
     if (dependsOnSomeColumn(node))

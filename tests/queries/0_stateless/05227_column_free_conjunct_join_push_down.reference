@@ -23,6 +23,10 @@ toNullable(256)
 10
 CAST to LowCardinality(Nullable)
 10
+a folded always false constant is not pushed to a key-value side
+0
+0
+0
 an unfolded always false conjunct is not pushed down either
 0
 0

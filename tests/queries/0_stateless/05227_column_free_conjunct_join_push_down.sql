@@ -26,8 +26,14 @@ SELECT 'toNullable(256)';
 SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE toNullable(256) SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
 SELECT 'CAST to LowCardinality(Nullable)';
 SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE CAST(1 AS LowCardinality(Nullable(UInt8))) SETTINGS join_algorithm = 'direct', allow_suspicious_low_cardinality_types = 1, use_join_disjunctions_push_down = 1);
--- An always false conjunct the DAG has not folded is not pushed down either. A folded `WHERE 0` is,
--- deliberately: the join-order estimator reads the empty side out of it.
+-- A folded always false constant is pushed down deliberately, so that the join-order estimator reads
+-- the empty side out of it, but never to a side whose push-down is disabled: above a key-value right
+-- side the `Filter` would hide the storage from the direct-join detection just the same.
+SELECT 'a folded always false constant is not pushed to a key-value side';
+SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE 0 SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
+SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE toNullable(NULL) SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
+SELECT count() FROM (SELECT value2 FROM t_direct_left INNER JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE 0 SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
+-- An always false conjunct the DAG has not folded is not pushed down at all.
 SELECT 'an unfolded always false conjunct is not pushed down either';
 SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE materialize(0) SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
 SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE materialize(toNullable(NULL)) SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
