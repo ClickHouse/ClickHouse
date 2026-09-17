@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Only the host the tables themselves live on. A host that appears solely in Iceberg metadata
+         must be rejected, as it is for an ordinary `S3` table definition. -->
+    <remote_url_allow_hosts>
+        <host>minio1</host>
+    </remote_url_allow_hosts>
+</clickhouse>

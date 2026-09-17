@@ -5,6 +5,8 @@
 #if USE_AVRO
 
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include <Common/Logger_fwd.h>
 #include <Core/Types.h>
@@ -16,6 +18,8 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB::Iceberg
 {
@@ -36,33 +40,53 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id);
+    Int32 current_schema_id,
+    ExternalStorageCache & external_storages);
 
 struct ReachableFilesResult
 {
+    /// Base-storage keys of reachable files inside `table_path`, for matching against a base-storage listing.
     std::unordered_set<String> files;
     Int32 metadata_version;
     /// Resolved storage path of the metadata file the traversal was rooted at. Two distinct
     /// files can share a version number, so identity of the root is this path, not the number.
     String metadata_path;
+    /// Reachable files a base-storage listing of `table_path` cannot see: on a secondary storage, or on
+    /// the base storage outside `table_path`. Deduplicated and paired with their storage.
+    std::vector<std::pair<ObjectStoragePtr, String>> external_files;
 };
 
-/// Collect all files reachable through the metadata graph.
+/// Collect all files reachable through the current metadata graph.
 ///
+/// The graph is rooted at the metadata file `catalog` points at; without a catalog, at the configured
+/// `iceberg_metadata_file_path` unless `ignore_explicit_metadata_file_path`, and at the latest metadata
+/// file in storage otherwise. A caller that deletes what the graph does *not* reach
+/// (`remove_orphan_files`) must use the latest version, or a configured older head would make every
+/// later file look unreachable; one that deletes what it *does* reach (`drop`) must use the configured
+/// head, which is where the table reads from.
 /// Traverses: metadata JSON files (from metadata-log), manifest lists (from snapshots),
 /// manifest files (from manifest lists), data/delete files (from manifest files),
-/// and statistics files. All returned paths are resolved storage paths.
-/// The root path identifies the state traversed; the version number alongside it is diagnostic.
-/// The root is the catalog's committed pointer when `catalog` is set, otherwise the most recent
-/// metadata file in storage under the configured selection policy.
+/// and statistics files. Base-storage files inside `table_path` go to `files` (as keys); everything
+/// else goes to `external_files` (as resolved (storage, key) pairs). Also returns the root the
+/// traversal used, for TOCTOU detection: the root path identifies the state traversed, while the
+/// version number alongside it is diagnostic.
+/// With `scan_metadata_log_history` the historical metadata versions from `metadata-log` are walked too
+/// (recursively), but solely to report external references into `external_files`; history never extends
+/// `files`. A history path already deleted from storage does not reach `external_files`, whether it is a
+/// metadata file, a manifest list, a manifest or a leaf below them: there is nothing outside `table_path`
+/// left for the caller to act on. Reading one that is gone is skipped with a warning, any other failure
+/// while inspecting it propagates.
 ReachableFilesResult collectReachableFiles(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
     LoggerPtr log,
-    const std::shared_ptr<DataLake::ICatalog> & catalog = nullptr,
-    const String & table_identifier = {});
+    ExternalStorageCache & external_storages,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
+    bool scan_metadata_log_history,
+    bool ignore_explicit_metadata_file_path);
 
 }
 
