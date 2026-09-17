@@ -65,7 +65,22 @@ INSERT INTO t_04092_typed_shadow VALUES
     (3, '{"other": "x"}');
 SELECT 'typed shadow string', id, JSONExtractStringCaseInsensitive(j, 'NAME') FROM t_04092_typed_shadow ORDER BY id;
 SELECT 'typed shadow raw',    id, JSONExtractRawCaseInsensitive(j, 'NAME')    FROM t_04092_typed_shadow ORDER BY id;
+-- The same must hold with `type_json_skip_null_typed_paths`: a non-nullable typed path is never NULL,
+-- so the "real value" test for it must still be "not the type default", not "not NULL".
+SELECT 'typed shadow string skip null', id, JSONExtractStringCaseInsensitive(j, 'NAME') FROM t_04092_typed_shadow ORDER BY id SETTINGS type_json_skip_null_typed_paths = 1;
+SELECT 'typed shadow raw skip null',    id, JSONExtractRawCaseInsensitive(j, 'NAME')    FROM t_04092_typed_shadow ORDER BY id SETTINGS type_json_skip_null_typed_paths = 1;
 DROP TABLE t_04092_typed_shadow;
+
+-- With a `Nullable` typed path and `type_json_skip_null_typed_paths`, a NULL typed value is absent, so
+-- a row with neither casing returns the default and a row with the lowercase key returns its value.
+DROP TABLE IF EXISTS t_04092_typed_shadow_nullable;
+CREATE TABLE t_04092_typed_shadow_nullable (id UInt32, j JSON(Name Nullable(String), max_dynamic_paths=0)) ENGINE = Memory;
+INSERT INTO t_04092_typed_shadow_nullable VALUES
+    (1, '{"name": "alice"}'),
+    (2, '{"Name": "bob"}'),
+    (3, '{"other": "x"}');
+SELECT 'typed shadow nullable skip null', id, JSONExtractStringCaseInsensitive(j, 'NAME'), JSONExtractRawCaseInsensitive(j, 'NAME') FROM t_04092_typed_shadow_nullable ORDER BY id SETTINGS type_json_skip_null_typed_paths = 1;
+DROP TABLE t_04092_typed_shadow_nullable;
 
 -- Same shadowing for a typed numeric path: the real lowercase value must win over the typed default.
 SELECT 'typed shadow int', JSONExtractIntCaseInsensitive('{"count": 5}'::JSON(Count Int64, max_dynamic_paths=0), 'COUNT');

@@ -27,6 +27,15 @@ typed shadow string	3
 typed shadow raw	1	"alice"
 typed shadow raw	2	"bob"
 typed shadow raw	3	""
+typed shadow string skip null	1	alice
+typed shadow string skip null	2	bob
+typed shadow string skip null	3	
+typed shadow raw skip null	1	"alice"
+typed shadow raw skip null	2	"bob"
+typed shadow raw skip null	3	""
+typed shadow nullable skip null	1	alice	"alice"
+typed shadow nullable skip null	2	bob	"bob"
+typed shadow nullable skip null	3		
 typed shadow int	5
 json drops null	{}
 null raw cs	

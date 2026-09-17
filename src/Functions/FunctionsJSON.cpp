@@ -516,24 +516,29 @@ public:
 
                     /// Typed paths are always present even when the value equals the type's default,
                     /// so presence must not be checked with `isDefaultAt` (see #101721). For non-typed
-                    /// paths the combined subcolumn is Dynamic where NULL means absent.
-                    VectorWithMemoryTracking<UInt8> path_always_present(num_paths);
+                    /// paths the combined subcolumn is Dynamic where NULL means absent. With
+                    /// `type_json_skip_null_typed_paths` a NULL typed path counts as absent too, which
+                    /// only matters for a typed path of a `Nullable` type.
+                    VectorWithMemoryTracking<UInt8> path_is_typed(num_paths);
                     for (size_t k = 0; k < num_paths; ++k)
-                        path_always_present[k] = !skip_null_typed_paths
-                            && data_type_object.getTypedPaths().contains(case_insensitive_matches[k]);
+                        path_is_typed[k] = data_type_object.getTypedPaths().contains(case_insensitive_matches[k]);
                     auto path_has_value_at = [&](size_t k, size_t i)
                     {
-                        return path_always_present[k] || !per_path_merged[k]->isNullAt(i);
+                        if (path_is_typed[k] && !skip_null_typed_paths)
+                            return true;
+                        return !per_path_merged[k]->isNullAt(i);
                     };
 
                     /// A value that is definitely present at this row rather than a placeholder default.
-                    /// A typed path always reports present via `path_always_present`, but its stored value is
+                    /// A typed path reports present regardless of its value, but that value is
                     /// indistinguishable from an absent key when it equals the type default (#101721), so
-                    /// only a non-default typed value proves presence. For non-typed paths a non-null
-                    /// Dynamic value proves presence.
+                    /// only a non-default typed value proves presence. This must not depend on
+                    /// `type_json_skip_null_typed_paths`: a non-nullable typed path is never NULL, so
+                    /// `isNullAt` would call its default a real value and let it shadow a differently-cased
+                    /// key with an actual value. For non-typed paths a non-null Dynamic value proves presence.
                     auto path_has_real_value_at = [&](size_t k, size_t i)
                     {
-                        return path_always_present[k] ? !per_path_merged[k]->isDefaultAt(i) : !per_path_merged[k]->isNullAt(i);
+                        return path_is_typed[k] ? !per_path_merged[k]->isDefaultAt(i) : !per_path_merged[k]->isNullAt(i);
                     };
 
                     /// Pick the stored path to use for this row. Prefer a candidate carrying a real value so
