@@ -17,6 +17,8 @@ division by a LowCardinality(Nullable) denominator
 \N
 \N
 \N
+\N
+5
 other resolvers that branch on the argument type
 2020-01-01
 2020-01-01

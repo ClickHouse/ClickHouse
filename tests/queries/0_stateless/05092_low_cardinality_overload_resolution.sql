@@ -30,6 +30,13 @@ SELECT positiveModulo(10, toLowCardinality(materialize(CAST(NULL, 'Nullable(UInt
 SELECT intDivOrZero(10, toLowCardinality(materialize(CAST(NULL, 'Nullable(UInt64)'))));
 SELECT intDiv(10, toLowCardinality(materialize(toUInt64(0)))); -- { serverError ILLEGAL_DIVISION }
 
+-- `divide` selects the NULL-masking variant only for a `Decimal` operand. `LowCardinality(Decimal)` is not a
+-- valid type, so the only reachable shape is a `LowCardinality` numerator with a `Nullable(Decimal)` denominator.
+SELECT divide(toLowCardinality(materialize(toUInt64(10))), materialize(CAST(NULL, 'Nullable(Decimal64(0))')));
+SELECT toLowCardinality(materialize(toUInt64(10))) / materialize(CAST(2, 'Nullable(Decimal64(0))'));
+SELECT toLowCardinality(materialize(toUInt64(10))) / materialize(CAST(0, 'Nullable(Decimal64(0))')); -- { serverError ILLEGAL_DIVISION }
+SELECT toLowCardinality(materialize(toDecimal64(10, 0))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SELECT 'other resolvers that branch on the argument type';
 SELECT fromModifiedJulianDay(toLowCardinality(materialize(toInt32(58849))));
 SELECT fromModifiedJulianDayOrNull(toLowCardinality(materialize(toInt32(58849))));
