@@ -350,6 +350,34 @@ namespace
         }
     }
 
+    /// An attribute description returned by `ldap_first_attribute` is the bare attribute name, optionally
+    /// followed by `;`-separated options (`userCertificate;binary`, `memberOf;range=0-1499`).
+    struct AttributeDescription
+    {
+        std::string_view name;
+        bool ranged = false;
+    };
+
+    AttributeDescription parseAttributeDescription(std::string_view description)
+    {
+        const auto options_pos = description.find(';');
+        const bool ranged = options_pos != std::string_view::npos && toLowerCopyASCII(description.substr(options_pos)).contains(";range=");
+        return {description.substr(0, options_pos), ranged};
+    }
+
+    /// A range option means the directory returned only a slice of the values (Active Directory sends at most
+    /// `MaxValRange` values, 1500 by default, of a multi-valued attribute). A login acting on the slice would see
+    /// only part of the memberships and a synchronisation would revoke every role beyond it, so the incomplete
+    /// entry is refused wherever it is read.
+    [[noreturn]] void throwRangedAttribute(const String & entry_dn, const String & server_name, std::string_view description)
+    {
+        throw Exception(ErrorCodes::LDAP_ERROR,
+            "LDAP entry '{}' on server '{}' returned attribute '{}' with a range option, i.e. only part of its values "
+            "(Active Directory returns at most MaxValRange values of a multi-valued attribute); refusing to continue with an "
+            "incomplete entry. Raise the limit on the directory or map roles with a search over the group entries instead",
+            entry_dn, server_name, description);
+    }
+
     /// Renders a failed search result: the result code and the optional diagnostic message and
     /// matched DN the directory attached to it.
     String describeSearchResultError(int rc, const char * error_msg, const char * matched_msg)
@@ -888,8 +916,22 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params,
                         attr = nullptr;
                     });
 
-                    if (search_params.attribute.empty() || boost::iequals(attr, search_params.attribute))
+                    /// Match on the bare name: the requested attribute comes back as `memberOf;range=0-1499` when
+                    /// the directory truncated it, and taking that for a missing attribute would let a login or an
+                    /// `EXECUTE AS` lookup see no roles at all instead of failing.
+                    const auto description = parseAttributeDescription(attr);
+                    if (search_params.attribute.empty() || boost::iequals(description.name, search_params.attribute))
                     {
+                        if (description.ranged)
+                        {
+                            char * dn = ldap_get_dn(handle, msg);
+                            SCOPE_EXIT({
+                                if (dn)
+                                    ldap_memfree(dn);
+                            });
+                            throwRangedAttribute(dn ? String(dn) : String(), params.name, attr);
+                        }
+
                         auto ** vals = ldap_get_values_len(handle, msg, attr);
                         if (vals)
                         {
@@ -1134,21 +1176,11 @@ std::vector<LDAPClient::Entry> LDAPClient::searchEntries(const SearchParams & se
                             attr = nullptr;
                         });
 
-                        /// The description may carry options (`userCertificate;binary`, `memberOf;range=0-1499`);
-                        /// the key is the bare name, so that a lookup by the configured attribute finds it.
-                        /// A range option means the directory returned only a slice of the values (Active
-                        /// Directory sends at most `MaxValRange` values, 1500 by default, of a multi-valued
-                        /// attribute): a synchronisation applying it would revoke every role beyond the slice
-                        /// and a login would see only part of the memberships, so refuse the incomplete entry.
-                        const std::string_view description(attr);
-                        const auto options_pos = description.find(';');
-                        const auto attribute_name = toLowerCopyASCII(description.substr(0, options_pos));
-                        if (options_pos != std::string_view::npos && toLowerCopyASCII(description.substr(options_pos)).contains(";range="))
-                            throw Exception(ErrorCodes::LDAP_ERROR,
-                                "LDAP entry '{}' on server '{}' returned attribute '{}' with a range option, i.e. only part of its values "
-                                "(Active Directory returns at most MaxValRange values of a multi-valued attribute); refusing to continue with an "
-                                "incomplete entry. Raise the limit on the directory or map roles with a search over the group entries instead",
-                                entry.dn, params.name, description);
+                        /// The key is the bare name, so that a lookup by the configured attribute finds it.
+                        const auto description = parseAttributeDescription(attr);
+                        if (description.ranged)
+                            throwRangedAttribute(entry.dn, params.name, attr);
+                        const auto attribute_name = toLowerCopyASCII(description.name);
 
                         auto ** vals = ldap_get_values_len(handle, msg, attr);
                         if (!vals)

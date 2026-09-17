@@ -311,6 +311,8 @@ Because the configured spelling wins in both forms of `groups` entries, the Clic
 
 The example above reads the `memberOf` attribute of the user's own entry: `base_dn` is `{user_dn}`, so `user_dn_detection` must be configured for the server, `scope` is `base` and `search_filter` is `(objectClass=*)`. The search runs under whichever identity ClickHouse is bound with when it performs the role searches: the user's own bind, or the service account `lookup_bind_dn` where it is used (see [LDAP server definition](#ldap-server-definition)). That identity must be allowed to read the user's `memberOf` attribute; Active Directory lets users read their own `memberOf` by default.
 
+Active Directory returns at most `MaxValRange` values (1500 by default) of a multi-valued attribute and marks a truncated one as ranged (`memberOf;range=0-1499`). A user entry returned that way fails the login, or the `EXECUTE AS` lookup, with a message naming the entry and the attribute, instead of granting the part of the memberships that arrived. Raise `MaxValRange` in the LDAP policy of the domain, or search the groups as shown below, which is not subject to that limit.
+
 **Nested groups in Active Directory**
 
 `memberOf` lists direct memberships only. To grant roles through nested groups, search the groups with the `LDAP_MATCHING_RULE_IN_CHAIN` matching rule (`1.2.840.113556.1.4.1941`) instead. With `attribute` set to `dn` the search returns the DNs of the matching groups, which are then mapped exactly like `memberOf` values:
