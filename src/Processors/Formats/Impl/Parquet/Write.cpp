@@ -1327,8 +1327,9 @@ void writeColumnImpl(
                 break;
             }
 
+            const size_t page_target = std::min(options.data_page_size, max_record_bytes);
             if (next_def_offset == num_values ||
-                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= options.data_page_size)
+                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= page_target)
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;
