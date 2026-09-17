@@ -742,6 +742,29 @@ void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const Strin
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
+    /// A synchronised `ldap` directory enumerates its users under the lookup identity of its server, and with
+    /// `only_synced_users` nobody logs in through it until a run succeeds, so a server that cannot enumerate must
+    /// not go unnoticed until the first run. The storages are created before the main configuration is applied to
+    /// the authenticators (at startup and at every reload), hence the check here, against the configuration as
+    /// given: a reload that fails it leaves the previous `ldap_servers` in effect.
+    for (const auto & storage : getStorages())
+    {
+        const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get());
+        if (!ldap_storage || !ldap_storage->hasSync())
+            continue;
+
+        try
+        {
+            ExternalAuthenticators::checkLDAPServerCanEnumerate(config, ldap_storage->getLDAPServerName());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while checking LDAP server '{}' of user directory {}, which has a 'sync' section",
+                ldap_storage->getLDAPServerName(), backQuote(ldap_storage->getStorageName())));
+            throw;
+        }
+    }
+
     external_authenticators->setConfiguration(config, getLogger());
 }
 

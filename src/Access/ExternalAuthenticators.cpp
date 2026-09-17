@@ -895,6 +895,20 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
     return result;
 }
 
+void ExternalAuthenticators::checkLDAPServerCanEnumerate(const Poco::Util::AbstractConfiguration & config, const String & server)
+{
+    if (!config.has("ldap_servers." + server))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
+
+    /// A definition that does not parse is refused with its own reason, like at login time.
+    LDAPClient::Params params;
+    parseLDAPServer(params, config, server);
+
+    if (!params.hasLookupIdentity())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP sync requires 'lookup_bind_dn' on server '{}'", server);
+}
+
+
 std::vector<LDAPSyncClient::UserEntry> ExternalAuthenticators::enumerateLDAPUsers(const String & server,
     const LDAPClient::UserEnumerationParams & enumeration_params, const LDAPClient::RoleSearchParamsList & role_search_params) const
 {
@@ -906,7 +920,8 @@ std::vector<LDAPSyncClient::UserEntry> ExternalAuthenticators::enumerateLDAPUser
     }
 
     /// The enumeration reads the directory on behalf of nobody in particular, so only a service
-    /// account can run it; without one there is no identity to bind as.
+    /// account can run it; without one there is no identity to bind as. `checkLDAPServerCanEnumerate`
+    /// refuses such a configuration before it is applied; this is the backstop.
     if (!params->hasLookupIdentity())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP sync requires 'lookup_bind_dn' on server '{}'", server);
 
