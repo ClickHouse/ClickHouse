@@ -1,7 +1,7 @@
 SET allow_experimental_time_series_table = 1;
 SET enable_alp_codec = 0;
 
--- Generated samples use `ALP` without enabling it for the session; recent samples use `ZSTD`.
+-- Generated samples and recent samples use `ALP` without enabling it for the session.
 CREATE TABLE ts_alp64 ENGINE = TimeSeries;
 SELECT type, compression_codec, count()
 FROM system.columns

@@ -638,8 +638,7 @@ namespace
                     if (!codec || is_version_0)
                         return true;
                     auto codec_name = codec->formatWithSecretsOneLine();
-                    return (codec_name == "CODEC(ZSTD(3))")
-                        || ((inner_table_kind == ViewTarget::Samples) && (codec_name == "CODEC(ALP, ZSTD(3))"));
+                    return (codec_name == "CODEC(ZSTD(3))") || (codec_name == "CODEC(ALP, ZSTD(3))");
                 }
 
                 return false;
@@ -938,20 +937,14 @@ namespace
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
 
-                /// Generated `timestamp` columns use `DoubleDelta` followed by `ZSTD`.
-                /// The main samples table also uses `ALP` for `value`; recent samples keep plain `ZSTD`.
-                /// Explicitly declared columns keep the user's codecs.
+                /// Generated `timestamp` and `value` columns use `DoubleDelta` and `ALP`, respectively,
+                /// followed by `ZSTD`. Explicitly declared columns keep the user's codecs.
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
                     timestamp_decl->setCodec(makeASTFunction(
                         "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                {
-                    auto zstd = makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}));
-                    if (inner_table_kind == ViewTarget::Samples)
-                        value_decl->setCodec(makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("ALP"), zstd));
-                    else
-                        value_decl->setCodec(makeASTFunction("CODEC", zstd));
-                }
+                    value_decl->setCodec(makeASTFunction(
+                        "CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
 
                 break;
             }

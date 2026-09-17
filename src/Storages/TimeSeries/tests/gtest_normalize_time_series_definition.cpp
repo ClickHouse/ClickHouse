@@ -195,8 +195,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
 
     String samples_columns = "`id` " + default_id_type + ", `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ALP, ZSTD(3))";
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), samples_columns);
-    EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"),
-        "`id` " + default_id_type + ", `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3))");
+    EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), samples_columns);
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` " + default_id_type + " DEFAULT " + default_id_generator + ", `metric_name` LowCardinality(String), "
         "`tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
@@ -260,7 +259,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, TypesDeclaredInInnerColumns)
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(6), Float32))")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6), `value` Float32");
     EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"),
-        "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ZSTD(3))");
+        "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ALP, ZSTD(3))");
     EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UInt64 DEFAULT sipHash64(tags), ")) << definition;
     EXPECT_TRUE(extractInnerColumns(definition, "TAGS").contains("`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6)))")) << definition;
 
@@ -605,7 +604,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
     /// Float32 as declared, `timestamp` is DateTime64(6) as in the source. The declared samples columns replace the copied ones.
     definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (value Float32)", src);
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float32");
-    EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ZSTD(3))");
+    EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ALP, ZSTD(3))");
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), "
         "`min_time` SimpleAggregateFunction(min, Nullable(DateTime64(6))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(6)))");
@@ -618,7 +617,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
     definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SAMPLES db.ext_data",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(ZSTD(5)))"), params);
     EXPECT_FALSE(definition.contains("ext_data SAMPLES INNER COLUMNS")) << definition;
-    EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3))");
+    EXPECT_EQ(extractInnerColumns(definition, "RECENT SAMPLES"), "`id` UInt64, `timestamp` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ALP, ZSTD(3))");
 }
 
 

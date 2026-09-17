@@ -953,7 +953,7 @@ The _samples_ table must have columns:
 Columns the engine creates itself get time-series compression codecs:
 `timestamp CODEC(DoubleDelta, ZSTD(1))` and `value CODEC(ALP, ZSTD(3))`. Near-monotonic timestamps barely
 compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
-The engine enables `ALP` for its inner samples table without requiring `enable_alp_codec` to be set.
+The engine enables `ALP` for its inner samples and recent samples tables without requiring `enable_alp_codec` to be set.
 See also [Adjusting types of columns](#adjusting-column-types).
 
 ### Recent samples table {#recent-samples-table}
@@ -961,7 +961,7 @@ See also [Adjusting types of columns](#adjusting-column-types).
 The _recent samples_ table is optional and enabled by default (see the [recent_samples_ttl_seconds](#settings) setting;
 setting it to zero disables the table). It contains a copy of the samples newer than the TTL defined by that setting,
 and it must have the same columns as the [samples](#samples-table) table.
-The generated `value` column uses `CODEC(ZSTD(3))`.
+The generated `value` column uses `CODEC(ALP, ZSTD(3))`.
 
 Every inserted sample is written both to the samples table and to the recent samples table.
 Queries whose time range fits in the TTL window read from the recent samples table instead of the main samples table
@@ -1033,7 +1033,7 @@ RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -1082,7 +1082,7 @@ CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(ZSTD(3))
+    `value` Float64 CODEC(ALP, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
