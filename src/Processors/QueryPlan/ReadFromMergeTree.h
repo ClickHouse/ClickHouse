@@ -13,6 +13,9 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Parsers/ASTFunction.h>
+#include <base/defines.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -42,10 +45,28 @@ struct UsefulSkipIndexes
     bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
-    std::vector<std::vector<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
+
+/// The order in which the useful skip indexes are applied to a single part: cheapest and coarsest first.
+using SkipIndexOrder = std::shared_ptr<const std::vector<size_t>>;
+
+/// Memoizes `SkipIndexOrder` per part for one `ReadFromMergeTree::Indexes` object.
+/// The order is derived from the part's index formats and file sizes, so it is stable for a given part,
+/// and computing it walks that metadata. The walk is done lazily, for the parts that survive pruning
+/// (see `filterPartsByPrimaryKeyAndSkipIndexes`), and its result is reused when the same read step is
+/// analyzed again - estimation, parallel replicas and then the executed read all share one `Indexes`.
+struct SkipIndexOrderCache
+{
+    std::mutex mutex;
+    std::unordered_map<String, SkipIndexOrder> orders TSA_GUARDED_BY(mutex);
+
+    /// The key must be unique within the table: a projection part is named after the projection,
+    /// which repeats in every parent part, so it is qualified with the parent part name.
+    static String makeKey(const IMergeTreeDataPart & part);
+};
+using SkipIndexOrderCachePtr = std::shared_ptr<SkipIndexOrderCache>;
 
 /// Contains parts each from different projection index
 using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
@@ -305,6 +326,8 @@ public:
         ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
         std::optional<PartitionPruner> partition_pruner;
         UsefulSkipIndexes skip_indexes;
+        /// Shared by every index analysis of this step, see `SkipIndexOrderCache`.
+        SkipIndexOrderCachePtr skip_index_orders = std::make_shared<SkipIndexOrderCache>();
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
@@ -445,10 +468,25 @@ public:
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
+    /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
+    RangesInDataParts getPartsForPrewhere() const;
+    IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
     /// Compose statistics over the part set of the given partition/PK analysis result
     /// instead of all prepared parts. Passing nullptr falls back to getParts().
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const;
+
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorForPrewhere(
+        const Names & required_columns, const ActionsDAG::Node * predicate) const;
+
+    static RangesInDataParts filterPartsForStatistics(
+        const RangesInDataParts & parts,
+        const ActionsDAG::Node * predicate,
+        const MergeTreeData & data,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & query_context,
+        bool skip_partition_pruning_ = false);
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
@@ -542,6 +580,15 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    static void buildPartitionPruningIndexes(
+        Indexes & indexes,
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+        const MergeTreeData & data,
+        const ContextPtr & query_context,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_partition_pruning_,
+        bool require_ready_sets = false);
+
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 
