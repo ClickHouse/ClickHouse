@@ -113,6 +113,16 @@ static bool isRefusedPrecondition(const Aws::S3::S3Error & error)
         || error.GetExceptionName() == "PreconditionFailed";
 }
 
+/// The text an S3 error is reported with. Above this layer a refused precondition is recognised by the
+/// `PreconditionFailed` token in the message, and an endpoint's own name for the refusal reaches that
+/// message only when the SDK cannot map it to a typed error, so it is named here.
+static std::string describeRefusal(const Aws::S3::S3Error & error)
+{
+    if (isRefusedPrecondition(error) && !error.GetMessage().contains("PreconditionFailed"))
+        return fmt::format("PreconditionFailed: {}", error.GetMessage());
+    return error.GetMessage();
+}
+
 
 WriteBufferFromS3::WriteBufferFromS3(
     std::shared_ptr<const S3::Client> client_ptr_,
@@ -760,7 +770,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
             throw S3Exception(
                 error.GetErrorType(),
                 "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                error.GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
+                describeRefusal(error), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
         }
     }
 
@@ -903,7 +913,7 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, bucket {}, key {}, object size {}",
-                    outcome.GetError().GetMessage(), bucket, key, content_length);
+                    describeRefusal(outcome.GetError()), bucket, key, content_length);
             }
         }
 
