@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 
 namespace DB
