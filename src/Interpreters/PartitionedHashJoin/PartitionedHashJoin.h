@@ -10,7 +10,6 @@
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
-#include <Common/SharedMutex.h>
 #include <Storages/TableLockHolder.h>
 
 #include <atomic>
@@ -302,11 +301,14 @@ private:
 
     using FillBlock = HashJoinClause::FillBlock;
 
-    /// One per fill thread, so appends and sketch updates never contend.
+    /// One per fill thread, so appends and sketch updates never contend. The mutex guards `hll` alone.
+    /// The lane's filler holds it across a block's hash pass. A sketch merge takes it lane by lane, so
+    /// a merge never stalls the other lanes.
     struct FillLane
     {
         std::vector<FillBlock> blocks;
         DenseHyperLogLog hll;
+        mutable std::mutex hll_mutex;
     };
 
     FillLane & getFillLane();
@@ -389,9 +391,8 @@ private:
     /// atomic loads. It is sized once and never resized, so the fast path cannot race a rehash.
     /// Lane-less callers keep the thread-id map.
     /// Mutable because `predictedResidentBytes` is a `const` query that still has to refresh the
-    /// cached distinct estimate under this lock. Shared with the per-lane sketch `add`, exclusive
-    /// for the merge: a torn register would persist into the barrier's estimate.
-    mutable SharedMutex fill_mutex;
+    /// cached distinct estimate under this lock. The sketches themselves are under their lane's lock.
+    mutable std::mutex fill_mutex;
     std::deque<FillLane> lanes;
     std::unordered_map<std::thread::id, FillLane *> lane_by_thread;
     std::vector<std::atomic<FillLane *>> fill_lane_slots;

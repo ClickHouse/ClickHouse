@@ -20,7 +20,6 @@
 
 #include <algorithm>
 #include <mutex>
-#include <shared_mutex>
 
 namespace ProfileEvents
 {
@@ -471,9 +470,8 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
 
     FillLane & lane = getFillLane(worker_id);
     {
-        /// Exclusive merge of the sketches must not race `add` on a live lane. A torn register
-        /// would persist into the barrier's `hll_estimate`. The post-build gate then uses that value.
-        std::shared_lock hll_lock(fill_mutex);
+        /// A sketch merge reads `hll` under this lock, so it never sees a half-written register.
+        std::lock_guard hll_lock(lane.hll_mutex);
         clause.computeRoutes(fill, lane.hll);
     }
 
@@ -626,8 +624,7 @@ void PartitionedHashJoin::onBuildPhaseFinish()
 
     /// Run once by the last fill thread, and deliberately cheap: concatenate the lanes, number the
     /// row-store blocks, merge the sketches, pick the plan. The scatter, allocation and inserts are
-    /// `runPostBuildPhase`'s work. The lock is taken exclusively, as `liveDistinctEstimate` takes it, so
-    /// the merge cannot race a fill thread's `add`.
+    /// `runPostBuildPhase`'s work. Every fill call has returned, so the lane locks are free.
     DenseHyperLogLog merged;
     size_t total_blocks = 0;
     {
@@ -637,7 +634,10 @@ void PartitionedHashJoin::onBuildPhaseFinish()
         build_blocks.reserve(total_blocks);
         for (auto & lane : lanes)
         {
-            merged.merge(lane.hll);
+            {
+                std::lock_guard hll_lock(lane.hll_mutex);
+                merged.merge(lane.hll);
+            }
             for (auto & block : lane.blocks)
                 build_blocks.push_back(std::move(block));
             lane.blocks.clear();
@@ -848,7 +848,10 @@ size_t PartitionedHashJoin::liveDistinctEstimate() const
 
     DenseHyperLogLog merged;
     for (const auto & lane : lanes)
+    {
+        std::lock_guard hll_lock(lane.hll_mutex);
         merged.merge(lane.hll);
+    }
 
     /// Floor at 1 so a still-empty sketch does not size the prediction as a zero-byte table. The
     /// post-build gate uses the same floor on `hll_estimate`. The value is not kept monotone: an
