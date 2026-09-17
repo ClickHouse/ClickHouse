@@ -164,6 +164,13 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
     assert 'select(.created_at >= $from and .created_at <= $to)' in retry_workflow
     assert 'finish_completed_at=$(echo "$finish_window" | cut -f2)' in retry_workflow
+    # The retry suppression keys on the run-scoped `Mergeable Check` marker
+    # that native_jobs.py writes only when the review-thread hook was the sole
+    # failure - never on the `Review Threads` status alone, which is also
+    # present when another post-hook failed for infrastructure reasons.
+    assert 'select(.context == "Mergeable Check")' in retry_workflow
+    assert 'select(.description == "Failed: review threads only")' in retry_workflow
+    assert 'select(.context == "Review Threads")' not in retry_workflow
     pull_request_workflow = (repository_root / "ci/workflows/pull_request.py").read_text()
     assert 'can_be_merged.py --review-threads' in pull_request_workflow
     assert '"ci/jobs/scripts/workflow_hooks/can_be_merged.py --review-threads"' in (
@@ -538,7 +545,7 @@ REPORT_URL = (
 PR_URL = "https://github.com/ClickHouse/ClickHouse/pull/114729"
 
 
-def _retry_marker_state(statuses, started_at, completed_at, run_sha=RUN_SHA):
+def _retry_marker_state(statuses, started_at, completed_at):
     """Run the retry-suppression predicate of `retry_infra_failures.yml`."""
     workflow = (
         Path(__file__).resolve().parents[2]
@@ -557,9 +564,6 @@ def _retry_marker_state(statuses, started_at, completed_at, run_sha=RUN_SHA):
             "--arg",
             "to",
             completed_at,
-            "--arg",
-            "sha",
-            run_sha,
             jq_filter,
         ],
         input=json.dumps(statuses),
@@ -572,71 +576,87 @@ def _retry_marker_state(statuses, started_at, completed_at, run_sha=RUN_SHA):
 
 @pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
 def test_retry_suppression_only_matches_the_failed_attempt():
-    """A later status refresh must not be attributed to the failed attempt."""
+    """Only the failed attempt's own run-scoped marker suppresses the retry."""
     own = {
-        "context": "Review Threads",
-        "state": "failure",
-        "created_at": "2026-08-20T10:00:30Z",
-        "target_url": REPORT_URL,
-    }
-    later = {
-        "context": "Review Threads",
-        "state": "failure",
-        "created_at": "2026-08-20T11:30:00Z",
-        "target_url": REPORT_URL,
-    }
-    earlier = {
-        "context": "Review Threads",
-        "state": "failure",
-        "created_at": "2026-08-20T09:00:00Z",
-        "target_url": REPORT_URL,
-    }
-    other = {
         "context": "Mergeable Check",
         "state": "failure",
+        "description": "Failed: review threads only",
+        "created_at": "2026-08-20T10:00:30Z",
+        "target_url": None,
+    }
+    later = {**own, "created_at": "2026-08-20T11:30:00Z"}
+    earlier = {**own, "created_at": "2026-08-20T09:00:00Z"}
+    # The gate's own `Review Threads` status is not proof on its own: it is
+    # also present when another post-hook failed alongside the gate.
+    gate_status = {
+        "context": "Review Threads",
+        "state": "failure",
+        "description": "review threads: 2 unresolved review thread(s)",
         "created_at": "2026-08-20T10:00:30Z",
         "target_url": REPORT_URL,
     }
     # `rerun_on_review_threads.yml` handling an `ignore-unresolved-threads`
     # label event while `Finish Workflow` is still running: same context,
-    # same commit, inside the window, but it points at the PR page.
+    # same commit, inside the window, but with the refresher's description.
     refresh = {
-        "context": "Review Threads",
+        "context": "Mergeable Check",
         "state": "failure",
+        "description": "review threads: 2 unresolved review thread(s)",
         "created_at": "2026-08-20T10:00:45Z",
         "target_url": PR_URL,
     }
     started, completed = "2026-08-20T10:00:00Z", "2026-08-20T10:01:00Z"
 
     assert _retry_marker_state([own], started, completed) == "failure"
+    assert _retry_marker_state([gate_status, own], started, completed) == "failure"
     # A status written after the failed `Finish Workflow` completed belongs to
     # a later reconciliation, so an infra failure must still be retried.
     assert _retry_marker_state([later], started, completed) == ""
     assert _retry_marker_state([earlier], started, completed) == ""
-    assert _retry_marker_state([other], started, completed) == ""
+    assert _retry_marker_state([gate_status], started, completed) == ""
     assert _retry_marker_state([earlier, own, later], started, completed) == "failure"
     # The refresh-only status must not stand in for the failed attempt's own
     # marker: a genuine infrastructure failure must still be retried.
     assert _retry_marker_state([refresh], started, completed) == ""
     assert _retry_marker_state([refresh, own], started, completed) == "failure"
-    # A status without a target URL, or one pointing at another commit's
-    # report, is not this run's marker either.
-    assert _retry_marker_state([{**own, "target_url": None}], started, completed) == ""
-    assert _retry_marker_state([own], started, completed, run_sha="0" * 40) == ""
-    assert (
-        _retry_marker_state(
-            [{**own, "target_url": REPORT_URL.replace(RUN_SHA, RUN_SHA + "aa")}],
-            started,
-            completed,
-        )
-        == ""
-    )
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_retry_suppression_ignores_a_mixed_post_hook_failure():
+    """Regression: the gate posted its red `Review Threads` status, then another
+    post-hook of the same `Finish Workflow` failed for infrastructure reasons.
+    `Finish Workflow` is still the only failed job, but `native_jobs.py` then
+    writes the aggregate `Failed: Workflow Post Hook` instead of the
+    review-threads-only marker, and the hourly retry must go ahead."""
+    started, completed = "2026-08-20T10:00:00Z", "2026-08-20T10:01:00Z"
+    gate_status = {
+        "context": "Review Threads",
+        "state": "failure",
+        "description": "review threads: 2 unresolved review thread(s)",
+        "created_at": "2026-08-20T10:00:30Z",
+        "target_url": REPORT_URL,
+    }
+    mixed = {
+        "context": "Mergeable Check",
+        "state": "failure",
+        "description": "Failed: Workflow Post Hook",
+        "created_at": "2026-08-20T10:00:50Z",
+        "target_url": None,
+    }
+    assert _retry_marker_state([gate_status, mixed], started, completed) == ""
+    # A run where a regular job failed as well is not the gate's doing either.
+    other_job = {**mixed, "description": "Failed: Style check,Workflow Post Hook"}
+    assert _retry_marker_state([gate_status, other_job], started, completed) == ""
+    # The pure policy failure of the same trace is still suppressed.
+    pure = {**mixed, "description": "Failed: review threads only"}
+    assert _retry_marker_state([gate_status, pure], started, completed) == "failure"
 
 
 def test_gate_statuses_point_at_the_praktika_report():
-    """The retry suppression keys on the report URL of the gate's own status,
-    so both writers of the `Review Threads` status must use it, and the
-    refresher must not."""
+    """Both writers of the `Review Threads` status must point at the Praktika
+    report of the commit, and the refresher must not: the URL tells a reader
+    which run produced the verdict, and keeps the refresher's status
+    distinguishable from the gate's own."""
     repository_root = Path(__file__).resolve().parents[2]
     for script in (
         "ci/jobs/scripts/workflow_hooks/review_threads.py",

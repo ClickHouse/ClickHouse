@@ -184,19 +184,21 @@ jobs:
               failed_workflow_jobs=$(echo "$jobs_raw" | jq -r '
                 .jobs[] | select(.conclusion == "failure") | .name
               ')
-              # The marker must come from the failed attempt itself: the gate
-              # posts the status from inside "Finish Workflow", so only a
-              # status created within that job's own time window belongs to
-              # it. A status created later (e.g. by a label event handled by
-              # rerun_on_review_threads.yml) says nothing about why this run
-              # failed, and must not suppress the retry of a genuine
-              # infrastructure failure. The time window alone is not enough:
-              # a label event can be handled while "Finish Workflow" is still
-              # running, and its refresh-only status lands inside the window.
-              # The gate's own status points at the Praktika report of this
-              # commit (ci/jobs/scripts/workflow_hooks/can_be_merged.py), while
-              # the refresher points at the pull request page, so the marker
-              # must also carry this run's report URL.
+              # A red "Review Threads" status alone does not prove that the
+              # gate was the only reason: "Finish Workflow" aggregates every
+              # PR post-hook, so the gate may have posted its status and then
+              # another post-hook failed for infrastructure reasons - such a
+              # run must still be retried. The run-scoped proof is the
+              # aggregate "Mergeable Check" status: ci/praktika/native_jobs.py
+              # writes the description "Failed: review threads only" only when
+              # the dedicated `can_be_merged.py --review-threads` post-hook was
+              # the sole failure of the whole workflow (any other failed job or
+              # post-hook yields "Failed: <jobs>" instead), and no other writer
+              # uses that description. The marker must also come from the
+              # failed attempt itself: only a status created within the failed
+              # "Finish Workflow" job's own time window belongs to it. A status
+              # created later (e.g. by rerun_on_review_threads.yml handling a
+              # label event) says nothing about why this run failed.
               finish_window=$(echo "$jobs_raw" | jq -r '
                 [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
                 first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
@@ -208,11 +210,10 @@ jobs:
                 statuses=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
                   | jq -s 'add // []') || statuses="[]"
                 marker_state=$(echo "$statuses" | jq -r \
-                  --arg from "$finish_started_at" --arg to "$finish_completed_at" \
-                  --arg sha "$run_sha" '
-                  [.[] | select(.context == "Review Threads") |
-                   select(.created_at >= $from and .created_at <= $to) |
-                   select((.target_url // "") | test("praktika\\.html\\?.*[?&]sha=" + $sha + "(&|$)"))] |
+                  --arg from "$finish_started_at" --arg to "$finish_completed_at" '
+                  [.[] | select(.context == "Mergeable Check") |
+                   select(.description == "Failed: review threads only") |
+                   select(.created_at >= $from and .created_at <= $to)] |
                   first // {} | .state // empty
                 ')
               fi
