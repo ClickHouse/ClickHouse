@@ -1,0 +1,26 @@
+<test>
+    <!--
+        Exercise the vectorized two-column tag extraction path over repeated
+        blocks. The tag pairs repeat so registration stays bounded and the
+        measured work includes the per-row extraction loop.
+    -->
+    <query>
+        SELECT timeSeriesTagsToGroup(
+                   [],
+                   concat('tag', toString(number % 128)),
+                   CAST(if(number % 8 = 0, NULL, concat('value', toString(number % 256))), 'Nullable(String)'))
+        FROM numbers(5000000)
+        SETTINGS max_threads = 1, max_block_size = 500000
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT timeSeriesTagsToGroup(
+                   [],
+                   toFixedString(concat('k', toString(number % 1000)), 4),
+                   CAST(if(number % 8 = 0, NULL, toFixedString(concat('v', toString(number % 1000)), 4)), 'Nullable(FixedString(4))'))
+        FROM numbers(5000000)
+        SETTINGS max_threads = 1, max_block_size = 500000
+        FORMAT Null
+    </query>
+</test>
