@@ -145,7 +145,7 @@ SELECT formatQueryFromJSON(
 SELECT 'duplicate output names';
 SELECT 1 AS x, 2 AS x
 UNION ALL BY NAME
-SELECT 3 AS x; -- { serverError BAD_ARGUMENTS }
+SELECT 3 AS x; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
 SET enable_analyzer = 0;
 SELECT 1 AS x
