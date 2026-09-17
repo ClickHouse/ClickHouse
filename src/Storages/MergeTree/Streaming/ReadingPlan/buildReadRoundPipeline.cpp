@@ -163,16 +163,6 @@ Pipe buildPartitionReadingPipeline(
     if (!plan)
         return {};
 
-    /// Add filter built from the outer query analysis.
-    if (prewhere_info)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            prewhere_info->prewhere_actions.clone(),
-            prewhere_info->prewhere_column_name,
-            prewhere_info->remove_prewhere_column));
-    }
-
     /// Add row policy filter built from the outer query analysis.
     if (row_level_filter)
     {
@@ -181,6 +171,16 @@ Pipe buildPartitionReadingPipeline(
             row_level_filter->actions.clone(),
             row_level_filter->column_name,
             row_level_filter->do_remove_column));
+    }
+
+    /// Add filter built from the outer query analysis.
+    if (prewhere_info)
+    {
+        plan->addStep(std::make_unique<FilterStep>(
+            plan->getCurrentHeader(),
+            prewhere_info->prewhere_actions.clone(),
+            prewhere_info->prewhere_column_name,
+            prewhere_info->remove_prewhere_column));
     }
 
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
