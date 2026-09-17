@@ -1420,6 +1420,31 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
     updateLevels(getClientConfiguration(), logger());
 }
 
+/// Tell the user about the persisted tables that did not load (see the call site), because the load
+/// error is otherwise only visible when a query touches the table. The startup job of such a table is
+/// canceled rather than failed, so only the failed jobs are reported, each table once.
+static void reportTablesThatFailedToLoad(const LoadTaskPtrs & load_metadata_tasks)
+{
+    for (const auto & task : load_metadata_tasks)
+    {
+        for (const auto & job : task->goals())
+        {
+            if (job->status() != LoadStatus::FAILED)
+                continue;
+
+            /// The loader records the failure with a stack trace embedded in the message text, which
+            /// is right for a server log and noise on a terminal: keep the text up to the trace.
+            String message = getExceptionMessage(job->exception(), /* with_stacktrace */ false);
+            if (auto pos = message.find(", Stack trace ("); pos != String::npos)
+                message.resize(pos);
+
+            std::cerr << fmt::format(
+                "Warning: {}. The table is unavailable and a query that uses it fails with this error; other tables are not affected.\n",
+                message);
+        }
+    }
+}
+
 void LocalServer::processConfig()
 {
     if (!queries.empty() && !queries_files.empty())
@@ -1880,7 +1905,19 @@ void LocalServer::processConfig()
             if (!getClientConfiguration().has("only-system-tables"))
             {
                 DatabaseCatalog::instance().createBackgroundTasks();
-                waitLoad(loadMetadata(global_context));
+
+                /// A persisted table that cannot be loaded - a `File` table whose file is gone, a table
+                /// of an engine this build does not have - must not stop `clickhouse-local` from running
+                /// unrelated queries: the default directory keeps such tables between runs, so a load
+                /// that rethrows the first failure would leave the user with no working invocation until
+                /// the metadata is deleted by hand. Do what the server does with `async_load_databases`:
+                /// schedule the load and startup of every table, wait for all of them here (a short-lived
+                /// process gains nothing from a background load), and keep the failures with the tables.
+                /// A query that touches a broken table fails with its load error; everything else works.
+                LoadTaskPtrs load_metadata_tasks = loadMetadata(global_context, /* default_database_name */ {}, /* async_load_databases */ true);
+                waitLoad(TablesLoaderForegroundPoolId, load_metadata_tasks, /* no_throw */ true);
+                reportTablesThatFailedToLoad(load_metadata_tasks);
+
                 DatabaseCatalog::instance().startupBackgroundTasks();
                 started_background_tasks = true;
             }
