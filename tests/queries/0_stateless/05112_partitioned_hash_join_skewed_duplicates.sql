@@ -78,16 +78,16 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     'saturated build: every row inserted, duplicate storage used',
-    ProfileEvents['PartitionedHashJoinInsertedRows'] = (SELECT count() FROM t_ird_build),
-    ProfileEvents['PartitionedHashJoinDuplicateRunBytes'] >= 8 * (SELECT count() FROM t_ird_build WHERE k = 7)
+    ProfileEvents['HashJoinInsertedRows'] = (SELECT count() FROM t_ird_build),
+    ProfileEvents['HashJoinDuplicateRunBytes'] >= 8 * (SELECT count() FROM t_ird_build WHERE k = 7)
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05112 saturated' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 SELECT
     'zipf build: every row inserted, duplicate storage used',
-    ProfileEvents['PartitionedHashJoinInsertedRows'] = (SELECT count() FROM t_ird_zipf),
-    ProfileEvents['PartitionedHashJoinDuplicateRunBytes'] > 0
+    ProfileEvents['HashJoinInsertedRows'] = (SELECT count() FROM t_ird_zipf),
+    ProfileEvents['HashJoinDuplicateRunBytes'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05112 zipf' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;

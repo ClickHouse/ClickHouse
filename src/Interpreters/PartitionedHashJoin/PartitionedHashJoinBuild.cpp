@@ -28,23 +28,23 @@
 
 namespace ProfileEvents
 {
-extern const Event PartitionedHashJoinBuildMicroseconds;
-extern const Event PartitionedHashJoinBuildHistogramMicroseconds;
-extern const Event PartitionedHashJoinBuildScatterMicroseconds;
-extern const Event PartitionedHashJoinBuildInsertMicroseconds;
-extern const Event PartitionedHashJoinInsertedRows;
-extern const Event PartitionedHashJoinHashTableBytes;
-extern const Event PartitionedHashJoinOverflowRows;
-extern const Event PartitionedHashJoinDuplicateRunBytes;
-extern const Event PartitionedHashJoinTeardownMicroseconds;
-extern const Event PartitionedHashJoinTableResizes;
+extern const Event HashJoinPartitionedBuildMicroseconds;
+extern const Event HashJoinPartitionedBuildHistogramMicroseconds;
+extern const Event HashJoinPartitionedBuildScatterMicroseconds;
+extern const Event HashJoinPartitionedBuildInsertMicroseconds;
+extern const Event HashJoinInsertedRows;
+extern const Event HashJoinTableBytes;
+extern const Event HashJoinPartitionOverflowRows;
+extern const Event HashJoinDuplicateRunBytes;
+extern const Event HashJoinTeardownMicroseconds;
+extern const Event HashJoinTableResizes;
 }
 
 namespace CurrentMetrics
 {
-extern const Metric PartitionedHashJoinPoolThreads;
-extern const Metric PartitionedHashJoinPoolThreadsActive;
-extern const Metric PartitionedHashJoinPoolThreadsScheduled;
+extern const Metric HashJoinPostBuildThreads;
+extern const Metric HashJoinPostBuildThreadsActive;
+extern const Metric HashJoinPostBuildThreadsScheduled;
 }
 
 namespace DB
@@ -643,7 +643,7 @@ void runPostBuildWave(ThreadPool & pool, size_t workers, Stage && stage, std::at
                 [&stage, &stage_thread_us, w, thread_group = CurrentThread::getGroup()]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
-                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
                     Stopwatch stage_watch;
                     stage(w);
                     stage_thread_us.fetch_add(stage_watch.elapsedMicroseconds(), std::memory_order_relaxed);
@@ -1145,7 +1145,7 @@ void PartitionedHashJoin::growHashJoinTable(Table & table, UInt64 occupied, UInt
     stats.table_cells = table.cellCount();
     stats.predictions_exact = false;
     ++stats.table_resizes;
-    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinTableResizes);
+    ProfileEvents::increment(ProfileEvents::HashJoinTableResizes);
     ctx.range_committed.assign(partitions, 1);
     decideAmacEngagement();
 }
@@ -1188,22 +1188,22 @@ void PartitionedHashJoin::runPostBuildPhase()
     if (single_fill_thread)
     {
         /// The rows went in during the fill; only the scratch finish and the publication remain.
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
-        ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::PartitionedHashJoinBuildInsertMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::HashJoinPartitionedBuildInsertMicroseconds);
         all_values_unique = finishSinglePartitionInsert();
     }
     else if (bits == 0)
     {
         /// Single-partition has no histogram or scatter stage - every row is inserted straight from the
         /// stored blocks - so all of it charges to the insert sub-phase.
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
-        ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::PartitionedHashJoinBuildInsertMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> leaf_watch(ProfileEvents::HashJoinPartitionedBuildInsertMicroseconds);
         all_values_unique = postBuildSinglePartition();
     }
     else
         all_values_unique = postBuildPartitioned();
 
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
 
     /// The routes and prepared key columns were already dropped as the scatter consumed them; this
     /// is the block shells and the lane bookkeeping, freed before the probe starts.
@@ -1212,10 +1212,10 @@ void PartitionedHashJoin::runPostBuildPhase()
     /// From here the byte count tracks only the stored blocks.
     accumulated_bytes.store(hash_join->data->allocated_size, std::memory_order_relaxed);
 
-    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinHashTableBytes, ht_total_bytes);
-    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinOverflowRows, stats.overflow_rows);
+    ProfileEvents::increment(ProfileEvents::HashJoinTableBytes, ht_total_bytes);
+    ProfileEvents::increment(ProfileEvents::HashJoinPartitionOverflowRows, stats.overflow_rows);
     ProfileEvents::increment(
-        ProfileEvents::PartitionedHashJoinDuplicateRunBytes, stats.owner_duplicates.arena_bytes + stats.drain_duplicates.arena_bytes);
+        ProfileEvents::HashJoinDuplicateRunBytes, stats.owner_duplicates.arena_bytes + stats.drain_duplicates.arena_bytes);
 
     /// For the next run of this query: join reordering, `rhs_size_estimation` and the runtime-filter
     /// sizing read `HashJoinEntry` whatever algorithm produced it, and the exact distinct count is what
@@ -1349,9 +1349,9 @@ size_t PartitionedHashJoin::keyColumnBytes() const
 std::unique_ptr<ThreadPool> PartitionedHashJoin::makePostBuildPool(size_t workers)
 {
     return std::make_unique<ThreadPool>(
-        CurrentMetrics::PartitionedHashJoinPoolThreads,
-        CurrentMetrics::PartitionedHashJoinPoolThreadsActive,
-        CurrentMetrics::PartitionedHashJoinPoolThreadsScheduled,
+        CurrentMetrics::HashJoinPostBuildThreads,
+        CurrentMetrics::HashJoinPostBuildThreadsActive,
+        CurrentMetrics::HashJoinPostBuildThreadsScheduled,
         /*max_threads_*/ workers,
         /*max_free_threads_*/ 0,
         /*queue_size_*/ workers);
@@ -1426,7 +1426,7 @@ void PartitionedHashJoin::insertSingleLaneBlock(FillBlock & fill)
         /*narrow_locators_data=*/nullptr,
         fill.block_no,
         fill.skipData());
-    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinInsertedRows, fill.rows);
+    ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, fill.rows);
     ctx.worker_state[0].inserted_rows += fill.rows;
     fill.releaseInputs();
 }
@@ -1652,7 +1652,7 @@ void PartitionedHashJoin::preparePostBuildContext()
         total_bucket_rows.assign(ctx.bucket_rows.begin(), ctx.bucket_rows.begin() + partitions);
         histogram_covers_full_build = true;
     }
-    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinBuildHistogramMicroseconds, hist_thread_us.load(std::memory_order_relaxed));
+    ProfileEvents::increment(ProfileEvents::HashJoinPartitionedBuildHistogramMicroseconds, hist_thread_us.load(std::memory_order_relaxed));
 
     stats.partition_row_counts = total_bucket_rows;
     ctx.partition_order.resize(partitions);
@@ -1715,7 +1715,7 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
     {
         /// The drop bucket holds the null-key and ON-filtered rows. They are never inserted and must not
         /// be refined again, so the bucket is freed before the refine passes.
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
         const size_t drop = ctx.fanout - 1;
         if (narrow_locators)
             ctx.locators32[drop] = {};
@@ -1781,13 +1781,13 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
         group_overflow);
 
     ProfileEvents::increment(
-        ProfileEvents::PartitionedHashJoinBuildHistogramMicroseconds,
+        ProfileEvents::HashJoinPartitionedBuildHistogramMicroseconds,
         hist_thread_us.load(std::memory_order_relaxed) + alloc_thread_us.load(std::memory_order_relaxed));
     ProfileEvents::increment(
-        ProfileEvents::PartitionedHashJoinBuildScatterMicroseconds,
+        ProfileEvents::HashJoinPartitionedBuildScatterMicroseconds,
         scatter_thread_us.load(std::memory_order_relaxed) + refine_thread_us.load(std::memory_order_relaxed));
     ProfileEvents::increment(
-        ProfileEvents::PartitionedHashJoinBuildInsertMicroseconds, insert_thread_us.load(std::memory_order_relaxed) + drain_wall_us);
+        ProfileEvents::HashJoinPartitionedBuildInsertMicroseconds, insert_thread_us.load(std::memory_order_relaxed) + drain_wall_us);
 }
 
 bool PartitionedHashJoin::postBuildPartitioned()
@@ -2400,7 +2400,7 @@ void PartitionedHashJoin::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
         /// The pass's duplicates become spans while the partition's cells are still warm.
         state.scratch_used_high_water = std::max(state.scratch_used_high_water, finishPassScratch(state.scratch, *state.writer));
         state.inserted_rows += partition_rows;
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinInsertedRows, partition_rows);
+        ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, partition_rows);
 
         /// Released as soon as they are consumed, so the table replaces the chunks rather than
         /// coexisting with them.
@@ -2417,7 +2417,7 @@ PartitionedHashJoin::~PartitionedHashJoin()
 {
     /// Explicit destruction inside the timer, in dependency order: cells point into the arenas and the
     /// row store, so the table goes first.
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinTeardownMicroseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinTeardownMicroseconds);
 
     /// The planner's row store decision for the next run of this query reads the matched count, as it
     /// does for the other hash joins, which publish it from their destructors too.

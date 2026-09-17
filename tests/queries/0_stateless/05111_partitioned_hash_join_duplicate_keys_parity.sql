@@ -259,10 +259,10 @@ SYSTEM FLUSH LOGS query_log;
 -- The partitioned build ran: more than one partition, a non-empty hash table, every build row inserted, and
 -- duplicate storage used.
 SELECT
-    ProfileEvents['PartitionedHashJoinPartitions'] > 1,
-    ProfileEvents['PartitionedHashJoinHashTableBytes'] > 0,
-    ProfileEvents['PartitionedHashJoinInsertedRows'] = (SELECT count() FROM t_ir_build),
-    ProfileEvents['PartitionedHashJoinDuplicateRunBytes'] > 0
+    ProfileEvents['HashJoinPartitions'] > 1,
+    ProfileEvents['HashJoinTableBytes'] > 0,
+    ProfileEvents['HashJoinInsertedRows'] = (SELECT count() FROM t_ir_build),
+    ProfileEvents['HashJoinDuplicateRunBytes'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05111 inner all uint64' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;

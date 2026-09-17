@@ -100,19 +100,19 @@ SETTINGS log_comment = '05138 32767 rows';
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'dups 8: duplicate storage bytes',
-    ProfileEvents['PartitionedHashJoinDuplicateRunBytes'] = 8 * (SELECT count() FROM t_sc_b)
+    ProfileEvents['HashJoinDuplicateRunBytes'] = 8 * (SELECT count() FROM t_sc_b)
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05138 dups 8'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 SELECT '32766-row key: duplicate storage bytes',
-    ProfileEvents['PartitionedHashJoinDuplicateRunBytes'] = 8 * 32766
+    ProfileEvents['HashJoinDuplicateRunBytes'] = 8 * 32766
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05138 32766 rows'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 SELECT '32767-row key: duplicate storage bytes',
-    ProfileEvents['PartitionedHashJoinDuplicateRunBytes'] >= 8 * 32767
+    ProfileEvents['HashJoinDuplicateRunBytes'] >= 8 * 32767
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05138 32767 rows'
 ORDER BY event_time_microseconds DESC LIMIT 1;

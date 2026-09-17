@@ -19,7 +19,7 @@
 
 namespace ProfileEvents
 {
-extern const Event PartitionedHashJoinProbeLookupMicroseconds;
+extern const Event HashJoinPartitionedProbeLookupMicroseconds;
 }
 
 namespace DB
@@ -854,7 +854,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane)
     {
         /// Lookups and match bookkeeping only. No column value is gathered yet - that is deferred to
         /// the lazy `HashJoinResult::next`, whose events are shared with the other hash-join algorithms.
-        ProfileEventTimeIncrement<Microseconds> lookup_watch(ProfileEvents::PartitionedHashJoinProbeLookupMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> lookup_watch(ProfileEvents::HashJoinPartitionedProbeLookupMicroseconds);
         const auto & tables = std::get<HashJoinTables>(table_maps->maps);
         switch (join.data->type)
         {

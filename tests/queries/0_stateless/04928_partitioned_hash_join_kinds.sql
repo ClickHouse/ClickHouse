@@ -147,22 +147,22 @@ SELECT 'empty probe side full', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(b.v))) FROM (SELECT * FROM t_kp WHERE 0) AS p FULL JOIN t_kb AS b ON p.k64 = b.k64 SETTINGS join_algorithm = 'partitioned_hash') AS pa)
 SETTINGS log_comment = '04928 empty probe full';
 
--- The large builds must use more than one partition and insert rows (`PartitionedHashJoinInsertedRows`
+-- The large builds must use more than one partition and insert rows (`HashJoinInsertedRows`
 -- > 0); the duplicate-heavy build over 1000 keys may end with one partition but must still insert its rows.
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'partition plans';
 SELECT
     log_comment,
-    ProfileEvents['PartitionedHashJoinPartitions'] > 1,
-    ProfileEvents['PartitionedHashJoinInsertedRows'] > 0
+    ProfileEvents['HashJoinPartitions'] > 1,
+    ProfileEvents['HashJoinInsertedRows'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '04928 %' AND log_comment NOT LIKE '04928 dup %'
 ORDER BY log_comment;
 SELECT
     log_comment,
-    ProfileEvents['PartitionedHashJoinPartitions'] >= 1,
-    ProfileEvents['PartitionedHashJoinInsertedRows'] > 0
+    ProfileEvents['HashJoinPartitions'] >= 1,
+    ProfileEvents['HashJoinInsertedRows'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '04928 dup %'
 ORDER BY log_comment;

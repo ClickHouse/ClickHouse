@@ -118,8 +118,8 @@ SYSTEM FLUSH LOGS query_log;
 SELECT '-- the row store was built (blocks > 0) where the shape admits it';
 SELECT
     log_comment,
-    ProfileEvents['PartitionedHashJoinRowStoreBlocks'] > 0,
-    ProfileEvents['PartitionedHashJoinInsertedRows'] > 0
+    ProfileEvents['HashJoinRowStoreBlocks'] > 0,
+    ProfileEvents['HashJoinInsertedRows'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05139 %'
 ORDER BY log_comment;

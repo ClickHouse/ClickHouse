@@ -26,12 +26,12 @@
 
 namespace ProfileEvents
 {
-extern const Event PartitionedHashJoinBuildMicroseconds;
-extern const Event PartitionedHashJoinBuildFillMicroseconds;
-extern const Event PartitionedHashJoinProbeMicroseconds;
-extern const Event PartitionedHashJoinPartitions;
-extern const Event PartitionedHashJoinInsertedRows;
-extern const Event PartitionedHashJoinRowStoreBlocks;
+extern const Event HashJoinPartitionedBuildMicroseconds;
+extern const Event HashJoinPartitionedBuildFillMicroseconds;
+extern const Event HashJoinPartitionedProbeMicroseconds;
+extern const Event HashJoinPartitions;
+extern const Event HashJoinInsertedRows;
+extern const Event HashJoinRowStoreBlocks;
 }
 
 namespace DB
@@ -226,7 +226,7 @@ PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane(size_t worker_i
 bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, size_t worker_id, bool check_limits)
 {
     /// `num_rows` only matters for the columnless CROSS blocks this algorithm never plans.
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
 
     if (build_phase_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: addBlockToJoin called after the build phase finished");
@@ -234,13 +234,13 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     if (delegate_mode)
     {
         /// The standard machinery runs the join whole, on one fill stream, so the inner join has one worker.
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinInsertedRows, source_block.rows());
+        ProfileEvents::increment(ProfileEvents::HashJoinInsertedRows, source_block.rows());
         return hash_join->addBlockToJoin(source_block, source_block.rows(), /*worker_id=*/0, check_limits);
     }
 
     /// Key preparation plus the per-row hash, route and sketch update. The partition plan comes later,
     /// at the barrier, so every plan pays exactly this much here.
-    ProfileEventTimeIncrement<Microseconds> fill_watch(ProfileEvents::PartitionedHashJoinBuildFillMicroseconds);
+    ProfileEventTimeIncrement<Microseconds> fill_watch(ProfileEvents::HashJoinPartitionedBuildFillMicroseconds);
 
     Block materialized = hash_join->materializeColumnsFromRightBlock(source_block);
     const size_t rows = materialized.rows();
@@ -381,7 +381,7 @@ void PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
     if (stored.hasRowStore())
     {
         ++stats.row_store_blocks;
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinRowStoreBlocks);
+        ProfileEvents::increment(ProfileEvents::HashJoinRowStoreBlocks);
     }
 
     if (!isRightOrFull(hash_join->getKind()))
@@ -500,13 +500,13 @@ void PartitionedHashJoin::decidePartitionPlan()
 
 void PartitionedHashJoin::onBuildPhaseFinish()
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinBuildMicroseconds);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
 
     if (delegate_mode)
     {
         /// The standard machinery already built during the fill; only its own barrier remains.
         hash_join->onBuildPhaseFinish();
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinPartitions, partitions);
+        ProfileEvents::increment(ProfileEvents::HashJoinPartitions, partitions);
         return;
     }
 
@@ -518,7 +518,7 @@ void PartitionedHashJoin::onBuildPhaseFinish()
         if (!table_maps)
             beginSinglePartitionInsert(reserveFor(1, 1.0));
         hll_estimate = static_cast<double>(claimedTotal());
-        ProfileEvents::increment(ProfileEvents::PartitionedHashJoinPartitions, partitions);
+        ProfileEvents::increment(ProfileEvents::HashJoinPartitions, partitions);
         LOG_TRACE(
             log,
             "Single fill thread: table of 2^{} cells, {} rows in {} blocks inserted during the fill, {} distinct keys",
@@ -561,7 +561,7 @@ void PartitionedHashJoin::onBuildPhaseFinish()
         narrow_locators = narrow_locators && fill.block_no < (1u << 16) && fill.rows <= (1uz << 16);
 
     decidePartitionPlan();
-    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinPartitions, partitions);
+    ProfileEvents::increment(ProfileEvents::HashJoinPartitions, partitions);
 
     LOG_TRACE(
         log,
@@ -586,10 +586,10 @@ JoinResultPtr PartitionedHashJoin::joinBlock(Block block, size_t lane)
 {
     JoinResultPtr result;
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PartitionedHashJoinProbeMicroseconds);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedProbeMicroseconds);
         result = delegate_mode ? hash_join->joinBlock(std::move(block)) : probeDispatch(std::move(block), lane);
     }
-    return std::make_unique<TimedJoinResult>(std::move(result), ProfileEvents::PartitionedHashJoinProbeMicroseconds);
+    return std::make_unique<TimedJoinResult>(std::move(result), ProfileEvents::HashJoinPartitionedProbeMicroseconds);
 }
 
 size_t PartitionedHashJoin::getTotalRowCount() const

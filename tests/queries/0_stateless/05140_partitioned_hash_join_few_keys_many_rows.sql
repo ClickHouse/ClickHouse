@@ -89,7 +89,7 @@ SETTINGS log_comment = '05140 below threshold';
 SYSTEM FLUSH LOGS query_log;
 
 SELECT '-- partitions above the threshold: 4 (one per thread); below: 1';
-SELECT log_comment, ProfileEvents['PartitionedHashJoinPartitions'], ProfileEvents['PartitionedHashJoinInsertedRows'] > 0
+SELECT log_comment, ProfileEvents['HashJoinPartitions'], ProfileEvents['HashJoinInsertedRows'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05140 %'
 ORDER BY log_comment;

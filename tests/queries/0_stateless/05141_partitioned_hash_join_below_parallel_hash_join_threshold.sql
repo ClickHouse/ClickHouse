@@ -137,9 +137,9 @@ SYSTEM FLUSH LOGS query_log;
 SELECT '-- one partition, rows inserted, table growth only for the low hint';
 SELECT
     log_comment,
-    ProfileEvents['PartitionedHashJoinPartitions'],
-    ProfileEvents['PartitionedHashJoinInsertedRows'] > 0,
-    ProfileEvents['PartitionedHashJoinTableResizes'] > 0
+    ProfileEvents['HashJoinPartitions'],
+    ProfileEvents['HashJoinInsertedRows'] > 0,
+    ProfileEvents['HashJoinTableResizes'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05141 %'
 ORDER BY log_comment;

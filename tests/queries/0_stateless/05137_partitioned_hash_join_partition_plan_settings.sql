@@ -68,7 +68,7 @@ SELECT '-- all three plans partitioned, and into the same number of partitions';
 SELECT count(), uniqExact(partitions), min(partitions) > 1
 FROM
 (
-    SELECT log_comment, ProfileEvents['PartitionedHashJoinPartitions'] AS partitions
+    SELECT log_comment, ProfileEvents['HashJoinPartitions'] AS partitions
     FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment LIKE '05137 %' AND type = 'QueryFinish'
     ORDER BY event_time_microseconds DESC

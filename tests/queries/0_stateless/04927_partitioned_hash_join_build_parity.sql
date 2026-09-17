@@ -181,16 +181,16 @@ SYSTEM FLUSH LOGS query_log;
 SELECT 'partition plans';
 SELECT
     log_comment,
-    ProfileEvents['PartitionedHashJoinPartitions'] > 1,
-    ProfileEvents['PartitionedHashJoinInsertedRows'] > 0,
-    ProfileEvents['PartitionedHashJoinHashTableBytes'] > 0
+    ProfileEvents['HashJoinPartitions'] > 1,
+    ProfileEvents['HashJoinInsertedRows'] > 0,
+    ProfileEvents['HashJoinTableBytes'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '04927 %' AND log_comment NOT LIKE '04927 single %'
 ORDER BY log_comment;
 SELECT
     log_comment,
-    ProfileEvents['PartitionedHashJoinPartitions'],
-    ProfileEvents['PartitionedHashJoinInsertedRows'] > 0
+    ProfileEvents['HashJoinPartitions'],
+    ProfileEvents['HashJoinInsertedRows'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '04927 single %'
 ORDER BY log_comment;
