@@ -1438,17 +1438,17 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
         insert_query.by_name);
 }
 
-void InterpreterInsertQuery::resolveInsertByNameColumns(ContextMutablePtr context, ASTInsertQuery & query)
+void InterpreterInsertQuery::resolveInsertByNameColumns(ContextMutablePtr context_, ASTInsertQuery & query)
 {
     if (!query.by_name)
         return;
 
     SharedHeader header;
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, context, select_query_options);
+    if (context_->getSettingsRef()[Setting::allow_experimental_analyzer])
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, context_, select_query_options);
     else
-        header = InterpreterSelectWithUnionQuery::getSampleBlock(query.select, context);
+        header = InterpreterSelectWithUnionQuery::getSampleBlock(query.select, context_);
 
     auto columns = make_intrusive<ASTExpressionList>(',');
     columns->children.reserve(header->columns());
