@@ -86,8 +86,8 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
         "reports it yet. "
         "`other` - something assigned the setting, but the engine does not say what. "
         "Which of these an engine can report depends on the engine: only `MergeTree` family tables report "
-        "`compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and `File`, `URL` and the `Log` "
-        "family report only `definition`."});
+        "`compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and `File`, `URL`, the `Log` "
+        "family and the object storage engines report only `definition`."});
     description.add({"is_masked", std::make_shared<DataTypeUInt8>(),
         "1 if `value` is a placeholder rather than the real value, because the setting holds a secret and the current "
         "user may not see it. Grant `displaySecretsInShowAndSelect` and enable "

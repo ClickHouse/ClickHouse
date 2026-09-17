@@ -1183,14 +1183,17 @@ bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & as
 
 SettingDescriptions StorageObjectStorage::getTableSettings(ContextPtr query_context) const
 {
-    /// The settings belong to the configuration rather than to this storage. A data lake
-    /// configuration keeps them; plain object storage - `S3`, `GCS`, `AzureBlobStorage`, `HDFS` -
-    /// never builds a `StorageObjectStorageSettings` at all, since `createStorageObjectStorage`
-    /// applies the `SETTINGS` clause to a copy of `Settings` and converts the result to
-    /// `FormatSettings`. It therefore cannot say what its settings are.
+    /// The settings belong to the configuration rather than to this storage. A data lake configuration keeps
+    /// them; plain object storage - `S3`, `GCS`, `AzureBlobStorage`, `HDFS` - never builds a
+    /// `StorageObjectStorageSettings` at all, since `createStorageObjectStorage` applies the `SETTINGS` clause to
+    /// a copy of `Settings` and converts the result to `FormatSettings`, which carries no setting names.
     auto settings = configuration->enumerateSettings();
     if (settings.empty())
-        return settingsNotRetainedByEngine();
+    {
+        /// What the clause states is still in the stored `CREATE` query, so report that, as `File`, `URL` and the
+        /// `Log` family do. What it does not state cannot be recovered: nothing holds it under its own name.
+        return IStorage::getTableSettings(query_context);
+    }
 
     return attributeSettingsStatedInDefinition(std::move(settings), query_context);
 }

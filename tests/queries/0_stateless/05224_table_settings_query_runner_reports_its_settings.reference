@@ -1,0 +1,5 @@
+-- what the definition states, and what it leaves at the default
+max_queue_size	1000	default
+threads	2	definition
+-- every setting the engine takes is reported, not only the one the definition states
+1

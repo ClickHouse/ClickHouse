@@ -37,13 +37,14 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
+        SettingDescriptions settings_descriptions_,
         const String & remote_table_schema_ = "",
         const String & on_conflict = "");
 
     String getName() const override { return "PostgreSQL"; }
 
-    /// See `IStorage::settingsNotRetainedByEngine`.
-    SettingDescriptions getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
+    /// Reports the connection settings this table works with - see the definition.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     bool isExternalDatabase() const override { return true; }
 
@@ -111,6 +112,10 @@ private:
     String remote_table_schema;
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
+    /// The engine keeps no `PostgreSQLSettings`: its creator resolves them - the session's values overlaid with
+    /// the `SETTINGS` clause - into a connection pool and drops them. The enumeration is taken there instead, so
+    /// the table can still report what it was built with.
+    SettingDescriptions settings_descriptions;
 
     LoggerPtr log;
 };

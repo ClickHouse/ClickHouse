@@ -55,6 +55,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     postgres::PoolWithFailoverPtr connection_pool;
+    SettingDescriptions settings_descriptions;
     std::optional<StoragePostgreSQL::Configuration> configuration;
 };
 
@@ -75,6 +76,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         ConstraintsDescription{},
         String{},
         context,
+        settings_descriptions,
         configuration->schema,
         configuration->on_conflict);
 
@@ -123,6 +125,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     /// stored in a named collection.
     if (settings_ast)
         postgresql_settings.loadFromQuery(settings_ast->as<ASTSetQuery &>());
+
+    settings_descriptions = postgresql_settings.enumerateSettings();
 
     if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");

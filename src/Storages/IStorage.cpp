@@ -291,6 +291,12 @@ NameSet getSettingNamesStatedInDefinition(const StorageID & table_id, ContextPtr
 
 }
 
+void IStorage::reportOriginByValue(SettingDescriptions & settings)
+{
+    for (auto & setting : settings)
+        setting.origin = setting.value == setting.default_value ? SettingOrigin::Default : SettingOrigin::Other;
+}
+
 SettingDescriptions IStorage::attributeSettingsStatedInDefinition(
     SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize) const
 {

@@ -28,8 +28,8 @@ public:
 
     std::string getName() const override { return "QueryRunner"; }
 
-    /// See `IStorage::settingsNotRetainedByEngine`.
-    SettingDescriptions getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
+    /// Reports the five settings this engine acts on, from what it was given - see the definition.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
@@ -42,6 +42,9 @@ public:
 
 private:
     QueryRunnerMode mode;
+    /// The engine consumes its settings at construction - `mode` here, the rest inside the dispatcher - so the
+    /// enumeration is taken while they are still at hand, and reported as it was then.
+    SettingDescriptions settings_descriptions;
     std::unique_ptr<QueryRunnerDispatcher> dispatcher;
     LoggerPtr log;
 };

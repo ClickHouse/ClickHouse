@@ -84,8 +84,8 @@ public:
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
-    /// See `IStorage::settingsNotRetainedByEngine`.
-    SettingDescriptions getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
+    /// Reports the replication settings this table works with - see the definition.
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     void shutdown(bool is_drop) override;
 
@@ -183,6 +183,9 @@ private:
     /// Not nullptr only for single MaterializedPostgreSQL storage, because for MaterializedPostgreSQL
     /// database engine there is one replication handler for all tables.
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
+    /// The replication settings are consumed at construction, so the enumeration is taken there - after
+    /// `materialized_postgresql_tables_list` is set to the remote table, which is what the handler is given.
+    SettingDescriptions settings_descriptions;
 
     /// Distinguish between single MaterilizePostgreSQL table engine and MaterializedPostgreSQL database engine,
     /// because table with engine MaterilizePostgreSQL acts differently in each case.

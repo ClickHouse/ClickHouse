@@ -308,13 +308,12 @@ public:
     static void reportEffectiveValueWithConfigFallback(
         SettingDescriptions & settings, std::string_view name, const String & stated, const String & value);
 
-    /// For an engine that consumes its settings at construction and keeps nothing. It cannot say
-    /// what its settings are, and the base implementation would report only what the definition
-    /// states - which looks like a complete answer and is not, since the effective values can come
-    /// from the query context, a named collection or a connection pool default. An engine that is
-    /// advertised by `system.engine_settings` and cannot answer for a table reports nothing here
-    /// rather than a partial truth.
-    static SettingDescriptions settingsNotRetainedByEngine() { return {}; }
+    /// Recomputes `origin` from the value alone: `Default` where it equals the compiled-in default and
+    /// `Other` where it does not. For an engine whose loader assigns every setting from the session -
+    /// `PostgreSQLSettings::loadFromQueryContext` does - which marks them all as changed even where the
+    /// session holds the compiled-in default, so the change alone says nothing about where a value is from.
+    /// Call before attributing the definition, which overrides both.
+    static void reportOriginByValue(SettingDescriptions & settings);
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
