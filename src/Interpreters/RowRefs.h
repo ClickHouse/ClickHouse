@@ -622,9 +622,14 @@ private:
 
     /// Repoint `word` at `b` with the saturating row count in bits 62..48. The cell-node pointer is
     /// stable across inserts, so this only rewrites the count bits of an already-resident cache line.
+    /// Only the 48-bit bound is checked here, not the tag bits: a `Batch` is 8-aligned (see the
+    /// `static_assert` below), so its pointer's tag bits are zero by construction, and a check of them
+    /// would keep the old word live across `insert` for nothing (`insert` is the `HashJoin` build loop).
     void setListWord(Batch * b, UInt64 total_rows_)
     {
-        const UInt64 ptr = checkedNodePointer(b);
+        const UInt64 ptr = reinterpret_cast<UInt64>(b);
+        if (ptr & ~PTR_MASK) [[unlikely]]
+            throwRowRefPointerTooLarge();
         const UInt64 count = total_rows_ < COUNT_SAT ? total_rows_ : COUNT_SAT;
         word = ptr | (count << COUNT_SHIFT) | TAG_BATCH;
     }
