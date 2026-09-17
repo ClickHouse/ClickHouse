@@ -1230,6 +1230,31 @@ def assert_startup_fails_with(directories_config, expected_message):
         restore_node_bad()
 
 
+def test_synced_user_shadows_a_same_named_user_of_a_later_storage(janedoe_in_role_a):
+    """`node_stale` declares `users_xml` after the synchronised directory, and `users_xml` defines
+    `shadowed` with the password `local`. Once the directory materialises an LDAP user of that name,
+    the LDAP entry takes precedence: the LDAP password logs in through the directory, and the local
+    password is an authentication failure that stops the chain, not a "not found" that would let
+    `users_xml` authenticate the same login name. Once the LDAP user is gone, the local one is
+    reachable again."""
+    assert login(node_stale, "shadowed", "local") == TSV([["shadowed"]])
+    ldap_add_user("shadowed")
+    try:
+        ldap_set_memberships("shadowed", {ROLE_A_GROUP})
+        wait_ldap_user(node_stale, "shadowed", present=True, retry_count=60)
+
+        assert login(node_stale, "shadowed") == TSV([["shadowed"]])
+        login_error(node_stale, "shadowed", "local")
+        failed = node_stale.grep_in_log("user: shadowed: Authentication failed")
+        assert "Invalid credentials" in failed, failed
+    finally:
+        ldap_set_memberships("shadowed", set())
+        ldap_delete(user_dn("shadowed"), ignore_missing=True)
+
+    wait_ldap_user(node_stale, "shadowed", present=False, retry_count=60)
+    assert login(node_stale, "shadowed", "local") == TSV([["shadowed"]])
+
+
 def test_nonexistent_roles_storage_fails_the_first_run(janedoe_in_role_a):
     try:
         restart_node_bad_with(

@@ -12,5 +12,10 @@
         <local_after>
             <password>local</password>
         </local_after>
+        <!-- Same name as an LDAP user `test_synced_user_shadows_a_same_named_user_of_a_later_storage` creates:
+             while the directory holds that user, this definition must be unreachable. -->
+        <shadowed>
+            <password>local</password>
+        </shadowed>
     </users>
 </clickhouse>
