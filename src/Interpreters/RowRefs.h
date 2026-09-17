@@ -498,9 +498,7 @@ struct EmitColumnRequest
 };
 
 /// Maps `block_no` (the high half of RowRef) to the stored block.
-/// Appended under mutex during the build phase (possibly from several ConcurrentHashJoin
-/// slots sharing one index, so that block numbers are globally unique across slots and
-/// remain valid after the slot block lists are spliced together in onBuildPhaseFinish).
+/// Appended under mutex from every build thread, so block numbers are unique across the join.
 /// Read lock-free at probe/emit time, which is safe because probing starts only after
 /// the build phase is finished.
 ///

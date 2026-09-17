@@ -1,4 +1,5 @@
 #include <Compression/CompressedWriteBuffer.h>
+#include <deque>
 #include <Formats/NativeWriter.h>
 #include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
@@ -295,7 +296,8 @@ GraceHashJoin::GraceHashJoin(
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     bool any_take_last_row_,
-    size_t external_join_threshold_)
+    size_t external_join_threshold_,
+    size_t max_threads_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
@@ -304,6 +306,7 @@ GraceHashJoin::GraceHashJoin(
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
     , external_join_threshold(external_join_threshold_)
+    , max_threads(std::max<size_t>(1, max_threads_))
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope({
@@ -489,11 +492,15 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 JoinResultPtr GraceHashJoin::joinBlock(Block block)
 {
-    /// Check if hash join post build optimizations could be performed.
-    if (hash_join && getNumBuckets() <= 1)
+    if (!post_build_phase_ran.load(std::memory_order_acquire) && getNumBuckets() <= 1)
     {
         std::lock_guard lock(hash_join_mutex);
-        hash_join->runPostBuildPhase();
+        /// Re-checked under the lock: several probe threads can pass the check above before the first one finishes.
+        if (hash_join && !post_build_phase_ran.load(std::memory_order_relaxed))
+        {
+            hash_join->runPostBuildPhase();
+            post_build_phase_ran.store(true, std::memory_order_release);
+        }
     }
 
     if (block.rows() == 0)
@@ -836,8 +843,21 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
 GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
-    auto join = std::make_unique<HashJoin>(
-        table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, /*is_concurrent_hash_join*/ false);
+    /// `max_threads` still matters even though inserts here are serialized: the fill streams
+    /// address worker slots by their own id.
+    ///
+    /// The serial layout is deliberate. 256 buckets of empty buffers would count against
+    /// `max_bytes_before_external_join` and would not shrink as Grace adds file buckets.
+    /// A small remainder could then rehash past `grace_hash_join_max_buckets`.
+    auto join = std::make_shared<HashJoin>(
+        table_join,
+        right_sample_block,
+        any_take_last_row,
+        reserve_num,
+        bucket_id,
+        HashJoinStatsCollectingParams{},
+        max_threads,
+        /*use_parallel_layout=*/false);
     /// A bucket that outgrows memory is rebucketed, which reads its right blocks back out - and that
     /// can happen at any point, so these blocks are never dropped.
     join->keepRightBlocksForAnotherAlgorithm();
@@ -846,6 +866,8 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bu
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
 {
+    /// The cached sample block, not `hash_join`: this runs without the mutex, and a rehash
+    /// replaces `hash_join`.
     return HashJoin::prepareRightBlock(block, hash_join_sample_block);
 }
 
@@ -906,7 +928,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, size_t worker_id)
         {
             hash_join->addBlockToJoin(current_block, current_block.rows(), worker_id, /* check_limits = */ false);
             block_added = true;
-            size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
+            size_t hash_join_total_keys = hash_join->getTotalRowCount();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
             if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
                 return;

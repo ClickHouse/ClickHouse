@@ -459,6 +459,8 @@ struct HashMethodKeysFixed
     static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
+    static constexpr bool reads_whole_block_at_construction = true;
+
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
     size_t keys_size;
@@ -483,6 +485,8 @@ struct HashMethodKeysFixed
         return true;
     }
 
+    /// Packs the whole block's key columns up front, which is why `reads_whole_block_at_construction`
+    /// is set: a caller splitting the block would otherwise repack it once per part.
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
