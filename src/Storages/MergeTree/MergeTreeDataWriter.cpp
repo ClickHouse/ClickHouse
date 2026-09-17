@@ -1824,6 +1824,22 @@ static size_t countJSONObjectTypes(const IDataType & type)
     return 0;
 }
 
+/// ParserCompoundIdentifier spells a sub-object/combined accessor step back-quoted ("^`arr`",
+/// "@`arr`"), so the key has to be unquoted before it can be used as a JSON path.
+static std::optional<String> tryGetJSONAccessorPath(std::string_view member)
+{
+    if (member.size() < 3 || member[1] != '`' || member.back() != '`'
+        || (member[0] != DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX && member[0] != DataTypeObject::COMBINED_SUBCOLUMN_PREFIX))
+        return std::nullopt;
+
+    ReadBufferFromMemory buf(member.substr(1));
+    String path;
+    if (!tryReadBackQuotedString(path, buf))
+        return std::nullopt;
+    /// Remaining path elements, if any: "^`a`.b" reaches the object at "a.b".
+    return path + String(buf.position(), buf.available());
+}
+
 /// One member step of a qualified candidate: Tuple elements by name or 1-based number, Map sides by
 /// "keys"/"values", a constant subscript by "[]"; Array/Nullable wrappers are looked through (member
 /// access maps over arrays).
@@ -1875,15 +1891,14 @@ static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::stri
     /// Dynamic, so descend into the type the value at that path is stored under, which carries it.
     if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
     {
-        std::string_view path = member;
-        const char accessor = path.empty() ? '\0' : path.front();
-        if (accessor == DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX || accessor == DataTypeObject::COMBINED_SUBCOLUMN_PREFIX)
-            path.remove_prefix(1);
+        String path{member};
+        if (auto accessor_path = tryGetJSONAccessorPath(member))
+            path = std::move(*accessor_path);
         if (path.empty())
             return nullptr;
-        if (auto it = object->getTypedPaths().find(String(path)); it != object->getTypedPaths().end())
+        if (auto it = object->getTypedPaths().find(path); it != object->getTypedPaths().end())
             return it->second;
-        return object->getTypeOfNestedObjects(String(path) + ".");
+        return object->getTypeOfNestedObjects(path + ".");
     }
 
     return nullptr;

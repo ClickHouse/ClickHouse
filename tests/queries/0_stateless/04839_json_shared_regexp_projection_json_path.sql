@@ -20,13 +20,16 @@ INSERT INTO projection_json_path_04839 VALUES (1, '{"arr":{"tag_a":1,"keep":2}}'
 -- Retire the rule at the table level; the part's own j type still carries it as history.
 ALTER TABLE projection_json_path_04839 MODIFY COLUMN j JSON(max_dynamic_paths=5);
 
+-- Aliased: a projection cannot declare a bare subcolumn (ProjectionDescription rejects it), but the
+-- provenance descent still resolves the identifier the SELECT item reads.
 ALTER TABLE projection_json_path_04839
-    ADD PROJECTION p_sub_object (SELECT id, j.^arr WHERE id > 0 ORDER BY id);
+    ADD PROJECTION p_sub_object (SELECT id, j.^arr AS sub WHERE id > 0 ORDER BY id);
 ALTER TABLE projection_json_path_04839 MATERIALIZE PROJECTION p_sub_object SETTINGS mutations_sync=1;
 
 -- The regression: without the JSON path step in the descent this is 0, and the next rewrite of the
 -- projection is free to re-promote the nested paths the retired rule had forced into shared data.
-SELECT 'sub-object path keeps provenance', countIf(position(type, '^tag_') > 0)
+SELECT 'sub-object path keeps provenance', countIf(position(type, '^tag_') > 0),
+       countIf(position(type, 'shared_regexp_path_prefix=\'arr.\'') > 0)
 FROM system.projection_parts_columns
 WHERE database=currentDatabase() AND table='projection_json_path_04839' AND name='p_sub_object' AND column != 'id' AND active;
 
