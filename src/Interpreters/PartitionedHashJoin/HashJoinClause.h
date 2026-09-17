@@ -269,8 +269,6 @@ public:
     /// arenas, built or predicted. The memory gate, the grow veto and the partition floor's guard count
     /// it as resident. Set by the join before this clause is planned and before it is built.
     void setBytesReservedElsewhere(size_t bytes) { bytes_reserved_elsewhere = bytes; }
-    /// Bytes still held by the saved routes of every clause; a clause's scatter releases its own.
-    size_t routeBytes() const;
 
     bool hasTable() const { return table_maps != nullptr; }
     /// Which `HashJoin::MapsVariant` alternative the table mirrors.
@@ -343,6 +341,8 @@ private:
     double reserveSafety() const { return estimate_is_exact ? 1.0 : reserve_safety; }
     /// Rows the partitioned inserts will see: the sum of the exact per-partition counts.
     UInt64 insertableRows() const;
+    /// Bytes still held by the saved routes of every clause; a clause's scatter releases its own.
+    size_t routeBytes() const;
 
     /// How the key columns are scattered. Fixed-width keys go by their raw bytes. Anything else
     /// (`String`, `LowCardinality`, ...) goes through `ColumnsScatter`, with an 8-byte hash word per
