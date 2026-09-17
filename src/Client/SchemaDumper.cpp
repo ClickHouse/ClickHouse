@@ -35,6 +35,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTViewTargets.h>
@@ -1178,17 +1179,65 @@ void collectFunctionArgumentReferences(
     }
 }
 
-/// Collects the named collections a `remote*` call names, local replica or not. A collection is a
-/// server-level object no `CREATE DATABASE`/`TABLE` in the dump creates, so replay needs it already there.
-void collectRemoteNamedCollections(const IAST & node, const ClusterLocality & clusters, std::vector<String> & out)
+/// Collects the named collections a stored CREATE names - a leading identifier in a table/database
+/// engine or table function, a dictionary source's `name` key. Replay needs them already on the server.
+void collectNamedCollections(const IAST & node, const ClusterLocality & clusters, std::vector<String> & out)
 {
-    const auto * function = node.as<ASTFunction>();
-    if (!function || !isRemoteTableFunctionName(function->name) || !function->arguments || function->arguments->children.empty())
-        return;
-    String name;
-    if (tryGetIdentifierNameInto(function->arguments->children[0], name)
-        && tryGetRemoteNamedCollection(*function, name, clusters))
-        out.push_back(name);
+    /// `cluster`/`clusterAllReplicas` take a cluster name there and refuse a collection outright.
+    if (const auto * function = node.as<ASTFunction>();
+        function && function->arguments && !isClusterTableFunctionName(function->name))
+    {
+        /// `tryGetNamedCollectionWithOverrides` reads the collection from the first argument; a
+        /// `*Cluster` table function erases the cluster name first, so its collection is the second.
+        size_t slot = function->name.ends_with("Cluster") && TableFunctionFactory::instance().isTableFunctionName(function->name) ? 1 : 0;
+        String name;
+        if (slot < function->arguments->children.size() && tryGetIdentifierNameInto(function->arguments->children[slot], name))
+        {
+            /// `remote*` refuses a name it can classify as neither cluster nor collection, because its
+            /// locality decides a dependency edge; every other carrier only needs the name reported.
+            if (isRemoteTableFunctionName(function->name))
+            {
+                if (tryGetRemoteNamedCollection(*function, name, clusters))
+                    out.push_back(name);
+            }
+            else if (clusters.named_collections().contains(name))
+                out.push_back(name);
+        }
+    }
+    else if (const auto * pair = node.as<ASTPair>(); pair && pair->first == "name" && pair->second)
+    {
+        String name;
+        if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            name = literal->value.safeGet<String>();
+        else
+            tryGetIdentifierNameInto(pair->second, name);
+        if (!name.empty() && clusters.named_collections().contains(name))
+            out.push_back(name);
+    }
+    for (const auto & child : node.children)
+        collectNamedCollections(*child, clusters, out);
+}
+
+/// Parses a stored CREATE and collects every named collection it names. Refuses on a parse failure:
+/// a carrier missed here leaves the dump silently unreplayable.
+std::vector<String> namedCollectionsOfCreate(const String & create_query, const String & object, const ClusterLocality & clusters)
+{
+    ASTPtr create_ast;
+    try
+    {
+        ParserCreateQuery create_parser;
+        create_ast = parseQuery(create_parser, create_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot parse the stored CREATE for {} to resolve its named collections for --dump-schema: {}",
+            object, e.message());
+    }
+
+    std::vector<String> collections;
+    collectNamedCollections(*create_ast, clusters, collections);
+    return collections;
 }
 
 /// Combines server dependency columns with parsed view references and drops implicit storage.
@@ -1317,6 +1366,13 @@ std::vector<TableInfo> resolveTables(
         }
     }
 
+    /// A collection can be named anywhere in a stored CREATE - a table engine, a dictionary source,
+    /// a table function - so the whole statement is scanned rather than just a view's SELECT.
+    for (auto & row : rows)
+        if (!row.create_query.empty())
+            row.named_collections = namedCollectionsOfCreate(
+                row.create_query, backQuoteIfNeed(row.database) + "." + backQuoteIfNeed(row.name), clusters);
+
     for (auto & row : rows)
     {
         /// A view's select sources are deliberately not in `loading_dependencies_*`, so they are
@@ -1421,7 +1477,6 @@ std::vector<TableInfo> resolveTables(
                 references.push_back({table_id->getDatabaseName(), table_id->shortName()});
             collectFunctionArgumentReferences(node, clusters, references);
             collectMergeAndLoopReferences(node, all_table_names_by_db, undumped_databases, undumped_tables_by_db, row.database, references);
-            collectRemoteNamedCollections(node, clusters, row.named_collections);
         });
         for (const auto & candidate : references)
             add_dependency(candidate);
@@ -1474,7 +1529,8 @@ std::vector<TableInfo> resolveTables(
 /// are the server's other databases, which a `merge(REGEXP(...), ...)` can still reach.
 std::vector<TableInfo> fetchTables(
     IServerConnection & connection, const ConnectionTimeouts & timeouts, const ClientInfo & client_info, ContextPtr context,
-    const std::vector<String> & databases, const std::set<String> & undumped_databases)
+    const std::vector<String> & databases, const std::set<String> & undumped_databases,
+    const std::map<String, String> & database_queries, std::map<String, std::vector<String>> & database_named_collections)
 {
     /// Resolved once per dump: the walkers gate `cluster*` calls on the server's cluster locality.
     ClusterLocality clusters;
@@ -1571,6 +1627,11 @@ std::vector<TableInfo> fetchTables(
             }, context->getSettingsRef(), undumped_visibility.show_datalake_catalogs, undumped_visibility.show_remote_databases);
     }
 
+    /// A database engine carries a collection the same way a table engine does.
+    for (const auto & [db, create_query] : database_queries)
+        if (auto collections = namedCollectionsOfCreate(create_query, backQuoteIfNeed(db), clusters); !collections.empty())
+            database_named_collections.emplace(db, std::move(collections));
+
     return resolveTables(fetchRawRows(connection, timeouts, client_info, databases, context->getSettingsRef()), clusters, undumped_databases, undumped_tables_by_db);
 }
 
@@ -1605,7 +1666,8 @@ void reportMaskedSecrets(
 }
 
 void reportDependenciesOutsideDumpSet(
-    const std::vector<TableInfo> & tables, const std::vector<String> & target_databases, std::ostream & err)
+    const std::vector<TableInfo> & tables, const std::map<String, std::vector<String>> & database_named_collections,
+    const std::vector<String> & target_databases, std::ostream & err)
 {
     std::set<String> dumped_databases(target_databases.begin(), target_databases.end());
 
@@ -1623,6 +1685,10 @@ void reportDependenciesOutsideDumpSet(
     for (const auto & table : tables)
         for (const auto & collection : table.named_collections)
             collections.emplace(table.database, table.name, collection);
+    std::set<std::pair<String, String>> database_collections;
+    for (const auto & [database, names] : database_named_collections)
+        for (const auto & collection : names)
+            database_collections.emplace(database, collection);
 
     /// The original session database is unknown; replay binds these names to the owner database.
     std::set<std::tuple<String, String, String>> unresolved;
@@ -1640,12 +1706,17 @@ void reportDependenciesOutsideDumpSet(
             << backQuoteIfNeed(collection) << ", which lives on the server rather than in a database and will not be "
             << "created by this dump; its values can include credentials, so the dump does not carry them.\n";
 
+    for (const auto & [database, collection] : database_collections)
+        err << "Warning: database " << backQuoteIfNeed(database) << " depends on named collection "
+            << backQuoteIfNeed(collection) << ", which lives on the server rather than in a database and will not be "
+            << "created by this dump; its values can include credentials, so the dump does not carry them.\n";
+
     for (const auto & [database, name, reference] : unresolved)
         err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " references "
             << backQuoteIfNeed(reference) << " without a database; no dumped database contains it, and on replay it "
             << "will resolve against " << backQuoteIfNeed(database) << ", which does not contain it either.\n";
 
-    if (!missing.empty() || !unresolved.empty() || !collections.empty())
+    if (!missing.empty() || !unresolved.empty() || !collections.empty() || !database_collections.empty())
         err << "Warning: replaying this dump into a fresh instance requires those objects to already exist.\n";
 }
 
@@ -2034,8 +2105,10 @@ void dumpDatabaseSchema(
         for (const auto & db : target_databases)
             undumped_databases.erase(db);
 
-        tables = fetchTables(connection, timeouts, client_info, context, target_databases, undumped_databases);
-        reportDependenciesOutsideDumpSet(tables, target_databases, err);
+        std::map<String, std::vector<String>> database_named_collections;
+        tables = fetchTables(connection, timeouts, client_info, context, target_databases, undumped_databases,
+            create_database_query_by_db, database_named_collections);
+        reportDependenciesOutsideDumpSet(tables, database_named_collections, target_databases, err);
         reportMaskedSecrets(tables, create_database_query_by_db, err);
         order = orderTablesByDependencies(tables);
     }

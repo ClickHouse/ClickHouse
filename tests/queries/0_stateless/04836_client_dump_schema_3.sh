@@ -393,4 +393,29 @@ else
     echo "unresolvable remote() first argument refused: $(grep -c 'neither a cluster nor a named collection' "$ERR_FILE")"
 fi
 rm -rf "$NC_PATH" "$NC_CONF"
+
+echo '--- a named collection carried by a stored engine or dictionary source is reported ---'
+# A collection reaches a persisted CREATE outside a view body too: a table engine keeps it as its
+# first argument and a dictionary source as its `NAME` key, and neither is created by the dump.
+NCC_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_carrier"
+NCC_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_carrier_dump.sql"
+rm -rf "$NCC_PATH"
+$CLICKHOUSE_LOCAL --path "$NCC_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE NAMED COLLECTION nc_url AS url = 'http://127.0.0.1:1/', format = 'TSV';
+CREATE NAMED COLLECTION nc_dict AS host = '127.0.0.1', port = 9000, db = '${DB}', table = 'nc_dict_src';
+CREATE TABLE ${DB}.nc_url_reader (id UInt64) ENGINE = URL(nc_url);
+CREATE DICTIONARY ${DB}.nc_dict_reader (id UInt64, v String) PRIMARY KEY id
+    SOURCE(CLICKHOUSE(NAME nc_dict)) LAYOUT(FLAT()) LIFETIME(0);
+"
+if $CLICKHOUSE_LOCAL --path "$NCC_PATH" --dump-schema="${DB}" > "$NCC_DUMP_FILE" 2>"$ERR_FILE"; then
+    echo "engine carrier warned: $(grep -c 'nc_url_reader` depends on named collection `nc_url`' "$ERR_FILE")"
+    echo "dictionary carrier warned: $(grep -c 'nc_dict_reader` depends on named collection `nc_dict`' "$ERR_FILE")"
+    echo "collections emitted into the dump: $(grep -c 'CREATE NAMED COLLECTION' "$NCC_DUMP_FILE")"
+    echo "engine carrier dumped naming the collection: $(grep -c 'ENGINE = URL(nc_url)' "$NCC_DUMP_FILE")"
+else
+    echo "FAIL: dump rejected: $(cat "$ERR_FILE")"
+fi
+rm -rf "$NCC_PATH"
+rm -f "$NCC_DUMP_FILE"
 rm -f "$ERR_FILE"

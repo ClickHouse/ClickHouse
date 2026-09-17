@@ -61,3 +61,8 @@ replayed reader needs the collection: 1
 masked named collection refused: 1
 --- a remote() identifier that names neither a cluster nor a collection is refused ---
 unresolvable remote() first argument refused: 1
+--- a named collection carried by a stored engine or dictionary source is reported ---
+engine carrier warned: 1
+dictionary carrier warned: 1
+collections emitted into the dump: 0
+engine carrier dumped naming the collection: 1
