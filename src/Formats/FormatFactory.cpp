@@ -30,7 +30,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Common/SettingsChanges.h>
-#include <Core/SettingsQuirks.h>
 
 #include <algorithm>
 
