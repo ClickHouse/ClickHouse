@@ -344,21 +344,20 @@ public:
                 fillBatch();
             }
 
-            String uri = batch[batch_index++];
-
-            /// The filter could not be applied when this address was generated, because its sets are only
-            /// created while the pipeline runs - see `fillBatch`. Apply it as the address is handed out.
+            /// The filter could not be applied when these addresses were generated, because its sets are
+            /// only created while the pipeline runs - see `fillBatch`. Now the pipeline runs, so the sets
+            /// are ready: prune the buffered addresses in one go and go back to pruning every batch as it
+            /// is generated, so that the consumers only ever see servable addresses.
             if (filter_deferred)
             {
-                std::vector<String> filtered_uris({uri});
-                const std::vector<String> paths({Poco::URI(uri).getPath()});
-                VirtualColumnUtils::filterByPathOrFile(
-                    filtered_uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
-                if (filtered_uris.empty())
-                    continue;
+                batch.erase(batch.begin(), batch.begin() + batch_index);
+                batch_index = 0;
+                applyFilter(batch);
+                filter_deferred = false;
+                continue;
             }
 
-            return uri;
+            return batch[batch_index++];
         }
     }
 
@@ -389,6 +388,14 @@ public:
 
         if (!has_filter)
             return upperBound();
+
+        /// The buffered addresses are not pruned yet, and how many of them survive is unknown until the
+        /// pipeline runs. Every stream asks for an address as soon as it starts, and a stream started for
+        /// an address the filter then rejects would ask the generator past the limit while another
+        /// stream already reads the one survivor. One stream reads exactly what a ready filter would
+        /// have selected; it prunes the batch on its first `next`.
+        if (filter_deferred)
+            return 1;
 
         while (batch.size() - batch_index < requested && !exhausted && generated < max_addresses_upper_bound)
             fillBatch();
@@ -453,8 +460,8 @@ private:
             /// The sets of the filter are built on first use: an empty glob must not run the subqueries
             /// of a `_path IN (...)` predicate, which it did not do when the addresses were materialized
             /// up front and the filter was skipped for an empty list. A set can stay unbuilt, because it
-            /// is only created while the pipeline runs; then the filter is applied to every address as
-            /// `next` hands it out, rather than to the batch.
+            /// is only created while the pipeline runs; then this batch is buffered unpruned and `next`
+            /// prunes it when the first consumer asks, once the pipeline runs.
             if (!filter_actions)
             {
                 filter_deferred = !VirtualColumnUtils::buildSetsForDAG(*filter_dag, filter_context);
@@ -462,18 +469,25 @@ private:
             }
 
             if (!filter_deferred)
-            {
-                std::vector<String> paths;
-                paths.reserve(fresh.size());
-                for (const auto & fresh_uri : fresh)
-                    paths.push_back(Poco::URI(fresh_uri).getPath());
-
-                VirtualColumnUtils::filterByPathOrFile(
-                    fresh, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
-            }
+                applyFilter(fresh);
         }
 
         batch.insert(batch.end(), std::make_move_iterator(fresh.begin()), std::make_move_iterator(fresh.end()));
+    }
+
+    /// Keeps the addresses the `_path` / `_file` filter accepts.
+    void applyFilter(Strings & uris) const TSA_REQUIRES(mutex)
+    {
+        if (uris.empty())
+            return;
+
+        std::vector<String> paths;
+        paths.reserve(uris.size());
+        for (const auto & uri : uris)
+            paths.push_back(Poco::URI(uri).getPath());
+
+        VirtualColumnUtils::filterByPathOrFile(
+            uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
     }
 
     std::mutex mutex;

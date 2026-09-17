@@ -22,4 +22,8 @@ $CLICKHOUSE_CLIENT --query "EXPLAIN PIPELINE SELECT x FROM url('http://localhost
     | grep -vF "ReadFromURL" | grep -oE "URL( × [0-9]+)?"
 
 echo "--- and the surviving addresses are the ones read"
-$CLICKHOUSE_CLIENT --query "SELECT x FROM url('http://localhost:11111/test/${prefix}_{0..19}.tsv', 'TSV', 'x UInt64') WHERE _file IN ('${prefix}_5.tsv', '${prefix}_7.tsv') LIMIT 1 SETTINGS glob_expansion_max_elements = 10, max_threads = 1"
+# A cluster read (`enable_parallel_replicas` turns `url` into one) hands the addresses out to one
+# consumer per replica: each idle replica asks for another address, and the one that asks after the
+# two survivors is what makes the generator report that the pattern exceeds the limit, exactly as it
+# always did for this pattern. The early stop under test is a property of the local read.
+$CLICKHOUSE_CLIENT --query "SELECT x FROM url('http://localhost:11111/test/${prefix}_{0..19}.tsv', 'TSV', 'x UInt64') WHERE _file IN ('${prefix}_5.tsv', '${prefix}_7.tsv') LIMIT 1 SETTINGS glob_expansion_max_elements = 10, max_threads = 1, enable_parallel_replicas = 0"
