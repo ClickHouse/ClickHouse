@@ -307,10 +307,9 @@ void StreamingExchangeSink::work()
         has_input = false;
         if (input_is_finished)
         {
-            /// Send empty final chunk
             chassert(!current_chunk);
             final_chunk_added = true;
-            consume(std::move(current_chunk));
+            sendEndOfStream();
         }
         else if (current_chunk)
         {
@@ -367,6 +366,18 @@ std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
     return {fd, EPOLLIN | EPOLLERR, -1};
 }
 
+void StreamingExchangeSink::sendEndOfStream()
+{
+    if (no_more_data_needed)
+        return;
+
+    LOG_TEST(log, "Writing the end-of-stream packet to exchange stream {}", stream_name);
+    StreamingExchangeProtocol::writeEndOfStreamPacket(*out);
+    ++packets_in_out;
+    flushSerializedData();
+    sendToSocket();
+}
+
 void StreamingExchangeSink::consume(Chunk chunk)
 {
     if (no_more_data_needed)
@@ -386,8 +397,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
     LOG_TEST(log, "Writing chunk with {} rows to exchange stream {}", chunk.getNumRows(), stream_name);
 
-    /// The end-of-stream marker has no columns and is made by the sink itself, also for serialized input.
-    if (input_is_serialized && chunk.hasColumns())
+    if (input_is_serialized)
     {
         /// A packet is sent from its own column, which the sinks of the other destinations of a
         /// broadcast share. Data the sink serialized itself came earlier and goes out first.
@@ -404,7 +414,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
         ++packets_in_out;
     }
 
-    /// A packet without rows ends the stream or carries only bucket information: do not hold it back.
+    /// A packet without rows carries only bucket information: do not hold it back.
     if (chunk.getNumRows() == 0)
         flushSerializedData();
 
