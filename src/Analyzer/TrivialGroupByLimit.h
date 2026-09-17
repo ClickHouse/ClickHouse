@@ -14,8 +14,8 @@ struct Settings;
 /// optimization controlled by the `optimize_trivial_group_by_limit_query` setting:
 /// a plain GROUP BY with a constant non-negative LIMIT and nothing that consumes or
 /// filters the groups between the aggregation and the LIMIT (HAVING, ORDER BY, WINDOW,
-/// QUALIFY, LIMIT BY, DISTINCT, GROUP BY modifiers, window functions or `arrayJoin`
-/// in the projection).
+/// QUALIFY, LIMIT BY, LIMIT AFTER / LIMIT UNTIL, DISTINCT, GROUP BY modifiers, window
+/// functions or `arrayJoin` in the projection).
 ///
 /// For such queries the aggregation may keep only the first `LIMIT + OFFSET` distinct
 /// keys: an unspecified subset of the groups is a valid result for LIMIT without ORDER BY.

@@ -94,6 +94,15 @@ std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Sett
         || query.isGroupByWithRollup() || query.isGroupByWithCube() || query.isGroupByWithGroupingSets())
         return std::nullopt;
 
+    /// `LIMIT n AFTER cond` / `LIMIT n UNTIL cond` select a window of `n` rows around a boundary
+    /// that is only found once the boundary row is produced. Capping the aggregation at
+    /// `n + offset` arbitrary groups can stop it before the boundary key ever appears, so the
+    /// window would be empty while the groups exist (the `04343` bug class). The guard has to
+    /// live here, not only in the settings-based pass: the planner calls this helper directly
+    /// for projections with aggregate functions.
+    if (query.hasLimitAfter() || query.hasLimitUntil())
+        return std::nullopt;
+
     /// Window functions and `arrayJoin` in the projection consume the aggregated rows after
     /// GROUP BY, so the produced groups are not simply cut by LIMIT and keeping only the first
     /// `LIMIT + OFFSET` groups can change the result:

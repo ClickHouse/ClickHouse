@@ -20,14 +20,13 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
 {
     auto * query = query_tree_node->as<QueryNode>();
     if (!query || !query->hasGroupBy() || !query->hasLimit() || query->hasHaving() || query->hasOrderBy() || query->hasWindow()
-        || query->hasQualify() || query->hasLimitBy() || query->hasLimitAfter() || query->hasLimitUntil()
-        || query->isDistinct() || query->isGroupByWithTotals()
+        || query->hasQualify() || query->hasLimitBy() || query->isDistinct() || query->isGroupByWithTotals()
         || query->isGroupByWithRollup() || query->isGroupByWithCube() || query->isGroupByWithGroupingSets()
         || hasAggregateFunctionNodes(query->getProjectionNode()))
         return;
 
-    /// The window-function and `arrayJoin` projection guards live in `getTrivialGroupByLimit`,
-    /// shared with the aggregate cutoff of the planner.
+    /// The `LIMIT AFTER` / `LIMIT UNTIL`, window-function and `arrayJoin` projection guards live
+    /// in `getTrivialGroupByLimit`, shared with the aggregate cutoff of the planner.
     const Settings & settings = context->getSettingsRef();
     auto max_rows = getTrivialGroupByLimit(*query, settings);
     if (!max_rows)
