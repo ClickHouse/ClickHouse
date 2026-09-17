@@ -145,6 +145,7 @@ public:
 
     virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
+    virtual bool namespaceAllowsSlash() const { return false; }
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) = 0;
     virtual bool isStaticConfiguration() const { return true; }

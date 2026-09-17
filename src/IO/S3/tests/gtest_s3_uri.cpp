@@ -5,6 +5,7 @@
 
 
 #if USE_AWS_S3
+#include <Common/re2.h>
 #include <IO/S3/Client.h>
 #include <aws/s3/S3EndpointProvider.h>
 
@@ -62,6 +63,20 @@ TEST(IOTestS3URI, MRAPKeyIsNotAURL)
     EXPECT_EQ(uri.uri.getPath(), "/" + key);
     EXPECT_TRUE(uri.uri.getQuery().empty());
     EXPECT_TRUE(uri.uri.getFragment().empty());
+}
+
+TEST(IOTestS3URI, MRAPAccessCheckURIEncodesLiteralKey)
+{
+    const auto uri = DB::S3::URI::fromMRAPArn(
+        "arn:aws:s3::123456789012:accesspoint/example.mrap", "my file%2F?#.csv");
+    EXPECT_EQ(uri.key, "my file%2F?#.csv");
+    EXPECT_EQ(uri.uri_str, "arn:aws:s3::123456789012:accesspoint/example.mrap/my%20file%252F%3F%23.csv");
+
+    Poco::URI access_uri(uri.uri_str);
+    access_uri.normalize();
+    EXPECT_EQ(access_uri.toString(), uri.uri_str);
+    EXPECT_TRUE(re2::RE2::FullMatch(access_uri.toString(),
+        R"(arn:aws:s3::123456789012:accesspoint/example\.mrap/my%20file%252F%3F%23\.csv)"));
 }
 
 TEST(IOTestS3URI, InvalidMRAPTarget)

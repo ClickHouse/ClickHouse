@@ -139,6 +139,7 @@ public:
 
     void check(ContextPtr context) override;
     void validateNamespace(const String & name) const override;
+    bool namespaceAllowsSlash() const override { return url.is_mrap; }
     bool isStaticConfiguration() const override { return static_configuration; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;

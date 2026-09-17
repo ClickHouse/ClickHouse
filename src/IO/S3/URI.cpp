@@ -71,7 +71,8 @@ URI URI::fromMRAPArn(const std::string & arn, const std::string & object_key)
     std::string encoded_path;
     Poco::URI::encode("/" + object_key, "?#", encoded_path);
     result.uri.setPath(encoded_path);
-    result.uri_str = result.bucket + "/" + object_key;
+    /// Access checks parse this string as a URI, while the SDK still receives the literal key.
+    result.uri_str = result.bucket + encoded_path;
     return result;
 }
 

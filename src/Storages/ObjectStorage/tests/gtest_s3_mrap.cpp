@@ -2,9 +2,11 @@
 
 #if USE_AWS_S3
 #include <gtest/gtest.h>
+#include <memory>
 #include <unordered_set>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 
 TEST(StorageS3MRAP, ObjectIdentityPreservesLiteralKeys)
 {
@@ -21,6 +23,18 @@ TEST(StorageS3MRAP, ObjectIdentityPreservesLiteralKeys)
         EXPECT_EQ(DB::StorageObjectStorageSource::getUniqueStoragePathIdentifier(configuration, object, false),
             configuration.url.bucket + "/" + key);
     }
+}
+
+TEST(StorageS3MRAP, PartitionedWriteAcceptsARNNamespace)
+{
+    auto configuration = std::make_shared<DB::StorageS3Configuration>();
+    configuration->url = DB::S3::URI::fromMRAPArn(
+        "arn:aws:s3::123456789012:accesspoint/example.mrap", "partition-{_partition_id}.csv");
+    const auto name = configuration->getNamespace();
+    EXPECT_NO_THROW(DB::PartitionedStorageObjectStorageSink::validateNamespace(name, configuration));
+
+    auto ordinary_configuration = std::make_shared<DB::StorageS3Configuration>();
+    EXPECT_ANY_THROW(DB::PartitionedStorageObjectStorageSink::validateNamespace(name, ordinary_configuration));
 }
 
 #endif
