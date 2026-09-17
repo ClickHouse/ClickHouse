@@ -419,9 +419,8 @@ BlockIO InterpreterSystemQuery::execute()
         volume_ptr = getContext()->getStoragePolicy(query.storage_policy)->getVolumeByName(query.volume);
 
     auto execute_fn = SystemCommandFactory::instance().get(*this, system_context, query.type);
-    if (!execute_fn) {
+    if (!execute_fn)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
-    }
 
     return execute_fn();
 }

@@ -34,7 +34,6 @@ BlockIO ISystemCommand::execute()
 namespace ErrorCodes
 {
 extern const int CANNOT_KILL;
-extern const int LOGICAL_ERROR;
 }
 
 class ShutdownCommand final : public ISystemCommand

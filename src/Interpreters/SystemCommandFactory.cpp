@@ -2,6 +2,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 SystemCommandFactory & SystemCommandFactory::instance()
 {
     static SystemCommandFactory commands_fact;
