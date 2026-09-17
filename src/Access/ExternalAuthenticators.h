@@ -65,12 +65,14 @@ public:
     std::vector<LDAPSyncClient::UserEntry> enumerateLDAPUsers(const String & server,
         const LDAPClient::UserEnumerationParams & enumeration_params, const LDAPClient::RoleSearchParamsList & role_search_params) const;
 
-    /// Checks, against a configuration that need not be applied yet, that LDAP server `server` is defined,
-    /// parses, and has the lookup identity the user enumeration of a synchronised directory binds with.
-    /// Throws `BAD_ARGUMENTS` otherwise. Used when the main configuration is applied, so that a synchronised
-    /// directory whose server cannot enumerate is refused at startup and at `SYSTEM RELOAD CONFIG` rather
-    /// than discovered by its first run.
-    static void checkLDAPServerCanEnumerate(const Poco::Util::AbstractConfiguration & config, const String & server);
+    /// Checks that LDAP server `server` is defined, parsed, and has the lookup identity the user enumeration
+    /// of a synchronised directory binds with, against the configuration this instance holds: a section-level
+    /// error (a duplicated name is recorded for the whole `ldap_servers` map) counts like at login time. Throws
+    /// `BAD_ARGUMENTS` otherwise. `AccessControl` calls it on the applied configuration once the storages exist
+    /// (startup) and on a scratch instance holding a candidate configuration before applying it (reload), so
+    /// that a synchronised directory whose server cannot enumerate is refused rather than discovered by its
+    /// first run.
+    void checkLDAPServerCanEnumerate(const String & server) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
 

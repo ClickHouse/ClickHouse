@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <mutex>
+#include <utility>
 
 
 namespace DB
@@ -320,6 +321,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setThrowOnInvalidReplicatedAccessEntities(config_.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", false));
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
+    checkLDAPSyncServers(*external_authenticators);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
 }
@@ -433,12 +435,16 @@ void AccessControl::addMemoryStorage(const String & storage_name_, bool allow_ba
 void AccessControl::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
 {
     auto new_storage = std::make_shared<LDAPAccessStorage>(storage_name_, *this, config_, prefix_);
+
+    /// Refuse a second `ldap` storage next to a synchronised one before it is added, so that a caller other than
+    /// `addStoragesFromMainConfig` cannot leave the layout unchecked, and one that catches the exception is not
+    /// left with the very layout the check refuses.
+    auto candidate = std::as_const(*this).getStorages();
+    candidate.push_back(new_storage);
+    checkLDAPStoragesLayout(candidate);
+
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', LDAP server name: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getLDAPServerName());
-
-    /// Refuse a second `ldap` storage next to a synchronised one as soon as it is added, so that a caller other than
-    /// `addStoragesFromMainConfig` cannot leave the layout unchecked.
-    checkLDAPStoragesLayout();
 }
 
 
@@ -553,6 +559,12 @@ void AccessControl::addStoragesFromMainConfig(
 
 void AccessControl::checkLDAPStoragesLayout() const
 {
+    checkLDAPStoragesLayout(getStorages());
+}
+
+
+void AccessControl::checkLDAPStoragesLayout(const std::vector<ConstStoragePtr> & storages) const
+{
     /// The synchronisation of an `ldap` storage asks the other storages whether they define a name before it
     /// materialises the user (see `LDAPAccessStorage::planSync`): a storage declared before it wins the login, so the
     /// name is left to it; one declared after it is overridden. A storage of any other type answers from its whole
@@ -564,7 +576,7 @@ void AccessControl::checkLDAPStoragesLayout() const
     /// told in general), so the layout is refused here, as soon as a second `ldap` storage is added and again once
     /// every storage of the configuration is known, and the server does not start.
     std::vector<const LDAPAccessStorage *> ldap_storages;
-    for (const auto & storage : getStorages())
+    for (const auto & storage : storages)
     {
         if (const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get()))
             ldap_storages.push_back(ldap_storage);
@@ -742,20 +754,45 @@ void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const Strin
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    /// A synchronised `ldap` directory enumerates its users under the lookup identity of its server, and with
-    /// `only_synced_users` nobody logs in through it until a run succeeds, so a server that cannot enumerate must
-    /// not go unnoticed until the first run. The storages are created before the main configuration is applied to
-    /// the authenticators (at startup and at every reload), hence the check here, against the configuration as
-    /// given: a reload that fails it leaves the previous `ldap_servers` in effect.
+    /// A reload must not put `ldap_servers` in effect that a synchronised `ldap` directory cannot use (see
+    /// `checkLDAPSyncServers`). A scratch instance parses the candidate configuration exactly as the application
+    /// below does, so that section-level errors count too, and nothing is applied when the check fails: the
+    /// previous servers stay in effect and `SYSTEM RELOAD CONFIG` reports the reason.
+    if (!getSyncedLDAPStorages().empty())
+    {
+        ExternalAuthenticators candidate;
+        candidate.setConfiguration(config, getLogger());
+        checkLDAPSyncServers(candidate);
+    }
+
+    external_authenticators->setConfiguration(config, getLogger());
+}
+
+
+std::vector<std::shared_ptr<const LDAPAccessStorage>> AccessControl::getSyncedLDAPStorages() const
+{
+    std::vector<std::shared_ptr<const LDAPAccessStorage>> synced;
     for (const auto & storage : getStorages())
     {
-        const auto * ldap_storage = typeid_cast<const LDAPAccessStorage *>(storage.get());
-        if (!ldap_storage || !ldap_storage->hasSync())
-            continue;
+        if (auto ldap_storage = typeid_cast<std::shared_ptr<const LDAPAccessStorage>>(storage); ldap_storage && ldap_storage->hasSync())
+            synced.push_back(ldap_storage);
+    }
+    return synced;
+}
 
+
+void AccessControl::checkLDAPSyncServers(const ExternalAuthenticators & authenticators) const
+{
+    /// The enumeration binds as the lookup identity of the server, and with `only_synced_users` nobody logs in
+    /// through the directory until a run succeeds: a server that cannot enumerate would only be noticed by the
+    /// first run, with every login refused meanwhile. The main configuration is applied to the authenticators
+    /// before the storages are created, so the first moment both are known is the end of `setupFromMainConfig`;
+    /// a reload is checked before it is applied (see `setExternalAuthenticatorsConfig`).
+    for (const auto & ldap_storage : getSyncedLDAPStorages())
+    {
         try
         {
-            ExternalAuthenticators::checkLDAPServerCanEnumerate(config, ldap_storage->getLDAPServerName());
+            authenticators.checkLDAPServerCanEnumerate(ldap_storage->getLDAPServerName());
         }
         catch (Exception & e)
         {
@@ -764,8 +801,6 @@ void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractCo
             throw;
         }
     }
-
-    external_authenticators->setConfiguration(config, getLogger());
 }
 
 

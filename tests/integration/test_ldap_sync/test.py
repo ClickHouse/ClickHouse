@@ -1297,12 +1297,25 @@ LDAP_SERVER_WITHOUT_LOOKUP = """<clickhouse>
 SYNC_SERVER_REFUSED = "LDAP sync requires 'lookup_bind_dn' on server 'openldap_strict'"
 
 
+def ldap_server_config_duplicated():
+    """`ldap_server.xml` with its `<openldap_strict>` block twice: a section-level error, recorded for
+    the name by `ExternalAuthenticators::setConfiguration`, that parsing one block alone would miss.
+    """
+    original = read_config("ldap_server.xml")
+    start = original.index("        <openldap_strict>")
+    end = original.index("        </openldap_strict>") + len(
+        "        </openldap_strict>\n"
+    )
+    return original[:end] + original[start:end] + original[end:]
+
+
 def test_sync_server_must_have_a_lookup_identity():
     """The enumeration binds as the lookup identity of the server. A synchronised directory whose server
     has none would only find out at its first run, with nobody able to log in through it meanwhile
-    (`only_synced_users`). The check runs when the main configuration is applied, against the
-    configuration as given: at startup it fails the start, and a `SYSTEM RELOAD CONFIG` that would take
-    the lookup identity away fails and leaves the previous servers in effect."""
+    (`only_synced_users`). The servers are known once the storages exist: at startup the check fails the
+    start, on the final parse state of `ldap_servers` (a duplicated name counts), and a
+    `SYSTEM RELOAD CONFIG` that would take the lookup identity away is checked before it is applied, so
+    it fails and leaves the previous servers in effect."""
     try:
         restart_node_bad_with(
             directories_bad_config(),
@@ -1320,6 +1333,20 @@ def test_sync_server_must_have_a_lookup_identity():
         restart_node_bad_with(
             directories_bad_config(), server_config=read_config("ldap_server.xml")
         )
+        restart_node_bad_with(
+            directories_bad_config(),
+            server_config=ldap_server_config_duplicated(),
+            expected_to_fail=True,
+        )
+        assert (
+            node_bad.grep_in_log(
+                "LDAP server 'openldap_strict' is misconfigured: Multiple LDAP servers with the same name are not allowed",
+                filename=ERR_LOG,
+                only_latest=True,
+            )
+            != ""
+        )
+
         admin(node_bad, "SYSTEM RELOAD USERS")
         node_bad.replace_config(
             f"{CONFIG_D}/ldap_server_bad_lookup.xml", LDAP_SERVER_WITHOUT_LOOKUP

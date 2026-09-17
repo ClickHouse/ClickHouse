@@ -34,6 +34,7 @@ namespace zkutil
 namespace DB
 {
 class ContextAccess;
+class LDAPAccessStorage;
 class ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
@@ -299,6 +300,12 @@ private:
     /// Called by `addLDAPStorage` after every `ldap` storage and once every storage of the main configuration
     /// has been added.
     void checkLDAPStoragesLayout() const;
+    void checkLDAPStoragesLayout(const std::vector<ConstStoragePtr> & storages) const;
+
+    /// The `ldap` storages that have a `sync` section.
+    std::vector<std::shared_ptr<const LDAPAccessStorage>> getSyncedLDAPStorages() const;
+    /// Refuses a synchronised `ldap` storage whose server, as `authenticators` knows it, cannot enumerate users.
+    void checkLDAPSyncServers(const ExternalAuthenticators & authenticators) const;
 
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
