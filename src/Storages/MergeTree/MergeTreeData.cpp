@@ -807,12 +807,21 @@ MergeTreeData::MergeTreeData(
 
     const auto settings = getSettings();
 
-    /// `SYSTEM RESTORE DATABASE REPLICA` re-creates tables from the metadata stored in Keeper at
-    /// `mode == CREATE` (it builds no ZooKeeper metadata transaction, unlike a lost-replica
-    /// recovery, which arrives at `SECONDARY_CREATE`), so `mode` cannot tell that replay apart
-    /// and the context carries it. A definition that was legal when persisted must load the same
-    /// way an `ATTACH` of it would.
-    bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE && !context_->isRecoveryFromStoredMetadata();
+    /// Two replays arrive here as a plain `CREATE` with no ZooKeeper metadata transaction, so `mode`
+    /// cannot tell them apart from user input and the context carries the fact instead:
+    /// `SYSTEM RESTORE DATABASE REPLICA` re-creates tables from the metadata stored in Keeper (a
+    /// lost-replica recovery arrives at `SECONDARY_CREATE` instead), and a Shared Catalog secondary
+    /// re-executes the initiator's `CREATE` (the same client-info marker `registerStorageMergeTree`
+    /// uses). A definition that was legal when persisted, or that an initiator already accepted,
+    /// must load the same way an `ATTACH` of it would.
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay = context_->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(context_);
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+    bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE && !context_->isRecoveryFromStoredMetadata()
+        && !is_shared_catalog_replay;
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
 
@@ -6406,9 +6415,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     const auto txn = local_context->getZooKeeperMetadataTransaction();
     const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
 
+    /// Shared Catalog secondaries replay the initiator's ALTER without a metadata transaction and
+    /// are told apart by the client info instead (the same marker the statistics check below and
+    /// `registerStorageMergeTree` use). Either kind of replay has already been judged once.
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay = local_context->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+    const bool is_replay = is_replay_on_another_replica || is_shared_catalog_replay;
+
     /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
     /// an override simply gone from the new list.
-    if (!is_replay_on_another_replica)
+    if (!is_replay)
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
@@ -6419,7 +6439,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /*allow_empty_sorting_key=*/ false,
         allow_nullable_key,
         local_context,
-        /*is_metadata_replay=*/ is_replay_on_another_replica,
+        /*is_metadata_replay=*/ is_replay,
         alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
