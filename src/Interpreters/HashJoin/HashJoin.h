@@ -641,8 +641,8 @@ public:
             }
         }
 
-        /// A map numbers its cells across buckets and needs the prefix sums of the bucket sizes for
-        /// that; a single-bucket map has nothing to sum.
+        /// Runs `computeBucketPrefix` on two-level maps. A map numbers its cells across buckets and
+        /// needs the prefix sums of the bucket sizes for that. A single-bucket map has nothing to sum.
         void computeBucketPrefix(Type which) const
         {
             switch (which)
