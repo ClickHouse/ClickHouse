@@ -208,6 +208,13 @@ WHERE event_date >= yesterday() AND name = 'WindowTopKPrefilterTransform' AND qu
         AND log_comment = '05218_window_top_k_prefilter_pruning' AND type = 'QueryFinish'
 );
 
+SELECT '-- 36 both window functions are registered case-insensitively and keep the query spelling, and';
+SELECT '--     TPC-DS writes them in upper case, so the spelling must not decide whether the pass fires';
+SELECT '36 RANK', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, RANK() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT '36b ROW_NUMBER', count() FROM (EXPLAIN actions=1 SELECT p, rn FROM (SELECT p, ROW_NUMBER() OVER (PARTITION BY p ORDER BY o DESC) AS rn FROM t_wtkp) WHERE rn <= 1) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT '36c DENSE_RANK still declines', count() FROM (EXPLAIN actions=1 SELECT p, rk FROM (SELECT p, DENSE_RANK() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3) WHERE explain ILIKE '%Window top-K prefilter%';
+SELECT p, o, rk FROM (SELECT p, o, RANK() OVER (PARTITION BY p ORDER BY o DESC) AS rk FROM t_wtkp) WHERE rk <= 3 ORDER BY p, o, rk;
+
 SELECT '-- 35 exact_rows_before_limit promises an exact `rows_before_limit_at_least`, and the counter is';
 SELECT '--     attached to the partial sort this prefilter feeds, so the pass must decline and the count';
 SELECT '--     must stay the whole input. The window ORDER BY ascends with the input, the shape where';

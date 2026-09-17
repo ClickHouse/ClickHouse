@@ -9,6 +9,8 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 
+#include <Poco/String.h>
+
 #include <unordered_set>
 
 namespace DB::QueryPlanOptimizations
@@ -21,7 +23,9 @@ namespace
 /// counts distinct ORDER BY values, so it needs the `top_k` best *distinct* keys, not the best `top_k` rows.
 bool isBoundableRankingFunction(const String & name)
 {
-    return name == "rank" || name == "row_number";
+    /// Both are registered case-insensitively and keep the query's spelling, so `RANK()` arrives as `RANK`.
+    const auto lower_name = Poco::toLower(name);
+    return lower_name == "rank" || lower_name == "row_number";
 }
 
 /// With a collator or `WITH FILL`, `compareAt` is not the comparator the sort actually applies.
@@ -139,8 +143,7 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     if (settings.make_distributed_plan || settings.serialize_query_plan)
         return;
 
-    /// `rows_before_limit_at_least` counts what enters the partial sort, which is where this prefilter
-    /// drops rows, so an exact count would report fewer rows than the query read.
+    /// The `rows_before_limit_at_least` counter sits on the partial sort this prefilter drops rows below.
     if (settings.exact_rows_before_limit)
         return;
 
