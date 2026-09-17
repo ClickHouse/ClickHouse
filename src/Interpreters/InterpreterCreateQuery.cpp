@@ -873,7 +873,7 @@ void throwIfNestedTableFunctionDependsOnCurrentUserGrants(const ASTPtr & ast, co
     }
 }
 
-void checkFreshNestedDefinitionsAllowed(const ASTPtr & ast, const ContextPtr & context)
+void checkNestedFreshDefinitionsAllowed(const ASTPtr & ast, const ContextPtr & context)
 {
     for (const auto & child : ast->children)
     {
@@ -882,7 +882,7 @@ void checkFreshNestedDefinitionsAllowed(const ASTPtr & ast, const ContextPtr & c
             if (const auto nested_table_function = TableFunctionFactory::instance().tryGet(function->name, context))
                 nested_table_function->checkFreshDefinitionAllowed(context);
         }
-        checkFreshNestedDefinitionsAllowed(child, context);
+        checkNestedFreshDefinitionsAllowed(child, context);
     }
 }
 
@@ -1196,6 +1196,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
+
+        if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        {
+            table_function->checkFreshDefinitionAllowed(getContext());
+            checkNestedFreshDefinitionsAllowed(table_function_ast, getContext());
+        }
+
         properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
@@ -2629,7 +2636,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (isFreshTableDefinition(mode, create.attach_short_syntax))
         {
             table_function->checkFreshDefinitionAllowed(getContext());
-            checkFreshNestedDefinitionsAllowed(table_function_ast, getContext());
+            checkNestedFreshDefinitionsAllowed(table_function_ast, getContext());
         }
 
         /// In case of CREATE AS table_function() query we should use global context
@@ -2654,7 +2661,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throwIfNestedTableFunctionDependsOnCurrentUserGrants(create.storage->engine->ptr(), getContext());
 
         if (create.storage && create.storage->engine && isFreshTableDefinition(mode, create.attach_short_syntax))
-            checkFreshNestedDefinitionsAllowed(create.storage->engine->ptr(), getContext());
+            checkNestedFreshDefinitionsAllowed(create.storage->engine->ptr(), getContext());
 
         res = StorageFactory::instance().get(create,
             data_path,
