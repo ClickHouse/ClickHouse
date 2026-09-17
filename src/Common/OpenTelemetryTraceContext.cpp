@@ -57,15 +57,8 @@ bool Span::addAttribute(SpanAttribute attribute) noexcept
     if (!this->isTraceEnabled())
         return false;
 
-    try
-    {
-        attributes.push_back(std::move(attribute));
-    }
-    catch (...) // Ok: noexcept, allocation failure
-    {
-        return false;
-    }
-    return true;
+    /// Only an allocation can fail here, in which case the attribute is dropped.
+    return tryOrFalse([&] { attributes.push_back(std::move(attribute)); });
 }
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
@@ -105,16 +98,12 @@ bool Span::addAttribute(std::string_view name, std::function<String()> value_sup
     if (!this->isTraceEnabled() || name.empty() || !value_supplier)
         return false;
 
-    try
-    {
-        auto value = value_supplier();
-        return value.empty() ? false : addAttributeImpl(name, value);
-    }
-    catch (...) // Ok: noexcept function, ignore supplier exception
-    {
-        /// Ignore exception raised by value_supplier
+    /// An exception raised by the supplier drops the attribute.
+    String value;
+    if (!tryOrFalse([&] { value = value_supplier(); }))
         return false;
-    }
+
+    return value.empty() ? false : addAttributeImpl(name, value);
 }
 
 bool Span::addAttribute(const Exception & e) noexcept

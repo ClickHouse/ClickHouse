@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/OpenTelemetryTracingContext.h>
+#include <Common/tryOrFalse.h>
 #include <base/types.h>
 #include <IO/WriteHelpers.h>
 
@@ -148,15 +149,8 @@ private:
     template <class T>
     bool addAttributeImpl(std::string_view name, T value) noexcept
     {
-        try
-        {
-            attributes.emplace_back(name, value);
-        }
-        catch (...) // Ok: noexcept, allocation failure
-        {
-            return false;
-        }
-        return true;
+        /// Only an allocation can fail here, in which case the attribute is dropped.
+        return tryOrFalse([&] { attributes.emplace_back(name, value); });
     }
 };
 
