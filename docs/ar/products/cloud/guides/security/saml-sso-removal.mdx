@@ -20,12 +20,16 @@ keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'تسجيل الدخول الأح�
 يجب أن تكون لدى المؤسسة مستخدم إداري واحد يستخدم طريقة مصادقة بديلة، حتى يتمكن من دعوة المستخدمين مرة أخرى إلى المؤسسة بعد إزالة SAML. ويلزم وجود مستخدم في ClickHouse Cloud يتمتع بامتيازات Admin لتنفيذ هذه الخطوات.
 
 <Steps>
-  <Step title="تفعيل الدعوات" id="enable-invitations">
+  <Step>
+    ### تفعيل الدعوات
+
     سجّل الدخول إلى [ClickHouse Cloud](https://console.clickhouse.cloud) وقدّم تذكرة دعم بعنوان `Enable invitations for SAML organization`. والهدف من ذلك هو طلب إتاحة إضافة المستخدمين باستخدام طريقة غير SAML.
   </Step>
 
-  <Step title="تدوين المستخدمين الذين ستُعاد دعوتهم" id="note-users-to-be-reinvited">
-    انقر على اسم المؤسسة في أسفل اليسار، ثم اختر `المستخدمون والأدوار`. راجع عمود `Provider` لكل مستخدم؛ فأي مستخدم يظهر لديه `Signed in with SSO` سيحتاج إلى إعادة دعوته إلى المؤسسة بعد إزالة SAML.
+  <Step>
+    ### تدوين المستخدمين الذين ستُعاد دعوتهم
+
+    انقر على اسم المؤسسة في أسفل اليسار، ثم اختر `Users and Roles`. راجع عمود `Provider` لكل مستخدم؛ فأي مستخدم يظهر لديه `Signed in with SSO` سيحتاج إلى إعادة دعوته إلى المؤسسة بعد إزالة SAML.
 
     تأكد من أن المستخدمين على علم بضرورة قبول الدعوات الجديدة قبل الوصول إلى الحساب بعد إزالة SAML.
   </Step>
@@ -36,11 +40,15 @@ keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'تسجيل الدخول الأح�
 </div>
 
 <Steps>
-  <Step title="ادعُ المستخدمين" id="invite-users">
-    انقر على اسم المؤسسة في أسفل اليسار، ثم اختر `المستخدمون والأدوار`. اتبع التعليمات [لدعوة المستخدمين](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users).
+  <Step>
+    ### ادعُ المستخدمين
+
+    انقر على اسم المؤسسة في أسفل اليسار، ثم اختر `Users and Roles`. اتبع التعليمات [لدعوة المستخدمين](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users).
   </Step>
 
-  <Step title="يقبل المستخدمون الدعوة" id="accept-invitation">
+  <Step>
+    ### يقبل المستخدمون الدعوة
+
     يجب أن يكون المستخدمون قد سجّلوا الخروج بالكامل من أي جلسات تسجيل دخول عبر SAML قبل قبول الدعوة. وعند قبول الدعوة باستخدام تسجيل الدخول عبر Google أو Microsoft، يجب على المستخدمين النقر على الزر `Continue with Google` أو `Continue with Microsoft`. أما المستخدمون الذين يستخدمون البريد الإلكتروني وكلمة المرور، فيجب عليهم الانتقال إلى https://console.clickhouse.cloud/?with=email لتسجيل الدخول وقبول الدعوة.
 
     <Note>
@@ -48,7 +56,9 @@ keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'تسجيل الدخول الأح�
     </Note>
   </Step>
 
-  <Step title="احفظ الاستعلامات ولوحات المعلومات" id="save-queries-and-dashboards">
+  <Step>
+    ### احفظ الاستعلامات ولوحات المعلومات
+
     بعد أن يسجّل المستخدمون الدخول بهوياتهم الجديدة، يجب عليهم تسجيل الخروج ثم تسجيل الدخول مرة أخرى باستخدام حساباتهم التابعة لـ SAML لمشاركة أي استعلامات محفوظة أو لوحات معلومات مع هويتهم الجديدة. ويجب عليهم حفظ نسخة ضمن هويتهم الجديدة لإكمال العملية.
   </Step>
 </Steps>

@@ -4,14 +4,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Poco/AutoPtr.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/StreamChannel.h>
-#include <fmt/format.h>
 #include <gtest/gtest.h>
-
-#include <sstream>
 
 using namespace DB;
 
@@ -46,13 +40,7 @@ String makeClientInfoPrefix(ClientInfo::QueryKind query_kind, const String & add
 /// helper this emits every field ClientInfo::read expects, so read() runs to completion even when it
 /// does not reject the address. Used to prove that an INITIAL_QUERY accepts a non-IP initial_address
 /// leniently (the server overwrites it later) instead of throwing.
-String makeFullClientInfoWire(
-    ClientInfo::QueryKind query_kind,
-    const String & address_string,
-    UInt64 client_version_major = 1,
-    UInt64 client_version_minor = 1,
-    UInt64 client_version_patch = DBMS_TCP_PROTOCOL_VERSION,
-    UInt64 client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION)
+String makeFullClientInfoWire(ClientInfo::QueryKind query_kind, const String & address_string)
 {
     WriteBufferFromOwnString buf;
     writeBinary(static_cast<UInt8>(query_kind), buf);
@@ -65,12 +53,12 @@ String makeFullClientInfoWire(
     writeBinary(String("os-user"), buf);                       /// os_user
     writeBinary(String("client-host"), buf);                   /// client_hostname
     writeBinary(String("ClickHouse client"), buf);             /// client_name
-    writeVarUInt(client_version_major, buf);                   /// client_version_major
-    writeVarUInt(client_version_minor, buf);                   /// client_version_minor
-    writeVarUInt(client_tcp_protocol_version, buf);            /// client_tcp_protocol_version
+    writeVarUInt(static_cast<UInt64>(1), buf);                 /// client_version_major
+    writeVarUInt(static_cast<UInt64>(1), buf);                 /// client_version_minor
+    writeVarUInt(static_cast<UInt64>(DBMS_TCP_PROTOCOL_VERSION), buf); /// client_tcp_protocol_version
     writeBinary(String(""), buf);                              /// quota_key (>= 54060)
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// distributed_depth (>= 54448)
-    writeVarUInt(client_version_patch, buf);                   /// client_version_patch (TCP, >= 54401)
+    writeVarUInt(static_cast<UInt64>(DBMS_TCP_PROTOCOL_VERSION), buf); /// client_version_patch (TCP, >= 54401)
     writeBinary(static_cast<UInt8>(0), buf);                   /// have OpenTelemetry trace id = no (>= 54442)
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// collaborate_with_initiator (>= 54453)
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// obsolete_count_participating_replicas
@@ -84,28 +72,6 @@ String makeFullClientInfoWire(
     buf.finalize();
     return buf.str();
 }
-
-class LoggerStateGuard final
-{
-public:
-    explicit LoggerStateGuard(const LoggerPtr & logger_)
-        : logger(logger_)
-        , channel(logger_->getChannel(), true)
-        , level(logger_->getLevel())
-    {
-    }
-
-    ~LoggerStateGuard()
-    {
-        logger->setChannel(channel.get());
-        logger->setLevel(level);
-    }
-
-private:
-    LoggerPtr logger;
-    Poco::AutoPtr<Poco::Channel> channel;
-    int level;
-};
 
 }
 
@@ -227,7 +193,7 @@ TEST(ClientInfoRead, ValidNumericAddressRoundTrips)
         out.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
         out.initial_user = "default";
         out.initial_query_id = "query-id";
-        out.initial_address = Poco::Net::SocketAddress(good);
+        out.initial_address = std::make_shared<Poco::Net::SocketAddress>(good);
         out.interface = ClientInfo::Interface::TCP;
 
         WriteBufferFromOwnString buf;
@@ -254,98 +220,6 @@ TEST(ClientInfoRead, ValidNumericAddressRoundTripsSecondaryQuery)
     }
 }
 
-/// Numeric IPv4 and IPv6 addresses, with or without numeric ports, must be accepted. For a
-/// comma-separated `X-Forwarded-For` chain, the last proxy-appended element is used after trimming.
-TEST(ClientInfoForwardedFor, ParsesNumericAddresses)
-{
-    const auto check_address = [](const String & value, const String & expected_host, UInt16 expected_port)
-    {
-        ClientInfo info;
-        info.forwarded_for = value;
-
-        const auto address = info.getLastForwardedFor();
-        ASSERT_TRUE(address) << "address: " << value;
-        EXPECT_EQ(address->host().toString(), expected_host) << "address: " << value;
-        EXPECT_EQ(address->port(), expected_port) << "address: " << value;
-    };
-
-    check_address("123.124.125.126", "123.124.125.126", 0);
-    check_address("123.124.125.126:80", "123.124.125.126", 80);
-    check_address("2001:db8::1", "2001:db8::1", 0);
-    check_address("[2001:db8::1]:443", "2001:db8::1", 443);
-    check_address("not-used.example," + String(2, ' ') + "203.0.113.7:65535" + String(2, ' '), "203.0.113.7", 65535);
-}
-
-/// Hostnames and malformed endpoints must be rejected without resolver calls. Empty input and an empty
-/// last chain element are also rejected, and `getLastForwardedForHost` returns an empty string.
-TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
-{
-    for (const String & bad : {
-        "localhost",
-        "localhost:80",
-        "attacker.example:443",
-        "127.0.0.1:http",
-        "[not-an-ip]:80",
-        "[2001:db8::1]",
-        "127.0.0.1:65536",
-        "127.0.0.1:"})
-    {
-        ClientInfo info;
-        info.forwarded_for = bad;
-
-        std::optional<Poco::Net::SocketAddress> address;
-        EXPECT_NO_THROW(address = info.getLastForwardedFor()) << "address: " << bad;
-        EXPECT_FALSE(address) << "address: " << bad;
-    }
-
-    ClientInfo trailing_whitespace;
-    trailing_whitespace.forwarded_for = "127.0.0.1," + String(3, ' ');
-    EXPECT_FALSE(trailing_whitespace.getLastForwardedFor());
-
-    ClientInfo empty;
-    EXPECT_FALSE(empty.getLastForwardedFor());
-
-    ClientInfo hostname;
-    hostname.forwarded_for = "localhost";
-    EXPECT_EQ(hostname.getLastForwardedForHost(), "");
-}
-
-    /// Successful and rejected results are reused while `forwarded_for` is unchanged,
-    /// including by copies sharing the cache, so repeated access logs an invalid value once.
-TEST(ClientInfoForwardedFor, LogsEachRejectedAddressOnlyOnce)
-{
-    std::ostringstream log_output; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    auto stream_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(log_output));
-    auto log = getLogger("ClientInfo");
-    LoggerStateGuard logger_state_guard(log);
-    log->setChannel(stream_channel.get());
-    log->setLevel("debug");
-
-    ClientInfo info;
-    info.forwarded_for = "attacker.example";
-    EXPECT_FALSE(info.getLastForwardedFor());
-    EXPECT_EQ(info.getLastForwardedForHost(), "");
-    EXPECT_FALSE(info.getLastForwardedFor());
-
-    /// Copies initially share the cached result. Changing `forwarded_for` on a copy causes its next lookup
-    /// to install a new cache entry without affecting the entry used by the original object.
-    ClientInfo copied_info = info;
-    EXPECT_FALSE(copied_info.getLastForwardedFor());
-    copied_info.forwarded_for = "second-attacker.example";
-    EXPECT_FALSE(copied_info.getLastForwardedFor());
-    EXPECT_EQ(copied_info.getLastForwardedForHost(), "");
-    EXPECT_FALSE(info.getLastForwardedFor());
-
-    const String log_text = log_output.str();
-    for (const String & rejected : {"attacker.example", "second-attacker.example"})
-    {
-        const String message = fmt::format("Invalid address in `X-Forwarded-For` HTTP header: '{}'", rejected);
-        const auto first_position = log_text.find(message);
-        ASSERT_NE(first_position, std::string::npos);
-        EXPECT_EQ(log_text.find(message, first_position + message.size()), std::string::npos);
-    }
-}
-
 /// `current_roles` is tri-state: nullopt = not sent (remote keeps defaults), empty = SET ROLE NONE (remote
 /// drops defaults), non-empty = active roles. Empty must round-trip as empty, not collapse to nullopt.
 TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
@@ -356,7 +230,7 @@ TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
         out.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
         out.initial_user = "default";
         out.initial_query_id = "query-id";
-        out.initial_address = std::make_optional<Poco::Net::SocketAddress>("127.0.0.1:9000");
+        out.initial_address = std::make_shared<Poco::Net::SocketAddress>("127.0.0.1:9000");
         out.interface = ClientInfo::Interface::TCP;
         out.current_roles = roles;
 
@@ -382,65 +256,4 @@ TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
     auto some = round_trip(std::vector<String>{"role_a", "role_b"});
     ASSERT_TRUE(some.has_value());
     EXPECT_EQ(*some, (std::vector<String>{"role_a", "role_b"}));
-}
-
-/// An older peer can forward a server-initiated query whose context was never filled with a
-/// version, so `client_version_*` arrives as 0.0.0 over the wire and `read` overwrites the seed
-/// taken from the session. `setClientVersionFromConnectionIfUnknown` must then restore the peer's
-/// version from the connection hello, so that version-gated compatibility logic and the
-/// zero-version check in `RemoteQueryExecutor` on the next hop do not misfire during a rolling
-/// upgrade. This mirrors the exact `TCPHandler::receiveQuery` sequence: seed, read, normalize.
-TEST(ClientInfoVersionFromConnection, ZeroWireVersionFilledFromConnectionHello)
-{
-    ClientInfo info;
-    info.connection_client_version_major = 26;
-    info.connection_client_version_minor = 7;
-    info.connection_client_version_patch = 1;
-    info.connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
-
-    ReadBufferFromOwnString in(makeFullClientInfoWire(ClientInfo::QueryKind::SECONDARY_QUERY, "127.0.0.1:9000", 0, 0, 0, 0));
-    ASSERT_NO_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION));
-    ASSERT_EQ(info.client_version_major, 0u);
-
-    info.setClientVersionFromConnectionIfUnknown();
-
-    EXPECT_EQ(info.client_version_major, 26u);
-    EXPECT_EQ(info.client_version_minor, 7u);
-    EXPECT_EQ(info.client_version_patch, 1u);
-    EXPECT_EQ(info.client_tcp_protocol_version, DBMS_TCP_PROTOCOL_VERSION);
-}
-
-/// A known (non-zero) wire version is authoritative: it identifies the initial client, which may
-/// differ from the immediate peer, and must never be replaced by the connection hello version.
-TEST(ClientInfoVersionFromConnection, KnownWireVersionIsKept)
-{
-    ClientInfo info;
-    info.connection_client_version_major = 26;
-    info.connection_client_version_minor = 7;
-    info.connection_client_version_patch = 1;
-    info.connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
-
-    ReadBufferFromOwnString in(makeFullClientInfoWire(ClientInfo::QueryKind::SECONDARY_QUERY, "127.0.0.1:9000", 25, 3, 2, 54467));
-    ASSERT_NO_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION));
-
-    info.setClientVersionFromConnectionIfUnknown();
-
-    EXPECT_EQ(info.client_version_major, 25u);
-    EXPECT_EQ(info.client_version_minor, 3u);
-    EXPECT_EQ(info.client_version_patch, 2u);
-    EXPECT_EQ(info.client_tcp_protocol_version, 54467u);
-}
-
-/// Without a connection hello version (e.g. a synthesized local context, not a TCP connection)
-/// there is nothing trustworthy to fill from, so the zero version must stay zero - the sender-side
-/// check in `RemoteQueryExecutor` is what reports such a context as a logical error.
-TEST(ClientInfoVersionFromConnection, NoConnectionVersionIsNoop)
-{
-    ClientInfo info;
-    info.setClientVersionFromConnectionIfUnknown();
-
-    EXPECT_EQ(info.client_version_major, 0u);
-    EXPECT_EQ(info.client_version_minor, 0u);
-    EXPECT_EQ(info.client_version_patch, 0u);
-    EXPECT_EQ(info.client_tcp_protocol_version, 0u);
 }

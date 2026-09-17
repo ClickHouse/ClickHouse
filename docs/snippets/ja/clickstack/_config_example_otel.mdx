@@ -2,7 +2,7 @@
 title: OTel 構成例
 ---
 
-endpoint と password のプレースホルダーを、ClickStack で生成された認証情報に置き換えます：
+以下にこの構成の例を示します (UIからコピーする場合、環境変数はあらかじめ入力された状態になります) :
 
 ```yaml
 receivers:
@@ -20,9 +20,9 @@ receivers:
 processors:
   batch:
   memory_limiter:
-    # 80% of maximum memory up to 2G, adjust for low memory environments
+    # 最大メモリの80%（上限2G）。メモリが少ない環境では調整してください
     limit_mib: 1500
-    # 25% of limit up to 2G, adjust for low memory environments
+    # 上限の25%（上限2G）。メモリが少ない環境では調整してください
     spike_limit_mib: 512
     check_interval: 5s
 connectors:
@@ -34,6 +34,10 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
   clickhouse/rrweb:
     database: default
     endpoint: <clickhouse_cloud_endpoint>
