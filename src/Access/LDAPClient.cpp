@@ -94,7 +94,9 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, tls_maximum_protocol_version.has_value());
     if (tls_maximum_protocol_version)
         ::updateHash(hash, static_cast<int>(*tls_maximum_protocol_version));
-    ::updateHash(hash, static_cast<int>(tls_require_cert));
+    ::updateHash(hash, tls_require_cert.has_value());
+    if (tls_require_cert)
+        ::updateHash(hash, static_cast<int>(*tls_require_cert));
     ::updateHash(hash, tls_cert_file);
     ::updateHash(hash, tls_key_file);
     ::updateHash(hash, tls_ca_cert_file);
@@ -632,7 +634,7 @@ void LDAPClient::connect()
 #ifdef LDAP_OPT_X_TLS_REQUIRE_CERT
     {
         int value = 0;
-        switch (params.tls_require_cert)
+        switch (params.tls_require_cert.value_or(Params::default_tls_require_cert))
         {
             case LDAPClient::Params::TLSRequireCert::NEVER:  value = LDAP_OPT_X_TLS_NEVER;  break;
             case LDAPClient::Params::TLSRequireCert::ALLOW:  value = LDAP_OPT_X_TLS_ALLOW;  break;
@@ -641,31 +643,56 @@ void LDAPClient::connect()
         }
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_REQUIRE_CERT, &value));
     }
+#else
+    if (params.tls_require_cert)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_require_cert' is not supported by this build of libldap");
+
+    /// The default `demand` is the other security bound (see `tls_minimum_protocol_version` above).
+    if (params.enable_tls != Params::TLSEnable::NO)
+        LOG_WARNING(getLogger("LDAPClient"),
+            "This build of libldap lacks LDAP_OPT_X_TLS_REQUIRE_CERT: the default certificate policy (demand) cannot be enforced "
+            "for LDAP server {}:{}, the library applies its own",
+            params.host, params.port);
 #endif
 
 #ifdef LDAP_OPT_X_TLS_CERTFILE
     if (!params.tls_cert_file.empty())
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_CERTFILE, params.tls_cert_file.c_str()));
+#else
+    if (!params.tls_cert_file.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_cert_file' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_X_TLS_KEYFILE
     if (!params.tls_key_file.empty())
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_KEYFILE, params.tls_key_file.c_str()));
+#else
+    if (!params.tls_key_file.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_key_file' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_X_TLS_CACERTFILE
     if (!params.tls_ca_cert_file.empty())
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTFILE, params.tls_ca_cert_file.c_str()));
+#else
+    if (!params.tls_ca_cert_file.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_ca_cert_file' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_X_TLS_CACERTDIR
     if (!params.tls_ca_cert_dir.empty())
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTDIR, params.tls_ca_cert_dir.c_str()));
+#else
+    if (!params.tls_ca_cert_dir.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_ca_cert_dir' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_X_TLS_CIPHER_SUITE
     if (!params.tls_cipher_suite.empty())
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_CIPHER_SUITE, params.tls_cipher_suite.c_str()));
+#else
+    if (!params.tls_cipher_suite.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_cipher_suite' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_X_TLS_NEWCTX

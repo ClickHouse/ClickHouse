@@ -170,7 +170,9 @@ public:
         std::optional<TLSProtocolVersion> tls_minimum_protocol_version;
         /// Unset means "whatever the library negotiates"; when set, must not be lower than the effective minimum.
         std::optional<TLSProtocolVersion> tls_maximum_protocol_version;
-        TLSRequireCert tls_require_cert = TLSRequireCert::DEMAND;
+        /// Unset means `default_tls_require_cert`; optional for the same reason as the minimum protocol version.
+        static constexpr TLSRequireCert default_tls_require_cert = TLSRequireCert::DEMAND;
+        std::optional<TLSRequireCert> tls_require_cert;
         String tls_cert_file;
         String tls_key_file;
         String tls_ca_cert_file;
