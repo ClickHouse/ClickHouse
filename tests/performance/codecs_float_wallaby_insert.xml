@@ -30,6 +30,11 @@
         </substitution>
     </substitutions>
 
+    <!-- The experimental gate `enable_wallaby_codec` is unknown to the reference server, so it cannot
+         go into <settings>: perf.py applies those to every connection and fails the whole test on an
+         unknown setting. A tolerated `SET` on the session instead enables the codec on the new
+         server only; `CREATE TABLE` is the only query that checks the gate. -->
+    <create_query do_not_check_in_pr="113575">SET enable_wallaby_codec = 1</create_query>
     <create_query do_not_check_in_pr="113575">
         CREATE TABLE codec_wallaby_{seq_type}_{type} (n {type} CODEC(Wallaby))
         ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
