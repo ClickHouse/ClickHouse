@@ -4,6 +4,8 @@
 #include <Client/ClientApplicationBase.h>
 #include <Common/QueryScope.h>
 
+#include <atomic>
+
 
 namespace BuzzHouse
 {
@@ -58,6 +60,10 @@ protected:
 
     bool tryProcessInteractiveClientCommand(std::string_view input) override;
 
+    bool tryExecuteDetachableQuery(std::string_view query, const ASTPtr & parsed_query, size_t insert_query_without_data_length) override;
+    bool supportsQueryDetachment() const override { return true; }
+    void requestQueryDetachment() override { query_detachment_requested.store(true, std::memory_order_release); }
+
     void readArguments(
         int argc,
         char ** argv,
@@ -91,6 +97,7 @@ private:
 
     QueryScope query_scope;
     BackgroundQueryManager background_queries;
+    std::atomic_bool query_detachment_requested{false};
 
 #if USE_JWT_CPP && USE_SSL
     std::shared_ptr<JWTProvider> jwt_provider;

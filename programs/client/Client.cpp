@@ -38,9 +38,13 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
 
 #include <Parsers/Access/ASTSetRoleQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -64,6 +68,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <filesystem>
 
 #include "config.h"
@@ -81,6 +86,12 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsBool apply_settings_from_server;
+extern const SettingsString default_format;
+extern const SettingsString format;
+extern const SettingsString output_format;
+extern const SettingsBool partial_result_on_first_cancel;
+extern const SettingsBool run_query_in_background;
 extern const SettingsBool use_client_time_zone;
 }
 
@@ -136,6 +147,60 @@ bool containsSetting(const ASTPtr & ast, std::string_view setting_name)
 
     return std::any_of(ast->children.begin(), ast->children.end(), [&](const auto & child)
         { return containsSetting(child, setting_name); });
+}
+
+std::optional<String> getDetachableOutputFormat(
+    const ASTPtr & ast,
+    const ContextPtr & context,
+    const SettingsChanges & settings_from_server,
+    const String & default_output_format,
+    bool is_default_format,
+    bool has_vertical_output_suffix)
+{
+    auto format_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(ast, format_context);
+
+    if (format_context->getSettingsRef()[Setting::apply_settings_from_server])
+    {
+        SettingsChanges changes_to_apply;
+        for (const auto & change : settings_from_server)
+            if (!format_context->getSettingsRef().isChanged(change.name))
+                changes_to_apply.push_back(change);
+        format_context->applySettingsChanges(changes_to_apply);
+    }
+
+    String format = default_output_format;
+    bool has_format_clause = false;
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+    {
+        if (query_with_output->out_file)
+            return {};
+        if (query_with_output->format_ast)
+        {
+            has_format_clause = true;
+            format = query_with_output->format_ast->as<ASTIdentifier &>().name();
+        }
+    }
+
+    const auto & settings = format_context->getSettingsRef();
+    if (settings[Setting::partial_result_on_first_cancel] || settings[Setting::run_query_in_background])
+        return {};
+
+    if (!settings[Setting::output_format].value.empty())
+        format = settings[Setting::output_format];
+    else if (!settings[Setting::format].value.empty())
+        format = settings[Setting::format];
+    else if (is_default_format && !has_format_clause && !settings[Setting::default_format].value.empty())
+        format = settings[Setting::default_format];
+
+    if (has_vertical_output_suffix)
+        format = "Vertical";
+
+    auto & factory = FormatFactory::instance();
+    if (!factory.checkIfOutputFormatIsTTYFriendly(format)
+        || !factory.checkIfFormatSupportAppend(format, format_context))
+        return {};
+    return format;
 }
 
 }
@@ -374,7 +439,7 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
                 result_output = &background_pager->in;
             }
 
-            WriteBufferFromFileDescriptor diagnostics(stderr_fd);
+            AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> diagnostics(stderr_fd);
             result = background_queries.foreground(*id, *result_output, diagnostics, true);
             finish_background_pager(true);
         }
@@ -423,6 +488,168 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             break;
     }
     return true;
+}
+
+bool Client::tryExecuteDetachableQuery(
+    std::string_view query, const ASTPtr & parsed_query, size_t insert_query_without_data_length)
+{
+    /// A Ctrl+B pressed during an ineligible query must not detach the next
+    /// eligible query as soon as it starts.
+    query_detachment_requested.store(false, std::memory_order_release);
+
+    if (!is_interactive
+        || insert_query_without_data_length != 0
+        || !parsed_query->as<ASTSelectWithUnionQuery>()
+        || !pager.empty()
+        || default_output_compression_method != CompressionMethod::None
+        || !external_tables.empty()
+        || !external_scalars.empty()
+        || client_context->getSettingsRef()[Setting::partial_result_on_first_cancel]
+        || client_context->getSettingsRef()[Setting::run_query_in_background]
+        || containsSetting(parsed_query, "partial_result_on_first_cancel")
+        || containsSetting(parsed_query, "run_query_in_background")
+        || containsSetting(parsed_query, "profile"))
+        return false;
+
+    /// This hook runs before ClientBase's usual connection preflight because
+    /// the worker executes that normal path. Synchronize or establish the
+    /// session before transferring it, then let the worker apply query-local
+    /// settings and send the statement.
+    if (connection_needs_resynchronization)
+        resynchronizeConnectionAfterError();
+    else if (!connection || !connection->checkConnectedWithoutRoundTrip())
+        connect();
+
+    if (!getDetachableOutputFormat(
+            parsed_query,
+            client_context,
+            settings_from_server,
+            default_output_format,
+            is_default_format,
+            has_vertical_output_suffix))
+        return false;
+
+    BackgroundQueryManager::Snapshot snapshot(
+        client_context,
+        connection_parameters,
+        getClientConfiguration(),
+        default_database,
+        max_client_network_bandwidth,
+        client_local_timezone,
+        default_output_format,
+        is_default_format,
+        default_output_compression_method,
+        has_vertical_output_suffix,
+        inline_insert_data,
+        allow_merge_tree_settings,
+        query_processing_stage,
+        query_kind);
+
+    int foreground_tty_fd = -1;
+    if (need_render_progress || need_render_progress_table)
+    {
+        if (stderr_is_a_tty)
+            foreground_tty_fd = stderr_fd;
+        else if (stdout_is_a_tty)
+            foreground_tty_fd = stdout_fd;
+        else if (stdin_is_a_tty)
+            foreground_tty_fd = stdin_fd;
+    }
+
+    /// Construct the only remaining potentially allocating local before the
+    /// connection is transferred to the worker. From that point onward every
+    /// exit must either collect the hidden handle or publish it as a job.
+    AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> diagnostics(stderr_fd);
+
+    /// Arm both controls before handing the live connection to the worker. In
+    /// particular, constructing the terminal interceptor's thread may throw;
+    /// after startAttached() succeeds there must be no unguarded exit which
+    /// leaves a hidden worker writing to the foreground buffers.
+    query_interrupt_handler.start(/* signals_before_stop = */ 1);
+    SCOPE_EXIT({
+        stopKeystrokeInterceptorIfExists();
+        query_interrupt_handler.stop();
+    });
+    startKeystrokeInterceptorIfExists();
+
+    const auto handle = background_queries.startAttached(
+        String(query),
+        parsed_query->formatForLogging(/* max_length = */ 80),
+        std::move(snapshot),
+        connection,
+        *std_out,
+        output_stream,
+        error_stream,
+        server_logs_file,
+        server_revision,
+        server_version,
+        stdout_is_a_tty,
+        stderr_is_a_tty,
+        terminal_width,
+        stderr_fd,
+        foreground_tty_fd,
+        need_render_progress,
+        need_render_progress_table,
+        progress_table_toggle_enabled,
+        progress_table_toggle_on);
+
+    bool attached_handle_owned = true;
+    SCOPE_EXIT({
+        if (attached_handle_owned)
+            background_queries.discardAttached(handle);
+    });
+
+    /// The worker now owns the exchange. Until normal completion returns the
+    /// connection, no main-thread reconnection or resynchronization may touch
+    /// it.
+    connection_needs_resynchronization = false;
+
+    bool cancellation_requested = false;
+    bool detachment_pending = false;
+
+    while (true)
+    {
+        if (!detachment_pending && query_detachment_requested.exchange(false, std::memory_order_acq_rel))
+        {
+            background_queries.requestDetach(handle);
+            detachment_pending = true;
+        }
+
+        if (!cancellation_requested && query_interrupt_handler.cancelled())
+        {
+            cancellation_requested = background_queries.cancelAttached(handle);
+        }
+
+        const auto wait_status = background_queries.waitAttached(handle, std::chrono::milliseconds(25));
+        if (wait_status == BackgroundQueryManager::AttachedWaitStatus::DetachAcknowledged)
+        {
+            const auto id = background_queries.promoteDetached(handle);
+            if (!id)
+                continue;
+
+            attached_handle_owned = false;
+            /// Restore canonical terminal input before displaying a fresh
+            /// prompt. The worker acknowledged the output redirect, so it can
+            /// no longer write result bytes to the foreground buffer.
+            stopKeystrokeInterceptorIfExists();
+            output_stream << "\nBackground job " << *id
+                          << " detached. The main client will reconnect with a new session." << std::endl;
+            return true;
+        }
+
+        if (wait_status != BackgroundQueryManager::AttachedWaitStatus::Terminal)
+            continue;
+
+        auto result = background_queries.collectAttached(handle, *std_out, diagnostics);
+        attached_handle_owned = false;
+        connection = std::move(result.connection);
+        connection_needs_resynchronization = result.connection_needs_resynchronization;
+        server_exception = std::move(result.server_exception);
+        client_exception = std::move(result.client_exception);
+        have_error = result.job.state == BackgroundQueryManager::State::Failed || server_exception || client_exception;
+        cancelled = result.job.state == BackgroundQueryManager::State::Cancelled;
+        return true;
+    }
 }
 
 void Client::processError(std::string_view query) const

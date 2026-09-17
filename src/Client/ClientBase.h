@@ -333,13 +333,28 @@ private:
 
     void applySettingsFromServerIfNeeded();
 
-    void startKeystrokeInterceptorIfExists();
-    void stopKeystrokeInterceptorIfExists();
-
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
     virtual bool supportsLocalMetaCommands() const { return false; }
+
+    /// Gives an interactive client a chance to execute a query on a worker
+    /// that can later be detached without moving a live receive stack.
+    virtual bool tryExecuteDetachableQuery(std::string_view, const ASTPtr &, size_t) { return false; }
+
+    /// Terminal keystrokes are intercepted only while a query is running.
+    /// Concrete clients use these hooks to turn Ctrl+B into a detach request;
+    /// the actual handoff is acknowledged by the query-owning worker at a
+    /// receive-loop checkpoint through checkQueryDetachment().
+    virtual bool supportsQueryDetachment() const { return false; }
+    virtual void requestQueryDetachment() { }
+    virtual void checkQueryDetachment() { }
+
+    /// Specialized clients can supply a log sink whose destination changes
+    /// together with query output. The reset notification invalidates any raw
+    /// pointer they retain to that sink.
+    virtual std::unique_ptr<WriteBuffer> createDefaultLogsOutputBuffer();
+    virtual void onLogsOutputBufferReset() { }
 
     /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
     /// and renders its embedded documentation, formatted from Markdown, in the terminal. When nothing
@@ -388,6 +403,9 @@ protected:
 
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
+    void startKeystrokeInterceptorIfExists();
+    void stopKeystrokeInterceptorIfExists();
+    void replaceOutputBuffer(std::unique_ptr<WriteBuffer> output_buffer_) { std_out = std::move(output_buffer_); }
 
     String appendSmileyIfNeeded(const String & prompt);
 
@@ -470,7 +488,7 @@ protected:
     /// Buffer that reads from stdin in batch mode.
     std::unique_ptr<ReadBuffer> std_in;
     /// Console output.
-    std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
+    std::unique_ptr<WriteBuffer> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// Wrapper for hooking into the flush event.
@@ -513,6 +531,14 @@ protected:
     bool progress_table_toggle_enabled = true;
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
+    /// Only the worker which owns an attached query needs the shorter receive
+    /// poll interval. The interactive Client also supports the Ctrl+B
+    /// keystroke, but ineligible queries should keep the normal interval.
+    bool poll_for_query_detachment = false;
+    /// BackgroundClient normally has batch parsing semantics, but an attached
+    /// foreground query still needs the usual interactive Ok/cancel/summary
+    /// text in the stream which will either stay attached or be spooled.
+    bool print_interactive_query_summary = false;
     bool written_first_block = false;
     /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,
     /// like with `INSERT ... SELECT`. We can use progress reports by server in that case to track processed rows.

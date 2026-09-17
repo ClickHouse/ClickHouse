@@ -987,15 +987,13 @@ try
             [this]()
             {
                 /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-                if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                if (!select_into_file || select_into_file_and_stdout)
                 {
                     std::unique_lock lock(tty_mutex);
-                    progress_indication.clearProgressOutput(*tty_buf, lock);
-                }
-                if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
-                {
-                    std::unique_lock lock(tty_mutex);
-                    progress_table.clearTableOutput(*tty_buf, lock);
+                    if (need_render_progress && tty_buf)
+                        progress_indication.clearProgressOutput(*tty_buf, lock);
+                    if (need_render_progress_table && tty_buf)
+                        progress_table.clearTableOutput(*tty_buf, lock);
                 }
             }
         );
@@ -1214,7 +1212,7 @@ void ClientBase::initLogsOutputStream()
             if (server_logs_file.empty())
             {
                 /// Use stderr by default
-                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
+                out_logs_buf = createDefaultLogsOutputBuffer();
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
@@ -1234,6 +1232,11 @@ void ClientBase::initLogsOutputStream()
 
         logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
     }
+}
+
+std::unique_ptr<WriteBuffer> ClientBase::createDefaultLogsOutputBuffer()
+{
+    return std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
 }
 
 void ClientBase::adjustSettings(ContextMutablePtr context)
@@ -1503,10 +1506,15 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
 void ClientBase::initKeystrokeInterceptor()
 {
-    if (is_interactive && need_render_progress_table && progress_table_toggle_enabled)
+    const bool supports_progress_toggle = need_render_progress_table && progress_table_toggle_enabled;
+    if (is_interactive && (supports_progress_toggle || supportsQueryDetachment()))
     {
         keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(stdin_fd, error_stream);
-        keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
+        if (supports_progress_toggle)
+            keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
+
+        if (supportsQueryDetachment())
+            keystroke_interceptor->registerCallback('\x02', [this]() { requestQueryDetachment(); });
 
         if (isEmbeeddedClient())
             keystroke_interceptor->registerCallback(0x03, [this]() { tryStopQuery(); });
@@ -1895,7 +1903,9 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
-    constexpr size_t default_poll_interval = 1000000; /// in microseconds
+    /// Attached workers must notice Ctrl+B promptly even while the server is
+    /// quiet (for example during a long aggregation before its first row).
+    const size_t default_poll_interval = poll_for_query_detachment ? 50000 : 1000000; /// in microseconds
     constexpr size_t min_poll_interval = 5000; /// in microseconds
     const size_t poll_interval
         = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
@@ -1913,6 +1923,12 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
         while (true)
         {
+            /// A detachable query owns its connection and output stack on a
+            /// worker from the outset. Let that worker perform the output
+            /// switch itself at a receive-loop checkpoint, so Ctrl+B never
+            /// attempts to move this call stack.
+            checkQueryDetachment();
+
             /// A client that owns a disposable connection may prefer to stop
             /// draining immediately after its persistent cancellation request
             /// has been sent. This also bounds shutdown when the server stops
@@ -1982,7 +1998,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
     if (local_format_error)
         std::rethrow_exception(local_format_error);
 
-    if (cancelled && is_interactive && !cancelled_printed.exchange(true))
+    if (cancelled && (is_interactive || print_interactive_query_summary) && !cancelled_printed.exchange(true))
         output_stream << "Query was cancelled." << std::endl;
 }
 
@@ -2125,7 +2141,7 @@ void ClientBase::onEndOfStream()
 
     resetOutput();
 
-    if (is_interactive)
+    if (is_interactive || print_interactive_query_summary)
     {
         if (cancelled && !cancelled_printed.exchange(true))
             output_stream << "Query was cancelled." << std::endl;
@@ -2288,6 +2304,7 @@ void ClientBase::resetOutput()
     logs_out_stream.reset();
 
     out_logs_buf.reset();
+    onLogsOutputBufferReset();
 
     if (pager_cmd)
     {
@@ -2880,7 +2897,7 @@ void ClientBase::cancelQuery()
         progress_table.clearTableOutput(*tty_buf, lock);
     }
 
-    if (is_interactive)
+    if (is_interactive || print_interactive_query_summary)
         output_stream << "Cancelling query." << std::endl;
 
     cancelled = true;
@@ -2917,6 +2934,13 @@ void ClientBase::processParsedSingleQuery(
             std_out->next();
         }
     }
+
+    /// A concrete interactive client may hand this query, together with the
+    /// current connection, to an attached worker. That worker runs the normal
+    /// processing path on its own ClientBase instance; returning here avoids
+    /// applying per-query settings or sending the statement twice.
+    if (tryExecuteDetachableQuery(query_, parsed_query, insert_query_without_data_length))
+        return;
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
@@ -2959,14 +2983,16 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getFormatSettings(client_context));
+            if (connection)
+                connection->setFormatSettings(getFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
         /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
-        connection->setFormatSettings(getFormatSettings(client_context));
+        if (connection)
+            connection->setFormatSettings(getFormatSettings(client_context));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -2974,7 +3000,7 @@ void ClientBase::processParsedSingleQuery(
         /// having noticed it yet.
         if (connection_needs_resynchronization)
             resynchronizeConnectionAfterError();
-        else if (!connection->checkConnectedWithoutRoundTrip())
+        else if (!connection || !connection->checkConnectedWithoutRoundTrip())
             connect();
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
@@ -3133,7 +3159,7 @@ void ClientBase::processParsedSingleQuery(
 
     auto processed_rows = std::max(processed_rows_from_blocks, processed_rows_from_progress);
 
-    if (is_interactive)
+    if (is_interactive || print_interactive_query_summary)
     {
         output_stream << std::endl;
         if (!server_exception || processed_rows != 0)
@@ -3166,7 +3192,8 @@ void ClientBase::processParsedSingleQuery(
             error_stream << formatReadableSizeWithBinarySuffix(peak_memory_usage) << "\n";
     }
 
-    if (!is_interactive && getClientConfiguration().getBool("print-num-processed-rows", false))
+    if (!is_interactive && !print_interactive_query_summary
+        && getClientConfiguration().getBool("print-num-processed-rows", false))
     {
         output_stream << "Processed rows: " << processed_rows << "\n";
     }
@@ -4071,11 +4098,11 @@ void ClientBase::initAIProvider()
 
 std::string ClientBase::executeQueryForSingleString(const std::string & query)
 {
-    if (!connection)
-        return "";
-
     try
     {
+        if (!connection)
+            connect();
+
         std::string result;
 
         /// Only the compression knobs: the rest of the session settings must not leak into this
@@ -4177,6 +4204,8 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
     /// resynchronization discipline as the regular queries.
     if (connection_needs_resynchronization)
         resynchronizeConnectionAfterError();
+    else if (!connection || !connection->checkConnectedWithoutRoundTrip())
+        connect();
 
     armResynchronizationAndSendQuery([&]
     {
@@ -5053,6 +5082,8 @@ void ClientBase::runInteractive()
             /// connection with a round trip.
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
+            else if (!connection || !connection->checkConnectedWithoutRoundTrip())
+                connect();
             connection_needs_resynchronization = true;
             suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
             if (suggest->lastExchangeEndedInSync())
