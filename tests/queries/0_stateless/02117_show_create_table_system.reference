@@ -547,6 +547,7 @@ CREATE TABLE system.parts
     `secondary_indices_compressed_bytes` UInt64,
     `secondary_indices_uncompressed_bytes` UInt64,
     `secondary_indices_marks_bytes` UInt64,
+    `secondary_indices_materialized` Array(String),
     `modification_time` DateTime,
     `remove_time` DateTime,
     `refcount` UInt32,
