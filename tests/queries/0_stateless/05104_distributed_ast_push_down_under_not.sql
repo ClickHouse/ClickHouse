@@ -5,6 +5,11 @@
 -- positive polarity: under `NOT` it makes the pushed predicate stronger, so the shard dropped rows
 -- the initiator-side filter can never bring back.
 
+-- The predicate is pushed as an AST only when the remote query is sent as text. With
+-- `serialize_query_plan` the shard receives a serialized plan instead, and the `system.query_log`
+-- assertion on the query text below is meaningless, so pin the AST path.
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t_push_ast;
 CREATE TABLE t_push_ast (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_push_ast SELECT number, number % 100 FROM numbers(1000);
