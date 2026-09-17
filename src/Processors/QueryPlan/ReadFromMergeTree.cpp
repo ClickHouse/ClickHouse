@@ -7025,6 +7025,15 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
                 input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Coordinator asked for a read-in-order distributed read that this node refused");
+
+        /// The coordinator decides the `PrefetchingConcatProcessor` opt-outs (residual filter above the
+        /// read, `LIMIT BY`, reading through a `JOIN`, aggregation-/distinct-in-order) on its own plan and
+        /// stamps them into `prefer_multiple_streams`, but only `input_order_info` travels with the step.
+        /// The worker re-optimizes its fragment with the sort already converted to `FinishSorting`, so
+        /// `optimizeReadInOrder` cannot re-derive those opt-outs here. Fail closed: a distributed
+        /// read-in-order fragment keeps the ordinary `MergingSortedTransform` path. Shipping the flag is
+        /// a follow-up that needs a plan serialization version bump.
+        read_from_merge_tree_step->setPreferMultipleStreams();
         read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
     }
 
