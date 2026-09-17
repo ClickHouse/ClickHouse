@@ -3,7 +3,7 @@
 # DateTime64 Protobuf auto-schema stores scaled ticks (int64), so pre-epoch values,
 # subsecond precision, and upper bound values are preserved through serialization and deserialization.
 # Legacy whole-seconds files can still be read with input_format_protobuf_datetime64_legacy_seconds=1
-# (or SET compatibility = '26.8'). Legacy writers can emit whole Unix seconds with
+# (or SET compatibility = '26.9'). Legacy writers can emit whole Unix seconds with
 # output_format_protobuf_datetime64_legacy_seconds=1. Float/double Protobuf fields always store
 # fractional Unix seconds and are unaffected by those settings.
 
@@ -87,11 +87,11 @@ SELECT *
 FROM file('${FILE_LEGACY_SECONDS}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
 SETTINGS input_format_protobuf_datetime64_legacy_seconds = 1"
 
-echo '-- compatibility 26.8 restores legacy whole-seconds decoding (produces 2020-01-01 00:00:00.000)'
+echo '-- compatibility 26.9 restores legacy whole-seconds decoding (produces 2020-01-01 00:00:00.000)'
 ${CLICKHOUSE_LOCAL} --query "
 SELECT *
 FROM file('${FILE_LEGACY_SECONDS}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
-SETTINGS compatibility = '26.8'"
+SETTINGS compatibility = '26.9'"
 
 echo '-- legacy output writes whole Unix seconds (subseconds truncated)'
 ${CLICKHOUSE_LOCAL} --query "
