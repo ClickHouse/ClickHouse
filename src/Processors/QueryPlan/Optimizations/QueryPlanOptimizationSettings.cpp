@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
@@ -119,6 +120,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsString distributed_plan_force_exchange_kind;
     extern const SettingsString force_optimize_projection_name;
+    extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -274,6 +276,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
+    prefer_use_projection = optimize_projection && from[Setting::prefer_optimize_projection];
+    preferred_projection_name = optimize_projection ? from[Setting::preferred_optimize_projection_name].value : "";
     max_set_size_for_projection_match = from[Setting::query_plan_max_set_size_for_projection_match];
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
