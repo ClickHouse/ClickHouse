@@ -22,7 +22,11 @@ Chunk WatermarkMarker::create(const Block & header, Field watermark_)
 
 bool isMarkerChunk(const Chunk & chunk)
 {
-    return chunk.getNumRows() == 0 && !chunk.getChunkInfos().empty();
+    if (chunk.getNumRows() > 0)
+        return false;
+
+    return chunk.getChunkInfos().has<IdleMarker>()
+        || chunk.getChunkInfos().has<WatermarkMarker>();
 }
 
 }

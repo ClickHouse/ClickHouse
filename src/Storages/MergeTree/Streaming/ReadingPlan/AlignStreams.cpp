@@ -272,10 +272,10 @@ void AlignStreamsStep::updateOutputHeader()
 QueryPipelineBuilderPtr AlignStreamsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreamsStep must have two input pipelines");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreams must have two input pipelines");
 
     if (pipelines[0]->getNumStreams() != 1 || pipelines[1]->getNumStreams() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreamsStep requires single-stream inputs, got {} and {}", pipelines[0]->getNumStreams(), pipelines[1]->getNumStreams());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreams requires single-stream inputs, got {} and {}", pipelines[0]->getNumStreams(), pipelines[1]->getNumStreams());
 
     pipelines[0]->addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ExtractBoundariesTransform>(header, /*drop_data=*/true); });
     pipelines[1]->addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ExtractBoundariesTransform>(header, /*drop_data=*/false); });
