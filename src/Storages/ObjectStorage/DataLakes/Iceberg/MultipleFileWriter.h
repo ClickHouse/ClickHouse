@@ -11,6 +11,9 @@ namespace DB
 
 #if USE_AVRO
 
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
 class MultipleFileWriter
 {
 public:

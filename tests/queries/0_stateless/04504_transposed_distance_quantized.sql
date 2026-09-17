@@ -1,9 +1,9 @@
 -- Quantized transposed distance functions: cosineDistanceTransposedQuantized / L2DistanceTransposedQuantized /
 -- dotProductTransposedQuantized. They operate on a QBit(Int8) of quantizeBFloat16ToInt8 Lloyd-Max codes, dequantizing
--- each code to its reconstruction level on the fly, and compute the distance against the reference vector. A Float reference is
--- the query, compared directly and cast to Float32 (the reconstruction precision of the dequantized codes, so a Float64 query is
--- narrowed to Float32); an Array(Int8) reference is itself dequantized, always at full 8-bit precision (`p` truncates only the
--- stored QBit), so the comparison is symmetric quantized-vs-quantized only at p = 8.
+-- each code to its precision-specific prefix centroid on the fly, and compute the distance against the reference vector.
+-- A Float reference is the query, compared directly and cast to Float32 (the reconstruction precision of the dequantized codes,
+-- so a Float64 query is narrowed to Float32); an Array(Int8) reference is itself dequantized, always at full 8-bit precision (`p`
+-- truncates only the stored QBit), so the comparison is symmetric quantized-vs-quantized only at p = 8.
 
 SET enable_analyzer = 1;
 

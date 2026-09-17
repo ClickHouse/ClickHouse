@@ -1,12 +1,13 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "المفاهيم",
+  "item": "Concepts",
   "pages": [
     "ar/concepts/index",
     {
       "expanded": true,
-      "group": "الأساسيات",
+      "group": "Fundamentals",
       "pages": [
+        "ar/concepts/core-concepts/index",
         "ar/concepts/core-concepts/glossary",
         "ar/concepts/core-concepts/parts",
         "ar/concepts/core-concepts/partitions",
@@ -14,44 +15,45 @@
         "ar/concepts/core-concepts/primary-indexes",
         "ar/concepts/core-concepts/query-parallelism",
         "ar/concepts/core-concepts/academic-overview"
-      ],
-      "root": "ar/concepts/core-concepts/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "مفاهيم ClickHouse",
+      "group": "ClickHouse concepts",
       "pages": [
+        "ar/concepts/features/index",
         {
-          "group": "العروض المادية",
+          "group": "Materialized views",
           "pages": [
+            "ar/concepts/features/materialized-views/index",
             "ar/concepts/features/materialized-views/incremental-materialized-view",
             "ar/concepts/features/materialized-views/refreshable-materialized-view",
             "ar/concepts/features/materialized-views/cascading-materialized-views"
-          ],
-          "root": "ar/concepts/features/materialized-views/index"
+          ]
         },
         {
-          "group": "القواميس",
+          "group": "Dictionaries",
           "pages": [
+            "ar/concepts/features/dictionaries/index",
             "ar/concepts/features/dictionaries/best-practices"
-          ],
-          "root": "ar/concepts/features/dictionaries/index"
+          ]
         },
         {
-          "group": "الإسقاطات",
+          "group": "Projections",
           "pages": [
             "ar/concepts/features/projections/projections",
             "ar/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "الأداء",
+          "group": "Performance",
           "pages": [
+            "ar/concepts/features/performance/index",
             "ar/concepts/features/performance/prewhere",
             "ar/concepts/features/performance/allocation-profiling",
             "ar/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "ذاكرات التخزين المؤقت",
+              "group": "Caches",
               "pages": [
                 "ar/concepts/features/performance/caches/caches",
                 "ar/concepts/features/performance/caches/query-cache",
@@ -60,7 +62,7 @@
               ]
             },
             {
-              "group": "فهارس التخطي",
+              "group": "Skipping-indexes",
               "pages": [
                 "ar/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ar/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -68,7 +70,7 @@
             },
             "ar/concepts/features/performance/lazy-materialization",
             {
-              "group": "استكشاف الأخطاء وإصلاحها",
+              "group": "Troubleshooting",
               "pages": [
                 "ar/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "ar/concepts/features/performance/troubleshoot/oom-canary",
@@ -76,14 +78,13 @@
                 "ar/concepts/features/performance/troubleshoot/sampling-query-profiler"
               ]
             }
-          ],
-          "root": "ar/concepts/features/performance/index"
+          ]
         },
         {
-          "group": "العمليات",
+          "group": "Operations",
           "pages": [
             {
-              "group": "إدراج",
+              "group": "Insert",
               "pages": [
                 "ar/concepts/features/operations/insert/inserting-data",
                 "ar/concepts/features/operations/insert/asyncinserts",
@@ -94,39 +95,37 @@
               ]
             },
             {
-              "group": "استعلام",
+              "group": "Select",
               "pages": [
                 "ar/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "تحديث",
+              "group": "Update",
               "pages": [
+                "ar/concepts/features/operations/update/index",
                 "ar/concepts/features/operations/update/overview",
-                "ar/concepts/features/operations/update/on-fly-mutations",
                 "ar/concepts/features/operations/update/replacing-merge-tree"
-              ],
-              "root": "ar/concepts/features/operations/update/index"
+              ]
             },
             {
-              "group": "حذف",
+              "group": "Delete",
               "pages": [
+                "ar/concepts/features/operations/delete/index",
                 "ar/concepts/features/operations/delete/overview",
-                "ar/concepts/features/operations/delete/delete-mutations",
                 "ar/concepts/features/operations/delete/drop-partition",
                 "ar/concepts/features/operations/delete/lightweight-delete",
                 "ar/concepts/features/operations/delete/truncate",
                 "ar/concepts/features/operations/delete/ttl"
-              ],
-              "root": "ar/concepts/features/operations/delete/index"
+              ]
             }
           ]
         },
         {
-          "group": "التهيئة",
+          "group": "Configuration",
           "pages": [
             {
-              "group": "الإعدادات",
+              "group": "Settings",
               "pages": [
                 "ar/concepts/features/configuration/settings/overview",
                 "ar/concepts/features/configuration/settings/settings-query-level",
@@ -142,7 +141,7 @@
               ]
             },
             {
-              "group": "إعدادات الخادم",
+              "group": "Server config",
               "pages": [
                 "ar/concepts/features/configuration/server-config/configuration-files",
                 "ar/concepts/features/configuration/server-config/storing-data",
@@ -150,27 +149,30 @@
                 "ar/concepts/features/configuration/server-config/workload-scheduling",
                 "ar/concepts/features/configuration/server-config/quotas",
                 "ar/concepts/features/configuration/server-config/composable-protocols",
-                "ar/concepts/features/configuration/server-config/startup-scripts"
+                "ar/concepts/features/configuration/server-config/startup-scripts",
+                "ar/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
         },
         {
-          "group": "الأمان والمصادقة",
+          "group": "Security and auth",
           "pages": [
+            "ar/concepts/features/security/index",
             "ar/concepts/features/security/access-rights",
             "ar/concepts/features/security/network-ports",
             {
               "group": "TLS",
               "pages": [
+                "ar/concepts/features/security/tls/index",
                 "ar/concepts/features/security/tls/configuring-tls",
                 "ar/concepts/features/security/tls/configuring-tls-acme-client"
-              ],
-              "root": "ar/concepts/features/security/tls/index"
+              ]
             },
             {
-              "group": "جهات المصادقة الخارجية",
+              "group": "External authenticators",
               "pages": [
+                "ar/concepts/features/security/external-authenticators/index",
                 {
                   "group": "SSL",
                   "pages": [
@@ -188,16 +190,15 @@
                 "ar/concepts/features/security/external-authenticators/http",
                 "ar/concepts/features/security/external-authenticators/kerberos",
                 "ar/concepts/features/security/external-authenticators/jwt"
-              ],
-              "root": "ar/concepts/features/security/external-authenticators/index"
+              ]
             }
-          ],
-          "root": "ar/concepts/features/security/index"
+          ]
         },
         {
-          "group": "النسخ الاحتياطي والاستعادة",
+          "group": "Backup and restore",
           "pages": [
             "ar/concepts/features/backup-restore/overview",
+            "ar/concepts/features/backup-restore/restore-settings",
             "ar/concepts/features/backup-restore/local-disk",
             "ar/concepts/features/backup-restore/s3-endpoint",
             "ar/concepts/features/backup-restore/azure-blob-storage",
@@ -206,25 +207,31 @@
           ]
         },
         {
-          "group": "الواجهات",
+          "group": "Interfaces",
           "pages": [
+            "ar/concepts/features/interfaces/native-clients-interfaces-index",
             "ar/concepts/features/interfaces/cli",
             "ar/concepts/features/interfaces/client",
+            "ar/concepts/features/interfaces/mcp",
             {
-              "group": "برامج التشغيل والواجهات",
+              "group": "Drivers and interfaces",
               "pages": [
+                "ar/concepts/features/interfaces/overview",
                 "ar/concepts/features/interfaces/http",
+                "ar/concepts/features/interfaces/framing-formats",
                 "ar/concepts/features/interfaces/tcp",
+                "ar/concepts/features/interfaces/adbc",
                 "ar/concepts/features/interfaces/jdbc",
                 "ar/concepts/features/interfaces/mysql",
-                "ar/concepts/features/interfaces/odbc",
+                {
+                  "$ref": "features/interfaces/odbc/navigation.json"
+                },
                 "ar/concepts/features/interfaces/postgresql",
                 "ar/concepts/features/interfaces/prometheus",
                 "ar/concepts/features/interfaces/ssh",
                 "ar/concepts/features/interfaces/grpc",
                 "ar/concepts/features/interfaces/arrowflight"
-              ],
-              "root": "ar/concepts/features/interfaces/overview"
+              ]
             },
             "ar/concepts/features/interfaces/cpp",
             "ar/concepts/features/interfaces/schema-inference",
@@ -232,18 +239,20 @@
             "ar/concepts/features/interfaces/web-sql",
             "ar/concepts/features/interfaces/web-ui-color-coding",
             "ar/concepts/features/interfaces/web-ui-pinned-columns",
+            "ar/concepts/features/interfaces/web-ui-result-shaping",
             "ar/concepts/features/interfaces/web-terminal",
             {
-              "group": "عملاء الجهات الخارجية",
-              "pages": [],
-              "root": "ar/concepts/features/interfaces/third-party/index"
+              "group": "Third-party clients",
+              "pages": [
+                "ar/concepts/features/interfaces/third-party/index"
+              ]
             }
-          ],
-          "root": "ar/concepts/features/interfaces/native-clients-interfaces-index"
+          ]
         },
         {
-          "group": "الأدوات والبرامج المساعدة",
+          "group": "Tools and utilities",
           "pages": [
+            "ar/concepts/features/tools-and-utilities/index",
             "ar/concepts/features/tools-and-utilities/backupview",
             "ar/concepts/features/tools-and-utilities/clickhouse-benchmark",
             "ar/concepts/features/tools-and-utilities/clickhouse-compressor",
@@ -255,16 +264,15 @@
             "ar/concepts/features/tools-and-utilities/clickhouse-obfuscator",
             "ar/concepts/features/tools-and-utilities/odbc-bridge",
             "ar/concepts/features/tools-and-utilities/static-files-disk-uploader"
-          ],
-          "root": "ar/concepts/features/tools-and-utilities/index"
+          ]
         }
-      ],
-      "root": "ar/concepts/features/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "أفضل الممارسات",
+      "group": "Best practices",
       "pages": [
+        "ar/concepts/best-practices/index",
         "ar/concepts/best-practices/choosing-a-primary-key",
         "ar/concepts/best-practices/select-data-type",
         "ar/concepts/best-practices/use-materialized-views",
@@ -276,9 +284,7 @@
         "ar/concepts/best-practices/avoid-optimize-final",
         "ar/concepts/best-practices/avoidnullablecolumns",
         "ar/concepts/best-practices/json-type"
-      ],
-      "root": "ar/concepts/best-practices/index"
+      ]
     }
-  ],
-  "root": "ar/concepts/index"
+  ]
 }

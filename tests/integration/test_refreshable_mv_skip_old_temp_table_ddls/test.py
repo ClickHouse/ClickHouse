@@ -137,6 +137,16 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
             f"SELECT uuid, name FROM system.tables WHERE database='{db_name}'",
             check_callback=lambda x: x == table_info1,
         )
+        # Pull both replicas' parts before comparing -- an APPEND refresh replicates rows
+        # via ReplicatedMergeTree, which SYSTEM WAIT VIEW does not wait for.
+        sync = f"SYSTEM SYNC REPLICA {db_name}.mv"
+        sync_settings = {"receive_timeout": 30}
+        node1.query_with_retry(
+            sync, retry_count=6, sleep_time=1, settings=sync_settings
+        )
+        node2.query_with_retry(
+            sync, retry_count=6, sleep_time=1, settings=sync_settings
+        )
         data1 = TSV(node1.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
         data2 = TSV(node2.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
         assert data1 == data2

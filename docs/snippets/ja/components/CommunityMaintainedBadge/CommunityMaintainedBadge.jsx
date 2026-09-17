@@ -10,5 +10,4 @@ export const CommunityMaintainedBadge = () => {
         </div>
     )
 }
-
 export default CommunityMaintainedBadge;
