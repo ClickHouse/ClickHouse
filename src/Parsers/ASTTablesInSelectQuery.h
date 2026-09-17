@@ -54,6 +54,7 @@ struct ASTTableExpression : public IAST
     bool final = false;
     ASTPtr sample_size;
     ASTPtr sample_offset;
+    ASTPtr read_from_projection_settings;
     ASTPtr stream_settings;
 
     /// Column aliases for the table expression (AS t(a, b))

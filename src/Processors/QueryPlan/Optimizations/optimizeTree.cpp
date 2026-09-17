@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 #include <fmt/ranges.h>
 
 #include <algorithm>
@@ -511,6 +512,17 @@ void optimizeTreeSecondPass(
         if (reading && optimization_settings.optimize_projection)
         {
             auto result = optimizeUseNormalProjections(stack, nodes, optimization_settings);
+            if (!result.applied_projection && !reading->getForcedProjectionName().empty())
+            {
+                auto it = result.projection_reject_reasons.find(reading->getForcedProjectionName());
+                throw Exception(
+                    ErrorCodes::PROJECTION_NOT_USED,
+                    "Projection {} is specified in the PROJECTION modifier of table {} but cannot be used: {}",
+                    backQuoteIfNeed(reading->getForcedProjectionName()),
+                    reading->getMergeTreeData().getStorageID().getNameForLogs(),
+                    it != result.projection_reject_reasons.end() ? it->second : "the projection was not considered by this read");
+            }
+
             projection_reject_reasons.merge(result.projection_reject_reasons);
             if (result.applied_projection)
             {

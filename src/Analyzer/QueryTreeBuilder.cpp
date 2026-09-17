@@ -14,6 +14,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTReadFromProjectionSettings.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -928,11 +929,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
             std::optional<TableExpressionModifiers> table_expression_modifiers;
 
-            if (table_expression.final || table_expression.sample_size || table_expression.stream_settings)
+            if (table_expression.final || table_expression.sample_size || table_expression.read_from_projection_settings || table_expression.stream_settings)
             {
                 bool has_final = table_expression.final;
                 std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
                 std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+                std::optional<ReadFromProjectionSettings> read_from_projection_settings;
                 std::optional<StreamSettings> stream_settings;
 
                 if (table_expression.sample_size)
@@ -947,6 +949,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     }
                 }
 
+                if (table_expression.read_from_projection_settings)
+                {
+                    const auto & ast_read_from_projection_settings = table_expression.read_from_projection_settings->as<ASTReadFromProjectionSettings &>();
+                    read_from_projection_settings = ReadFromProjectionSettings{.name = getIdentifierName(ast_read_from_projection_settings.name)};
+                }
+
                 if (table_expression.stream_settings)
                 {
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
@@ -957,7 +965,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     stream_settings->watermark = ast_stream_settings.watermark;
                 }
 
-                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
+                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(read_from_projection_settings), std::move(stream_settings));
             }
 
             if (table_expression.database_and_table_name)

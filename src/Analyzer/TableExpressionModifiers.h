@@ -3,6 +3,7 @@
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/IAST.h>
 
+#include <Core/ReadFromProjectionSettings.h>
 #include <Core/Streaming/CursorTree.h>
 #include <Core/Streaming/Settings.h>
 
@@ -28,10 +29,12 @@ public:
     TableExpressionModifiers(bool has_final_,
         std::optional<Rational> sample_size_ratio_,
         std::optional<Rational> sample_offset_ratio_,
+        std::optional<ReadFromProjectionSettings> read_from_projection_settings_ = {},
         std::optional<StreamSettings> stream_settings_ = {})
         : has_final(has_final_)
         , sample_size_ratio(sample_size_ratio_)
         , sample_offset_ratio(sample_offset_ratio_)
+        , read_from_projection_settings(std::move(read_from_projection_settings_))
         , stream_settings(std::move(stream_settings_))
     {}
 
@@ -71,6 +74,24 @@ public:
         return sample_offset_ratio;
     }
 
+    /// Returns true if PROJECTION modifier is specified
+    bool hasProjection() const
+    {
+        return read_from_projection_settings.has_value();
+    }
+
+    /// Get read from projection settings
+    const std::optional<ReadFromProjectionSettings> & getReadFromProjectionSettings() const
+    {
+        return read_from_projection_settings;
+    }
+
+    /// Set read from projection settings
+    void setReadFromProjectionSettings(std::optional<ReadFromProjectionSettings> value)
+    {
+        read_from_projection_settings = std::move(value);
+    }
+
     /// Returns true if STREAM modifier is specified
     bool hasStream() const
     {
@@ -96,6 +117,7 @@ private:
     bool has_final = false;
     std::optional<Rational> sample_size_ratio;
     std::optional<Rational> sample_offset_ratio;
+    std::optional<ReadFromProjectionSettings> read_from_projection_settings;
     std::optional<StreamSettings> stream_settings;
 };
 
@@ -110,6 +132,7 @@ inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressi
     return lhs.hasFinal() == rhs.hasFinal()
         && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio()
         && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio()
+        && lhs.getReadFromProjectionSettings() == rhs.getReadFromProjectionSettings()
         && lhs.getStreamSettings() == rhs.getStreamSettings();
 }
 

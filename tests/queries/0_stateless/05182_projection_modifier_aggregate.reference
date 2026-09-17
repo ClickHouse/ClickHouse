@@ -1,0 +1,110 @@
+-- { echoOn }
+
+-- count() goes through the named projection instead of the trivial count or the implicit projection.
+EXPLAIN indexes = 1, projections = 1 SELECT count() FROM t_agg;
+Output: count()
+
+MergingAggregated
+│  Keys:
+│  Aggregates: count()
+└──ReadFromPreparedSource (Optimized trivial count)
+EXPLAIN indexes = 1, projections = 1 SELECT count() FROM t_agg PROJECTION p_count;
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──ReadFromMergeTree (p_count)
+      Read type: Default
+      Parts: 1 | Granules: 13
+      Output: count()
+      Indexes:
+        PrimaryKey
+          Condition: true
+          Parts: 1/1
+          Granules: 13/13
+        Ranges: 1
+SELECT count() FROM t_agg PROJECTION p_count;
+100000
+-- The projection reads more marks than the base table, so it is used only when forced. The result is the same.
+EXPLAIN indexes = 1, projections = 1 SELECT other, count() FROM t_agg WHERE key < 10 GROUP BY other ORDER BY other;
+Output: other, count()
+
+Sorting (Sorting for ORDER BY)
+│  Sort description: other ASC
+└──Aggregating
+   │  Keys: other
+   │  Aggregates: count()
+   │  Skip merging: 0
+   └──ReadFromMergeTree (default.t_agg)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: other
+         Prewhere filter
+         Prewhere filter column:  key < 10
+         Indexes:
+           PrimaryKey
+             Keys:
+               key
+             Condition: (key in (-Inf, 9])
+             Parts: 1/1
+             Granules: 1/13
+             Search Algorithm: binary search
+           Ranges: 1
+         Projections:
+           Name: p_other_key
+             Description: Projection p_other_key is usable but requires reading 13 marks, which is not better than the original table with 1 marks
+             Condition: (key in (-Inf, 9])
+             Search Algorithm: generic exclusion search
+             Parts: 1
+             Marks: 13
+             Ranges: 1
+             Rows: 100000
+             Filtered Parts: 0
+EXPLAIN indexes = 1, projections = 1 SELECT other, count() FROM t_agg PROJECTION p_other_key WHERE key < 10 GROUP BY other ORDER BY other;
+Output: other, count()
+
+Sorting (Sorting for ORDER BY)
+│  Sort description: other ASC
+└──Aggregating
+   │  Keys: other
+   │  Aggregates: count()
+   │  Skip merging: 0
+   └──Filter
+      │  Filter column: key < 10
+      └──ReadFromMergeTree (p_other_key)
+            Read type: Default
+            Parts: 1 | Granules: 13
+            Output: key, other, count()
+            Indexes:
+              PrimaryKey
+                Keys:
+                  key
+                Condition: (key in (-Inf, 9])
+                Parts: 1/1
+                Granules: 13/13
+                Search Algorithm: generic exclusion search
+              Ranges: 1
+SELECT other, count() FROM t_agg WHERE key < 10 GROUP BY other ORDER BY other;
+0	1
+1	1
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+SELECT other, count() FROM t_agg PROJECTION p_other_key WHERE key < 10 GROUP BY other ORDER BY other;
+0	1
+1	1
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1

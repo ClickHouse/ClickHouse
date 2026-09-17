@@ -127,8 +127,14 @@ void rejectProjections(
             reject_reasons.try_emplace(projection->name, reason);
 }
 
-void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name)
+void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & forced_name, const String & preferred_name)
 {
+    if (!forced_name.empty())
+    {
+        std::erase_if(projections, [&](const auto * projection) { return projection->name != forced_name; });
+        return;
+    }
+
     auto is_preferred = [&](const auto * projection) { return projection->name == preferred_name; };
     if (std::ranges::none_of(projections, is_preferred))
         return;

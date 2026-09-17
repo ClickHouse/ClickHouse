@@ -511,7 +511,7 @@ bool hasTrivialCountIncompatibleModifiers(
     auto disqualifies = [](const std::optional<TableExpressionModifiers> & m)
     {
         return m.has_value()
-            && (m->hasFinal() || m->hasSampleSizeRatio() || m->hasSampleOffsetRatio() || m->hasStream());
+            && (m->hasFinal() || m->hasSampleSizeRatio() || m->hasSampleOffsetRatio() || m->hasProjection() || m->hasStream());
     };
     if (table_node && disqualifies(table_node->getTableExpressionModifiers()))
         return true;
@@ -1246,6 +1246,7 @@ void pushOrderByIntoView(
         && (table_node->getTableExpressionModifiers()->hasFinal()
             || table_node->getTableExpressionModifiers()->hasSampleSizeRatio()
             || table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()
+            || table_node->getTableExpressionModifiers()->hasProjection()
             || table_node->getTableExpressionModifiers()->hasStream()))
         return;
 
@@ -1818,7 +1819,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 table_expression_query_info.table_expression_modifiers = TableExpressionModifiers(true /*has_final*/,
                     sample_size_ratio,
-                    sample_offset_ratio);
+                    sample_offset_ratio,
+                    table_expression_modifiers->getReadFromProjectionSettings());
             }
             else
             {
@@ -2300,7 +2302,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 auto merged_sample_offset = outer_modifiers->hasSampleOffsetRatio()
                                     ? outer_modifiers->getSampleOffsetRatio()
                                     : (inner_modifiers ? inner_modifiers->getSampleOffsetRatio() : std::nullopt);
-                                dist_table.setTableExpressionModifiers(TableExpressionModifiers{merged_final, merged_sample_size, merged_sample_offset});
+                                auto merged_projection = outer_modifiers->hasProjection()
+                                    ? outer_modifiers->getReadFromProjectionSettings()
+                                    : (inner_modifiers ? inner_modifiers->getReadFromProjectionSettings() : std::nullopt);
+                                dist_table.setTableExpressionModifiers(TableExpressionModifiers{merged_final, merged_sample_size, merged_sample_offset, merged_projection});
                             }
 
                             /// Fold any `additional_table_filters` keyed by this view into the outer

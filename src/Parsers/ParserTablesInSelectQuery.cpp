@@ -11,6 +11,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserReadFromProjectionSettings.h>
 #include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/StatementFactory.h>
@@ -118,6 +119,15 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
     }
 
+    /// PROJECTION name
+    if (ParserKeyword(Keyword::PROJECTION).ignore(pos, expected))
+    {
+        ParserReadFromProjectionSettings read_from_projection_settings_p;
+
+        if (!read_from_projection_settings_p.parse(pos, res->read_from_projection_settings, expected))
+            return false;
+    }
+
     /// STREAM [CURSOR '{...}']
     if (ParserKeyword(Keyword::STREAM).ignore(pos, expected))
     {
@@ -137,6 +147,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)
         res->children.emplace_back(res->sample_offset);
+    if (res->read_from_projection_settings)
+        res->children.emplace_back(res->read_from_projection_settings);
     if (res->stream_settings)
         res->children.emplace_back(res->stream_settings);
     if (res->column_aliases)
@@ -503,6 +515,33 @@ INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
 
 `FINAL` is a modifier on the table reference, so it must follow the full `table [AS alias]` expression. Placing it before the alias (`FROM table1 FINAL AS t1`) is a syntax error.
 
+## PROJECTION Modifier {#projection-modifier}
+
+`PROJECTION name` after a `MergeTree` family table makes the query read that table through the named projection:
+
+```sql
+SELECT value FROM table PROJECTION projection_name WHERE key < 10;
+```
+
+The projection is used whenever it can answer the read, even when the optimizer estimates that the base table is cheaper. Parts that do not have the projection materialized are read from the base table. No other projection is considered for that table, including the implicit `_minmax_count_projection`, unless it is the one named.
+
+Like `FINAL`, the modifier follows the full `table [AS alias]` expression, so in a join every table can name its own projection:
+
+```sql
+SELECT count()
+FROM t1 AS a PROJECTION p1
+INNER JOIN t1 AS b PROJECTION p2 ON a.key = b.key;
+```
+
+The query fails instead of silently reading the base table when the projection cannot be used:
+
+- `NO_SUCH_PROJECTION_IN_TABLE` when the table has no projection with that name;
+- `ILLEGAL_PROJECTION` when the table is not a `MergeTree` family table, or when the modifier is combined with `FINAL`, `SAMPLE` or `STREAM`;
+- `SUPPORT_IS_DISABLED` when projection optimization is off (`optimize_use_projections = 0`) or `make_distributed_plan` is enabled;
+- `PROJECTION_NOT_USED`, with the reason, when the projection cannot serve the read: it lacks a column the query needs, its `WHERE` is not implied by the query filter, no selected part has it materialized, the read is in order of the sorting key, or the table has pending mutations.
+
+`EXPLAIN indexes = 1, projections = 1` shows the decision, and `system.query_log.projections` records the projection. The modifier takes precedence over [preferred_optimize_projection_name](/reference/settings/session-settings/preferred#preferred_optimize_projection_name) for that table; [force_optimize_projection_name](/reference/settings/session-settings/force-optimize#force_optimize_projection_name) keeps its meaning and counts the projection as used.
+
 ## Implementation Details {#implementation-details}
 
 If the `FROM` clause is omitted, data will be read from the `system.one` table.
@@ -512,7 +551,7 @@ To execute a query, all the columns listed in the query are extracted from the a
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
 )DOCS_MD",
         .syntax = R"(
-SELECT ... FROM [db.]table | (subquery) | table_function | VALUES (...) [FINAL] [SAMPLE ...] ...
+SELECT ... FROM [db.]table | (subquery) | table_function | VALUES (...) [FINAL] [SAMPLE ...] [PROJECTION name] ...
 FROM [db.]table SELECT ...
 )",
         .parent = "SELECT",

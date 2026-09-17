@@ -762,6 +762,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     AggregateProjectionCandidates candidates;
 
     ContextPtr context = reading.getContext();
+    const String forced_name = reading.getForcedProjectionName();
 
     const auto & projections = metadata->projections;
     std::vector<const ProjectionDescription *> agg_projections;
@@ -771,6 +772,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             agg_projections.push_back(&projection);
 
     bool can_use_minmax_projection = allow_implicit_projections
+        && (forced_name.empty() || forced_name == ProjectionDescription::MINMAX_COUNT_PROJECTION_NAME)
         && metadata->minmax_count_projection
         && !reading.getMutationsSnapshot()->hasLightweightDeletedMask()
         && canMinMaxCountProjectionMatchAggregates(aggregates);
@@ -828,7 +830,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             candidates.reject_reasons.try_emplace(projection->name, "the implicit projection cannot compute the aggregation keys and functions of the query");
 
             /// Trivial count optimization only applies after @can_use_minmax_projection.
-            if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
+            if (forced_name.empty() && keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
                 candidates.only_count_column = aggregates[0].column_name;
         }
     }
@@ -836,8 +838,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     if (!candidates.minmax_projection)
     {
         const auto all_agg_projections = agg_projections;
-        filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
-        rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, "the setting preferred_optimize_projection_name names another projection");
+        filterProjectionCandidates(agg_projections, forced_name, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+        rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, forced_name.empty() ? "the setting preferred_optimize_projection_name names another projection" : "the PROJECTION modifier names another projection");
 
         candidates.real.reserve(agg_projections.size());
         for (const auto * projection : agg_projections)
@@ -876,7 +878,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     /// When no projection can serve the aggregation, try to answer min/max/count directly
     /// from per-part column statistics.
-    if (allow_implicit_projections && !candidates.minmax_projection && candidates.real.empty()
+    if (allow_implicit_projections && forced_name.empty() && !candidates.minmax_projection && candidates.real.empty()
         && candidates.only_count_column.empty() && !dag.filter_node)
     {
         candidates.statistics_min_max_aggregates
@@ -893,6 +895,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
 
     ContextPtr context = reading.getContext();
+    const String forced_name = reading.getForcedProjectionName();
 
     const auto & projections = metadata->projections;
     std::vector<const ProjectionDescription *> agg_projections;
@@ -921,8 +924,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     /// Prefer the user specified projection if any.
     const auto all_agg_projections = agg_projections;
-    filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
-    rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, "the setting preferred_optimize_projection_name names another projection");
+    filterProjectionCandidates(agg_projections, forced_name, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+    rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, forced_name.empty() ? "the setting preferred_optimize_projection_name names another projection" : "the PROJECTION modifier names another projection");
 
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());
@@ -1213,6 +1216,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
     const auto & query_info = reading->getQueryInfo();
     const auto metadata = reading->getStorageMetadata();
     ContextPtr context = reading->getContext();
+    const bool forced = !reading->getForcedProjectionName().empty();
     AggregateProjectionCandidate * best_candidate = nullptr;
 
     /// Stores row count from exact ranges of parts.
@@ -1250,9 +1254,9 @@ UseProjectionsResult optimizeUseAggregateProjections(
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
 
-        const bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+        const bool relax_gates = context->getSettingsRef()[Setting::force_optimize_projection] || forced;
 
-        if (!force_optimize_projection)
+        if (!relax_gates)
         {
             /// Nothing to read. Ignore projections.
             if (parent_reading_select_result->parts_with_ranges.empty())
@@ -1356,7 +1360,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
         auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
 
         /// If there are remaining parts to read, attempt to select the best candidate.
-        if (!parent_reading_select_result->parts_with_ranges.empty() || force_optimize_projection)
+        if (!parent_reading_select_result->parts_with_ranges.empty() || relax_gates)
         {
             for (auto & candidate : candidates.real)
             {
@@ -1414,7 +1418,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 candidate.stat = &stat;
 
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-                if (candidate.sum_marks > parent_reading_marks)
+                if (!forced && candidate.sum_marks > parent_reading_marks)
                 {
                     stat.description = fmt::format(
                         "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -1453,8 +1457,9 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 chassert(candidate.stat);
                 chassert(candidate.stat->description.empty());
                 candidate.stat->description = fmt::format(
-                    "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
+                    "Projection {} is {} with {} marks to read, while the original table requires scanning {} marks",
                     candidate.projection->name,
+                    forced ? "forced by the PROJECTION modifier" : "selected as the best",
                     candidate.sum_marks,
                     parent_reading_select_result->selected_marks);
                 LOG_DEBUG(logger, "{}", candidate.stat->description);
@@ -1568,6 +1573,12 @@ UseProjectionsResult optimizeUseAggregateProjections(
         projection_query_info.prewhere_info = nullptr;
         projection_query_info.row_level_filter = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
+
+        if (forced)
+        {
+            projection_query_info.table_expression_modifiers->setReadFromProjectionSettings({});
+            reading->dropForcedProjection();
+        }
 
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);
         projection_reading = reader.readFromParts(

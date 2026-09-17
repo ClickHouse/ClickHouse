@@ -604,6 +604,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             const auto & table_expression = table_element->table_expression->as<ASTTableExpression &>();
             if (table_expression.stream_settings)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries are not supported with the old analyzer.");
+            if (table_expression.read_from_projection_settings)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The PROJECTION table expression modifier is not supported with the old analyzer.");
         }
     }
 

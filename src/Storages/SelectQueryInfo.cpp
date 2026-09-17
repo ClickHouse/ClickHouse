@@ -27,6 +27,11 @@ bool SelectQueryInfo::isStream() const
     return table_expression_modifiers && table_expression_modifiers->hasStream();
 }
 
+bool SelectQueryInfo::isProjectionRead() const
+{
+    return table_expression_modifiers && table_expression_modifiers->hasProjection();
+}
+
 std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;

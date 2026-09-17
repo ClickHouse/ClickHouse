@@ -45,6 +45,8 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (table_expression_modifiers.hasSampleOffsetRatio())
         flags |= 4;
+    if (table_expression_modifiers.hasProjection())
+        flags |= 8;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -52,6 +54,9 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
 
     if (table_expression_modifiers.hasSampleOffsetRatio())
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
+
+    if (table_expression_modifiers.hasProjection())
+        writeStringBinary(table_expression_modifiers.getReadFromProjectionSettings()->name, ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
@@ -81,7 +86,14 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     if (flags & 4)
         sample_offset_ratio = deserializeRational(ctx.in);
 
-    TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
+    std::optional<ReadFromProjectionSettings> read_from_projection_settings;
+    if (flags & 8)
+    {
+        read_from_projection_settings.emplace();
+        readStringBinary(read_from_projection_settings->name, ctx.in);
+    }
+
+    TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(read_from_projection_settings));
     return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
 }
 

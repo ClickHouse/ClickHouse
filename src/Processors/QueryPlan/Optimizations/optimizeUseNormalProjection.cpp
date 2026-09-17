@@ -346,6 +346,9 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (!reading)
         return result;
 
+    const String forced_name = reading->getForcedProjectionName();
+    const bool forced = !forced_name.empty();
+
     const auto metadata = reading->getStorageMetadata();
     const auto & projections = metadata->projections;
 
@@ -396,8 +399,11 @@ UseProjectionsResult optimizeUseNormalProjections(
 
     ContextPtr context = reading->getContext();
     const auto all_normal_projections = normal_projections;
-    filterProjectionCandidates(normal_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
-    rejectProjections(result.projection_reject_reasons, all_normal_projections, normal_projections, "the setting preferred_optimize_projection_name names another projection");
+    filterProjectionCandidates(normal_projections, forced_name, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+    rejectProjections(result.projection_reject_reasons, all_normal_projections, normal_projections, forced ? "the PROJECTION modifier names another projection" : "the setting preferred_optimize_projection_name names another projection");
+
+    if (normal_projections.empty())
+        return result;
 
     Names required_columns = reading->getAllColumnNames();
 
@@ -444,9 +450,9 @@ UseProjectionsResult optimizeUseNormalProjections(
             query.dag->removeUnusedActions();
     }
 
-    const bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+    const bool relax_gates = context->getSettingsRef()[Setting::force_optimize_projection] || forced;
 
-    if (!force_optimize_projection)
+    if (!relax_gates)
     {
         /// A normal projection can help in two ways:
         ///     1. Pruning rows via a filter
@@ -488,7 +494,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         parent_reading_select_result->selected_ranges = parts.size();
     }
 
-    if (!force_optimize_projection)
+    if (!relax_gates)
     {
         /// /// Nothing to read. Ignore projections.
         if (parent_reading_select_result->parts_with_ranges.empty())
@@ -555,7 +561,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             result.projection_reject_reasons.try_emplace(projection->name, "the projection does not contain all columns required by the query");
 
             /// Check if projection can be used to filter parts or building projection index filters
-            if (query.filter_node && optimize_use_projection_filtering)
+            if (!forced && query.filter_node && optimize_use_projection_filtering)
             {
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
                 filterPartsAndCollectProjectionCandidates(
@@ -617,7 +623,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         /// - `force_optimize_projection` is enabled, or
         /// - the parent reading's `selected_marks` becomes zero, or
         /// - the projection's sort order matches the query's ORDER BY,
-        if (candidate.sum_marks > parent_reading_marks)
+        if (!forced && candidate.sum_marks > parent_reading_marks)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -629,7 +635,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
-        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)
+        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !relax_gates && !sort_order_helps)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
@@ -662,8 +668,9 @@ UseProjectionsResult optimizeUseNormalProjections(
             chassert(candidate.stat);
             chassert(candidate.stat->description.empty());
             candidate.stat->description = fmt::format(
-                "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
+                "Projection {} is {} with {} marks to read, while the original table requires scanning {} marks",
                 candidate.projection->name,
+                forced ? "forced by the PROJECTION modifier" : "selected as the best",
                 candidate.sum_marks,
                 parent_reading_select_result->selected_marks);
             LOG_DEBUG(logger, "{}", candidate.stat->description);
@@ -695,6 +702,12 @@ UseProjectionsResult optimizeUseNormalProjections(
             query.filter_node->result_name,
             {query.filter_node},
             {query.filter_node});
+    }
+
+    if (forced)
+    {
+        projection_query_info.table_expression_modifiers->setReadFromProjectionSettings({});
+        reading->dropForcedProjection();
     }
 
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);

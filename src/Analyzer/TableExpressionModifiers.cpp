@@ -1,6 +1,7 @@
 #include <Analyzer/TableExpressionModifiers.h>
 
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 
 #include <Core/Streaming/CursorTree.h>
 #include <Core/Streaming/StreamingVirtualColumns.h>
@@ -27,6 +28,9 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
     if (sample_offset_ratio)
         buffer << ", sample_offset: " << ASTSampleRatio::toString(*sample_offset_ratio);
 
+    if (read_from_projection_settings)
+        buffer << ", projection: " << read_from_projection_settings->name;
+
     if (stream_settings)
         buffer << ", stream";
 }
@@ -36,6 +40,7 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
     hash_state.update(has_final);
     hash_state.update(sample_size_ratio.has_value());
     hash_state.update(sample_offset_ratio.has_value());
+    hash_state.update(read_from_projection_settings.has_value());
     hash_state.update(stream_settings.has_value());
 
     if (sample_size_ratio.has_value())
@@ -48,6 +53,11 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
     {
         hash_state.update(sample_offset_ratio->numerator);
         hash_state.update(sample_offset_ratio->denominator);
+    }
+
+    if (read_from_projection_settings.has_value())
+    {
+        hash_state.update(read_from_projection_settings->name);
     }
 
     if (stream_settings.has_value())
@@ -108,9 +118,16 @@ String TableExpressionModifiers::formatForErrorMessage() const
         buffer << "OFFSET " << ASTSampleRatio::toString(*sample_offset_ratio);
     }
 
-    if (stream_settings)
+    if (read_from_projection_settings)
     {
         if (has_final || sample_size_ratio || sample_offset_ratio)
+            buffer << ' ';
+        buffer << "PROJECTION " << backQuoteIfNeed(read_from_projection_settings->name);
+    }
+
+    if (stream_settings)
+    {
+        if (has_final || sample_size_ratio || sample_offset_ratio || read_from_projection_settings)
             buffer << ' ';
         buffer << "STREAM";
     }
