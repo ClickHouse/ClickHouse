@@ -783,6 +783,40 @@ def test_move_preserve_tags_setting(started_cluster):
         == "false"
     )
 
+    # EXCLUSIVE has its own allowlist: an operator who hits a missing `s3:GetObjectTagging`
+    # permission must be able to turn the setting off there too.
+    exclusive_table = f"{table_name}_exclusive"
+    create_table(
+        started_cluster,
+        node,
+        exclusive_table,
+        "exclusive",
+        f"{exclusive_table}_data",
+        additional_settings={"after_processing_move_preserve_tags": 1},
+        after_processing="move",
+        move_to_prefix=f"{token}_moved_exclusive",
+    )
+    assert (
+        node.query(
+            f"SELECT alterable FROM system.s3_queue_settings "
+            f"WHERE table = '{exclusive_table}' "
+            "AND name = 'after_processing_move_preserve_tags'"
+        ).strip()
+        == "1"
+    )
+    node.query(
+        f"ALTER TABLE {exclusive_table} MODIFY SETTING "
+        "after_processing_move_preserve_tags = 0"
+    )
+    assert (
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings "
+            f"WHERE table = '{exclusive_table}' "
+            "AND name = 'after_processing_move_preserve_tags'"
+        ).strip()
+        == "false"
+    )
+
     azure_table = f"{table_name}_azure"
     create_table(
         started_cluster,

@@ -1525,6 +1525,7 @@ static const std::unordered_set<std::string_view> changeable_settings_exclusive_
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
