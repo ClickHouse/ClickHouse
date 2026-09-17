@@ -110,12 +110,11 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 ///       `TAG_RUN`   a headerless block of `count` contiguous refs, `count` exact in [2, MAX_RANGE_REFS];
 ///       `TAG_CHAIN` a newest-first chain of ranges; the pointer is the newest range's 16-byte header.
 ///       `TAG_COUNT`, `TAG_FILL`, `TAG_FILL_H` are build-time words `PartitionedHashJoin` never publishes.
-/// Every layout keeps the same contract for the readers: `rows`, `firstWord` and `ForwardIterator`
-/// decode all of them, so `LazyOutput`, the used flags and the non-joined fillers never care which
-/// build produced the word. A `Batch` node is allocated only when the first duplicate of a key
-/// arrives, so ALL-join cells are as small as ANY-join cells for every key type, and unique keys never
-/// touch the arena. The run and chain layouts are written by `PartitionedHashJoin` (see `SpanWriter`);
-/// they store 8 bytes per row and a 16-byte header on every range after the key's first.
+/// Every layout shares the reader contract (`rows`, `firstWord`, `ForwardIterator`).
+/// `LazyOutput`, the used flags and the non-joined fillers never care which build produced the word.
+/// A `Batch` is allocated only on the first duplicate. ALL-join cells stay as small as ANY-join cells,
+/// and unique keys never touch the arena. `PartitionedHashJoin` writes run and chain (`SpanWriter`):
+/// 8 bytes per row, and a 16-byte header on every range after the key's first.
 struct RowRefList
 {
     /// Low 48 bits of a list word hold the node pointer; bits 62..48 hold the saturating count.
@@ -138,9 +137,9 @@ struct RowRefList
     static constexpr UInt64 TAG_RUN = 0x6;
     static constexpr UInt64 NODE_PTR_MASK = PTR_MASK & ~TAG_MASK;
 
-    /// 16-byte header in front of every range of a key except the key's first. The range's refs
-    /// follow the header directly (`refs`). The previous pointer names the previous range's header
-    /// when `prevHasHeader`, its refs otherwise.
+    /// 16-byte header in front of every range of a key except the key's first. The range's refs follow
+    /// the header directly (`refs`). The previous pointer names the previous range's header when
+    /// `prevHasHeader`, its refs otherwise.
     struct RangeHeader
     {
         UInt64 len_total = 0; /// bits 63..48 own_len, bits 47..0 total (this range plus all older)
@@ -325,8 +324,7 @@ struct RowRefList
     }
 
     /// Total rows for this key, load-free unless the count saturated. Wider than the in-word
-    /// counter, because past saturation it comes from `Batch::total_rows`, which is 56 bits, or
-    /// from a chain header's total.
+    /// counter, because past saturation it comes from `Batch::total_rows` (56 bits) or a chain header's total.
     size_t rows() const
     {
         if (isInline())
@@ -549,10 +547,9 @@ struct RowRefList
             UInt64 pending = 0;
         };
 
-        /// The run and chain layouts are decoded out of line and returned by value: the `Batch` path
-        /// stays as small as it was without the tags, so the callers that iterate one key per map cell
-        /// (the non-joined fillers) keep inlining it, and the iterator never escapes into a call, which
-        /// would force its members onto the stack on every path.
+        /// Run and chain layouts are decoded out of line and returned by value so the `Batch` path
+        /// stays as small as it was without the tags. Callers that iterate one key per map cell (the
+        /// non-joined fillers) keep inlining it. An escaping call would force the iterator onto the stack.
         static NO_INLINE RangeCursor startRanges(UInt64 word)
         {
             const RowRefList list = fromWord(word);
@@ -595,7 +592,7 @@ struct RowRefList
 
         /// Run mode: `cur` walks the current contiguous run bounded by `run_end`. For a `Batch` chain
         /// `next_node` is the next overflow node (newest-first); for a range chain `pending` is the
-        /// header's previous-range word (0 when none). `cur == nullptr` => range mode or done.
+        /// header's previous-range word (0 when none). `cur == nullptr` means range mode or done.
         const UInt64 * cur = nullptr;
         const UInt64 * run_end = nullptr;
         const Batch * next_node = nullptr;
@@ -623,7 +620,7 @@ private:
     /// Repoint `word` at `b` with the saturating row count in bits 62..48. The cell-node pointer is
     /// stable across inserts, so this only rewrites the count bits of an already-resident cache line.
     /// Only the 48-bit bound is checked here, not the tag bits: a `Batch` is 8-aligned (see the
-    /// `static_assert` below), so its pointer's tag bits are zero by construction, and a check of them
+    /// `static_assert` below), so its pointer's tag bits are zero by construction. Checking them
     /// would keep the old word live across `insert` for nothing (`insert` is the `HashJoin` build loop).
     void setListWord(Batch * b, UInt64 total_rows_)
     {
@@ -655,9 +652,9 @@ inline RowRefList refsOf(UInt64 word)
     return RowRefList::fromWord(word);
 }
 
-/// The run and chain layouts (`TAG_RUN`, `TAG_CHAIN`) of `forEachRef`, out of line: the standard `HashJoin`
-/// never publishes them, and keeping their decode out of the emit loop's inlined body is what lets that
-/// loop close on one conditional back-edge.
+/// The run and chain layouts (`TAG_RUN`, `TAG_CHAIN`) of `forEachRef`, out of line: the standard
+/// `HashJoin` never publishes them. Keeping their decode out of the emit loop's inlined body lets
+/// that loop close on one conditional back-edge.
 template <typename F>
 NO_INLINE void forEachRefOfRangeChain(UInt64 word, F & f)
 {
@@ -666,10 +663,10 @@ NO_INLINE void forEachRefOfRangeChain(UInt64 word, F & f)
 }
 
 /// Applies `f` to every encoded ref of a non-zero cell / LazyOutput word, in `ForwardIterator` order.
-/// The inline word, the `Batch` layouts (cell run `refs[0 .. size)`, or `refs[0 .. SLOTS)` plus the
-/// overflow chain newest-first when chained) and the range node are walked with plain pointer ranges,
-/// so an emit loop that inlines this has one exit per run instead of the iterator's run-end switch;
-/// only a run or chain word takes the iterator, out of line.
+/// The inline word, the `Batch` layouts, and the range node are walked with plain pointer ranges:
+/// cell run `refs[0 .. size)`, or `refs[0 .. SLOTS)` plus the overflow chain newest-first when chained.
+/// An emit loop that inlines this has one exit per run instead of the iterator's run-end switch.
+/// Only a run or chain word takes the iterator, out of line.
 template <typename F>
 ALWAYS_INLINE void forEachRef(UInt64 word, F && f)
 {

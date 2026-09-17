@@ -1,12 +1,11 @@
 -- Tests that an ASOF JOIN built with the parallel layout produces the same
--- result as one built with the serial layout. ASOF joins used to be excluded
--- from the parallel hash join.
+-- result as one built with the serial layout. ASOF can use the parallel layout.
 --
 -- Strategy: per-row mutual EXCEPT in both directions. This is strictly stronger
 -- than comparing aggregate count/sum and avoids float-summation-order
--- non-determinism (the two layouts materialize rows in a different order,
--- which changes the bit-level result of sum() over floats —
--- semantically identical, but EXCEPT would treat the rows as different).
+-- non-determinism. The two layouts materialize rows in a different order.
+-- That changes the bit-level result of sum() over floats.
+-- The sums are semantically identical, but EXCEPT would treat the rows as different.
 
 -- Force more than one build slot. With max_threads = 1 there is one slot,
 -- scatterBlockBySlot is never called, and the ASOF key slicing would not be

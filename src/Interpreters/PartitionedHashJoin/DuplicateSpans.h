@@ -15,12 +15,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/** Per-pass scratch for the duplicate rows of a `PartitionedHashJoin` build. A pass is the stretch of
-  * inserts between two `SpanWriter::finish` calls: one owner's partition, one drain run, or one block
-  * on the single fill thread. When a key sees its first duplicate of the pass, the cell's previous
-  * word (an inline ref, or a span or chain from an earlier pass) becomes the key's first item; every
-  * later row of the key appends its ref. The zero key has no bucket: its items live in `zero_items`.
-  * At the pass's finish, `SpanWriter` turns each key's items into one exact arena span.
+/** Scratch for one pass of duplicate rows in a `PartitionedHashJoin` build. A pass is the inserts
+  * between two `SpanWriter::finish` calls: one owner's partition, one drain run, or one block on the
+  * single fill thread. On a key's first duplicate, the cell's previous word becomes the first item:
+  * an inline ref, or a span or chain from an earlier pass. Later rows of the key append their refs.
+  * The zero key has no bucket; its items live in `zero_items`. At finish, `SpanWriter` writes one
+  * exact arena span per key.
   */
 struct PassScratch
 {
@@ -89,16 +89,16 @@ ALWAYS_INLINE inline void appendRowZero(RowRefList & mapped, UInt64 ref, PassScr
     scratch.zero_items.push_back(ref);
 }
 
-/** Turns one pass's scratch into exact arena spans: a headerless `TAG_RUN` for a key's first span,
-  * a 16-byte header in front of every later span, newest span first. One writer per build worker
-  * (and one for the drain), allocating from that worker's arena. A key is only ever appended to by
-  * the owner of its partition or by the serial drain, so nothing here synchronizes.
+/** Turns one pass's scratch into exact arena spans. A key's first span is a headerless `TAG_RUN`.
+  * Every later span has a 16-byte header in front, newest span first. One writer per build worker
+  * (and one for the drain) allocates from that worker's arena. A key is appended to only by the
+  * owner of its partition or by the serial drain, so nothing here synchronizes.
   */
 class SpanWriter
 {
 public:
-    /// Every span after a key's first is preceded by a header: the key's row count so far and the link
-    /// to the previous span.
+    /// Every span after a key's first is preceded by a header: the key's row count so far and the
+    /// link to the previous span.
     static constexpr size_t span_header_bytes = 2 * sizeof(UInt64);
 
     struct Stats

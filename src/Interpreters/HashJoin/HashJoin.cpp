@@ -628,10 +628,10 @@ HashJoin::HashJoin(
         }
     }
 
-    /// Building the buckets is many small allocations. Each one is charged to the thread, and the
-    /// thread only passes the total up to the query once it crosses `max_untracked_memory`, so a
-    /// 256-bucket layout can leave a megabyte uncharged. Flush that and let the query's limit
-    /// apply, rather than reporting a join the query cannot afford as built.
+    /// Building the buckets is many small allocations. Each one is charged to the thread.
+    /// The thread only passes the total to the query once it crosses `max_untracked_memory`.
+    /// A 256-bucket layout can leave a megabyte uncharged. Flush it so the query's limit
+    /// applies, rather than reporting a join the query cannot afford as built.
     CurrentThread::flushUntrackedMemory();
     CurrentMemoryTracker::check();
 }
@@ -789,8 +789,8 @@ bool HashJoin::preferUseMapsAll() const
         || table_join->getMixedJoinExpression() != nullptr;
 }
 
-/// A set map answers whether a key is present and nothing else, so it fits exactly those joins whose
-/// result can never contain a value taken from a right row.
+/// A set map answers whether a key is present and nothing else.
+/// It fits joins whose result can never contain a value taken from a right row.
 bool HashJoin::canUseSetMaps() const
 {
     if (!allow_set_maps || !table_join->enableJoinKeyOnlyHashTables())
@@ -1703,27 +1703,6 @@ JoinResultPtr HashJoin::joinBlock(Block block)
     return runJoinDispatch(ScatteredBlock(std::move(block)));
 }
 
-JoinResultPtr HashJoin::joinScatteredBlock(ScatteredBlock block)
-{
-    if (!data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
-
-    chassert(kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full);
-    for (const auto & onexpr : table_join->getClauses())
-    {
-        auto cond_column_name = onexpr.condColumnNames();
-        JoinCommon::checkTypesOfKeys(
-            block.getSourceBlock(),
-            onexpr.key_names_left,
-            cond_column_name.first,
-            right_sample_block,
-            onexpr.key_names_right,
-            cond_column_name.second);
-    }
-
-    return runJoinDispatch(std::move(block));
-}
-
 JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
 {
     std::vector<const std::decay_t<decltype(data->maps[0])> *> maps_vector;
@@ -1825,7 +1804,8 @@ HashJoin::~HashJoin()
 
 void HashJoin::parallelDestroyRightTableData()
 {
-    /// The map cells are trivially destructible; the cost is the stored columns and the arenas.
+    /// The maps stay in `data` and are freed serially: their cells are trivially destructible, except the ASOF lookup vectors.
+    /// The parallel work is the stored columns and the arenas.
     std::vector<WorkerStoredData> workers_to_destroy = std::move(data->workers);
     std::vector<std::unique_ptr<Arena>> pools_to_destroy = std::move(data->pools);
 
@@ -1862,10 +1842,9 @@ void HashJoin::parallelDestroyRightTableData()
 
 /// Appends one hash map cell's not-joined rows: as a flat run of encoded ref words for the
 /// columnar columns, and resolved to row pointers for the row store. Returns the rows appended.
-/// Always inlined: it runs once per map key inside the `fillColumns` scan, and whether the compiler
-/// inlines it on its own depends on the size of `RowRefList::ForwardIterator`, which the run and
-/// chain tags pushed over the threshold (an out-of-line call per key cost the RIGHT ALL non-joined
-/// emission 10-14 %).
+/// Always inlined: it runs once per map key in the `fillColumns` scan. The run and chain tags grew
+/// `RowRefList::ForwardIterator` past the inlining threshold. An out-of-line call per key cost the
+/// RIGHT ALL non-joined emission 10-14 %.
 template <typename Mapped>
 struct CollectorNonJoined
 {
@@ -2870,9 +2849,8 @@ bool HashJoin::canConvertToFixedHashMap() const
         && data->maps.size() == 1 && strictness != JoinStrictness::Asof;
 }
 
-/// The build leaves two things unsettled that probing reads: the cell prefix sums, and the min/max
-/// bounds a direct-addressed map keeps off while concurrent inserts could race. Call after the
-/// last insert.
+/// The build leaves two things unset that probing reads: cell prefix sums, and the min/max
+/// bounds a direct-addressed map keeps off while concurrent inserts could race. Call after the last insert.
 void HashJoin::freezeMapsForProbing()
 {
     const auto maps_kind = getMapsKind();
