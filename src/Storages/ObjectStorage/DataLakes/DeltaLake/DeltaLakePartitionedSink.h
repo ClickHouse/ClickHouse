@@ -51,7 +51,7 @@ public:
 
     /// A single partition column's logical value for one partition.
     /// `is_null` covers the Delta null-equivalent forms (SQL NULL and empty string);
-    /// `value` is the `toString`-serialized value and is meaningless when `is_null`.
+    /// `value` is the serialized value and is meaningless when `is_null`.
     struct PartitionValue
     {
         String name;
@@ -104,7 +104,7 @@ private:
     IColumn::Selector chunk_row_index_to_partition_index;
     Arena partition_keys_arena;
 
-    /// Per-partition-column expressions that serialize each value with `toString`,
+    /// Per-partition-column expressions that serialize each value to text,
     /// preserving nulls (result columns are `Nullable(String)`). Built once, in order.
     std::vector<IPartitionStrategy::PartitionExpressionActionsAndColumnName> partition_value_actions;
 

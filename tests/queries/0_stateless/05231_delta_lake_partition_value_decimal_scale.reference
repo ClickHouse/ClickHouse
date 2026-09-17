@@ -1,0 +1,48 @@
+-- decimal(10,2): every committed value must carry exactly 2 fractional digits.
+-- Before the fix 1.50 was committed as "1.5", 10.00 as "10", -1.50 as "-1.5" and
+-- -0.50 as "-0.5". -0.05 and 1.05 are the controls that already had a full-width
+-- fraction, so they must be committed unchanged.
+1	1.5
+2	10
+3	-1.5
+4	-0.05
+5	1.05
+6	-0.5
+committed partitionValues:
+"partitionValues":{"p":"-0.05"}
+"partitionValues":{"p":"-0.50"}
+"partitionValues":{"p":"-1.50"}
+"partitionValues":{"p":"1.05"}
+"partitionValues":{"p":"1.50"}
+"partitionValues":{"p":"10.00"}
+committed paths:
+p=-0.05/<uuid>.parquet
+p=-0.50/<uuid>.parquet
+p=-1.50/<uuid>.parquet
+p=1.05/<uuid>.parquet
+p=1.50/<uuid>.parquet
+p=10.00/<uuid>.parquet
+-- decimal(38,10) (Decimal128 width): the fraction is padded to the full scale
+1	1.5
+committed partitionValues: "partitionValues":{"p":"1.5000000000"}
+-- decimal(10,0) already conformed and must stay unchanged: no decimal point is added
+1	5
+committed partitionValues: "partitionValues":{"p":"5"}
+committed paths: p=5/<uuid>.parquet
+-- a NULL decimal partition value still uses the placeholder directory and a JSON null,
+-- alongside a scale-exact non-null value in the same table
+1	\N
+2	1.5
+committed partitionValues:
+"partitionValues":{"p":"1.50"}
+"partitionValues":{"p":null}
+committed paths:
+p=1.50/<uuid>.parquet
+p=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
+-- a decimal partition column composes with a non-decimal one (which is unaffected)
+1	1.5	x
+committed partitionValues: "partitionValues":{"p":"1.50","s":"x"}
+committed paths: p=1.50/s=x/<uuid>.parquet
+-- the plain (non-accurate) write cast produces the same protocol form
+1	1.5
+committed partitionValues: "partitionValues":{"p":"1.50"}
