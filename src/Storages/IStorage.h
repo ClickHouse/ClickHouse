@@ -320,20 +320,15 @@ public:
         return false;
     }
 
-    /// Return true if reading a row of this storage yields the stored values, with no expression
-    /// evaluated on the way out. A rewrite that widens the set of rows a column is read for is only
-    /// sound on such a storage. The default is false: a storage that has not proven this is assumed
-    /// to transform what it reads.
+    /// Return true if reading a row yields the stored values, with no expression evaluated on the way out.
+    /// The default is false: a storage that has not proven this is assumed to transform what it reads.
     virtual bool readsColumnsWithoutTransformations(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
     {
         return false;
     }
 
-    /// Return true if a read of this storage is bounded by a limit whose outcome depends on how much
-    /// one read covers (the partitions it spans, the marks it selects), which a rewrite that widens
-    /// the set of rows read can push over. The default is true: a storage that has not answered this
-    /// is assumed to be bounded. The safe answer is the opposite one from the predicate above: here it
-    /// is true that has to stop such a rewrite.
+    /// Return true if a read is bounded by a limit whose outcome depends on how much one read covers
+    /// (the partitions it spans, the marks it selects). The default is true: assumed to be bounded.
     virtual bool readIsBoundedBySpanLimit(ContextPtr /*query_context*/) const { return true; }
 
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.

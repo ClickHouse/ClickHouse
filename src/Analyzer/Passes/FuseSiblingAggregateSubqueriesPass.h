@@ -7,11 +7,8 @@ namespace DB
 
 /** Answer sibling single-row aggregate subqueries that read the same tables with one scan.
   *
-  * A cross/comma join of derived tables that each aggregate the same FROM and differ only in their
-  * own WHERE conjuncts reads that FROM once per branch. When every branch is a single-row
-  * aggregation over the same tables and its aggregates take no arguments, the branches are answered
-  * by a single pass: the conjuncts every branch shares become the fused filter, and each branch's
-  * own residual conjuncts become the condition of an -If combinator on its aggregates.
+  * The conjuncts every branch shares become the fused filter, and each branch's own residual conjuncts
+  * become the condition of an -If combinator on its aggregates.
   *
   * Example:
   *

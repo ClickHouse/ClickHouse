@@ -57,7 +57,6 @@ namespace
 
 using NodeSet = std::unordered_set<const IQueryTreeNode *>;
 
-/// Point the enclosing query's references to a fused-away sibling at the branch that now computes it.
 class RepointSiblingReferencesVisitor : public InDepthQueryTreeVisitor<RepointSiblingReferencesVisitor>
 {
 public:
@@ -86,7 +85,6 @@ private:
     const IQueryTreeNode::ReplacementMap & substitution;
 };
 
-/// Flatten an AND chain so the conjuncts shared by every branch can be matched one by one.
 void collectConjuncts(const QueryTreeNodePtr & node, QueryTreeNodes & conjuncts)
 {
     const auto * function_node = node->as<FunctionNode>();
@@ -111,10 +109,8 @@ QueryTreeNodePtr makeLogicalFunction(const String & function_name, QueryTreeNode
     return function_node;
 }
 
-/// A comparison of two equal types reads the values as they are stored, except where the type
-/// dispatches on each row's own type: `Variant`, `Dynamic` and `JSON`. The comparison excludes those
-/// at the top level (`FunctionsComparison.h`); nested in a tuple its elements are compared by a
-/// comparison of their own, so they have to be excluded at any depth.
+/// `Variant`, `Dynamic` and `JSON` dispatch on each row's own type. Comparison excludes them at the top level
+/// (`FunctionsComparison.h`), but inside a tuple its elements are compared by a comparison of their own.
 bool typeDispatchesPerRow(const IDataType & type)
 {
     bool result = false;
@@ -128,12 +124,9 @@ bool typeDispatchesPerRow(const IDataType & type)
     return result;
 }
 
-/// Whether this expression yields a value for every row, whatever the column values are. Fusion
-/// evaluates a branch's conjuncts on rows that branch's own filter excluded and reorders the shared
-/// ones, so totality has to be proven rather than assumed. `IFunction::canThrow` cannot prove it: it
-/// falls back to short-circuit suitability, which reports a cheap throwing function as not throwing.
-/// Only shapes total by construction are accepted: the connectives, and comparisons, which answer for
-/// themselves.
+/// Whether this expression yields a value for every row, whatever the column values are.
+/// `IFunction::canThrow` cannot answer that: it falls back to short-circuit suitability, which reports a
+/// cheap throwing function as not throwing. Hence the whitelist of shapes that are total by construction.
 bool isTotalOnEveryRow(const QueryTreeNodePtr & root)
 {
     static const std::unordered_set<std::string_view> total_function_names
@@ -145,7 +138,6 @@ bool isTotalOnEveryRow(const QueryTreeNodePtr & root)
         auto current = nodes_to_visit.back();
         nodes_to_visit.pop_back();
 
-        /// Already folded to a value, so no row can change it.
         if (current->as<ConstantNode>())
             continue;
 
@@ -156,7 +148,6 @@ bool isTotalOnEveryRow(const QueryTreeNodePtr & root)
             continue;
         }
 
-        /// An argument list holds no value of its own, so only its elements have to be accepted.
         if (const auto * function_node = current->as<FunctionNode>())
         {
             if (!function_node->isOrdinaryFunction() || !total_function_names.contains(function_node->getFunctionName()))
@@ -189,11 +180,8 @@ bool isTotalOnEveryRow(const QueryTreeNodePtr & root)
     return true;
 }
 
-/// Fusion computes the branches' equal expressions once instead of once per branch, so a branch whose
-/// expressions are not reproducible keeps its own scan: separate `min(rand64())` and `max(rand64())`
-/// branches must go on drawing independent values. Ordinary functions are the whole scope, since every
-/// branch keeps its own aggregate state. A server constant such as `now()` never reaches this check:
-/// the analyzer has already folded it into a `ConstantNode` whose source expression is not a child.
+/// Whether the branch's expressions can be evaluated once for all siblings rather than once per branch:
+/// separate `min(rand64())` and `max(rand64())` branches must go on drawing independent values.
 bool isReproducibleBranch(const QueryTreeNodePtr & root)
 {
     QueryTreeNodes nodes_to_visit{root};
@@ -218,9 +206,7 @@ bool isReproducibleBranch(const QueryTreeNodePtr & root)
     return true;
 }
 
-/// Collect the table expressions this subtree reads columns from, and refuse a column that carries
-/// an expression or resolves outside `allowed_sources` (a correlated reference), which would change
-/// meaning under the branch that is kept.
+/// Refuses an expression column, or one resolving outside `allowed_sources` (a correlated reference).
 bool collectColumnSources(const QueryTreeNodePtr & root, const NodeSet & allowed_sources, NodeSet & used_sources)
 {
     QueryTreeNodes nodes_to_visit{root};
@@ -249,14 +235,11 @@ bool collectColumnSources(const QueryTreeNodePtr & root, const NodeSet & allowed
     return true;
 }
 
-/// The branch's sources must return stored values with nothing evaluated on the way out, and carry no
-/// predicate attached to them after the passes run. Fusion moves each branch's conjuncts inside an
-/// `OR`, which widens the set of rows every column is materialized for, so a column read through an
-/// expression can throw for rows the branch excluded, and a dropped per-source predicate changes the answer.
+/// Whether every source returns stored values, with nothing evaluated on the way out and no predicate
+/// attached to it after the passes run.
 bool areSourcesAndColumnsSafe(const QueryTreeNodePtr & branch, const ContextPtr & context)
 {
-    /// `additional_table_filters` is matched against table names and aliases in the planner, so two
-    /// alias-insensitively equal sources can carry different filters and fusion would keep one.
+    /// `additional_table_filters` is matched by name and alias in the planner, so equal-looking sources can carry different filters.
     if (!context->getSettingsRef()[Setting::additional_table_filters].value.empty())
         return false;
 
@@ -266,8 +249,7 @@ bool areSourcesAndColumnsSafe(const QueryTreeNodePtr & branch, const ContextPtr 
     QueryTreeNodePtrWithHashIgnoreAliasesSet distinct_table_expressions;
     for (const auto & table_expression : table_expressions)
     {
-        /// Two occurrences of one table compare equal below, which conflates their columns: the
-        /// shared-conjunct match and the positional substitution would bind columns to either one.
+        /// Two occurrences of one table compare equal below, so a column would bind to either one.
         QueryTreeNodePtr table_expression_node = table_expression;
         if (!distinct_table_expressions.insert(table_expression_node).second)
             return false;
@@ -279,18 +261,13 @@ bool areSourcesAndColumnsSafe(const QueryTreeNodePtr & branch, const ContextPtr 
         if (!table_node->getStorage()->readsColumnsWithoutTransformations(table_node->getStorageSnapshot(), context))
             return false;
 
-        /// Fusion answers the branches with a read of the union of their rows, so a limit on how far
-        /// one read may span is evaluated against that union rather than against each branch.
         if (table_node->getStorage()->readIsBoundedBySpanLimit(context))
             return false;
 
-        /// A projection is selected against the branch's own filter, and the fused OR implies none of
-        /// them.
         if (table_node->getStorageSnapshot()->metadata->hasProjections())
             return false;
 
-        /// A modifier changes what the read returns, and for an absolute SAMPLE it does so as a
-        /// function of this branch's own key condition, which fusion replaces with the merged one.
+        /// An absolute SAMPLE is a function of the branch's own key condition, which fusion replaces.
         if (table_node->getTableExpressionModifiers().has_value())
             return false;
 
@@ -312,8 +289,7 @@ bool areSourcesAndColumnsSafe(const QueryTreeNodePtr & branch, const ContextPtr 
             auto column_source = column_node->getColumnSourceOrNull();
             if (const auto * source_table = column_source ? column_source->as<TableNode>() : nullptr)
             {
-                /// A column with a DEFAULT is evaluated inside the reader for a part that does not
-                /// store it, and a column that is not physical is not stored at all.
+                /// A DEFAULT is evaluated in the reader for a part that does not store the column.
                 const auto & columns = source_table->getStorageSnapshot()->metadata->getColumns();
                 const auto & column_name = column_node->getColumnName();
                 if (!columns.hasPhysical(column_name) || columns.hasDefault(column_name))
@@ -329,8 +305,8 @@ bool areSourcesAndColumnsSafe(const QueryTreeNodePtr & branch, const ContextPtr 
     return true;
 }
 
-/// A branch is fusable when it returns exactly one row of argument-less aggregates over its FROM,
-/// with no other clause that could change its cardinality or its grouping.
+/// A fusable branch returns exactly one row of argument-less aggregates over its FROM, with no clause
+/// that could change its cardinality or its grouping.
 bool isFusableBranch(const QueryTreeNodePtr & table_expression, const ContextPtr & context)
 {
     const auto * query_node = table_expression->as<QueryNode>();
@@ -354,14 +330,9 @@ bool isFusableBranch(const QueryTreeNodePtr & table_expression, const ContextPtr
     if (query_node->hasSettingsChanges())
         return false;
 
-    /// A branch with no filter of its own is already read in full, or answered from part metadata
-    /// without reading at all; fusing it cannot shrink its scan, and it leaves the fused filter empty,
-    /// which takes every sibling's residual out of the reader's reach.
     if (!query_node->hasWhere())
         return false;
 
-    /// Fusion grows the kept branch's projection, and an override whose size stops matching it turns
-    /// a valid query into an error.
     if (!query_node->getProjectionAliasesToOverride().empty())
         return false;
 
@@ -375,19 +346,15 @@ bool isFusableBranch(const QueryTreeNodePtr & table_expression, const ContextPtr
         if (!function_node || !function_node->isAggregateFunction())
             return false;
 
-        /// An aggregate argument is not covered by the guarantees this pass can establish: under -If
-        /// it is evaluated on every row the fused filter keeps, including the rows this branch's own
-        /// filter excluded.
+        /// Under -If an argument is evaluated on every row the fused filter keeps, including the rows
+        /// this branch's own filter excluded.
         if (!function_node->getArguments().getNodes().empty())
             return false;
 
-        /// Appending a second -If would need the two conditions merged into the existing argument
-        /// instead of a new combinator.
         if (Poco::toLower(function_node->getFunctionName()).ends_with("if"))
             return false;
     }
 
-    /// Established above, and `collectConjuncts` dereferences the WHERE.
     chassert(query_node->hasWhere());
     QueryTreeNodes conjuncts;
     collectConjuncts(query_node->getWhere(), conjuncts);
@@ -395,14 +362,12 @@ bool isFusableBranch(const QueryTreeNodePtr & table_expression, const ContextPtr
         if (!isTotalOnEveryRow(conjunct))
             return false;
 
-    /// Fusion collapses what were independent evaluations of this branch's expressions into one.
     if (!isReproducibleBranch(table_expression))
         return false;
 
     return areSourcesAndColumnsSafe(table_expression, context);
 }
 
-/// Everything the fused branch needs, built before the tree is touched so an abandoned attempt is free.
 struct FusionPlan
 {
     QueryTreeNodePtr where;
@@ -421,7 +386,6 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
     for (const auto & base_table_expression : base_table_expressions)
         base_sources.insert(base_table_expression.get());
 
-    /// The conjuncts of every branch's WHERE, and the subset all of them share.
     std::vector<QueryTreeNodes> branch_conjuncts;
     branch_conjuncts.reserve(members.size());
     for (auto member : members)
@@ -466,8 +430,7 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
         IQueryTreeNode::ReplacementMap substitution;
         for (size_t position = 0; position < branch_table_expressions.size(); ++position)
         {
-            /// Each sibling captures its own storage snapshot and table-expression equality ignores
-            /// it, so one scan answers the branches only when they read the same snapshot.
+            /// Table-expression equality ignores the storage snapshot each sibling captured.
             const auto * branch_table = branch_table_expressions[position]->as<TableNode>();
             const auto * base_table = base_table_expressions[position]->as<TableNode>();
             if (!branch_table || !base_table || branch_table->getStorageSnapshot().get() != base_table->getStorageSnapshot().get())
@@ -477,7 +440,6 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
                 substitution.emplace(branch_table_expressions[position].get(), base_table_expressions[position]);
         }
 
-        /// Cloned onto the kept branch's sources: a failed attempt must leave the branches untouched.
         QueryTreeNodes residual_conjuncts;
         QueryTreeNodePtrWithHashIgnoreAliasesSet taken;
         for (const auto & conjunct : branch_conjuncts[member])
@@ -499,9 +461,7 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
         }
         else
         {
-            /// Residuals over different tables lose their per-branch correlation inside the fused
-            /// `OR`: only each side's union of them can be pushed down, so the join has to carry
-            /// combinations no branch ever asked for.
+            /// Residuals over different tables lose their per-branch correlation inside the fused `OR`.
             if (residual_sources.size() > 1)
                 return {};
 
@@ -529,19 +489,15 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
                 if (!AggregateFunctionFactory::instance().isAggregateFunctionName(conditional_function_name))
                     return {};
 
-                /// The aggregate factory unwraps `LowCardinality` and applies the `Null` combinator
-                /// before -If validates its condition, so those wrappers resolve as well.
+                /// The factory unwraps `LowCardinality` and applies `Null` before -If validates its condition.
                 const auto & condition_type = condition->getResultType();
                 if (!isUInt8(removeNullable(removeLowCardinality(condition_type))) && !condition_type->onlyNull())
                     return {};
 
-                /// Each aggregate gets its own copy of the condition rather than sharing one node.
                 function_node.getArguments().getNodes().push_back(condition->clone());
                 resolveAggregateFunctionNodeByName(function_node, conditional_function_name);
 
-                /// `f()` over the rows its branch kept and `fIf(residual)` over the union of all
-                /// branches' rows agree by the combinator's definition, but only if the combinator
-                /// did not change the result type the enclosing query already resolved against.
+                /// The combinator must not change the result type the enclosing query resolved against.
                 if (!function_node.getResultType()->equals(*output_column.type))
                     return {};
             }
@@ -555,9 +511,8 @@ std::optional<FusionPlan> planFusion(const QueryTreeNodes & branches, const std:
         }
     }
 
-    /// The fused filter keeps exactly the rows at least one branch kept: the shared conjuncts, and
-    /// the disjunction of the branches' own filters. A branch with no residual accepts every row the
-    /// shared part keeps, which makes that disjunction true anyway.
+    /// The fused filter keeps the rows at least one branch kept: the shared conjuncts, and the
+    /// disjunction of the branches' own filters, which a branch with no residual makes true anyway.
     QueryTreeNodes where_conjuncts;
     for (const auto & conjunct : common_conjuncts)
         where_conjuncts.push_back(conjunct->clone());
@@ -587,14 +542,11 @@ public:
         if (!getSettings()[Setting::optimize_fuse_sibling_aggregate_subqueries])
             return;
 
-        /// With this setting an aggregation over an empty set returns no row at all, so a branch
-        /// whose own filter matches nothing empties the whole cross join. One fused aggregation
-        /// cannot reproduce that per-branch behaviour.
+        /// With this setting an aggregation over an empty set returns no row at all, so a branch whose
+        /// own filter matches nothing empties the whole cross join.
         if (getSettings()[Setting::empty_result_for_aggregation_by_empty_set])
             return;
 
-        /// Fusion answers N independently bounded reads and joins with one, and each of these limits is
-        /// evaluated on that fused shape: a query that fits N times over can stop fitting once.
         static constexpr std::array scope_changing_limits{
             &Setting::max_rows_to_read,
             &Setting::max_bytes_to_read,
@@ -610,8 +562,8 @@ public:
             if (getSettings()[*limit])
                 return;
 
-        /// A forced projection turns a lost access path into an error, and the -If rewrite makes the
-        /// read ineligible for the implicit minmax_count projection every MergeTree table carries.
+        /// The -If rewrite makes the read ineligible for the implicit minmax_count projection, and a
+        /// forced projection turns a lost access path into an error.
         if (getSettings()[Setting::force_optimize_projection]
             || !getSettings()[Setting::force_optimize_projection_name].value.empty())
             return;
@@ -625,8 +577,7 @@ public:
         if (!cross_join_node)
             return;
 
-        /// Every gap must be the same plain cross/comma join, so that any subset of the tables can
-        /// be re-joined the same way.
+        /// Every gap must be the same plain cross/comma join, so any subset can be re-joined the same way.
         const auto & join_types = cross_join_node->getJoinTypes();
         if (join_types.empty())
             return;
@@ -638,7 +589,6 @@ public:
 
         auto branches = cross_join_node->getTableExpressions();
 
-        /// Group the fusable branches by their FROM.
         std::vector<std::vector<size_t>> groups;
         QueryTreeNodePtrWithHashIgnoreAliasesMap<size_t> group_of_join_tree;
         for (size_t position = 0; position < branches.size(); ++position)
@@ -683,8 +633,7 @@ public:
             if (!fused_away.contains(branch->asTableExpression()))
                 remaining_branches.push_back(branch);
 
-        /// Copy the join type out before reassigning join_tree: that assignment can drop the last
-        /// reference to the cross join node the join_types reference belongs to.
+        /// Reassigning join_tree can drop the last reference to the node `join_types` belongs to.
         const auto remaining_join_type = join_types.front();
         const auto remaining_gaps = remaining_branches.size() - 1;
 
@@ -694,8 +643,6 @@ public:
             join_tree = std::make_shared<CrossJoinNode>(
                 std::move(remaining_branches), CrossJoinNode::JoinTypes(remaining_gaps, remaining_join_type));
 
-        /// The enclosing query's references to a fused-away sibling are repointed in place: cloning
-        /// its clauses one at a time would give each of them its own copy of the kept branch.
         RepointSiblingReferencesVisitor visitor(fused_away);
         for (auto & child : node->getChildren())
             if (child)

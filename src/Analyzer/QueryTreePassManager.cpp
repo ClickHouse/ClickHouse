@@ -343,8 +343,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<LikePerfectAffixRewritePass>());
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
 
-    /// Before CrossToInnerJoinPass, so that the join equalities the branches share are still
-    /// top-level AND conjuncts of the fused filter when that pass turns them into join conditions.
+    /// Before CrossToInnerJoinPass turns the join equalities the branches share into join conditions.
     manager.addPass(std::make_unique<FuseSiblingAggregateSubqueriesPass>());
 
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
