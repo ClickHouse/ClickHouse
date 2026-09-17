@@ -1252,8 +1252,10 @@ bool HashJoinClause::growBeforeLastFreeCell(Target & target)
 /// chunks are not counted here.
 size_t HashJoinClause::residentBytes() const
 {
-    /// The join's byte count: the stored blocks and routes, the null maps, the table and the arenas.
-    size_t bytes = accumulated_bytes.load(std::memory_order_relaxed) + hash_join.data->nullmaps_allocated_size + tableAndArenaBytes();
+    /// The join's byte count: the stored blocks and every clause's routes, the null maps, this table and
+    /// its arenas, and the other clauses' tables.
+    size_t bytes = accumulated_bytes.load(std::memory_order_relaxed) + hash_join.data->nullmaps_allocated_size + tableAndArenaBytes()
+        + bytes_reserved_elsewhere;
     if (!post_build_ctx)
         return bytes;
     const auto & ctx = *post_build_ctx;
@@ -1715,7 +1717,8 @@ bool HashJoinClause::partitionFloorFitsMemory(size_t floor_bits, size_t floor_de
     const size_t tables_and_spans = predictedTableAndArenaBytes(rows, distinct, /*grouped=*/false);
     const size_t predicted_tables = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, type, reserveFor(rows, static_cast<double>(distinct)));
     const size_t spans = tables_and_spans > predicted_tables ? tables_and_spans - predicted_tables : 0;
-    const size_t floor_bytes = hash_join.data->allocated_size + hash_join.data->nullmaps_allocated_size + routeBytes() + spans + generic_key_bytes_est;
+    const size_t floor_bytes = hash_join.data->allocated_size + hash_join.data->nullmaps_allocated_size + routeBytes() + spans
+        + generic_key_bytes_est + bytes_reserved_elsewhere;
     const size_t floor_partitions = 1uz << floor_bits;
     const size_t peak = floor_bytes + std::max(transient + tables / floor_partitions, tables + transient / floor_partitions);
     return peak <= max_bytes_before_external_join;
@@ -1744,7 +1747,7 @@ size_t HashJoinClause::routeBytes() const
 {
     size_t bytes = 0;
     for (const auto & fill : build_blocks)
-        bytes += fill.clauses[clause_idx].routes.allocated_bytes();
+        bytes += fill.routeBytes();
     return bytes;
 }
 
@@ -2317,8 +2320,8 @@ HashJoinClause::PostBuildPlan HashJoinClause::planPostBuild(size_t rows, ThreadP
         /// The single-partition path inserts straight from the stored blocks, so there is no transient
         /// to bound and grouping has nothing to do. Table and duplicate runs go through the shared
         /// helper so this verdict cannot drift from the fill-phase prediction.
-        const size_t resident
-            = row_store + routes + predictedTableAndArenaBytes(insertable, distinct, /*grouped=*/false) + generic_key_bytes;
+        const size_t resident = row_store + routes + predictedTableAndArenaBytes(insertable, distinct, /*grouped=*/false)
+            + generic_key_bytes + bytes_reserved_elsewhere;
         post_build_plan = resident <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
         return post_build_plan;
     }
@@ -2328,13 +2331,13 @@ HashJoinClause::PostBuildPlan HashJoinClause::planPostBuild(size_t rows, ThreadP
 
     /// What must be resident whatever the scatter schedule is. The grouped arena term needs `groups_est`;
     /// it is computed from this ungrouped floor, so the header charge cannot feed back into itself.
-    const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/false);
+    const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/false) + bytes_reserved_elsewhere;
     const size_t tables = ht_total_bytes;
     const size_t chunk_all = chunkBytesForBlockRange(0, build_blocks.size());
     const size_t headroom_for_groups
         = max_bytes_before_external_join > floor_bytes + tables ? max_bytes_before_external_join - floor_bytes - tables : 1;
     groups_est = std::max(1uz, ceilDiv(chunk_all, headroom_for_groups));
-    const size_t floor_bytes_grouped = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/true);
+    const size_t floor_bytes_grouped = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/true) + bytes_reserved_elsewhere;
 
     /// The ungrouped scatter never holds the whole chunk next to the whole table: an owner commits its
     /// range and frees that partition's chunk in the same claim, so the peak sits at one end of the wave.

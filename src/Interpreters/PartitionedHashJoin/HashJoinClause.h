@@ -261,6 +261,13 @@ public:
     /// the join's drain into another join runs on one too.
     static std::unique_ptr<ThreadPool> makePostBuildPool(size_t workers);
 
+    /// What the join's other clauses hold or will hold next to this clause's build - their tables and
+    /// arenas, built or predicted. The memory gate, the grow veto and the partition floor's guard count
+    /// it as resident. Set by the join before this clause is planned and before it is built.
+    void setBytesReservedElsewhere(size_t bytes) { bytes_reserved_elsewhere = bytes; }
+    /// Bytes still held by the saved routes of every clause; a clause's scatter releases its own.
+    size_t routeBytes() const;
+
     bool hasTable() const { return table_maps != nullptr; }
     /// Which `HashJoin::MapsVariant` alternative the table mirrors.
     size_t mapsVariantIndex() const { return maps_variant_index; }
@@ -332,8 +339,6 @@ private:
     double reserveSafety() const { return estimate_is_exact ? 1.0 : reserve_safety; }
     /// Rows the partitioned inserts will see: the sum of the exact per-partition counts.
     UInt64 insertableRows() const;
-    /// Bytes still held by the saved routes.
-    size_t routeBytes() const;
 
     /// How the key columns are scattered. Fixed-width keys go by their raw bytes. Anything else
     /// (`String`, `LowCardinality`, ...) goes through `ColumnsScatter`, with an 8-byte hash word per
@@ -430,6 +435,8 @@ private:
     const size_t max_bytes_before_external_join;
     /// Same as the constructor budget unless a test lifts or tightens it to force or refuse a grow.
     size_t grow_budget = 0;
+    /// See `setBytesReservedElsewhere`.
+    size_t bytes_reserved_elsewhere = 0;
     std::optional<size_t> grow_budget_for_drain_for_tests;
     /// The join's concatenated fill blocks (one list for every clause), read by the post-build stages
     /// and released block by block as they are consumed.

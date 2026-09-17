@@ -349,7 +349,12 @@ private:
     void dropLastStoredBlock();
     /// The saved-block form of one stored block, for the drains that hand blocks to another join.
     Block storedBlockToBlock(StoredBlock && stored) const;
-    size_t liveDistinctEstimate() const;
+    /// The fill-phase distinct estimate of one clause; refreshing it refreshes every clause's.
+    size_t liveDistinctEstimate(size_t clause_idx) const;
+    /// The other clauses' tables and arenas, built or predicted; see `HashJoinClause::setBytesReservedElsewhere`.
+    size_t bytesReservedForOtherClauses(size_t clause_idx) const;
+    /// Every clause's table and arenas.
+    size_t tablesAndArenasBytes() const;
     /// Reads the previous run's distinct-key count into `cached_distinct_keys` and counts it as a
     /// preallocation. False when the cache has no entry for this join or the entry exceeds
     /// `max_size_to_preallocate_for_joins`.
@@ -429,10 +434,11 @@ private:
     std::vector<std::atomic<FillLane *>> fill_lane_slots;
     std::atomic<size_t> accumulated_rows{0};
     std::atomic<size_t> accumulated_bytes{0};
-    /// Fill-phase distinct estimate for `predictedResidentBytes`. Merging every lane on every block
-    /// would cost `lanes * 8 KiB`, so the value is reused until the row count has grown by a
-    /// sixteenth. A slightly stale value only delays the switch by one refresh interval.
-    mutable std::atomic<size_t> cached_distinct_estimate{0};
+    /// Fill-phase distinct estimates for `predictedResidentBytes`, one per clause. Merging every lane
+    /// on every block would cost `lanes * clauses * 8 KiB`, so the values are reused until the row
+    /// count has grown by a sixteenth. A slightly stale value only delays the switch by one refresh
+    /// interval.
+    mutable std::vector<std::atomic<size_t>> cached_distinct_estimates;
     mutable std::atomic<size_t> distinct_estimate_at_rows{0};
 
     std::optional<size_t> build_rows_hint;
