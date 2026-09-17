@@ -99,7 +99,7 @@ public:
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    String copyObject( /// NOLINT
+    void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,
@@ -138,9 +138,6 @@ public:
     ObjectStoragePtr cloneImpl() const override;
 
 private:
-    /// Deletes one blob. When `object.etag` is set, only that generation is deleted (`If-Match`);
-    /// a blob that has since been overwritten is left in place and `FILE_CHANGED_DURING_READ` is
-    /// thrown, whatever `if_exists` says.
     void removeObjectImpl(
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
