@@ -185,7 +185,8 @@ private:
     /// database engine there is one replication handler for all tables.
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
     /// What the handler was built from, kept so the table can report it. Null for a table of a
-    /// `MaterializedPostgreSQL` database, which is built by a constructor that receives no settings.
+    /// `MaterializedPostgreSQL` database, which is built by a constructor that receives no settings -
+    /// see `getTableSettings`.
     std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings;
 
     /// Distinguish between single MaterilizePostgreSQL table engine and MaterializedPostgreSQL database engine,

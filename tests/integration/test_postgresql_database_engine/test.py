@@ -856,6 +856,49 @@ def test_postgresql_database_engine_schema_sql_injection(started_cluster):
     cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
+def test_table_settings_of_a_database_table(started_cluster):
+    # A `PostgreSQL` database resolves its settings into the connection pool its tables share, so those
+    # settings describe each table it makes. The tables keep them and report them, although no table has a
+    # `SETTINGS` clause of its own - which is why the source is `other`: the value came from the session that
+    # created the database.
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+    create_postgres_table(cursor, "test_settings_table")
+
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    # The database engine takes no `SETTINGS` clause, so its settings come from the creating session.
+    node1.query(
+        f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', "
+        f"'postgres', '{pg_pass}')",
+        settings={"postgresql_connection_pool_size": 8},
+    )
+    # Touch the table so that the database builds the storage for it.
+    assert "test_settings_table" in node1.query("SHOW TABLES FROM postgres_database")
+    node1.query("SELECT count() FROM postgres_database.test_settings_table")
+
+    assert (
+        node1.query(
+            "SELECT value, source FROM system.table_settings WHERE database = 'postgres_database' "
+            "AND table = 'test_settings_table' AND name = 'postgresql_connection_pool_size'"
+        ).strip()
+        == "8\tother"
+    )
+
+    # And what the database did not state is at the compiled-in default.
+    assert (
+        node1.query(
+            "SELECT source FROM system.table_settings WHERE database = 'postgres_database' "
+            "AND table = 'test_settings_table' AND name = 'postgresql_connection_pool_retries'"
+        ).strip()
+        == "default"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    cursor.execute("DROP TABLE IF EXISTS test_settings_table")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

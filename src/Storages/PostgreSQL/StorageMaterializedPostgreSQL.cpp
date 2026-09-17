@@ -151,8 +151,10 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
 SettingDescriptions StorageMaterializedPostgreSQL::getTableSettings(ContextPtr query_context) const
 {
-    /// A table of a `MaterializedPostgreSQL` database is built by a constructor that receives no settings -
-    /// there they belong to the database - and reports nothing, as before.
+    /// The constructors a `MaterializedPostgreSQL` database uses receive no settings - there they belong to
+    /// the database - so there is nothing for such a table to report here. It is not what the user sees for
+    /// one either: a table of such a database is listed as the nested table the data is materialized into,
+    /// and reports that table's settings (verified in `test_postgresql_replica_database_engine/test_3.py`).
     if (!replication_settings)
         return {};
 

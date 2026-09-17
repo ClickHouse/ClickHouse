@@ -3352,6 +3352,74 @@ def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_table_settings_reported(started_cluster):
+    # `system.table_settings` reports the settings a table works with. The standalone
+    # `MaterializedPostgreSQL` engine consumes its settings at construction, so it keeps them to be able to
+    # answer; a table of a `MaterializedPostgreSQL` *database* is built by a constructor that receives none -
+    # there the settings belong to the database - and reports nothing.
+    table = "test_settings"
+    pg_manager.create_and_fill_postgres_table(table)
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Integer, value Integer, PRIMARY KEY (key))
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_max_block_size = 5000
+        """
+    )
+
+    # Every setting the engine takes is reported, not only what the clause states.
+    reported = instance.query(
+        f"SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = '{table}'"
+    ).strip()
+    advertised = instance.query(
+        "SELECT count() FROM system.engine_settings WHERE engine_name = 'MaterializedPostgreSQL'"
+    ).strip()
+    assert reported == advertised, (
+        f"the table reports {reported} settings while the engine advertises {advertised}"
+    )
+
+    assert (
+        instance.query(
+            f"SELECT value, source FROM system.table_settings WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND name = 'materialized_postgresql_max_block_size'"
+        ).strip()
+        == "5000\tdefinition"
+    )
+
+    # The constructor replaces this one with the table's own remote name, so the value reported is the
+    # handler's rather than the clause's - `other`, not `definition`.
+    assert (
+        instance.query(
+            f"SELECT value, source FROM system.table_settings WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND name = 'materialized_postgresql_tables_list'"
+        ).strip()
+        == f"{table}\tother"
+    )
+
+    instance.query(f"DROP TABLE {table} SYNC")
+
+    # A table of a `MaterializedPostgreSQL` database is a different thing: the replication settings belong to
+    # the database, and the table itself is the nested table the data is materialized into. So none of the
+    # database's settings are attributed to it - what it reports is its own storage's.
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    check_tables_are_synchronized(instance, table)
+    assert (
+        instance.query(
+            f"SELECT countIf(name LIKE 'materialized\\_postgresql\\_%'), countIf(name = 'index_granularity') "
+            f"FROM system.table_settings WHERE database = 'test_database' AND table = '{table}'"
+        ).strip()
+        == "0\t1"
+    )
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
