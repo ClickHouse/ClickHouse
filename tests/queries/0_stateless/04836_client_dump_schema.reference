@@ -66,6 +66,9 @@ ambiguous merge refused: 1
 outside binding refused: 1
 --- a database-less reference satisfiable by an omitted database is refused, not rebound ---
 omitted-database reference refused: 1
+--- a plain unqualified reference is stored qualified, so it is reported, not rebound ---
+reference kept bound to the omitted database: 1
+omitted binding reported: 1
 --- a database-less merge() satisfiable by an omitted database is refused, not rebound ---
 omitted-database merge refused: 1
 --- the prelude omits dump-specific gates this schema cannot need ---

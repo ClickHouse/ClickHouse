@@ -364,7 +364,7 @@ CREATE VIEW mrg_a.reads_merge AS SELECT * FROM merge('', '^zzz_src\$');
 if $CLICKHOUSE_LOCAL --path "$MRG_PATH" --dump-schema='mrg_a,mrg_b' > /dev/null 2>"$ERR_FILE"; then
     echo 'FAIL: dump succeeded despite an ambiguous database-less merge()'
 else
-    echo "ambiguous merge refused: $(grep -c 'more than one dumped database' "$ERR_FILE")"
+    echo "ambiguous merge refused: $(grep -c 'more than one database' "$ERR_FILE")"
 fi
 rm -rf "$MRG_PATH"
 
@@ -386,17 +386,17 @@ fi
 rm -rf "$SUB_PATH"
 
 echo '--- a database-less reference satisfiable by an omitted database is refused, not rebound ---'
-# Both the owning database and an omitted database have a table with the same name; the view was
-# created under USE <omitted>, so replaying under USE <owning> would silently rebind the reference.
+# joinGet() stores its table argument verbatim, so the create-time session database is unknown:
+# both the owning and an omitted database have `jt`, and USE <owning> on replay could rebind it.
 UNDUMPED_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_undumped"
 rm -rf "$UNDUMPED_PATH"
 $CLICKHOUSE_LOCAL --path "$UNDUMPED_PATH" --multiquery --query "
 CREATE DATABASE undump_a;
 CREATE DATABASE undump_b;
-CREATE TABLE undump_a.shared_src (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE undump_b.shared_src (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE undump_a.jt (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
+CREATE TABLE undump_b.jt (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
 USE undump_b;
-CREATE VIEW undump_a.reads_unqual AS SELECT * FROM shared_src;
+CREATE VIEW undump_a.uses_join AS SELECT joinGet('jt', 'v', toUInt64(1)) AS x;
 "
 if $CLICKHOUSE_LOCAL --path "$UNDUMPED_PATH" --dump-schema='undump_a' > /dev/null 2>"$ERR_FILE"; then
     echo 'FAIL: dump succeeded despite an ambiguous database-less reference to an omitted database'
@@ -404,6 +404,28 @@ else
     echo "omitted-database reference refused: $(grep -c 'omitted database' "$ERR_FILE")"
 fi
 rm -rf "$UNDUMPED_PATH"
+
+echo '--- a plain unqualified reference is stored qualified, so it is reported, not rebound ---'
+# CREATE stamps the session database onto plain table identifiers in a view body, so this one is
+# stored as undump_b.shared_src: nothing to refuse, and the binding is kept and reported, not rebound.
+UNQUAL_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_unqual"
+UNQUAL_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_unqual.sql"
+rm -rf "$UNQUAL_PATH"
+$CLICKHOUSE_LOCAL --path "$UNQUAL_PATH" --multiquery --query "
+CREATE DATABASE undump_a;
+CREATE DATABASE undump_b;
+CREATE TABLE undump_a.shared_src (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE undump_b.shared_src (k UInt64) ENGINE = MergeTree ORDER BY k;
+USE undump_b;
+CREATE VIEW undump_a.reads_unqual AS SELECT * FROM shared_src;
+"
+if $CLICKHOUSE_LOCAL --path "$UNQUAL_PATH" --dump-schema='undump_a' > "$UNQUAL_DUMP_FILE" 2>"$ERR_FILE"; then
+    echo "reference kept bound to the omitted database: $(grep -c 'AS SELECT \* FROM undump_b\.shared_src' "$UNQUAL_DUMP_FILE")"
+    echo "omitted binding reported: $(grep -c 'undump_a\.reads_unqual depends on undump_b\.shared_src,' "$ERR_FILE")"
+else
+    echo 'FAIL: dump refused a reference the server had already qualified'
+fi
+rm -rf "$UNQUAL_PATH" "$UNQUAL_DUMP_FILE"
 
 echo '--- a database-less merge() satisfiable by an omitted database is refused, not rebound ---'
 UNDUMPED_MRG_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_undumped_mrg"
