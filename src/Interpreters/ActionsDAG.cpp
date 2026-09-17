@@ -2261,6 +2261,11 @@ bool ActionsDAG::hasStatefulFunctions() const
     return false;
 }
 
+bool ActionsDAG::hasNonDeterministicOrStatefulFunctions() const
+{
+    return std::ranges::any_of(nodes, isNonDeterministicOrStateful);
+}
+
 bool ActionsDAG::trivial() const noexcept
 {
     for (const auto & node : nodes)
