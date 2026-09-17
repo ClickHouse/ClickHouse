@@ -270,6 +270,8 @@ private:
     /// Whether the definition of the union table has to be verified against the expected one.
     /// This is done at the first flush and after each rotation of the log table; on other
     /// flushes the union table is only recreated if it went missing (e.g. dropped by a user).
+    /// Also cleared when the name is occupied by a table that was not created by this feature:
+    /// such a table is left intact until it is dropped or renamed by the user.
     bool union_table_check_pending = true;
     /// Set when the union table cannot be created (e.g. the configured cluster does not exist)
     /// or the database engine does not support it, to avoid retrying the creation and polluting
