@@ -56,12 +56,12 @@ FROM
         (
             SELECT column_data_compressed_bytes
             FROM system.parts_columns
-            WHERE (`table` = 't_cast_to_low_cardinality') AND active AND (column = 'str_lc')
+            WHERE (database = currentDatabase()) AND (`table` = 't_cast_to_low_cardinality') AND active AND (column = 'str_lc')
         ) AS on_disk_compressed_bytes,
         toUInt64(round((
             SELECT column_data_uncompressed_bytes
             FROM system.parts_columns
-            WHERE (`table` = 't_cast_to_low_cardinality') AND active AND (column = 'str')
+            WHERE (database = currentDatabase()) AND (`table` = 't_cast_to_low_cardinality') AND active AND (column = 'str')
         ) / (
             SELECT estimateCompressionRatio('LZ4', 65536, 'LowCardinality(String)')(str)
             FROM t_cast_to_low_cardinality
