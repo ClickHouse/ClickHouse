@@ -40,6 +40,9 @@ struct DatabaseReplicaInfo
     String shard_name;
     String replica_name;
     std::optional<bool> is_local;
+    /// Replica group of the node, published by the replicated database replica
+    /// (empty when the node is a member of no group).
+    String replica_group;
 };
 
 /// List of replica hostnames grouped per shard. Used to construct a Cluster for the remote() function.
@@ -121,6 +124,8 @@ public:
         String host_name;
         String database_shard_name;
         String database_replica_name;
+        /// Replica group of the node (for clusters that belong to a `Replicated` database).
+        String replica_group;
         UInt16 port{0};
         /// Optional per-node ports for the distributed-plan engine: the interserver port the
         /// initiator dispatches tasks to, and the streaming-exchange listener port. Zero means
