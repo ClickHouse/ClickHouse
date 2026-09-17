@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+# Two explicit `ReplicatedMergeTree` replicas share one Keeper path and the initiator is held back
+# with `SYSTEM STOP REPLICATION QUEUES`; replicated-database and shared-merge-tree modes rewrite
+# that topology, and `--no-zookeeper` flavors cannot run it at all.
 # Mutation partition pruning ruled a partition out of a mutation because the parts the initiating
 # replica holds in it are all empty - the state a delete-all mutation or a `TTL` expiry leaves behind
 # until the cleanup thread removes the part - and recorded it as analyzed, which also kept the scope
