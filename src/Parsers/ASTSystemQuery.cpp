@@ -831,6 +831,10 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     if (!query_type_opt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: '{}'", query_type_str);
     type = *query_type_opt;
+    /// `UNKNOWN` and `END` are not commands: the parser never produces them and `formatImpl`
+    /// throws a `LOGICAL_ERROR` for them.
+    if (type == Type::UNKNOWN || type == Type::END)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid SYSTEM query_type: '{}'", query_type_str);
 #if USE_XRAY
     if (type == Type::INSTRUMENT_ADD || type == Type::INSTRUMENT_REMOVE)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
@@ -843,6 +847,33 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     table = r.readIdentifierChild("table");
     if (table)
         children.push_back(table);
+    /// These commands take a mandatory table (or view) name; `formatImpl` prints it unconditionally
+    /// (`chassert(table)`), so an absent one must be rejected here instead of failing there.
+    switch (type)
+    {
+        case Type::SCHEDULE_MERGE:
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
+        case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
+        case Type::TEST_VIEW:
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+            if (!table)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Missing 'table' for SYSTEM query_type '{}' during AST JSON deserialization", query_type_str);
+            break;
+        default:
+            break;
+    }
     if_exists = r.getBool("if_exists");
     /// `query_settings` is parser-produced as an `ASTSetQuery`; `InterpreterSystemQuery` reads it as
     /// `query.query_settings->as<ASTSetQuery>()->changes`, so reject any other node type here.

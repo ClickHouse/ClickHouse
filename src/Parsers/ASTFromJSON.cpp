@@ -383,6 +383,11 @@ ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
     if (!json.has("type"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON object missing 'type' field for AST deserialization");
 
+    /// `getValue<String>` would throw a bare `Poco::Exception` for `null` and coerce numbers and
+    /// booleans to text; the node type must be a JSON string.
+    if (!json.get("type").isString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON object 'type' field must be a string for AST deserialization");
+
     String type = json.getValue<String>("type");
 
     const auto & factory = getASTFactory();
