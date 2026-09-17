@@ -865,8 +865,8 @@ void ReadFromRemote::addPipe(
         //     connect to instantiates the coordinator which manages the reading on the whole shard and
         //     returns the result of the shard, so several connections mean several coordinators;
         //   * with parallel replicas disabled, or not applicable for any other reason (e.g. by
-        //     `automatic_parallel_replicas_mode` or `parallel_replicas_only_with_analyzer`), a replica
-        //     just executes the query over all of its data.
+        //     `automatic_parallel_replicas_mode`), a replica just executes the query over all of its
+        //     data.
         if (context->canUseOffsetParallelReplicas())
             remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         else
