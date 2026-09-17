@@ -1,0 +1,83 @@
+== explicit overrides ==
+1	hello	42
+== auto-assign ==
+1	hello	42
+== mixed override + auto-assign ==
+1	hello	42
+== default (no settings) ==
+1	hello	42
+== nested auto-assign ==
+[1,2,3]	('hi',7)	{'k':1}
+== nested overrides ==
+[1,2,3]	('hi',7)
+== a malformed value only affects Parquet output ==
+1
+2
+== field_ids: explicit overrides ==
+a	10
+b	20
+c	30
+== field_ids: auto-assign ==
+a	1
+b	2
+c	3
+== field_ids: mixed override + auto-assign ==
+a	2
+b	1
+c	3
+== field_ids: default (no settings) ==
+a	-
+b	-
+c	-
+== field_ids: nested auto-assign ==
+a	1
+a.element	2
+b	3
+b.s	4
+b.i	5
+c	6
+c.key	7
+c.value	8
+== field_ids: nested overrides ==
+a	1
+a.element	100
+b	2
+b.s	200
+b.i	3
+== field_ids: geo explicit override (Point as WKB) ==
+point	7
+== field_ids: geo auto-assign (Point as WKB) ==
+point	1
+== field_ids: geo explicit override (MultiPoint as WKB) ==
+mp	9
+== field_ids: geo auto-assign (MultiPoint as WKB) ==
+mp	1
+== field_ids: max non-reserved id ==
+a	2147483447
+== error: unknown column ==
+references unknown column
+BAD_ARGUMENTS
+== error: non-covering map without auto-assign ==
+does not cover every output column
+BAD_ARGUMENTS
+== error: non-covering map skips nested field ==
+does not cover every output column
+BAD_ARGUMENTS
+== error: duplicate id ==
+more than one column
+BAD_ARGUMENTS
+== error: non-integer string value ==
+is not an integer
+BAD_ARGUMENTS
+== error: negative id ==
+must be non-negative
+BAD_ARGUMENTS
+== error: id in the Iceberg reserved range ==
+reserved by Iceberg
+BAD_ARGUMENTS
+== error: dotted top-level name collides with nested path (auto-assign) ==
+two output columns or nested fields flatten
+BAD_ARGUMENTS
+== error: dotted top-level name collides with nested path (overrides) ==
+two output columns or nested fields flatten
+BAD_ARGUMENTS
