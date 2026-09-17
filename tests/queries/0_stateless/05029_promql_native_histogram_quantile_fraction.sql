@@ -24,13 +24,13 @@ INSERT INTO ts_nh_qf (metric_name, tags, histograms) VALUES
 
 -- Classic-bucket series cb_bucket{job='classic', le='0.5'/'1'/'+Inf'} with cumulative counts 1/3/4:
 -- the phi=0.5 quantile is rank 2 in the le=1 bucket -> 0.5 + (1-0.5)*(2-1)/(3-1) = 0.75.
-INSERT INTO ts_nh_qf (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_qf (metric_name, tags, samples) VALUES
     ('cb_bucket', map('job', 'classic', 'le', '0.5'), [(toDateTime64(110, 3), 1)]),
     ('cb_bucket', map('job', 'classic', 'le', '1'), [(toDateTime64(110, 3), 3)]),
     ('cb_bucket', map('job', 'classic', 'le', '+Inf'), [(toDateTime64(110, 3), 4)]);
 
 -- A pure-float series: native-histogram functions skip it.
-INSERT INTO ts_nh_qf (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_qf (metric_name, tags, samples) VALUES
     ('f', map('job', 'float'), [(toDateTime64(110, 3), 42)]);
 
 SELECT '-- histogram_quantile over a native histogram: q=0.5 lands on [2,4], fraction 1/3, linear -> 2 + 2/3';
@@ -58,6 +58,6 @@ SELECT '-- histogram_fraction over a pure-float series: empty result';
 SELECT tags, timestamp, value FROM prometheusQuery('ts_nh_qf', 'histogram_fraction(0, 1, f)', 120);
 
 SELECT '-- range query over the native histogram: the quantile is emitted at every step seeing the sample';
-SELECT tags, time_series FROM prometheusQueryRange('ts_nh_qf', 'histogram_quantile(0.5, nh)', 100, 120, 10);
+SELECT tags, samples FROM prometheusQueryRange('ts_nh_qf', 'histogram_quantile(0.5, nh)', 100, 120, 10);
 
 DROP TABLE ts_nh_qf;
