@@ -22,13 +22,6 @@ struct ReadRoundContext
     const SharedHeader output_header;
 };
 
-Names extendWithAuxiliaryColumns(
-    Names columns,
-    const StreamSettings & stream_settings,
-    const FilterDAGInfoPtr & row_level_filter,
-    const StorageMetadataPtr & metadata,
-    const ContextPtr & context);
-
 ReadRoundContext makeReadRoundContext(
     const MergeTreeData & storage,
     const SelectQueryInfo & query_info,

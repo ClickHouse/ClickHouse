@@ -6,6 +6,8 @@
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <Parsers/IAST.h>
@@ -35,8 +37,6 @@
 #include <Core/SortDescription.h>
 #include <Core/Streaming/StreamingVirtualColumns.h>
 
-#include <Common/logger_useful.h>
-
 #include <algorithm>
 #include <memory>
 
@@ -45,6 +45,37 @@ namespace DB
 
 namespace
 {
+
+const ProjectionDescription * chooseCommitOrderProjection(const StorageInMemoryMetadata & metadata, const Names & columns)
+{
+    for (const auto & projection : metadata.projections)
+    {
+        if (projection.type != ProjectionDescription::Type::Normal)
+            continue;
+
+        const auto sorting_key = projection.metadata->getSortingKeyColumns();
+        if (sorting_key.size() < 2 || sorting_key[0] != BlockNumberColumn::name || sorting_key[1] != BlockOffsetColumn::name)
+            continue;
+
+        auto has_column = [&](const String & column) { return projection.sample_block.findColumnOrSubcolumnByName(column).has_value(); };
+        if (std::ranges::all_of(columns, has_column))
+            return &projection;
+    }
+
+    return nullptr;
+}
+
+QueryPlanOptimizationSettings makeReadRoundOptimizationSettings(const ContextPtr & context, const StorageInMemoryMetadata & metadata, const Names & columns_to_read)
+{
+    QueryPlanOptimizationSettings settings(context);
+    if (const auto * projection = chooseCommitOrderProjection(metadata, columns_to_read))
+    {
+        settings.prefer_use_projection = true;
+        settings.preferred_projection_name = projection->name;
+    }
+
+    return settings;
+}
 
 /// Commit-order key + everything the watermark needs.
 Names metadataStreamColumns(const StreamSettings & stream_settings, const StorageMetadataPtr & metadata, const ContextPtr & context)
@@ -242,7 +273,8 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const auto metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     const auto storage_snapshot = reading_context.storage.getStorageSnapshot(metadata, context);
     const auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
-    const QueryPlanOptimizationSettings opt_settings(context);
+    const auto columns_to_read = dataStreamColumns(reading_context.user_requested_columns, stream_settings, reading_context.prewhere_info, reading_context.row_level_filter);
+    const auto opt_settings = makeReadRoundOptimizationSettings(context, *metadata, columns_to_read);
 
     ReadRoundPipeline result;
     Pipes pipes;
