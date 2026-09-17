@@ -1,0 +1,48 @@
+-- baseline after one committed append
+versions: 2, data files: 1, rows: 3
+-- DELETE FROM t WHERE id = 1
+(BAD_ARGUMENTS)
+versions: 2, data files: 1, rows: 3
+-- ALTER TABLE t DELETE WHERE id = 1
+(UNSUPPORTED_METHOD)
+versions: 2, data files: 1, rows: 3
+-- ALTER TABLE t UPDATE s = 'z' WHERE 1
+(UNSUPPORTED_METHOD)
+versions: 2, data files: 1, rows: 3
+-- TRUNCATE TABLE t
+(NOT_IMPLEMENTED)
+versions: 2, data files: 1, rows: 3
+-- OPTIMIZE TABLE t
+(UNSUPPORTED_METHOD)
+versions: 2, data files: 1, rows: 3
+-- OPTIMIZE TABLE t FINAL
+(UNSUPPORTED_METHOD)
+versions: 2, data files: 1, rows: 3
+-- ALTER TABLE t ADD COLUMN extra Int32
+(UNSUPPORTED_METHOD)
+versions: 2, data files: 1, rows: 3
+-- ALTER TABLE t DROP COLUMN s
+(UNSUPPORTED_METHOD)
+versions: 2, data files: 1, rows: 3
+-- ALTER TABLE t MODIFY COLUMN s Int32
+(UNSUPPORTED_METHOD)
+versions: 2, data files: 1, rows: 3
+-- ALTER TABLE t RENAME COLUMN s TO renamed
+(UNSUPPORTED_METHOD)
+versions: 2, data files: 1, rows: 3
+-- INSERT with a column the table does not have is rejected before any file is written
+(INCOMPATIBLE_COLUMNS)
+versions: 2, data files: 1, rows: 3
+-- INSERT of NULL into a non-nullable data column is rejected before any file is written
+(CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)
+versions: 2, data files: 1, rows: 3
+-- INSERT that throws while streaming rows leaves nothing behind
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+versions: 2, data files: 1, rows: 3
+-- every column is a partition column: rejected as a user error, nothing written
+(INCORRECT_DATA)
+versions: 1, data files: 0, rows: 0
+-- the original rows are still readable after all rejected statements
+1	a
+2	b
+3	c
