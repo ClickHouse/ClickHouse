@@ -115,12 +115,25 @@ def test_ldaps_with_pinned_ca():
     assert not any("LDAP_ERROR" in line for line in lines), lines
 
 
+def assert_negotiated(server, expected):
+    """`LDAPClient` logs the negotiated protocol version and cipher on the first bind of a protected
+    connection; it is the only observable proof of the transport mode and of the protocol bounds.
+    """
+    assert_logs_contain_with_retry(
+        node, f"LDAP server '{server}': the connection to openldap:{expected}"
+    )
+
+
 def test_tls13_minimum():
     assert_login_works("user_ldaps_tls13")
+    assert_negotiated("ldaps_tls13", "1636 is protected by LDAPS (TLSv1.3 with cipher")
 
 
 def test_tls12_maximum():
     assert_login_works("user_ldaps_max_tls12")
+    assert_negotiated(
+        "ldaps_max_tls12", "1636 is protected by LDAPS (TLSv1.2 with cipher"
+    )
 
 
 def test_tls11_maximum_fails_handshake():
@@ -147,6 +160,8 @@ def test_never_skips_certificate_verification():
 
 def test_starttls_on_plain_port():
     assert_login_works("user_starttls")
+    # Plain binds are accepted on this port, so the success alone would not prove the upgrade.
+    assert_negotiated("starttls", "1389 is protected by StartTLS (TLSv1.")
 
 
 def test_network_timeout_bounds_unreachable_server():

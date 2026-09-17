@@ -292,6 +292,8 @@ protected:
     /// service credentials come from the configuration, so a failure is an operator error
     /// and not a "user not found" signal.
     MAYBE_NORETURN bool bind(BindMode mode);
+    /// Logs the protocol version and cipher of a protected connection, once per connection, on its first bind.
+    void logNegotiatedTLS();
 
     /// Runs `params.user_dn_detection` and returns the single DN it yields. Throws
     /// `LDAP_ERROR` when more than one entry matches. When `tolerate_missing_user` is set an
@@ -340,6 +342,7 @@ protected:
     LDAP * handle = nullptr;
 #endif
     BindMode bound_as = BindMode::None;
+    bool tls_logged = false;
     Placeholders placeholders;
 };
 

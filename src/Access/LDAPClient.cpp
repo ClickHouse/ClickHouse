@@ -706,6 +706,7 @@ void LDAPClient::connect()
         handleError(ldap_start_tls_s(handle, nullptr, nullptr));
 
     bound_as = BindMode::None;
+    tls_logged = false;
 
     /// The raw login is kept and escaped exactly once wherever it is substituted.
     placeholders.user_name = params.user;
@@ -779,12 +780,46 @@ bool LDAPClient::bind(BindMode mode)
 
             handleError(rc);
             bound_as = mode;
+
+            /// The first successful operation of the connection: with LDAPS the handshake has just happened, with
+            /// StartTLS it happened in `openConnection`; either way the negotiated parameters are known now.
+            if (params.enable_tls != Params::TLSEnable::NO && !tls_logged)
+            {
+                logNegotiatedTLS();
+                tls_logged = true;
+            }
             return true;
         }
 
         default:
             throw Exception(ErrorCodes::LDAP_ERROR, "Unknown SASL mechanism");
     }
+}
+
+
+void LDAPClient::logNegotiatedTLS()
+{
+#if defined(LDAP_OPT_X_TLS_VERSION) && defined(LDAP_OPT_X_TLS_CIPHER)
+    /// Read-only options of libldap; both strings are allocated for the caller.
+    char * version = nullptr;
+    if (ldap_get_option(handle, LDAP_OPT_X_TLS_VERSION, &version) != LDAP_OPT_SUCCESS || !version)
+        return;
+    SCOPE_EXIT({ ldap_memfree(version); });
+
+    String cipher = "unknown";
+    char * cipher_raw = nullptr;
+    if (ldap_get_option(handle, LDAP_OPT_X_TLS_CIPHER, &cipher_raw) == LDAP_OPT_SUCCESS && cipher_raw)
+    {
+        cipher = cipher_raw;
+        ldap_memfree(cipher_raw);
+    }
+
+    /// The tests of the transport settings assert on this line: it is the only observable proof that StartTLS
+    /// upgraded the connection and that the protocol bounds were applied.
+    LOG_DEBUG(getLogger("LDAPClient"), "LDAP server '{}': the connection to {}:{} is protected by {} ({} with cipher {})",
+        params.name, params.host, params.port,
+        params.enable_tls == Params::TLSEnable::YES_STARTTLS ? "StartTLS" : "LDAPS", version, cipher);
+#endif
 }
 
 std::optional<String> LDAPClient::detectUserDN(bool tolerate_missing_user)
