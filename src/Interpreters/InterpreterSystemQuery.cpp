@@ -181,7 +181,6 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_KILL;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
@@ -2303,9 +2302,7 @@ void registerSystemCommandLambdas()
     using Type = ASTSystemQuery::Type;
     auto & factory = SystemCommandFactory::instance();
 
-    auto reg_fn = [&](Type type, auto&& f) {
-        factory.registerCommand(type, f());
-    };
+    auto reg_fn = [&](Type type, auto && f) { factory.registerCommand(type, f()); };
 
     auto with_check_fn = [](std::optional<AccessType> access, auto && f)
     {
@@ -2319,7 +2316,8 @@ void registerSystemCommandLambdas()
                 return [=, &interpreter] -> BlockIO
                 {
                     BlockIO result;
-                    if (access.has_value()) {
+                    if (access.has_value())
+                    {
                         interpreter.getContext()->checkAccess(*access);
                     }
                     if constexpr (std::is_invocable_v<decltype(f)>)
@@ -2346,7 +2344,8 @@ void registerSystemCommandLambdas()
                     {
                         f(interpreter.log, interpreter.query_ptr->as<ASTSystemQuery &>(), system_context);
                     }
-                    else if constexpr (std::is_invocable_v<decltype(f), LoggerPtr, ASTSystemQuery &, ContextMutablePtr, InterpreterSystemQuery & >)
+                    else if constexpr (
+                        std::is_invocable_v<decltype(f), LoggerPtr, ASTSystemQuery &, ContextMutablePtr, InterpreterSystemQuery &>)
                     {
                         f(interpreter.log, interpreter.query_ptr->as<ASTSystemQuery &>(), system_context, interpreter);
                     }
@@ -2368,8 +2367,9 @@ void registerSystemCommandLambdas()
         };
     };
 
-    auto with_startstop_fn = [](StorageActionBlockType action_type, bool start) {
-        return [=]() 
+    auto with_startstop_fn = [](StorageActionBlockType action_type, bool start)
+    {
+        return [=]()
         {
             return [=](SystemCommandFactory::Arguments & args)
             {
@@ -2408,36 +2408,17 @@ void registerSystemCommandLambdas()
             }));
     reg_fn(
         Type::CLEAR_CONNECTIONS_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_CONNECTIONS_CACHE,
-            []()
-            {
-                HTTPConnectionPools::instance().dropCache();
-            }));
+        with_check_fn(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE, []() { HTTPConnectionPools::instance().dropCache(); }));
     reg_fn(
         Type::PREWARM_MARK_CACHE,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.prewarmMarkCache();
-            }));
+        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.prewarmMarkCache(); }));
     reg_fn(
         Type::PREWARM_PRIMARY_INDEX_CACHE,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.prewarmPrimaryIndexCache();
-            }));
+        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.prewarmPrimaryIndexCache(); }));
     reg_fn(
         Type::CLEAR_MARK_CACHE,
         with_check_fn(
-            AccessType::SYSTEM_DROP_MARK_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                system_context->clearMarkCache();
-            }));
+            AccessType::SYSTEM_DROP_MARK_CACHE, [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearMarkCache(); }));
 #if USE_AVRO
     reg_fn(
         Type::CLEAR_ICEBERG_METADATA_CACHE,
@@ -2467,9 +2448,7 @@ void registerSystemCommandLambdas()
 #if USE_AVRO
     reg_fn(
         Type::CLEAR_AVRO_SCHEMA_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE,
-            []() { clearConfluentSchemaRegistryCache(); }));
+        with_check_fn(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE, []() { clearConfluentSchemaRegistryCache(); }));
 #else
     reg_fn(
         Type::CLEAR_AVRO_SCHEMA_CACHE,
@@ -2552,26 +2531,18 @@ void registerSystemCommandLambdas()
         Type::CLEAR_QUERY_CONDITION_CACHE,
         with_check_fn(
             AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.getContext()->clearQueryConditionCache();
-            }));
+            [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.getContext()->clearQueryConditionCache(); }));
     reg_fn(
         Type::CLEAR_ENCRYPTION_HEADERS_CACHE,
         with_check_fn(
             AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.getContext()->clearEncryptionHeaderCache();
-            }));
+            [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.getContext()->clearEncryptionHeaderCache(); }));
     reg_fn(
         Type::CLEAR_QUERY_CACHE,
         with_check_fn(
             AccessType::SYSTEM_DROP_QUERY_CACHE,
             [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.getContext()->clearQueryResultCache(query.query_result_cache_tag);
-            }));
+            { interpreter.getContext()->clearQueryResultCache(query.query_result_cache_tag); }));
 #if USE_EMBEDDED_COMPILER
     reg_fn(
         Type::CLEAR_COMPILED_EXPRESSION_CACHE,
@@ -2609,12 +2580,7 @@ void registerSystemCommandLambdas()
 #if USE_AWS_S3
     reg_fn(
         Type::CLEAR_S3_CLIENT_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_S3_CLIENT_CACHE,
-            []()
-            {
-                S3::ClientCacheRegistry::instance().clearCacheForAll();
-            }));
+        with_check_fn(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE, []() { S3::ClientCacheRegistry::instance().clearCacheForAll(); }));
 #else
     reg_fn(
         Type::CLEAR_S3_CLIENT_CACHE,
@@ -2671,9 +2637,7 @@ void registerSystemCommandLambdas()
         with_check_fn(
             AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE,
             [](LoggerPtr log, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                DistributedCache::clearDistributedCache(interpreter.getContext(), query, log);
-            }));
+            { DistributedCache::clearDistributedCache(interpreter.getContext(), query, log); }));
 #endif
     reg_fn(
         Type::SYNC_FILESYSTEM_CACHE,
@@ -2681,48 +2645,49 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE,
             [](LoggerPtr, ASTSystemQuery & query, BlockIO & result)
             {
-            ColumnsDescription columns{NamesAndTypesList{
-                {"cache_name", std::make_shared<DataTypeString>()},
-                {"path", std::make_shared<DataTypeString>()},
-                {"size", std::make_shared<DataTypeUInt64>()},
-            }};
-            Block sample_block;
-            for (const auto & column : columns)
-                sample_block.insert({column.type->createColumn(), column.type, column.name});
+                ColumnsDescription columns{NamesAndTypesList{
+                    {"cache_name", std::make_shared<DataTypeString>()},
+                    {"path", std::make_shared<DataTypeString>()},
+                    {"size", std::make_shared<DataTypeUInt64>()},
+                }};
+                Block sample_block;
+                for (const auto & column : columns)
+                    sample_block.insert({column.type->createColumn(), column.type, column.name});
 
-            MutableColumns res_columns = sample_block.cloneEmptyColumns();
+                MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-            auto fill_data = [&](const std::string & cache_name, const std::vector<FileSegment::Info> & file_segments)
-            {
-                for (const auto & file_segment : file_segments)
+                auto fill_data = [&](const std::string & cache_name, const std::vector<FileSegment::Info> & file_segments)
                 {
-                    size_t i = 0;
-                    /// `file_segment.path` already reflects the real on-disk name (including the
-                    /// size suffix for downloaded segments); do not recompute it from the offset.
-                    res_columns[i++]->insert(cache_name);
-                    res_columns[i++]->insert(file_segment.path);
-                    res_columns[i++]->insert(file_segment.downloaded_size);
-                }
-            };
+                    for (const auto & file_segment : file_segments)
+                    {
+                        size_t i = 0;
+                        /// `file_segment.path` already reflects the real on-disk name (including the
+                        /// size suffix for downloaded segments); do not recompute it from the offset.
+                        res_columns[i++]->insert(cache_name);
+                        res_columns[i++]->insert(file_segment.path);
+                        res_columns[i++]->insert(file_segment.downloaded_size);
+                    }
+                };
 
-            if (query.filesystem_cache_name.empty())
-            {
-                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
+                if (query.filesystem_cache_name.empty())
                 {
-                    auto file_segments = cache_data->cache->sync();
-                    fill_data(cache_data->cache->getName(), file_segments);
+                    for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
+                    {
+                        auto file_segments = cache_data->cache->sync();
+                        fill_data(cache_data->cache->getName(), file_segments);
+                    }
                 }
-            }
-            else
-            {
-                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
-                auto file_segments = cache->sync();
-                fill_data(query.filesystem_cache_name, file_segments);
-            }
+                else
+                {
+                    auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
+                    auto file_segments = cache->sync();
+                    fill_data(query.filesystem_cache_name, file_segments);
+                }
 
-            size_t num_rows = res_columns[0]->size();
-            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
-            result.pipeline = QueryPipeline(std::move(source));
+                size_t num_rows = res_columns[0]->size();
+                auto source = std::make_shared<SourceFromSingleChunk>(
+                    std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
+                result.pipeline = QueryPipeline(std::move(source));
             }));
     reg_fn(
         Type::CLEAR_DISK_METADATA_CACHE,
@@ -2737,38 +2702,34 @@ void registerSystemCommandLambdas()
     reg_fn(
         Type::CLEAR_PAGE_CACHE,
         with_check_fn(
-            AccessType::SYSTEM_DROP_PAGE_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                system_context->clearPageCache();
-            }));
+            AccessType::SYSTEM_DROP_PAGE_CACHE, [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearPageCache(); }));
     reg_fn(
         Type::CLEAR_SCHEMA_CACHE,
         with_check_fn(
             AccessType::SYSTEM_DROP_SCHEMA_CACHE,
             [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
             {
-            std::unordered_set<String> caches_to_drop;
-            if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
-            else
-                caches_to_drop = {query.schema_cache_storage};
+                std::unordered_set<String> caches_to_drop;
+                if (query.schema_cache_storage.empty())
+                    caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
+                else
+                    caches_to_drop = {query.schema_cache_storage};
 
-            if (caches_to_drop.contains("FILE"))
-                StorageFile::getSchemaCache(interpreter.getContext()).clear();
+                if (caches_to_drop.contains("FILE"))
+                    StorageFile::getSchemaCache(interpreter.getContext()).clear();
 #if USE_AWS_S3
-            if (caches_to_drop.contains("S3"))
-                StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageS3Configuration::type_name).clear();
+                if (caches_to_drop.contains("S3"))
+                    StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageS3Configuration::type_name).clear();
 #endif
 #if USE_HDFS
-            if (caches_to_drop.contains("HDFS"))
-                StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageHDFSConfiguration::type_name).clear();
+                if (caches_to_drop.contains("HDFS"))
+                    StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageHDFSConfiguration::type_name).clear();
 #endif
-            if (caches_to_drop.contains("URL"))
-                StorageURL::getSchemaCache(interpreter.getContext()).clear();
+                if (caches_to_drop.contains("URL"))
+                    StorageURL::getSchemaCache(interpreter.getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
-            if (caches_to_drop.contains("AZURE"))
-                StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageAzureConfiguration::type_name).clear();
+                if (caches_to_drop.contains("AZURE"))
+                    StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageAzureConfiguration::type_name).clear();
 #endif
             }));
     reg_fn(
@@ -2777,32 +2738,32 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE,
             [](LoggerPtr log, ASTSystemQuery & query, ContextMutablePtr system_context)
             {
-            std::unordered_set<String> caches_to_drop;
-            if (query.schema_cache_format.empty())
-                caches_to_drop = {"Protobuf", "Files"};
-            else
-                caches_to_drop = {query.schema_cache_format};
+                std::unordered_set<String> caches_to_drop;
+                if (query.schema_cache_format.empty())
+                    caches_to_drop = {"Protobuf", "Files"};
+                else
+                    caches_to_drop = {query.schema_cache_format};
 #if USE_PROTOBUF
-            if (caches_to_drop.contains("Protobuf"))
-                ProtobufSchemas::instance().clear();
+                if (caches_to_drop.contains("Protobuf"))
+                    ProtobufSchemas::instance().clear();
 #endif
-            if (caches_to_drop.contains("Files"))
-            {
-                fs::path format_schema_cached_dir = fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME;
-                if (fs::exists(format_schema_cached_dir))
+                if (caches_to_drop.contains("Files"))
                 {
-                    size_t count = 0;
-                    for (const auto & entry : fs::directory_iterator(format_schema_cached_dir))
+                    fs::path format_schema_cached_dir = fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME;
+                    if (fs::exists(format_schema_cached_dir))
                     {
-                        if (entry.is_regular_file())
+                        size_t count = 0;
+                        for (const auto & entry : fs::directory_iterator(format_schema_cached_dir))
                         {
-                            fs::remove(entry.path());
-                            count++;
+                            if (entry.is_regular_file())
+                            {
+                                fs::remove(entry.path());
+                                count++;
+                            }
                         }
+                        LOG_INFO(log, "Cleared format schema cache files {}", count);
                     }
-                    LOG_INFO(log, "Cleared format schema cache files {}", count);
                 }
-            }
             }));
     reg_fn(
         Type::RELOAD_DICTIONARY,
@@ -2810,10 +2771,10 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_RELOAD_DICTIONARY,
             [](LoggerPtr, ASTSystemQuery & query, ContextMutablePtr system_context, InterpreterSystemQuery & interpreter)
             {
-            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            reloadDictionaryFromSystemQuery(external_dictionaries_loader, query, interpreter.getContext());
+                auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+                reloadDictionaryFromSystemQuery(external_dictionaries_loader, query, interpreter.getContext());
 
-            ExternalDictionariesLoader::resetAll();
+                ExternalDictionariesLoader::resetAll();
             }));
     reg_fn(
         Type::RELOAD_DICTIONARIES,
@@ -2821,11 +2782,10 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_RELOAD_DICTIONARY,
             [](LoggerPtr, ContextMutablePtr system_context)
             {
-            executeCommandsAndThrowIfError({
-                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
-                [&] { system_context->getEmbeddedDictionaries().reload(); }
-            });
-            ExternalDictionariesLoader::resetAll();
+                executeCommandsAndThrowIfError(
+                    {[&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
+                     [&] { system_context->getEmbeddedDictionaries().reload(); }});
+                ExternalDictionariesLoader::resetAll();
             }));
     reg_fn(
         Type::UNLOAD_DICTIONARY,
@@ -2833,9 +2793,9 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_RELOAD_DICTIONARY,
             [](LoggerPtr, ASTSystemQuery & query, ContextMutablePtr system_context, InterpreterSystemQuery & interpreter)
             {
-            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            unloadDictionaryFromSystemQuery(external_dictionaries_loader, query, interpreter.getContext());
-            ExternalDictionariesLoader::resetAll();
+                auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+                unloadDictionaryFromSystemQuery(external_dictionaries_loader, query, interpreter.getContext());
+                ExternalDictionariesLoader::resetAll();
             }));
     reg_fn(
         Type::UNLOAD_DICTIONARIES,
@@ -2843,9 +2803,9 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_RELOAD_DICTIONARY,
             [](LoggerPtr, ContextMutablePtr system_context)
             {
-            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.unloadAllDictionaries();
-            ExternalDictionariesLoader::resetAll();
+                auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+                external_dictionaries_loader.unloadAllDictionaries();
+                ExternalDictionariesLoader::resetAll();
             }));
     reg_fn(
         Type::RELOAD_FUNCTION,
@@ -2853,8 +2813,9 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_RELOAD_FUNCTION,
             [](LoggerPtr, ASTSystemQuery & query, ContextMutablePtr system_context)
             {
-            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
-            external_user_defined_executable_functions_loader.reloadFunction(query.target_function);
+                auto & external_user_defined_executable_functions_loader
+                    = system_context->getExternalUserDefinedExecutableFunctionsLoader();
+                external_user_defined_executable_functions_loader.reloadFunction(query.target_function);
             }));
     reg_fn(
         Type::RELOAD_FUNCTIONS,
@@ -2862,26 +2823,25 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_RELOAD_FUNCTION,
             [](LoggerPtr, ContextMutablePtr system_context)
             {
-            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
-            external_user_defined_executable_functions_loader.reloadAllTriedToLoad();
+                auto & external_user_defined_executable_functions_loader
+                    = system_context->getExternalUserDefinedExecutableFunctionsLoader();
+                external_user_defined_executable_functions_loader.reloadAllTriedToLoad();
             }));
     reg_fn(
         Type::RELOAD_EMBEDDED_DICTIONARIES,
         with_check_fn(
             AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-            system_context->getEmbeddedDictionaries().reload();
-            }));
+            [](LoggerPtr, ContextMutablePtr system_context) { system_context->getEmbeddedDictionaries().reload(); }));
     reg_fn(
         Type::RELOAD_CONFIG,
         with_check_fn(
             AccessType::SYSTEM_RELOAD_CONFIG,
             [](LoggerPtr, ContextMutablePtr system_context)
             {
-            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
-                throw Exception::createDeprecated("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
-            system_context->reloadConfig();
+                if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                    throw Exception::createDeprecated(
+                        "SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
+                system_context->reloadConfig();
             }));
     reg_fn(
         Type::RELOAD_USERS,
@@ -2904,47 +2864,43 @@ void registerSystemCommandLambdas()
         Type::RELOAD_DELTA_KERNEL_TRACING,
         with_check_fn(
             std::nullopt,
-            [](LoggerPtr log, ASTSystemQuery & query) { 
-            const auto & level_str = query.delta_kernel_tracing_level;
-            ffi::Level level = {};
+            [](LoggerPtr log, ASTSystemQuery & query)
+            {
+                const auto & level_str = query.delta_kernel_tracing_level;
+                ffi::Level level = {};
 
-            if (level_str == "ERROR")
-                level = ffi::Level::ERROR;
-            else if (level_str == "WARN")
-                level = ffi::Level::WARN;
-            else if (level_str == "INFO")
-                level = ffi::Level::INFO;
-            else if (level_str == "DEBUG")
-                level = ffi::Level::DEBUG;
-            else if (level_str == "TRACE")
-                level = ffi::Level::TRACE;
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
+                if (level_str == "ERROR")
+                    level = ffi::Level::ERROR;
+                else if (level_str == "WARN")
+                    level = ffi::Level::WARN;
+                else if (level_str == "INFO")
+                    level = ffi::Level::INFO;
+                else if (level_str == "DEBUG")
+                    level = ffi::Level::DEBUG;
+                else if (level_str == "TRACE")
+                    level = ffi::Level::TRACE;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
 
-            /// Reload tracing with the new level (can be called multiple times)
-            bool success = ffi::enable_event_tracing(tracingCallback, level);
+                /// Reload tracing with the new level (can be called multiple times)
+                bool success = ffi::enable_event_tracing(tracingCallback, level);
 
-            if (success)
-                LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
-            else
-                throw Exception(ErrorCodes::DELTA_KERNEL_ERROR, "Failed to reload delta kernel tracing level to {}", level_str);
-
-             }));
+                if (success)
+                    LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
+                else
+                    throw Exception(ErrorCodes::DELTA_KERNEL_ERROR, "Failed to reload delta kernel tracing level to {}", level_str);
+            }));
 #else
     reg_fn(
         Type::RELOAD_DELTA_KERNEL_TRACING,
-        with_check_fn(
-            std::nullopt,
-            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Delta Kernel support is not enabled"); }));
+        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Delta Kernel support is not enabled"); }));
 #endif
     reg_fn(
         Type::RECONNECT_ZOOKEEPER,
         with_check_fn(
             AccessType::SYSTEM_RECONNECT_ZOOKEEPER,
             [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command");
-            }));
+            { system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command"); }));
     reg_fn(Type::STOP_MERGES, with_startstop_fn(ActionLocks::PartsMerge, false));
     reg_fn(Type::START_MERGES, with_startstop_fn(ActionLocks::PartsMerge, true));
     reg_fn(Type::STOP_TTL_MERGES, with_startstop_fn(ActionLocks::PartsTTLMerge, false));
@@ -2985,8 +2941,8 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            for (const auto & task : interpreter.getRefreshTasks())
-                task->startReplicated();
+                for (const auto & task : interpreter.getRefreshTasks())
+                    task->startReplicated();
             }));
     reg_fn(
         Type::STOP_REPLICATED_VIEW,
@@ -2994,8 +2950,8 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            for (const auto & task : interpreter.getRefreshTasks())
-                task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
+                for (const auto & task : interpreter.getRefreshTasks())
+                    task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
             }));
     reg_fn(
         Type::REFRESH_VIEW,
@@ -3003,8 +2959,8 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            for (const auto & task : interpreter.getRefreshTasks())
-                task->run();
+                for (const auto & task : interpreter.getRefreshTasks())
+                    task->run();
             }));
     reg_fn(
         Type::WAIT_VIEW,
@@ -3012,8 +2968,8 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            for (const auto & task : interpreter.getRefreshTasks())
-                task->wait(interpreter.getContext());
+                for (const auto & task : interpreter.getRefreshTasks())
+                    task->wait(interpreter.getContext());
             }));
     reg_fn(
         Type::CANCEL_VIEW,
@@ -3021,8 +2977,8 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            for (const auto & task : interpreter.getRefreshTasks())
-                task->cancel();
+                for (const auto & task : interpreter.getRefreshTasks())
+                    task->cancel();
             }));
     reg_fn(
         Type::TEST_VIEW,
@@ -3030,18 +2986,18 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
             {
-            /// The parser keeps the literal text; resolving it needs the server timezone.
-            std::optional<Int64> fake_time;
-            if (query.fake_time_for_view)
-            {
-                ReadBufferFromString buf(*query.fake_time_for_view);
-                time_t time = 0;
-                readDateTimeText(time, buf);
-                assertEOF(buf);
-                fake_time = Int64(time);
-            }
-            for (const auto & task : interpreter.getRefreshTasks())
-                task->setFakeTime(fake_time);
+                /// The parser keeps the literal text; resolving it needs the server timezone.
+                std::optional<Int64> fake_time;
+                if (query.fake_time_for_view)
+                {
+                    ReadBufferFromString buf(*query.fake_time_for_view);
+                    time_t time = 0;
+                    readDateTimeText(time, buf);
+                    assertEOF(buf);
+                    fake_time = Int64(time);
+                }
+                for (const auto & task : interpreter.getRefreshTasks())
+                    task->setFakeTime(fake_time);
             }));
     reg_fn(
         Type::STOP,
@@ -3085,9 +3041,9 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            interpreter.startStopAction(ActionLocks::ViewRefresh, true);
-            interpreter.startStopAction(ActionLocks::ViewRefreshPause, true);
-            interpreter.startStopAction(ActionLocks::StreamConsume, true);
+                interpreter.startStopAction(ActionLocks::ViewRefresh, true);
+                interpreter.startStopAction(ActionLocks::ViewRefreshPause, true);
+                interpreter.startStopAction(ActionLocks::StreamConsume, true);
             }));
     reg_fn(
         Type::PAUSE_ALL_BACKGROUND,
@@ -3095,8 +3051,8 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            interpreter.startStopAction(ActionLocks::ViewRefreshPause, false);
-            interpreter.startStopAction(ActionLocks::StreamConsume, false);
+                interpreter.startStopAction(ActionLocks::ViewRefreshPause, false);
+                interpreter.startStopAction(ActionLocks::StreamConsume, false);
             }));
     reg_fn(
         Type::CANCEL_ALL_BACKGROUND,
@@ -3104,10 +3060,10 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            for (const auto & task : interpreter.getAccessibleRefreshTasks())
-                task->cancel();
-            for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
-                streaming_storage->cancelBackgroundActivity();
+                for (const auto & task : interpreter.getAccessibleRefreshTasks())
+                    task->cancel();
+                for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
+                    streaming_storage->cancelBackgroundActivity();
             }));
     reg_fn(
         Type::REFRESH_ALL_BACKGROUND,
@@ -3115,147 +3071,78 @@ void registerSystemCommandLambdas()
             std::nullopt,
             [](LoggerPtr, InterpreterSystemQuery & interpreter)
             {
-            for (const auto & task : interpreter.getAccessibleRefreshTasks())
-                task->run();
-            for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
-                streaming_storage->refreshBackgroundActivity();
+                for (const auto & task : interpreter.getAccessibleRefreshTasks())
+                    task->run();
+                for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
+                    streaming_storage->refreshBackgroundActivity();
             }));
     reg_fn(
         Type::DROP_REPLICA,
         with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.dropReplica(query);
-            }));
+            std::nullopt, [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.dropReplica(query); }));
     reg_fn(
         Type::DROP_DATABASE_REPLICA,
         with_check_fn(
             std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.dropDatabaseReplica(query);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.dropDatabaseReplica(query); }));
     reg_fn(
         Type::SYNC_REPLICA,
         with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.syncReplica(query);
-            }));
+            std::nullopt, [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.syncReplica(query); }));
     reg_fn(
         Type::SYNC_DATABASE_REPLICA,
         with_check_fn(
             std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.syncReplicatedDatabase(query);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.syncReplicatedDatabase(query); }));
     reg_fn(
-        Type::REPLICA_UNREADY,
-        with_check_fn(
-            std::nullopt,
-            []()
-            {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-            }));
-    reg_fn(
-        Type::REPLICA_READY,
-        with_check_fn(
-            std::nullopt,
-            []()
-            {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-            }));
+        Type::REPLICA_UNREADY, with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+    reg_fn(Type::REPLICA_READY, with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
     reg_fn(
         Type::SYNC_TRANSACTION_LOG,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.syncTransactionLog();
-            }));
+        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.syncTransactionLog(); }));
     reg_fn(
         Type::FLUSH_DISTRIBUTED,
         with_check_fn(
             std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.flushDistributed(query);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.flushDistributed(query); }));
     reg_fn(
         Type::FLUSH_OBJECT_STORAGE_QUEUE,
         with_check_fn(
             std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.flushObjectStorageQueue(query);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.flushObjectStorageQueue(query); }));
     reg_fn(
         Type::RESTART_REPLICAS,
         with_check_fn(
             std::nullopt,
             [](LoggerPtr, ASTSystemQuery &, ContextMutablePtr system_context, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.restartReplicas(system_context);
-            }));
+            { interpreter.restartReplicas(system_context); }));
     reg_fn(
         Type::RESTART_REPLICA,
         with_check_fn(
             std::nullopt,
             [](LoggerPtr, ASTSystemQuery &, ContextMutablePtr system_context, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.restartReplica(interpreter.table_id, system_context);
-            }));
+            { interpreter.restartReplica(interpreter.table_id, system_context); }));
     reg_fn(
         Type::RESTORE_REPLICA,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.restoreReplica();
-            }));
+        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.restoreReplica(); }));
     reg_fn(
         Type::RESTORE_DATABASE_REPLICA,
         with_check_fn(
             std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.restoreDatabaseReplica(query);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.restoreDatabaseReplica(query); }));
     reg_fn(
         Type::WAIT_LOADING_PARTS,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.waitLoadingParts();
-            }));
+        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.waitLoadingParts(); }));
     reg_fn(
         Type::WAIT_QUERY_RUNNER,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.waitQueryRunner();
-            }));
+        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.waitQueryRunner(); }));
     reg_fn(
         Type::SCHEDULE_MERGE,
         with_check_fn(
             std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.scheduleMerge(query);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.scheduleMerge(query); }));
     reg_fn(
-        Type::SYNC_MERGES,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.syncMerges();
-            }));
+        Type::SYNC_MERGES, with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.syncMerges(); }));
     reg_fn(
         Type::WAIT_BLOBS_CLEANUP,
         with_check_fn(
@@ -3276,10 +3163,7 @@ void registerSystemCommandLambdas()
         Type::RESTART_DISK,
         with_check_fn(
             std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.restartDisk(query.disk);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.restartDisk(query.disk); }));
     reg_fn(
         Type::FLUSH_LOGS,
         with_check_fn(
@@ -3294,17 +3178,13 @@ void registerSystemCommandLambdas()
         with_check_fn(
             AccessType::SYSTEM_LISTEN,
             [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.getContext()->stopServers(query.server_type);
-            }));
+            { interpreter.getContext()->stopServers(query.server_type); }));
     reg_fn(
         Type::START_LISTEN,
         with_check_fn(
             AccessType::SYSTEM_LISTEN,
             [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.getContext()->startServers(query.server_type);
-            }));
+            { interpreter.getContext()->startServers(query.server_type); }));
     reg_fn(
         Type::FLUSH_ASYNC_INSERT_QUEUE,
         with_check_fn(
@@ -3357,18 +3237,12 @@ void registerSystemCommandLambdas()
         Type::ENABLE_FAILPOINT,
         with_check_fn(
             AccessType::SYSTEM_FAILPOINT,
-            [](LoggerPtr, ASTSystemQuery & query)
-            {
-                FailPointInjection::enableFailPoint(query.fail_point_name);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query) { FailPointInjection::enableFailPoint(query.fail_point_name); }));
     reg_fn(
         Type::DISABLE_FAILPOINT,
         with_check_fn(
             AccessType::SYSTEM_FAILPOINT,
-            [](LoggerPtr, ASTSystemQuery & query)
-            {
-                FailPointInjection::disableFailPoint(query.fail_point_name);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query) { FailPointInjection::disableFailPoint(query.fail_point_name); }));
     reg_fn(
         Type::ALLOCATE_MEMORY,
         with_check_fn(
@@ -3447,71 +3321,58 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM,
             [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
             {
-            LOG_INFO(getLogger("InterpreterSystemQuery"),
-                "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
+                LOG_INFO(getLogger("InterpreterSystemQuery"), "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
 #if WITH_COVERAGE_DEPTH
-            {
-                /// Register (or re-register) the flush callback so coverage data is
-                /// resolved and inserted into system.coverage_log when the previous
-                /// test's counters are flushed.  We re-register on each call so the
-                /// captured global context stays fresh after server restart scenarios,
-                /// and so that the callback is available even on the very first call.
-                ContextPtr global_ctx = interpreter.getContext()->getGlobalContext();
-                registerCoverageFlushCallback(
-                    [global_ctx](std::string_view prev_test,
-                                 const std::vector<CovCounter> & name_refs,
-                                 const std::vector<IndirectCallEntry> & indirect_calls)
-                    {
-                        LOG_INFO(getLogger("CoverageCollection"),
-                            "Flushing coverage for test '{}': {} covered counters, {} indirect calls",
-                            prev_test, name_refs.size(), indirect_calls.size());
+                {
+                    /// Register (or re-register) the flush callback so coverage data is
+                    /// resolved and inserted into system.coverage_log when the previous
+                    /// test's counters are flushed.  We re-register on each call so the
+                    /// captured global context stays fresh after server restart scenarios,
+                    /// and so that the callback is available even on the very first call.
+                    ContextPtr global_ctx = interpreter.getContext()->getGlobalContext();
+                    registerCoverageFlushCallback(
+                        [global_ctx](
+                            std::string_view prev_test,
+                            const std::vector<CovCounter> & name_refs,
+                            const std::vector<IndirectCallEntry> & indirect_calls)
+                        {
+                            LOG_INFO(
+                                getLogger("CoverageCollection"),
+                                "Flushing coverage for test '{}': {} covered counters, {} indirect calls",
+                                prev_test,
+                                name_refs.size(),
+                                indirect_calls.size());
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-                        DB::collectAndInsertCoverage(prev_test, name_refs, indirect_calls, global_ctx);
+                            DB::collectAndInsertCoverage(prev_test, name_refs, indirect_calls, global_ctx);
 #else
-                        (void)prev_test;
-                        (void)name_refs;
-                        (void)indirect_calls;
-                        (void)global_ctx;
+                            (void)prev_test;
+                            (void)name_refs;
+                            (void)indirect_calls;
+                            (void)global_ctx;
 #endif
-                    });
-            }
+                        });
+                }
 #endif
-            (void)interpreter;
-            setCoverageTest(query.coverage_test_name);
+                (void)interpreter;
+                setCoverageTest(query.coverage_test_name);
             }));
     reg_fn(
         Type::LOAD_PRIMARY_KEY,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.loadPrimaryKeys();
-            }));
+        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.loadPrimaryKeys(); }));
     reg_fn(
         Type::UNLOAD_PRIMARY_KEY,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.unloadPrimaryKeys();
-            }));
+        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.unloadPrimaryKeys(); }));
 #if USE_XRAY
     reg_fn(
         Type::INSTRUMENT_ADD,
         with_check_fn(
             AccessType::SYSTEM_INSTRUMENT_ADD,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.instrumentWithXRay(true, query);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.instrumentWithXRay(true, query); }));
     reg_fn(
         Type::INSTRUMENT_REMOVE,
         with_check_fn(
             AccessType::SYSTEM_INSTRUMENT_REMOVE,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.instrumentWithXRay(false, query);
-            }));
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.instrumentWithXRay(false, query); }));
 #else
     reg_fn(
         Type::INSTRUMENT_ADD,
@@ -3552,34 +3413,35 @@ void registerSystemCommandLambdas()
             AccessType::SYSTEM_JEMALLOC,
             [](LoggerPtr, ASTSystemQuery &, InterpreterSystemQuery & interpreter, BlockIO & result)
             {
-            auto context = interpreter.getContext();
-            auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
-            auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
-            auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
+                auto context = interpreter.getContext();
+                auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
+                auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
+                auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
 
-            std::string output_filename;
-            if (format == JemallocProfileFormat::Raw)
-            {
-                output_filename = filename;
-            }
-            else if (format == JemallocProfileFormat::Symbolized)
-            {
-                output_filename = filename + ".symbolized";
-                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
-            }
-            else
-            {
-                output_filename = filename + ".collapsed";
-                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
-            }
-            auto col = ColumnString::create();
-            col->insertData(output_filename.data(), output_filename.size());
-            Columns columns;
-            columns.emplace_back(std::move(col));
-            Chunk chunk(std::move(columns), 1);
-            SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "filename")});
-            auto filename_source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-            result.pipeline = QueryPipeline(filename_source);
+                std::string output_filename;
+                if (format == JemallocProfileFormat::Raw)
+                {
+                    output_filename = filename;
+                }
+                else if (format == JemallocProfileFormat::Symbolized)
+                {
+                    output_filename = filename + ".symbolized";
+                    symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+                }
+                else
+                {
+                    output_filename = filename + ".collapsed";
+                    symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+                }
+                auto col = ColumnString::create();
+                col->insertData(output_filename.data(), output_filename.size());
+                Columns columns;
+                columns.emplace_back(std::move(col));
+                Chunk chunk(std::move(columns), 1);
+                SharedHeader header = std::make_shared<Block>(
+                    Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "filename")});
+                auto filename_source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
+                result.pipeline = QueryPipeline(filename_source);
             }));
 #else
     reg_fn(
@@ -3603,10 +3465,7 @@ void registerSystemCommandLambdas()
         Type::RESET_DDL_WORKER,
         with_check_fn(
             AccessType::SYSTEM_RESET_DDL_WORKER,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.getContext()->getDDLWorker().requestToResetState();
-            }));
+            [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.getContext()->getDDLWorker().requestToResetState(); }));
 }
 
 void registerSystemCommands();
