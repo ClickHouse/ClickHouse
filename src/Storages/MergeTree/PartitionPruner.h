@@ -18,7 +18,8 @@ public:
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         bool strict = false,
-        bool skip_analysis = false);
+        bool skip_analysis = false,
+        bool require_ready_sets = false);
 
     /// True if the part cannot hold a row the predicate accepts. An empty part never can, whatever
     /// its partition is, which is the answer a read wants.
