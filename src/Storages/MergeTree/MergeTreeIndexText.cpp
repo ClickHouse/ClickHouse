@@ -513,15 +513,10 @@ DictionaryBlockRanges blocksMatchingTokenKeyRanges(
         size_t first_block_after_begin = sparse_index.upperBound(key_range.begin);
         size_t range_begin = first_block_after_begin != 0 ? first_block_after_begin - 1 : 0;
 
-        size_t range_end;
-        if (key_range.end.empty())
-            range_end = sparse_index.size();
-        else if (key_range.end == key_range.begin)
-            /// Equal bounds are the single key `begin`, which only the block found above can hold.
-            range_end = first_block_after_begin;
-        else
-            /// `end` is excluded from the range, so a block whose first token is `end` holds no key of it.
-            range_end = sparse_index.lowerBound(key_range.end);
+        /// `end` is exclusive: a block whose first token is `end` holds no key of it. Equal bounds are the single key `begin`.
+        size_t range_end = sparse_index.size();
+        if (!key_range.end.empty())
+            range_end = key_range.end == key_range.begin ? first_block_after_begin : sparse_index.lowerBound(key_range.end);
 
         if (range_begin < range_end)
             block_ranges.emplace_back(range_begin, range_end);
