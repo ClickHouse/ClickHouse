@@ -223,26 +223,51 @@ public:
 
     void setEnableLazyColumnsIndexing(bool value) override;
 
-    /// See `HashJoinClause::BuildStats`. Valid after `runPostBuildPhase`.
+    /// See `HashJoinClause::BuildStats`, per clause. Valid after `runPostBuildPhase`.
     using BuildStats = HashJoinClause::BuildStats;
-    BuildStats getBuildStats() const;
+    BuildStats getBuildStats(size_t clause_idx = 0) const;
 
-    void setReserveSafetyFactorForTests(double factor) { clause.setReserveSafetyFactorForTests(factor); }
-    void setReserveOverrideForTests(size_t reserve) { clause.setReserveOverrideForTests(reserve); }
-    void setAmacEnabledForTests(bool value) { clause.setAmacEnabledForTests(value); }
-    void setL1CacheSizeForTests(size_t bytes) { clause.setL1CacheSizeForTests(bytes); }
+    void setReserveSafetyFactorForTests(double factor)
+    {
+        for (auto & clause : clauses)
+            clause.setReserveSafetyFactorForTests(factor);
+    }
+    void setReserveOverrideForTests(size_t reserve)
+    {
+        for (auto & clause : clauses)
+            clause.setReserveOverrideForTests(reserve);
+    }
+    void setAmacEnabledForTests(bool value)
+    {
+        for (auto & clause : clauses)
+            clause.setAmacEnabledForTests(value);
+    }
+    void setL1CacheSizeForTests(size_t bytes)
+    {
+        for (auto & clause : clauses)
+            clause.setL1CacheSizeForTests(bytes);
+    }
     /// A forced partition plan is a partitioned build, which a one-thread join would otherwise skip.
     void setPartitionBitsForTests(size_t value)
     {
-        clause.setPartitionBitsForTests(value);
+        for (auto & clause : clauses)
+            clause.setPartitionBitsForTests(value);
         single_fill_thread = false;
     }
-    void setGrowBudgetForTests(size_t bytes) { clause.setGrowBudgetForTests(bytes); }
-    void setGrowBudgetForDrainForTests(size_t bytes) { clause.setGrowBudgetForDrainForTests(bytes); }
-    size_t predictedArenaBytesForTests(bool grouped) const { return clause.predictedArenaBytesForTests(grouped); }
+    void setGrowBudgetForTests(size_t bytes)
+    {
+        for (auto & clause : clauses)
+            clause.setGrowBudgetForTests(bytes);
+    }
+    void setGrowBudgetForDrainForTests(size_t bytes)
+    {
+        for (auto & clause : clauses)
+            clause.setGrowBudgetForDrainForTests(bytes);
+    }
+    size_t predictedArenaBytesForTests(bool grouped) const { return clauses.front().predictedArenaBytesForTests(grouped); }
     size_t predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const
     {
-        return clause.predictedDuplicateScratchBytesForTests(rows_in_range, first_group);
+        return clauses.front().predictedDuplicateScratchBytesForTests(rows_in_range, first_group);
     }
 
     /// The post-build memory verdict, taken once at the barrier from numbers that already exist. A
@@ -306,8 +331,11 @@ private:
     /// a merge never stalls the other lanes.
     struct FillLane
     {
+        explicit FillLane(size_t num_clauses) : hll(num_clauses) { }
+
         std::vector<FillBlock> blocks;
-        DenseHyperLogLog hll;
+        /// One sketch per clause, indexed like `clauses`.
+        std::vector<DenseHyperLogLog> hll;
         mutable std::mutex hll_mutex;
     };
 
@@ -329,6 +357,9 @@ private:
     void finishBuildPhase(bool all_values_unique);
     /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
     void reinitUsedFlags();
+    /// The pool of the post-build waves, one per build for every clause; created on first use after the
+    /// barrier, sized to the smaller of the thread count and the block count, released with the scratch.
+    ThreadPool & postBuildPool();
 
     /// `MapsShape` is the standard shape the (kind, strictness) pair dispatches to; the shared table is
     /// its partitioned counterpart, holding identical cells. With `join_get_columns` the block carries
@@ -442,8 +473,13 @@ private:
 
     LoggerPtr log;
 
-    /// The one clause's table and its build, over this join's store, fill blocks and byte count.
-    HashJoinClause clause;
+    /// See `postBuildPool`.
+    std::unique_ptr<ThreadPool> post_build_pool;
+
+    /// One per ON clause, indexed like `TableJoin::getClauses`: each holds its table and its build, all
+    /// over this join's store, fill blocks and byte count. A deque, because the clause is neither copyable
+    /// nor movable (reference members).
+    std::deque<HashJoinClause> clauses;
 };
 
 }
