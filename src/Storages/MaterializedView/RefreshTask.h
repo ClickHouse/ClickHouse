@@ -239,6 +239,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
+        /// ├── ["request-<replica>"] (ephemeral, one per replica that owes an out-of-schedule refresh)
         /// └── ["paused"]
 
         struct WatchState
@@ -249,6 +250,23 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
+        /// Whether any replica has accepted a SYSTEM REFRESH VIEW that hasn't started yet. Such a
+        /// replica publishes a "request-<replica>" znode, so that SYSTEM WAIT VIEW on every replica
+        /// can see that a refresh is owed even before an attempt exists. Only the replica that
+        /// accepted the command runs it, so which replica refreshes is unaffected.
+        bool out_of_schedule_request_znode_exists = false;
+        /// Whether *our* "request-<replica>" znode existed at the last read.
+        bool our_request_znode_exists = false;
+        /// Bumped whenever this replica changes its own request znode, so a read that raced with
+        /// such a change can tell that its observation is outdated.
+        UInt64 request_znode_epoch = 0;
+        /// Number of run() calls that have published a request znode but not yet counted it in
+        /// `out_of_schedule_refresh_requested`. A refresh is owed during that window too, so the
+        /// scheduling pass must not mistake the new znode for a leftover and retract it.
+        UInt64 publishing_requests = 0;
+        /// Bumped on every read of the znodes above. wait() uses it to tell that what it looks at
+        /// was read after the wait started, instead of trusting a possibly stale copy.
+        UInt64 znodes_read_count = 0;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
@@ -430,7 +448,11 @@ private:
     std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, CoordinationZnode>
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
 
-    void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
+    void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool is_shutdown);
+    /// Name of this replica's "request-<replica>" znode; see run().
+    String requestZnodeName() const;
+    /// Whether any replica owes an out-of-schedule refresh that hasn't started yet.
+    bool outOfScheduleRefreshPending() const;
     /// Update the root znode and create/remove-if-exists the 'running' znode,
     /// atomically, conditionally on the root znode version number.
     /// If `only_running_znode`, the root znode is not updated, but its version is still checked.

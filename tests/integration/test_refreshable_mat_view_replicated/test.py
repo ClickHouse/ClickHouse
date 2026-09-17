@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 from datetime import datetime
 from typing import Optional
@@ -840,3 +841,150 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
     node.query("SYSTEM START VIEW child_v")
     node2.query("SYSTEM START VIEW parent_v")
     _drop_sync_objects()
+
+
+def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables):
+    # `SYSTEM WAIT VIEW` must account for a `SYSTEM REFRESH VIEW` that another replica has accepted
+    # but not started yet. The request is queued behind a refresh that is already running, so the
+    # window in which it exists without a running attempt is as long as that refresh.
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    create_sql = CREATE_RMV.render(
+        table_name="test_rmv",
+        refresh_interval="EVERY 1 HOUR",
+        to_clause="tgt1",
+        # 5 rows, one second each: every refresh takes ~5s and appends 5 rows.
+        select_query="SELECT now() + sleepEachRow(1) a FROM numbers(5) SETTINGS max_block_size = 1",
+        with_append=True,
+        on_cluster="default",
+        empty=True,
+        settings={"refresh_retries": "0"},
+    )
+    node.query(create_sql)
+
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    get_rmv_info(node, "test_rmv", wait_status="Running")
+    # node2 has read the current coordination state, so this is not about a stale cache.
+    get_rmv_info(node2, "test_rmv", wait_status="RunningOnAnotherReplica")
+
+    # Accepted by `node` while refresh #1 is still running, so it cannot start yet.
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+
+    # Both refreshes must be done by now: 5 rows each.
+    rows = node.query("SELECT count() FROM tgt1").strip()
+    assert rows == "10", f"node2 stopped waiting after {rows} rows, expected 10"
+
+
+def test_wait_view_covers_request_before_any_attempt_starts(fn3_setup_tables):
+    # The same, in the window before any attempt exists at all: the refresh is requested on `node`
+    # and `node`'s coordination write is parked, so there is no running attempt anywhere. A wait on
+    # node2 must still cover the requested refresh.
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    create_sql = CREATE_RMV.render(
+        table_name="test_rmv",
+        refresh_interval="EVERY 1 HOUR",
+        to_clause="tgt1",
+        select_query="SELECT now() a FROM numbers(5)",
+        with_append=True,
+        on_cluster="default",
+        empty=True,
+        settings={"refresh_retries": "0"},
+    )
+    node.query(create_sql)
+
+    fp = "refresh_mv_pause_inside_coordination_write"
+    node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    released = False
+    try:
+        node.query("SYSTEM REFRESH VIEW test_rmv")
+        # `node` is now parked before publishing the attempt to Keeper.
+        node.query(f"SYSTEM WAIT FAILPOINT {fp} PAUSE")
+        assert node.query("SELECT count() FROM tgt1").strip() == "0"
+
+        wait_done = []
+
+        def wait_on_node2():
+            node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+            wait_done.append(time.time())
+
+        waiter = threading.Thread(target=wait_on_node2)
+        waiter.start()
+        try:
+            # The wait must not finish while the requested refresh has not run.
+            time.sleep(3)
+            assert not wait_done, "node2 stopped waiting before the requested refresh ran"
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+            released = True
+            waiter.join(timeout=180)
+
+        assert wait_done, "node2 never finished waiting"
+        rows = node.query("SELECT count() FROM tgt1").strip()
+        assert rows == "5", f"node2 stopped waiting after {rows} rows, expected 5"
+    finally:
+        if not released:
+            node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+
+
+def test_drop_view_with_unconsumed_refresh_request(fn3_setup_tables):
+    # A refresh requested while the view is stopped cluster-wide is never consumed, so the request
+    # this replica published outlives every refresh. Dropping the view must still clean Keeper up:
+    # the coordination znode is removed child by child, so a request znode left under it would make
+    # that removal fail, and the view's whole coordination state would leak.
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    create_sql = CREATE_RMV.render(
+        table_name="test_rmv",
+        refresh_interval="EVERY 1 HOUR",
+        to_clause="tgt1",
+        select_query="SELECT now() a",
+        with_append=True,
+        on_cluster="default",
+        empty=True,
+    )
+    node.query(create_sql)
+
+    uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_rmv'"
+    ).strip()
+    znode_path = f"/clickhouse/tables/{uuid}/1"
+
+    node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
+    for n in nodes:
+        get_rmv_info(n, "test_rmv", wait_status="Disabled")
+
+    # Accepted and published, but the cluster-wide stop means it can never run.
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    wait_condition(
+        lambda: node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}'"
+            " AND name LIKE 'request-%'"
+        ).strip(),
+        lambda x: x == "1",
+        max_attempts=50,
+        delay=0.2,
+    )
+
+    node.query("DROP TABLE test_rmv ON CLUSTER default SYNC")
+
+    # `system.zookeeper` throws instead of returning nothing for a path that is gone, and the
+    # parent may be gone too, so ask the parent for the child and treat either absence as removed.
+    def coordination_znode_gone():
+        try:
+            return (
+                node.query(
+                    f"SELECT count() FROM system.zookeeper"
+                    f" WHERE path = '/clickhouse/tables/{uuid}' AND name = '1'"
+                ).strip()
+                == "0"
+            )
+        except helpers.client.QueryRuntimeException:
+            return True
+
+    assert coordination_znode_gone(), "the view's coordination znode was left behind in Keeper"
