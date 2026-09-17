@@ -439,6 +439,10 @@ struct ClusterLocality
     /// `Context::tryGetCluster` expands macros before looking a cluster up, but a stored definition
     /// keeps the placeholder text, so the same expansion has to happen before the lookups here.
     std::map<String, String> macros;
+    /// Named collections the dump session can read, by name and then key. `remote*` resolves an
+    /// identifier first argument against these before the clusters, so one can name a local address.
+    /// Fetched on first use because most dumps contain no such call.
+    std::function<const std::map<String, std::map<String, String>> &()> named_collections;
     /// For mirroring the server's constant folding of `cluster*` name/table arguments.
     ContextPtr context;
 };
@@ -581,22 +585,10 @@ bool remoteAddressIsLocal(const String & address, bool secure, const ClusterLoca
     return ip.isLoopback() && isLocalAddress(ip);
 }
 
-/// Whether a `remote*` call has a replica the server reads without a connection, the way
-/// `parseRemoteFunctionArguments` builds its ad-hoc cluster from the first argument.
-bool remoteFunctionHasLocalReplica(const ASTFunction & function, const ClusterLocality & clusters)
+/// Whether any replica of a `remote*` address pattern is read without a connection.
+bool remoteDescriptionHasLocalReplica(const String & pattern, bool secure, const ClusterLocality & clusters)
 {
-    const auto & first = function.arguments->children.at(0);
-    /// An identifier is a named collection when one exists, else a configured cluster; only the
-    /// latter can be local, and a collection's addresses are not readable here anyway.
-    String cluster_name;
-    if (tryGetIdentifierNameInto(first, cluster_name))
-        return clusters.local.contains(cluster_name);
-    const auto * literal = first->as<ASTLiteral>();
-    if (!literal || literal->value.getType() != Field::Types::String)
-        return false;
-    const String & pattern = literal->value.safeGet<String>();
     size_t max_addresses = clusters.context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-    bool secure = function.name == "remoteSecure";
     for (const auto & shard : parseRemoteDescription(pattern, 0, pattern.size(), ',', max_addresses))
         for (const auto & replica : parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses))
             if (remoteAddressIsLocal(replica, secure, clusters))
@@ -604,13 +596,164 @@ bool remoteFunctionHasLocalReplica(const ASTFunction & function, const ClusterLo
     return false;
 }
 
+/// What a `remote*` named-collection call names, once the call's overrides are applied.
+struct RemoteCollectionTarget
+{
+    String addresses;
+    String database;
+    String table;
+    /// `remote(nc, database = mysql(...))`: the target is a table function, so there is no table edge.
+    bool target_is_table_function = false;
+};
+
+/// The collection a `remote*` identifier first argument names: `parseRemoteFunctionArguments` tries
+/// named collections before configured clusters. Returns null when the name is a cluster instead,
+/// and refuses when it is neither - a collection the dump session cannot see would otherwise pass
+/// for a remote address and lose the dependency edge.
+const std::map<String, String> * tryGetRemoteNamedCollection(
+    const ASTFunction & function, const String & name, const ClusterLocality & clusters)
+{
+    const auto & collections = clusters.named_collections();
+    if (auto it = collections.find(name); it != collections.end())
+        return &it->second;
+    if (clusters.known.contains(name))
+        return nullptr;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot resolve {} of {} on the connected server for --dump-schema: it names neither a cluster nor a named "
+        "collection this session can read, and a named collection may point at a local address",
+        backQuoteIfNeed(name), function.formatForErrorMessage());
+}
+
+/// Reads a named-collection override value as text, the way `getKeyValueFromAST` does.
+std::optional<String> tryReadNamedCollectionValue(const ASTPtr & arg, const ClusterLocality & clusters)
+{
+    ASTPtr evaluated = arg;
+    if (!arg->as<ASTLiteral>())
+    {
+        if (dependsOnUnstoredContext(*arg, clusters.context))
+            return std::nullopt;
+        try
+        {
+            evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg->clone(), clusters.context);
+        }
+        catch (Exception &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Not a constant: the caller refuses the dump.
+            return std::nullopt;
+        }
+    }
+    const auto * literal = evaluated->as<ASTLiteral>();
+    if (!literal)
+        return std::nullopt;
+    if (literal->value.getType() == Field::Types::String)
+        return literal->value.safeGet<String>();
+    if (literal->value.getType() == Field::Types::UInt64)
+        return toString(literal->value.safeGet<UInt64>());
+    return std::nullopt;
+}
+
+/// Mirrors the named-collection branch of `parseRemoteFunctionArguments`: the collection's own keys
+/// with the call's `key = value` overrides applied on top.
+RemoteCollectionTarget resolveRemoteNamedCollection(
+    const ASTFunction & function, const String & name, const std::map<String, String> & collection,
+    const ClusterLocality & clusters)
+{
+    auto refuse = [&](std::string_view reason)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot statically resolve named collection {} of {} for --dump-schema: {}, so whether its table "
+            "reference is a local dependency is unknown",
+            backQuoteIfNeed(name), function.formatForErrorMessage(), reason);
+    };
+
+    std::map<String, String> values = collection;
+    RemoteCollectionTarget target;
+    const auto & args = function.arguments->children;
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        const auto * equals = args[i]->as<ASTFunction>();
+        if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+            continue;
+        String key;
+        if (!tryGetIdentifierNameInto(equals->arguments->children[0], key))
+            continue;
+        /// Credentials and the sharding key name no table and reach no address.
+        if (key == "user" || key == "username" || key == "password" || key == "sharding_key")
+            continue;
+        const ASTPtr & value = equals->arguments->children[1];
+        if (const auto * value_function = value->as<ASTFunction>();
+            value_function && TableFunctionFactory::instance().isTableFunctionName(value_function->name))
+        {
+            target.target_is_table_function = true;
+            continue;
+        }
+        auto text = tryReadNamedCollectionValue(value, clusters);
+        if (!text)
+            refuse("override " + backQuoteIfNeed(key) + " is not a constant the dump can read");
+        else
+            values[key] = *text;
+    }
+
+    /// Without SHOW NAMED COLLECTIONS SECRETS every value reads back as [HIDDEN].
+    for (const auto & key : {"addresses_expr", "host", "hostname", "port", "db", "database", "table"})
+        if (auto it = values.find(key); it != values.end() && it->second == "[HIDDEN]")
+            refuse("its values are masked for this session");
+
+    auto get = [&](const String & key) -> String
+    {
+        auto it = values.find(key);
+        return it == values.end() ? String{} : it->second;
+    };
+
+    target.addresses = get("addresses_expr");
+    if (target.addresses.empty())
+    {
+        String host = values.contains("host") ? get("host") : get("hostname");
+        if (host.empty())
+            refuse("it carries no address");
+        String port = get("port");
+        target.addresses = port.empty() ? host : host + ':' + port;
+    }
+    /// `db` wins over `database`, and neither present means the server's own default.
+    if (values.contains("db"))
+        target.database = get("db");
+    else if (values.contains("database"))
+        target.database = get("database");
+    else
+        target.database = "default";
+    target.table = get("table");
+    return target;
+}
+
+/// Whether a `remote*` call has a replica the server reads without a connection, the way
+/// `parseRemoteFunctionArguments` builds its ad-hoc cluster from the first argument.
+bool remoteFunctionHasLocalReplica(const ASTFunction & function, const ClusterLocality & clusters)
+{
+    const auto & first = function.arguments->children.at(0);
+    bool secure = function.name == "remoteSecure";
+    String name;
+    if (tryGetIdentifierNameInto(first, name))
+    {
+        if (const auto * collection = tryGetRemoteNamedCollection(function, name, clusters))
+            return remoteDescriptionHasLocalReplica(
+                resolveRemoteNamedCollection(function, name, *collection, clusters).addresses, secure, clusters);
+        return clusters.local.contains(name);
+    }
+    const auto * literal = first->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return false;
+    return remoteDescriptionHasLocalReplica(literal->value.safeGet<String>(), secure, clusters);
+}
+
 /// Whether a `cluster*`/`remote*` call reads its table argument on this instance.
 bool distributedFunctionReadsLocally(const ASTFunction & function, const ClusterLocality & clusters)
 {
-    if (!function.arguments || function.arguments->children.size() < 2)
+    if (!function.arguments || function.arguments->children.empty())
         return false;
     if (isClusterTableFunctionName(function.name))
-        return clusters.local.contains(resolveClusterOfFunction(function, clusters));
+        return function.arguments->children.size() >= 2
+            && clusters.local.contains(resolveClusterOfFunction(function, clusters));
+    /// A `remote*` call needs no second argument: a named collection can carry the table itself.
     return remoteFunctionHasLocalReplica(function, clusters);
 }
 
@@ -907,6 +1050,26 @@ void collectFunctionArgumentReferences(
             if (distributedFunctionReadsLocally(*function, clusters))
             {
                 const auto & args = function->arguments->children;
+                /// A named-collection call carries no positional database/table arguments: the edge
+                /// comes from the collection's own keys, with the call's overrides applied.
+                if (isRemoteTableFunctionName(function->name))
+                {
+                    String collection_name;
+                    if (tryGetIdentifierNameInto(args[0], collection_name))
+                    {
+                        if (const auto * collection = tryGetRemoteNamedCollection(*function, collection_name, clusters))
+                        {
+                            auto target = resolveRemoteNamedCollection(
+                                *function, collection_name, *collection, clusters);
+                            if (!target.target_is_table_function && !target.table.empty())
+                                out.push_back({target.database, target.table});
+                            return;
+                        }
+                    }
+                }
+                /// `remote('addr')` alone reads `system.one`, and `cluster('name')` cannot get here.
+                if (args.size() < 2)
+                    return;
                 /// The server folded these at CREATE time against its own session and machine, neither
                 /// of which the dump shares; rebinding them here would invent or miss a local edge.
                 for (size_t i = 1; i < std::min<size_t>(args.size(), 3); ++i)
@@ -1324,6 +1487,30 @@ std::vector<TableInfo> fetchTables(
         return *cached;
     };
     clusters.treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
+    using NamedCollectionMap = std::map<String, std::map<String, String>>;
+    clusters.named_collections
+        = [&, cached = std::optional<NamedCollectionMap>{}]() mutable -> const NamedCollectionMap &
+    {
+        if (!cached)
+        {
+            cached.emplace();
+            executeQuery(connection, timeouts, client_info,
+                "SELECT name, tupleElement(kv, 1), tupleElement(kv, 2) "
+                "FROM system.named_collections ARRAY JOIN collection AS kv",
+                [&](const Block & block)
+                {
+                    if (block.empty())
+                        return;
+                    const auto & name_col = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
+                    const auto & key_col = typeid_cast<const ColumnString &>(*block.getByPosition(1).column);
+                    const auto & value_col = typeid_cast<const ColumnString &>(*block.getByPosition(2).column);
+                    for (size_t i = 0; i < name_col.size(); ++i)
+                        (*cached)[name_col[i].safeGet<String>()].emplace(
+                            key_col[i].safeGet<String>(), value_col[i].safeGet<String>());
+                }, context->getSettingsRef());
+        }
+        return *cached;
+    };
     /// Both ordered by `macro`, so the two columns line up.
     auto macro_names = fetchStringColumn(connection, timeouts, client_info, "SELECT macro FROM system.macros ORDER BY macro", context->getSettingsRef());
     auto macro_values = fetchStringColumn(connection, timeouts, client_info, "SELECT substitution FROM system.macros ORDER BY macro", context->getSettingsRef());

@@ -319,4 +319,59 @@ rc=$?
 echo "replayed MATERIALIZED table present: $($CLICKHOUSE_LOCAL --path "$MATDEF_REPLAY_PATH" --query "SELECT count() FROM system.tables WHERE database = '${DB}' AND name = 'with_mat'")"
 rm -rf "$MATDEF_PATH" "$MATDEF_REPLAY_PATH" "$MATDEF_DUMP_FILE"
 
+echo '--- a remote() named collection on a loopback address names a local dependency ---'
+# `parseRemoteFunctionArguments` tries named collections before clusters for an identifier first
+# argument, so a collection holding a loopback address reads its table from the local catalog. Both
+# readers sort before `zzz_nc_src`, so without the edge they would be dumped ahead of their source.
+NC_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc"
+NC_CONF="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc.xml"
+NC_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_dump.sql"
+rm -rf "$NC_PATH"
+# A collection's values read back as [HIDDEN] unless the instance is configured to show secrets.
+cat > "$NC_CONF" <<EOF
+<clickhouse>
+    <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
+</clickhouse>
+EOF
+$CLICKHOUSE_LOCAL --config-file "$NC_CONF" --path "$NC_PATH" --multiquery --query "
+CREATE DATABASE ${DB};
+CREATE NAMED COLLECTION nc_local AS host = '127.0.0.1', db = '${DB}', table = 'zzz_nc_src';
+CREATE TABLE ${DB}.zzz_nc_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW ${DB}.aaa_nc_reader AS SELECT * FROM remote(nc_local);
+CREATE VIEW ${DB}.aab_nc_reader_override AS SELECT * FROM remote(nc_local, table = 'zzz_nc_src');
+"
+if $CLICKHOUSE_LOCAL --config-file "$NC_CONF" --path "$NC_PATH" --format_display_secrets_in_show_and_select=1 \
+    --dump-schema="${DB}" > "$NC_DUMP_FILE" 2>"$ERR_FILE"; then
+    NC_SRC_LINE=$(grep -n "CREATE TABLE ${DB}\.zzz_nc_src" "$NC_DUMP_FILE" | head -1 | cut -d: -f1)
+    for reader in aaa_nc_reader aab_nc_reader_override; do
+        NC_READER_LINE=$(grep -n "CREATE VIEW ${DB}\.${reader} " "$NC_DUMP_FILE" | head -1 | cut -d: -f1)
+        if [ -n "$NC_SRC_LINE" ] && [ -n "$NC_READER_LINE" ] && [ "$NC_SRC_LINE" -lt "$NC_READER_LINE" ]; then
+            echo "OK: named-collection source dumped before ${reader}"
+        else
+            echo "FAIL: named-collection dependency of ${reader} missing or misordered (src=$NC_SRC_LINE reader=$NC_READER_LINE)"
+        fi
+    done
+else
+    echo "FAIL: dump rejected: $(cat "$ERR_FILE")"
+fi
+rm -f "$NC_DUMP_FILE"
+
+echo '--- a remote() named collection the dump session cannot read is refused, not assumed remote ---'
+# Same fixture without the secrets config: every value is [HIDDEN], so the address is unknown.
+if $CLICKHOUSE_LOCAL --path "$NC_PATH" --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"; then
+    echo 'FAIL: dump succeeded over a named collection it could not read'
+else
+    echo "masked named collection refused: $(grep -c 'values are masked for this session' "$ERR_FILE")"
+fi
+
+echo '--- a remote() identifier that names neither a cluster nor a collection is refused ---'
+# Dropping the collection leaves the stored views naming something the dump cannot classify.
+$CLICKHOUSE_LOCAL --config-file "$NC_CONF" --path "$NC_PATH" --query "DROP NAMED COLLECTION nc_local"
+if $CLICKHOUSE_LOCAL --config-file "$NC_CONF" --path "$NC_PATH" --format_display_secrets_in_show_and_select=1 \
+    --dump-schema="${DB}" > /dev/null 2>"$ERR_FILE"; then
+    echo 'FAIL: dump succeeded over an unresolvable remote() first argument'
+else
+    echo "unresolvable remote() first argument refused: $(grep -c 'neither a cluster nor a named collection' "$ERR_FILE")"
+fi
+rm -rf "$NC_PATH" "$NC_CONF"
 rm -f "$ERR_FILE"
