@@ -14,6 +14,17 @@ SELECT count() FROM t_final_neg_zero FINAL SETTINGS enable_automatic_decision_fo
 SELECT count() FROM t_final_neg_zero FINAL SETTINGS do_not_merge_across_partitions_select_final = 1;
 DROP TABLE t_final_neg_zero;
 
+SELECT 'BFloat16 is a floating-point type too';
+-- `isFloat` also covers `BFloat16`; it has the same signed zero and `NaN` semantics as the native floats,
+-- so it is part of the exclusion on purpose.
+DROP TABLE IF EXISTS t_final_bfloat16;
+CREATE TABLE t_final_bfloat16 (f BFloat16, v UInt8) ENGINE = ReplacingMergeTree(v) PARTITION BY toString(f) ORDER BY f;
+INSERT INTO t_final_bfloat16 VALUES (-0.0, 1);
+INSERT INTO t_final_bfloat16 VALUES (0.0, 2);
+SELECT count() FROM t_final_bfloat16 FINAL SETTINGS enable_automatic_decision_for_merging_across_partitions_for_final = 1;
+SELECT count() FROM t_final_bfloat16 FINAL SETTINGS enable_automatic_decision_for_merging_across_partitions_for_final = 0;
+DROP TABLE t_final_bfloat16;
+
 SELECT 'NaN payloads';
 DROP TABLE IF EXISTS t_final_nan;
 CREATE TABLE t_final_nan (f Float64, v UInt8) ENGINE = ReplacingMergeTree(v) PARTITION BY reinterpretAsUInt64(f) ORDER BY f;
