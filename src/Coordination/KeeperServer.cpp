@@ -750,6 +750,18 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     raft_instance->keeper_context = keeper_context;
 
+    /// Entries are dropped while the local logs are not preprocessed, so the leader is only
+    /// producing work that is thrown away - but it may be asked to stop only once the node knows
+    /// its replay can finish from what it already has. A node whose local tail diverges from the
+    /// leader's still needs requests carrying entries to learn where the two logs match, and
+    /// `get_target_committed_log_idx` can be rolled back, so this has to be read at the moment
+    /// the answer is used rather than remembered from the last request that arrived.
+    state_machine->setAppendEntriesPauseCondition([this]
+    {
+        return !keeper_context->localLogsPreprocessed()
+            && raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk;
+    });
+
     state_manager->getLogStore()->setRaftServer(raft_instance);
 
     nuraft::raft_server::limits raft_limits;
@@ -1209,21 +1221,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// we don't want to append new logs if we are committing local logs
                 else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
                 {
-                    /// Everything on disk is already known to be committed, so the replay finishes
-                    /// on the commit thread from the commit index the heartbeats carry. Ask the
-                    /// leader to stop sending entries that are dropped anyway.
-                    state_machine->setPauseAppendingEntries(true);
-                    /// If the wait ends before the preprocessing does, the request is handled the
-                    /// same way as when the replay is far from done: the GotAppendEntryReqFromLeader
-                    /// callback below drops its entries and the leader sends them again later.
+                    /// The replay can finish without the leader from here: the commit index it
+                    /// already sent covers the whole on-disk tail, and the commit thread does
+                    /// the rest. Giving up converges on the branch below, where the entries are
+                    /// dropped and the leader sends them again later.
                     waitForLocalLogsPreprocessing();
                 }
                 else
                 {
-                    /// Here the replay cannot finish without the leader: only a request carrying
-                    /// entries corrects `last_log_idx_on_disk` down to the index the two logs
-                    /// still match at, so the leader must keep sending them.
-                    state_machine->setPauseAppendingEntries(false);
                     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: ignoring");
                 }
 

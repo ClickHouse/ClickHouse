@@ -9,7 +9,7 @@
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <atomic>
+#include <functional>
 #include <optional>
 
 namespace DB
@@ -100,15 +100,21 @@ public:
 
     uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
 
+    /// Decides whether the leader should be asked to stop sending log entries. Installed by
+    /// `KeeperServer` before the Raft server starts, because the answer depends on state the
+    /// state machine cannot see. While unset the answer is no.
+    void setAppendEntriesPauseCondition(std::function<bool()> condition)
+    {
+        append_entries_pause_condition = std::move(condition);
+    }
+
     /// A negative hint makes the leader fall back to heartbeats instead of resending entries as
-    /// fast as they are refused. Entries are refused while the local logs are not preprocessed,
-    /// but only ask the leader to pause once the node knows it can finish the replay on its own:
-    /// if its local tail diverges from the leader's, it still needs those requests to find out
-    /// where the two logs match.
-    void setPauseAppendingEntries(bool pause) { pause_appending_entries = pause; }
+    /// fast as they are refused. NuRaft's default implementation returns 0, which means any
+    /// batch size is welcome. Evaluated on every response rather than latched: a pause
+    /// suppresses the very requests that would otherwise be the occasion to lift it.
     int64_t get_next_batch_size_hint_in_bytes() override
     {
-        return pause_appending_entries && !keeper_context->localLogsPreprocessed() ? -1 : 0;
+        return append_entries_pause_condition && append_entries_pause_condition() ? -1 : 0;
     }
 
     nuraft::ptr<nuraft::snapshot> last_snapshot() override;
@@ -270,7 +276,8 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    std::atomic<bool> pause_appending_entries = false;
+    /// Set once, before the Raft server starts, and only read afterwards.
+    std::function<bool()> append_entries_pause_condition;
 
     KeeperSnapshotManagerS3 * snapshot_manager_s3;
 

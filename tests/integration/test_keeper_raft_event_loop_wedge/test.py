@@ -52,6 +52,7 @@ CREATES_PER_TRANSACTION = 1000
 
 WAIT_STARTED = "ProcessReq callback: waiting for preprocessing"
 WAIT_STOPPED = "ProcessReq callback: stopped waiting for preprocessing"
+ADMISSION_DECLINED = "ProcessReq callback: another thread is already waiting"
 ENTRIES_REFUSED = "Logs not preprocessed, ProcessReq callback with"
 NO_REPLAY_NEEDED = "No log preprocessing needed"
 
@@ -195,6 +196,26 @@ def test_raft_event_loop_is_not_wedged_by_log_replay(started_cluster):
         "no wait for log preprocessing ended on its deadline"
     )
 
+    # The one-thread cap is a structural bound, not something the fix relies on in the ordinary
+    # case: the negative batch size hint stops the leader before a second request carrying
+    # entries can arrive, so no thread should ever find another one already waiting. This
+    # asserts the hint rather than the cap - if it fires, the leader kept sending entries at
+    # full speed and the cap became load-bearing, which is how the wedge starts.
+    assert not grep_log(node2, ADMISSION_DECLINED), (
+        "a second thread of the Raft event loop reached the wait, so the leader was never "
+        "paused - the negative batch size hint regressed"
+    )
+
+    # And the leader must stay paused: once node2 has given up and asked it to back off, no
+    # further request carrying entries may arrive. One grep of both patterns returns the lines
+    # in log order, so the last wait can be located without parsing timestamps.
+    timeline = grep_log(node2, f"{ENTRIES_REFUSED}|{WAIT_STOPPED}")
+    last_wait_end = max(i for i, line in enumerate(timeline) if WAIT_STOPPED in line)
+    assert all(WAIT_STOPPED in line for line in timeline[last_wait_end:]), (
+        "the leader sent entries to node2 again after it asked for heartbeats, so the pause is "
+        "not holding for the rest of the replay"
+    )
+
     # 6) node2 is a working member of the cluster again.
     zk = get_fake_zk(node2)
     try:
@@ -294,7 +315,8 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
         "node2 never rolled back its divergent tail"
     )
 
-    # The same bound as in the test above has to hold on this path as well.
+    # The same bound as in the test above has to hold on this path as well, and every wait must
+    # have been released: a wait that never ends is the wedge, whichever branch reached it.
     waiting = 0
     for timestamp, thread, delta in waiting_thread_events(node2):
         waiting += delta
@@ -302,6 +324,11 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
             f"{waiting} threads of the Raft event loop were waiting for log preprocessing at "
             f"{timestamp}, when thread {thread} started waiting"
         )
+    assert waiting == 0, "a thread of the Raft event loop is still waiting for log preprocessing"
+    assert not grep_log(node2, ADMISSION_DECLINED), (
+        "a second thread of the Raft event loop reached the wait, so the leader was never "
+        "paused - the negative batch size hint regressed"
+    )
 
     # 5) node2 agrees with the rest again: it dropped what only it had and took what it missed.
     zk = get_fake_zk(node2)
