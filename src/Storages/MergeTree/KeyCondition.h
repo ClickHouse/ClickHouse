@@ -674,11 +674,17 @@ private:
     };
     static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
 
+    struct SpaceFillingCurveArgument
+    {
+        String name;
+        DataTypePtr type;
+    };
+
     struct SpaceFillingCurveDescription
     {
         size_t key_column_pos{};
         String function_name;
-        std::vector<String> arguments;
+        std::vector<SpaceFillingCurveArgument> arguments;
         SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
