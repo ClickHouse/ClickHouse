@@ -49,6 +49,7 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
+    REGULAR(remote_query_executor_local_packet_processing_error) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
@@ -228,6 +229,7 @@ static struct InitFiu
     REGULAR(zero_copy_lock_zk_fail_after_op) \
     REGULAR(plain_object_storage_write_fail_on_directory_create) \
     REGULAR(plain_object_storage_write_fail_on_directory_move) \
+    ONCE(plain_object_storage_fail_after_copy_on_file_move) \
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
