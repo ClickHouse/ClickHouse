@@ -1,5 +1,5 @@
 ---
-description: 'Prometheus HTTP API support in ClickHouse: remote write, remote read, and PromQL queries over a TimeSeries table.'
+description: 'Prometheus HTTP API support in ClickHouse: remote write, remote read, and PromQL queries over a TimeSeries table, with the query endpoints and remote write also accepting a Distributed table over per-shard TimeSeries tables.'
 sidebarTitle: 'Prometheus API and PromQL'
 slug: /interfaces/prometheus
 title: 'Prometheus HTTP API and PromQL'
@@ -10,7 +10,7 @@ import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/Pr
 
 <PrivatePreviewBadge/>
 
-ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
+ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table, and its query endpoints and remote write over a `Distributed` table of per-shard `TimeSeries` tables as well. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
 
 To expose ClickHouse's own metrics for a Prometheus server to scrape, see the [Prometheus metrics endpoint](/concepts/features/interfaces/prometheus-metrics).
 
@@ -93,7 +93,7 @@ Configure one prefix-routed handler on the main ClickHouse HTTP port:
 | `/prometheus/api/v1/series` | Series metadata |
 | `/prometheus/api/v1/metadata` | Metric-family metadata |
 
-The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple `TimeSeries` tables.
+The example omits `database` and `table` from the handler. Each request must provide the `table` query parameter (except for `/format_query`, which only parses the given PromQL expression and doesn't need a table). It can also provide `database`, use a qualified table name such as `prometheus.metrics`, or omit the database to use `default`. This allows one handler to serve multiple tables.
 
 To use one fixed table for every request, configure it in the handler:
 
@@ -112,7 +112,7 @@ Routing and handler settings:
 | Name | Default | Description |
 |---|---|---|
 | `url_prefix` | none | Rule filter that matches every request path that starts with the configured prefix. |
-| `table` | none | The name of a `TimeSeries` table. When omitted, the request must provide the `table` query parameter. The configured name can include a database. |
+| `table` | none | The name of a `TimeSeries` table, or of a `Distributed` table over per-shard `TimeSeries` tables, which the query endpoints and remote write accept but remote read and the metadata endpoints refuse. When omitted, the request must provide the `table` query parameter. The configured name can include a database. |
 | `database` | none | The database containing the table. A request can provide it as a query parameter. When omitted, ClickHouse uses a database from a qualified `table` value or falls back to `default`. |
 
 ### Create a TimeSeries table {#create-a-timeseries-table}
