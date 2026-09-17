@@ -1,0 +1,23 @@
+asof inner >=	340000	1	1
+asof left > string equi key	400000	1	1
+asof inner <=	297500	1	1
+asof inner nullable asof key	333459	1	1
+on filter right side left join	400000	1	1
+on filter right side right join (filtered rows are non-joined)	300000	1	1
+on filter left side inner join	60000	1	1
+on filter both sides full join	680000	1	1
+multi-disjunct inner	2040000	1
+multi-disjunct left join_use_nulls	2100000	1
+multi-disjunct right (used flags kept per row)	2040000	1
+partition plans
+04929 asof inner ge	1	1
+04929 asof inner le	1	1
+04929 asof inner nullable	1	1
+04929 asof left gt string	1	1
+04929 or inner	1	1
+04929 or left join_use_nulls	1	1
+04929 or right	1	1
+04929 filter full both	1	1
+04929 filter inner lhs	1	1
+04929 filter left rhs	1	1
+04929 filter right rhs	1	1

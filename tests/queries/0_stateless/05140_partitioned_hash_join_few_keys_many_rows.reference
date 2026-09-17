@@ -1,0 +1,25 @@
+inner all	3070372	1
+right all on a nullable key	2988035	1
+full all	3070848	1
+any left	2048	1
+-- semi and anti left
+semi left	1572	1
+anti left	476	1
+any left keeping the last row per key	2048	1
+-- string key over the same few keys
+string inner all	3070372	1
+string right all	3070372	1
+string full all	3070848	1
+below the threshold the small table keeps one partition	3070372	1
+-- partitions above the threshold: 4 (one per thread); below: 1
+05140 anti left	4	1
+05140 any left	4	1
+05140 any left last row	4	1
+05140 below threshold	1	1
+05140 full all	4	1
+05140 inner all	4	1
+05140 right all nullable	4	1
+05140 semi left	4	1
+05140 string full all	4	1
+05140 string inner all	4	1
+05140 string right all	4	1

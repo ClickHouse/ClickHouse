@@ -166,6 +166,9 @@
     M(HashJoinDestroyThreads, "Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas.") \
     M(HashJoinDestroyThreadsActive, "Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas running a task.") \
     M(HashJoinDestroyThreadsScheduled, "Number of queued or active jobs in the thread pool for destroying a large HashJoin's stored blocks and arenas.") \
+    M(HashJoinPostBuildThreads, "Number of threads in the thread pool of `partitioned_hash` joins that insert into the hash table after the build.") \
+    M(HashJoinPostBuildThreadsActive, "Number of threads in the thread pool of `partitioned_hash` joins that insert into the hash table after the build and are running a task.") \
+    M(HashJoinPostBuildThreadsScheduled, "Number of queued or active jobs in the thread pool of `partitioned_hash` joins that insert into the hash table after the build.") \
     M(HashedDictionaryThreads, "Number of threads in the HashedDictionary thread pool.") \
     M(HashedDictionaryThreadsActive, "Number of threads in the HashedDictionary thread pool running a task.") \
     M(HashedDictionaryThreadsScheduled, "Number of queued or active jobs in the HashedDictionary thread pool.") \
