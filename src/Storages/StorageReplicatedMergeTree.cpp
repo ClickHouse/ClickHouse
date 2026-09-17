@@ -258,6 +258,7 @@ namespace FailPoints
 {
     extern const char replicated_queue_fail_next_entry[];
     extern const char alter_settings_throw_before_metadata_write[];
+    extern const char alter_settings_pause_before_metadata_write[];
     extern const char replicated_queue_unfail_entries[];
     extern const char finish_set_quorum_failed_parts[];
     extern const char zero_copy_lock_zk_fail_before_op[];
@@ -7030,6 +7031,7 @@ void StorageReplicatedMergeTree::alter(
                 setInMemoryMetadata(future_metadata);
             }
 
+            FailPointInjection::pauseFailPoint(FailPoints::alter_settings_pause_before_metadata_write);
             fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
@@ -7106,6 +7108,7 @@ void StorageReplicatedMergeTree::alter(
                 setInMemoryMetadata(future_metadata);
             }
 
+            FailPointInjection::pauseFailPoint(FailPoints::alter_settings_pause_before_metadata_write);
             fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
@@ -8758,6 +8761,23 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
 
+    /// Serialize the creation of the mutation entry with settings `ALTER`s, like `StorageMergeTree::mutate`
+    /// does. A local `ALTER TABLE ... MODIFY SETTING` applies the new settings in memory before it writes
+    /// the durable metadata and rolls them back when that write throws. `persist_mutation_author` gates
+    /// the format of the shared `/mutations` entries, so without this lock a mutation that starts inside
+    /// that window could read the transient value and publish an entry the durable setting does not
+    /// announce, e.g. a `format version: 2` entry after the enabling `ALTER` has already failed.
+    /// The lock is released before waiting for the mutation, so a synchronous mutation does not block ALTERs.
+    auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    if (alter_lock == std::nullopt)
+    {
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot start mutation in {}ms because some metadata-changing ALTER (MODIFY|RENAME|ADD|DROP) is currently executing. "
+            "You can change this timeout with `lock_acquire_timeout` setting",
+            query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
+    }
+
     /// An empty author keeps the mutation entry format byte-for-byte identical
     /// to the one used by servers that do not know about the `author` field.
     mutation_entry.author = getMutationAuthor(query_context);
@@ -8820,6 +8840,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
         }
         throw Coordination::Exception::fromMessage(rc, "Unable to create a mutation znode");
     }
+
+    alter_lock.reset();
 
     merge_selecting_task->schedule();
 

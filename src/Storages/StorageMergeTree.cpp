@@ -96,6 +96,7 @@ namespace FailPoints
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
     extern const char alter_settings_throw_before_metadata_write[];
+    extern const char alter_settings_pause_before_metadata_write[];
 }
 
 namespace Setting
@@ -525,6 +526,7 @@ void StorageMergeTree::alter(
                 setInMemoryMetadata(new_metadata);
             }
 
+            FailPointInjection::pauseFailPoint(FailPoints::alter_settings_pause_before_metadata_write);
             fiu_do_on(FailPoints::alter_settings_throw_before_metadata_write,
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the metadata write of a settings ALTER");
