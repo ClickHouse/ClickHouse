@@ -20,8 +20,7 @@ using PartitionMap = HashMap<UInt128, size_t, UInt128TrivialHash>;
 struct PartitionHeap
 {
     std::vector<size_t> rows;
-    /// The row that created the bucket. Every later row is verified against it with `compareAt`, so a
-    /// hash collision cannot make two logically different keys share one heap.
+    /// The row that created the bucket; every later row is verified against it with `compareAt`.
     size_t first_row = 0;
 };
 
@@ -58,9 +57,7 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
 
     const Columns & columns = chunk.getColumns();
 
-    /// Materialize `ColumnReplicated` key columns so comparisons do not pay the index indirection, as
-    /// `PartialSortingTransform` does. These copies are only read here: the chunk keeps its own columns
-    /// and the filter below is applied to those.
+    /// These copies are only read here; the filter below is applied to the chunk's own columns.
     Columns materialized;
     materialized.reserve(partition_positions.size() + order_positions.size());
     auto take = [&](size_t position) -> const IColumn *
@@ -79,8 +76,7 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
     for (size_t position : order_positions)
         order_columns.push_back(take(position));
 
-    /// `direction * compareAt` over the ORDER BY columns: bit for bit the comparator the sort itself uses,
-    /// so "better" means "earlier in the window's order".
+    /// `direction * compareAt` is bit for bit the comparator the sort itself applies.
     auto is_better = [&](size_t lhs, size_t rhs) -> bool
     {
         for (size_t i = 0, size = order_columns.size(); i < size; ++i)
@@ -128,9 +124,9 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
         auto & heap = heaps[bucket->getMapped()];
         UInt8 keep = 1;
 
-        /// A collision between two different keys is caught here and both rows forwarded; one logical key
-        /// split across two buckets would leave each keeping the best `top_k` of a subset. Either way the
-        /// forwarded set only grows, which is why the partition key type needs no restriction.
+        /// A hash collision can only over-forward, so the partition key type needs no restriction: two
+        /// different keys in one bucket are caught here and both rows forwarded, and one key split across
+        /// two buckets leaves each bucket keeping the best `top_k` of a subset.
         if (!same_partition(row, heap.first_row))
         {
             filter[row] = 1;
@@ -151,8 +147,6 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
         }
         else if (is_better(heap.rows.front(), row))
         {
-            /// `top_k` distinct rows of this partition are strictly better, so this row's rank is above the
-            /// bound whatever the rest of the input looks like.
             keep = 0;
         }
         /// Otherwise the row ties with the heap's worst entry, so it shares that entry's rank and has to be
@@ -164,10 +158,6 @@ void WindowTopKPrefilterTransform::transform(Chunk & chunk)
 
     observed_rows += num_rows;
     skipped_rows += num_rows - kept_rows;
-    /// Hashing and heap building in chunk after chunk of mostly unique partitions costs CPU for nothing.
-    /// The threshold is `TopKAggregationHeapBase::shouldFreeze`'s, but the window is not: a chunk-local
-    /// heap's skip rate is decided within one chunk, so one chunk of evidence is enough, and waiting for
-    /// that heap's 65536-row window would only make more chunks pay full cost.
     if (observed_rows >= profitability_window
         && static_cast<Float64>(skipped_rows) / static_cast<Float64>(observed_rows) < 0.1)
         frozen = true;

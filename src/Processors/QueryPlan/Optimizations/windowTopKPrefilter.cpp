@@ -17,17 +17,14 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-/// `rank()` assigns one rank to a whole tie block and `row_number() >= rank()`, so a bound on either is
-/// satisfied by keeping the best `top_k` ORDER BY keys plus everything tying with the `top_k`-th.
-/// `dense_rank()` is not in the list: it counts distinct ORDER BY values, so bounding it needs the `top_k`
-/// best *distinct* keys, which a heap of rows does not give.
+/// `row_number() >= rank()` always, so one bound covers both. `dense_rank()` is not boundable this way: it
+/// counts distinct ORDER BY values, so it needs the `top_k` best *distinct* keys, not the best `top_k` rows.
 bool isBoundableRankingFunction(const String & name)
 {
     return name == "rank" || name == "row_number";
 }
 
-/// A collator makes string comparison locale-specific and `WITH FILL` synthesizes rows, so in both cases
-/// `compareAt` is not the comparator the sort actually applies.
+/// With a collator or `WITH FILL`, `compareAt` is not the comparator the sort actually applies.
 bool isPlainSortDescription(const SortDescription & description)
 {
     for (const auto & column_description : description)
@@ -77,10 +74,9 @@ std::optional<UInt64> tryGetIntegerConstant(const ActionsDAG::Node * node)
     return {};
 }
 
-/// Rows the prefilter removes must be rows the filter above removes anyway, so nothing the filter computes may
-/// depend on them: it may compute the bound and nothing else. `and`/`or`/`not` are admitted because they reject
-/// any argument that is not a native number at analysis time (`FunctionsLogical.cpp:715-718`), so they have no
-/// value-dependent failure mode; every other function is refused, whatever it does.
+/// A row the prefilter removes must be a row the filter above removes anyway, so nothing the filter computes
+/// may depend on it. `and`/`or`/`not` are admitted because they reject any argument that is not a native
+/// number at analysis time, so they have no value-dependent failure mode; every other function is refused.
 bool computesOnlyTheBound(const ActionsDAG & dag, const std::unordered_set<const ActionsDAG::Node *> & bound_atoms)
 {
     static const NameSet connectives = {"and", "or", "not"};
@@ -98,9 +94,6 @@ bool computesOnlyTheBound(const ActionsDAG & dag, const std::unordered_set<const
     return true;
 }
 
-/// The largest rank the conjunct admits, when it bounds one of `ranking_columns` by an integer constant:
-/// `rk <= k` / `k >= rk` / `rk = k` give `k`, and the strict forms give `k - 1`. Zero means "no rows pass",
-/// which is not a bound worth optimizing for, and is reported as no bound at all.
 std::optional<UInt64> tryGetRankBound(const ActionsDAG::Node * atom, const NameSet & ranking_columns)
 {
     if (atom->type != ActionsDAG::ActionType::FUNCTION || !atom->function_base || atom->children.size() != 2)
@@ -125,7 +118,6 @@ std::optional<UInt64> tryGetRankBound(const ActionsDAG::Node * atom, const NameS
     if (!constant)
         return {};
 
-    /// Mirrored for a constant on the left: `k >= rk` bounds the rank exactly as `rk <= k` does.
     const bool inclusive = function_name == "equals" || (rank_on_left ? function_name == "lessOrEquals" : function_name == "greaterOrEquals");
     const bool strict = rank_on_left ? function_name == "less" : function_name == "greater";
 
@@ -143,9 +135,7 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     if (!settings.window_top_k_prefilter)
         return;
 
-    /// `SortingStep::serialize` carries no optimizer hints, so a shipped plan would silently sort
-    /// everything while the initiator's `EXPLAIN` still advertised the prefilter. Decline instead, exactly
-    /// as `tryOptimizeGroupByTopK` does.
+    /// `SortingStep::serialize` carries no optimizer hints, so a shipped plan would sort everything anyway.
     if (settings.make_distributed_plan || settings.serialize_query_plan)
         return;
 
@@ -155,9 +145,8 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
 
     const auto & filter_dag = filter_step->getExpression();
 
-    /// The window must be the filter's DIRECT child: a step in between would be evaluated on the rows the
-    /// prefilter leaves rather than on all of them, which is observable for a stateful function such as
-    /// `rowNumberInAllBlocks`.
+    /// The window must be the filter's DIRECT child: a step in between would see only the rows the prefilter
+    /// leaves, which a stateful function such as `rowNumberInAllBlocks` observes.
     const QueryPlan::Node * window_node = node.children.front();
     const auto * window_step = typeid_cast<const WindowStep *>(window_node->step.get());
     if (!window_step || window_node->children.size() != 1)
@@ -167,8 +156,7 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
 
     if (window_description.order_by.empty())
         return;
-    /// `rank()` ignores the frame, but a sibling window function in the same step does not, and this step
-    /// is optimized as a whole.
+    /// `rank()` ignores the frame, but a sibling window function in the same step does not.
     if (!window_description.frame.is_default)
         return;
     if (!isPlainSortDescription(window_description.partition_by) || !isPlainSortDescription(window_description.order_by))
@@ -198,8 +186,6 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     if (top_k == 0)
         return;
 
-    /// The heap costs memory and CPU proportional to the bound, so reuse the limit the sibling top-K
-    /// optimizations are bounded by, plus their hard cap.
     if (settings.max_limit_for_top_k_optimization != 0 && top_k > settings.max_limit_for_top_k_optimization)
         return;
     if (top_k > Aggregator::Params::TopKParams::max_k)
@@ -210,26 +196,21 @@ void windowTopKPrefilter(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
         return;
     if (sorting_step->getType() != SortingStep::Type::Full || sorting_step->isSortingForMergeJoin())
         return;
-    /// A bounded sort keeps the first n rows of a stream, which decides WHICH rows the window ranks;
-    /// dropping further rows below it would change the answer rather than just the cost.
+    /// A bounded sort decides WHICH rows the window ranks, so dropping rows below it changes the answer.
     if (sorting_step->getLimit() != 0)
         return;
     /// A query that exceeds `max_rows_to_sort` / `max_bytes_to_sort` today must not start succeeding.
     const auto & size_limits = sorting_step->getSettings().size_limits;
     if (size_limits.max_rows != 0 || size_limits.max_bytes != 0)
         return;
-    /// The sort must be the window's own sort over exactly PARTITION BY then ORDER BY, so the prefilter's
-    /// comparator and the ranks the window computes are the same order.
+    /// The sort must be the window's own, so the prefilter's comparator is the order the window ranks by.
     if (window_description.partition_by.size() + window_description.order_by.size()
         != window_description.full_sort_description.size())
         return;
     if (!sameSortColumns(sorting_step->getSortDescription(), window_description.full_sort_description))
         return;
 
-    /// The rewrite changes which rows every step between the window and this filter sees, so the filter must
-    /// compute nothing but the bound, and its column names must identify their carriers uniquely
-    /// (`CAST(rk, 'UInt64') AS rk` republishes an input's name for a computed node). Both walk the whole
-    /// filter DAG, so they run only once the cheap structural tests have admitted the shape.
+    /// A computed node may republish an input's name (`CAST(rk, 'UInt64') AS rk`), hiding the bound's carrier.
     if (filter_dag.hasInputNameShadowedByComputedNode() || !computesOnlyTheBound(filter_dag, bound_atoms))
         return;
 

@@ -7,24 +7,18 @@
 namespace DB
 {
 
-/** Drops rows that cannot pass a `rank() <= top_k` / `row_number() <= top_k` filter placed above the
-  * window, before the window's sort sees them.
+/** Drops rows that cannot pass a `rank() <= top_k` / `row_number() <= top_k` filter above the window.
   *
-  * Soundness. Within one chunk, for each PARTITION BY key, a heap holds the `top_k` best ORDER BY keys
-  * seen so far in that chunk. A row is dropped only when the heap already holds `top_k` values strictly
-  * better than the row's own, each belonging to a distinct earlier row of the same partition; the row's
-  * final rank is therefore at least `top_k + 1`, whatever the rest of the input looks like. A row tying
-  * with the heap's worst entry is always forwarded, which is what makes this correct for `rank()` (all
-  * rows of a tie block share one rank) rather than for a plain row count. `row_number() >= rank()`, so a
-  * `row_number()` bound is covered by the same argument. Every row within the bound has every row of its
-  * partition ranked ahead of it forwarded too, so the ranks the window computes for the rows the filter
-  * keeps are exact. A row forwarded with a rank already past the bound may be ranked lower than it would
-  * have been, which is what the filter above discards.
+  * Soundness. A row is dropped only when `top_k` distinct rows of the same PARTITION BY key, already seen
+  * by this instance, are strictly better in the window's ORDER BY: its final rank is then at least
+  * `top_k + 1` whatever the rest of the input holds. A row tying with the heap's worst entry is forwarded,
+  * which is what makes this correct for `rank()`, where one rank covers a whole tie block, rather than for
+  * a row count; `row_number() >= rank()`, so a `row_number()` bound follows. Every row within the bound
+  * keeps every row of its partition ranked ahead of it, so the kept rows' ranks are exact.
   *
-  * The argument only ever uses "rows of this partition that this instance has already seen", and a chunk
-  * is such a subset just as much as a whole stream is - so no state has to survive `transform`, and the
-  * transform may run per stream before the scatter, with no exchange: each stream forwards a superset of
-  * what the filter above keeps.
+  * The argument uses only "rows of this partition this instance has already seen", and a chunk is such a
+  * subset just as much as a whole stream is: no state survives `transform`, and the transform may run per
+  * stream before the scatter with no exchange, each stream forwarding a superset of what the filter keeps.
   */
 class WindowTopKPrefilterTransform final : public ISimpleTransform
 {
@@ -48,8 +42,7 @@ private:
     ColumnNumbers partition_positions;
     ColumnNumbers order_positions;
 
-    /// Rows to observe before the skip rate may freeze the transform into a pass-through, and the
-    /// counters it is judged on.
+    /// Rows to observe before the skip rate may freeze the transform into a pass-through.
     const UInt64 profitability_window;
     UInt64 observed_rows = 0;
     UInt64 skipped_rows = 0;

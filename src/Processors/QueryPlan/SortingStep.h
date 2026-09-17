@@ -177,8 +177,7 @@ public:
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
 
-    /// See `windowTopKPrefilter`. A `rank() <= top_k` filter above the window this sort feeds lets each
-    /// stream drop rows whose rank is already above the bound before they are sorted.
+    /// See `windowTopKPrefilter`.
     void setWindowTopKPrefilter(
         SortDescription window_partition_description_,
         SortDescription window_order_description_,
@@ -198,8 +197,6 @@ private:
     /// It is applied only when `LIMIT BY` keys are a prefix of `stream_sort_desc`.
     void addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc);
 
-    /// Adds a per-stream `WindowTopKPrefilterTransform` above the sort's input, so the rows it drops are
-    /// never sorted, merged or scattered.
     void addWindowTopKPrefilterIfNeeded(QueryPipelineBuilder & pipeline);
 
     static void mergeSorting(

@@ -312,8 +312,7 @@ void SortingStep::setWindowTopKPrefilter(
     SortDescription window_order_description_,
     UInt64 window_top_k_)
 {
-    /// Only tighten, so re-optimizing the same plan (StorageMerge child plans, set subplans) cannot stack
-    /// a second prefilter on top of the first.
+    /// The same plan can be optimized twice (StorageMerge child plans, set subplans), so only tighten.
     if (window_top_k != 0 && window_top_k_ >= window_top_k)
         return;
 
@@ -892,7 +891,7 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
     cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
-    /// Through the setter, so the clone also gets the trait the prefilter implies.
+    /// The setter also sets the row-count trait the prefilter implies.
     if (window_top_k)
         cloned->setWindowTopKPrefilter(window_partition_description, window_order_description, window_top_k);
     return cloned;
