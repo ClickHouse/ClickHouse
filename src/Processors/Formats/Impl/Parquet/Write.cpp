@@ -618,7 +618,10 @@ struct ConverterJSON
     const ColumnObject & column;
     DataTypePtr data_type;
     PODArray<parquet::ByteArray> buf;
-    std::vector<String> stash;
+    /// The serialized values back to back, with their lengths, rather than a string each: the batch
+    /// is bounded by bytes, so neither can be sized from the number of values that were asked for.
+    PODArray<char> chars;
+    PODArray<size_t> lengths;
     const FormatSettings & format_settings;
 
     explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
@@ -628,26 +631,51 @@ struct ConverterJSON
     {
     }
 
+    /// How many bytes of serialized values to stop after, 0 for no limit. The caller cannot
+    /// measure a JSON value without serializing it - its size is not the column's byteSizeAt,
+    /// which counts neither the keys nor the punctuation - so the batch is bounded here instead
+    /// of being materialized in full and cut afterwards.
+    size_t byte_budget = 0;
+    size_t produced = 0;
+
     const parquet::ByteArray * getBatch(size_t offset, size_t count)
     {
-        buf.resize(count);
-        stash.clear();
-        stash.reserve(count);
+        chars.clear();
+        lengths.clear();
 
         auto serialization = data_type->getDefaultSerialization();
 
+        produced = count;
         for (size_t i = 0; i < count; ++i)
         {
             WriteBufferFromOwnString wb;
             serialization->serializeTextJSON(column, offset + i, wb, format_settings);
 
-            stash.emplace_back(std::move(wb.str()));
-            const String & s = stash.back();
+            const String s = wb.str();
+            chars.insert(s.data(), s.data() + s.size());
+            lengths.push_back(s.size());
 
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
+            if (byte_budget != 0 && chars.size() >= byte_budget)
+            {
+                produced = i + 1;
+                break;
+            }
+        }
+
+        /// Only now that `chars` has stopped growing do the values get pointers into it.
+        buf.resize(lengths.size());
+        size_t offset_in_chars = 0;
+        for (size_t i = 0; i < lengths.size(); ++i)
+        {
+            buf[i] = parquet::ByteArray(
+                static_cast<UInt32>(lengths[i]), reinterpret_cast<const uint8_t *>(chars.data() + offset_in_chars));
+            offset_in_chars += lengths[i];
         }
         return buf.data();
     }
+
+    size_t producedBatchSize() const { return produced; }
+    void setByteBudget(size_t budget) { byte_budget = budget; }
 };
 
 /// Like ConverterNumberAsFixedString, but converts to big-endian. (Parquet uses little-endian
@@ -1213,15 +1241,25 @@ void writeColumnImpl(
     /// master writes with a valid index keeps one.
     static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
 
-    auto limit_batch_by_bytes = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, auto && value_size)
+    /// `overhead_per_value` is what the encoding writes around each value: plain BYTE_ARRAY prefixes
+    /// every one with its 4-byte length, which a record of many small values reaches the page limit
+    /// on long before its payload does. The returned total stays the payload alone, because that is
+    /// what `unencoded_byte_array_data_bytes` reports.
+    auto limit_batch_by_bytes
+        = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, size_t overhead_per_value, auto && value_size)
     {
         size_t bytes = 0;
+        size_t encoded_bytes = 0;
         size_t data_idx = 0;
 
         for (size_t i = 0; i < def_count; ++i)
         {
             if (s.max_def == 0 || s.def[batch_def_offset + i] == s.max_def)
-                bytes += value_size(data_idx++);
+            {
+                const size_t value_bytes = value_size(data_idx++);
+                bytes += value_bytes;
+                encoded_bytes += value_bytes + overhead_per_value;
+            }
 
             bool record_ends = !pages_change_on_record_boundaries
                 || batch_def_offset + i + 1 == num_values
@@ -1229,7 +1267,7 @@ void writeColumnImpl(
 
             /// Pages of such a chunk no longer start on record boundaries, which is what the column
             /// index promises, so it is dropped rather than written wrong.
-            if (!record_ends && bytes >= max_record_bytes)
+            if (!record_ends && encoded_bytes >= max_record_bytes)
             {
                 /// Neither index can describe a chunk whose pages start mid-record, so both are
                 /// dropped rather than written wrong.
@@ -1238,7 +1276,7 @@ void writeColumnImpl(
                 record_ends = true;
             }
 
-            if (record_ends && bytes >= max_batch_bytes)
+            if (record_ends && encoded_bytes >= max_batch_bytes)
             {
                 def_count = i + 1;
                 data_count = data_idx;
@@ -1275,20 +1313,116 @@ void writeColumnImpl(
                 }
             }
 
+            /// A converter materializes the whole batch before it can be measured, and ConverterJSON
+            /// serializes each value into storage of its own, so a batch of wide values has to be cut
+            /// from the source column's sizes before that happens. Those sizes only approximate the
+            /// encoded ones - serializing a value can grow it - so the batch is measured again below,
+            /// once the values exist.
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, sizeof(UInt32),
+                    [&](size_t i) { return s.primitive_column->byteSizeAt(next_data_offset + i); });
+            }
+
+            /// A converter that cannot be measured without doing the work bounds itself, and reports
+            /// how much of the batch it produced.
+            if constexpr (requires { converter.setByteBudget(size_t{}); })
+                converter.setByteBudget(max_batch_bytes);
+
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
+
+            if constexpr (requires { converter.producedBatchSize(); })
+            {
+                if (size_t produced = converter.producedBatchSize(); produced < data_count)
+                {
+                    auto levels_holding = [&](size_t values)
+                    {
+                        if (s.max_def == 0)
+                            return values;
+                        size_t levels = 0;
+                        for (size_t seen = 0; seen < values; ++levels)
+                            seen += s.def[next_def_offset + levels] == s.max_def;
+                        return levels;
+                    };
+                    auto values_in = [&](size_t levels)
+                    {
+                        if (s.max_def == 0)
+                            return levels;
+                        size_t values = 0;
+                        for (size_t i = 0; i < levels; ++i)
+                            values += s.def[next_def_offset + i] == s.max_def;
+                        return values;
+                    };
+
+                    size_t def_count_kept = levels_holding(produced);
+
+                    /// A page starts on a record boundary while the page index describes it, so give
+                    /// back the tail of a record the converter stopped inside.
+                    if (pages_change_on_record_boundaries)
+                        while (def_count_kept > 0 && next_def_offset + def_count_kept < num_values
+                               && s.rep[next_def_offset + def_count_kept] != 0)
+                            --def_count_kept;
+
+                    if (def_count_kept == 0)
+                    {
+                        /// The converter stopped inside the first record of the batch, and a record
+                        /// cannot be cut while the page index describes it, so that record is
+                        /// converted whole. Only it: asking for the rest of the batch again would
+                        /// serialize rows that this page is not going to keep.
+                        def_count_kept = 1;
+                        while (next_def_offset + def_count_kept < num_values
+                               && s.rep[next_def_offset + def_count_kept] != 0)
+                            ++def_count_kept;
+                        def_count_kept = std::min(def_count_kept, def_count);
+
+                        def_count = def_count_kept;
+                        data_count = values_in(def_count_kept);
+
+                        /// Not without a budget: a record can be larger than a page, and one that is
+                        /// gets split below anyway, at the cost of the index. Stopping there bounds
+                        /// this to what a page can hold rather than to the whole record.
+                        converter.setByteBudget(max_record_bytes);
+                        converted = converter.getBatch(next_data_offset, data_count);
+
+                        if (const size_t retry_produced = converter.producedBatchSize(); retry_produced < data_count)
+                        {
+                            def_count = levels_holding(retry_produced);
+                            data_count = retry_produced;
+                        }
+                    }
+                    else
+                    {
+                        def_count = def_count_kept;
+                        data_count = values_in(def_count_kept);
+                    }
+                }
+            }
 
             /// May shrink the batch, so it has to run before anything else consumes `data_count`.
             size_t batch_byte_size = 0;
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
             {
                 batch_byte_size = limit_batch_by_bytes(
-                    next_def_offset, def_count, data_count, [&](size_t i) { return static_cast<size_t>(converted[i].len); });
+                    next_def_offset, def_count, data_count, sizeof(UInt32),
+                    [&](size_t i) { return static_cast<size_t>(converted[i].len); });
             }
             else if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
             {
                 batch_byte_size = limit_batch_by_bytes(
-                    next_def_offset, def_count, data_count, [&](size_t) { return converter.fixedStringSize(); });
+                    next_def_offset, def_count, data_count, 0, [&](size_t) { return converter.fixedStringSize(); });
+            }
+            else
+            {
+                /// The remaining physical types are written back to back at a fixed width. A record
+                /// of enough of them still outgrows a page - `Array(UInt64)` needs 2^28 elements -
+                /// so they are budgeted the same way. A batch of `write_batch_size` of them is a few
+                /// kilobytes, far below the budget, so ordinary columns never reach the cut.
+                /// Booleans are bit-packed rather than byte-packed, which only over-counts.
+                batch_byte_size = limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, 0,
+                    [](size_t) { return sizeof(typename ParquetDType::c_type); });
             }
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
