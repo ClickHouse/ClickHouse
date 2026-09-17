@@ -46,7 +46,13 @@ INSERT INTO t_h3_geo VALUES (0.0, 70.0, 2);
 
 SELECT '-- baseline session: the key is used and the result is right';
 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Parts:%';
+-- Parallel replicas can leave the plan with no local MergeTree read at all (on the
+-- `parallel_replicas_local_plan = 0` draw), and every plan assertion here reads that step.
+SELECT countIf(explain LIKE '%Condition: (tupleElement(h3ToGeo(h), 1) in (50., +Inf))%') AS armed,
+       countIf(explain LIKE '%Condition: true%') AS disarmed,
+       countIf(explain LIKE '%Parts: 1/2%') AS pruned,
+       countIf(explain LIKE '%Parts: 2/2%') AS unpruned
+FROM (EXPLAIN indexes = 1 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS enable_parallel_replicas = 0);
 SELECT h FROM t_h3_part WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT h FROM t_h3_minmax WHERE tupleElement(h3ToGeo(h), 1) > 50;
 -- force_data_skipping_indices throws unless the index really pruned, so these also assert that agreeing
@@ -57,13 +63,17 @@ SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 80.00712511716989 S
 SELECT v FROM t_h3_geo WHERE geoToH3(lat, lon, 5) = geoToH3(80.0, 10.0, 5);
 -- The two counts below only mean anything while in-order reading is enabled: with it off both are 0,
 -- whatever the guard does, so the setting is pinned rather than taken from the session.
-SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1) WHERE explain LIKE '%Read type: InOrder%';
+SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Read type: InOrder%';
 SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k;
 
 SELECT '-- deviating session: element 1 is now the longitude, so the other row matches and the key must not be used';
 SET h3togeo_lon_lat_result_order = 1;
 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50) WHERE explain LIKE '%Condition:%' OR explain LIKE '%Parts:%';
+SELECT countIf(explain LIKE '%Condition: (tupleElement(h3ToGeo(h), 1) in (50., +Inf))%') AS armed,
+       countIf(explain LIKE '%Condition: true%') AS disarmed,
+       countIf(explain LIKE '%Parts: 1/2%') AS pruned,
+       countIf(explain LIKE '%Parts: 2/2%') AS unpruned
+FROM (EXPLAIN indexes = 1 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS enable_parallel_replicas = 0);
 SELECT h FROM t_h3_pk WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 SELECT h FROM t_h3_part WHERE tupleElement(h3ToGeo(h), 1) > 50;
 SELECT h FROM t_h3_minmax WHERE tupleElement(h3ToGeo(h), 1) > 50;
@@ -71,7 +81,7 @@ SELECT h FROM t_h3_set WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS use_query
 SELECT h FROM t_h3_set WHERE tupleElement(h3ToGeo(h), 1) > 50 SETTINGS force_data_skipping_indices = 'i_lat'; -- { serverError INDEX_NOT_USED }
 SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 69.99002414925245 SETTINGS use_query_condition_cache = 0;
 SELECT h FROM t_h3_bloom WHERE tupleElement(h3ToGeo(h), 1) = 69.99002414925245 SETTINGS force_data_skipping_indices = 'i_lat'; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1) WHERE explain LIKE '%Read type: InOrder%';
+SELECT count() FROM (EXPLAIN SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%Read type: InOrder%';
 SELECT tupleElement(h3ToGeo(h), 1) AS k FROM t_h3_pk ORDER BY k;
 SET h3togeo_lon_lat_result_order = 0;
 

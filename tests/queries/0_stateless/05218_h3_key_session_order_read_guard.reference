@@ -1,8 +1,6 @@
 -- baseline session: the key is used and the result is right
 608009741498580991
-Parts: 1 | Granules: 1
-Condition: (tupleElement(h3ToGeo(h), 1) in (50., +Inf))
-Parts: 1/2
+1	0	1	0
 608009741498580991
 608009741498580991
 608009741498580991
@@ -13,9 +11,7 @@ Parts: 1/2
 80.00712511716989
 -- deviating session: element 1 is now the longitude, so the other row matches and the key must not be used
 610315033787760639
-Parts: 2 | Granules: 2
-Condition: true
-Parts: 2/2
+0	1	0	1
 610315033787760639
 610315033787760639
 610315033787760639
