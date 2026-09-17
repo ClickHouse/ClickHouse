@@ -19,13 +19,13 @@ DROP TABLE IF EXISTS ts_dedup_metrics;
 CREATE TABLE ts_dedup_data (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS non_replicated_deduplication_window = 100;
 CREATE TABLE ts_dedup_tags (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String), min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE ts_dedup_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
-CREATE TABLE ts_dedup ENGINE = TimeSeries DATA ts_dedup_data TAGS ts_dedup_tags METRICS ts_dedup_metrics;
+CREATE TABLE ts_dedup ENGINE = TimeSeries SAMPLES ts_dedup_data TAGS ts_dedup_tags METRIC FAMILIES ts_dedup_metrics;
 CREATE TABLE ts_dedup_source (x UInt64) ENGINE = MergeTree ORDER BY x;
 
 -- The two views are identical on purpose: each branch pushes the same blocks into the same data
 -- table, so if the branches shared deduplication ids, one of them would be silently dropped.
-CREATE MATERIALIZED VIEW ts_dedup_mv_a TO ts_dedup AS SELECT 'metric' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS time_series FROM ts_dedup_source;
-CREATE MATERIALIZED VIEW ts_dedup_mv_b TO ts_dedup AS SELECT 'metric' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS time_series FROM ts_dedup_source;
+CREATE MATERIALIZED VIEW ts_dedup_mv_a TO ts_dedup AS SELECT 'metric' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS samples FROM ts_dedup_source;
+CREATE MATERIALIZED VIEW ts_dedup_mv_b TO ts_dedup AS SELECT 'metric' AS metric_name, map('x', toString(x)) AS tags, [(toDateTime64(x, 3), toFloat64(x))] AS samples FROM ts_dedup_source;
 
 INSERT INTO ts_dedup_source SELECT number FROM numbers(4) SETTINGS parallel_view_processing = 1, deduplicate_blocks_in_dependent_materialized_views = 1, insert_deduplicate = 1, max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1;
 
