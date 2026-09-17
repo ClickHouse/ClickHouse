@@ -74,24 +74,55 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         scope_data = data;
         scope_data->context = getSubqueryContext(ast, data.context);
         if (!scope_data->context->getSettingsRef()[Setting::enable_global_with_statement])
+        {
             scope_data->subqueries.clear();
+            scope_data->materialized_ctes.clear();
+        }
     }
     const Data & scope = scope_data ? *scope_data : data;
 
     std::optional<Data> new_data;
     if (auto with = ast.with())
     {
+        /// Materialized CTEs may be referenced before their declaration: register the names first.
+        for (const auto & child : with->children)
+        {
+            const auto * ast_with_elem = child->as<ASTWithElement>();
+            if (!ast_with_elem || !scope.keep_materialized_cte || !ast_with_elem->is_materialized)
+                continue;
+            if (!new_data)
+                new_data = scope;
+            new_data->subqueries.erase(ast_with_elem->name);
+            new_data->materialized_ctes.insert(ast_with_elem->name);
+        }
+
         for (auto & child : with->children)
         {
-            visit(child, new_data ? *new_data : scope);
             auto * ast_with_elem = child->as<ASTWithElement>();
+            if (ast_with_elem && scope.keep_materialized_cte && ast_with_elem->is_materialized)
+            {
+                /// Inside its own body the name keeps the meaning it has in the enclosing scope.
+                Data body_data = *new_data;
+                body_data.materialized_ctes.erase(ast_with_elem->name);
+                if (scope.materialized_ctes.contains(ast_with_elem->name))
+                    body_data.materialized_ctes.insert(ast_with_elem->name);
+                if (auto outer = scope.subqueries.find(ast_with_elem->name); outer != scope.subqueries.end())
+                    body_data.subqueries[ast_with_elem->name] = outer->second;
+                visit(child, body_data);
+                continue;
+            }
+
+            visit(child, new_data ? *new_data : scope);
             auto child_alias = child->tryGetAlias();
             if (ast_with_elem || !child_alias.empty())
             {
                 if (!new_data)
                     new_data = scope;
                 if (ast_with_elem)
+                {
                     new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+                    new_data->materialized_ctes.erase(ast_with_elem->name);
+                }
                 else
                     new_data->literals[child_alias] = child;
             }
@@ -130,6 +161,8 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
                     table.subquery->setAlias(old_alias);
                 table.children.emplace_back(table.subquery);
             }
+            else if (data.kept_cte_references && data.materialized_ctes.contains(table_id.table_name))
+                data.kept_cte_references->insert(table.database_and_table_name.get());
         }
     }
 }
@@ -155,6 +188,11 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                     func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
+                }
+                else if (data.materialized_ctes.contains(name))
+                {
+                    if (data.kept_cte_references)
+                        data.kept_cte_references->insert(ast.get());
                 }
                 else
                 {
@@ -188,6 +226,19 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
             }
         }
     }
+}
+
+std::unordered_set<const IAST *> ApplyWithSubqueryVisitor::visitKeepingMaterializedCTEs(ASTSelectWithUnionQuery & select)
+{
+    Data data;
+    data.keep_materialized_cte = true;
+    /// Expanding a plain CTE clones its body, so classify the references only on the final tree.
+    visit(select, data);
+
+    std::unordered_set<const IAST *> kept_cte_references;
+    data.kept_cte_references = &kept_cte_references;
+    visit(select, data);
+    return kept_cte_references;
 }
 
 }
