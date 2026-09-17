@@ -608,7 +608,7 @@ void GraceHashJoin::foldInMemoryJoin(GraceHashJoinStats & into, const IJoin & jo
     if (partitioned_buckets)
     {
         const auto & partitioned = assert_cast<const PartitionedHashJoin &>(join);
-        into.foldIn(partitioned.getRightTableRowCount(), partitioned.getTotalRowCount(), inMemoryPeakBytes(join), nullptr);
+        into.foldIn(partitioned.getRightTableRowCount(), partitioned.getTotalRowCount(), inMemoryPeakBytes(join), partitioned.getMatchStats());
         return;
     }
     const auto & hash = assert_cast<const HashJoin &>(join);

@@ -1,6 +1,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/HashJoin/fillRowStoreOutputColumns.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/JoinUtils.h>
@@ -85,6 +86,8 @@ public:
 
                 fillNullsFromBlocks<with_row_store, with_columns>(columns_right, rows_added);
             });
+        if (auto * stats = parent.matched_rows_stats.get())
+            stats->collectNonJoined(rows_added);
         return rows_added;
     }
 

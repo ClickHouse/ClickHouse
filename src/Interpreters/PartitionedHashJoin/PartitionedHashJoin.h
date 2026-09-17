@@ -24,6 +24,7 @@
 namespace DB
 {
 
+class MatchedRowsStats;
 class TableJoin;
 
 /** Partitioned hash join (`join_algorithm = 'partitioned_hash'`).
@@ -180,6 +181,9 @@ public:
     /// A Join table's join has no build phase at all.
     bool hasPostBuildPhase() const override { return !join_table_mode; }
     void runPostBuildPhase() override;
+
+    /// The matched-row statistics `EXPLAIN ANALYZE` reports, when the query collects them.
+    const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
 
     /// The planner reads the matched count of the previous run to decide on the row store. It is
     /// published at destruction, as the other hash joins publish theirs.
@@ -413,6 +417,10 @@ private:
     StatsCollectingParams stats_collecting_params;
     /// The matched-row statistics the planner's row store decision reads.
     StatsCollectingParams match_stats_collecting_params;
+    /// The matched-row counts `EXPLAIN ANALYZE` reports, only when the query asks for them. The left
+    /// side is counted per probe block from the block's outputs. The right side comes from the
+    /// non-joined rows, or with `matches = 1` from the row refs the probe records.
+    std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     /// Empty when the probe did not count matches, so nothing is published for that run.
     std::optional<size_t> hash_table_matches;
     bool probe_phase_finished = false;

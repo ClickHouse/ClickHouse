@@ -4,6 +4,7 @@
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/HashJoin/SharedFixedHashTableFilter.h>
 #include <Interpreters/JoinUtils.h>
@@ -170,6 +171,9 @@ PartitionedHashJoin::PartitionedHashJoin(
     fill_lane_slots = std::vector<std::atomic<FillLane *>>(2 * num_threads);
     probe_scratch_slots = std::vector<std::atomic<ProbeScratch *>>(2 * num_threads);
 
+    if (table_join->collectAnalyzeStats())
+        matched_rows_stats = std::make_unique<MatchedRowsStats>(hash_join->getKind(), hash_join->getStrictness(), table_join->analyzeMode());
+
     if (join_table_mode)
     {
         /// `StorageJoin` accepts one key clause, no mixed ON condition and no ASOF at `CREATE`, so these
@@ -282,6 +286,10 @@ void PartitionedHashJoin::shareJoinTable(const PartitionedHashJoin & source)
     shared_from_join_table = true;
     /// `reuseJoinedData` sized the flags to the inner join's own, empty map.
     reinitUsedFlags();
+    /// The stored blocks are the storage's now, so the right-side flags of the statistics can be
+    /// sized to them, as `HashJoin::reuseJoinedData` sizes its own.
+    if (matched_rows_stats)
+        matched_rows_stats->prepareRightFlagsIfNeeded(hash_join->data->workers);
 }
 
 DataTypePtr PartitionedHashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
@@ -754,6 +762,10 @@ void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
     hash_join->onBuildPhaseFinish();
     reinitUsedFlags();
     hash_join->data->keys_to_join = getTotalRowCount();
+    /// Every stored block has its final number: the right-side flags of the statistics are sized
+    /// per block, as `HashJoin::onBuildPhaseFinish` sizes its own.
+    if (matched_rows_stats)
+        matched_rows_stats->prepareRightFlagsIfNeeded(hash_join->data->workers);
     build_phase_finished = true;
 }
 
@@ -922,14 +934,24 @@ StepAnalysisReport PartitionedHashJoin::getAnalysisReport() const
     if (delegate_mode)
         return hash_join->getAnalysisReport();
 
-    /// Only the sizes the table itself knows: the probe does not feed the per-side matched counters
-    /// `HashJoin` collects.
-    StepAnalysisReport report;
-
-    MetricList right_metrics;
+    /// A Join table's rows are the storage's, shared with every per-query instance.
     const size_t right_rows = join_table_mode ? storedData().rows_to_join.load() : accumulated_rows.load(std::memory_order_relaxed);
-    right_metrics.emplace_back(MetricKey::Rows, right_rows);
-    report.push_back({MetricGroupKey::Right, std::move(right_metrics)});
+
+    StepAnalysisReport report;
+    if (matched_rows_stats)
+    {
+        report = buildMatchedRowsReport(
+            {.left_rows = matched_rows_stats->getInputLeft(),
+             .matched_left = matched_rows_stats->getMatchedLeft(),
+             .right_rows = right_rows,
+             .matched_right = matched_rows_stats->getMatchedRight(right_rows)});
+    }
+    else
+    {
+        MetricList right_metrics;
+        right_metrics.emplace_back(MetricKey::Rows, right_rows);
+        report.push_back({MetricGroupKey::Right, std::move(right_metrics)});
+    }
 
     MetricList hash_table_metrics;
     hash_table_metrics.emplace_back(MetricKey::UniqueKeys, getTotalRowCount());

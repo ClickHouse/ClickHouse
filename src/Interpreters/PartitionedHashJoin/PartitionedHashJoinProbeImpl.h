@@ -5,6 +5,7 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/AmacRing.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
@@ -880,6 +881,12 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
         join.key_sizes[0],
         HashJoin::isLowCardinalityType(join.data->type));
 
+    /// Only `MapsAll` keeps every right row of a key, so only there do the recorded words resolve to
+    /// exact right rows. The residual-filter path marks its right matches itself, as in
+    /// `HashJoinMethods::joinBlockImpl`.
+    constexpr bool refs_can_carry_stats = join_features.is_maps_all && (join_features.inner || join_features.left || join_features.full);
+    const bool record_refs_for_stats = refs_can_carry_stats && join.recordsRowRefsForStats();
+
     AddedColumns added_columns(
         scattered_block,
         is_join_get ? *join_get_columns : join.sample_block_with_columns_to_add,
@@ -890,7 +897,9 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
         join.additional_filter_required_rhs_pos,
         join_features.is_asof_join,
         is_join_get,
-        /*record_refs_for_stats=*/false);
+        record_refs_for_stats);
+    if (matched_rows_stats && matched_rows_stats->hasRightFlags())
+        added_columns.match_stats = matched_rows_stats.get();
 
     const bool has_required_right_keys = join.required_right_keys.columns() != 0;
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
@@ -931,6 +940,18 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
     }
 
     added_columns.join_on_keys.clear();
+
+    /// Per block, from what the kernel produced. The left matches come from the replication offsets,
+    /// the default-row markers or the filter; the right matches from the recorded refs.
+    if (auto * stats = matched_rows_stats.get())
+    {
+        const size_t probed_rows = processed_rows ? processed_rows : scattered_block.rows();
+        stats->collectProbeBlock(probed_rows, countMatchedLeftRows<KIND, STRICTNESS>(added_columns, probed_rows));
+
+        const bool right_matches_marked_inline = added_columns.additional_filter_expression != nullptr;
+        if (stats->hasRightFlags() && !right_matches_marked_inline)
+            markRightMatchedFromRowRefs(*stats, added_columns);
+    }
 
     /// A mixed ON condition stops at `max_joined_block_rows`; the rows it did not reach go back to the
     /// transform as the next block, as in `HashJoinMethods::joinBlockImpl`.
