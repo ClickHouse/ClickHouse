@@ -5,8 +5,8 @@
 # - no-fasttest: fail points need a build with libfiu.
 
 # The fail point holds a registered runtime filter in the state it otherwise only passes
-# through transiently: findable by the probe side while inserts_are_finished is still false.
-# ProfileEvents make the branch taken inside IRuntimeFilter::find() observable.
+# through transiently: findable by the probe side while it is not ready yet.
+# ProfileEvents make the pass-through branch taken by `__applyFilter` observable.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,10 +32,13 @@ $CLICKHOUSE_CLIENT -q "
 
 # Keep rf_witness_build on the build side: 'auto' may swap the sides and build the filter from
 # the probe table. Fabricated join-order statistics can land at or below the threshold, in which
-# case no runtime filter is created and find() is never called.
+# case no runtime filter is created and the probe never reaches the filter. The shared
+# fixed-hash-table publication would replace the held filter with a prebuilt, ready one, so it is
+# turned off to keep the Set/bloom filter under test.
 JOIN_SETTINGS="
     SET enable_analyzer = 1;
     SET enable_join_runtime_filters = 1;
+    SET join_runtime_filter_from_fixed_hash_table = 0;
     SET enable_parallel_replicas = 0;
     SET join_algorithm = 'hash';
     SET query_plan_join_swap_table = 0;

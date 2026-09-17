@@ -2,11 +2,12 @@
 --
 -- When the build side converts to a `FixedHashMap`, `HashJoin::publishSharedRuntimeFilters`
 -- replaces the `Set`/bloom runtime filter with a `SharedFixedHashTableRuntimeFilter`, snapshotting
--- the recorded exact key values and key range once. `SharedFixedHashTableRuntimeFilter::merge` is a
--- no-op, so a snapshot taken while the build streams are still merging would stay empty for the
--- rest of the query, silently disabling index pruning instead of only during the unfinished window.
--- The publication is therefore skipped while the original filter is unfinished. Whichever filter
--- ends up published, results must be exact and granule pruning must still engage.
+-- the recorded exact key values and key range once. The publication may race the last build
+-- streams that are still merging into the original filter: the metadata accessors must expose
+-- nothing until the original filter is ready (so the snapshot is complete or absent, never
+-- partial), and a late merge into the already published shared filter must be ignored rather
+-- than fail the query. Whichever filter ends up published, results must be exact and granule
+-- pruning must still engage.
 
 DROP TABLE IF EXISTS rf_shared_fact;
 DROP TABLE IF EXISTS rf_shared_dim;

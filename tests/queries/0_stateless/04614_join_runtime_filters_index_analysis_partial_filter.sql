@@ -1,12 +1,12 @@
 -- Regression for the read-time consumer of a JOIN runtime filter (index analysis).
 --
 -- A runtime filter is built by N parallel streams and only becomes "finished" after the last
--- stream merges. The row-level probe (IRuntimeFilter::find) already fails open before that. The
--- read-time index-analysis path (getRecordedKeyValues -> exact IN-set granule pruning in
--- ReadFromMergeTree) must fail open too: reading the exact-value set before the finish flag is
--- published would both race the merging stream and expose only the keys merged so far, pruning
--- probe granules for not-yet-merged keys and silently dropping matching rows. getRecordedKeyRanges
--- already guards on the finish flag; getRecordedKeyValues must match it.
+-- stream merges. The row-level probe (`__applyFilter`) already passes all rows through before that.
+-- The read-time index-analysis path (`RuntimeFilter::getRecordedKeyValues` -> exact IN-set granule
+-- pruning in ReadFromMergeTree) must fail open too: reading the exact-value set before the build
+-- finished would both race the merging stream and expose only the keys merged so far, pruning
+-- probe granules for not-yet-merged keys and silently dropping matching rows. Both
+-- getRecordedKeyRanges and getRecordedKeyValues must return nothing until the filter is ready.
 --
 -- The dim side is small enough (4000 distinct keys < join_runtime_filter_exact_values_limit) to
 -- keep the exact set (not overflow to a bloom filter) and selective enough that the exact IN-set

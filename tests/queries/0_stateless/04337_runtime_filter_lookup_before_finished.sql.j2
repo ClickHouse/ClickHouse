@@ -9,10 +9,12 @@
 -- A JOIN runtime filter is built on the right (build) side by N parallel streams; it only
 -- becomes "finished" after the last stream merges. With join_overflow_mode='break' and a tiny
 -- max_bytes_in_join the join stops reading the build side early, so the probe (left) side can
--- call IRuntimeFilter::find() while the filter is still unfinished. The query result is
--- intentionally not checked: join_overflow_mode='break' makes it non-deterministic, and the
--- point of the test is that find() must not throw. The race is probabilistic, so the query is
--- repeated; without the fix at least one repetition aborts the server with very high probability.
+-- reach the registered filter through `__applyFilter` while it is still unfinished. The probe must
+-- pass the block through unfiltered (`RuntimeFilter::isReady`) instead of probing the half-built
+-- filter (`RuntimeFilter::find` throws on an unfinished filter). The query result is intentionally
+-- not checked: join_overflow_mode='break' makes it non-deterministic, and the point of the test is
+-- that the query must not fail. The race is probabilistic, so the query is repeated; without the
+-- fix at least one repetition aborts the server with very high probability.
 --
 -- The per-repetition cost is dominated by the probe-side scan, so the probe is kept small to
 -- stay fast under the debug/sanitizer `flaky check` (which runs the test many times with
@@ -49,7 +51,7 @@ SET max_block_size = 8192;
 -- max_bytes_before_external_join between 0 and 1000000000, and 0 closes the early-break window
 -- and prevents the race from reproducing at all. Pin it to the harness's own nonzero value so
 -- the reproducer is not silently disabled on randomized runs (a tiny value instead would force
--- grace-hash spilling and raise LIMIT_EXCEEDED before find() is ever reached).
+-- grace-hash spilling and raise LIMIT_EXCEEDED before the probe ever reaches the filter).
 SET max_bytes_before_external_join = 1000000000;
 -- Pin the join build/probe side. The `flaky check` harness randomizes
 -- query_plan_join_swap_table between 'auto' and 'false'; under 'auto' this ALL INNER JOIN
@@ -58,7 +60,7 @@ SET max_bytes_before_external_join = 1000000000;
 -- Pin to 0 (false) so rf_build always stays on the build side.
 SET query_plan_join_swap_table = 0;
 -- A fabricated probe-side row count from randomized join-order statistics can land at or below
--- the threshold, in which case no runtime filter is built and find() is never reached.
+-- the threshold, in which case no runtime filter is built and the probe never reaches the filter.
 SET query_plan_optimize_join_order_randomize = 0;
 SET join_runtime_filter_min_probe_rows = 0;
 
