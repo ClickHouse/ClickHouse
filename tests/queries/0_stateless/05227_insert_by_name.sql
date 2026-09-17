@@ -6,7 +6,7 @@ CREATE TABLE insert_by_name_dst_05227
     a UInt64,
     b String DEFAULT 'missing',
     c UInt64 DEFAULT a + 10,
-    d String
+    d UInt64
 )
 ENGINE = Memory;
 
@@ -84,6 +84,25 @@ WHERE b % 2 = 0
 FORMAT TSV
 2
 SELECT a, b FROM insert_by_name_input_dst_05227 FORMAT TSVRaw;
+
+SET use_structure_from_insertion_table_in_table_functions = 1;
+INSERT INTO FUNCTION file(concat(database(), '.data_05227_insert_by_name.bin'), RowBinary)
+SELECT 'file' AS b, 100 AS a
+SETTINGS engine_file_truncate_on_insert = 1;
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT b, a FROM file(concat(database(), '.data_05227_insert_by_name.bin'), RowBinary);
+SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
+
+SET allow_experimental_analyzer = 0;
+INSERT INTO FUNCTION file(concat(database(), '.data_05227_insert_by_name_old.bin'), RowBinary)
+SELECT 'old' AS b, 101 AS a
+SETTINGS engine_file_truncate_on_insert = 1;
+TRUNCATE TABLE insert_by_name_dst_05227;
+INSERT INTO insert_by_name_dst_05227 BY NAME
+SELECT b, a FROM file(concat(database(), '.data_05227_insert_by_name_old.bin'), RowBinary);
+SELECT a, b, c, d FROM insert_by_name_dst_05227 FORMAT TSVRaw;
+SET allow_experimental_analyzer = 1;
 
 SET allow_experimental_analyzer = 0;
 TRUNCATE TABLE insert_by_name_dst_05227;

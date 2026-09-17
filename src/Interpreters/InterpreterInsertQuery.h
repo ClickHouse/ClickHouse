@@ -65,6 +65,7 @@ public:
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
+    static void resolveInsertByNameColumns(ContextMutablePtr context_, ASTInsertQuery & query);
 
 private:
     static Block getSampleBlock(
@@ -90,8 +91,6 @@ private:
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
-
-    void resolveInsertByNameColumns(ASTInsertQuery & query);
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
     std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo>

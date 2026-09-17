@@ -1278,9 +1278,11 @@ BlockIO InterpreterInsertQuery::execute()
     StoragePtr table = getTable(query);
     was_by_name = query.by_name;
     setInsertContextValues(context, query, table);
-    resolveInsertByNameColumns(query);
     if (was_by_name)
+    {
+        resolveInsertByNameColumns(context, query);
         setInsertContextValues(context, query, table);
+    }
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
@@ -1436,12 +1438,11 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
         insert_query.by_name);
 }
 
-void InterpreterInsertQuery::resolveInsertByNameColumns(ASTInsertQuery & query)
+void InterpreterInsertQuery::resolveInsertByNameColumns(ContextMutablePtr context, ASTInsertQuery & query)
 {
     if (!query.by_name)
         return;
 
-    auto context = getContext();
     SharedHeader header;
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])

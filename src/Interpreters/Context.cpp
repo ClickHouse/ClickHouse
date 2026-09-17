@@ -3886,7 +3886,11 @@ bool Context::isCurrentQueryKilled() const
     return false;
 }
 
-void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::shared_ptr<ColumnsDescription> column_description)
+void Context::setInsertionTable(
+    StorageID db_and_table,
+    std::optional<Names> column_names,
+    std::shared_ptr<ColumnsDescription> column_description,
+    bool by_name)
 {
     insertion_table_info = {
         .table = std::move(db_and_table),
