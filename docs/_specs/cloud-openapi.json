@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1130983",
+      "url": "/cloud/manage/openapi?referrer=openapi-1130983",
       "email": "support@clickhouse.com"
     }
   },
@@ -474,7 +474,7 @@
     "/v1/organizations/{organizationId}/prometheus/discovery": {
       "get": {
         "summary": "List Prometheus scrape targets",
-        "description": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics.",
+        "description": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](/integrations/prometheus) for more on the exported metrics.",
         "operationId": "organizationPrometheusDiscoveryGet",
         "parameters": [
           {
@@ -569,7 +569,7 @@
           "Prometheus"
         ],
         "x-mint": {
-          "content": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](https://clickhouse.com/docs/integrations/prometheus) for more on the exported metrics."
+          "content": "Returns one Prometheus scrape target per service in the organization, in the [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) format. Only services the API key is authorized to view are included; services that are being deleted or have been deleted are omitted.\n\nPoint an [`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job at this endpoint to discover and scrape all services in the organization automatically. Prometheus refreshes the target list on every discovery poll, so newly created and deleted services are picked up without configuration changes.\n\nDiscovered targets scrape with `filtered_metrics=true` by default; pass `?filtered_metrics=false` to this endpoint to discover unfiltered targets. See the [Prometheus integration guide](/integrations/prometheus) for more on the exported metrics."
         }
       }
     },
@@ -9186,7 +9186,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling": {
       "get": {
         "summary": "Get CDC ClickPipes scaling",
-        "description": "Get scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. For billing purposes, 2 CPU cores and 8 GB of RAM [correspond](https://clickhouse.com/docs/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](#tag/ClickPipes/operation/clickPipeGet).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**",
+        "description": "Get scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. For billing purposes, 2 CPU cores and 8 GB of RAM [correspond](/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](#tag/ClickPipes/operation/clickPipeGet).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**",
         "operationId": "clickPipeCdcScalingGet",
         "parameters": [
           {
@@ -9293,12 +9293,12 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Get scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. For billing purposes, 2 CPU cores and 8 GB of RAM [correspond](https://clickhouse.com/docs/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](/products/cloud/api-reference/clickpipes/get-clickpipe).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**"
+          "content": "Get scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. For billing purposes, 2 CPU cores and 8 GB of RAM [correspond](/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](/products/cloud/api-reference/clickpipes/get-clickpipe).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**"
         }
       },
       "patch": {
         "summary": "Update CDC ClickPipes scaling",
-        "description": "Update scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. Scaling settings may take a few minutes to fully propagate.\n\nFor billing purposes, 2 CPU cores and 8 GB of RAM [correspond](https://clickhouse.com/docs/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit. If your organization tier changes, database ClickPipes will be [rescaled](https://clickhouse.com/docs/cloud/manage/billing/overview#compute) appropriately.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](#tag/ClickPipes/operation/clickPipeGet).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**",
+        "description": "Update scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. Scaling settings may take a few minutes to fully propagate.\n\nFor billing purposes, 2 CPU cores and 8 GB of RAM [correspond](/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit. If your organization tier changes, database ClickPipes will be [rescaled](/cloud/manage/billing/overview#compute) appropriately.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](#tag/ClickPipes/operation/clickPipeGet).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**",
         "operationId": "clickPipeCdcScalingUpdate",
         "parameters": [
           {
@@ -9414,7 +9414,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Update scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. Scaling settings may take a few minutes to fully propagate.\n\nFor billing purposes, 2 CPU cores and 8 GB of RAM [correspond](https://clickhouse.com/docs/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit. If your organization tier changes, database ClickPipes will be [rescaled](https://clickhouse.com/docs/cloud/manage/billing/overview#compute) appropriately.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](/products/cloud/api-reference/clickpipes/get-clickpipe).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**"
+          "content": "Update scaling settings for database ClickPipes (PostgreSQL, MySQL, MongoDB, BigQuery).\n\nThe infrastructure is shared between all database ClickPipes in the service, both for initial load and CDC. Scaling settings may take a few minutes to fully propagate.\n\nFor billing purposes, 2 CPU cores and 8 GB of RAM [correspond](/cloud/manage/billing/overview#clickpipes-for-postgres-cdc) to one compute unit. If your organization tier changes, database ClickPipes will be [rescaled](/cloud/manage/billing/overview#compute) appropriately.\n\n**Note:** For Kafka, Kinesis, and object storage pipes (S3, GCS, Azure Blob), see [Get ClickPipe](/products/cloud/api-reference/clickpipes/get-clickpipe).\n\n**This endpoint becomes available once at least one database ClickPipe was provisioned.**"
         }
       }
     },
@@ -15716,7 +15716,7 @@
     "/v1/organizations/{organizationId}/privateEndpointConfig": {
       "get": {
         "summary": "Get private endpoint configuration for region within cloud provider for an organization",
-        "description": "Deprecated. Please follow [documentation](https://clickhouse.com/docs/manage/security/aws-privatelink#add-endpoint-id-to-services-allow-list) for the updated process.",
+        "description": "Deprecated. Please follow [documentation](/manage/security/aws-privatelink#add-endpoint-id-to-services-allow-list) for the updated process.",
         "operationId": "organizationPrivateEndpointConfigGetList",
         "parameters": [
           {
@@ -19080,7 +19080,7 @@
       "post": {
         "operationId": "udfCreate",
         "summary": "Create UDF",
-        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Creates a new UDF. See [User-defined functions in Cloud](https://clickhouse.com/docs/products/cloud/features/sql-console-features/user-defined-functions).",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Creates a new UDF. See [User-defined functions in Cloud](/products/cloud/features/sql-console-features/user-defined-functions).",
         "tags": [
           "UDF"
         ],
@@ -22797,7 +22797,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: https://clickhouse.com/docs/en/integrations/clickpipes/kafka#iam",
+            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/kafka#iam",
             "type": [
               "string",
               "null"
@@ -22903,7 +22903,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: https://clickhouse.com/docs/en/integrations/clickpipes/kafka#iam",
+            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/kafka#iam",
             "type": [
               "string",
               "null"
@@ -22997,7 +22997,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: https://clickhouse.com/docs/en/integrations/clickpipes/kafka#iam",
+            "description": "IAM role for the Kafka source. Use with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/kafka#iam",
             "type": [
               "string",
               "null"
@@ -23245,7 +23245,7 @@
             ]
           },
           "url": {
-            "description": "Provide a path to the file(s) you want to ingest. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: https://clickhouse.com/docs/en/integrations/clickpipes/object-storage#limitations",
+            "description": "Provide a path to the file(s) you want to ingest. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": "string",
             "example": "https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/**.ndjson.gz"
           },
@@ -23321,7 +23321,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: https://clickhouse.com/docs/en/integrations/clickpipes/object-storage#authentication",
+            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/object-storage#authentication",
             "type": [
               "string",
               "null"
@@ -23337,7 +23337,7 @@
             "example": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
           },
           "path": {
-            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: https://clickhouse.com/docs/en/integrations/clickpipes/object-storage#limitations",
+            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": [
               "string",
               "null"
@@ -23383,7 +23383,7 @@
             ]
           },
           "url": {
-            "description": "Provide a path to the file(s) you want to ingest. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: https://clickhouse.com/docs/en/integrations/clickpipes/object-storage#limitations",
+            "description": "Provide a path to the file(s) you want to ingest. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": "string",
             "example": "https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/**.ndjson.gz"
           },
@@ -23459,7 +23459,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: https://clickhouse.com/docs/en/integrations/clickpipes/object-storage#authentication",
+            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/object-storage#authentication",
             "type": [
               "string",
               "null"
@@ -23475,7 +23475,7 @@
             "example": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
           },
           "path": {
-            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: https://clickhouse.com/docs/en/integrations/clickpipes/object-storage#limitations",
+            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": [
               "string",
               "null"
@@ -23541,7 +23541,7 @@
             ]
           },
           "iamRole": {
-            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: https://clickhouse.com/docs/en/integrations/clickpipes/object-storage#authentication",
+            "description": "IAM role to be used with IAM role authentication. Read more in ClickPipes documentation: /integrations/clickpipes/object-storage#authentication",
             "type": [
               "string",
               "null"
@@ -23557,7 +23557,7 @@
             "example": "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey;EndpointSuffix=core.windows.net"
           },
           "path": {
-            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: https://clickhouse.com/docs/en/integrations/clickpipes/object-storage#limitations",
+            "description": "Path to the file(s) within the Azure container. Used for Azure Blob Storage sources. You can specify multiple files using bash-like wildcards. For more information, see the documentation on using wildcards in path: /integrations/clickpipes/object-storage#limitations",
             "type": [
               "string",
               "null"
@@ -37672,7 +37672,7 @@
       "basicAuth": {
         "type": "http",
         "scheme": "basic",
-        "description": "Use key ID and key secret obtained in ClickHouse Cloud console: https://clickhouse.com/docs/cloud/manage/openapi",
+        "description": "Use key ID and key secret obtained in ClickHouse Cloud console: /cloud/manage/openapi",
         "x-permission-scopes": "The scope list of a `security` requirement holds ClickHouse Cloud API key permission ids (for example `control-plane:organization:view`), not OAuth scopes. OpenAPI has no field for API key permissions, so this is the closest available place. A key must hold every permission listed on an operation to call it; an operation with no scopes needs none beyond a valid key. Every operation declares at most one requirement object, always for this scheme, so the list is only ever conjunctive — alternative sets of permissions are never expressed."
       }
     }
