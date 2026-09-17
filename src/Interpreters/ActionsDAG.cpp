@@ -441,7 +441,8 @@ const ActionsDAG::Node & ActionsDAG::addColumn(
     std::string name,
     bool is_deterministic_constant,
     bool is_masked_secret,
-    bool is_runtime_filter_id)
+    bool is_runtime_filter_id,
+    std::vector<size_t> scalar_subquery_ids_)
 {
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
@@ -459,6 +460,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(
     node.is_deterministic_constant = is_deterministic_constant;
     node.is_masked_secret = is_masked_secret;
     node.is_runtime_filter_id = is_runtime_filter_id;
+    node.scalar_subquery_ids = std::move(scalar_subquery_ids_);
 
     return addNode(std::move(node));
 }

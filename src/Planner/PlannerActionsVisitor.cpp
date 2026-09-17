@@ -672,13 +672,9 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret);
-
-        /// The annotation is display-only and the node was created by `actions_dag` a line above,
-        /// which is not const here; only the returned pointer is. Marking it in place avoids
-        /// threading the ids through `addColumn` and every other caller of it.
-        if (!scalar_subquery_ids.empty())
-            const_cast<ActionsDAG::Node *>(node)->scalar_subquery_ids = scalar_subquery_ids;
+        const auto * node = &actions_dag.addColumn(
+            std::move(column), std::move(type), std::move(name), is_deterministic, is_masked_secret,
+            /*is_runtime_filter_id=*/false, scalar_subquery_ids);
 
         node_name_to_node[node->result_name] = node;
 

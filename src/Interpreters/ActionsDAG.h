@@ -199,7 +199,8 @@ public:
         std::string name,
         bool is_deterministic_constant = true,
         bool is_masked_secret = false,
-        bool is_runtime_filter_id = false);
+        bool is_runtime_filter_id = false,
+        std::vector<size_t> scalar_subquery_ids = {});
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
