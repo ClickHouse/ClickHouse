@@ -224,6 +224,7 @@ struct HiddenExpressionArguments
 };
 
 /// Returns true if `name` binds to something other than a lambda argument in `scope` itself.
+/// A non-lambda scope owning `name` as an expression argument counts as such a binding.
 bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope, bool allow_to_check_aliases)
 {
     IdentifierLookup lookup{Identifier{name}, IdentifierLookupContext::EXPRESSION};
@@ -234,7 +235,20 @@ bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope
     if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(name) != nullptr)
         allow_to_check_aliases = false;
 
-    return (allow_to_check_aliases && IdentifierResolver::tryBindIdentifierToAliases(lookup, scope))
+    /// `expression_argument_name_to_node` is not lambda-only: the synthetic column of an `INTERPOLATE`
+    /// expression is registered there as well, and it is a real binding written outside of any lambda.
+    /// Mirror `tryResolveIdentifierFromExpressionArguments`: entries which an expression lookup cannot
+    /// use, such as the table of a recursive CTE, do not count.
+    bool binds_to_expression_argument = false;
+    if (scope.scope_node->getNodeType() != QueryTreeNodeType::LAMBDA)
+    {
+        auto it = scope.expression_argument_name_to_node.find(name);
+        binds_to_expression_argument = it != scope.expression_argument_name_to_node.end()
+            && isExpressionNodeType(it->second->getNodeType());
+    }
+
+    return binds_to_expression_argument
+        || (allow_to_check_aliases && IdentifierResolver::tryBindIdentifierToAliases(lookup, scope))
         || IdentifierResolver::tryBindIdentifierToTableExpressions(lookup, {} /*table_expression_node_to_ignore*/, scope)
         || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(lookup, scope)
         || IdentifierResolver::tryBindIdentifierToJoinUsingColumn(lookup, scope);
@@ -263,8 +277,13 @@ bool hasToHideLambdaArgument(
           *
           * An argument that an enclosing alias resolution already hid is not visible either: the resolution
           * walk skips it, so it cannot be what the aliased expression refers to.
+          *
+          * Only lambda scopes own arguments. Other scopes with entries in `expression_argument_name_to_node`,
+          * such as the one of an `INTERPOLATE` expression, provide ordinary outer bindings, which
+          * `canBindNameInScope` accounts for.
           */
-        if (current_scope->expression_argument_name_to_node.contains(name)
+        if (current_scope->scope_node->getNodeType() == QueryTreeNodeType::LAMBDA
+            && current_scope->expression_argument_name_to_node.contains(name)
             && !lambda_scopes_to_hide.contains(current_scope)
             && !current_scope->hidden_expression_arguments.contains(name))
             return false;
