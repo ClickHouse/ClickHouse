@@ -4,6 +4,7 @@
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/UnavailableShardTracker.h>
 
+#include <base/sleep.h>
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -58,6 +59,8 @@ namespace Setting
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
     extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
+    extern const SettingsUInt64 distributed_query_retries;
+    extern const SettingsMilliseconds distributed_query_retry_interval_ms;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
 }
@@ -70,11 +73,15 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
+    extern const char remote_query_executor_prepare_retry_pause[];
     extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
 }
 
@@ -265,13 +272,26 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     ConnectionPoolWithFailoverPtr pool)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
+    failover_pool = pool;
+
     /// Capture `pool` in the lambda to prevent the connection pool from being destroyed
     /// while entries are still in use. The Entry objects hold raw references (via PoolEntryHelper)
     /// back to the pool's internal PooledObject and PoolBase structures, so the pool must
     /// outlive all Entry objects.
-    create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback) mutable
+    create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback async_callback) mutable -> std::unique_ptr<IConnections>
     {
-        auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context, throttler);
+        /// The preselected entries are used for the first attempt only. A retry after a network error
+        /// (`distributed_query_retries`) reacquires the connections from the pool, so that it can go to
+        /// another replica (the failed one has been penalized in the pool by then).
+        if (connections_.empty())
+        {
+            if (!pool)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot re-create connections for a remote query without a connection pool");
+
+            return createConnectionsFromPool(pool, throttler, std::move(async_callback));
+        }
+
+        auto res = std::make_unique<MultiplexedConnections>(std::exchange(connections_, {}), context, throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
@@ -292,56 +312,63 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     GetPriorityForLoadBalancing::Func priority_func_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_)
 {
-    create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
+    failover_pool = pool;
+    create_connections = [this, pool, throttler](AsyncCallback async_callback)
     {
-        const Settings & current_settings = context->getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+        return createConnectionsFromPool(pool, throttler, std::move(async_callback));
+    };
+}
+
+std::unique_ptr<IConnections> RemoteQueryExecutor::createConnectionsFromPool(
+    const ConnectionPoolWithFailoverPtr & pool, const ThrottlerPtr & throttler, AsyncCallback async_callback)
+{
+    const Settings & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
 #if defined(OS_LINUX)
-        if (current_settings[Setting::use_hedged_requests])
-        {
-            std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
-            if (main_table)
-                table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
-
-            auto res = std::make_unique<HedgedConnections>(
-                pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback), priority_func);
-            if (extension && extension->replica_info)
-                res->setReplicaInfo(*extension->replica_info);
-            return res;
-        }
-#endif
-
-        ConnectionPoolEntries connection_entries;
-        std::optional<bool> skip_unavailable_endpoints;
-        if (extension && extension->parallel_reading_coordinator)
-            skip_unavailable_endpoints = true;
-
+    if (current_settings[Setting::use_hedged_requests])
+    {
+        std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
         if (main_table)
-        {
-            auto try_results = pool->getManyChecked(
-                timeouts,
-                current_settings,
-                pool_mode,
-                main_table.getQualifiedName(),
-                std::move(async_callback),
-                skip_unavailable_endpoints,
-                priority_func);
-            connection_entries.reserve(try_results.size());
-            for (auto & try_result : try_results)
-                connection_entries.emplace_back(std::move(try_result.entry));
-        }
-        else
-        {
-            connection_entries = pool->getMany(
-                timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
-        }
+            table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
+        auto res = std::make_unique<HedgedConnections>(
+            pool, context, timeouts, throttler, pool_mode, table_to_check, std::move(async_callback), priority_func);
         if (extension && extension->replica_info)
             res->setReplicaInfo(*extension->replica_info);
         return res;
-    };
+    }
+#endif
+
+    ConnectionPoolEntries connection_entries;
+    std::optional<bool> skip_unavailable_endpoints;
+    if (extension && extension->parallel_reading_coordinator)
+        skip_unavailable_endpoints = true;
+
+    if (main_table)
+    {
+        auto try_results = pool->getManyChecked(
+            timeouts,
+            current_settings,
+            pool_mode,
+            main_table.getQualifiedName(),
+            std::move(async_callback),
+            skip_unavailable_endpoints,
+            priority_func);
+        connection_entries.reserve(try_results.size());
+        for (auto & try_result : try_results)
+            connection_entries.emplace_back(std::move(try_result.entry));
+    }
+    else
+    {
+        connection_entries = pool->getMany(
+            timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
+    }
+
+    auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
+    if (extension && extension->replica_info)
+        res->setReplicaInfo(*extension->replica_info);
+    return res;
 }
 
 RemoteQueryExecutor::~RemoteQueryExecutor()
@@ -580,36 +607,68 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         connections->sendQueryPlan(*query_plan);
 
     sendExternalTables();
+
+    /// Retry-commit point: the Query packet and all pending request payloads (scalars / query plan /
+    /// external tables, including the terminating empty Data packet) have been sent. Only now can
+    /// deferred progress from a prior failed attempt be discarded. If a network error occurs during
+    /// any send above, the old progress is still available for a later retry or terminal flush.
+    deferred_progress.reset();
 }
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    LockAndBlocker lock(was_cancelled_mutex);
-    if (was_cancelled)
-        return -1;
+    while (true)
+    {
+        try
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return -1;
 
-    if (!read_context)
-        read_context = std::make_unique<ReadContext>(
-            *this,
-            /*suspend_when_query_sent*/ true,
-            read_packet_type_separately);
+            if (!read_context)
+                read_context = std::make_unique<ReadContext>(
+                    *this,
+                    /*suspend_when_query_sent*/ true,
+                    read_packet_type_separately);
 
-    /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
-    /// because we can still be in process of sending scalars or external tables.
-    if (read_context->isQuerySent())
-        return -1;
+            /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
+            /// because we can still be in process of sending scalars or external tables.
+            if (read_context->isQuerySent())
+                return -1;
 
-    read_context->resume();
+            read_context->resume();
 
-    if (read_context->isQuerySent())
-        return -1;
+            if (read_context->isQuerySent())
+                return -1;
 
-    ProfileEvents::increment(ProfileEvents::SuspendSendingQueryToShard); /// Mostly for testing purposes.
-    return read_context->getFileDescriptor();
+            ProfileEvents::increment(ProfileEvents::SuspendSendingQueryToShard); /// Mostly for testing purposes.
+            return read_context->getFileDescriptor();
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
 #else
-    sendQuery();
-    return -1;
+    while (true)
+    {
+        try
+        {
+            sendQuery();
+            return -1;
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
 #endif
 }
 
@@ -626,6 +685,24 @@ Block RemoteQueryExecutor::readBlock()
 
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
+{
+    while (true)
+    {
+        try
+        {
+            return readImpl();
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
+}
+
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readImpl()
 {
     if (!sent_query)
     {
@@ -670,6 +747,24 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
+{
+    while (true)
+    {
+        try
+        {
+            return readAsyncImpl();
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
+}
+
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsyncImpl()
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     if (!read_context)
@@ -734,8 +829,115 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             return read_result;
     }
 #else
-    return read();
+    return readImpl();
 #endif
+}
+
+bool RemoteQueryExecutor::canRetryAfterNetworkError(const Exception & e) const
+{
+    /// `ATTEMPT_TO_READ_AFTER_EOF` is what reading from the connection throws when the remote server
+    /// is stopped or killed: the socket is closed on the remote side and the read hits EOF.
+    if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
+        && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+        return false;
+
+    return mayRetryAfterNetworkError();
+}
+
+bool RemoteQueryExecutor::mayRetryAfterNetworkError() const
+{
+    if (!allow_query_retry)
+        return false;
+
+    /// The connections for the retry are reacquired from the failover pool, and the failed replica
+    /// is penalized there; without a pool (e.g. a single preestablished connection) a retry is impossible.
+    if (!failover_pool)
+        return false;
+
+    /// An exception received from a remote server in a packet means that the query failed there,
+    /// not that the connection is broken.
+    if (hasThrownException())
+        return false;
+
+    /// After a part of the result has been received, re-sending the query would duplicate data in the result.
+    if (got_data_from_replica)
+        return false;
+
+    /// The same for the final statistics of the query: they are accumulated by `RemoteSource`,
+    /// so a retry would count the numbers of the failed attempt twice.
+    if (got_final_metadata_from_replica)
+        return false;
+
+    /// Queries with parallel replicas and queries of cluster functions distribute work between replicas
+    /// dynamically, and the work that was already assigned to the failed replica would be lost after a retry.
+    if (extension || task_iterator)
+        return false;
+
+    /// With `PoolMode::GET_MANY` (offset parallel replicas) one executor owns several replicas, each
+    /// executing its own slice of the query. One replica may finish (flushing the deferred progress
+    /// of the whole executor) before another replica fails, and a retry would re-send every slice,
+    /// so the finished replica's work would be replayed and counted twice.
+    if (pool_mode != PoolMode::GET_ONE)
+        return false;
+
+    return network_error_retries_count < context->getSettingsRef()[Setting::distributed_query_retries];
+}
+
+void RemoteQueryExecutor::flushDeferredProgress()
+{
+    if (deferred_progress.empty())
+        return;
+
+    if (progress_callback)
+        progress_callback(deferred_progress);
+    deferred_progress.reset();
+}
+
+void RemoteQueryExecutor::finishRetryWindow()
+{
+    got_final_metadata_from_replica = true;
+    flushDeferredProgress();
+}
+
+void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
+{
+    ++network_error_retries_count;
+
+    LOG_WARNING(
+        log,
+        "Query failed with a network error, will retry ({}/{}): {}",
+        network_error_retries_count,
+        context->getSettingsRef()[Setting::distributed_query_retries].value,
+        e.displayText());
+
+    {
+        LockAndBlocker lock(was_cancelled_mutex);
+
+        if (connections)
+        {
+            /// Penalize the replica that failed mid-query, so that the retry connects to another
+            /// available replica even under deterministic `load_balancing` policies (e.g. `in_order`,
+            /// which would otherwise reconnect to the same host and burn all the retries there).
+            /// The connection failures during establishment are already counted by the pool itself.
+            for (const auto & address : connections->getFailedReplicaAddresses())
+                failover_pool->incrementErrorCount(address.host, address.port);
+
+            connections->disconnect();
+        }
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        packet_in_progress = false;
+#endif
+        read_context.reset();
+
+        /// Make the next read attempt re-establish the connections and re-send the query.
+        established = false;
+        sent_query = false;
+        finished = false;
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_prepare_retry_pause);
+    sleepForMilliseconds(context->getSettingsRef()[Setting::distributed_query_retry_interval_ms].totalMilliseconds());
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
@@ -769,12 +971,17 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (!packet.block.empty() && (packet.block.rows() > 0))
             {
                 got_data_from_replica = true;
+                /// A retry is no longer possible: the deferred progress can be reported.
+                flushDeferredProgress();
                 return ReadResult(adaptBlockStructure(packet.block, *header));
             }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
+            /// A retry is no longer possible, and the work reported by the deferred progress
+            /// was really done by the remote server.
+            flushDeferredProgress();
 
             if (shouldIgnoreShardException(packet.exception->code()))
             {
@@ -796,6 +1003,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::EndOfStream:
+            /// The query has completed on the remote server, so its progress must be reported
+            /// even if it has not returned any data (a retry is no longer possible).
+            flushDeferredProgress();
             if (!connections->hasActiveConnections())
             {
                 finished = true;
@@ -811,23 +1021,38 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
               * constraints (for example, the minimum speed of query execution)
               * and quotas (for example, the number of lines to read).
               */
-            if (progress_callback)
+            if (mayRetryAfterNetworkError())
+            {
+                /// While a retry after a network error is still possible, defer the progress:
+                /// a retry would replay the same work, and reporting it twice would double-count
+                /// rows and bytes in the read limits and quotas.
+                deferred_progress.incrementPiecewiseAtomically(packet.progress);
+            }
+            else if (progress_callback)
                 progress_callback(packet.progress);
             break;
 
         case Protocol::Server::ProfileInfo:
+            /// This packet is a part of the suffix of a completed query, so a retry is no longer
+            /// possible: `RemoteSource` accumulates the statistics, and a second execution would
+            /// add them for the second time.
+            finishRetryWindow();
             /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
             if (profile_info_callback)
                 profile_info_callback(packet.profile_info);
             break;
 
         case Protocol::Server::Totals:
+            /// Also a part of the suffix of a completed query, see `Protocol::Server::ProfileInfo`.
+            finishRetryWindow();
             totals = packet.block;
             if (!totals.empty())
                 totals = adaptBlockStructure(totals, *header);
             break;
 
         case Protocol::Server::Extremes:
+            /// Also a part of the suffix of a completed query, see `Protocol::Server::ProfileInfo`.
+            finishRetryWindow();
             extremes = packet.block;
             if (!extremes.empty())
                 extremes = adaptBlockStructure(packet.block, *header);
@@ -926,6 +1151,8 @@ void RemoteQueryExecutor::finish()
 {
     LockAndBlocker guard(was_cancelled_mutex);
 
+    flushDeferredProgress();
+
     /** If one of:
       * - nothing started to do;
       * - received all packets before EndOfStream;
@@ -942,7 +1169,7 @@ void RemoteQueryExecutor::finish()
         /// never becomes true.
         if (!sent_query)
         {
-            /// Also mark the executor cancelled, not just finished. `RemoteSource::work()` may
+            /// Mark the executor cancelled, not just finished. `RemoteSource::work()` may
             /// already be queued for execution (its `prepare()` ran before the output port was
             /// closed), and both `sendQuery` and `sendQueryAsync` gate only on `was_cancelled` -
             /// never on `finished`. Without this the query is still sent after we declared the
@@ -952,7 +1179,11 @@ void RemoteQueryExecutor::finish()
             /// without a disconnect. A parallel-replicas follower is then left blocked in
             /// `receivePartitionMergeTreeReadTaskResponse` for the whole `receive_timeout`,
             /// holding the table's shared lock and stalling a subsequent `DROP TABLE` (#109265).
-            was_cancelled = true;
+            /// Also covers a concurrent `prepareRetryAfterNetworkError` that cleared `sent_query`
+            /// and is waiting to re-send: `tryCancel` sets `was_cancelled` so the waking `read()`
+            /// returns empty instead of calling `sendQuery` again (`sendCancel` is skipped when
+            /// `!sent_query`).
+            tryCancel("Cancelling query because finish() was called before the query was (re-)sent");
             finished = true;
         }
         else if (was_cancelled && !finished && connections)
@@ -1055,6 +1286,8 @@ void RemoteQueryExecutor::finish()
                 break;
 
             case Protocol::Server::Progress:
+                /// The query is being finished, no retry can happen anymore.
+                flushDeferredProgress();
                 if (progress_callback)
                     progress_callback(packet.progress);
                 break;
@@ -1073,6 +1306,9 @@ void RemoteQueryExecutor::cancel()
 
 void RemoteQueryExecutor::cancelUnlocked()
 {
+    /// Terminal for this executor when cancellation never reaches `finish()` (e.g. `RemoteSource::onCancel`).
+    flushDeferredProgress();
+
     {
         LockAndBlocker lock(external_tables_mutex);
 

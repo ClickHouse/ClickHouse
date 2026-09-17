@@ -323,6 +323,31 @@ std::string HedgedConnections::dumpAddresses() const
     return addresses;
 }
 
+std::vector<IConnections::ReplicaAddress> HedgedConnections::getFailedReplicaAddresses() const
+{
+    std::lock_guard lock(cancel_mutex);
+
+    /// The replicas that failed while receiving a packet are already removed from `offset_states`
+    /// (see `resumePacketReceiver`), and the survivors, if any, are healthy hedges that must not be
+    /// penalized instead of them.
+    if (!failed_replica_addresses.empty())
+        return failed_replica_addresses;
+
+    /// Otherwise the error came from a send on one of the established connections, and it cannot be
+    /// attributed to a particular replica.
+    std::vector<ReplicaAddress> addresses;
+    for (const OffsetState & offset_state : offset_states)
+    {
+        for (const ReplicaState & replica : offset_state.replicas)
+        {
+            if (replica.connection)
+                addresses.push_back({replica.connection->getHost(), replica.connection->getPort()});
+        }
+    }
+
+    return addresses;
+}
+
 void HedgedConnections::sendCancel()
 {
     std::lock_guard lock(cancel_mutex);
@@ -481,6 +506,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
     if (replica_state.packet_receiver->isTimeoutExpired())
     {
         const String & description = replica_state.connection->getDescription();
+        rememberFailedReplica(replica_state);
         finishProcessReplica(replica_state, true);
 
         /// Check if there is no more active connections with the same offset and there is no new replica in process.
@@ -493,6 +519,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
     }
     else if (replica_state.packet_receiver->hasException())
     {
+        rememberFailedReplica(replica_state);
         finishProcessReplica(replica_state, true);
         std::rethrow_exception(replica_state.packet_receiver->getException());
     }
@@ -673,6 +700,11 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
         case HedgedConnectionsFactory::State::NOT_READY:
             break;
     }
+}
+
+void HedgedConnections::rememberFailedReplica(const ReplicaState & replica)
+{
+    failed_replica_addresses.push_back({replica.connection->getHost(), replica.connection->getPort()});
 }
 
 void HedgedConnections::finishProcessReplica(ReplicaState & replica, bool disconnect)
