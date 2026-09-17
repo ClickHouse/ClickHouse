@@ -4,40 +4,40 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "912d4ea7eb14eab5911f88b95a8e5be0b8dcba7e7a59e4a3c8c83c0f5df33be0",
+      "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
-        "ru": {
-          "updatedAt": "2026-09-17T14:45:48.718Z",
-          "fileName": "docs.json"
-        },
-        "ar": {
-          "updatedAt": "2026-09-17T14:45:49.020Z",
-          "fileName": "docs.json"
-        },
         "fr": {
-          "updatedAt": "2026-09-17T14:45:49.173Z",
-          "fileName": "docs.json",
-          "postProcessHash": "e265a6d939ee2fae00a57501e6bd897cfff6bfc0866a784bde376620b342a50a"
-        },
-        "ko": {
-          "updatedAt": "2026-09-17T14:45:48.419Z",
-          "fileName": "docs.json"
-        },
-        "es": {
-          "updatedAt": "2026-09-17T14:45:48.066Z",
+          "updatedAt": "2026-09-17T19:19:20.342Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-17T14:45:48.262Z",
+          "updatedAt": "2026-09-17T19:19:20.561Z",
           "fileName": "docs.json"
         },
-        "pt-BR": {
-          "updatedAt": "2026-09-17T14:45:48.569Z",
+        "ru": {
+          "updatedAt": "2026-09-17T19:19:20.770Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-17T14:45:48.869Z",
+          "updatedAt": "2026-09-17T19:19:20.989Z",
           "fileName": "docs.json"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-17T19:19:21.204Z",
+          "fileName": "docs.json"
+        },
+        "ko": {
+          "updatedAt": "2026-09-17T19:19:21.413Z",
+          "fileName": "docs.json"
+        },
+        "es": {
+          "updatedAt": "2026-09-17T19:19:21.632Z",
+          "fileName": "docs.json"
+        },
+        "ar": {
+          "updatedAt": "2026-09-17T19:19:21.839Z",
+          "fileName": "docs.json",
+          "postProcessHash": "3057dbdcf5a983e16bb5534aeb42b382c20af3dd0a8d411057d96f8418b4d588"
         }
       },
       "fileName": "docs.json"
@@ -125311,51 +125311,50 @@
     },
     {
       "fileId": "43901488041dac4c1d45018fd238c4ab30fde41a9c02bdc1f0963a34fa95db2b",
-      "versionId": "d4966d7d367dd668265fd88aa3336e2e11dc450591b6ab16a422e1af7c109012",
+      "versionId": "6cee179f7d387cc05ceb38447d3b3fef865ceeba2d84a67d4c5745feb849531f",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.025Z",
-          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-          "postProcessHash": "7dbaf1b0bcfe5bf88ea4ceb0d750f5da1ba12d7dfbd84367708119f7cd836b48"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.025Z",
-          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-          "postProcessHash": "4f3c0f80f1a145416be83d8ae956805e09cb2f86df4d9826a073bed263db04df"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.025Z",
-          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-          "postProcessHash": "f3f5d7dc0d11d16db76dac9e708737ab1754aca5277f747e1069a872161187b5"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.025Z",
-          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-          "postProcessHash": "602db78984e488904c3cc1fbf9e85c2abc0720a47095cbdc6a6ba61fd05cea62"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.025Z",
-          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-          "postProcessHash": "2aad8b73a90f301ba8d1aa8654e8f6cb956ddff91120c7cf2605326136c5f7b9"
+        "fr": {
+          "updatedAt": "2026-09-17T19:19:20.119Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
+          "postProcessHash": "9ea00e4f3c90d269d6ff1505c3a42f5e8f41264587fbe282aa01e34c85ba891b"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.025Z",
+          "updatedAt": "2026-09-17T19:19:20.121Z",
           "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-          "postProcessHash": "a7201d922aebde43fe80a4cae71a02af2f7939a4e23282a340fdaa5a50b6d8cc"
+          "postProcessHash": "04dbe8aaa3b5ee8386ca925c2f6083a70143c77437b214b16b13c768d61847d0"
+        },
+        "ru": {
+          "updatedAt": "2026-09-17T19:19:20.121Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
+          "postProcessHash": "9a28637fc268049116105a9df963eb9a3a4d34801f36aa0315d41e38c77a1d89"
+        },
+        "ko": {
+          "updatedAt": "2026-09-17T19:19:20.122Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
+          "postProcessHash": "15c57536eba5548f65aea92f6b37e4fb45f49dba566c8518052bae28e795b020"
+        },
+        "es": {
+          "updatedAt": "2026-09-17T19:19:20.122Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
+          "postProcessHash": "f0e81d219a857a3a3d855b4d368b1afbeb6012d88f09e0b065dca579e248b82a"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-17T19:19:20.123Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
+          "postProcessHash": "f5fa94e655e82a8f9749d3a340538557f69f90b09f887d872803b2c92e708741"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.025Z",
+          "updatedAt": "2026-09-17T19:19:20.561Z",
           "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-          "postProcessHash": "bd47fa9d6599c4da676f1081ccf4da33bcee1471508f5384a7e14757fabaf79c"
+          "postProcessHash": "d98f138e8ebdf6da0fe290b61d085758b6918142072ab905703d2cbc953109e7"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.025Z",
-          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-          "postProcessHash": "752e249ed4559cd746e587f41b3e1e1a392f7e02d2aa81a1be25eb15e3874c58"
+        "ja": {
+          "updatedAt": "2026-09-17T19:19:21.634Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
+          "postProcessHash": "06413e12a714b2bd1bf4db7ef08a729a245bb1e8120a1c24cdd9935cf45da8a9"
         }
       },
-      "fileName": "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx",
-      "staged": false
+      "fileName": "integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse.mdx"
     },
     {
       "fileId": "2a8d1d7d7a5ade301a9ea165aeed36ed4b23d5ba8baabe1973d5caab6e07bf7d",
@@ -139055,6 +139054,53 @@
         }
       },
       "fileName": "clickstack/managing/isolating-read-write.mdx"
+    },
+    {
+      "fileId": "57482b36b719fe03004309d5a6fa7b4dff83c2801c813c80d6f1f1350928e7dd",
+      "versionId": "7d784b64fb41afbe6e9b7b6eca694e4f319ed028d927ff994851875ae55df4d8",
+      "translations": {
+        "ko": {
+          "updatedAt": "2026-09-17T19:19:20.990Z",
+          "fileName": "ko/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx",
+          "postProcessHash": "2ed6d5d9acf93a22d6a0fca772f019ecccd99973630782d167813a75439d327b"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-17T19:19:20.990Z",
+          "fileName": "pt-BR/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx",
+          "postProcessHash": "1f5ff7a9611c5a3f501ab46471a64bd29820ff5be8d46e857ee0368211cc814a"
+        },
+        "es": {
+          "updatedAt": "2026-09-17T19:19:21.204Z",
+          "fileName": "es/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx",
+          "postProcessHash": "fcf87f5f71cace9fe9497653079a8b303eb4bc68470067956cab07c408ad21ca"
+        },
+        "zh": {
+          "updatedAt": "2026-09-17T19:19:21.205Z",
+          "fileName": "zh/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx",
+          "postProcessHash": "e5aa3b36e3df0c1c3cfc27ee229830049f87a00f99e6f71cf141aa1fa8030cf8"
+        },
+        "ja": {
+          "updatedAt": "2026-09-17T19:19:21.413Z",
+          "fileName": "ja/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx",
+          "postProcessHash": "5434bf63950d14a842b58e3a849842f94409021b7dc764fb006683563c4ac612"
+        },
+        "ru": {
+          "updatedAt": "2026-09-17T19:19:21.633Z",
+          "fileName": "ru/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx",
+          "postProcessHash": "cff026e29c584158bc288267bec5a0a60c0acf08494550927269cf6cc6a2817f"
+        },
+        "fr": {
+          "updatedAt": "2026-09-17T19:19:21.633Z",
+          "fileName": "fr/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx",
+          "postProcessHash": "f8bc939b1412909f1cc23df04b3833d7ee96b783da246fe31084d179ae2d0011"
+        },
+        "ar": {
+          "updatedAt": "2026-09-17T19:19:21.634Z",
+          "fileName": "ar/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx",
+          "postProcessHash": "a5087b61b9029c200ffa5251bb58fafc1f4dff6604d1e8093cc88fd3b8a7decc"
+        }
+      },
+      "fileName": "integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin.mdx"
     }
   ]
 }
