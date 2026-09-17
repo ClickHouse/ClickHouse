@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Core/Names.h>
@@ -356,6 +357,7 @@ protected:
 
 private:
     std::vector<Rename> renames;
+    std::unordered_map<std::string, size_t> rename_source_to_index;
     static constexpr size_t children_size = 0;
 };
 

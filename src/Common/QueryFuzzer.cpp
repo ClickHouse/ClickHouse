@@ -951,6 +951,8 @@ ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
         list->children.push_back(replace);
     }
     /// RENAME must be terminal and resolves against the original column name.
+    /// Keep it occasional so that strict missing-source errors do not stop most generated chains early.
+    if (fuzz_rand() % 5 == 0)
     {
         auto rename = make_intrusive<ASTColumnsRenameTransformer::Rename>();
         rename->source_name = random_column_name();

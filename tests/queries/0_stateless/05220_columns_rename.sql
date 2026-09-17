@@ -15,6 +15,7 @@ INSERT INTO t_columns_rename VALUES (1, 2, 3, 4);
 SET enable_analyzer = 0;
 
 SELECT * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME a AS x FROM t_columns_rename ORDER BY x FORMAT TSVWithNames;
 SELECT * RENAME (a AS x, b AS y) FROM t_columns_rename FORMAT TSVWithNames;
 SELECT t_columns_rename.* RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT COLUMNS('^metric_') RENAME (metric_cpu AS cpu, metric_mem AS mem) FROM t_columns_rename FORMAT TSVWithNames;
@@ -22,7 +23,9 @@ SELECT * APPLY(toString) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames
 SELECT * REPLACE(a + 1 AS a) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * EXCEPT(b) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME (a AS b, b AS c) FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME (a AS b, b AS c) FROM t_columns_rename ORDER BY b, c FORMAT TSVWithNames;
 SELECT * RENAME a AS a FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME (a AS x, b AS x) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- RENAME is local to each matcher and does not leak through shared matcher nodes.
 SELECT * RENAME a AS x, * FROM t_columns_rename FORMAT TSVWithNames;
@@ -36,19 +39,22 @@ SELECT * RENAME `a` AS `new name` FROM t_columns_rename FORMAT TSVWithNames;
 SET enable_analyzer = 1;
 
 SELECT * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME a AS x FROM t_columns_rename ORDER BY x FORMAT TSVWithNames;
 SELECT * RENAME (a AS x, b AS y) FROM t_columns_rename FORMAT TSVWithNames;
+SELECT t_columns_rename.* RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT COLUMNS('^metric_') RENAME (metric_cpu AS cpu, metric_mem AS mem) FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * APPLY(toString) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * REPLACE(a + 1 AS a) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * EXCEPT(b) RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME (a AS b, b AS c) FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME a AS x, * FROM t_columns_rename FORMAT TSVWithNames;
 SELECT *, * RENAME a AS x FROM t_columns_rename FORMAT TSVWithNames;
 SELECT * RENAME a AS x, *, * RENAME b AS y FROM t_columns_rename FORMAT TSVWithNames;
-
-SELECT * RENAME (a AS x, b AS x) FROM t_columns_rename FORMAT TSVWithNames;
+SELECT * RENAME `a` AS `new name` FROM t_columns_rename FORMAT TSVWithNames;
 
 SELECT * RENAME missing AS x FROM t_columns_rename; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 SELECT * RENAME (a AS x, a AS y) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * RENAME (a AS x, b AS x) FROM t_columns_rename; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT * EXCEPT(a) RENAME a AS x FROM t_columns_rename; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 SELECT * RENAME () FROM t_columns_rename; -- { serverError SYNTAX_ERROR }
 SELECT * RENAME a x FROM t_columns_rename; -- { serverError SYNTAX_ERROR }

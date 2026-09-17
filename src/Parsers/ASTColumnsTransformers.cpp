@@ -522,12 +522,16 @@ void ASTColumnsRenameTransformer::readJSON(const Poco::JSON::Object & json)
             "ASTColumnsRenameTransformer JSON requires at least one rename");
 
     std::unordered_set<String> source_names;
+    std::unordered_set<String> target_names;
     for (const auto & child : children)
     {
         const auto & rename = child->as<const ASTColumnsRenameTransformer::Rename &>();
         if (!source_names.emplace(rename.source_name).second)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Duplicate source column '{}' in ASTColumnsRenameTransformer JSON", rename.source_name);
+        if (!target_names.emplace(rename.target_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Duplicate target column '{}' in ASTColumnsRenameTransformer JSON", rename.target_name);
     }
 }
 

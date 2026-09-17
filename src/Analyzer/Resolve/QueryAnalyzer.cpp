@@ -2642,6 +2642,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         bool replace_transformer_was_used = false;
         bool execute_apply_transformer = false;
         bool execute_replace_transformer = false;
+        std::optional<String> rename_target;
 
         auto projection_name_it = node_to_projection_name.find(node);
         if (projection_name_it != node_to_projection_name.end())
@@ -2747,6 +2748,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 {
                     rename_transformer_to_used_column_names[rename_transformer].insert(column_name);
                     result_projection_names.back() = *target_name;
+                    rename_target = *target_name;
                 }
             }
 
@@ -2778,7 +2780,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
 
         if (node)
+        {
+            if (rename_target)
+            {
+                /// RENAME creates a query alias in the same way as a regular SELECT alias.
+                /// Keep the alias on a clone so that shared matcher nodes are not modified.
+                auto alias_node = node->clone();
+                alias_node->setAlias(*rename_target);
+                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                visitor.visit(alias_node);
+            }
+
             list->getNodes().push_back(node);
+        }
         else
             result_projection_names.pop_back();
     }

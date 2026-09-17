@@ -11,4 +11,5 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * RENAME (`a b` AS `x y`, a 
 
 SELECT formatQueryFromJSON('{"type":"ColumnsRenameTransformer"}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"ColumnsRenameTransformer","children":[{"type":"ColumnsRenameTransformerRename","source_name":"a","target_name":"x"},{"type":"ColumnsRenameTransformerRename","source_name":"a","target_name":"y"}]}'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatQueryFromJSON('{"type":"ColumnsRenameTransformer","children":[{"type":"ColumnsRenameTransformerRename","source_name":"a","target_name":"x"},{"type":"ColumnsRenameTransformerRename","source_name":"b","target_name":"x"}]}'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT formatQueryFromJSON('{"type":"ColumnsTransformerList","children":[{"type":"ColumnsRenameTransformer","children":[{"type":"ColumnsRenameTransformerRename","source_name":"a","target_name":"x"}]},{"type":"ColumnsApplyTransformer","func_name":"toString"}]}'); -- { serverError BAD_ARGUMENTS }

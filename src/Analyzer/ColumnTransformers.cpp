@@ -361,20 +361,28 @@ RenameColumnTransformerNode::RenameColumnTransformerNode(const std::vector<Renam
     , renames(renames_)
 {
     std::unordered_set<std::string> source_names;
+    std::unordered_set<std::string> target_names;
     for (const auto & rename : renames)
     {
         if (!source_names.emplace(rename.source_name).second)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Columns in column transformer rename should not contain same source {} more than once",
                 rename.source_name);
+
+        if (!target_names.emplace(rename.target_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Columns in column transformer rename should not contain same target {} more than once",
+                rename.target_name);
+
+        rename_source_to_index.emplace(rename.source_name, rename_source_to_index.size());
     }
 }
 
 const std::string * RenameColumnTransformerNode::findRenameTarget(const std::string & source_name) const
 {
-    for (const auto & rename : renames)
-        if (rename.source_name == source_name)
-            return &rename.target_name;
+    auto it = rename_source_to_index.find(source_name);
+    if (it != rename_source_to_index.end())
+        return &renames[it->second].target_name;
 
     return nullptr;
 }

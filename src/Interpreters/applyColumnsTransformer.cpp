@@ -239,12 +239,16 @@ void applyColumnsReplaceTransformer(const ASTColumnsReplaceTransformer & transfo
 void applyColumnsRenameTransformer(const ASTColumnsRenameTransformer & transformer, ColumnsTransformerState & state)
 {
     std::map<String, String> rename_map;
+    std::set<String> target_names;
     for (const auto & rename_child : transformer.children)
     {
         const auto & rename = rename_child->as<const ASTColumnsRenameTransformer::Rename &>();
         if (!rename_map.emplace(rename.source_name, rename.target_name).second)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Columns transformer RENAME should not contain the same source column more than once");
+        if (!target_names.emplace(rename.target_name).second)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Columns transformer RENAME should not contain the same target column more than once");
     }
 
     std::set<String> matched_columns;
