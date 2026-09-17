@@ -66,8 +66,12 @@ struct ClusterConnectionParameters
 class Cluster
 {
 public:
-    /// 'treat_local_port_as_remote' - never treat a replica as local, even when its address points to
-    /// this host. Set for clickhouse-local, which listens on no port of its own.
+    /// 'treat_local_port_as_remote' - never treat a configured replica as local, even when its address
+    /// points to this host. Set for clickhouse-local, which listens on no port of its own: a replica of a
+    /// configured cluster always carries a port (explicit or inherited from `tcp_port`), so it is the
+    /// analogue of the `host:port` form of an address list, which is remote in the tool as well. This
+    /// differs from the constructor below, where a bare `localhost` (no port) of an address list keeps
+    /// resolving in the tool itself (see 01949_clickhouse_local_with_remote_localhost).
     Cluster(const Poco::Util::AbstractConfiguration & config,
             const Settings & settings,
             const String & config_prefix_,
