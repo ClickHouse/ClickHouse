@@ -624,6 +624,7 @@ def test_barrier_synchronised_concurrent_appends(started_cluster, partitioned):
     successes = sum(1 for o in outcomes if o == "ok")
     failures = [o for o in outcomes if o != "ok"]
     logging.info("barrier round: %s successes, %s failures", successes, len(failures))
+    assert failures, "no writer lost the race in three rounds: the conflict path was not exercised"
     for f in failures:
         assert "commit conflict at version" in f, f
 
@@ -695,6 +696,9 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
 
     for e in ch_errors:
         assert "commit conflict at version" in e, e
+    assert rs_ok, f"delta-rs never committed: {rs_errors}"
+    for e in rs_errors:
+        assert any(m in e.lower() for m in ("conflict", "already exists", "version", "precondition")), e
 
     versions = log_versions(started_cluster, "s3", path)
     assert versions == list(range(len(ch_ok) + len(rs_ok) + 1)), versions
@@ -714,35 +718,43 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
 # ---------------------------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_kill_query_on_object_storage_leaves_no_orphans(started_cluster, storage_type):
+def test_kill_query_on_object_storage_leaves_no_orphans(started_cluster, storage_type, partitioned):
     node = started_cluster.instances["node1"]
     path = randomize_table_name(f"test_kill_{storage_type}")
     schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
-    create_empty_delta_table(started_cluster, storage_type, path, schema, partition_by=["part"])
+    create_empty_delta_table(started_cluster, storage_type, path, schema, partition_by=["part"] if partitioned else None)
     node.query(f"CREATE TABLE {path} (id Int32, part Int32) ENGINE = {delta_engine_definition(started_cluster, storage_type, path)}")
     query_id = f"{path}_insert"
+    outcome = {}
 
-    # Hold each row for a moment so KILL lands while the object-storage buffers are open.
-    thread = threading.Thread(
-        target=lambda: node.query_and_get_answer_with_error(
+    def slow_insert():
+        # Hold each row so the KILL lands while the object-storage buffers are open.
+        outcome["result"] = node.query_and_get_answer_with_error(
             f"INSERT INTO {path} SELECT number, number % 2 FROM numbers(30) "
+            f"WHERE sleepEachRow(0.2) = 0 "
             f"SETTINGS max_block_size = 1, max_insert_threads = 1, "
-            f"function_sleep_max_microseconds_per_block = 2000000, "
-            f"max_execution_time = 120 "
-            f"WHERE sleepEachRow(0.2) = 0",
+            f"function_sleep_max_microseconds_per_block = 2000000, max_execution_time = 120",
             query_id=query_id,
         )
-    )
+
+    thread = threading.Thread(target=slow_insert)
     thread.start()
-    # Wait until the query is running and has started writing.
-    for _ in range(100):
-        running = node.query(f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'").strip()
-        if running == "1" and list_delta_data_files(started_cluster, storage_type, path):
+    # Objects only appear in the listing once finalized, so "writing started" is observed through
+    # the rows the INSERT has already pulled into the sink.
+    started_writing = False
+    for _ in range(150):
+        read_rows = node.query(f"SELECT read_rows FROM system.processes WHERE query_id = '{query_id}'").strip()
+        if read_rows and int(read_rows) >= 3:
+            started_writing = True
             break
         time.sleep(0.2)
     node.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
     thread.join()
+    assert started_writing, f"the INSERT never started consuming rows before the KILL: {outcome}"
+    _, error = outcome["result"]
+    assert "QUERY_WAS_CANCELLED" in error, error
 
     assert node.query("SELECT 1").strip() == "1"
     assert log_versions(started_cluster, storage_type, path) == [0]
@@ -751,13 +763,14 @@ def test_kill_query_on_object_storage_leaves_no_orphans(started_cluster, storage
     node.query(f"DROP TABLE {path}")
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_cancel_in_commit_window_on_object_storage_keeps_data(started_cluster, storage_type):
+def test_cancel_in_commit_window_on_object_storage_keeps_data(started_cluster, storage_type, partitioned):
     node = started_cluster.instances["node1"]
     failpoint = "delta_lake_write_cancel_in_commit_window"
     path = randomize_table_name(f"test_commit_window_{storage_type}")
     schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
-    create_empty_delta_table(started_cluster, storage_type, path, schema, partition_by=["part"])
+    create_empty_delta_table(started_cluster, storage_type, path, schema, partition_by=["part"] if partitioned else None)
     node.query(f"CREATE TABLE {path} (id Int32, part Int32) ENGINE = {delta_engine_definition(started_cluster, storage_type, path)}")
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
     try:
@@ -769,7 +782,7 @@ def test_cancel_in_commit_window_on_object_storage_keeps_data(started_cluster, s
     assert node.query("SELECT 1").strip() == "1"
     # The commit landed before the cancel: the data must survive and stay referenced.
     assert log_versions(started_cluster, storage_type, path) == [0, 1]
-    assert len(list_delta_data_files(started_cluster, storage_type, path)) == 2
+    assert len(list_delta_data_files(started_cluster, storage_type, path)) == (2 if partitioned else 1)
     fresh = f"{path}_fresh"
     node.query(f"CREATE TABLE {fresh} (id Int32, part Int32) ENGINE = {delta_engine_definition(started_cluster, storage_type, path)}")
     assert node.query(f"SELECT count() FROM {fresh}").strip() == "6"
