@@ -1,0 +1,18 @@
+-- a Keeper-backed table reports every setting, as a plain one does
+k_keeper	1
+k_plain	1
+-- and, apart from the two Keeper settings and the client id, the same rows in both directions
+0
+0
+-- the working values are reported with their macros expanded
+kafka_topic_list	1	definition
+-- the Keeper settings come from the definition, the path with its macros expanded
+kafka_keeper_path	/clickhouse/DATABASE/k_keeper	definition
+kafka_replica_name	r1	definition
+-- the client id the engine generates is reported as the engine's
+kafka_client_id	1	other
+-- a named collection is reported as the source of what it supplies, and the definition still wins
+kafka_max_block_size	17	definition
+kafka_topic_list	t	named_collection
+-- no row claims the default source for a value that is not the default
+0

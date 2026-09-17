@@ -57,10 +57,19 @@ class ThreadStatus;
 ///
 /// For the committed offsets we try to mimic the same behavior as Kafka does: if the last
 /// read offset is `n`, then we save the offset `n + 1`, same as Kafka does.
+namespace StorageKafkaUtils
+{
+/// `system.table_settings` for a table of either `Kafka` storage - see the definition.
+template <typename KafkaStorage>
+SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
+}
+
 class StorageKafka2 final : public IStreamingStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;
+    template <typename KafkaStorage>
+    friend SettingDescriptions StorageKafkaUtils::getTableSettings(const KafkaStorage & storage, ContextPtr query_context);
     friend class Kafka2Source;
     friend class ReadFromStorageKafka2;
 
@@ -84,6 +93,8 @@ public:
     ~StorageKafka2() override;
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
+
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     bool isMessageQueue() const override { return true; }
 

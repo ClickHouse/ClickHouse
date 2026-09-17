@@ -36,6 +36,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -1171,4 +1172,50 @@ PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_
     return split;
 }
 }
+}
+
+namespace DB::StorageKafkaUtils
+{
+
+/// Shared by `StorageKafka` and `StorageKafka2`, which keep the same state and derive the same working values; both
+/// befriend this, because it composes the protected `IStorage` helpers.
+template <typename KafkaStorage>
+SettingDescriptions getTableSettings(const KafkaStorage & storage, ContextPtr query_context)
+{
+    auto settings = storage.kafka_settings->enumerateSettings();
+
+    /// The settings struct records only that a value differs from its default, not what changed it,
+    /// and for a `Kafka` table three things can have: a named collection given in the engine
+    /// arguments, the table's own `SETTINGS` clause, and the storage's constructor, which pins a
+    /// few format settings. They are applied in that order, so the later source wins.
+    ///
+    /// Anything left as `Other` was set by the engine itself. Saying so is the point of that value -
+    /// guessing `named_collection` for it would be wrong, and there is no source to name.
+    if (!storage.collection_name.empty())
+    {
+        if (const auto collection = NamedCollectionFactory::instance().tryGet(storage.collection_name))
+            for (auto & setting : settings)
+                if (collection->has(setting.name))
+                    setting.origin = SettingOrigin::NamedCollection;
+    }
+
+    /// The `SETTINGS` clause is applied last and so wins over the collection.
+    settings = storage.attributeSettingsStatedInDefinition(std::move(settings), query_context);
+
+    /// What the table works with: the constructor expands macros in these, and generates a client id when none is
+    /// given - a value nothing but the engine set.
+    KafkaStorage::reportEffectiveValue(settings, "kafka_topic_list", boost::algorithm::join(storage.topics, ","));
+    KafkaStorage::reportEffectiveValue(settings, "kafka_broker_list", storage.brokers);
+    KafkaStorage::reportEffectiveValue(settings, "kafka_group_name", storage.group);
+    KafkaStorage::reportEffectiveValue(settings, "kafka_format", storage.format_name);
+    KafkaStorage::reportEffectiveValue(settings, "kafka_schema", storage.schema_name);
+    KafkaStorage::reportEffectiveValue(
+        settings, "kafka_client_id", storage.client_id,
+        (*storage.kafka_settings)[KafkaSetting::kafka_client_id].value.empty() ? std::optional(SettingOrigin::Other) : std::nullopt);
+    return settings;
+}
+
+template SettingDescriptions getTableSettings<StorageKafka>(const StorageKafka & storage, ContextPtr query_context);
+template SettingDescriptions getTableSettings<StorageKafka2>(const StorageKafka2 & storage, ContextPtr query_context);
+
 }
