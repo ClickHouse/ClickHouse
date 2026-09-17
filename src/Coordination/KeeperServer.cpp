@@ -1,7 +1,6 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 #include <Common/ProfiledLocks.h>
-#include <Interpreters/Context.h>
 
 #include "config.h"
 
@@ -29,10 +28,8 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
-#include <Common/setThreadName.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -56,6 +53,7 @@
 namespace ProfileEvents
 {
     extern const Event KeeperServerWriteLockWaitMicroseconds;
+    extern const Event KeeperServerWriteLockHoldMicroseconds;
 }
 
 namespace DB
@@ -65,7 +63,6 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsBool async_replication;
     extern const CoordinationSettingsBool auto_forwarding;
-    extern const CoordinationSettingsUInt64 commit_profiler_real_time_period_ns;
     extern const CoordinationSettingsUInt64 configuration_change_tries_count;
     extern const CoordinationSettingsMilliseconds election_timeout_lower_bound_ms;
     extern const CoordinationSettingsMilliseconds election_timeout_upper_bound_ms;
@@ -86,9 +83,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
     extern const CoordinationSettingsBool nuraft_test_mode;
-    extern const CoordinationSettingsBool nuraft_streaming_mode;
-    extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
-    extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
 }
 
 namespace ErrorCodes
@@ -109,24 +103,20 @@ namespace
 
 auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std::string_view key)
 {
-    const String config_prefix = fmt::format("openSSL.{}.", key);
-    const String load_default_ca_file_property = config_prefix + "loadDefaultCAFile";
-    const String verification_mode_property = config_prefix + "verificationMode";
-    const String root_ca_file_property = config_prefix + "caConfig";
-    const String private_key_passphrase_property = config_prefix + "privateKeyPassphraseHandler.options.password";
-    const String certificate_file_property = config_prefix + "certificateFile";
-    const String private_key_file_property = config_prefix + "privateKeyFile";
+    String load_default_ca_file_property = fmt::format("openSSL.{}.loadDefaultCAFile", key);
+    String verification_mode_property = fmt::format("openSSL.{}.verificationMode", key);
+    String root_ca_file_property = fmt::format("openSSL.{}.caConfig", key);
+    String private_key_passphrase_property = fmt::format("openSSL.{}.privateKeyPassphraseHandler.options.password", key);
 
     Poco::Net::Context::Params params;
-
+    String certificate_file_property = fmt::format("openSSL.{}.certificateFile", key);
+    String private_key_file_property = fmt::format("openSSL.{}.privateKeyFile", key);
     if (config.has(certificate_file_property))
         params.certificateFile = config.getString(certificate_file_property);
 
     if (config.has(private_key_file_property))
         params.privateKeyFile = config.getString(private_key_file_property);
 
-    /// For passphrase-protected keys, we need to load certs manually via CertificateReloader::Data
-    /// Clear params so Poco::Net::Context doesn't try to load them (it can't handle passphrases)
     std::shared_ptr<CertificateReloader::Data> certificate_data;
     if (config.has(private_key_passphrase_property))
     {
@@ -142,15 +132,15 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
 
-    const String cipher_list_property = config_prefix + "cipherList";
+    String cipher_list_property = fmt::format("openSSL.{}.cipherList", key);
     if (config.has(cipher_list_property))
         params.cipherList = config.getString(cipher_list_property);
 
-    const String dh_params_file_property = config_prefix + "dhParamsFile";
+    String dh_params_file_property = fmt::format("openSSL.{}.dhParamsFile", key);
     if (config.has(dh_params_file_property))
         params.dhParamsFile = config.getString(dh_params_file_property);
 
-    std::string disabled_protocols_list = config.getString(config_prefix + "disableProtocols", "");
+    std::string disabled_protocols_list = config.getString(fmt::format("openSSL.{}.disableProtocols", key), "");
     Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
     int disabled_protocols = 0;
     for (const auto & token : dp_tok)
@@ -167,10 +157,9 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
     }
 
-    auto prefer_server_cypher = config.getBool(config_prefix + "preferServerCiphers", false);
-    auto cache_sessions = config.getBool(config_prefix + "cacheSessions", false);
-
-    return [params, disabled_protocols, prefer_server_cypher, cache_sessions, is_server = key == "server", config_prefix, certificate_data]
+    auto prefer_server_cypher = config.getBool(fmt::format("openSSL.{}.preferServerCiphers", key), false);
+    auto cache_sessions = config.getBool(fmt::format("openSSL.{}.cache_sessions", key), false);
+    return [params, disabled_protocols, prefer_server_cypher, cache_sessions, is_server = key == "server", certificate_data]
     {
         Poco::Net::Context context(is_server ? Poco::Net::Context::Usage::SERVER_USE : Poco::Net::Context::Usage::CLIENT_USE, params);
         context.disableProtocols(disabled_protocols);
@@ -182,36 +171,27 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
             context.enableSessionCache();
 
         auto * ssl_ctx = context.sslContext();
-
-        /// Try to register with CertificateReloader for hot-reload support.
-        /// If registration fails, fall back to static certificate loading.
-        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix))
+        if (certificate_data)
         {
-            /// For passphrase-protected keys, load certificates manually
-            if (certificate_data)
+            if (auto err = SSL_CTX_clear_chain_certs(ssl_ctx); err != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Clear certificates {}", Poco::Net::Utility::getLastError());
+
+            const auto * root_certificate = static_cast<const X509 *>(certificate_data->certs_chain.front());
+            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(root_certificate)); err != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Use certificate {}", Poco::Net::Utility::getLastError());
+
+            for (auto cert = certificate_data->certs_chain.begin() + 1; cert != certificate_data->certs_chain.end(); cert++)
             {
-                if (auto err = SSL_CTX_clear_chain_certs(ssl_ctx); err != 1)
-                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Clear certificates {}", Poco::Net::Utility::getLastError());
-
-                const auto * root_certificate = static_cast<const X509 *>(certificate_data->certs_chain.front());
-                if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(root_certificate)); err != 1)
-                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Use certificate {}", Poco::Net::Utility::getLastError());
-
-                for (auto cert = certificate_data->certs_chain.begin() + 1; cert != certificate_data->certs_chain.end(); cert++)
-                {
-                    const auto * certificate = static_cast<const X509 *>(*cert);
-                    if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(certificate)); err != 1)
-                        throw Exception(ErrorCodes::OPENSSL_ERROR, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
-                }
-
-                if (auto err = SSL_CTX_use_PrivateKey(ssl_ctx, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(certificate_data->key))); err != 1)
-                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Use private key {}", Poco::Net::Utility::getLastError());
-
-                if (auto err = SSL_CTX_check_private_key(ssl_ctx); err != 1)
-                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
+                const auto * certificate = static_cast<const X509 *>(*cert);
+                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(certificate)); err != 1)
+                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
             }
-            /// Otherwise, Poco::Net::Context already loaded certs from params.certificateFile/privateKeyFile
-            /// (if they were configured). No additional action needed.
+
+            if (auto err = SSL_CTX_use_PrivateKey(ssl_ctx, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(certificate_data->key))); err != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Use private key {}", Poco::Net::Utility::getLastError());
+
+            if (auto err = SSL_CTX_check_private_key(ssl_ctx); err != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
         }
 
         return context.takeSslContext();
@@ -261,25 +241,25 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
 }
 
 KeeperServer::KeeperServer(
-    const KeeperConfigurationPtr & server_config,
+    const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
     KeeperContextPtr keeper_context_,
     KeeperSnapshotManagerS3 & snapshot_manager_s3,
     IKeeperStateMachine::CommitCallback commit_callback)
-    : server_id(server_config->server_id)
+    : server_id(configuration_and_settings_->server_id)
     , log(getLogger("KeeperServer"))
     , is_recovering(config.getBool("keeper_server.force_recovery", false))
     , keeper_context{std::move(keeper_context_)}
     , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
     , enable_reconfiguration(config.getBool("keeper_server.enable_reconfiguration", false))
 {
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
-    if (coordination_settings[CoordinationSetting::quorum_reads])
+    if (keeper_context->getCoordinationSettings()[CoordinationSetting::quorum_reads])
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
 #if USE_ROCKSDB
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (coordination_settings[CoordinationSetting::experimental_use_rocksdb])
     {
         state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
@@ -288,7 +268,7 @@ KeeperServer::KeeperServer(
             keeper_context,
             config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
             commit_callback,
-            checkAndGetSuperdigest(server_config->super_digest));
+            checkAndGetSuperdigest(configuration_and_settings_->super_digest));
         LOG_WARNING(log, "Use RocksDB as Keeper backend storage.");
     }
     else
@@ -299,7 +279,7 @@ KeeperServer::KeeperServer(
             keeper_context,
             config.getBool("keeper_server.upload_snapshot_on_exit", false) ? &snapshot_manager_s3 : nullptr,
             commit_callback,
-            checkAndGetSuperdigest(server_config->super_digest));
+            checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,
@@ -351,34 +331,6 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
 
     void commit_in_bg() override
     {
-        /// Set up query profiler for the commit thread if configured.
-        /// We create a new Context, as if this were a clickhouse query, and set setting
-        /// query_profiler_real_time_period_ns so that the profiler samples this thread and results
-        /// appear in system.trace_log with query_id = 'KeeperCommit' for easy filtering.
-        std::optional<ThreadGroupSwitcher> thread_group_switcher;
-        UInt64 profiler_period = keeper_context->getCoordinationSettings()[CoordinationSetting::commit_profiler_real_time_period_ns];
-        if (profiler_period > 0)
-        {
-            try
-            {
-                auto global_context = Context::getGlobalContextInstance();
-                if (global_context && global_context->hasTraceCollector())
-                {
-                    auto query_context = Context::createCopy(global_context);
-                    query_context->makeQueryContext();
-                    query_context->setCurrentQueryId("KeeperCommit");
-                    query_context->setSetting("query_profiler_real_time_period_ns", Field(profiler_period));
-
-                    auto thread_group = ThreadGroup::createForQuery(query_context);
-                    thread_group_switcher.emplace(std::move(thread_group), ThreadName::KEEPER_COMMIT);
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException("KeeperServer", "Failed to set up commit thread profiler");
-            }
-        }
-
         // For NuRaft, if any commit fails (uncaught exception) the whole server aborts as a safety
         // This includes failed allocation which can produce an unknown state for the storage,
         // making it impossible to handle correctly.
@@ -391,6 +343,11 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     std::unique_lock<std::recursive_mutex> lockRaft()
     {
         return std::unique_lock(lock_);
+    }
+
+    std::unique_lock<std::mutex> lockCommit()
+    {
+        return std::unique_lock(commit_lock_);
     }
 
     bool isCommitInProgress() const
@@ -453,10 +410,6 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     }
 
     using nuraft::raft_server::raft_server;
-
-    /// Keeper context for accessing coordination settings (e.g. commit profiler).
-    /// Set after construction because the base class constructor is inherited.
-    KeeperContextPtr keeper_context;
 
     // peers are initially marked as responding because at least one cycle
     // of heartbeat * response_limit (20) need to pass to be marked
@@ -527,7 +480,7 @@ void KeeperServer::forceRecovery()
 {
     // notify threads containing the lock that we want to enter recovery mode
     is_recovering = true;
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
     auto params = raft_instance->get_current_params();
     enterRecoveryMode(params);
     raft_instance->setConfig(state_manager->load_config());
@@ -536,7 +489,7 @@ void KeeperServer::forceRecovery()
 
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
 
     nuraft::raft_params params;
     params.parallel_log_appending_ = true;
@@ -592,14 +545,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::max_requests_append_size], "max_requests_append_size", log);
     params.max_append_size_bytes_ = coordination_settings[CoordinationSetting::max_requests_append_bytes_size];
 
-    if (coordination_settings[CoordinationSetting::nuraft_streaming_mode])
-    {
-        params.max_log_gap_in_stream_
-            = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::nuraft_max_log_gap_in_stream], "nuraft_max_log_gap_in_stream", log);
-        params.max_bytes_in_flight_in_stream_
-            = static_cast<int64_t>(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
-    }
-
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
@@ -621,7 +566,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// asio is async framework, so even with 1 thread it should be ok, but
     /// still as safeguard it's better to have some redundant capacity here
     asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
-    asio_opts.streaming_mode_ = coordination_settings[CoordinationSetting::nuraft_streaming_mode];
 
     if (state_manager->isSecure())
     {
@@ -684,8 +628,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 
-    raft_instance->keeper_context = keeper_context;
-
     state_manager->getLogStore()->setRaftServer(raft_instance);
 
     nuraft::raft_server::limits raft_limits;
@@ -710,7 +652,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     keeper_context->setLastCommitIndex(state_machine->last_commit_index());
 
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
 
     state_manager->loadLogStore(state_machine->last_commit_index(), coordination_settings[CoordinationSetting::reserved_log_items]);
 
@@ -744,11 +686,7 @@ void KeeperServer::shutdownRaftServer()
     keeper_context->setServerState(KeeperContext::Phase::SHUTDOWN);
 
     if (create_snapshot_on_exit)
-    {
-        nuraft::raft_server::create_snapshot_options options;
-        options.serialize_commit_ = true;
-        raft_instance->create_snapshot(options);
-    }
+        raft_instance->create_snapshot();
 
     raft_instance.reset();
 
@@ -785,14 +723,12 @@ void KeeperServer::shutdown()
 }
 
 
-void KeeperServer::putLocalReadRequests(const KeeperRequestsForSessions & requests)
+void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {
-    for (const auto & request_for_session : requests)
-    {
-        if (!request_for_session.request->isReadRequest())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
-    }
-    state_machine->processReadRequests(requests);
+    if (!request_for_session.request->isReadRequest())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
+
+    state_machine->processReadRequest(request_for_session);
 }
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
@@ -802,7 +738,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions &
     for (const auto & request_for_session : requests_for_sessions)
         entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
     if (is_recovering)
         return nullptr;
 
@@ -1204,7 +1140,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
     const ClusterUpdateAction & action, bool last_command_was_leader_change)
 {
     using enum ConfigUpdateState;
-    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
@@ -1269,12 +1205,12 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
 
 ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
 {
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     auto diff = state_manager->getRaftConfigurationDiff(config, coordination_settings);
 
     if (!diff.empty())
     {
-        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
         last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]).cluster_config;
     }
 
@@ -1283,7 +1219,8 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    ProfiledMutexLock server_write_lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledMutexLock server_write_lock(
+        server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
@@ -1299,7 +1236,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
         server_write_lock.lock();
     };
 
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings[CoordinationSetting::configuration_change_tries_count] && !is_recovering; ++i)
@@ -1356,7 +1293,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
     auto became_leader = [&] { LOG_INFO(log, "Became leader, aborting"); return false; };
     auto backoff = [&](size_t i) { std::this_thread::sleep_for(sleep_time * (i + 1)); };
 
-    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     if (const auto* add = std::get_if<AddRaftServer>(&action))
     {
         for (size_t i = 0; i < coordination_settings[CoordinationSetting::configuration_change_tries_count] && !is_recovering; ++i)
@@ -1414,12 +1351,8 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
-    /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we call
-    /// enableSnapshotMode() on storage in the state that corresponds to `log_idx`, rather than a
-    /// more recent state.
-    nuraft::raft_server::create_snapshot_options options;
-    options.serialize_commit_ = true;
-    uint64_t log_idx = raft_instance->create_snapshot(options);
+    auto commit_lock = raft_instance->lockCommit();
+    uint64_t log_idx = raft_instance->create_snapshot();
     if (log_idx != 0)
         LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
     else

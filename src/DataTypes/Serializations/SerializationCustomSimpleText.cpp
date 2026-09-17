@@ -88,27 +88,20 @@ bool SerializationCustomSimpleText::tryDeserializeTextEscaped(IColumn & column, 
 
 void SerializationCustomSimpleText::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    auto str = serializeToString(*this, column, row_num, settings);
-    if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(str, ostr);
-    else
-        writeQuotedString(str, ostr);
+    writeQuotedString(serializeToString(*this, column, row_num, settings), ostr);
 }
 
 void SerializationCustomSimpleText::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
-    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
-    /// and a value written by us via `Values` must be parseable back by the same path.
-    readQuotedStringWithSQLStyle(str, istr);
+    readQuotedString(str, istr);
     deserializeFromString(*this, column, str, settings);
 }
 
 bool SerializationCustomSimpleText::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    if (!tryReadQuotedStringWithSQLStyle(str, istr))
+    if (!tryReadQuotedString(str, istr))
         return false;
     return tryDeserializeFromString(*this, column, str, settings);
 }

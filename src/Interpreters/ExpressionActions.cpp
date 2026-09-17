@@ -7,7 +7,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnReplicated.h>
-#include <Columns/validateColumnType.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -691,7 +690,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-                if (!columnMatchesType(*res_column.column, *res_column.type))
+                if (res_column.column->getDataType() != res_column.type->getColumnType())
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -799,8 +798,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     }
 }
 
-void ExpressionActions::execute(
-    Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
 {
     ExecutionContext execution_context
     {
@@ -842,14 +840,6 @@ void ExpressionActions::execute(
             e.addMessage(fmt::format("while executing '{}'", action.toString()));
             throw;
         }
-
-        if (check_cancelled && check_cancelled())
-        {
-            /// Return an empty block with the names and types of result columns
-            block = sample_block.cloneWithColumns(sample_block.cloneEmptyColumns());
-            num_rows = 0;
-            return;
-        }
     }
 
     if (project_inputs)
@@ -884,11 +874,11 @@ void ExpressionActions::execute(
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
 {
     size_t num_rows = block.rows();
 
-    execute(block, num_rows, dry_run, allow_duplicates_in_input, std::move(check_cancelled));
+    execute(block, num_rows, dry_run, allow_duplicates_in_input);
 
     if (block.empty())
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
@@ -913,17 +903,15 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
     std::optional<size_t> min_size;
     NameAndTypePair result;
 
     for (const auto & column : columns)
     {
-        /// Skip .sizeX and similar meta information for storage column lists.
-        /// For subquery projections, all entries are valid query-level outputs,
-        /// so skip_subcolumns should be false.
-        if (skip_subcolumns && column.isSubcolumn())
+        /// Skip .sizeX and similar meta information
+        if (column.isSubcolumn())
             continue;
 
         /// @todo resolve evil constant

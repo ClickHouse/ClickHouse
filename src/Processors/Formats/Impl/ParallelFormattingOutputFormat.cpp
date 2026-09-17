@@ -95,18 +95,7 @@ namespace DB
             unit.rows_num = unit.chunk.getNumRows();
         }
 
-        try
-        {
-            scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
-        }
-        catch (...)
-        {
-            /// Properly terminate in case of exception during scheduling, i.e. CANNOT_SCHEDULE_TASK
-            onBackgroundException();
-            if (can_throw_exception)
-                throw;
-            return;
-        }
+        scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
         ++writer_unit_number;
     }
 

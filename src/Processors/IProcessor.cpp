@@ -69,17 +69,13 @@ std::pair<int, uint32_t> IProcessor::scheduleForEvent()
 }
 #endif
 
-IProcessor::PipelineUpdate IProcessor::updatePipeline()
+Processors IProcessor::expandPipeline()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'updatePipeline' is not implemented for {} processor", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
 }
 
-void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
+void IProcessor::cancel() noexcept
 {
-    /// PartialResult means the consumer has enough data and only wants external ingress to stop
-    /// while the rest of the pipeline drains. Only sources act on it;
-    if (reason == CancelReason::PartialResult)
-        return;
 
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
     if (already_cancelled)
@@ -226,8 +222,8 @@ std::string IProcessor::statusToName(std::optional<Status> status)
             return "Ready";
         case Status::Async:
             return "Async";
-        case Status::UpdatePipeline:
-            return "UpdatePipeline";
+        case Status::ExpandPipeline:
+            return "ExpandPipeline";
     }
 }
 

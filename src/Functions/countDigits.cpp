@@ -135,12 +135,7 @@ private:
             {
                 auto value = src_data[i].value;
                 if (value < 0) [[unlikely]]
-                    /// Cast to unsigned before negation: `-INT_MIN` on a signed integer type is
-                    /// undefined behavior. Unary minus on the unsigned representation is
-                    /// well-defined modular arithmetic and preserves the correct magnitude.
-                    /// The outer cast back to `NativeT` is needed because integer promotion
-                    /// widens narrower unsigned types to `int` before applying unary minus.
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-static_cast<NativeT>(value))));
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-value)));
                 else
                     dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }
@@ -148,8 +143,7 @@ private:
             {
                 auto value = src_data[i];
                 if (value < 0) [[unlikely]]
-                    /// See note above.
-                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-static_cast<NativeT>(value))));
+                    dst_data[i] = static_cast<UInt8>(digits10(static_cast<NativeT>(-static_cast<NativeT>(value))));
                 else
                     dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }

@@ -21,6 +21,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
 

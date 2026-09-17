@@ -8,6 +8,8 @@ title: 'Time64'
 doc_type: 'reference'
 ---
 
+# Time64
+
 Data type `Time64` represents a time-of-day with fractional seconds.
 It has no calendar date components (day, month, year).
 The `precision` parameter defines the number of fractional digits and therefore the tick size.
@@ -118,23 +120,6 @@ SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
 1. │ 14:30:25.250 │ Time64(3) │
    └───────────────┴───────────┘
 ```
-
-## Addition with Date {#addition-with-date}
-
-A [Time64](time64.md) value can be added to a [Date](date.md) or [Date32](date32.md) value to produce a [DateTime64](datetime64.md) with the same scale as the `Time64`:
-
-```sql
-SET use_legacy_to_time = 0;
-SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
-```
-
-```text
-   ┌─────────────────────────dt─┬─toTypeName(dt)─┐
-1. │ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
-   └────────────────────────────┴────────────────┘
-```
-
-See [Date and Time Addition](../operators/index.md#date-time-addition) for details on all supported combinations and result types.
 
 **See Also**
 

@@ -7,6 +7,8 @@ title: 'fuzzJSON'
 doc_type: 'reference'
 ---
 
+# fuzzJSON Table Function
+
 Perturbs a JSON string with random variations.
 
 ## Syntax {#syntax}

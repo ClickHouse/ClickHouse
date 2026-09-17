@@ -68,6 +68,7 @@ namespace
     const int INITIAL_BACKUP_VERSION = 1;
     /// We may use lightweight backup in version 2.
     const int CURRENT_BACKUP_VERSION = 2;
+    constexpr auto BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP = "base_backup_copy_s3_credentials_from_backup";
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -129,6 +130,17 @@ namespace
             throw Exception(
                 ErrorCodes::INSECURE_PATH,
                 "Backup {}: <{}> {} resolves to a path outside the backup, which is not allowed",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
+
+        /// The name is kept verbatim, and `listFiles` cuts a directory prefix off it by byte offset, so a
+        /// name that is not already normalized yields a remainder that is rooted or escapes its directory.
+        /// Compare the strings: two `fs::path` objects compare element-wise, so "a//b" equals "a/b".
+        if (normalized.string() != file_name)
+            throw Exception(
+                ErrorCodes::INSECURE_PATH,
+                "Backup {}: <{}> {} is not a normalized path, which is not allowed",
                 backup_name_for_logging,
                 field_name,
                 quoteString(file_name));
@@ -310,10 +322,21 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
 {
     if (!base_backup && base_backup_info)
     {
+        /// Copy the credentials into a local copy only used for opening the base backup.
+        /// The stored `base_backup_info` must stay unchanged because `writeBackupMetadata`
+        /// serializes it into the `.backup` file, and the copied credentials must not be persisted there.
+        BackupInfo effective_base_backup_info = *base_backup_info;
         if (params.use_same_s3_credentials_for_base_backup)
-            backup_info.copyS3CredentialsTo(*base_backup_info);
+        {
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        }
+        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
+        {
+            /// Metadata marker asks to copy credentials from this backup locator at restore time.
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        }
 
-        BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(*base_backup_info, archive_params.password);
+        BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
@@ -419,8 +442,27 @@ void BackupImpl::writeBackupMetadata()
 
         if (base_backup_in_use)
         {
-            *out << "<base_backup>" << xml << base_backup_info->toString() << "</base_backup>";
+            /// Persist base backup locators without inline `S3` credentials.
+            BackupInfo effective_base_backup_info = *base_backup_info;
+            if (params.use_same_s3_credentials_for_base_backup)
+                backup_info.copyS3CredentialsTo(effective_base_backup_info);
+
+            const BackupInfo base_backup_info_for_metadata = effective_base_backup_info.withoutS3Credentials(params.context);
+            const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != effective_base_backup_info.toString();
+            bool base_backup_can_use_this_backup_credentials = false;
+
+            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
+            {
+                BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
+                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials);
+                base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
+            }
+
+            *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
+            if (base_backup_can_use_this_backup_credentials)
+                *out << "<" << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">true</"
+                     << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">";
         }
     }
 
@@ -529,7 +571,13 @@ void BackupImpl::readBackupMetadata()
     uuid = parse<UUID>(getString(config_root, "uuid"));
 
     if (config_root->getNodeByPath("base_backup") && !base_backup_info)
+    {
         base_backup_info = BackupInfo::fromString(getString(config_root, "base_backup"));
+
+        /// The marker is honored only when the base backup locator itself comes from the metadata:
+        /// if the locator was overridden with the `base_backup` setting, the override is used as is.
+        base_backup_copy_s3_credentials_from_backup = getBool(config_root, BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP, false);
+    }
 
     if (config_root->getNodeByPath("base_backup_uuid"))
         base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));
@@ -929,18 +977,71 @@ String BackupImpl::getObjectKey(const String & file_name) const
 }
 
 size_t BackupImpl::copyFileToDisk(const String & file_name,
-                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
+                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const
 {
-#if CLICKHOUSE_CLOUD
     String object_key = getObjectKey(file_name);
     if (!object_key.empty())
+    {
+        /// The optimized object-key copy exposes no buffer to fsync, so the sync case needs a buffered path.
+        if (sync)
+            return copyObjectKeyEntryToDiskSynced(object_key, destination_disk, destination_path, write_mode);
+#if CLICKHOUSE_CLOUD
         return copyFileToDiskByObjectKey(object_key, destination_disk, destination_path, write_mode);
 #endif
-    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode);
+    }
+    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode, sync);
+}
+
+size_t BackupImpl::copyObjectKeyEntryToDiskSynced(
+    const String & object_key, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
+{
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    BackupFileInfo info;
+    {
+        std::lock_guard lock{mutex};
+        auto it = lightweight_snapshot_file_infos.find(object_key);
+        if (it == lightweight_snapshot_file_infos.end())
+            throw Exception(
+                ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
+                "Backup {}: Entry with object key {} not found in the backup",
+                backup_name_for_logging, object_key);
+        info = it->second;
+    }
+
+    if (info.encrypted_by_disk && !destination_disk->getDataSourceDescription().is_encrypted)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TO_NONENCRYPTED_DISK,
+            "File {} is encrypted in the backup, it can be restored only to an encrypted disk",
+            info.data_file_name);
+    }
+
+    auto read_buffer = readFileByObjectKey(info);
+    size_t buf_size = std::min<size_t>(info.size ? info.size : DBMS_DEFAULT_BUFFER_SIZE, reader->getWriteBufferSize());
+    std::unique_ptr<WriteBufferFromFileBase> write_buffer;
+    /// readFileByObjectKey returns the bytes as stored (still encrypted for encrypted-by-disk entries),
+    /// so write them through writeEncryptedFile to avoid re-encrypting, mirroring the generic copy path.
+    if (info.encrypted_by_disk)
+        write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
+    else
+        write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
+    copyData(*read_buffer, *write_buffer, info.size);
+    write_buffer->finalize();
+    /// fdatasync the contents so a restored part survives power loss (see copyFileToDisk above).
+    write_buffer->sync();
+
+    {
+        std::lock_guard lock{mutex};
+        ++num_read_files;
+        num_read_bytes += info.size;
+    }
+    return info.size;
 }
 
 size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
-                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
+                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
@@ -950,8 +1051,18 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
         /// Entry's data is empty.
         if (write_mode == WriteMode::Rewrite)
         {
-            /// Just create an empty file.
-            destination_disk->createFile(destination_path);
+            if (sync)
+            {
+                /// createFile() leaves the empty contents unsynced; a live buffer lets us fsync it.
+                auto write_buffer = destination_disk->writeFile(destination_path, DBMS_DEFAULT_BUFFER_SIZE, write_mode, reader->getWriteSettings());
+                write_buffer->finalize();
+                write_buffer->sync();
+            }
+            else
+            {
+                /// Just create an empty file.
+                destination_disk->createFile(destination_path);
+            }
         }
         std::lock_guard lock{mutex};
         ++num_read_files;
@@ -983,16 +1094,25 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
 
     bool file_copied = false;
 
-    if (info.size && !info.base_size && !use_archive)
+    /// When `sync` is requested we must copy through a live destination buffer so we can fsync its
+    /// contents below. The optimized delegate paths (reader->copyFileToDisk / base backup) may use
+    /// fs::copy or an object-storage copy and expose no buffer, so skip them and take the buffered
+    /// branch, which is already correct for every source (this backup, base backup, archive).
+    if (!sync && info.size && !info.base_size && !use_archive)
     {
-        /// Data comes completely from this backup.
+        /// Data comes completely from this backup. The reader copies without exposing a write
+        /// buffer we could fsync, so this fast path is used only when `sync` isn't requested.
         reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode);
         file_copied = true;
     }
     else if (info.size && (info.size == info.base_size))
     {
-        /// Data comes completely from the base backup (nothing comes from this backup).
-        getBaseBackup()->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode);
+        /// Data comes completely from the base backup (nothing comes from this backup). The base
+        /// backup is itself a BackupImpl that honours `sync` and can read its own encrypted-by-disk
+        /// entries, so forward the copy (and the `sync` request) there. Going through the generic
+        /// branch below instead would read the base via the public readFile(), which always requests
+        /// unencrypted data and would fail on an encrypted entry (CANNOT_RESTORE_TO_NONENCRYPTED_DISK).
+        getBaseBackup()->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode, sync);
         file_copied = true;
     }
 
@@ -1007,7 +1127,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     {
         /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
         auto read_buffer = readFileImpl(info.file_name, size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
-        std::unique_ptr<WriteBuffer> write_buffer;
+        std::unique_ptr<WriteBufferFromFileBase> write_buffer;
         size_t buf_size = std::min<size_t>(info.size, reader->getWriteBufferSize());
         if (info.encrypted_by_disk)
             write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
@@ -1015,6 +1135,10 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
             write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
         copyData(*read_buffer, *write_buffer, info.size);
         write_buffer->finalize();
+        /// fdatasync the contents so a restored part survives power loss, matching the durability
+        /// an inserted part gets from fsync_after_insert (the caller passes `sync` accordingly).
+        if (sync)
+            write_buffer->sync();
     }
 
     return info.size;
@@ -1026,15 +1150,6 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     /// we don't write anything for reference files
     if (entry->isReference())
         return;
-
-    if (entry->isFromRemoteFile())
-    {
-        LOG_TRACE(log, "Writing backup for file {} : skipped because of lightweight snapshot", info.data_file_name);
-        std::lock_guard lock{mutex};
-        original_endpoint = entry->getEndpointURI();
-        original_namespace = entry->getNamespace();
-        return;
-    }
 
     if (open_mode == OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
@@ -1153,6 +1268,16 @@ void BackupImpl::setCompressedSize()
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
     else
         compressed_size = uncompressed_size;
+}
+
+
+void BackupImpl::setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept
+{
+    if (original_endpoint.empty())
+    {
+        original_endpoint = endpoint_;
+        original_namespace = namespace_;
+    }
 }
 
 

@@ -59,6 +59,7 @@ namespace ProfileEvents
     extern const Event ThreadPoolReaderPageCacheMissElapsedMicroseconds;
     extern const Event AsynchronousReaderIgnoredBytes;
 
+    extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;

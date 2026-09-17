@@ -132,7 +132,7 @@ REGISTER_FUNCTION(polygonsIntersect)
                 │ 1 │
                 └───────────────────┘
         )"}},
-        .introduced_in = {25, 7},
+        .introduced_in = {25, 6},
         .category = FunctionDocumentation::Category::Geo});
 
     factory.registerFunction<FunctionpolygonsIntersect<SphericalPoint>>(FunctionDocumentation{
@@ -160,7 +160,7 @@ REGISTER_FUNCTION(polygonsIntersect)
                 │ 1 │
                 └───────────────────┘
         )"}},
-        .introduced_in = {25, 7},
+        .introduced_in = {25, 6},
         .category = FunctionDocumentation::Category::Geo});
 }
 

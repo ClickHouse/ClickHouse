@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
@@ -20,6 +21,7 @@ namespace DB
 
 class ASTFunction;
 class Context;
+class IFunction;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -368,6 +370,11 @@ public:
         bool relaxed_);
 
 private:
+    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
+    /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
+    /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.
+    bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
+
     /// Information used when building a KeyCondition out of ActionsDAG.
     struct BuildInfo
     {

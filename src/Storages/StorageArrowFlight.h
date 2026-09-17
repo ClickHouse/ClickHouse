@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -13,10 +13,8 @@ class NamedCollection;
 class StorageFactory;
 struct StorageID;
 
-class StorageArrowFlight : public StorageWithCommonVirtualColumns, protected WithContext
+class StorageArrowFlight : public IStorage, protected WithContext
 {
-    static VirtualColumnsDescription createVirtuals();
-
 public:
     struct Configuration
     {
@@ -46,8 +44,6 @@ public:
         ContextPtr context_);
 
     String getName() const override { return "ArrowFlight"; }
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

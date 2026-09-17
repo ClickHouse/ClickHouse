@@ -65,7 +65,6 @@ namespace ObjectStorageQueueSetting
 namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
-    extern const char object_storage_queue_fail_commit_after_success[];
 }
 
 namespace ErrorCodes
@@ -165,6 +164,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
+    if (iterator_invalidated)
+        return true;
+
     std::lock_guard lock(mutex);
     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
     return iterator_finished
@@ -386,6 +388,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
+                    /// file_metadatas is empty when the keeper tryMulti above failed and
+                    /// cleared it (see the chassert below); only compact it when populated.
+                    const bool compact_file_metadatas = !file_metadatas.empty();
                     size_t batch_i = 0;
                     for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
                     {
@@ -401,10 +406,12 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
 
                         new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (compact_file_metadatas)
+                            file_metadatas[i] = file_metadatas[batch_i];
                     }
                     new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    if (compact_file_metadatas)
+                        file_metadatas.resize(num_successful_objects);
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
@@ -498,7 +505,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (use_buckets_for_processing)
         {
+            refreshExpiringBucketLocks();
+
             std::lock_guard lock(mutex);
+
+            if (iterator_invalidated)
+            {
+                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                return {};
+            }
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
             file_metadata = result.file_metadata;
@@ -598,6 +613,38 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
+void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
+{
+    const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+    if (!ttl_seconds)
+        return;
+
+    std::lock_guard lock(mutex);
+
+    /// Already invalidated (possibly by another thread), nothing to refresh.
+    /// Checked under the mutex to never hit the released holder of the lost lock.
+    if (iterator_invalidated)
+        return;
+    for (auto & [processor, holders] : bucket_holders)
+    {
+        for (auto & holder : *holders)
+        {
+            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
+            {
+                try
+                {
+                    holder->refresh();
+                }
+                catch (...)
+                {
+                    iterator_invalidated = true;
+                    throw;
+                }
+            }
+        }
+    }
+}
+
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
@@ -623,7 +670,15 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
                 chassert(holder->isFinished());
 
             /// Release bucket lock.
-            holder->release();
+            try
+            {
+                holder->release();
+            }
+            catch (...)
+            {
+                iterator_invalidated = true;
+                throw;
+            }
             ++released_holders;
 
             /// Reset bucket processor in cached state.
@@ -1003,17 +1058,7 @@ Chunk ObjectStorageQueueSource::generate()
     }
 
     if (!chunk && commit_once_processed)
-    {
-        try
-        {
-            commit(true);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Failed to commit data: {}", getCurrentExceptionMessage(false));
-            throw;
-        }
-    }
+        commit(true);
 
     return chunk;
 }
@@ -1111,7 +1156,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
-                storage_id,
                 file_iterator,
                 configuration,
                 object_storage,
@@ -1256,9 +1300,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
-                    .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified,
+                    .last_modified = object_metadata->last_modified
                 },
                 getContext());
 
@@ -1482,12 +1525,6 @@ void ObjectStorageQueueSource::preparePartitionProcessedRequests(
     }
 }
 
-void ObjectStorageQueueSource::setUncertainCommit()
-{
-    for (auto & file : processed_files)
-        file.metadata->setUncertainCommit();
-}
-
 void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
@@ -1587,9 +1624,6 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         exception_message);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
-    if (requests.empty() && successful_objects.empty())
-        return;
-
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
@@ -1620,20 +1654,10 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         }
         ++try_num;
         code = zk_client->tryMulti(requests, responses);
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-            if (code == Coordination::Error::ZOK)
-                throw zkutil::KeeperException::fromMessage(
-                    Coordination::Error::ZCONNECTIONLOSS,
-                    "Simulated connection loss after successful commit");
-        });
     });
 
     if (code != Coordination::Error::ZOK)
-    {
-        if (try_num > 1)
-            setUncertainCommit();
         throw zkutil::KeeperMultiException(code, requests, responses);
-    }
 
     const auto commit_id = StorageObjectStorageQueue::generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

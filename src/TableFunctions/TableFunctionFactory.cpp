@@ -88,10 +88,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
 {
-    String canonical_name = getAliasToOrName(name);
-    if (table_functions.contains(canonical_name))
-        return true;
-    return case_insensitive_table_functions.contains(Poco::toLower(canonical_name));
+    return table_functions.contains(name);
 }
 
 std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentation(const String & name) const

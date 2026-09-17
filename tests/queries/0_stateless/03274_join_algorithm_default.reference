@@ -83,24 +83,18 @@ ExpressionTransform
               NumbersRange 0 → 1
 (Expression)
 ExpressionTransform
-  (Expression)
-  ExpressionTransform
-    (Join)
-    JoiningTransform 2 → 1
-      (Expression)
+  (Join)
+  JoiningTransform 2 → 1
+    (Expression)
+    ExpressionTransform
+      (Limit)
+      Limit
+        (ReadFromSystemNumbers)
+        NumbersRange 0 → 1
+    (Expression)
+    FillingRightJoinSide
       ExpressionTransform
-        (Expression)
-        ExpressionTransform
-          (Limit)
-          Limit
-            (ReadFromSystemNumbers)
-            NumbersRange 0 → 1
-      (Expression)
-      FillingRightJoinSide
-        ExpressionTransform
-          (Expression)
-          ExpressionTransform
-            (Limit)
-            Limit
-              (ReadFromSystemNumbers)
-              NumbersRange 0 → 1
+        (Limit)
+        Limit
+          (ReadFromSystemNumbers)
+          NumbersRange 0 → 1

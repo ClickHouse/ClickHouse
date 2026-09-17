@@ -11,6 +11,7 @@
 #    include <boost/algorithm/string/case_conv.hpp>
 #    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#    include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
 #    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #    include <Interpreters/Context.h>
 
@@ -57,6 +58,11 @@ Chunk ORCBlockInputFormat::read()
     auto batch = batch_result.ValueOrDie();
     if (!batch)
         return {};
+
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*batch);
 
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())

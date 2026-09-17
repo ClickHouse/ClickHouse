@@ -40,9 +40,6 @@ done
 */
 
 
-namespace
-{
-
 template <typename Map>
 void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 {
@@ -90,9 +87,7 @@ void insert(Map & map, std::string_view & k)
     std::cout << map.find(k)->getMapped() << std::endl;
 }
 
-}
-
-int mainEntryExampleHashMapLookup(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 3)
     {

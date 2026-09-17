@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 
 #include <Columns/ColumnString.h>
@@ -9,22 +8,8 @@ namespace DB
 
 SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVersion version_)
     : version(version_)
-    , serialization_string(SerializationString::create(version))
+    , serialization_string(version)
 {
-}
-
-
-UInt128 SerializationStringSize::getHash(MergeTreeStringSerializationVersion version_)
-{
-    SipHash hash;
-    hash.update("StringSize");
-    hash.update(static_cast<int>(version_));
-    return hash.get128();
-}
-
-SerializationPtr SerializationStringSize::create(MergeTreeStringSerializationVersion version_)
-{
-    return ISerialization::pooled(getHash(version_), [=] { return new SerializationStringSize(version_); });
 }
 
 void SerializationStringSize::enumerateStreams(
@@ -137,7 +122,7 @@ void SerializationStringSize::deserializeWithStringData(
         double avg_value_size_hint
             = settings.get_avg_value_size_hint_callback ? settings.get_avg_value_size_hint_callback(settings.path) : 0.0;
 
-        serialization_string->deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
+        serialization_string.deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
 
         num_read_rows = string_state.column->size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state.column, num_read_rows);
@@ -259,11 +244,6 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     }
 
     settings.path.pop_back();
-}
-
-size_t SerializationStringSize::allocatedBytes() const
-{
-    return sizeof(*this);
 }
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
 #include <Common/randomSeed.h>
 #include <Common/QueryFuzzer.h>
@@ -14,7 +14,7 @@ class Chunk;
 
 class NamedCollection;
 
-class StorageFuzzQuery final : public StorageWithCommonVirtualColumns
+class StorageFuzzQuery final : public IStorage
 {
 public:
     struct Configuration : public StatelessTableEngineConfiguration
@@ -28,10 +28,6 @@ public:
         const StorageID & table_id_, const ColumnsDescription & columns_, const String & comment_, const Configuration & config_);
 
     std::string getName() const override { return "FuzzQuery"; }
-
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

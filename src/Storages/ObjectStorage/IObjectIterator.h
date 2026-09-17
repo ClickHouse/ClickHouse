@@ -2,9 +2,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/StorageID.h>
-#include <Formats/FormatFilterInfo.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
 #include <Formats/FormatSettings.h>
@@ -112,9 +109,7 @@ public:
         ObjectIterator iterator_,
         const String & format_,
         ObjectStoragePtr object_storage_,
-        const ContextPtr & context_,
-        const StorageID & storage_id_ = StorageID::createEmpty(),
-        FormatFilterInfoPtr format_filter_info_ = nullptr);
+        const ContextPtr & context_);
 
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
@@ -125,9 +120,6 @@ private:
     String format;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
-    StorageID storage_id;
-    FormatFilterInfoPtr format_filter_info;
-    QueryConditionCachePtr query_condition_cache;
 
     std::queue<ObjectInfoPtr> pending_objects_info;
     const LoggerPtr log = getLogger("GlobIterator");

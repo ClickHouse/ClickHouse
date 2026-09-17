@@ -1,9 +1,11 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
+#include <chrono>
+#include <optional>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
@@ -26,7 +28,6 @@ extern const Event CachedReadBufferPredownloadedFromSourceMicroseconds;
 extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
-extern const Event CachedReadBufferPredownloadedFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
 extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
@@ -280,6 +281,14 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
+    auto create_remote_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        auto impl = info.implementation_buffer_creator();
+        if (impl->supportsRightBoundedReads())
+            return impl;
+        return std::make_unique<BoundedReadBuffer>(std::move(impl));
+    };
+
     switch (read_type)
     {
         case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
@@ -304,12 +313,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 
             if (!remote_fs_segment_reader)
             {
-                auto impl = info.implementation_buffer_creator();
-                if (impl->supportsRightBoundedReads())
-                    remote_fs_segment_reader = std::move(impl);
-                else
-                    remote_fs_segment_reader = std::make_unique<BoundedReadBuffer>(std::move(impl));
-
+                remote_fs_segment_reader = create_remote_read_buffer();
                 file_segment.setRemoteFileReader(remote_fs_segment_reader);
             }
             else
@@ -328,9 +332,13 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             /// We cannot directly check info.remote_file_reader because of a possible race with background downloader.
             auto reader = file_segment.extractRemoteFileReader();
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
+            {
                 info.remote_file_reader = reader;
+            }
             else
-                info.remote_file_reader = info.implementation_buffer_creator();
+            {
+                info.remote_file_reader = create_remote_read_buffer();
+            }
 
             return info.remote_file_reader;
         }
@@ -428,7 +436,18 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                download_state = file_segment.wait(offset);
+                download_state = file_segment.wait(
+                    offset, info_.settings.filesystem_cache_wait_for_concurrent_download_timeout_milliseconds);
+
+                if (download_state == FileSegment::State::DOWNLOADING && !canStartFromCache(offset, file_segment))
+                {
+                    LOG_TEST(
+                        log, "Bypassing cache because waiting for a concurrent download did not succeed within the timeout. "
+                        "File segment info: {}", file_segment.getInfoForLog());
+
+                    return create(ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+                }
+
                 continue;
             }
             case FileSegment::State::DOWNLOADED:
@@ -795,7 +814,6 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
             chassert(size == state.buf->available());
             chassert(size <= state.bytes_to_predownload);
 
-            ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, size);
 
@@ -1026,7 +1044,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
             auto & file_segment = info.file_segments->front();
 
-            if (file_segment.isDownloader())
+            const bool could_be_downloader
+                = !state || state->read_type != ReadType::CACHED || std::uncaught_exceptions() > 0;
+
+            if (could_be_downloader && file_segment.isDownloader())
             {
                 if (!implementation_buffer_can_be_reused)
                     file_segment.resetRemoteFileReader();
@@ -1111,7 +1132,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + size);
 
-    if (file_segment.isDownloader())
+    if (state->read_type != ReadType::CACHED && file_segment.isDownloader())
         file_segment.completePartAndResetDownloader();
 
     chassert(!file_segment.isDownloader(), "!isDownloader() failed in the end of nextImpl: " + getInfoForLog());
@@ -1162,13 +1183,13 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 #endif
 
     auto do_download = state.read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
-    if (do_download != file_segment.isDownloader())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Incorrect segment state. Having read type: {}, file segment info: {}",
-            toString(state.read_type), file_segment.getInfoForLog());
-    }
+    /// Debug-only check to avoid taking the file segment lock on the hot cache-hit path.
+    /// In release builds FileSegment::write and FileSegment::reserve still throw
+    /// if the caller is not the downloader.
+    chassert(
+        do_download == file_segment.isDownloader(),
+        fmt::format("Incorrect segment state. Having read type: {}, file segment info: {}",
+                    toString(state.read_type), file_segment.getInfoForLog()));
 
     if (!size)
     {

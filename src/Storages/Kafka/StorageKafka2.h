@@ -31,8 +31,6 @@ namespace DB
 {
 
 struct KafkaSettings;
-class Kafka2Source;
-class ReadFromStorageKafka2;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
 
@@ -58,8 +56,6 @@ class StorageKafka2 final : public IStorage, WithContext
 {
     using KafkaInterceptors = KafkaInterceptors<StorageKafka2>;
     friend KafkaInterceptors;
-    friend class Kafka2Source;
-    friend class ReadFromStorageKafka2;
 
 public:
     using KeeperHandlingConsumerPtr = std::shared_ptr<KeeperHandlingConsumer>;
@@ -91,8 +87,7 @@ public:
 
     void drop() override;
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -170,14 +165,6 @@ private:
     /// If named_collection is specified.
     String collection_name;
     std::atomic<bool> shutdown_called = false;
-    /// Number of background streaming threads currently consuming for materialized views.
-    /// Prevents direct SELECTs from using consumers concurrently with MV streaming.
-    /// Uses a counter instead of a boolean because with thread_per_consumer=1,
-    /// multiple threads may stream simultaneously and each must be tracked independently.
-    std::atomic<size_t> active_mv_streamers{0};
-    /// Number of consumers used by direct SELECTs. Prevents MV streaming from starting
-    /// while direct reads are in progress, avoiding concurrent consumer access.
-    std::atomic<size_t> active_direct_readers{0};
 
     // Handling replica activation.
     std::atomic<bool> is_active = false;
@@ -230,7 +217,7 @@ private:
     void dropReplica();
 
     std::optional<BlocksAndGuard>
-    pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, const ContextPtr & modified_context, size_t poll_max_block_size = 0);
+    pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, const ContextPtr & modified_context);
 
     void setZooKeeper();
     zkutil::ZooKeeperPtr tryGetZooKeeper() const;

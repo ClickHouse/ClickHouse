@@ -14,7 +14,7 @@
 
 using namespace DB;
 
-int mainEntryExampleKerberosInit(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     std::cout << "Kerberos Init" << "\n";
 

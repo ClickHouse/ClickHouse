@@ -103,6 +103,10 @@ public:
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
+        /// Display-only: this constant holds a secret (e.g. an `encrypt` key). The value stays in
+        /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
+        /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
+        bool is_masked_secret = false;
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
 
@@ -159,7 +163,7 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant = true);
+    const Node & addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant = true, bool is_masked_secret = false);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -240,6 +244,12 @@ public:
     /// Returns true if any of the actions were removed or if the outputs are changed.
     /// The order of outputs might be changed even if actions are not removed.
     bool removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
+
+    /// Remove the given nodes, bypassing `removeUnusedActions`'s row-changing
+    /// carve-out for ARRAY_JOIN. Nodes still required by any output are kept.
+    /// Caller MUST ensure removed ARRAY_JOIN is recomputed elsewhere in the plan.
+    /// Returns count of removed nodes.
+    size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
 
     void removeAliasesForFilter(const std::string & filter_name);
 
@@ -352,7 +362,7 @@ public:
     const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
     /// Remove materialize() and identity() wrapper functions from the DAG.
-    /// These are transparent wrappers that don't change values. Removing them projection matching for queries through views.
+    /// These are transparent wrappers that don't change values. Removing them helps projection matching for queries through views.
     void removeTrivialWrappers();
 
     enum class MatchColumnsMode : uint8_t
@@ -379,7 +389,6 @@ public:
         NameSet * columns_contain_compiled_function = nullptr);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
-    static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);
 
     /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
     /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.

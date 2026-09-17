@@ -7,8 +7,6 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <DataTypes/DataTypeNullable.h>
 
 #include "config.h"
 
@@ -26,9 +24,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings)
+void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 {
-    auto & out = settings.out;
     bool first = true;
 
     for (const auto & desc : description)
@@ -37,7 +34,7 @@ void dumpSortDescription(const SortDescription & description, ExplainFormatSetti
             out << ", ";
         first = false;
 
-        out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(desc.column_name, settings.pretty_names) : desc.column_name);
+        out << desc.column_name;
 
         if (desc.direction > 0)
             out << " ASC";
@@ -157,18 +154,11 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     if (!description.compile_sort_description || sort_description_types.empty())
         return;
 
-    for (size_t i = 0; i < description.size(); ++i)
+    for (const auto & type : sort_description_types)
     {
-        auto nested_type = removeNullable(sort_description_types[i]);
-        if (!sort_description_types[i]->createColumn()->isComparatorCompilable() ||
-            (!canBeNativeType(*sort_description_types[i]) && !WhichDataType(nested_type).isString() && !WhichDataType(nested_type).isFixedString()))
-            return;
-
-        /// JIT comparator does not support collation-aware comparison
-        if (description[i].collator)
+        if (!type->createColumn()->isComparatorCompilable() || !canBeNativeType(*type))
             return;
     }
-
 
     auto description_dump = getSortDescriptionDump(description, sort_description_types);
 
@@ -227,9 +217,7 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 std::string dumpSortDescription(const SortDescription & description)
 {
     WriteBufferFromOwnString wb;
-    ExplainFormatSettings settings{.out = wb, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
-
-    dumpSortDescription(description, settings);
+    dumpSortDescription(description, wb);
     return wb.str();
 }
 

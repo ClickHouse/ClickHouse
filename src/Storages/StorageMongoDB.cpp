@@ -18,8 +18,6 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -51,6 +49,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
@@ -70,13 +69,22 @@ void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
         context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
 }
 
+void MongoDBConfiguration::checkCollection() const
+{
+    /// The C driver builds the namespace as "<db>.<collection>" and asserts that the collection part is non-empty.
+    /// It treats the name as a NUL-terminated C string, so any embedded NUL truncates it and can produce an
+    /// effectively empty collection name, which aborts the process inside the driver.
+    if (collection.empty() || collection.find('\0') != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
+}
+
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
     MongoDBConfiguration configuration_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
-    : StorageWithCommonVirtualColumns{table_id_}
+    : IStorage{table_id_}
     , configuration{std::move(configuration_)}
     , log(getLogger("StorageMongoDB (" + table_id_.getFullTableName() + ")"))
 {
@@ -84,16 +92,7 @@ StorageMongoDB::StorageMongoDB(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageMongoDB::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 Pipe StorageMongoDB::read(
@@ -160,6 +159,7 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
         boost::split(configuration.oid_fields, named_collection->get<String>("oid_columns"), boost::is_any_of(","));
 
     configuration.checkHosts(context);
+    configuration.checkCollection();
     return configuration;
 }
 
@@ -240,6 +240,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
                             "MongoDB('host:port', 'database', 'collection', 'user', 'password'[, options[, oid_columns]]) or MongoDB('uri', 'collection'[, oid columns]).");
 
     configuration.checkHosts(context);
+    configuration.checkCollection();
 
     return configuration;
 }

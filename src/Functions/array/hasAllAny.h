@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>

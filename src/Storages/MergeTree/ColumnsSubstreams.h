@@ -30,11 +30,15 @@ public:
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;
     std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;
     size_t getSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
+    std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
     std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
     size_t getFirstSubstreamPosition(size_t column_position) const;
     size_t getLastSubstreamPosition(size_t column_position) const;
 
     const std::vector<String> & getColumnSubstreams(size_t column_position) const;
+
+    /// Returns the recorded substreams for a column by name, or nullptr if the column is not present.
+    const std::vector<String> * tryGetColumnSubstreams(const String & column_name) const;
 
     void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);

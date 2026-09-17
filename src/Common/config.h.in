@@ -7,7 +7,6 @@
 #cmakedefine01 USE_CPUID
 #cmakedefine01 USE_BASE64
 #cmakedefine01 USE_SSL
-#cmakedefine01 USE_OPENSSL_FIPS
 #cmakedefine01 USE_SSH
 #cmakedefine01 USE_HDFS
 #cmakedefine01 USE_AWS_S3
@@ -34,7 +33,6 @@
 #cmakedefine01 USE_BECH32
 #cmakedefine01 USE_IDNA
 #cmakedefine01 USE_NLP
-#cmakedefine01 USE_LIBSTEMMER
 #cmakedefine01 USE_VECTORSCAN
 #cmakedefine01 USE_LIBURING
 #cmakedefine01 USE_AVRO
@@ -87,6 +85,5 @@
 #cmakedefine01 USE_LIBCOTP
 #cmakedefine01 USE_WASMEDGE
 #cmakedefine01 USE_WASMTIME
-#cmakedefine01 USE_OPENSSL_FIPS
 #cmakedefine01 WITH_COVERAGE
 

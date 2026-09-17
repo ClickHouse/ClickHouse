@@ -1089,19 +1089,13 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
-public:
     void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
     {
         const auto place = grower.place(hash_key);
         __builtin_prefetch(&buf[place]);
     }
 
-    bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
-    {
-        const auto place = grower.place(hash_key);
-        return buf[place].isZero(*this);
-    }
-
+public:
     void reserve(size_t num_elements)
     {
         resize(num_elements);

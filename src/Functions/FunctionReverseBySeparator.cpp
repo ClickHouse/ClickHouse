@@ -1,7 +1,6 @@
 #include <Functions/FunctionReverseBySeparator.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/StringSearcher.h>

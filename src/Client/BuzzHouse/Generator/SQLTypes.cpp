@@ -117,9 +117,9 @@ String BoolType::SQLitetypeName(RandomGenerator &, const bool) const
     return "INTEGER";
 }
 
-std::unique_ptr<SQLType> BoolType::typeDeepCopy() const
+SQLType * BoolType::typeDeepCopy() const
 {
-    return std::make_unique<BoolType>();
+    return new BoolType();
 }
 
 String BoolType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -183,9 +183,9 @@ String IntType::SQLitetypeName(RandomGenerator &, const bool) const
     return "INTEGER";
 }
 
-std::unique_ptr<SQLType> IntType::typeDeepCopy() const
+SQLType * IntType::typeDeepCopy() const
 {
-    return std::make_unique<IntType>(size, is_unsigned);
+    return new IntType(size, is_unsigned);
 }
 
 String IntType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -336,9 +336,9 @@ String FloatType::SQLitetypeName(RandomGenerator &, const bool) const
     return "REAL";
 }
 
-std::unique_ptr<SQLType> FloatType::typeDeepCopy() const
+SQLType * FloatType::typeDeepCopy() const
 {
-    return std::make_unique<FloatType>(size);
+    return new FloatType(size);
 }
 
 String FloatType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -375,9 +375,9 @@ String DateType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> DateType::typeDeepCopy() const
+SQLType * DateType::typeDeepCopy() const
 {
-    return std::make_unique<DateType>(extended);
+    return new DateType(extended);
 }
 
 String DateType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -431,9 +431,9 @@ String TimeType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> TimeType::typeDeepCopy() const
+SQLType * TimeType::typeDeepCopy() const
 {
-    return std::make_unique<TimeType>(extended, precision);
+    return new TimeType(extended, precision);
 }
 
 String TimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -508,9 +508,9 @@ String DateTimeType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> DateTimeType::typeDeepCopy() const
+SQLType * DateTimeType::typeDeepCopy() const
 {
-    return std::make_unique<DateTimeType>(extended, precision, timezone);
+    return new DateTimeType(extended, precision, timezone);
 }
 
 String DateTimeType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -590,9 +590,9 @@ String DecimalType::SQLitetypeName(RandomGenerator & rg, const bool escape) cons
     return MySQLtypeName(rg, escape);
 }
 
-std::unique_ptr<SQLType> DecimalType::typeDeepCopy() const
+SQLType * DecimalType::typeDeepCopy() const
 {
-    return std::make_unique<DecimalType>(short_notation, precision, scale);
+    return new DecimalType(short_notation, precision, scale);
 }
 
 String DecimalType::appendDecimalValue(RandomGenerator & rg, const bool use_func, const DecimalType * dt)
@@ -658,9 +658,9 @@ String StringType::SQLitetypeName(RandomGenerator & rg, const bool) const
     return rg.nextBool() ? "BLOB" : "TEXT";
 }
 
-std::unique_ptr<SQLType> StringType::typeDeepCopy() const
+SQLType * StringType::typeDeepCopy() const
 {
-    return std::make_unique<StringType>(precision);
+    return new StringType(precision);
 }
 
 String StringType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -697,9 +697,9 @@ String UUIDType::SQLitetypeName(RandomGenerator & rg, const bool) const
     return rg.nextBool() ? "BLOB" : "TEXT";
 }
 
-std::unique_ptr<SQLType> UUIDType::typeDeepCopy() const
+SQLType * UUIDType::typeDeepCopy() const
 {
-    return std::make_unique<UUIDType>();
+    return new UUIDType();
 }
 
 String UUIDType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -798,9 +798,9 @@ String EnumType::SQLitetypeName(RandomGenerator & rg, const bool) const
     return rg.nextBool() ? "BLOB" : "TEXT";
 }
 
-std::unique_ptr<SQLType> EnumType::typeDeepCopy() const
+SQLType * EnumType::typeDeepCopy() const
 {
-    return std::make_unique<EnumType>(size, values);
+    return new EnumType(size, values);
 }
 
 String EnumType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -833,9 +833,9 @@ String IPv4Type::SQLitetypeName(RandomGenerator & rg, const bool) const
     return rg.nextBool() ? "BLOB" : "TEXT";
 }
 
-std::unique_ptr<SQLType> IPv4Type::typeDeepCopy() const
+SQLType * IPv4Type::typeDeepCopy() const
 {
-    return std::make_unique<IPv4Type>();
+    return new IPv4Type();
 }
 
 String IPv4Type::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -872,9 +872,9 @@ String IPv6Type::SQLitetypeName(RandomGenerator & rg, const bool) const
     return rg.nextBool() ? "BLOB" : "TEXT";
 }
 
-std::unique_ptr<SQLType> IPv6Type::typeDeepCopy() const
+SQLType * IPv6Type::typeDeepCopy() const
 {
-    return std::make_unique<IPv6Type>();
+    return new IPv6Type();
 }
 
 String IPv6Type::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -907,9 +907,9 @@ String DynamicType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> DynamicType::typeDeepCopy() const
+SQLType * DynamicType::typeDeepCopy() const
 {
-    return std::make_unique<DynamicType>(ntypes);
+    return new DynamicType(ntypes);
 }
 
 String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1014,7 +1014,7 @@ String JSONType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> JSONType::typeDeepCopy() const
+SQLType * JSONType::typeDeepCopy() const
 {
     std::vector<JSubType> jsubcols;
 
@@ -1023,7 +1023,7 @@ std::unique_ptr<SQLType> JSONType::typeDeepCopy() const
     {
         jsubcols.emplace_back(JSubType(entry.cname, entry.subtype->typeDeepCopy()));
     }
-    return std::make_unique<JSONType>(desc, std::move(jsubcols));
+    return new JSONType(desc, std::move(jsubcols));
 }
 
 String JSONType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1039,6 +1039,13 @@ String JSONType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & ge
     return appendRandomRawValue(rg, gen);
 }
 
+JSONType::~JSONType()
+{
+    for (const auto & entry : subcols)
+    {
+        delete entry.subtype;
+    }
+}
 
 String Nullable::typeName(const bool escape, const bool simplified) const
 {
@@ -1060,9 +1067,9 @@ String Nullable::SQLitetypeName(RandomGenerator & rg, const bool escape) const
     return subtype->SQLitetypeName(rg, escape);
 }
 
-std::unique_ptr<SQLType> Nullable::typeDeepCopy() const
+SQLType * Nullable::typeDeepCopy() const
 {
-    return std::make_unique<Nullable>(subtype->typeDeepCopy());
+    return new Nullable(subtype->typeDeepCopy());
 }
 
 String Nullable::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1096,9 +1103,9 @@ String LowCardinality::SQLitetypeName(RandomGenerator & rg, const bool escape) c
     return subtype->SQLitetypeName(rg, escape);
 }
 
-std::unique_ptr<SQLType> LowCardinality::typeDeepCopy() const
+SQLType * LowCardinality::typeDeepCopy() const
 {
-    return std::make_unique<LowCardinality>(subtype->typeDeepCopy());
+    return new LowCardinality(subtype->typeDeepCopy());
 }
 
 String LowCardinality::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1132,9 +1139,9 @@ String GeoType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> GeoType::typeDeepCopy() const
+SQLType * GeoType::typeDeepCopy() const
 {
-    return std::make_unique<GeoType>(geotype);
+    return new GeoType(geotype);
 }
 
 String GeoType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator &) const
@@ -1159,7 +1166,7 @@ String ArrayType::MySQLtypeName(RandomGenerator &, const bool) const
 
 String ArrayType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) const
 {
-    SQLType * nsubtype = subtype.get();
+    SQLType * nsubtype = subtype;
     Nullable * nl = nullptr;
     LowCardinality * lc = nullptr;
 
@@ -1167,11 +1174,11 @@ String ArrayType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) co
     {
         if ((nl = dynamic_cast<Nullable *>(nsubtype)))
         {
-            nsubtype = nl->subtype.get();
+            nsubtype = nl->subtype;
         }
         else if ((lc = dynamic_cast<LowCardinality *>(nsubtype)))
         {
-            nsubtype = lc->subtype.get();
+            nsubtype = lc->subtype;
         }
         else
         {
@@ -1193,9 +1200,9 @@ String ArrayType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> ArrayType::typeDeepCopy() const
+SQLType * ArrayType::typeDeepCopy() const
 {
-    return std::make_unique<ArrayType>(subtype->typeDeepCopy());
+    return new ArrayType(subtype->typeDeepCopy());
 }
 
 String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, const uint64_t limit)
@@ -1218,7 +1225,7 @@ String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator 
 {
     std::uniform_int_distribution<uint64_t> rows_dist(gen.fc.min_nested_rows, gen.fc.max_nested_rows);
 
-    return appendRandomRawValue(rg, gen, subtype.get(), rows_dist(rg.generator));
+    return appendRandomRawValue(rg, gen, subtype, rows_dist(rg.generator));
 }
 
 String ArrayType::insertNumberEntry(
@@ -1260,9 +1267,9 @@ String MapType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> MapType::typeDeepCopy() const
+SQLType * MapType::typeDeepCopy() const
 {
-    return std::make_unique<MapType>(key->typeDeepCopy(), value->typeDeepCopy());
+    return new MapType(key->typeDeepCopy(), value->typeDeepCopy());
 }
 
 String MapType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1306,6 +1313,11 @@ MapType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, const
     return ret;
 }
 
+MapType::~MapType()
+{
+    delete key;
+    delete value;
+}
 
 String TupleType::typeName(const bool escape, const bool simplified) const
 {
@@ -1355,7 +1367,7 @@ String TupleType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> TupleType::typeDeepCopy() const
+SQLType * TupleType::typeDeepCopy() const
 {
     std::vector<SubType> nsubtypes;
 
@@ -1364,7 +1376,7 @@ std::unique_ptr<SQLType> TupleType::typeDeepCopy() const
     {
         nsubtypes.emplace_back(SubType(entry.cname, entry.subtype->typeDeepCopy()));
     }
-    return std::make_unique<TupleType>(nullable, std::move(nsubtypes));
+    return new TupleType(nullable, std::move(nsubtypes));
 }
 
 String TupleType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1400,6 +1412,13 @@ String TupleType::insertNumberEntry(
     return ret;
 }
 
+TupleType::~TupleType()
+{
+    for (const auto & entry : subtypes)
+    {
+        delete entry.subtype;
+    }
+}
 
 String VariantType::typeName(const bool escape, const bool simplified) const
 {
@@ -1433,16 +1452,16 @@ String VariantType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> VariantType::typeDeepCopy() const
+SQLType * VariantType::typeDeepCopy() const
 {
-    std::vector<std::unique_ptr<SQLType>> nsubtypes;
+    std::vector<SQLType *> nsubtypes;
 
     nsubtypes.reserve(subtypes.size());
     for (const auto & entry : subtypes)
     {
         nsubtypes.emplace_back(entry->typeDeepCopy());
     }
-    return std::make_unique<VariantType>(std::move(nsubtypes));
+    return new VariantType(std::move(nsubtypes));
 }
 
 String VariantType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1456,6 +1475,13 @@ String VariantType::insertNumberEntry(
     return subtypes.empty() ? "NULL" : rg.pickRandomly(subtypes)->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
 }
 
+VariantType::~VariantType()
+{
+    for (const auto & entry : subtypes)
+    {
+        delete entry;
+    }
+}
 
 String QBitType::typeName(const bool escape, const bool simplified) const
 {
@@ -1477,9 +1503,9 @@ String QBitType::SQLitetypeName(RandomGenerator &, const bool) const
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> QBitType::typeDeepCopy() const
+SQLType * QBitType::typeDeepCopy() const
 {
-    return std::make_unique<QBitType>(subtype->typeDeepCopy(), dimension);
+    return new QBitType(subtype->typeDeepCopy(), dimension);
 }
 
 String QBitType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1514,6 +1540,10 @@ QBitType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, cons
     return ret;
 }
 
+QBitType::~QBitType()
+{
+    delete subtype;
+}
 
 String AggregateFunctionType::typeName(const bool escape, const bool simplified) const
 {
@@ -1545,16 +1575,16 @@ String AggregateFunctionType::SQLitetypeName(RandomGenerator &, const bool) cons
     return "TEXT";
 }
 
-std::unique_ptr<SQLType> AggregateFunctionType::typeDeepCopy() const
+SQLType * AggregateFunctionType::typeDeepCopy() const
 {
-    std::vector<std::unique_ptr<SQLType>> nsubtypes;
+    std::vector<SQLType *> nsubtypes;
 
     nsubtypes.reserve(subtypes.size());
     for (const auto & entry : subtypes)
     {
         nsubtypes.emplace_back(entry->typeDeepCopy());
     }
-    return std::make_unique<AggregateFunctionType>(simple, aggregate, std::move(nsubtypes));
+    return new AggregateFunctionType(simple, aggregate, std::move(nsubtypes));
 }
 
 String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
@@ -1584,6 +1614,13 @@ String AggregateFunctionType::insertNumberEntry(
     return ret;
 }
 
+AggregateFunctionType::~AggregateFunctionType()
+{
+    for (const auto & entry : subtypes)
+    {
+        delete entry;
+    }
+}
 
 String NestedType::typeName(const bool escape, const bool simplified) const
 {
@@ -1598,7 +1635,8 @@ String NestedType::typeName(const bool escape, const bool simplified) const
         {
             ret += ",";
         }
-        ret += sub.cname;
+        ret += "c";
+        ret += std::to_string(sub.cname);
         ret += " ";
         ret += sub.subtype->typeName(escape, simplified);
     }
@@ -1631,7 +1669,7 @@ String NestedType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & 
     return appendRandomRawValue(rg, gen);
 }
 
-std::unique_ptr<SQLType> NestedType::typeDeepCopy() const
+SQLType * NestedType::typeDeepCopy() const
 {
     std::vector<NestedSubType> nsubtypes;
 
@@ -1640,10 +1678,18 @@ std::unique_ptr<SQLType> NestedType::typeDeepCopy() const
     {
         nsubtypes.emplace_back(NestedSubType(entry.cname, entry.subtype->typeDeepCopy()));
     }
-    return std::make_unique<NestedType>(std::move(nsubtypes));
+    return new NestedType(std::move(nsubtypes));
 }
 
-std::tuple<std::unique_ptr<SQLType>, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint64_t allowed_types)
+NestedType::~NestedType()
+{
+    for (const auto & entry : subtypes)
+    {
+        delete entry.subtype;
+    }
+}
+
+std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerator & rg, const uint64_t allowed_types)
 {
     chassert(this->ids.empty());
 
@@ -1691,35 +1737,35 @@ std::tuple<std::unique_ptr<SQLType>, Integers> StatementGenerator::randomIntType
     switch (nopt)
     {
         case 1:
-            return std::make_tuple(std::make_unique<IntType>(8, true), Integers::UInt8);
+            return std::make_tuple(new IntType(8, true), Integers::UInt8);
         case 2:
-            return std::make_tuple(std::make_unique<IntType>(16, true), Integers::UInt16);
+            return std::make_tuple(new IntType(16, true), Integers::UInt16);
         case 3:
-            return std::make_tuple(std::make_unique<IntType>(32, true), Integers::UInt32);
+            return std::make_tuple(new IntType(32, true), Integers::UInt32);
         case 4:
-            return std::make_tuple(std::make_unique<IntType>(64, true), Integers::UInt64);
+            return std::make_tuple(new IntType(64, true), Integers::UInt64);
         case 5:
-            return std::make_tuple(std::make_unique<IntType>(128, true), Integers::UInt128);
+            return std::make_tuple(new IntType(128, true), Integers::UInt128);
         case 6:
-            return std::make_tuple(std::make_unique<IntType>(256, true), Integers::UInt256);
+            return std::make_tuple(new IntType(256, true), Integers::UInt256);
         case 7:
-            return std::make_tuple(std::make_unique<IntType>(8, false), Integers::Int8);
+            return std::make_tuple(new IntType(8, false), Integers::Int8);
         case 8:
-            return std::make_tuple(std::make_unique<IntType>(16, false), Integers::Int16);
+            return std::make_tuple(new IntType(16, false), Integers::Int16);
         case 9:
-            return std::make_tuple(std::make_unique<IntType>(32, false), Integers::Int32);
+            return std::make_tuple(new IntType(32, false), Integers::Int32);
         case 10:
-            return std::make_tuple(std::make_unique<IntType>(64, false), Integers::Int64);
+            return std::make_tuple(new IntType(64, false), Integers::Int64);
         case 11:
-            return std::make_tuple(std::make_unique<IntType>(128, false), Integers::Int128);
+            return std::make_tuple(new IntType(128, false), Integers::Int128);
         case 12:
-            return std::make_tuple(std::make_unique<IntType>(256, false), Integers::Int256);
+            return std::make_tuple(new IntType(256, false), Integers::Int256);
         default:
             UNREACHABLE();
     }
 }
 
-std::tuple<std::unique_ptr<SQLType>, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg, const uint64_t allowed_types)
+std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg, const uint64_t allowed_types)
 {
     chassert(this->ids.empty());
 
@@ -1737,16 +1783,16 @@ std::tuple<std::unique_ptr<SQLType>, FloatingPoints> StatementGenerator::randomF
     }
     const uint32_t nopt = rg.pickRandomly(this->ids);
     this->ids.clear();
-    return std::make_tuple(std::make_unique<FloatType>(1 << (3 + nopt)), static_cast<FloatingPoints>(nopt));
+    return std::make_tuple(new FloatType(1 << (3 + nopt)), static_cast<FloatingPoints>(nopt));
 }
 
-std::tuple<std::unique_ptr<SQLType>, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint64_t allowed_types) const
+std::tuple<SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint64_t allowed_types) const
 {
     const bool use32 = (allowed_types & allow_date32) && rg.nextBool();
-    return std::make_tuple(std::make_unique<DateType>(use32), use32 ? Dates::Date32 : Dates::Date);
+    return std::make_tuple(new DateType(use32), use32 ? Dates::Date32 : Dates::Date);
 }
 
-std::unique_ptr<SQLType> StatementGenerator::randomTimeType(RandomGenerator & rg, const uint64_t allowed_types, TimeTp * dt) const
+SQLType * StatementGenerator::randomTimeType(RandomGenerator & rg, const uint64_t allowed_types, TimeTp * dt) const
 {
     const bool use64 = (allowed_types & allow_time64) && rg.nextBool();
     std::optional<uint32_t> precision;
@@ -1763,10 +1809,10 @@ std::unique_ptr<SQLType> StatementGenerator::randomTimeType(RandomGenerator & rg
             dt->set_precision(precision.value());
         }
     }
-    return std::make_unique<TimeType>(use64, precision);
+    return new TimeType(use64, precision);
 }
 
-std::unique_ptr<SQLType> StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint64_t allowed_types, DateTimeTp * dt) const
+SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint64_t allowed_types, DateTimeTp * dt) const
 {
     bool has_precision = false;
     const bool use64 = (allowed_types & allow_datetime64) && rg.nextBool();
@@ -1793,11 +1839,10 @@ std::unique_ptr<SQLType> StatementGenerator::randomDateTimeType(RandomGenerator 
             dt->set_timezone(timezone.value());
         }
     }
-    return std::make_unique<DateTimeType>(use64, precision, timezone);
+    return new DateTimeType(use64, precision, timezone);
 }
 
-std::unique_ptr<SQLType>
-StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint64_t allowed_types, BottomTypeName * tp) const
+SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint64_t allowed_types, BottomTypeName * tp) const
 {
     Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
     std::optional<DecimalN_DecimalPrecision> short_notation;
@@ -1859,13 +1904,13 @@ StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint64_t allow
             }
         }
     }
-    return std::make_unique<DecimalType>(short_notation, precision, scale);
+    return new DecimalType(short_notation, precision, scale);
 }
 
-std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator & rg, const bool simple, BottomTypeName * tp)
+SQLType * StatementGenerator::randomAggregateType(RandomGenerator & rg, const bool simple, BottomTypeName * tp)
 {
     uint32_t col_counter2 = 0;
-    std::vector<std::unique_ptr<SQLType>> subtypes;
+    std::vector<SQLType *> subtypes;
     AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
     static const std::vector<SQLFunc> available_aggrs
         = {SQLFunc::FUNCany,
@@ -1906,13 +1951,12 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
         af->set_simple(simple);
         af->set_aggr(aggr);
     }
-    return std::make_unique<AggregateFunctionType>(simple, aggr, std::move(subtypes));
+    return new AggregateFunctionType(simple, aggr, subtypes);
 }
 
-std::unique_ptr<SQLType>
-StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_types, const bool low_card, BottomTypeName * tp)
+SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_types, const bool low_card, BottomTypeName * tp)
 {
-    std::unique_ptr<SQLType> res;
+    SQLType * res = nullptr;
 
     const bool allow_floats = (allowed_types & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points;
     const uint32_t int_type = 40;
@@ -1998,7 +2042,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                       tp->set_fixed_string(swidth.value());
                   }
               }
-              res = std::make_unique<StringType>(swidth);
+              res = new StringType(swidth);
           }},
          {decimal_type, [&] { res = randomDecimalType(rg, allowed_types, tp); }},
          {bool_type,
@@ -2008,7 +2052,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
               {
                   tp->set_boolean(true);
               }
-              res = std::make_unique<BoolType>();
+              res = new BoolType();
           }},
          {enum_type,
           [&]
@@ -2045,7 +2089,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                   }
                   evs.emplace_back(EnumValue(nval, num));
               }
-              res = std::make_unique<EnumType>(bits16 ? 16 : 8, evs);
+              res = new EnumType(bits16 ? 16 : 8, evs);
           }},
          {uuid_type,
           [&]
@@ -2054,7 +2098,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
               {
                   tp->set_uuid(true);
               }
-              res = std::make_unique<UUIDType>();
+              res = new UUIDType();
           }},
          {ipv4_type,
           [&]
@@ -2063,7 +2107,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
               {
                   tp->set_ipv4(true);
               }
-              res = std::make_unique<IPv4Type>();
+              res = new IPv4Type();
           }},
          {ipv6_type,
           [&]
@@ -2072,7 +2116,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
               {
                   tp->set_ipv6(true);
               }
-              res = std::make_unique<IPv6Type>();
+              res = new IPv6Type();
           }},
          {j_type,
           [&]
@@ -2150,11 +2194,11 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
 
                       const uint64_t type_mask_backup = this->next_type_mask;
                       this->next_type_mask = fc.type_mask & ~(allow_nested | allow_enum);
-                      auto jtp = randomNextType(rg, this->next_type_mask, col_counter2, tp ? jpt->mutable_type() : nullptr);
+                      SQLType * jtp = randomNextType(rg, this->next_type_mask, col_counter2, tp ? jpt->mutable_type() : nullptr);
                       this->next_type_mask = type_mask_backup;
 
                       desc += jtp->typeName(false, false);
-                      subcols.emplace_back(JSubType(npath, std::move(jtp)));
+                      subcols.emplace_back(JSubType(npath, jtp));
                   }
               }
               this->depth--;
@@ -2162,7 +2206,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
               {
                   desc += ")";
               }
-              res = std::make_unique<JSONType>(desc, std::move(subcols));
+              res = new JSONType(desc, subcols);
           }},
          {dynamic_type,
           [&]
@@ -2178,7 +2222,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                       dyn->set_ntypes(ntypes.value());
                   }
               }
-              res = std::make_unique<DynamicType>(ntypes);
+              res = new DynamicType(ntypes);
           }},
          {time_type,
           [&]
@@ -2190,7 +2234,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
          {qbit_type,
           [&]
           {
-              std::unique_ptr<SQLType> sub;
+              SQLType * sub;
               FloatingPoints nflo;
               const uint32_t dimension = rg.nextSmallNumber();
 
@@ -2202,7 +2246,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                   qbit->set_subtype(nflo);
                   qbit->set_dimension(dimension);
               }
-              res = std::make_unique<QBitType>(std::move(sub), dimension);
+              res = new QBitType(sub, dimension);
           }},
          {geo_type,
           [&]
@@ -2214,7 +2258,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
               {
                   tp->set_geo(gt);
               }
-              res = std::make_unique<GeoType>(gt);
+              res = new GeoType(gt);
           }},
          {aggr_type, [&] { res = randomAggregateType(rg, false, tp); }},
          {simple_aggr_type, [&] { res = randomAggregateType(rg, true, tp); }}});
@@ -2222,8 +2266,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
     return res;
 }
 
-std::unique_ptr<SQLType>
-StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
+SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
     const uint32_t non_nullable_type = 70;
     const uint32_t nullable_type = 35 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0);
@@ -2235,7 +2278,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
     const uint32_t nested_type = 10
         * static_cast<uint32_t>((allowed_types & allow_nested) != 0 && this->depth < this->fc.max_depth
                                 && this->width < this->fc.max_width);
-    std::unique_ptr<SQLType> result;
+    SQLType * result = nullptr;
 
     rg.pickWeighted(
         {{non_nullable_type,
@@ -2243,21 +2286,21 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
           {
               /// Non nullable
               const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
-              auto res = bottomType(
+              SQLType * res = bottomType(
                   rg, allowed_types, lcard, tp ? (lcard ? tp->mutable_non_nullable_lcard() : tp->mutable_non_nullable()) : nullptr);
-              result = lcard ? std::make_unique<LowCardinality>(std::move(res)) : std::move(res);
+              result = lcard ? new LowCardinality(res) : res;
           }},
          {nullable_type,
           [&]
           {
               /// Nullable
               const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
-              std::unique_ptr<SQLType> res = std::make_unique<Nullable>(bottomType(
+              SQLType * res = new Nullable(bottomType(
                   rg,
                   allowed_types & ~(allow_dynamic | allow_aggregate),
                   lcard,
                   tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
-              result = lcard ? std::make_unique<LowCardinality>(std::move(res)) : std::move(res);
+              result = lcard ? new LowCardinality(res) : res;
           }},
          {array_type,
           [&]
@@ -2266,9 +2309,9 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               TopTypeName * arr = tp ? tp->mutable_array() : nullptr;
 
               this->depth++;
-              auto k = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, arr);
+              SQLType * k = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, arr);
               this->depth--;
-              result = std::make_unique<ArrayType>(std::move(k));
+              result = new ArrayType(k);
           }},
          {map_type,
           [&]
@@ -2277,13 +2320,14 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               MapTypeDef * mt = tp ? tp->mutable_map() : nullptr;
 
               this->depth++;
-              auto k = this->randomNextType(
+              SQLType * k = this->randomNextType(
                   rg, this->next_type_mask & ~(allow_nullable | allow_nested), col_counter, mt ? mt->mutable_key() : nullptr);
               this->width++;
-              auto v = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
+              SQLType * v
+                  = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, mt ? mt->mutable_value() : nullptr);
               this->depth--;
               this->width--;
-              result = std::make_unique<MapType>(std::move(k), std::move(v));
+              result = new MapType(k, v);
           }},
          {tuple_type,
           [&]
@@ -2317,18 +2361,18 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
                       tcd->mutable_col()->set_column("c" + std::to_string(ncname));
                       opt_cname = std::optional<uint32_t>(ncname);
                   }
-                  auto k
+                  SQLType * k
                       = this->randomNextType(rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : ttn);
-                  subtypes.emplace_back(SubType(opt_cname, std::move(k)));
+                  subtypes.emplace_back(SubType(opt_cname, k));
               }
               this->depth--;
-              result = std::make_unique<TupleType>(is_nullable, std::move(subtypes));
+              result = new TupleType(is_nullable, std::move(subtypes));
           }},
          {variant_type,
           [&]
           {
               /// Variant
-              std::vector<std::unique_ptr<SQLType>> subtypes;
+              std::vector<SQLType *> subtypes;
               TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
               const uint32_t ncols
                   = (this->width >= this->fc.max_width ? 0
@@ -2344,7 +2388,7 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
                       rg, this->next_type_mask & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
               }
               this->depth--;
-              result = std::make_unique<VariantType>(std::move(subtypes));
+              result = new VariantType(subtypes);
           }},
          {nested_type,
           [&]
@@ -2357,19 +2401,19 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_t allowed_
               this->depth++;
               for (uint32_t i = 0; i < ncols; i++)
               {
-                  const String cname = "c" + std::to_string(col_counter++);
+                  const uint32_t cname = col_counter++;
                   TypeColumnDef * tcd = tp ? ((i == 0) ? nt->mutable_type1() : nt->add_others()) : nullptr;
 
                   if (tcd)
                   {
-                      tcd->mutable_col()->set_column(cname);
+                      tcd->mutable_col()->set_column("c" + std::to_string(cname));
                   }
-                  auto k = this->randomNextType(
+                  SQLType * k = this->randomNextType(
                       rg, this->next_type_mask & ~(allow_nested), col_counter, tcd ? tcd->mutable_type_name() : nullptr);
-                  subtypes.emplace_back(NestedSubType(cname, std::move(k)));
+                  subtypes.emplace_back(NestedSubType(cname, k));
               }
               this->depth--;
-              result = std::make_unique<NestedType>(std::move(subtypes));
+              result = new NestedType(subtypes);
           }}});
     return result;
 }

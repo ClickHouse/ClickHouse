@@ -141,14 +141,17 @@ private:
         explicit PrefetchIncrement(std::shared_ptr<AsyncReadCounters> counters_)
             : counters(counters_)
         {
-            counters->total_prefetch_tasks.fetch_add(1, std::memory_order_relaxed);
-            AsyncReadCounters::incrementAndUpdateMax(
-                counters->current_parallel_prefetch_tasks, counters->max_parallel_prefetch_tasks);
+            std::lock_guard lock(counters->mutex);
+            ++counters->total_prefetch_tasks;
+            if (++counters->current_parallel_prefetch_tasks > counters->max_parallel_prefetch_tasks)
+                counters->max_parallel_prefetch_tasks = counters->current_parallel_prefetch_tasks;
+
         }
 
         ~PrefetchIncrement()
         {
-            counters->current_parallel_prefetch_tasks.fetch_sub(1, std::memory_order_relaxed);
+            std::lock_guard lock(counters->mutex);
+            --counters->current_parallel_prefetch_tasks;
         }
 
         std::shared_ptr<AsyncReadCounters> counters;

@@ -9,6 +9,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
@@ -30,7 +31,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 StorageAlias::StorageAlias(
@@ -140,7 +140,7 @@ void StorageAlias::read(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
 
     target_storage->read(
@@ -164,7 +164,7 @@ SinkToStoragePtr StorageAlias::write(
     bool /*async_insert*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
 
     /// Use AliasSink which executes full INSERT pipeline on target
     /// Therefore it will trigger the MV on the target
@@ -177,26 +177,6 @@ void StorageAlias::alter(
     AlterLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-
-    /// ALTER through alias on a table in a Replicated database is not supported
-    /// when the alias and target are in different databases. This is because the
-    /// DDL worker path is bypassed and metadata changes won't be replicated to
-    /// other replicas in ZooKeeper. If both are in the same Replicated database,
-    /// the DDL worker handles the ALTER correctly.
-    auto target_storage_id = target_storage->getStorageID();
-    if (getStorageID().database_name != target_storage_id.database_name)
-    {
-        auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
-        if (target_db && target_db->getEngineName() == "Replicated")
-        {
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "ALTER through alias is not supported when the target table is in a different Replicated database. "
-                "Execute the ALTER directly on the target table: {}",
-                target_storage_id.getNameForLogs());
-        }
-    }
-
     target_storage->alter(params, local_context, table_lock_holder);
 }
 
@@ -207,7 +187,7 @@ void StorageAlias::truncate(
     TableExclusiveLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
 }
 
@@ -222,7 +202,7 @@ bool StorageAlias::optimize(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
 }
@@ -233,7 +213,7 @@ Pipe StorageAlias::alterPartition(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     return target_storage->alterPartition(target_metadata, commands, local_context);
 }
 
@@ -244,7 +224,7 @@ void StorageAlias::checkAlterPartitionIsPossible(
     ContextPtr local_context) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     target_storage->checkAlterPartitionIsPossible(commands, target_metadata, settings, local_context);
 }
 
@@ -257,7 +237,20 @@ void StorageAlias::mutate(const MutationCommands & commands, ContextPtr local_co
 QueryPipeline StorageAlias::updateLightweight(const MutationCommands & commands, ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    return target_storage->updateLightweight(commands, local_context);
+    auto lock = target_storage->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    auto pipeline = target_storage->updateLightweight(commands, local_context);
+
+    /// The caller locks the alias, not the target, so the target needs its own share lock held
+    /// until the pipeline has committed the patch part.
+    QueryPlanResourceHolder target_resources;
+    target_resources.storage_holders.emplace_back(target_storage);
+    target_resources.table_locks.emplace_back(std::move(lock));
+    pipeline.addResources(std::move(target_resources));
+
+    return pipeline;
 }
 
 CancellationCode StorageAlias::killMutation(const String & mutation_id)
@@ -313,7 +306,7 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr();
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
     return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
 }

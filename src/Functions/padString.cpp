@@ -167,11 +167,11 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             FunctionArgumentDescriptors mandatory_args{
-                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-                {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "UInt*"},
+                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Array"},
+                {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "const UInt*"},
             };
             FunctionArgumentDescriptors optional_args{
-                {"pad_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String"}
+                {"pad_string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "Array"}
             };
 
             validateFunctionArguments(*this, arguments, mandatory_args, optional_args);

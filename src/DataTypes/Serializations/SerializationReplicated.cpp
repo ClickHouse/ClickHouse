@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/IColumn.h>
@@ -14,28 +13,47 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+
+/// Validate that every deserialized index is within [0, num_elements) so that later
+/// ColumnReplicated accessors don't dereference nested_column[index] out of bounds.
+void checkDeserializedIndexes(const IColumn & indexes, size_t size_of_indexes_type, size_t num_elements)
+{
+    auto check = [&](auto type)
+    {
+        using IndexType = decltype(type);
+        const auto & indexes_data = assert_cast<const ColumnVector<IndexType> &>(indexes).getData();
+        for (auto index : indexes_data)
+        {
+            if (index >= num_elements)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid index {} in ColumnReplicated in Native format: it must be less than the number of elements ({})",
+                    static_cast<UInt64>(index), num_elements);
+        }
+    };
+
+    switch (size_of_indexes_type)
+    {
+        case sizeof(UInt8): check(UInt8{}); break;
+        case sizeof(UInt16): check(UInt16{}); break;
+        case sizeof(UInt32): check(UInt32{}); break;
+        case sizeof(UInt64): check(UInt64{}); break;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", size_of_indexes_type);
+    }
+}
+
 }
 
 
 SerializationReplicated::SerializationReplicated(const SerializationPtr & nested_)
     : nested(nested_)
 {
-}
-
-
-UInt128 SerializationReplicated::getHash(const SerializationPtr & nested_)
-{
-    SipHash hash;
-    hash.update("Replicated");
-    hash.update(nested_->getHash());
-    return hash.get128();
-}
-
-SerializationPtr SerializationReplicated::create(const SerializationPtr & nested_)
-{
-    if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationReplicated(nested_));
-    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationReplicated(nested_); });
 }
 
 ISerialization::KindStack SerializationReplicated::getKindStack() const
@@ -47,7 +65,7 @@ ISerialization::KindStack SerializationReplicated::getKindStack() const
 
 SerializationPtr SerializationReplicated::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return SerializationReplicated::create(prev);
+    return std::make_shared<SerializationReplicated>(prev);
 }
 
 ColumnPtr SerializationReplicated::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -130,16 +148,16 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     switch (size_of_indexes_type)
     {
         case sizeof(UInt8):
-            SerializationNumber<UInt8>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt8>().serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt16):
-            SerializationNumber<UInt16>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt16>().serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt32):
-            SerializationNumber<UInt32>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt32>().serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt64):
-            SerializationNumber<UInt64>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt64>().serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", size_of_indexes_type);
@@ -223,25 +241,23 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     {
         case sizeof(UInt8):
             indexes = ColumnUInt8::create();
-            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt8>().deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         case sizeof(UInt16):
             indexes = ColumnUInt16::create();
-            SerializationNumber<UInt16>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt16>().deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         case sizeof(UInt32):
             indexes = ColumnUInt32::create();
-            SerializationNumber<UInt32>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt32>().deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         case sizeof(UInt64):
             indexes = ColumnUInt64::create();
-            SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt64>().deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", UInt32(size_of_indexes_type));
     }
-
-    column_replicated.getIndexes().attachIndexes(std::move(indexes));
 
     settings.path.push_back(Substream::ReplicatedElements);
     auto * elements_stream = settings.getter(settings.path);
@@ -252,7 +268,22 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
 
     size_t num_elements;
     readVarUInt(num_elements, *elements_stream);
+
+    checkDeserializedIndexes(*indexes, size_of_indexes_type, num_elements);
+    column_replicated.getIndexes().attachIndexes(std::move(indexes));
+
     nested->deserializeBinaryBulkWithMultipleStreams(column_replicated.getNestedColumn(), 0, num_elements, settings, state, cache);
+
+    /// Bulk readers of primitive types (e.g. `SerializationNumber::deserializeBinaryBulk`) short-read on EOF
+    /// instead of throwing, so a truncated elements stream would otherwise leave the nested column smaller
+    /// than num_elements while already-validated indexes still reference the missing rows. `NativeReader`
+    /// only checks `column->size()`, which for `ColumnReplicated` is the index count, not the nested column
+    /// size, so this must be verified explicitly here.
+    if (column_replicated.getNestedColumn()->size() != num_elements)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot read all elements of ColumnReplicated in Native format: read {} of {}",
+            column_replicated.getNestedColumn()->size(), num_elements);
 }
 
 void SerializationReplicated::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -362,20 +393,6 @@ void SerializationReplicated::serializeTextXML(const IColumn & column, size_t ro
 {
     const auto & column_replicated = assert_cast<const ColumnReplicated &>(column);
     nested->serializeTextXML(*column_replicated.getNestedColumn(), column_replicated.getIndexes().getIndexAt(row_num), ostr, settings);
-}
-
-void SerializationReplicated::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    const auto & column_replicated = assert_cast<const ColumnReplicated &>(column);
-    nested->serializeTextRaw(*column_replicated.getNestedColumn(), column_replicated.getIndexes().getIndexAt(row_num), ostr, settings);
-}
-
-void SerializationReplicated::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserialize(column, [&](auto & nested_column)
-    {
-        nested->deserializeTextRaw(nested_column, istr, settings);
-    });
 }
 
 }

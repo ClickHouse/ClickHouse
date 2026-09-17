@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -62,24 +63,6 @@ public:
     DataTypePtr getNormalizedStateType() const override
     {
         return nested_func->getNormalizedStateType();
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        return nested_func->canMergeStateFromDifferentVariant(*rhs.getNestedFunction());
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        chassert(rhs.getNestedFunction() != nullptr);
-
-        nested_func->mergeStateFromDifferentVariant(place, *rhs.getNestedFunction(), rhs_place, arena);
     }
 
     bool isVersioned() const override
@@ -200,11 +183,6 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
-    }
-
-    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        nested_func->parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
     }
 
     void mergeBatch(

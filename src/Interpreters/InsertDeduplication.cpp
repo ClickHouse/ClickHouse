@@ -18,6 +18,7 @@
 #include <Common/PODArray.h>
 #include <Common/ErrorCodes.h>
 #include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
@@ -151,6 +152,38 @@ DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplic
 }
 
 
+DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const
+{
+    /// An empty selector means the block was not split (single partition); with dedup off or a
+    /// single token there is nothing to attribute. Every token then belongs to this partition.
+    if (disabled || row_to_partition.empty() || getCount() <= 1)
+        return cloneSelf();
+
+    /// Keep only tokens that have at least one row in this partition.
+    std::set<size_t> absent_offsets;
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        bool present = false;
+        for (size_t row = getTokenBegin(i); row < getTokenEnd(i); ++row)
+        {
+            if (row_to_partition[row] == partition_index)
+            {
+                present = true;
+                break;
+            }
+        }
+        if (!present)
+            absent_offsets.insert(i);
+    }
+
+    if (absent_offsets.empty())
+        return cloneSelf();
+
+    /// filterImpl drops the absent tokens and keeps the block/offsets consistent.
+    return filterImpl(absent_offsets).deduplication_info;
+}
+
+
 DeduplicationInfo::FilterResult DeduplicationInfo::recalculateBlock(DeduplicationInfo::FilterResult && filtered, const std::string & partition_id, ContextPtr context) const
 {
     if (filtered.removed_rows == 0)
@@ -176,12 +209,10 @@ std::set<size_t> DeduplicationInfo::filterSelf(const String & partition_id) cons
     if (getCount() <= 1)
         return {};
 
-    auto block_id_to_offsets = buildBlockIdToOffsetsMap(partition_id);
-
     std::set<size_t> fitered_offsets;
     /// fitered_offsets will contain all but first offsets for each block id
     /// so that only first occurrence of each block id will remain
-    for (auto & [_, block_offsets] : block_id_to_offsets)
+    for (const auto & [_, block_offsets] : buildOffsetsMapImpl(partition_id))
     {
         if (block_offsets.size() > 1)
             fitered_offsets.insert(block_offsets.begin() + 1, block_offsets.end());
@@ -420,6 +451,26 @@ DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const st
 }
 
 
+std::vector<std::pair<UInt128, std::vector<size_t>>> DeduplicationInfo::buildOffsetsMapImpl(const std::string & partition_id) const
+{
+    /// (hash, offset) pairs sorted by hash, then offset; runs of equal hashes are the groups.
+    std::vector<std::pair<UInt128, size_t>> sorted;
+    sorted.reserve(offsets.size());
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
+        sorted.emplace_back(getBlockUnifiedHash(offset, partition_id).hash, offset);
+    std::sort(sorted.begin(), sorted.end());
+
+    std::vector<std::pair<UInt128, std::vector<size_t>>> result;
+    for (const auto & [hash, offset] : sorted)
+    {
+        if (result.empty() || result.back().first != hash)
+            result.emplace_back(hash, std::vector<size_t>{});
+        result.back().second.push_back(offset);
+    }
+    return result;
+}
+
+
 DeduplicationHash DeduplicationInfo::getBlockHash(size_t offset, const std::string & partition_id) const
 {
     // if user token is empty we calculate by_data_hash
@@ -532,6 +583,20 @@ std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const s
         original_block = std::make_shared<Block>(original_block->cloneEmpty());
 
     return result;
+}
+
+
+void DeduplicationInfo::prewarmDataHashes() const
+{
+    if (!original_block || !original_block->rows())
+        return;
+
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (!tokens[i].by_user.empty())
+            continue;
+        calculateDataHashColumnWise(i, *original_block);
+    }
 }
 
 

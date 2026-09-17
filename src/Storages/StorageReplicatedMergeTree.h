@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -914,6 +915,12 @@ private:
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
     PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
+    PartitionCommandsResultInfo attachPartitionImpl(
+        const PartitionCommand & command,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr query_context,
+        bool allow_attach_while_readonly,
+        bool deduplicate_part);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
@@ -960,7 +967,7 @@ private:
     void startBackgroundMovesIfNeeded() override;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

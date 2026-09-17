@@ -17,4 +17,6 @@ std::vector<String> listFiles(
     const String & path,
     const String & prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need);
+
+String resolvePathInsideTable(const String & table_path, const String & relative_path);
 }

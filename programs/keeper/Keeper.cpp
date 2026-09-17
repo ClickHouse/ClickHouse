@@ -35,7 +35,6 @@
 
 #include <Interpreters/Context.h>
 
-#include <Coordination/KeeperContext.h>
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -161,13 +160,12 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
-        std::string app_name = (commandName() == "clickhouse-keeper") ? "clickhouse-keeper" : "clickhouse keeper";
         auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
                                       "{0} client [OPTION]\n"
 #endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      app_name);
+                                      commandName());
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -364,8 +362,6 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
-    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
-
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
 
@@ -458,11 +454,6 @@ try
         listen_hosts.emplace_back("127.0.0.1");
         listen_try = true;
     }
-
-#if USE_SSL
-    CertificateReloader::instance().tryLoad(config());
-    CertificateReloader::instance().tryLoadClient(config());
-#endif
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */ false);
@@ -634,7 +625,6 @@ try
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             updateLevels(config(), logger());
-            KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
 
             if (config().has("keeper_server"))
                 global_context->updateKeeperConfiguration(config());

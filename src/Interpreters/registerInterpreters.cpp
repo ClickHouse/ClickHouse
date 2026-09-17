@@ -38,7 +38,6 @@ void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRoleQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
-void registerInterpreterCreateMaskingPolicyQuery(InterpreterFactory & factory);
 void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory);
 void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory);
@@ -105,7 +104,6 @@ void registerInterpreters()
     registerInterpreterCreateRoleQuery(factory);
     registerInterpreterCreateQuotaQuery(factory);
     registerInterpreterCreateRowPolicyQuery(factory);
-    registerInterpreterCreateMaskingPolicyQuery(factory);
     registerInterpreterCreateSettingsProfileQuery(factory);
     registerInterpreterDropAccessEntityQuery(factory);
     registerInterpreterMoveAccessEntityQuery(factory);

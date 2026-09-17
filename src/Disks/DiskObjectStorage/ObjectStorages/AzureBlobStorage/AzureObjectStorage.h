@@ -115,7 +115,6 @@ public:
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override { return connection_params; }
 
     bool isReadOnly() const override { return settings.get()->read_only; }
 

@@ -421,6 +421,9 @@ namespace
             grpc_context.set_compression_level(transport_compression.level);
         }
 
+        /// Makes the pending operations of this call complete (with `ok` set to false).
+        void cancel() { grpc_context.TryCancel(); }
+
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
         {
@@ -1017,7 +1020,7 @@ namespace
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            initializePipeline(input_storage->getInMemoryMetadataPtr(context, false)->getSampleBlock());
+            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1199,7 +1202,7 @@ namespace
                 if (!external_table.data().empty())
                 {
                     /// The data will be written directly to the table.
-                    auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+                    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
 
                     std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
@@ -1467,6 +1470,17 @@ namespace
 
     void Call::close()
     {
+        /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
+        /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
+        /// owned by the responder, so both have to outlive it.
+        if (reading_query_info.get())
+        {
+            /// If the call has not been finished, nothing would complete that read on its own.
+            if (!responder_finished)
+                responder->cancel();
+            reading_query_info.wait(false);
+        }
+
         responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;

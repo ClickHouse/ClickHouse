@@ -39,13 +39,6 @@ enum class VirtualsKind : UInt8
     All = Ephemeral | Persistent,
 };
 
-enum class VirtualsMaterializationPlace : UInt8
-{
-    Reader = 1,
-    Plan = 2,
-    All = Reader | Plan,
-};
-
 struct GetColumnsOptions
 {
     enum Kind : UInt8
@@ -76,16 +69,14 @@ struct GetColumnsOptions
         return *this;
     }
 
-    GetColumnsOptions & withVirtuals(VirtualsKind value, VirtualsMaterializationPlace place)
+    GetColumnsOptions & withVirtuals(VirtualsKind value = VirtualsKind::All)
     {
         virtuals_kind = value;
-        virtuals_place = place;
         return *this;
     }
 
     Kind kind;
     VirtualsKind virtuals_kind = VirtualsKind::None;
-    VirtualsMaterializationPlace virtuals_place = VirtualsMaterializationPlace::All;
 
     bool with_subcolumns = false;
     bool with_dynamic_subcolumns = false;

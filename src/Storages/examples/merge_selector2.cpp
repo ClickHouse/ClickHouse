@@ -19,7 +19,7 @@ clickhouse-client --query="
     WHERE table = 'visits' AND active AND partition = '201610'" | ./merge_selector2
   */
 
-int mainEntryExampleMergeSelector2(int, char **)
+int main(int, char **)
 {
     using namespace DB;
 

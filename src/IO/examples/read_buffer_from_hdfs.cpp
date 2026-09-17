@@ -9,7 +9,7 @@
 
 using namespace DB;
 
-int mainEntryExampleReadBufferFromHdfs(int, char **)
+int main()
 {
     setenv("LIBHDFS3_CONF", "/path/to/hdfs-site.xml", true); /// NOLINT
     String hdfs_uri = "hdfs://cluster_name";

@@ -102,12 +102,29 @@ public:
         mask_id = id;
     }
 
+    /// Whether this constant is hidden as a secret (e.g. a key argument of `encrypt`).
+    bool isMasked() const
+    {
+        return mask_id != 0;
+    }
+
+    /// Placeholder shown instead of the value when this constant is hidden as a secret.
+    String getMaskString() const
+    {
+        chassert(isMasked());
+        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
+            return "[HIDDEN]";
+        return "[HIDDEN id: " + std::to_string(mask_id) + "]";
+    }
+
     void convertToNullable() override;
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
     String getValueName(const IColumn::Options & options) const
     {
+        if (isMasked())
+            return getMaskString();
         return constant_value.getValueName(options);
     }
 

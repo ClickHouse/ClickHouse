@@ -181,8 +181,13 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// fillMissingColumns() must be called after reading but before any filterings because
     /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
     /// fillMissingColumns() fixes this.
+    /// Names of columns produced by earlier chain steps (advertised in `previous_header`), so a
+    /// subcolumn whose parent is among them is deferred to evaluateMissingDefaults, not default-filled.
+    NameSet previous_step_columns;
+    for (const auto & col : previous_header)
+        previous_step_columns.insert(col.name);
     bool should_evaluate_missing_defaults = false;
-    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows);
+    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, previous_step_columns);
 
     if (result.total_rows_per_granule != num_read_rows)
     {
@@ -228,10 +233,55 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
     apply_patches(ColumnForPatch::Order::BeforeConversions);
 
-    /// If columns not empty, then apply on-fly alter conversions if any required
+    /// Apply alter conversions for columns read by this step.
+    ///
+    /// On-fly UPDATE/DELETE steps that precede a pending `ALTER MODIFY COLUMN` are built
+    /// by `AlterConversions::getMutationSteps` with `perform_alter_conversions = false`,
+    /// because the on-fly action's DAG embeds its own CAST for the columns the mutation
+    /// overwrites. Pre-casting the on-disk value would fail on values the UPDATE is
+    /// about to replace (e.g. `CAST('x' AS UInt64)` before `UPDATE v = '100'`).
+    ///
+    /// The same step also produces pass-through columns the mutation never touches.
+    /// Skipping conversion for those leaves the block advertising the post-MODIFY
+    /// metadata type over the on-disk column class, and downstream operators
+    /// (`MergingSortedTransform`'s `ColumnLowCardinality::insertFrom`, `NativeWriter`'s
+    /// `typeid_cast<ColumnLowCardinality>`, etc.) trip on the type vs. storage mismatch.
+    ///
+    /// `prewhere_info->columns_overwritten_by_chain` is the set of columns the chain
+    /// will overwrite. Null those out around `performRequiredConversions` so they are
+    /// skipped, then restore them so the step's action sees them in their on-disk form.
+    /// An empty skip set means the chain has nothing to skip, so the conversion is a
+    /// no-op for this step and we leave the columns untouched.
     if (!prewhere_info || prewhere_info->perform_alter_conversions)
     {
         merge_tree_reader->performRequiredConversions(read_columns);
+    }
+    else if (!prewhere_info->columns_overwritten_by_chain.empty())
+    {
+        const auto & reader_columns = merge_tree_reader->getColumns();
+        const auto & skip = prewhere_info->columns_overwritten_by_chain;
+
+        Columns saved(read_columns.size());
+        size_t pos = 0;
+        for (const auto & name_and_type : reader_columns)
+        {
+            if (skip.contains(name_and_type.getNameInStorage()))
+            {
+                saved[pos] = read_columns[pos];
+                read_columns[pos] = nullptr;
+            }
+            ++pos;
+        }
+
+        merge_tree_reader->performRequiredConversions(read_columns);
+
+        pos = 0;
+        for (const auto & name_and_type : reader_columns)
+        {
+            if (skip.contains(name_and_type.getNameInStorage()))
+                read_columns[pos] = std::move(saved[pos]);
+            ++pos;
+        }
     }
 
     apply_patches(ColumnForPatch::Order::AfterConversions);

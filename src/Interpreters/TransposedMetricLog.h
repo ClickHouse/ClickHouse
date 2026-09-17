@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 

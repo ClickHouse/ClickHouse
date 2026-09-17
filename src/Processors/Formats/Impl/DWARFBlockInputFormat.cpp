@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/SharedThreadPools.h>
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_ELF;
     extern const int CANNOT_PARSE_DWARF;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 enum DwarfColumn
@@ -110,6 +112,28 @@ static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
         }
     });
     return name_to_idx;
+}
+
+static const DataTypes & getColumnTypes()
+{
+    static const DataTypes types = []
+    {
+        DataTypes res;
+        for (const auto & c : getHeaderForDWARF())
+            res.push_back(c.type);
+        return res;
+    }();
+    return types;
+}
+
+/// The DWARF format has a fixed set of columns, so a name that is not one of them can not be read.
+static size_t getColumnIdx(const std::string & name)
+{
+    const auto & name_to_idx = getColumnNameToIdx();
+    auto it = name_to_idx.find(name);
+    if (it == name_to_idx.end())
+        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", name);
+    return it->second;
 }
 
 DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u)
@@ -186,6 +210,10 @@ DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader head
             append(attr_forms, name);
     }
     attr_form_dict_column = ColumnUnique<ColumnString>::create(std::move(attr_forms), /*is_nullable*/ false);
+
+    /// Reject unknown column names up front instead of failing in the middle of parsing.
+    for (const std::string & name : getPort().getHeader().getNames())
+        getColumnIdx(name);
 }
 
 DWARFBlockInputFormat::~DWARFBlockInputFormat()
@@ -375,10 +403,9 @@ uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const 
 Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 {
     const auto & header = getPort().getHeader();
-    const auto & column_name_to_idx = getColumnNameToIdx();
     std::array<bool, COL_COUNT> need{};
     for (const std::string & name : header.getNames())
-        need[column_name_to_idx.at(name)] = true;
+        need[getColumnIdx(name)] = true;
 
     /// For parallel arrays, we nominate one of them to be responsible for populating the offsets vector.
     need[COL_ATTR_NAME] = need[COL_ATTR_NAME] || need[COL_ATTR_FORM] || need[COL_ATTR_INT] || need[COL_ATTR_STR];
@@ -737,7 +764,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     Columns cols;
     for (const std::string & name : header.getNames())
     {
-        switch (column_name_to_idx.at(name))
+        switch (getColumnIdx(name))
         {
             case COL_OFFSET:
                 cols.push_back(std::exchange(col_offset, nullptr));
@@ -786,8 +813,18 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 cols.push_back(std::exchange(col_linkage_name, nullptr));
                 break;
             case COL_DECL_FILE:
-                cols.push_back(ColumnLowCardinality::create(unit.filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
+            {
+                /// A unit without DW_AT_stmt_list has no filename table; use a minimal dictionary instead of null.
+                ColumnPtr filename_table = unit.filename_table;
+                if (filename_table == nullptr)
+                {
+                    auto dict = ColumnString::create();
+                    dict->insertDefault();
+                    filename_table = ColumnUnique<ColumnString>::create(std::move(dict), /*is_nullable*/ false);
+                }
+                cols.push_back(ColumnLowCardinality::create(filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
                 break;
+            }
             case COL_DECL_LINE:
                 cols.push_back(std::exchange(col_decl_line, nullptr));
                 break;
@@ -813,6 +850,18 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column index");
         }
     }
+
+    /// The requested header may declare types other than the ones produced above.
+    const auto & native_types = getColumnTypes();
+    size_t pos = 0;
+    for (const std::string & name : header.getNames())
+    {
+        ColumnWithTypeAndName column(cols[pos], native_types[getColumnIdx(name)], name);
+        castColumnToRequestedType(column, header.getByName(name).type);
+        cols[pos] = std::move(column.column);
+        ++pos;
+    }
+
     return Chunk(std::move(cols), num_rows);
 }
 
@@ -859,10 +908,11 @@ uint64_t DWARFBlockInputFormat::fetchFromDebugAddr(uint64_t addr_base, uint64_t 
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing .debug_addr section.");
     if (addr_base == UINT64_MAX)
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing DW_AT_addr_base");
+    uint64_t section_size = debug_addr_section->size();
+    if (addr_base > section_size || idx >= (section_size - addr_base) / 8)
+        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: addr_base {}, idx {} vs {}.", addr_base, idx, section_size);
     uint64_t offset = addr_base + idx * 8;
-    if (offset + 8 > debug_addr_section->size())
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: {} vs {}.", offset, debug_addr_section->size());
-    uint64_t res;
+    uint64_t res = 0;
     memcpy(&res, debug_addr_section->data() + offset, 8);
     return res;
 }
@@ -900,14 +950,19 @@ void DWARFBlockInputFormat::parseRanges(
             if (unit.rnglists_base == UINT64_MAX)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing DW_AT_rnglists_base");
             uint64_t entry_size = unit.dwarf_unit->getFormParams().getDwarfOffsetByteSize();
+            uint64_t section_size = debug_rnglists_extractor->size();
+            if (entry_size == 0 || unit.rnglists_base > section_size
+                || offset >= (section_size - unit.rnglists_base) / entry_size)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx offset out of bounds: rnglists_base {}, idx {} vs {}", unit.rnglists_base, offset, section_size);
             uint64_t lists_offset = unit.rnglists_base + offset * entry_size;
-            if (lists_offset + entry_size > debug_rnglists_extractor->size())
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx offset out of bounds: {} vs {}", lists_offset, debug_rnglists_extractor->size());
 
-            offset = 0;
-            memcpy(&offset, debug_rnglists_extractor->getData().data() + lists_offset, entry_size);
+            uint64_t list_entry = 0;
+            memcpy(&list_entry, debug_rnglists_extractor->getData().data() + lists_offset, entry_size);
 
-            offset += unit.rnglists_base;
+            /// The offset read from the table is untrusted; the subtraction also stops rnglists_base + list_entry from wrapping.
+            if (list_entry > section_size - unit.rnglists_base)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx points out of bounds: rnglists_base {}, entry {} vs {}", unit.rnglists_base, list_entry, section_size);
+            offset = unit.rnglists_base + list_entry;
         }
 
         llvm::DWARFDebugRnglist list;

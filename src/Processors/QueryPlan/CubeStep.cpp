@@ -1,7 +1,6 @@
 #include <Processors/QueryPlan/CubeStep.h>
 
 #include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
@@ -48,7 +47,7 @@ ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bo
         for (const auto & key : keys)
         {
             const auto * node = dag.getOutputs()[header->getPositionByName(key)];
-            if (removeLowCardinality(node->result_type)->canBeInsideNullable())
+            if (node->result_type->canBeInsideNullable())
             {
                 dag.addOrReplaceInOutputs(dag.addFunction(to_nullable, { node }, node->result_name));
             }

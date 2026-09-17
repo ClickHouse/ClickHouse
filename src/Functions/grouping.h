@@ -2,6 +2,8 @@
 
 #include <base/defines.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
