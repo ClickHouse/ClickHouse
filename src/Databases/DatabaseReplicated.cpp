@@ -499,53 +499,42 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
+        ::sort(unfiltered_hosts.begin(), unfiltered_hosts.end());
+
+        /// Read the replica group of every replica in a single batch; it's used to filter hosts
+        /// and/or to carry the group of every address of the cluster (e.g. `system.clusters` shows it).
+        /// Hosts are sorted beforehand so that `hosts`, `host_groups` and `host_ids` keep index alignment.
+        std::vector<String> group_paths;
+        group_paths.reserve(unfiltered_hosts.size());
+        for (const auto & host : unfiltered_hosts)
+            group_paths.emplace_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+
+        auto replica_groups = zookeeper->tryGet(group_paths);
+
         if (all_groups)
         {
+            /// The cluster consists of the replicas of all the groups.
             hosts = unfiltered_hosts;
-        }
-        else
-        {
-            hosts.clear();
-            std::vector<String> paths;
-            for (const auto & host : unfiltered_hosts)
-                paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-            auto replica_groups = zookeeper->tryGet(paths);
-
-            for (size_t i = 0; i < paths.size(); ++i)
-            {
-                if (replica_groups[i].data == replica_group_name)
-                    hosts.push_back(unfiltered_hosts[i]);
-            }
-        }
-
-        Int32 cversion = stat.cversion;
-        ::sort(hosts.begin(), hosts.end());
-
-        /// The addresses of the cluster carry the replica group of every node
-        /// (e.g. `system.clusters` shows it).
-        if (all_groups)
-        {
-            /// The cluster consists of the replicas of all the groups, read the group of each one.
-            std::vector<String> group_paths;
-            group_paths.reserve(hosts.size());
-            for (const auto & host : hosts)
-                group_paths.emplace_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-            auto group_result = zookeeper->tryGet(group_paths);
             host_groups.resize(hosts.size());
             for (size_t i = 0; i < hosts.size(); ++i)
             {
-                if (group_result[i].error == Coordination::Error::ZOK)
-                    host_groups[i] = std::move(group_result[i].data);
+                if (replica_groups[i].error == Coordination::Error::ZOK)
+                    host_groups[i] = std::move(replica_groups[i].data);
             }
         }
         else
         {
             /// The cluster consists of the replicas of the local replica group only.
+            hosts.clear();
+            for (size_t i = 0; i < unfiltered_hosts.size(); ++i)
+            {
+                if (replica_groups[i].data == replica_group_name)
+                    hosts.push_back(unfiltered_hosts[i]);
+            }
             host_groups.assign(hosts.size(), replica_group_name);
         }
 
+        Int32 cversion = stat.cversion;
 
         std::vector<String> host_paths;
         host_paths.reserve(hosts.size());
