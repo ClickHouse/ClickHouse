@@ -342,14 +342,18 @@ struct Client : DB::S3::Client
     /// selects it by passing an endpoint here. The default is empty, which deduces `ProviderType::UNKNOWN`.
     static constexpr std::string_view gcs_endpoint = "https://storage.googleapis.com";
 
+    /// `DB::S3::Client` keeps a credentialed GCS endpoint in `ApiMode::AWS` and only a credential-less one
+    /// in `ApiMode::GCS`, so a test that depends on the dialect selects it by asking for access keys here.
     explicit Client(
         std::shared_ptr<S3MemStrore> mock_s3_store,
         bool is_s3express_bucket = false,
-        std::string_view endpoint = {})
+        std::string_view endpoint = {},
+        bool with_access_keys = false)
         : DB::S3::Client(
             100,
             DB::S3::ServerSideEncryptionKMSConfig(),
-            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
+            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(
+                with_access_keys ? "mock-access-key" : "", with_access_keys ? "mock-secret-key" : ""),
             GetClientConfiguration(endpoint),
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             DB::S3::ClientSettings{
@@ -363,11 +367,12 @@ struct Client : DB::S3::Client
     static std::shared_ptr<Client> CreateClient(
         String bucket = "mock-s3-bucket",
         bool is_s3express_bucket = false,
-        std::string_view endpoint = {})
+        std::string_view endpoint = {},
+        bool with_access_keys = false)
     {
         auto s3store = std::make_shared<S3MemStrore>();
         s3store->CreateBucket(bucket);
-        return std::make_shared<Client>(s3store, is_s3express_bucket, endpoint);
+        return std::make_shared<Client>(s3store, is_s3express_bucket, endpoint, with_access_keys);
     }
 
     static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration(std::string_view endpoint = {})
@@ -2295,6 +2300,38 @@ TEST_P(SyncAsync, ConditionalReplaceMultipartOnGCSIsRefused) {
     EXPECT_TRUE(client->store->GetBucketStore(bucket).objects["conditional_replace_mpu_gcs"].empty());
 }
 
+/// The refusal keys on the endpoint being GCS, not on the dialect the client speaks, and access keys are
+/// what select that dialect: with them the client stays in the AWS dialect, where the create-if-absent
+/// rewrite does not run. GCS evaluates no multipart precondition in either dialect, so both are refused.
+TEST_P(SyncAsync, ConditionalMultipartOnGCSWithAccessKeysIsRefused) {
+    client = MockS3::Client::CreateClient(
+        bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint, /* with_access_keys */ true);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_mpu_gcs_hmac", conditionalCreateWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::UNSUPPORTED_METHOD, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("does not support conditional writes"));
+            throw;
+        }
+      }, DB::Exception);
+
+    EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+    EXPECT_EQ(client->counters.putObject, 0u);
+    EXPECT_TRUE(client->store->GetBucketStore(bucket).objects["conditional_mpu_gcs_hmac"].empty());
+}
+
 /// In-range control for the refusal: the single-part shape is the one GCS can express, so a conditional
 /// create on the same GCS client still goes through, still carrying the fence.
 TEST_P(SyncAsync, SinglepartConditionalPutOnGCSStillSucceeds) {
@@ -2333,6 +2370,27 @@ TEST_P(SyncAsync, ConditionalMultipartOnNonGCSStillSucceeds) {
     EXPECT_EQ(client->counters.multiUploadCreate, 1u);
     EXPECT_EQ(client->counters.multiUploadComplete, 1u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["conditional_mpu_non_gcs"], "A");
+}
+
+/// In-range control for the other conjunct of the same guard: what is refused is a write that ASKED for a
+/// condition, so an ordinary multipart upload to GCS - the path every large object takes - still goes
+/// through.
+TEST_P(SyncAsync, UnconditionalMultipartOnGCSStillSucceeds) {
+    client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
+    ASSERT_TRUE(client->isClientForGCS());
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto buffer = getWriteBuffer("unconditional_mpu_gcs");
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    EXPECT_EQ(client->counters.multiUploadCreate, 1u);
+    EXPECT_EQ(client->counters.multiUploadComplete, 1u);
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["unconditional_mpu_gcs"], "A");
 }
 
 /// A refusal identified only by its `412` status still has to reach the write-token replay check, so a
