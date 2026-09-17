@@ -9,9 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `ATTACH TABLE ... FROM '<dir>'` adopts a directory in `user_files` as the data of the new table, so it needs
-# `READ ON FILE`, the same grant as the `file` function. Without that check `CREATE TABLE` on a table of their
-# own is enough for a user to read data that somebody else staged in `user_files`.
+# `ATTACH TABLE ... FROM '<dir>'` reads a directory in `user_files` as the data of the new table and moves it to
+# the data path of the table, so it needs `READ ON FILE` like the `file` function and `WRITE ON FILE` like
+# renaming files after processing. Without that check `CREATE TABLE` on a table of their own is enough for a
+# user to read and consume data that somebody else staged in `user_files`.
 
 user="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 staged_root="${CLICKHOUSE_TEST_UNIQUE_NAME}_staged"
@@ -35,21 +36,27 @@ EOF
 
 attach_query="ATTACH TABLE stolen FROM '${staged_table_dir}/' (id UInt64, secret UInt64) ENGINE = MergeTree ORDER BY id"
 
-# Without `READ ON FILE` the query is denied before it touches the directory.
-if ${CLICKHOUSE_CLIENT} --user "$user" --query "$attach_query" 2>&1 | grep -qF "necessary to have the grant READ ON FILE"; then
-    echo "ACCESS_DENIED"
-else
-    echo "UNEXPECTED: the attach was not denied"
-fi
-${CLICKHOUSE_CLIENT} --query "SELECT 'tables named stolen:', count() FROM system.tables WHERE database = currentDatabase() AND name = 'stolen'"
-if [ -d "${USER_FILES_PATH}/${staged_table_dir}" ]; then
-    echo "staged directory is still in place"
-else
-    echo "UNEXPECTED: the staged directory is gone"
-fi
-
-# With the grant the same query attaches the data.
+# The query is denied before it touches the directory: with no grant on the FILE source, and with `READ` alone.
+check_denied_and_untouched()
+{
+    if ${CLICKHOUSE_CLIENT} --user "$user" --query "$attach_query" 2>&1 | grep -qF "$1"; then
+        echo "ACCESS_DENIED: $1"
+    else
+        echo "UNEXPECTED: the attach was not denied with: $1"
+    fi
+    ${CLICKHOUSE_CLIENT} --query "SELECT 'tables named stolen:', count() FROM system.tables WHERE database = currentDatabase() AND name = 'stolen'"
+    if [ -d "${USER_FILES_PATH}/${staged_table_dir}" ]; then
+        echo "staged directory is still in place"
+    else
+        echo "UNEXPECTED: the staged directory is gone"
+    fi
+}
+check_denied_and_untouched "necessary to have the grant READ, WRITE ON FILE"
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON FILE TO $user"
+check_denied_and_untouched "Missing permissions: WRITE ON FILE"
+
+# With both grants the same query attaches the data.
+${CLICKHOUSE_CLIENT} --query "GRANT WRITE ON FILE TO $user"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "$attach_query"
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT secret FROM stolen"
 
