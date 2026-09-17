@@ -7,36 +7,36 @@
       "versionId": "912d4ea7eb14eab5911f88b95a8e5be0b8dcba7e7a59e4a3c8c83c0f5df33be0",
       "translations": {
         "ru": {
-          "updatedAt": "2026-09-16T22:08:14.759Z",
+          "updatedAt": "2026-09-17T01:04:56.763Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-16T22:08:15.020Z",
+          "updatedAt": "2026-09-17T01:04:57.060Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-16T22:08:15.140Z",
+          "updatedAt": "2026-09-17T01:04:57.213Z",
           "fileName": "docs.json",
           "postProcessHash": "cd5aab4f6cf6bdaa8b0daa99e85e29e2ac1c8d2d1fda538c1848b5fc88564c13"
         },
         "ko": {
-          "updatedAt": "2026-09-16T22:08:14.491Z",
+          "updatedAt": "2026-09-17T01:04:56.461Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-16T22:08:14.228Z",
+          "updatedAt": "2026-09-17T01:04:56.119Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-16T22:08:14.361Z",
+          "updatedAt": "2026-09-17T01:04:56.307Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-16T22:08:14.632Z",
+          "updatedAt": "2026-09-17T01:04:56.612Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-16T22:08:14.886Z",
+          "updatedAt": "2026-09-17T01:04:56.910Z",
           "fileName": "docs.json"
         }
       },
@@ -89780,51 +89780,50 @@
     },
     {
       "fileId": "3b1a74637e69213ce54ba37e609642d41c79def0708b86ba3f810ad6ced64f50",
-      "versionId": "615acd54f51a46d7ee7d24f3245b5b46b8f7a51af00a3441fc200c9c47ffb52f",
+      "versionId": "c10a3337f30486d86953cc6b24ddf888638a787f9032f05bb003de4b010ee7d9",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.422Z",
-          "fileName": "es/resources/changelogs/cloud/release-notes/26_4.mdx",
-          "postProcessHash": "09868221d7eb53c85f9a1418ea5f18a152e6106b60542ed94ae20814463e3d8d"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.422Z",
-          "fileName": "ja/resources/changelogs/cloud/release-notes/26_4.mdx",
-          "postProcessHash": "18557cf5a010d544654dc854ef2f3a145cb00ae850a27e086373efcb7e104587"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.423Z",
-          "fileName": "ko/resources/changelogs/cloud/release-notes/26_4.mdx",
-          "postProcessHash": "f0b9001df9dcaa2f5fb58b7b3ca23329a5004854f6d7b6cc143c10338f6f7d83"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.423Z",
-          "fileName": "pt-BR/resources/changelogs/cloud/release-notes/26_4.mdx",
-          "postProcessHash": "4fc43ea4a4f224679a905bd502d258dda66b38bbed5434294b91376137ccb982"
+        "zh": {
+          "updatedAt": "2026-09-17T01:05:00.971Z",
+          "fileName": "zh/resources/changelogs/cloud/release-notes/26_4.mdx",
+          "postProcessHash": "4f82ea3f021bdfd585ecf43836d981208841a794cd0159d86e3dc513e8f92f43"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.424Z",
+          "updatedAt": "2026-09-17T01:05:00.973Z",
           "fileName": "ru/resources/changelogs/cloud/release-notes/26_4.mdx",
-          "postProcessHash": "8b98ca9313470644a644179e2724dbe0a742f03536183af06f6a4e77053590bc"
+          "postProcessHash": "4d7ff99d94b5fea71daafbce157d2d60d69d148fd4bf04eca2c960e7097c9a76"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.424Z",
-          "fileName": "zh/resources/changelogs/cloud/release-notes/26_4.mdx",
-          "postProcessHash": "989ba90d05d8917563dfb111e026d4db0edff7992a80b80f65fedc17841c7a56"
+        "es": {
+          "updatedAt": "2026-09-17T01:05:00.974Z",
+          "fileName": "es/resources/changelogs/cloud/release-notes/26_4.mdx",
+          "postProcessHash": "bc89ac998c4fd8ec0a6669c15bae32e522c68e9f21ab68cd655714b0dd38b647"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.425Z",
-          "fileName": "ar/resources/changelogs/cloud/release-notes/26_4.mdx",
-          "postProcessHash": "b832f2df39e1831e08489cbecb44bd4363651cbf3a74460405ae8a22661f13f9"
+        "pt-BR": {
+          "updatedAt": "2026-09-17T01:05:00.976Z",
+          "fileName": "pt-BR/resources/changelogs/cloud/release-notes/26_4.mdx",
+          "postProcessHash": "e96ad1648885c8aef9af152b7e3716d57c9f13e86fedca4b193e97980d309755"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.425Z",
+          "updatedAt": "2026-09-17T01:05:00.977Z",
           "fileName": "fr/resources/changelogs/cloud/release-notes/26_4.mdx",
-          "postProcessHash": "a1dee5569ede4c91f8eebeabbb7b4142e5fcd858f96e8943436c9b99b00711f2"
+          "postProcessHash": "e048369b8e75522c2b65276524384e291695621ac35bbc9f15adfbc8eabe2654"
+        },
+        "ar": {
+          "updatedAt": "2026-09-17T01:05:00.978Z",
+          "fileName": "ar/resources/changelogs/cloud/release-notes/26_4.mdx",
+          "postProcessHash": "d688bdb60a7fe9ee276cf5e942a2dd74cff147e53fdca345dbc43decfd1425e6"
+        },
+        "ja": {
+          "updatedAt": "2026-09-17T01:05:00.979Z",
+          "fileName": "ja/resources/changelogs/cloud/release-notes/26_4.mdx",
+          "postProcessHash": "b49cc671cdabdcea573633a7c7188b25e387ca37511701ea00b5523b1b0a1970"
+        },
+        "ko": {
+          "updatedAt": "2026-09-17T01:05:00.981Z",
+          "fileName": "ko/resources/changelogs/cloud/release-notes/26_4.mdx",
+          "postProcessHash": "2d8610927a8ce4ff2bc6fb901dd8b363176b5f57709964b93e5956f1b1e603be"
         }
       },
-      "fileName": "resources/changelogs/cloud/release-notes/26_4.mdx",
-      "staged": false
+      "fileName": "resources/changelogs/cloud/release-notes/26_4.mdx"
     },
     {
       "fileId": "5cf5f4e604871d1b9becc59f123a93a47e7ebcf303f7c851a0eb06729b786f09",
