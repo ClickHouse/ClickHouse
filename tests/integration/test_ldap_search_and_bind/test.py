@@ -244,6 +244,41 @@ def test_search_and_bind_authenticates(ldap_cluster):
     ) == TSV([["janedoe", "ldap", "['ldap']"]])
 
 
+def test_execute_as_resolves_the_target_through_search_and_bind(ldap_cluster):
+    """`EXECUTE AS` has no password to bind with. On this configuration (`bind_dn` is
+    `{user_dn}`) the target is found by `user_dn_detection` under the service account
+    (`LDAPSimpleAuthClient::find`), and its roles are read by the same account (`ou=groups`
+    is unreadable for users). `johndoe` has not logged in on `instance` at this point of the
+    module, so the entry, roles included, comes from that lookup and not from a login.
+    """
+    instance.query(
+        "CREATE ROLE IF NOT EXISTS role_1", user="common_user", password="qwerty"
+    )
+    try:
+        ldap_add_group("clickhouse-role_1", ["johndoe"])
+
+        assert instance.query(
+            "EXECUTE AS johndoe SELECT currentUser()",
+            user="common_user",
+            password="qwerty",
+        ) == TSV([["johndoe"]])
+        assert instance.query(
+            "EXECUTE AS johndoe SELECT role_name FROM system.current_roles ORDER BY role_name",
+            user="common_user",
+            password="qwerty",
+        ) == TSV([["role_1"]])
+        assert instance.query(
+            "SELECT storage, auth_type FROM system.users WHERE name = 'johndoe'",
+            user="common_user",
+            password="qwerty",
+        ) == TSV([["ldap", "['ldap']"]])
+    finally:
+        ldap_delete_group("clickhouse-role_1")
+        instance.query(
+            "DROP ROLE IF EXISTS role_1", user="common_user", password="qwerty"
+        )
+
+
 def test_wrong_password_and_unknown_user_are_authentication_failures(ldap_cluster):
     # Wrong password: the service account finds the DN, the user bind is rejected.
     login_fails_without_ldap_error(instance, "janedoe", "wrong")
@@ -490,7 +525,8 @@ def test_detection_base_from_bind_dn_treats_missing_base_as_unknown_user(ldap_cl
     directory, which answers the search with `LDAP_NO_SUCH_OBJECT`; that is the same "user
     not found" signal as for `{user_name}` written directly into `base_dn`, so a login must be
     a plain authentication failure and `EXECUTE AS` must give `UNKNOWN_USER`, never
-    `LDAP_ERROR`. `common_user` has `access_management`, which includes `IMPERSONATE`."""
+    `LDAP_ERROR`. `common_user` has `access_management`, which includes `IMPERSONATE`.
+    """
     # Known users resolve through the substituted base, both at login and on the forced
     # lookup of `EXECUTE AS` (johndoe has never logged in on this instance).
     assert instance_mode2_bind_dn_base.query(
@@ -633,7 +669,8 @@ def test_nonexistent_detection_base_dn_is_an_ldap_error(ldap_cluster):
     """A static `base_dn` that does not exist (mistyped naming context) makes the directory
     answer `user_dn_detection` with `LDAP_NO_SUCH_OBJECT`. That is a misconfiguration and
     must be logged as `LDAP_ERROR`; only a `base_dn` that depends on the login (`{user_name}`,
-    or `{bind_dn}`/`{user_dn}` from a `bind_dn` template) may treat it as "user not found"."""
+    or `{bind_dn}`/`{user_dn}` from a `bind_dn` template) may treat it as "user not found".
+    """
     original_config = read_config("ldap_parse_error.xml")
     nonexistent_base_config = original_config.replace(
         "<lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>",
