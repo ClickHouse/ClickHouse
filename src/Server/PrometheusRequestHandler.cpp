@@ -21,6 +21,7 @@
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
 #include <Common/MemoryTrackerSwitcher.h>
+#include <Common/Stopwatch.h>
 #include <IO/SnappyBasicReadBuffer.h>
 #include <IO/SnappyBasicWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
@@ -28,6 +29,7 @@
 #include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
@@ -190,6 +192,14 @@ protected:
         return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
     }
 
+    ProcessList::EntryPtr admitRequest(const String & description)
+    {
+        /// Some protocol operations do not pass through `executeQuery`.
+        auto entry = context->getProcessList().insert(description, 0, nullptr, context, Stopwatch{}.getStart(), false);
+        context->setProcessListElement(entry->getQueryStatus());
+        return entry;
+    }
+
     bool isSettingLikeParameter(const String & name) override
     {
         /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
@@ -336,6 +346,10 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
+        ProcessList::EntryPtr process_list_entry;
+        if (write_request.timeseries().empty() && write_request.metadata().empty())
+            process_list_entry = admitRequest("Prometheus empty remote write");
+
         protocol.write(write_request.timeseries(), write_request.metadata());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
@@ -363,6 +377,9 @@ public:
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
     {
 #if USE_PROMETHEUS_PROTOBUFS
+        /// Remote reads build their pipeline directly, without admission through `executeQuery`.
+        auto process_list_entry = admitRequest("Prometheus remote read");
+
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
@@ -490,6 +507,7 @@ public:
             {
                 /// The format_query endpoint only parses and reformats the given PromQL expression,
                 /// so it doesn't need the TimeSeries table.
+                auto process_list_entry = admitRequest("Prometheus format query");
                 formatQuery(getOutputStream(response), params->get("query", ""));
                 return;
             }

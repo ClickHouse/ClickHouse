@@ -17,6 +17,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
 #include <Common/ThreadStatus.h>
+#include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -1357,7 +1358,12 @@ arrow::Status ArrowFlightServer::DoAction(
 
             auto query_scope = QueryScope::createForQueryContext();
             auto query_context = session->makeQueryContext();
+            query_context->setCurrentQueryId("");
             query_scope.attachToQueryContext(query_context);
+            /// This action does not pass through `executeQuery` and needs its own admission.
+            auto process_list_entry = query_context->getProcessList().insert(
+                "Arrow Flight SetSessionOptions", 0, nullptr, query_context, Stopwatch{}.getStart(), false);
+            query_context->setProcessListElement(process_list_entry->getQueryStatus());
             auto session_context = query_context->getSessionContext();
 
             /// Convert Arrow Flight SessionOptionValue to a string representation
@@ -1527,6 +1533,7 @@ arrow::Status ArrowFlightServer::DoAction(
 
             LOG_DEBUG(log, "CreatePreparedStatement request: query={}", ast->formatForLogging());
 
+            ProcessList::EntryPtr process_list_entry;
             if (dynamic_cast<const ASTSelectWithUnionQuery *>(ast.get()))
             {
                 /// Try to infer the result schema by executing the NULL-substituted query.
@@ -1566,6 +1573,13 @@ arrow::Status ArrowFlightServer::DoAction(
                         "the prepared statement will be created without dataset_schema: {}",
                         ast->formatForLogging(), getCurrentExceptionMessage(/* with_stacktrace = */ false));
                 }
+            }
+            else
+            {
+                /// Parsing a prepared statement must account for setup without executing it.
+                process_list_entry = query_context->getProcessList().insert(
+                    ast->formatForLogging(), 0, ast.get(), query_context, Stopwatch{}.getStart(), false);
+                query_context->setProcessListElement(process_list_entry->getQueryStatus());
             }
 
             std::optional<ArrowFlight::Duration> session_timeout_for_ps;

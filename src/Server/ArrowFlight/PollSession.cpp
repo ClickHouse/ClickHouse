@@ -92,7 +92,12 @@ void PollSession::onFinish() { block_io.onFinish(); }
 
 void PollSession::onException() { block_io.onException(); }
 
-void PollSession::onCancelOrConnectionLoss() { block_io.onCancelOrConnectionLoss(); }
+void PollSession::onCancelOrConnectionLoss()
+{
+    /// Cancellation can tear down the pipeline before the session destructor runs.
+    MemoryTrackerSwitcher query_memory_scope(&thread_group->memory_tracker);
+    block_io.onCancelOrConnectionLoss();
+}
 
 }
 }

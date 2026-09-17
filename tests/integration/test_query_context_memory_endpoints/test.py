@@ -25,6 +25,7 @@ from test_default_session_user.grpc_protocol_pb2 import clickhouse_grpc_pb2 as g
 from test_prometheus_protocols.prometheus_test_utils import (
     convert_time_series_to_protobuf,
     convert_read_request_to_protobuf,
+    extract_protobuf_from_remote_read_response,
 )
 
 cluster = ClickHouseCluster(__file__)
@@ -59,10 +60,19 @@ ENDPOINTS = [
     "flight_poll",
     "flight_cancel",
     "flight_prepare",
+    "flight_prepare_insert",
+    "flight_session_options",
     "flight_metadata",
     "prometheus_query",
+    "prometheus_query_range",
+    "prometheus_format_query",
+    "prometheus_series",
+    "prometheus_labels",
+    "prometheus_label_values",
+    "prometheus_metadata",
     "prometheus_read",
     "prometheus_write",
+    "prometheus_write_empty",
 ]
 
 
@@ -210,6 +220,11 @@ def run_endpoint(endpoint, user):
             PORTS["flight"],
             insecure=True,
             username=user,
+            metadata=(
+                {"x-clickhouse-session-id": str(uuid.uuid4())}
+                if endpoint == "flight_session_options"
+                else None
+            ),
         )
         try:
             client._flight_call_options = lambda: flight.FlightCallOptions(
@@ -224,12 +239,19 @@ def run_endpoint(endpoint, user):
                 client.execute_update(
                     "INSERT INTO context_memory_sink SETTINGS log_comment = '' VALUES (1)"
                 )
-            elif endpoint == "flight_prepare":
-                statement = client.prepare(SELECT)
+            elif endpoint in ("flight_prepare", "flight_prepare_insert"):
+                statement = client.prepare(
+                    SELECT
+                    if endpoint == "flight_prepare"
+                    else "INSERT INTO context_memory_sink VALUES (?)"
+                )
                 try:
-                    assert statement.dataset_schema is not None
+                    if endpoint == "flight_prepare":
+                        assert statement.dataset_schema is not None
                 finally:
                     statement.close()
+            elif endpoint == "flight_session_options":
+                assert not client.set_session_options({"max_block_size": 123}).errors
             elif endpoint in ("flight_poll", "flight_cancel"):
                 poll = client.poll_flight_info(
                     flight_descriptor(CommandStatementQuery(query=SELECT))
@@ -267,18 +289,17 @@ def run_endpoint(endpoint, user):
         kind = endpoint.removeprefix("prometheus_")
         url = f"http://{node.ip_address}:{PORTS['prometheus']}"
         kwargs = {"auth": (user, ""), "timeout": 30, "params": {"log_comment": ""}}
-        if kind == "query":
-            kwargs["params"]["query"] = "1"
-            response = requests.post(url + "/api/v1/query", **kwargs)
-        else:
-            if kind == "write":
+        if kind in ("read", "write", "write_empty"):
+            if kind.startswith("write"):
                 message = convert_time_series_to_protobuf(
                     [({"__name__": "context_memory"}, {1: 1})]
+                    if kind == "write"
+                    else []
                 )
             else:
                 message = convert_read_request_to_protobuf("context_memory", 0, 2)
             response = requests.post(
-                url + "/" + kind,
+                url + "/" + ("write" if kind.startswith("write") else "read"),
                 data=snappy.compress(message.SerializeToString()),
                 headers={
                     "Content-Encoding": "snappy",
@@ -286,8 +307,25 @@ def run_endpoint(endpoint, user):
                 },
                 **kwargs,
             )
+        else:
+            path = "label/__name__/values" if kind == "label_values" else kind
+            if kind in ("query", "query_range", "format_query"):
+                kwargs["params"]["query"] = "1"
+            if kind == "query_range":
+                kwargs["params"].update(start=0, end=2, step=1)
+            elif kind in ("series", "labels", "label_values"):
+                kwargs["params"].update(
+                    {"match[]": "context_memory", "start": 0, "end": 2}
+                )
+            response = requests.post(url + "/api/v1/" + path, **kwargs)
         if response.status_code not in (200, 204):
             raise RuntimeError(response.text)
+        if kind == "read":
+            assert (
+                len(extract_protobuf_from_remote_read_response(response).results) == 1
+            )
+        elif not kind.startswith("write"):
+            assert response.json()["status"] == "success", response.text
     else:
         raise ValueError(endpoint)
 
@@ -306,7 +344,7 @@ def test_endpoint_setup_limit_and_recovery(endpoint, batching_limit, limit, leve
             Exception, match=f"{level} memory limit exceeded during query setup"
         ):
             run_endpoint(endpoint, user)
-        node.query(f"ALTER USER {user} SETTINGS {limit} = 0")
+        node.query(f"ALTER USER {user} MODIFY SETTINGS {limit} = 0")
         run_endpoint(endpoint, user)
 
 
@@ -314,7 +352,7 @@ def test_endpoint_setup_limit_and_recovery(endpoint, batching_limit, limit, leve
 @pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
 def test_endpoint_releases_context_memory(endpoint, batching_limit):
     with payload_user("max_memory_usage", batching_limit) as user:
-        node.query(f"ALTER USER {user} SETTINGS max_memory_usage = 0")
+        node.query(f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0")
         sentinel_id = str(uuid.uuid4())
         sentinel = node.get_query_request(
             "SELECT repeat('ssssssssssssssssssssssssssssssss', 524288), sleep(600) "
@@ -336,6 +374,8 @@ def test_endpoint_releases_context_memory(endpoint, batching_limit):
                 "SELECT memory_usage - (SELECT memory_usage FROM system.processes "
                 f"WHERE query_id = '{sentinel_id}') FROM system.user_processes WHERE user = '{user}'"
             )
+            # Protocol completion can precede context destruction on the server thread.
+            assert_eq_with_retry(node, f"SELECT abs(({balance_query})) < 65536", "1")
             before = int(node.query(balance_query))
             for _ in range(8):
                 run_endpoint(endpoint, user)
@@ -359,7 +399,7 @@ def test_endpoint_releases_context_memory(endpoint, batching_limit):
 
 def test_postgres_multistatement_contexts():
     with payload_user("max_memory_usage", 0) as user:
-        node.query(f"ALTER USER {user} SETTINGS max_memory_usage = 0")
+        node.query(f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0")
         with contextlib.closing(
             psycopg2.connect(
                 host=node.ip_address,

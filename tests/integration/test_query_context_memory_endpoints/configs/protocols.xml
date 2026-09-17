@@ -7,7 +7,7 @@
         <port>9093</port>
         <handlers>
             <query>
-                <url>/api/v1/query</url>
+                <url>regex:/api/v1/.*</url>
                 <handler>
                     <type>query</type>
                     <table>default.context_memory_prometheus</table>
