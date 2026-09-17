@@ -14,23 +14,19 @@
 namespace DB::ColumnsScatter
 {
 
-/** Splits batches of columns into exact-sized per-shard destinations.
+/** Splits batches of columns into exact-sized per-shard destinations. A shard is one destination;
+  * the fanout is the shard count; a pid is a row's shard id; SWWC is software write-combining.
   *
-  * A shard is one destination; the fanout is the shard count; a pid is a row's shard id; SWWC is
-  * software write-combining.
-  *
-  * Two surfaces. The chunk kernels are single-threaded per call and own nothing: the caller
-  * allocates the destinations, seeds the write cursors and coordinates workers, so a parallel
-  * driver can run its histogram, prefix-sum and scatter phases itself. `scatter` at the bottom is
-  * the one-shot surface: it allocates, dispatches on type and lets no raw pointer escape.
+  * Two surfaces. The chunk kernels are single-threaded per call and own nothing. The caller
+  * allocates destinations, seeds write cursors, and coordinates workers. A parallel driver can then
+  * run histogram, prefix-sum, and scatter itself. `scatter` is the one-shot surface: it allocates,
+  * dispatches on type, and lets no raw pointer escape.
   */
 
 constexpr size_t LINE_BYTES = 64;
-/// Below this fanout the per-shard cursors still hit in cache, so software write-combining (SWWC)
-/// only adds work.
+/// Below this fanout the per-shard cursors still hit in cache, so software write-combining (SWWC) only adds work.
 constexpr size_t SWWC_MIN_FANOUT = 256;
-/// Above this fanout the 4 interleaved histogram lanes cost more cache than the dependency chain
-/// they break.
+/// Above this fanout the 4 interleaved histogram lanes cost more cache than the dependency chain they break.
 constexpr size_t HIST_INTERLEAVE_MAX_FANOUT = 2048;
 /// Sized so the per-batch boundary work (cursor sweeps, partial-line flushes) stays small against
 /// the lines written in between.
@@ -43,25 +39,23 @@ inline size_t scatterBatchRowsTarget(size_t fanout)
 }
 
 /// Splits log2(fanout) shard bits into MSB-first passes, each at most `max_fanout_per_pass` wide.
-/// The split is balanced, not greedy: 15 bits under a 10-bit cap give 8 + 7, not 10 + 5, because
-/// the widest pass sets the staging footprint. Empty for fanout <= 1.
+/// The split is balanced, not greedy: 15 bits under a 10-bit cap give 8 + 7, not 10 + 5.
+/// The widest pass sets the staging footprint. Empty for fanout <= 1.
 std::vector<size_t> computePassBits(size_t fanout, size_t max_fanout_per_pass); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-/// Write combining needs the staging line to fill to exactly 64 bytes, which holds only for widths
-/// that divide the line and are covered by the 16-byte minimum alignment of column data.
+/// Write combining needs the staging line to fill to exactly 64 bytes. That holds only for widths
+/// that divide the line and that the 16-byte minimum alignment of column data covers.
 inline bool widthSupportsSwwc(size_t w)
 {
     return w == 1 || w == 2 || w == 4 || w == 8 || w == 16;
 }
 
-/** Per-worker write cursors, plus one 64-byte staging line and a fill counter per shard when
-  * write combining is on.
-  *
-  * Invariant: shard p's staged bytes live at `staging + p*64 + [m, fill)` with
-  * `m = (uintptr) cursors[p] & 63`. `seed` starts `fill` at the cursor's misalignment, so the first
-  * flush writes only the bytes past it and leaves the cursor line-aligned (m == 0) from then on.
-  * Column data is at least 16-byte aligned and per-worker offsets are whole elements, so for the
-  * write-combined widths m is a multiple of the width and the line always fills to exactly 64 bytes.
+/** Per-worker write cursors, plus one 64-byte staging line and a fill counter per shard when write
+  * combining is on. Invariant: shard p's staged bytes live at `staging + p*64 + [m, fill)` with
+  * `m = (uintptr) cursors[p] & 63`. `seed` starts `fill` at the cursor's misalignment. The first
+  * flush then writes only the bytes past that and leaves the cursor line-aligned (`m == 0`).
+  * Column data is at least 16-byte aligned and per-worker offsets are whole elements. For the
+  * write-combined widths, `m` is a multiple of the width and the line always fills to exactly 64 bytes.
   */
 struct ScatterScratch
 {
@@ -99,8 +93,7 @@ struct ScatterScratch
             fill[p] = static_cast<UInt32>(reinterpret_cast<uintptr_t>(cursor) & (LINE_BYTES - 1));
     }
 
-    /// Must run before any destination is read: it flushes the partial lines and publishes the
-    /// non-temporal stores.
+    /// Must run before any destination is read: it flushes the partial lines and publishes the non-temporal stores.
     void drain()
     {
         if (!use_swwc)
@@ -124,27 +117,27 @@ struct ScatterScratch
     }
 };
 
-/** Chunk kernels: one call scatters one chunk of one column, with the cursors living in the
-  * caller's `ScatterScratch` across chunks - seed once per column, scatter every chunk, drain once.
-  * The row loops stay inside this module's translation unit, so the call cost is per chunk and never
-  * per row. Pids are UInt16 because the narrower id halves the pid stream's bandwidth; the caller
-  * keeps its shard count, plus any spare id it needs, under 2^16.
+/** Chunk kernels: one call scatters one chunk of one column. Cursors live in the caller's
+  * `ScatterScratch` across chunks: seed once per column, scatter every chunk, drain once. The row
+  * loops stay in this translation unit, so the call cost is per chunk, never per row. Pids are
+  * `UInt16` because the narrower id halves the pid stream's bandwidth. The caller keeps its shard
+  * count, plus any spare id it needs, under 2^16.
   */
 
 void scatterPidChunk(size_t width, const UInt16 * pids, const char * data, size_t n, bool use_swwc, ScatterScratch & scratch);
 
 /// `lanes` is 4 * fanout caller-owned counters: four interleaved partial histograms that break the
-/// load-increment-store dependency chain; reduce them once at the end. Pass nullptr above
+/// load-increment-store dependency chain. Reduce them once at the end. Pass nullptr above
 /// `HIST_INTERLEAVE_MAX_FANOUT` to count straight into `hist`.
 void histogramPidChunk(const UInt16 * pids, size_t n, UInt64 * hist, UInt64 * lanes, size_t fanout);
 void reduceHistogramLanes(UInt64 * hist, const UInt64 * lanes, size_t fanout);
 
 /// Returns the column and a write base spanning exactly `rows * sizeOfValueIfFixed` bytes. The
-/// memory is left uninitialized on purpose: the scatter writes are what first-touch the pages.
+/// memory is left uninitialized on purpose: the scatter writes first-touch the pages.
 std::pair<MutableColumnPtr, std::span<char>> allocateUninitializedFixed(const IColumn & sample, size_t rows);
 
-/// Which kernel handled a column - the tests assert on it, since a silent fall back to
-/// `IColumn::scatter` is otherwise invisible.
+/// Which kernel handled a column. Tests assert on it. A silent fall back to `IColumn::scatter` is
+/// otherwise invisible.
 enum class ScatterKernelId : UInt8
 {
     FixedWidth,     /// raw-byte kernels: ColumnVector, ColumnDecimal, ColumnFixedString
@@ -178,22 +171,22 @@ struct DispatchTrace
 DispatchTrace * exchangeDispatchTrace(DispatchTrace * trace);
 
 /// `rows_per_shard` must be pre-zeroed with size == num_shards. Count once per flush and hand the
-/// result to every `scatter` call of that flush rather than re-counting per column-position.
+/// result to every `scatter` call of that flush rather than recounting per column-position.
 void countRowsPerShard(std::span<const std::span<const UInt16>> pids_per_source, std::span<UInt32> rows_per_shard);
 
-/** Scatters one column-position of a batch of chunks: `source_columns[b]` is that position's column
-  * from chunk b, all of the same concrete type, and row j of source b goes to shard
-  * `pids_per_source[b][j]`. Result k holds every row routed to shard k in source order.
+/** Scatters one column-position of a batch of chunks. `source_columns[b]` is that position's column
+  * from chunk b; all chunks share one concrete type. Row j of source b goes to shard
+  * `pids_per_source[b][j]`. Result k holds every row routed to shard k, in source order.
   *
-  * Transparent wrappers are normalized away before dispatch, `ColumnLowCardinality` is preserved,
-  * and an all-const batch of byte-identical values stays a `ColumnConst`.
+  * Transparent wrappers are stripped before dispatch. `ColumnLowCardinality` is preserved. An
+  * all-const batch of byte-identical values stays a `ColumnConst`.
   *
-  * `rows_per_shard` comes from `countRowsPerShard`; pass it empty to count internally. When passed,
-  * its values drive exact-sized allocation, so an undercount overflows the heap. That, out-of-range
-  * pids, and concrete-type mismatches deeper than the TypeIndex are checked in debug and sanitizer
-  * builds only - in release they are undefined behavior. The shallower misuses (span sizes, pid
-  * count against column size, zero shards, TypeIndex, FixedString width, tuple arity) throw
-  * `LOGICAL_ERROR` in every build.
+  * `rows_per_shard` comes from `countRowsPerShard`. Pass it empty to count internally. When passed,
+  * its values size the allocations, so an undercount overflows the heap. An undercount, out-of-range
+  * pids and concrete-type mismatches deeper than TypeIndex are checked in debug and sanitizer
+  * builds only. In release they are undefined behavior. Shallower misuses throw `LOGICAL_ERROR` in
+  * every build: span sizes, pid count against column size, zero shards, TypeIndex, FixedString
+  * width, tuple arity.
   */
 [[nodiscard]] MutableColumns scatter(
     std::span<const IColumn * const> source_columns,

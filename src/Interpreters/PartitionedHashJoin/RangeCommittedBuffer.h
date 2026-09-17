@@ -14,10 +14,10 @@ namespace DB
   * by the workers, and each owner frees its scattered chunk in the same step. If the whole buffer
   * were charged to the memory tracker up front, the post-build peak would be the table plus the
   * whole chunk. Charging each range when its owner first touches it lets the table's charge rise as
-  * the chunk's falls, and that is the accounting the spill decision (`max_bytes_before_external_join`)
+  * the chunk's falls. That is the accounting the spill decision (`max_bytes_before_external_join`)
   * is built on.
   *
-  * The memory comes from jemalloc through its untracked entry point, so a repeated build gets its
+  * The memory comes from jemalloc through its untracked entry point. A repeated build gets its
   * extents back from the arena's retained pages instead of faulting a fresh mapping and unmapping it
   * at teardown. Reused memory is not zero. `commit` first charges `len` bytes to the current memory
   * tracker, which throws on the limit before anything is written, then zeroes exactly its range. The

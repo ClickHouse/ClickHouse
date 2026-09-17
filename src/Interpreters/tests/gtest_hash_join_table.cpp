@@ -53,7 +53,6 @@ bool allBytesAre(const char * begin, const char * end, char value)
 /// The table type the `UInt64` keys use, for its geometry helpers and its degree arithmetic.
 using Key64Table = typename decltype(HashJoinTableMapsAll::key64)::element_type;
 
-/// The multiplicative step of the build keys: `keyOf(i) = i * key_step + 1`.
 constexpr UInt64 key_step = 2654435761ULL;
 
 UInt64 keyOf(size_t i)
@@ -61,8 +60,8 @@ UInt64 keyOf(size_t i)
     return i * key_step + 1;
 }
 
-/// An `amacRun` policy with no memory to wait for: row `r` completes on its `r % 4`-th visit, and
-/// every fifth row is handled in `start` without entering the ring. Completions are counted per row.
+/// An `amacRun` policy with no memory to wait for. Row `r` completes on its `r % 4`-th visit.
+/// Every fifth row is handled in `start` without entering the ring. Completions are counted per row.
 struct CountingPolicy
 {
     template <size_t ring_size>
@@ -152,7 +151,7 @@ TEST(RangeCommittedBuffer, CommitAccountsAndZeroes)
     EXPECT_EQ(empty.committedBytes(), 0u);
 }
 
-/// A table past 2^32 cells is refused before anything is allocated, and a reserve above 2^31 keys is what
+/// A table past 2^32 cells is refused before anything is allocated. A reserve above 2^31 keys is what
 /// the standard grower's rounding maps there.
 TEST(HashJoinTable, DegreeCap)
 {
@@ -163,12 +162,11 @@ TEST(HashJoinTable, DegreeCap)
     EXPECT_GE(Key64Table::degreeFor(reserve_for_33), 33u);
 }
 
-/// The route the fill saves for a key names the partition whose range holds the key's home cell, for every
-/// plan the 16-bit routes cover.
+/// The route the fill saves for a key names the partition whose range holds the key's home cell.
+/// That holds for every plan the 16-bit routes cover. Checked on `key64` and `key_string` with the
+/// same hashes the build and the probe use.
 TEST(HashJoinTable, RoutesMatchTablePlacement)
 {
-    /// The invariant the probe relies on. Checked on the table type the `UInt64` keys use and on the
-    /// string type, with the same hashes the build and the probe use.
     constexpr size_t rows = 10007;
     auto uint64_key = ColumnUInt64::create();
     for (size_t i = 0; i < rows; ++i)

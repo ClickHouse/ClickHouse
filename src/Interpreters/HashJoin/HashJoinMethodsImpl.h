@@ -481,49 +481,31 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         added_columns.join_on_keys,
         [](const auto & elem) { return !elem.null_map && elem.join_mask_column.getKind() == JoinCommon::JoinMask::Kind::AllTrue; });
 
-    if (selector.isContinuousRange())
+    /// The probe always runs on a whole block: `HashJoin::joinBlock` wraps it into one continuous
+    /// range, and a `next_block` is materialized before it is probed again. Only the build side
+    /// scatters rows by index.
+    if (!selector.isContinuousRange())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash join probe expects a continuous range of rows");
+
+    const auto range = selector.getRange();
+    if (mapv.size() > 1 || added_columns.join_on_keys.empty())
     {
-        if (mapv.size() > 1 || added_columns.join_on_keys.empty())
-        {
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
-        }
+        if (fast_path)
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
+                std::move(key_getter_vector), mapv, added_columns, used_flags, range);
         else
-        {
-            chassert(key_getter_vector.size() == 1);
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
-        }
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
+                std::move(key_getter_vector), mapv, added_columns, used_flags, range);
     }
     else
     {
-        if (mapv.size() > 1 || added_columns.join_on_keys.empty())
-        {
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
-        }
+        chassert(key_getter_vector.size() == 1);
+        if (fast_path)
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
+                key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, range);
         else
-        {
-            chassert(key_getter_vector.size() == 1);
-            if (fast_path)
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/true>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
-            else
-                return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
-                    key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
-        }
+            return joinRightColumns<KeyGetter, Map, need_filter, /*fast_path=*/false>(
+                key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, range);
     }
 }
 
@@ -662,34 +644,27 @@ void processMatch(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <
-    typename KeyGetter,
-    typename Map,
-    bool need_filter,
-    bool fast_path,
-    typename AddedColumns,
-    typename Selector>
+template <typename KeyGetter, typename Map, bool need_filter, bool fast_path, typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
-    KeyGetter & key_getter, const Map * map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
+    KeyGetter & key_getter,
+    const Map * map,
+    AddedColumns & added_columns,
+    JoinStuff::JoinUsedFlags & used_flags,
+    const ScatteredBlock::Selector::Range & range)
 {
     static constexpr bool flag_per_row = false; // Always false in single map case
     const auto & join_keys = added_columns.join_on_keys.at(0);
 
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
-    size_t rows = ScatteredBlock::Selector::size(selector);
+    size_t rows = ScatteredBlock::Selector::size(range);
 
     /// The skip pointer is a local so that it can stay in a register across the calls in
     /// the loop body (see `JoinOnKeyColumns::buildRowSkipData`).
     const UInt8 * skip_data = nullptr;
     IColumn::Filter skip_buffer;
     if constexpr (!fast_path)
-    {
-        if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
-            skip_data = join_keys.buildRowSkipData(skip_buffer, selector);
-        else
-            skip_data = join_keys.buildRowSkipData(skip_buffer, selector.first, rows);
-    }
+        skip_data = join_keys.buildRowSkipData(skip_buffer, range.first, rows);
     if constexpr (need_filter)
     {
         added_columns.filter = IColumn::Filter(rows, 0);
@@ -715,7 +690,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                map->prefetch(key_getter.getKeyHolder(selectorIndexAt(selector, k), pool));
+                map->prefetch(key_getter.getKeyHolder(range.first + k, pool));
         });
 
     IColumn::Offset current_offset = 0;
@@ -724,7 +699,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         if constexpr (can_prefetch)
             prefetcher.prefetchAt(i);
 
-        const size_t ind = selectorIndexAt(selector, i);
+        const size_t ind = range.first + i;
 
         bool right_row_found = false;
         KnownRowsHolder<flag_per_row> dummy_known_rows;
@@ -764,25 +739,19 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <
-    typename KeyGetter,
-    typename Map,
-    bool need_filter,
-    bool fast_path,
-    typename AddedColumns,
-    typename Selector>
+template <typename KeyGetter, typename Map, bool need_filter, bool fast_path, typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
     JoinStuff::JoinUsedFlags & used_flags,
-    const Selector & selector)
+    const ScatteredBlock::Selector::Range & range)
 {
     static constexpr bool flag_per_row = true; // Always true in multiple maps case
 
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
-    size_t rows = ScatteredBlock::Selector::size(selector);
+    size_t rows = ScatteredBlock::Selector::size(range);
 
     /// Per-clause skip bytes, prepared once per call (see `JoinOnKeyColumns::buildRowSkipData`).
     std::vector<const UInt8 *> skip_datas;
@@ -793,12 +762,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         skip_datas.resize(num_clauses);
         skip_buffers.resize(num_clauses);
         for (size_t d = 0; d < num_clauses; ++d)
-        {
-            if constexpr (std::is_same_v<std::decay_t<Selector>, ScatteredBlock::Indexes>)
-                skip_datas[d] = added_columns.join_on_keys[d].buildRowSkipData(skip_buffers[d], selector);
-            else
-                skip_datas[d] = added_columns.join_on_keys[d].buildRowSkipData(skip_buffers[d], selector.first, rows);
-        }
+            skip_datas[d] = added_columns.join_on_keys[d].buildRowSkipData(skip_buffers[d], range.first, rows);
     }
     if constexpr (need_filter)
     {
@@ -829,7 +793,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
-                mapv[0]->prefetch(key_getter_vector[0].getKeyHolder(selectorIndexAt(selector, k), pool));
+                mapv[0]->prefetch(key_getter_vector[0].getKeyHolder(range.first + k, pool));
         });
 
     size_t max_joined_rows = added_columns.max_joined_block_rows > 0 ? added_columns.max_joined_block_rows : std::numeric_limits<size_t>::max();
@@ -841,7 +805,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         if constexpr (can_prefetch)
             prefetcher.prefetchAt(i);
 
-        const size_t ind = selectorIndexAt(selector, i);
+        const size_t ind = range.first + i;
 
         bool right_row_found = false;
         KnownRowsHolder<flag_per_row> known_rows;

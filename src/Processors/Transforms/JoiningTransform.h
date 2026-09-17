@@ -120,7 +120,6 @@ private:
     JoinResultPtr join_result;
 
     FinishCounterPtr finish_counter;
-    /// Passed to `IJoin::joinBlock` as the probe lane.
     size_t probe_lane = 0;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;

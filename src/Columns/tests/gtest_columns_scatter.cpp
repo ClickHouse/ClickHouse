@@ -54,8 +54,8 @@ std::vector<UInt16> makePids(size_t n, size_t num_shards)
     return pids;
 }
 
-/// Fill a freshly created fixed-width column with `n` rows of random bytes (valid content for
-/// ColumnVector / ColumnDecimal / ColumnFixedString - the scatter contract is byte-preservation).
+/// Fill a freshly created fixed-width column with `n` rows of random bytes. Valid content for
+/// ColumnVector / ColumnDecimal / ColumnFixedString: the scatter contract is byte-preservation.
 MutableColumnPtr fillFixedRandom(MutableColumnPtr column, size_t n)
 {
     auto raw = column->insertRawUninitialized(n);
@@ -64,10 +64,9 @@ MutableColumnPtr fillFixedRandom(MutableColumnPtr column, size_t n)
     return column;
 }
 
-/// Materializes the oracle's input the way the scatter contract says: wrappers stripped at every
-/// nesting level, top-level LowCardinality preserved. A wrapped composite is not a usable oracle -
-/// `IColumn::scatter` on a composite holding a `ColumnSparse` element duplicated one source value
-/// across shards.
+/// Oracle input as the scatter contract requires: wrappers stripped at every nesting level, top-level
+/// LowCardinality preserved. A wrapped composite is not a usable oracle: `IColumn::scatter` on a
+/// composite holding a `ColumnSparse` element duplicated one source value across shards.
 ColumnPtr materializeForOracle(const IColumn & source)
 {
     if (source.getDataType() == TypeIndex::LowCardinality)
@@ -75,9 +74,9 @@ ColumnPtr materializeForOracle(const IColumn & source)
     return recursiveRemoveLowCardinality(source.convertToFullIfWrapped());
 }
 
-/// Oracle: `IColumn::scatter` per (materialized) source + `insertRangeFrom` concatenation. This is
-/// the same algorithm as the module's fallback, so the Fallback tests compare values with it and
-/// rely on their kernel, type and ownership assertions for the rest.
+/// Oracle: `IColumn::scatter` per (materialized) source plus `insertRangeFrom` concatenation. Same
+/// algorithm as the module's fallback, so Fallback tests compare values with it and rely on their
+/// kernel, type, and ownership assertions for the rest.
 MutableColumns referenceScatter(std::span<const IColumn * const> sources, const std::vector<std::vector<UInt16>> & pids, size_t num_shards)
 {
     MutableColumns result(num_shards);
@@ -148,7 +147,6 @@ void checkEquivalence(
     ASSERT_EQ(num_shards, result.size());
     for (size_t s = 0; s < num_shards; ++s)
     {
-        /// Per-shard counts must equal the selector histogram whatever the contents are.
         ASSERT_EQ(counts[s], result[s]->size()) << "shard " << s;
         expectColumnsBitIdentical(*expected[s], *result[s], "shard " + std::to_string(s) + " of " + std::to_string(num_shards));
     }
@@ -363,8 +361,7 @@ TEST(ColumnsScatter, AllConstEqualValuesStayCompact)
     ASSERT_EQ(160u, total);
 }
 
-/// -0.0 and +0.0 compare equal by value but differ in bytes, so the compact path must not collapse
-/// them into one const.
+/// -0.0 and +0.0 compare equal by value but differ in bytes. The compact path must not collapse them into one const.
 TEST(ColumnsScatter, ConstBitExactNotOrderingEqual)
 {
     auto value_pos = ColumnFloat64::create();
@@ -494,7 +491,7 @@ TEST(ColumnsScatter, TupleEquivalence)
     checkTypedKernel(sources, pids, 8, ColumnsScatter::ScatterKernelId::Tuple);
 }
 
-/// A sparse element hidden inside a Tuple in one chunk, in both chunk orders: the recursive
+/// A sparse element hidden inside a Tuple in one chunk, in both chunk orders: recursive
 /// normalization has to strip it before the typed kernels run.
 TEST(ColumnsScatter, TupleWithSparseElement)
 {
@@ -656,8 +653,8 @@ TEST(ColumnsScatter, ConstStringMixedWithFull)
     checkBothOrders(*const_column, *full, 4, ColumnsScatter::ScatterKernelId::String);
 }
 
-/// Misuse must fail loudly. A debug or sanitizer build aborts on a thrown `LOGICAL_ERROR` by design,
-/// which is loud but not catchable, so the throw itself is only asserted in release.
+/// Misuse must fail loudly. A debug or sanitizer build aborts on a thrown `LOGICAL_ERROR` by design.
+/// That abort is not catchable, so the throw itself is only asserted in release.
 TEST(ColumnsScatter, NegativeMisuseThrows)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -677,8 +674,7 @@ TEST(ColumnsScatter, NegativeMisuseThrows)
     auto short_pids = makePids(5, 4);
     std::vector<std::span<const UInt16>> short_spans{short_pids};
     EXPECT_THROW((void)ColumnsScatter::scatter(sources, short_spans, 4), Exception);
-    /// Same TypeIndex, different value widths - silent corruption in the raw-byte kernel if this goes
-    /// unchecked.
+    /// Same TypeIndex, different value widths: silent corruption in the raw-byte kernel if this goes unchecked.
     auto fixed_4 = fillFixedRandom(ColumnFixedString::create(4), 10);
     auto fixed_8 = fillFixedRandom(ColumnFixedString::create(8), 10);
     std::vector<const IColumn *> mixed_sources{fixed_4.get(), fixed_8.get()};
@@ -718,10 +714,10 @@ TEST(ColumnsScatter, ReplicatedNormalizedBeforeDispatch)
     checkBothOrders(*replicated, *full, 4, ColumnsScatter::ScatterKernelId::FixedWidth);
 }
 
-/// The staging invariant from `ScatterScratch`: a cursor seeded mid-line - which is what the join's
-/// workers do, seeding at prefix-sum offsets - must fill the partial head line with regular stores,
-/// then stream aligned lines, then drain the residual. Scattering every shard into one shared buffer
-/// at prefix-sum offsets is what leaves most seeds unaligned.
+/// The staging invariant from `ScatterScratch`: a cursor seeded mid-line (as the join's workers do,
+/// at prefix-sum offsets) must fill the partial head line with regular stores, then stream aligned
+/// lines, then drain the residual. Scattering every shard into one shared buffer at prefix-sum
+/// offsets is what leaves most seeds unaligned.
 TEST(ColumnsScatter, MisalignedCursorSeedingSwwc)
 {
     const size_t n = 64 << 10;
@@ -772,8 +768,8 @@ TEST(ColumnsScatter, MisalignedCursorSeedingSwwc)
 }
 
 
-/// The whole dispatch table: every supported family reaches its named kernel, every type without a
-/// dedicated kernel the fallback.
+/// The whole dispatch table: every supported family reaches its named kernel; every type without
+/// a dedicated kernel takes the fallback.
 TEST(ColumnsScatter, DispatchTableComplete)
 {
     tryRegisterAggregateFunctions();
@@ -801,7 +797,7 @@ TEST(ColumnsScatter, DispatchTableComplete)
     }
 }
 
-/// A Variant whose nested representations differ across chunks - full against sparse - so the
+/// A Variant whose nested representations differ across chunks (full against sparse), so
 /// normalization has to strip the sparse alternative before the cross-chunk append.
 TEST(ColumnsScatter, VariantMixedNestedRepresentation)
 {
@@ -867,8 +863,7 @@ TEST(ColumnsScatter, VariantMixedNestedRepresentation)
 }
 
 /// A QBit with one sparse `FixedString` bit-group element: normalization recurses through
-/// `forEachSubcolumn`, so the sparse element is stripped even inside a composite that no type switch
-/// names.
+/// `forEachSubcolumn`, so the sparse element is stripped even inside a composite that no type switch names.
 TEST(ColumnsScatter, QBitMixedNestedRepresentation)
 {
     constexpr size_t dimension = 8;
@@ -918,8 +913,7 @@ TEST(ColumnsScatter, QBitMixedNestedRepresentation)
     checkEquivalence(sources, pids, 3);
 }
 
-/// A type without a dedicated kernel: values preserved through the fallback, and the result stays
-/// `Dynamic`.
+/// A type without a dedicated kernel: values preserved through the fallback, and the result stays `Dynamic`.
 TEST(ColumnsScatter, DynamicFallbackEquivalence)
 {
     auto type = DataTypeFactory::instance().get("Dynamic");
@@ -952,8 +946,8 @@ TEST(ColumnsScatter, DynamicFallbackEquivalence)
     }
 }
 
-/// LowCardinality nested inside a composite must stay LowCardinality per shard, which the
-/// serialize-based value oracle cannot see.
+/// LowCardinality nested inside a composite must stay LowCardinality per shard. The
+/// serialize-based value oracle cannot see that.
 TEST(ColumnsScatter, LowCardinalityInsideCompositesPreserved)
 {
     auto make_tuple = [](size_t rows)
@@ -1026,12 +1020,11 @@ TEST(ColumnsScatter, LowCardinalityInsideCompositesPreserved)
 }
 
 
-/// `AggregateFunction` states through the fallback, the type without a dedicated kernel whose
-/// semantics are least trivial: outputs view the source arena, and a cross-source append deep-copies
-/// through `ensureOwnership`. The states are arena-allocating `groupArray` ones with distinct per-row
-/// payloads, so a misroute or permutation changes the serialized value, and every non-result owner
-/// is destroyed before the results are read - under ASan that catches any break in the
-/// result-to-arena ownership chain.
+/// `AggregateFunction` states through the fallback. Outputs view the source arena. A cross-source
+/// append deep-copies through `ensureOwnership`. The states are arena-allocating `groupArray` ones with
+/// distinct per-row payloads, so a misroute or permutation changes the serialized value. Every non-result
+/// owner is destroyed before the results are read. Under ASan that catches a break in the result-to-arena
+/// ownership chain.
 TEST(ColumnsScatter, AggregateFunctionFallbackEquivalence)
 {
     tryRegisterAggregateFunctions();
@@ -1096,9 +1089,9 @@ TEST(ColumnsScatter, AggregateFunctionFallbackEquivalence)
     }
 }
 
-/// The chunk kernels in the composition the join runs: the histogram accumulated chunk by chunk
-/// through the interleaved lanes and reduced once, one exact uninitialized allocation per shard,
-/// cursors seeded once per column, then every chunk of every column scattered from the same pids.
+/// Chunk kernels in the composition the join runs: histogram accumulated chunk by chunk through the
+/// interleaved lanes and reduced once, one exact uninitialized allocation per shard, cursors seeded
+/// once per column, then every chunk of every column scattered from the same pids.
 TEST(ColumnsScatter, ChunkKernelsComposeLikeTheJoin)
 {
     const size_t n = 10000;

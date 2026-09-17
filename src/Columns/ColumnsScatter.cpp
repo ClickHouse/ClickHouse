@@ -39,7 +39,6 @@ namespace
 
 using NtLine = char __attribute__((vector_size(LINE_BYTES)));
 
-/// Where a row's shard id comes from: the pid array the caller computed, read once per row.
 template <typename Pid>
 struct RouteFromPids
 {
@@ -59,11 +58,10 @@ void scatterDirect(Route route, const char * data, size_t n, char ** cursors)
     }
 }
 
-/// Runtime-width row copy made only of constant-size copies: 16-byte chunks, then an overlapped
-/// 16-byte tail. A runtime-size `memcpy` would lower to a libc call per row, and the barrier stops
-/// clang's loop-idiom pass from recreating that call. The overlapped tail rewrites bytes of the same
-/// row with the same values and never writes past dst + w, so the exact-sized destinations stay
-/// intact.
+/// Runtime-width copy: 16-byte chunks, then an overlapped 16-byte tail. A runtime-size `memcpy`
+/// would lower to a libc call per row. The barrier stops clang's loop-idiom pass from recreating
+/// that call. The tail rewrites bytes of the same row with the same values and never writes past
+/// dst + w, so the exact-sized destinations stay intact.
 ALWAYS_INLINE void copyRowExact(char * __restrict dst, const char * __restrict src, size_t w)
 {
     if (w >= 16)
@@ -174,16 +172,14 @@ void scatterPidChunkImpl(size_t w, const Pid * pids, const char * data, size_t n
         case 4: scatterOne<4>(route, data, n, use_swwc, scratch); break;
         case 8: scatterOne<8>(route, data, n, use_swwc, scratch); break;
         case 16: scatterOne<16>(route, data, n, use_swwc, scratch); break;
-        /// Width 32 fails `widthSupportsSwwc` - a 16-byte alignment guarantee cannot keep a
-        /// 32-byte staging stride exact - so it goes direct like the generic default, but with a
-        /// compile-time width that spares `copyRowExact`'s runtime branches.
+        /// Width 32 fails `widthSupportsSwwc`: a 16-byte alignment cannot keep a 32-byte staging
+        /// stride exact. It goes direct, with a compile-time width that spares `copyRowExact`'s branches.
         case 32: scatterDirect<32>(route, data, n, scratch.cursors.data()); break;
         default: scatterDirectGeneric(route, data, n, w, scratch.cursors.data()); break;
     }
 }
 
-/// `lanes` breaks the load-increment-store dependency chain: four rows in flight increment four
-/// independent counters.
+/// `lanes` breaks the load-increment-store dependency chain: four rows in flight increment four independent counters.
 template <typename Pid, typename Counter>
 void histogramPidChunkImpl(const Pid * pids, size_t n, Counter * hist, Counter * lanes, size_t fanout)
 {
@@ -221,22 +217,21 @@ ALWAYS_INLINE void traceDispatch(TypeIndex type, ScatterKernelId kernel)
         dispatch_trace->entries.push_back({type, kernel});
 }
 
-/** State for the String kernels. Each shard has two output streams that advance together: chars,
-  * whose per-row length is data-dependent, and offsets, which are running per-shard totals rebased
-  * to 0 rather than copies of the source offsets. `scatterString` sizes the chars streams with
-  * `stringBytesPerShardImpl`, allocates, seeds, then scatters chunk by chunk.
+/** State for the String kernels. Each shard has two output streams that advance together.
+  * Chars have a data-dependent per-row length. Offsets are running per-shard totals rebased to 0,
+  * not copies of the source offsets. `scatterString` sizes the chars streams with
+  * `stringBytesPerShardImpl`, then allocates, seeds, and scatters chunk by chunk.
   */
 struct StringScatterState
 {
     /// One 32-byte record per shard, so a row touches one cache line of cursor state instead of one
-    /// line in each of three arrays. At fanout 8192 the cursor state alone is 256 KiB, and the lines
-    /// touched per row are what drive L2 traffic.
+    /// line in each of three arrays. At fanout 8192 the cursor state alone is 256 KiB. The lines
+    /// touched per row drive L2 traffic.
     struct ShardCursor
     {
         char * chars = nullptr;
         UInt64 * offsets = nullptr;
-        /// What the next row's destination offset becomes once its length is added; 0 for a fresh
-        /// destination.
+        /// Next row's destination offset after adding its length; 0 for a fresh destination.
         UInt64 rebased = 0;
         UInt64 padding = 0;
     };
@@ -258,9 +253,9 @@ struct StringScatterState
 
 /// The chars copy and the rebased offset store, fused per row. The copy follows the
 /// `memcpySmallAllowReadWriteOverflow15` contract: a row write may touch up to 15 bytes past the
-/// row's end, so every shard's chars destination must be its own overflow-tolerant allocation - a
-/// `ColumnString` is one. Carving the shards out of a single shared buffer is not supported: a row
-/// written to shard p would clobber the head of shard p + 1.
+/// row's end. Every shard's chars destination must be its own overflow-tolerant allocation; a
+/// `ColumnString` is one. Carving the shards out of a single shared buffer is not supported.
+/// A row written to shard p would clobber the head of shard p + 1.
 template <typename Pid>
 void scatterStringChunkImpl(const char * chars, const UInt64 * offsets, const Pid * pids, size_t n, StringScatterState & state)
 {
@@ -282,9 +277,9 @@ void scatterStringChunkImpl(const char * chars, const UInt64 * offsets, const Pi
     }
 }
 
-/// `offsets` is in `ColumnString` form: offsets[i] ends row i, so row i spans
-/// [offsets[i - 1], offsets[i]) with offsets[-1] taken as 0. `bytes_per_shard` is written every
-/// iteration; clang-tidy misreads the indexed write as const-able.
+/// `offsets` is in `ColumnString` form: offsets[i] ends row i, so row i spans [offsets[i - 1], offsets[i])
+/// with offsets[-1] taken as 0. `bytes_per_shard` is written every iteration; clang-tidy misreads
+/// the indexed write as const-able.
 template <typename Pid>
 void stringBytesPerShardImpl(
     const UInt64 * offsets, const Pid * pids, size_t n, UInt64 * bytes_per_shard) /// NOLINT(readability-non-const-parameter)
@@ -313,8 +308,8 @@ MutableColumns dispatchToKernel(std::span<const IColumn * const> sources, Source
 template <typename Pid>
 MutableColumns scatterFallback(std::span<const IColumn * const> sources, SourcePids<Pid> pids, std::span<const UInt32> rows_per_shard);
 
-/// Every fixed-and-contiguous type with `insertRawUninitialized` support. The body stays
-/// runtime-width; the compile-time kernel is picked per chunk inside `scatterPidChunkImpl`.
+/// Every fixed-and-contiguous type with `insertRawUninitialized` support. The body stays runtime-width;
+/// the compile-time kernel is picked per chunk inside `scatterPidChunkImpl`.
 template <typename Pid>
 MutableColumns scatterFixedWidth(std::span<const IColumn * const> sources, SourcePids<Pid> pids, std::span<const UInt32> rows_per_shard)
 {
@@ -323,8 +318,8 @@ MutableColumns scatterFixedWidth(std::span<const IColumn * const> sources, Sourc
     const size_t num_shards = rows_per_shard.size();
     const bool use_swwc = num_shards >= SWWC_MIN_FANOUT && widthSupportsSwwc(width);
 
-    /// The entry's `getDataType` equality cannot see FixedString widths, and a mismatch would
-    /// stride the source wrongly and corrupt every shard silently.
+    /// The entry's `getDataType` equality cannot see FixedString widths; a mismatch would stride
+    /// the source wrongly and corrupt every shard silently.
     for (size_t b = 1; b < sources.size(); ++b)
         if (sources[b]->sizeOfValueIfFixed() != width)
             throw Exception(
@@ -345,8 +340,8 @@ MutableColumns scatterFixedWidth(std::span<const IColumn * const> sources, Sourc
     }
 
     for (size_t b = 0; b < sources.size(); ++b)
-        /// The length below is `rows * width`, not `getRawData().size()`, so the checker cannot
-        /// correlate the pointer with a size call on the same view - the two are equal by contract.
+        /// Length is `rows * width`, not `getRawData().size()`: the checker cannot correlate the
+        /// pointer with a size call, but the two are equal by contract.
         scatterPidChunkImpl(width, pids[b].data(), sources[b]->getRawData().data(), sources[b]->size(), use_swwc, scratch); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 
     scratch.drain();
@@ -426,8 +421,7 @@ MutableColumns scatterTuple(std::span<const IColumn * const> sources, SourcePids
     const auto & first = assert_cast<const ColumnTuple &>(*sources[0]);
     const size_t num_elements = first.tupleSize();
 
-    /// The entry's `getDataType` equality cannot see tuple arity, and a mismatch would index
-    /// elements out of bounds.
+    /// The entry's `getDataType` equality cannot see tuple arity; a mismatch would index elements out of bounds.
     for (size_t b = 1; b < sources.size(); ++b)
         if (assert_cast<const ColumnTuple &>(*sources[b]).tupleSize() != num_elements)
             throw Exception(
@@ -474,8 +468,8 @@ MutableColumns scatterArray(std::span<const IColumn * const> sources, SourcePids
 {
     const size_t num_shards = rows_per_shard.size();
 
-    /// The nested dispatch sizes destinations from UInt32 counts, so wider batches fall back.
-    /// Checked before the pid expansion, which would otherwise materialize gigabytes and discard them.
+    /// Nested dispatch sizes destinations from UInt32 counts, so wider batches fall back. The check
+    /// runs before pid expansion. Expansion would otherwise materialize gigabytes and discard them.
     size_t total_elements = 0;
     for (const IColumn * source : sources)
     {
@@ -524,8 +518,7 @@ MutableColumns scatterArray(std::span<const IColumn * const> sources, SourcePids
         {nested_rows_per_shard.data(), num_shards});
 
     MutableColumns offsets_shards(num_shards);
-    /// `ShardCursor` is reused only for its {offsets cursor, rebased total} pair; there is no chars
-    /// stream to seed.
+    /// `ShardCursor` is reused only for its {offsets cursor, rebased total} pair; there is no chars stream to seed.
     StringScatterState offsets_state;
     offsets_state.init(num_shards);
     for (size_t s = 0; s < num_shards; ++s)
@@ -570,7 +563,7 @@ MutableColumns scatterMap(std::span<const IColumn * const> sources, SourcePids<P
     auto nested_shards = scatterArray<Pid>({nested.data(), nested.size()}, pids, rows_per_shard);
 
     /// Statistics is only a serialization sizing hint, and merged shards have no exact one anyway,
-    /// so the first source's is good enough - which is what `ColumnMap::scatter` propagates too.
+    /// so the first source's is good enough - the same choice `ColumnMap::scatter` makes.
     const auto & statistics = assert_cast<const ColumnMap &>(*sources[0]).getStatistics();
     MutableColumns result(nested_shards.size());
     for (size_t s = 0; s < nested_shards.size(); ++s)
@@ -580,7 +573,7 @@ MutableColumns scatterMap(std::span<const IColumn * const> sources, SourcePids<P
 
 /// Stays LowCardinality: the index stream takes the fixed-width kernel and every shard shares one
 /// dictionary, as `ColumnLowCardinality::scatter` does. Several sources generally mean several
-/// dictionaries, and merging them is exactly the fallback's body, so that case is delegated.
+/// dictionaries. Merging them is the fallback's body, so that case is delegated.
 template <typename Pid>
 MutableColumns scatterLowCardinality(std::span<const IColumn * const> sources, SourcePids<Pid> pids, std::span<const UInt32> rows_per_shard)
 {
@@ -648,10 +641,10 @@ constexpr std::array<TypeIndex, 25> FIXED_WIDTH_TYPES = {
     TypeIndex::Decimal32, TypeIndex::Decimal64, TypeIndex::Decimal128, TypeIndex::Decimal256, TypeIndex::DateTime64, TypeIndex::Time64,
     TypeIndex::FixedString};
 
-/// TypeIndex -> kernel, sized by the underlying type so indexing needs no bounds check. Types
+/// TypeIndex to kernel, sized by the underlying type so indexing needs no bounds check. Types
 /// without a dedicated kernel take the fallback. The function-pointer table is derived from this
-/// one, so the traced kernel equals the executed kernel by construction and a new type family is
-/// registered in one place.
+/// one. The traced kernel therefore equals the executed kernel by construction, and a new type
+/// family is registered in one place.
 constexpr std::array<ScatterKernelId, SCATTER_TABLE_SIZE> buildKernelIdTable()
 {
     std::array<ScatterKernelId, SCATTER_TABLE_SIZE> table{};
@@ -712,7 +705,7 @@ MutableColumns dispatchToKernel(std::span<const IColumn * const> sources, Source
 }
 
 /// An all-const batch of byte-identical values needs only `cloneResized` per shard. Equality has to
-/// be byte-exact rather than `compareAt`, because a physical split must preserve +0.0 vs -0.0 and NaN
+/// be byte-exact rather than `compareAt`. A physical split must preserve +0.0 vs -0.0 and NaN
 /// payloads. Empty when the values differ, or cannot be serialized and there is more than one source.
 MutableColumns tryScatterAllConst(std::span<const IColumn * const> sources, std::span<const UInt32> rows_per_shard)
 {
@@ -805,8 +798,7 @@ MutableColumns scatterImpl(
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// These counts size destinations the kernels then write through, so an undercount is a heap
-    /// overflow in release. Recounted after the pid-range asserts above, so the recount itself
-    /// cannot go out of bounds.
+    /// overflow in release. Recounted after the pid-range asserts above, so the recount cannot go out of bounds.
     if (!rows_per_shard.empty())
     {
         PaddedPODArray<UInt32> recounted;
@@ -874,8 +866,8 @@ MutableColumns scatterImpl(
 
     if (!fits_32)
     {
-        /// `IColumn::scatter` sizes destinations itself from 64-bit counts, so the UInt32 counting
-        /// is skipped outright - zero counts only cost the reserve.
+        /// `IColumn::scatter` sizes destinations itself from 64-bit counts, so UInt32 counting is
+        /// skipped; zero counts only cost the reserve.
         traceDispatch(type, ScatterKernelId::Fallback);
         PaddedPODArray<UInt32> zero_counts;
         zero_counts.resize_fill(num_shards, 0);
@@ -928,7 +920,7 @@ std::pair<MutableColumnPtr, std::span<char>> allocateUninitializedFixed(const IC
 {
     auto column = sample.cloneEmpty();
     /// `insertRawUninitialized` grows power-of-two because it serves append loops; reserving first
-    /// is what makes this allocation exact, as the contract promises.
+    /// makes this allocation exact, as the contract promises.
     column->reserve(rows);
     auto raw = column->insertRawUninitialized(rows);
     chassert(raw.size() == rows * sample.sizeOfValueIfFixed());

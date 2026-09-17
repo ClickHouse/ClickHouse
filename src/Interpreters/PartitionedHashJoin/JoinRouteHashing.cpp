@@ -21,7 +21,7 @@ namespace
 template <typename KeyGetter, typename Hash>
 void computeRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)
 {
-    /// The string getters hand out arena key holders; nothing persists them here, so the arena stays
+    /// The string getters hand out arena key holders. Nothing persists them here, so the arena stays
     /// empty and only exists to satisfy the interface.
     Arena pool;
     KeyGetter key_getter(key_columns, key_sizes, nullptr);
@@ -36,7 +36,7 @@ void computeRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key_size
     }
 }
 
-/// A direct-index table builds one partition and every key is its own cell, so the sketch only needs
+/// A direct-index table builds one partition and every key is its own cell. The sketch only needs
 /// to see distinct values; the key itself is a fine 32-bit word for it.
 template <typename KeyGetter>
 void computeFixedRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)

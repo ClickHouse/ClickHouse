@@ -23,9 +23,9 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-/// Whether the running kernel accepts `MADV_POPULATE_WRITE` (Linux 5.14+). Probed once on a private page:
-/// an older kernel reports the unknown advice as EINVAL, and EINVAL is also what a bad range returns, so
-/// a real call cannot double as the capability check. `Allocator`'s own prefaulting is not reused because
+/// Whether the running kernel accepts `MADV_POPULATE_WRITE` (Linux 5.14+). Probed once on a private page.
+/// An older kernel reports the unknown advice as EINVAL, and EINVAL is also what a bad range returns.
+/// A real call cannot double as the capability check. `Allocator`'s own prefaulting is not reused because
 /// it skips anything under 16 MiB, and a range is L2-sized.
 bool populateWriteSupported()
 {
@@ -55,8 +55,8 @@ RangeCommittedBuffer::RangeCommittedBuffer(size_t bytes_)
         return;
 
     /// Page aligned, so the ranges the owners commit and zero never share a page with anything else.
-    /// Allocated through the untracked entry point, as `Allocator` does underneath its own accounting:
-    /// the memory tracker learns about this buffer range by range, in `commit`. A tracker blocker would
+    /// Allocated through the untracked entry point, as `Allocator` does underneath its own accounting.
+    /// The memory tracker learns about this buffer range by range, in `commit`. A tracker blocker would
     /// not do here, because it hides the allocation from the query's tracker while the global total still
     /// counts it.
     void * buf = nullptr;
@@ -119,15 +119,15 @@ void RangeCommittedBuffer::commit(size_t offset, size_t len)
     if (offset + len > bytes || offset + len < offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeCommittedBuffer: commit of [{}, {}) outside a buffer of {} bytes", offset, offset + len, bytes);
 
-    /// Charged before the first touch, so a memory limit fails the query here rather than in a page fault.
+    /// Charged before the first touch. A memory limit fails the query here rather than in a page fault.
     auto trace = CurrentMemoryTracker::alloc(static_cast<Int64>(len));
     committed.fetch_add(len, std::memory_order_relaxed);
     trace.onAlloc(ptr + offset, len);
 
     /// The kernel faults the fresh pages in bulk first. Taking one page fault per 4 KiB page from user
     /// space, with every owner faulting into the same mapping at once, costs several times more than the
-    /// population loop: on a 4 GiB table, 17 s of build CPU against 8 s. Then the range is zeroed, because
-    /// reused allocator memory is not zero. The zeroing touches exactly this range, so it never races a
+    /// population loop. On a 4 GiB table: 17 s of build CPU against 8 s. Then the range is zeroed, because
+    /// reused allocator memory is not zero. The zeroing touches exactly this range. It never races a
     /// neighbour's cells.
     if (populateWriteSupported())
     {

@@ -119,19 +119,15 @@ public:
         SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
 
     /// Add block of data from right hand of JOIN.
-    ///
     /// `num_rows` is the row count of the chunk the block came from. `Block::rows` returns 0 for a
-    /// block without columns, which happens when PREWHERE consumes every column of a cross join's
-    /// right side, so the count travels separately.
-    ///
-    /// `worker_id` is the number of the thread that fills the join, for a join that keeps state per
-    /// filler thread. Concurrent fillers pass distinct ids from `[0, getMaxBuildThreads())`, a
-    /// single filler passes 0, and a wrapper join forwards the id it received. `HashJoin` keeps
-    /// unsynchronized per-worker state behind it.
-    ///
+    /// block without columns. That happens when `PREWHERE` consumes every column on the right side
+    /// of a `CROSS JOIN`. The count travels separately.
+    /// `worker_id` is the number of the thread that fills the join. A join that keeps state per
+    /// filler thread uses that id. Concurrent fillers pass distinct ids from
+    /// `[0, getMaxBuildThreads())`. A single filler passes 0. A wrapper join forwards the id it
+    /// received. `HashJoin` keeps unsynchronized per-worker state behind it.
     /// `check_limits` makes the join check `max_rows_in_join` and `max_bytes_in_join` after the
-    /// insert; a caller that checks the limits itself, such as `JoinSwitcher`, passes false.
-    ///
+    /// insert. Callers that check the limits themselves pass false. `JoinSwitcher` is such a caller.
     /// @returns false, if some limit was exceeded and you should not insert more data.
     virtual bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) = 0;
 
@@ -148,10 +144,10 @@ public:
     virtual JoinResultPtr joinBlock(Block block) = 0;
 
     /// `lane` is the probe-side counterpart of `worker_id`: the number of the `JoiningTransform` that
-    /// probes, assigned in `QueryPipelineBuilder`. A join can index per-lane probe state by it; executor
-    /// threads migrate between transforms, the lane does not. Some pipeline shapes hand out lanes above
-    /// the join's thread count, so an implementation must tolerate an out-of-range lane. The default
-    /// ignores the lane.
+    /// probes, assigned in `QueryPipelineBuilder`. A join can index per-lane probe state by it.
+    /// Executor threads migrate between transforms; the lane does not. Some pipeline shapes hand out
+    /// lanes above the join's thread count. An implementation must tolerate an out-of-range lane.
+    /// The default ignores the lane.
     virtual JoinResultPtr joinBlock(Block block, size_t /*lane*/) { return joinBlock(std::move(block)); }
 
     /** Set/Get totals for right table
@@ -168,8 +164,8 @@ public:
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
 
-    /// For callers that must not block, `IProcessor::prepare` above all. Returns nullopt when the
-    /// answer would need a wait, and the caller then skips whatever the answer was gating.
+    /// For callers that must not block, especially `IProcessor::prepare`. Returns nullopt when
+    /// the answer would need a wait. The caller then skips whatever the answer was gating.
     virtual std::optional<bool> tryAlwaysReturnsEmptySet() const { return alwaysReturnsEmptySet(); }
 
     /// StorageJoin/Dictionary is already filled. No need to call addBlockToJoin.
@@ -180,7 +176,7 @@ public:
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
 
-    /// Upper bound on the number of threads that fill this join concurrently; zero leaves the
+    /// Upper bound on the number of threads that fill this join concurrently. Zero leaves the
     /// choice to the pipeline.
     virtual size_t getMaxBuildThreads() const { return 0; }
 

@@ -134,10 +134,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
                 || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 
-            /// Range analysis normally enforces throwing read limits and memoizes its result.
-            /// At this stage, however, later planning may make the executed read exempt from those
-            /// limits, or the caller may estimate before the plan is optimized. In both cases use an
-            /// estimation-only analysis; execution will analyze again after its final read mode is known.
+            /// Range analysis normally enforces throwing read limits and memoizes its result. Later
+            /// planning may make the executed read exempt from those limits. The caller may also estimate
+            /// before the plan is optimized. In both cases use an estimation-only analysis. Execution
+            /// will analyze again after its final read mode is known.
             if (has_throwing_row_limit || !keep_index_analysis)
                 analyzed_result = reading->selectRangesToReadForEstimation(keep_index_analysis);
             else

@@ -27,15 +27,16 @@ class GraceHashJoin;
 /// into a new GraceHashJoin. If they all fit in memory, the in-memory join becomes chosen_join with
 /// no rework at all.
 ///
-/// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock,
-/// while switchToGraceHashJoin takes an exclusive lock, so no block can land in a join that is being drained.
+/// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition.
+/// `addBlockToJoin` takes a shared lock; `switchToGraceHashJoin` takes an exclusive lock.
+/// That way no block can land in a join that is being drained.
 ///
-/// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
-/// transforms needed by GraceHashJoin. When HashJoin is used, getDelayedBlocks returns
+/// `hasDelayedBlocks` always returns true so that the pipeline includes the delayed-block
+/// transforms needed by `GraceHashJoin`. When `HashJoin` is used, `getDelayedBlocks` returns
 /// nullptr and the delayed transforms finish instantly.
-/// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
-/// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
-/// GraceHashJoin), since spilling may reorder rows.
+/// Because `hasDelayedBlocks` returns true, the read-in-order-through-join optimisation
+/// in `optimizeReadInOrder.cpp` does not propagate through `SpillingHashJoin` (same as
+/// `GraceHashJoin`). Spilling may reorder rows.
 class SpillingHashJoin final : public IJoin
 {
 public:
@@ -92,14 +93,14 @@ public:
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
-    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
-    /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
-    /// fixed hash map, publishing the shared runtime filter).
-    /// After a spill `chosen_join` is a `GraceHashJoin`, which does not override these methods, so
-    /// forwarding keeps the spilled path exactly as it is today: `GraceHashJoin` itself runs the
-    /// post-build phase only when the right table ended up in a single bucket. Multi-bucket spills
-    /// skip it, because a hash table holding one bucket cannot produce a runtime filter valid for
-    /// the whole right table.
+    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`. An in-memory
+    /// `HashJoin` still gets its post-build optimizations: right-table reranging, conversion to a
+    /// fixed hash map, and publishing the shared runtime filter.
+    /// After a spill `chosen_join` is a `GraceHashJoin`. That class does not override these methods.
+    /// Forwarding keeps the spilled path exactly as it is today.
+    /// `GraceHashJoin` itself runs the post-build phase only when the right table ended up in a
+    /// single bucket. Multi-bucket spills skip it: a hash table holding one bucket cannot produce
+    /// a runtime filter valid for the whole right table.
     bool hasPostBuildPhase() const override;
     void runPostBuildPhase() override;
 

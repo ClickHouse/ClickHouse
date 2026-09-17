@@ -43,11 +43,11 @@ extern const int LOGICAL_ERROR;
     M(low_cardinality_key_fixed_string)
 
 /// Turns a map hash into the bits `HashJoinTable` addresses by. The home cell is the top `size_degree`
-/// bits of this word and a row's partition the top `partition_bits`, so every key's home cell lies
-/// inside its partition's range by construction, whatever table size the barrier later chooses.
+/// bits of this word and a row's partition the top `partition_bits`. Every key's home cell therefore
+/// lies inside its partition's range by construction, whatever table size the barrier later chooses.
 ///
-/// The low 32 hash bits are shifted into the high half, nothing more. A 32-bit CRC lands whole, a
-/// 64-bit hash contributes 32 good bits, and a table is at most 2^32 cells. Mixing further would hurt:
+/// The low 32 hash bits are shifted into the high half, nothing more. A 32-bit CRC lands whole. A
+/// 64-bit hash contributes 32 good bits, and a table is at most 2^32 cells. Mixing further would hurt.
 /// `HashCRC32` is linear over GF(2), so probe keys arriving in sequence visit cells in a pattern the
 /// branch predictor learns, exactly as with `HashMap`'s `hash & mask`. With a multiplicative mix every
 /// empty-cell branch became a coin flip on such streams: about one mispredict per probed row against a
@@ -58,8 +58,8 @@ ALWAYS_INLINE inline UInt64 hashJoinTablePlacement(size_t hash_value)
     return static_cast<UInt64>(hash_value) << 32;
 }
 
-/// The distinct-key sketch wants uniform bits, which a raw CRC of structured keys does not give, so it
-/// still sees the multiplicative mix; the multiplier is the 64-bit golden ratio.
+/// The distinct-key sketch wants uniform bits, which a raw CRC of structured keys does not give.
+/// It still sees the multiplicative mix; the multiplier is the 64-bit golden ratio.
 ALWAYS_INLINE inline UInt64 hashJoinTableMix(size_t hash_value)
 {
     return static_cast<UInt64>(hash_value) * 0x9E3779B97F4A7C15ULL;
@@ -70,14 +70,14 @@ ALWAYS_INLINE inline UInt64 hashJoinTableMix(size_t hash_value)
   * The table may grow in place during post-build (a new buffer, same object, same partition bits).
   * The probe is the standard linear walk over one `{buf, mask}` pair, wrapping at the end of the buffer.
   *
-  * `Cell` and `Hash` are the standard join map's, taken from `HashJoin::MapsTemplate`, so the cells
+  * `Cell` and `Hash` are the standard join map's, taken from `HashJoin::MapsTemplate`. The cells
   * are bit-identical to `HashJoin`'s. Every key getter works on this table unchanged: it provides
   * `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. There is no
-  * `emplace`: the build claims cells through `claim` under its own ownership protocol, and the table's
+  * `emplace`: the build claims cells through `claim` under its own ownership protocol. The table's
   * size is published once at the end. The zero key lives in the standard zero-value cell.
   *
   * Memory: the buffer is one reservation (`RangeCommittedBuffer`). A range is committed and charged
-  * when its owner first touches it, so during post-build the table's charge rises as the scattered
+  * when its owner first touches it. During post-build the table's charge rises as the scattered
   * chunks' charge falls. `getBufferSizeInBytes` reports what has been committed; `reservedBytes` the
   * whole buffer.
   */
@@ -121,7 +121,7 @@ public:
     {
         /// Only the ASOF cells own anything (a sorted lookup behind a `unique_ptr`); the ref words are
         /// trivial. A completed build has committed every range. A build that failed half-way leaves
-        /// uncommitted, never-zeroed ranges that must not be read, so the walk is skipped then.
+        /// uncommitted, never-zeroed ranges that must not be read. The walk is skipped then.
         if constexpr (!std::is_trivially_destructible_v<Cell>)
         {
             if (buffer.committedBytes() == buffer.size())
@@ -176,7 +176,7 @@ public:
     bool fullyCommitted() const { return buffer.committedBytes() == buffer.size(); }
 
     /// Claims the empty cell at `pos` for `key_holder`, exactly as `emplaceNonZeroImpl` does up to, not
-    /// including, the mapped write; the caller writes the mapped value. Not counted here: owners count
+    /// including, the mapped write. The caller writes the mapped value. Not counted here: owners count
     /// their claims and the build publishes the sum with `setSize`.
     template <typename KeyHolder>
     ALWAYS_INLINE Cell * claim(size_t pos, KeyHolder && key_holder, size_t hash_value)
@@ -324,7 +324,7 @@ namespace HashJoinTableDetail
 {
 
 /// The table type for a standard join hash map type: the `HashJoinTable` over the same key, cell, hash and
-/// grower, or the unchanged `FixedHashMap` for the direct-index key types.
+/// grower. Direct-index key types keep the unchanged `FixedHashMap`.
 template <typename Map>
 struct TableFor;
 
@@ -342,9 +342,9 @@ struct TableFor<FixedHashMap<Key, Mapped, Cell, Size, Alloc, size_bits>>
 
 /// `HashJoin`'s single-level maps are bucket-partitioned tables with one bucket (`BITS_FOR_BUCKET_SERIAL`):
 /// `JoinHashMap` is a `TwoLevelHashMapTable` over `HashMapTable`, `JoinFixedHashMap` a `TwoLevelHashTable`
-/// over `FixedHashMap`. Both take `cell_type`, `key_type` and `LookupResult` from the inner table, and the
-/// routing layer adds no state to a cell. So the two specializations strip the routing layer and delegate
-/// to the inner table's trait; the cells stay bit-identical to what `HashJoin`'s probe code reads.
+/// over `FixedHashMap`. Both take `cell_type`, `key_type` and `LookupResult` from the inner table. The
+/// routing layer adds no state to a cell. The two specializations strip the routing layer and delegate
+/// to the inner table's trait. The cells stay bit-identical to what `HashJoin`'s probe code reads.
 template <
     typename Key,
     typename Cell,
@@ -606,7 +606,7 @@ struct HashJoinTableMapsFor<HashJoin::MapsAsof>
 };
 
 /** A variant over the three mapped-value types whose active alternative mirrors the inner `HashJoin`'s
-  * own `MapsVariant`, so build and probe agree with the standard machinery about which maps type a
+  * own `MapsVariant`. Build and probe agree with the standard machinery about which maps type a
   * given (kind, strictness) uses.
   */
 struct HashJoinTableMaps
@@ -616,7 +616,7 @@ struct HashJoinTableMaps
     /// Index-compatible with `HashJoin::MapsVariant` - the active alternative is selected by that
     /// variant's index. `HashJoin::MapsSet` (index 3) is the one alternative without a counterpart here:
     /// its key-only tables are hash sets, not the hash maps the traits rebind. The inner `HashJoin` is
-    /// therefore built with `allow_set_maps_ = false`, so it never selects one.
+    /// therefore built with `allow_set_maps_ = false`. It never selects one.
     static_assert(
         std::is_same_v<std::variant_alternative_t<0, HashJoin::MapsVariant>, HashJoin::MapsOne>
         && std::is_same_v<std::variant_alternative_t<1, HashJoin::MapsVariant>, HashJoin::MapsAll>
@@ -649,7 +649,7 @@ struct HashJoinTableMaps
         }
     }
 
-    /// A `FixedHashMap` buffer does not depend on the build size, so partitioning cannot shrink it
+    /// A `FixedHashMap` buffer does not depend on the build size. Partitioning cannot shrink it,
     /// and such plans always run as a single partition.
     static bool isFixedSizeType(HashJoin::Type which)
     {
