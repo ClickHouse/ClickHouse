@@ -367,9 +367,10 @@ private:
     void finishBuildPhase(bool all_values_unique);
     /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
     void reinitUsedFlags();
-    /// The pool of the post-build waves, one per build for every clause; created on first use after the
-    /// barrier, sized to the smaller of the thread count and the block count, released with the scratch.
-    ThreadPool & postBuildPool();
+    /// The pool of one clause's post-build waves, created on first use after the barrier and sized to the
+    /// smaller of the thread count and the block count. One per clause, so the clauses can build at once;
+    /// released with the scratch.
+    ThreadPool & postBuildPool(size_t clause_idx);
 
     /// `MapsShape` is the standard shape the (kind, strictness) pair dispatches to; the shared table is
     /// its partitioned counterpart, holding identical cells. With `join_get_columns` the block carries
@@ -493,8 +494,8 @@ private:
 
     LoggerPtr log;
 
-    /// See `postBuildPool`.
-    std::unique_ptr<ThreadPool> post_build_pool;
+    /// See `postBuildPool`; indexed like `clauses`.
+    std::vector<std::unique_ptr<ThreadPool>> post_build_pools;
 
     /// One per ON clause, indexed like `TableJoin::getClauses`: each holds its table and its build, all
     /// over this join's store, fill blocks and byte count. A deque, because the clause is neither copyable

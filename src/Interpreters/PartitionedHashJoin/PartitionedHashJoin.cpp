@@ -157,6 +157,7 @@ PartitionedHashJoin::PartitionedHashJoin(
     for (size_t clause_idx = 0; clause_idx < table_join->getClauses().size(); ++clause_idx)
         clauses.emplace_back(
             *hash_join, *table_join, clause_idx, any_take_last_row, num_threads, max_bytes_before_external_join, build_blocks, accumulated_bytes, log);
+    post_build_pools.resize(clauses.size());
 
     /// The same shapes for which `HashJoin` allocates its per-row flags: the flagged (kind, strictness)
     /// pairs of `MapGetter`. The others mark nothing and read nothing.
@@ -690,7 +691,7 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
     for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
     {
         clauses[clause_idx].setBytesReservedElsewhere(bytesReservedForOtherClauses(clause_idx));
-        plan = std::max(plan, clauses[clause_idx].planPostBuild(rows, postBuildPool()));
+        plan = std::max(plan, clauses[clause_idx].planPostBuild(rows, postBuildPool(clause_idx)));
     }
     return plan;
 }
@@ -710,17 +711,53 @@ void PartitionedHashJoin::runPostBuildPhase()
         for (auto & clause : clauses)
             all_values_unique &= clause.finishSinglePartitionInsert();
     }
-    else
+    else if (clauses.size() == 1 || max_bytes_before_external_join != 0)
     {
-        /// One clause after another on the one pool. A clause's scatter releases only its own inputs, so
-        /// the next clause still finds its keys and routes in the fill blocks. Each build's budget counts
-        /// the tables built before it and the ones predicted after it.
+        /// One clause after another. A clause's scatter releases only its own inputs, so the next clause
+        /// still finds its keys and routes in the fill blocks. A memory budget keeps this order. The gate
+        /// counts one scatter transient at a time, and each build's budget counts the tables built before
+        /// it and the ones predicted after it.
         const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
         for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
         {
             clauses[clause_idx].setBytesReservedElsewhere(bytesReservedForOtherClauses(clause_idx));
-            all_values_unique &= clauses[clause_idx].postBuild(rows, postBuildPool());
+            all_values_unique &= clauses[clause_idx].postBuild(rows, postBuildPool(clause_idx));
         }
+    }
+    else
+    {
+        /// Without a budget the clauses build at once, each on a pool of its own. The barrier waves
+        /// (histogram, allocate, scatter, owner, drain) are fixed costs that add up per clause on a small
+        /// build. A clause reads and releases only its own inputs of the fill blocks and writes only its
+        /// own table, arenas and counters. The join's byte count is atomic. The pools are created on this
+        /// thread, before any worker could create one.
+        const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+        std::vector<UInt8> clause_unique(clauses.size(), 1);
+        for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+        {
+            clauses[clause_idx].setBytesReservedElsewhere(bytesReservedForOtherClauses(clause_idx));
+            postBuildPool(clause_idx);
+        }
+        auto clause_pool = HashJoinClause::makePostBuildPool(clauses.size() - 1);
+        try
+        {
+            for (size_t clause_idx = 1; clause_idx < clauses.size(); ++clause_idx)
+                clause_pool->scheduleOrThrow(
+                    [this, clause_idx, rows, &clause_unique, thread_group = CurrentThread::getGroup()]
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
+                        clause_unique[clause_idx] = clauses[clause_idx].postBuild(rows, *post_build_pools[clause_idx]);
+                    });
+            clause_unique[0] = clauses.front().postBuild(rows, *post_build_pools[0]);
+            clause_pool->wait();
+        }
+        catch (...)
+        {
+            clause_pool->wait();
+            throw;
+        }
+        for (UInt8 unique : clause_unique)
+            all_values_unique &= unique != 0;
     }
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
@@ -755,7 +792,8 @@ void PartitionedHashJoin::runPostBuildPhase()
             ReadableSize(duplicate_run_bytes));
         clauses[clause_idx].releaseBuildScratch();
     }
-    post_build_pool.reset();
+    for (auto & pool : post_build_pools)
+        pool.reset();
 
     /// The entry is for the next run of this query. Join reordering, `rhs_size_estimation`,
     /// runtime-filter sizing and this join's own table size (`readDistinctKeysFromStatisticsCache`)
@@ -813,11 +851,12 @@ void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
     build_phase_finished = true;
 }
 
-ThreadPool & PartitionedHashJoin::postBuildPool()
+ThreadPool & PartitionedHashJoin::postBuildPool(size_t clause_idx)
 {
-    if (!post_build_pool)
-        post_build_pool = HashJoinClause::makePostBuildPool(std::max<size_t>(1, std::min(num_threads, build_blocks.size())));
-    return *post_build_pool;
+    auto & pool = post_build_pools[clause_idx];
+    if (!pool)
+        pool = HashJoinClause::makePostBuildPool(std::max<size_t>(1, std::min(num_threads, build_blocks.size())));
+    return *pool;
 }
 
 void PartitionedHashJoin::reinitUsedFlags()
@@ -1188,7 +1227,8 @@ void PartitionedHashJoin::beginStoredBlockDrain()
     stored_blocks_released = true;
     build_blocks.clear();
     build_blocks.shrink_to_fit();
-    post_build_pool.reset();
+    for (auto & pool : post_build_pools)
+        pool.reset();
     for (auto & clause : clauses)
         clause.releaseTable();
 }
