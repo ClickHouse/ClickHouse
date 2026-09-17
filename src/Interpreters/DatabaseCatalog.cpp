@@ -2222,7 +2222,8 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
 /// dependency graph then makes every later DDL statement that adds a dependency edge fail with
 /// `INFINITE_LOOP`, anywhere on the server, and the database stops being listable after a restart.
 /// The check applies the rename to a copy of the graph and refuses the rename if it becomes cyclic, the
-/// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table.
+/// same way `RENAME TABLE` and `EXCHANGE TABLES` do for a single table. The caller passes the exact set
+/// of tables it is about to re-key and holds the locks that keep that set stable until `updateDatabaseName`.
 void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
     const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
 {
