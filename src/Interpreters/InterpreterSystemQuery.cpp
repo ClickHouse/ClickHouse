@@ -2591,12 +2591,13 @@ void registerSystemCommandLambdas()
         Type::CLEAR_FILESYSTEM_CACHE,
         with_check_fn(
             AccessType::SYSTEM_DROP_FILESYSTEM_CACHE,
-            [](LoggerPtr, ASTSystemQuery & query)
+            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
             {
 #if ENABLE_DISTRIBUTED_CACHE
-                const auto user_id = DistributedCache::getFilesystemCacheUserId(getContext());
+                const auto user_id = DistributedCache::getFilesystemCacheUserId(interpreter.getContext());
 #else
                 const auto user_id = FileCache::getCommonOrigin().user_id;
+                (void)interpreter;
 #endif
 
                 if (query.filesystem_cache_name.empty())
