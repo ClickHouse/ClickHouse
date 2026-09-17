@@ -639,6 +639,8 @@ void StorageMergeTree::alter(
             try
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
+                /// setProperties publishes new_metadata below, so it must carry the escaping derived from the new settings.
+                applyEscapeIndexFilenamesSetting(new_metadata);
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
