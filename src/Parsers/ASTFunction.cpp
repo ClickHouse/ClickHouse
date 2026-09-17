@@ -503,6 +503,14 @@ struct FunctionOperatorMapping
 
 }
 
+/// A bare `ANY` followed by a single subquery is the SQL quantifier, which the parser rewrites to `IN`, so a
+/// function actually named `any` (the aggregate) in that shape only survives a re-parse while quoted.
+static bool quantifierNameNeedsQuoting(const String & name, const ASTPtr & arguments)
+{
+    return equalsCaseInsensitive(name, "any") && arguments && arguments->children.size() == 1
+        && arguments->children[0]->as<ASTSubquery>();
+}
+
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
@@ -1004,7 +1012,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (!name.empty())
-        ostr << backQuoteIfNeed(name);
+        ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
 
     if (parameters)
     {
