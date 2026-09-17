@@ -121,7 +121,7 @@ duration
     ;
 
 offsetValue
-    : (ADD | SUB)? NUMBER
+    : (ADD | SUB)? (NUMBER | LEFT_PAREN (ADD | SUB)? NUMBER RIGHT_PAREN)
     ;
 
 // Selectors
