@@ -269,10 +269,10 @@ protected:
         if (internal)
             return type;
 
-        if (keep_nullable
-            && canContainNull(*arguments.front().type)
-            && type->canBeInsideNullable())
-            return makeNullable(type);
+        /// Nullable(LowCardinality(T)) is not a valid type, so a LowCardinality target
+        /// carries NULL as LowCardinality(Nullable(T)) instead.
+        if (keep_nullable && canContainNull(*arguments.front().type))
+            return makeNullableOrLowCardinalityNullableSafe(type);
 
         return type;
     }

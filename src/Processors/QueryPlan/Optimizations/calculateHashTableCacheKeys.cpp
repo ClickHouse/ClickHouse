@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Core/ProtocolDefines.h>
+#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SetSerialization.h>
@@ -14,6 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -95,7 +97,11 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
         && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
         return 0;
 
-    WriteBufferFromOwnString wbuf;
+    /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
+    /// hashed as it is produced rather than accumulated. A step can carry a whole constant-folded
+    /// literal here, which `serializeConstant` writes out in full.
+    SipHash hash;
+    SipHashingWriteBuffer wbuf(hash);
     SerializedSetsRegistry registry;
     registry.for_cache_key = true;
     /// The bytes are hashed in-process by the same binary that wrote them and never reach another
@@ -106,12 +112,15 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     IQueryPlanStep::Serialization ctx{
         .out = wbuf, .registry = registry, .for_cache_key = true, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
 
-    writeStringBinary(transform.getSerializationName(), wbuf);
+    const auto step_name = transform.getSerializationName();
+    writeStringBinary(step_name, wbuf);
     if (transform.isSerializable())
+    {
+        ctx.step_version = QueryPlanStepRegistry::instance().versionToWrite(step_name, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         transform.serialize(ctx);
+    }
 
-    SipHash hash;
-    hash.update(wbuf.str());
+    wbuf.finalize();
     return hash.get64();
 }
 

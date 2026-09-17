@@ -1,11 +1,11 @@
 {
   "groups": [
     {
-      "group": "ClickHouseガイド",
+      "group": "ClickHouse guides",
       "pages": [
         "ja/guides/clickhouse/index",
         {
-          "group": "データフォーマット",
+          "group": "Data formats",
           "pages": [
             "ja/guides/clickhouse/data-formats/intro",
             "ja/guides/clickhouse/data-formats/csv-tsv",
@@ -29,7 +29,7 @@
           ]
         },
         {
-          "group": "データモデリング",
+          "group": "Data modelling",
           "pages": [
             "ja/guides/clickhouse/data-modelling/index",
             "ja/guides/clickhouse/data-modelling/schema-design",
@@ -41,7 +41,7 @@
             "ja/guides/clickhouse/data-modelling/generating-test-data",
             {
               "expanded": false,
-              "group": "圧縮",
+              "group": "Compression",
               "pages": [
                 "ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse",
                 "ja/guides/clickhouse/data-modelling/compression/compression-modes"
@@ -52,9 +52,18 @@
           ]
         },
         {
-          "group": "パフォーマンスと監視",
+          "group": "Performance & monitoring",
           "pages": [
-            "ja/guides/clickhouse/performance-and-monitoring/query-optimization",
+            {
+              "group": "Query optimization",
+              "pages": [
+                "ja/guides/clickhouse/performance-and-monitoring/query-optimization",
+                "ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
+                "ja/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks",
+                "ja/guides/clickhouse/performance-and-monitoring/optimization-approaches",
+                "ja/guides/clickhouse/performance-and-monitoring/query-optimization-example"
+              ]
+            },
             "ja/guides/clickhouse/performance-and-monitoring/analyzer",
             "ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
             "ja/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
@@ -62,7 +71,7 @@
         },
         {
           "expanded": false,
-          "group": "集約関数コンビネーターの例",
+          "group": "Aggregate combinator examples",
           "pages": [
             "ja/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
             "ja/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -94,7 +103,7 @@
         },
         "ja/guides/oss/update",
         {
-          "group": "OSSのベストプラクティス",
+          "group": "OSS best practices",
           "pages": [
             "ja/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "ja/guides/oss/best-practices/tips"
@@ -102,7 +111,7 @@
         },
         {
           "expanded": false,
-          "group": "デプロイメントとスケーリング",
+          "group": "Deployment and scaling",
           "pages": [
             "ja/guides/oss/deployment-and-scaling/terminology",
             "ja/guides/oss/deployment-and-scaling/shards",
@@ -119,7 +128,7 @@
             },
             {
               "expanded": false,
-              "group": "監視",
+              "group": "Monitoring",
               "pages": [
                 "ja/guides/oss/deployment-and-scaling/monitoring/monitoring",
                 "ja/guides/oss/deployment-and-scaling/monitoring/opentelemetry"
@@ -127,7 +136,7 @@
             },
             {
               "expanded": false,
-              "group": "例",
+              "group": "Examples",
               "pages": [
                 "ja/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
                 "ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica",
@@ -140,15 +149,15 @@
     },
     {
       "expanded": true,
-      "group": "ユースケースガイド",
+      "group": "Use case guides",
       "pages": [
         "ja/guides/use-cases/index",
         {
-          "group": "リアルタイム分析",
+          "group": "Real-time analytics",
           "pages": [
             {
               "expanded": false,
-              "group": "時系列",
+              "group": "Time series",
               "pages": [
                 "ja/guides/use-cases/real-time-analytics/time-series/index",
                 "ja/guides/use-cases/real-time-analytics/time-series/date-time-data-types",
@@ -163,13 +172,13 @@
           ]
         },
         {
-          "group": "オブザーバビリティ",
+          "group": "Observability",
           "pages": [
             "ja/guides/use-cases/observability/index",
             "ja/guides/use-cases/observability/cloud-monitoring",
             "ja/guides/use-cases/observability/self-managed-monitoring",
             {
-              "group": "独自に構築する",
+              "group": "Build your own",
               "pages": [
                 "ja/guides/use-cases/observability/build-your-own/index",
                 "ja/guides/use-cases/observability/build-your-own/introduction",
@@ -183,11 +192,11 @@
           ]
         },
         {
-          "group": "データウェアハウジング",
+          "group": "Data warehousing",
           "pages": [
             "ja/guides/use-cases/data-warehousing/index",
             {
-              "group": "はじめに",
+              "group": "Getting started",
               "pages": [
                 "ja/guides/use-cases/data-warehousing/getting-started/overview",
                 "ja/guides/use-cases/data-warehousing/getting-started/querying-directly",
@@ -198,7 +207,7 @@
               ]
             },
             {
-              "group": "カタログ",
+              "group": "Catalogs",
               "pages": [
                 "ja/guides/use-cases/data-warehousing/reference/index",
                 "ja/guides/use-cases/data-warehousing/glue-catalog",
@@ -206,6 +215,7 @@
                 "ja/guides/use-cases/data-warehousing/nessie-catalog",
                 "ja/guides/use-cases/data-warehousing/onelake-catalog",
                 "ja/guides/use-cases/data-warehousing/polaris-catalog",
+                "ja/guides/use-cases/data-warehousing/horizon-catalog",
                 "ja/guides/use-cases/data-warehousing/rest-catalog",
                 "ja/guides/use-cases/data-warehousing/seaweedfs-catalog",
                 "ja/guides/use-cases/data-warehousing/unity-catalog",
@@ -222,7 +232,7 @@
             "ja/guides/use-cases/ai-ml/vector-search",
             "ja/guides/use-cases/ai-ml/ai-powered-sql-generation",
             {
-              "group": "データ探索",
+              "group": "Data exploration",
               "pages": [
                 "ja/guides/use-cases/ai-ml/data-exploration/jupyter-notebook",
                 "ja/guides/use-cases/ai-ml/data-exploration/marimo-notebook"
@@ -239,24 +249,24 @@
                 "ja/guides/use-cases/ai-ml/MCP/ollama",
                 "ja/guides/use-cases/ai-ml/MCP/janai",
                 {
-                  "group": "AIエージェントライブラリ",
+                  "group": "AI agent libraries",
                   "pages": [
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
-                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
-                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
-                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
-                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
-                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
                     "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
-                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
-                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
                   ]
                 }
               ]
@@ -267,5 +277,5 @@
     }
   ],
   "icon": "/images/icons/icon-guides.svg",
-  "item": "ガイド"
+  "item": "Guides"
 }

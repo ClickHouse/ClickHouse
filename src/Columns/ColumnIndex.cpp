@@ -11,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 
@@ -239,6 +240,16 @@ void ColumnIndex::insertIndexesRange(const IColumn & column, size_t offset, size
             indexes->insertRangeFrom(column, offset, limit);
         else
         {
+            const size_t column_size = column_ptr->size();
+            if (offset > column_size || limit > column_size - offset)
+                throw Exception(
+                    ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "Parameters offset = {}, limit = {} are out of bound in ColumnIndex::insertIndexesRange method "
+                    "(column.size() = {})",
+                    offset,
+                    limit,
+                    column_size);
+
             auto copy = [&](auto cur_type)
             {
                 using CurIndexType = decltype(cur_type);

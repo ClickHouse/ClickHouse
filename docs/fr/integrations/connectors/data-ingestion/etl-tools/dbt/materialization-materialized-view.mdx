@@ -528,18 +528,18 @@ Le tableau suivant résume le niveau de sécurité de chaque opération lorsque 
 Les [vues matérialisées actualisables](/fr/concepts/features/materialized-views/refreshable-materialized-view) sont un type particulier de vue matérialisée dans ClickHouse qui réexécute périodiquement la requête et en stocke le résultat, à l&#39;image du fonctionnement des vues matérialisées dans d&#39;autres bases de données. Cela est utile lorsque vous avez besoin de snapshots ou d&#39;aggregations périodiques plutôt que de déclencheurs d’insertion en temps réel.
 
 <Tip>
-  Les vues matérialisées actualisables peuvent être utilisées avec les approches [implicit target](#implicit-target) et [explicit target](#explicit-target). La `config` `refreshable` est indépendante de la manière dont la target table est gérée.
+  Les vues matérialisées actualisables peuvent être utilisées avec les approches [cible implicite](#implicit-target) et [cible explicite](#explicit-target). La `config` `refreshable` est indépendante de la manière dont la table cible est gérée.
 </Tip>
 
 Pour utiliser une vue matérialisée actualisable, ajoutez un objet de `config` `refreshable` à votre modèle MV avec les options suivantes :
 
 | Option                        | Description                                                                                                                                                                                  | Requis | Valeur par défaut |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------- |
-| refresh&#95;interval          | La clause interval (requise)                                                                                                                                                                 | Oui    |                   |
+| interval                      | La clause interval (requise), telle que `EVERY 5 MINUTE`                                                                                                                                     | Oui    |                   |
 | randomize                     | La clause de randomisation, qui apparaîtra après `RANDOMIZE FOR`                                                                                                                             |        |                   |
 | append                        | Si défini sur `True`, chaque actualisation insère des rows dans la table sans supprimer les rows existantes. L&#39;insert n&#39;est pas atomique, comme avec un `INSERT SELECT` classique.   |        | False             |
-| depends&#95;on                | Une liste de dependencies pour la MV actualisable. Fournissez les dependencies au format suivant `{schema}.{view_name}`                                                                      |        |                   |
-| depends&#95;on&#95;validation | Indique s&#39;il faut valider l&#39;existence des dependencies fournies dans `depends_on`. Si une dependency ne contient pas de schéma, la validation s&#39;effectue sur le schéma `default` |        | False             |
+| depends&#95;on                | Une liste de dépendance pour la MV actualisable. Fournissez les dépendance au format suivant `{schema}.{view_name}`                                                                      |        |                   |
+| depends&#95;on&#95;validation | Indique s&#39;il faut valider l&#39;existence des dépendance fournies dans `depends_on`. Si une dependency ne contient pas de schéma, la validation s&#39;effectue sur le schéma `default` |        | False             |
 
 <div id="refreshable-implicit-example">
   ### Exemple avec cible implicite
@@ -591,6 +591,19 @@ SELECT
 FROM {{ source('raw', 'events') }}
 GROUP BY event_date, event_type
 ```
+
+<div id="refreshable-updating-parameters">
+  ### Mise à jour des paramètres d’actualisation
+</div>
+
+À partir de dbt-clickhouse 1.10.2, les modifications apportées aux paramètres d’actualisation (`interval`, `randomize` et `depends_on`) d’une vue matérialisée actualisable existante sont appliquées directement lors d’un `dbt run` standard, à l’aide de `ALTER TABLE ... MODIFY REFRESH`. La vue matérialisée n’est ni supprimée ni recréée : aucune donnée n’est donc perdue et il n’y a pas de « fenêtre aveugle » pendant l’application de la modification.
+
+Certaines transitions ne peuvent pas être appliquées directement. Au lieu de les ignorer silencieusement, dbt fera échouer l’exécution avec une erreur vous demandant d’utiliser `dbt run --full-refresh` :
+
+* Conversion d’une vue matérialisée standard en vue matérialisée actualisable (ajout de la config `refreshable`), ou inversement (suppression de celle-ci).
+* Modification du paramètre `append`, car ClickHouse n’autorise pas l’ajout ou la suppression de `APPEND` via `MODIFY REFRESH`.
+
+Gardez à l’esprit qu’un `--full-refresh` supprime et recrée la vue matérialisée, avec les implications décrites dans [Comportement lors d’une ingestion active](#behavior-during-active-ingestion).
 
 <div id="refreshable-limitations">
   ### Limites
