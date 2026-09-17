@@ -5,6 +5,10 @@
 SET serialize_query_plan = 0;
 -- Randomized over [0,1,10,100,1000,100000]; the pass declines a bound above it.
 SET query_plan_max_limit_for_top_k_optimization = 100000;
+-- The pass declines when either is set, and the test profile of every functional job sets both to 10G
+-- (tests/config/users.d/limits.yaml), which would make the control below read 0.
+SET max_rows_to_sort = 0;
+SET max_bytes_to_sort = 0;
 
 DROP TABLE IF EXISTS t_wtkp_collate;
 CREATE TABLE t_wtkp_collate (p UInt8, o UInt8) ENGINE = Memory;

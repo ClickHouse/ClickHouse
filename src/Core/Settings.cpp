@@ -6829,7 +6829,7 @@ Possible values:
     DECLARE(Bool, query_plan_window_top_k_prefilter, true, R"(
 Toggles a query-plan-level optimization for queries that bound a `rank()` or `row_number()` window function, such as `WHERE rk <= 100`. Each stream below the window drops rows whose rank already exceeds the bound before the window's sort, partition reshuffle and merge see them. Rows tying with the bound are always kept, so results are unchanged. Speeds up "top N per group" queries, where the window otherwise sorts every row to compute ranks the filter discards.
 
-The optimization is disabled when the rank bound is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the bound.
+The optimization is disabled when the rank bound is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the bound. It is also disabled when [max_rows_to_sort](#max_rows_to_sort) or [max_bytes_to_sort](#max_bytes_to_sort) is set, so that a query which exceeds those limits today keeps failing.
 
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
