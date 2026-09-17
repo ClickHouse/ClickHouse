@@ -96,6 +96,9 @@ serialized plan	0
 10000
 10000
 10000
+10000
+10000
+10000
 --- independent per-partition aggregation is refused ---
 skip merging is set	1
 and the pre-filter is not	0

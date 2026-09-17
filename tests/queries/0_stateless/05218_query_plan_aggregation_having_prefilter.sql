@@ -453,6 +453,21 @@ SELECT count() FROM (
     SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 AND throwIf(cnt = 3, 'boom') = 0
 ) SETTINGS query_plan_aggregation_having_prefilter = 1;
 
+-- Not specific to `throwIf`: an ordinary arithmetic error behaves the same. Written after the bound the
+-- error is already elided without this setting, so only the first pair of arms diverges.
+SELECT count() FROM (
+    SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING intDiv(1, cnt - 3) > 0 AND count() > 3
+) SETTINGS query_plan_aggregation_having_prefilter = 0; -- { serverError ILLEGAL_DIVISION }
+SELECT count() FROM (
+    SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING intDiv(1, cnt - 3) > 0 AND count() > 3
+) SETTINGS query_plan_aggregation_having_prefilter = 1;
+SELECT count() FROM (
+    SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 AND intDiv(1, cnt - 3) > 0
+) SETTINGS query_plan_aggregation_having_prefilter = 0;
+SELECT count() FROM (
+    SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING count() > 3 AND intDiv(1, cnt - 3) > 0
+) SETTINGS query_plan_aggregation_having_prefilter = 1;
+
 SELECT '--- independent per-partition aggregation is refused ---';
 
 -- `skip_merging` routes the pipeline through a squashing transform that re-packs the per-bucket
