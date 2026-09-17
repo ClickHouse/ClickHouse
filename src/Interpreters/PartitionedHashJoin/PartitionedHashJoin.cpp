@@ -844,14 +844,37 @@ size_t PartitionedHashJoin::predictedResidentBytes(bool at_barrier) const
 
     if (single_fill_thread)
     {
-        /// The table already exists and doubles in place while the old buffer is still alive, so the
-        /// peak ahead is the resident set plus two more table buffers. At the barrier every row is in,
-        /// and only a table past its maximum fill still has that doubling ahead of it.
         const HashJoin::Type type = hash_join->data->type;
-        const size_t table_bytes = clause.hasTable() ? clause.tableMaps().getBufferSizeInBytes(type) : 0;
-        if (at_barrier && (!clause.hasTable() || clause.claimedTotal() <= clause.tableMaps().maxFill(type)))
-            return getTotalByteCount();
-        return getTotalByteCount() + 2 * table_bytes;
+
+        /// At the barrier every row is in and the resident set is what it is; only a table past its
+        /// maximum fill still has a doubling ahead of it, in place with both buffers alive.
+        if (at_barrier)
+        {
+            if (!clause.hasTable() || clause.claimedTotal() <= clause.tableMaps().maxFill(type))
+                return getTotalByteCount();
+            return getTotalByteCount() + 2 * clause.tableMaps().getBufferSizeInBytes(type);
+        }
+
+        /// Before it, judged from the rows as the partitioned branch judges its build: the stored bytes
+        /// plus the table and arenas predicted for the keys seen so far - the exact claimed count, or the
+        /// planner's estimate when that is larger - sized as `reserveFor` sizes them, not the table this
+        /// thread happens to hold, which would charge three buffers of a pre-sized table from the first
+        /// block on. A table whose claimed keys are within one block of its maximum fill doubles when the
+        /// next block arrives, so then the doubled table is the prediction.
+        const auto & data = storedData();
+        const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+        const size_t stored = data.allocated_size + data.nullmaps_allocated_size;
+        const size_t claimed = clause.hasTable() ? clause.claimedTotal() : 0;
+        const size_t keys = std::max(claimed, build_rows_hint.value_or(0));
+        size_t predicted = stored + clause.predictedTableAndArenaBytes(std::max(rows, keys), keys, /*grouped=*/false);
+        if (clause.hasTable())
+        {
+            const size_t blocks = storedBlocks().size();
+            const size_t rows_per_block = blocks == 0 ? rows : rows / blocks;
+            if (claimed + rows_per_block > clause.tableMaps().maxFill(type))
+                predicted = std::max(predicted, stored + 2 * clause.tableMaps().getBufferSizeInBytes(type));
+        }
+        return predicted;
     }
 
     const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
