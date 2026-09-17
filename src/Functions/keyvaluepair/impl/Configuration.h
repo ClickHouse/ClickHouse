@@ -2,8 +2,6 @@
 
 #include <vector>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 namespace DB
 {
 namespace extractKV
@@ -22,7 +20,7 @@ public:
 
     const char key_value_delimiter;
     const char quoting_character;
-    const VectorWithMemoryTracking<char> pair_delimiters;
+    const std::vector<char> pair_delimiters;
     const UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy;
 
 private:
@@ -31,7 +29,7 @@ private:
     Configuration(
         char key_value_delimiter_,
         char quoting_character_,
-        VectorWithMemoryTracking<char> pair_delimiters_,
+        std::vector<char> pair_delimiters_,
         UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy_
     );
 };
@@ -42,12 +40,12 @@ private:
 struct ConfigurationFactory
 {
 public:
-    static Configuration createWithoutEscaping(char key_value_delimiter, char quoting_character, VectorWithMemoryTracking<char> pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy);
+    static Configuration createWithoutEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy);
 
-    static Configuration createWithEscaping(char key_value_delimiter, char quoting_character, VectorWithMemoryTracking<char> pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy);
+    static Configuration createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy);
 
 private:
-    static void validate(char key_value_delimiter, char quoting_character, VectorWithMemoryTracking<char> pair_delimiters);
+    static void validate(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters);
 
     static constexpr auto MAX_NUMBER_OF_PAIR_DELIMITERS = 8u;
 };

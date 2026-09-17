@@ -13,8 +13,6 @@
 #include <Core/Settings.h>
 #include <Core/Field.h>
 
-#include <string_view>
-
 namespace DB
 {
 
@@ -28,7 +26,7 @@ namespace ErrorCodes
 
 
 /// Extracts integer or decimal parameter value and converts it to decimal with the target scale (scale of the timestamp column)
-static Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
 {
     auto target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
 
@@ -71,7 +69,7 @@ static Decimal64 normalizeParameter(const std::string & function_name, const std
     }
 }
 
-static UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
@@ -115,7 +113,7 @@ static UInt64 extractIntParameter(const std::string & function_name, const std::
     }
 }
 
-static Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
@@ -143,7 +141,7 @@ static Float64 extractFloatParameter(const std::string & function_name, const st
     {
         Float64 value{};
         ReadBufferFromString buf(string_value);
-        if (tryReadFloatTextPrecise(value, buf))
+        if (tryReadFloatText(value, buf))
             return value;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -157,14 +155,6 @@ static Float64 extractFloatParameter(const std::string & function_name, const st
     }
 }
 
-/// Validates that the aggregate function got exactly the expected number of parameters.
-static void assertParametersCount(const std::string & name, const Array & parameters, size_t required, std::string_view parameter_names)
-{
-    if (parameters.size() != required)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} requires {} parameters: {}", name, required, parameter_names);
-}
-
 
 namespace Setting
 {
@@ -175,64 +165,90 @@ namespace Setting
 namespace
 {
 
-/// With the timestamp, interval and value types resolved, parse the grid parameters and build the function via
-/// the factory. The factory receives the parsed values and is the only place that knows the concrete function.
 template <
-    typename TimestampType,
-    typename IntervalType,
+    bool is_rate_or_resets,
+    bool is_predict,
+    bool array_arguments,
     typename ValueType,
-    typename MakeFunction
+    template <bool, typename, typename, typename, bool> class FunctionTraits,
+    template <typename> class Function
 >
-AggregateFunctionPtr createWithTypes(const std::string & name, const Array & parameters, UInt32 target_scale, MakeFunction && make_function)
-{
-    if constexpr (std::is_same_v<TimestampType, DateTime64>)
-    {
-        /// Convert start, end, step and staleness parameters to the scale of the timestamp column
-        DateTime64 start_timestamp = normalizeParameter(name, "start", parameters[0], target_scale);
-        DateTime64 end_timestamp = normalizeParameter(name, "end", parameters[1], target_scale);
-        DateTime64 step = normalizeParameter(name, "step", parameters[2], target_scale);
-        DateTime64 window = normalizeParameter(name, "window", parameters[3], target_scale);
-        return make_function.template operator()<TimestampType, IntervalType, ValueType>(start_timestamp, end_timestamp, step, window, target_scale);
-    }
-    else
-    {
-        UInt64 start_timestamp = extractIntParameter(name, "start", parameters[0]);
-        UInt64 end_timestamp = extractIntParameter(name, "end", parameters[1]);
-        Int64 step = extractIntParameter(name, "step", parameters[2]);
-        Int64 window = extractIntParameter(name, "window", parameters[3]);
-        return make_function.template operator()<TimestampType, IntervalType, ValueType>(
-            static_cast<TimestampType>(start_timestamp), static_cast<TimestampType>(end_timestamp),
-            static_cast<IntervalType>(step), static_cast<IntervalType>(window), target_scale);
-    }
-}
-
-/// Resolves the timestamp and interval types from the first (timestamp) argument, then delegates to createWithTypes.
-template <
-    typename ValueType,
-    typename MakeFunction
->
-AggregateFunctionPtr createWithValueType(const std::string & name, const DataTypes & argument_types, const Array & parameters, bool array_arguments, MakeFunction && make_function)
+AggregateFunctionPtr createWithValueType(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     const auto & timestamp_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[0].get())->getNestedType() : argument_types[0];
 
+    if (!is_predict && parameters.size() != 4)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        "Aggregate function {} requires 4 parameters: start_timestamp, end_timestamp, step, window", name);
+
+    if (is_predict && parameters.size() != 5)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+        "Aggregate function {} requires 5 parameters: start_timestamp, end_timestamp, step, window, predict_offset", name);
+
+    const Field & start_timestamp_param = parameters[0];
+    const Field & end_timestamp_param = parameters[1];
+    const Field & step_param = parameters[2];
+    const Field & window_param = parameters[3];
+    const Field & predict_offset_param = is_predict ? parameters[4] : Field();
+
+    AggregateFunctionPtr res;
     if (isDateTime64(timestamp_type))
     {
+        /// Convert start, end, step and staleness parameters to the scale of the timestamp column
         auto timestamp_decimal = std::dynamic_pointer_cast<const DataTypeDateTime64>(timestamp_type);
-        return createWithTypes<DateTime64, Int64, ValueType>(name, parameters, timestamp_decimal->getScale(), make_function);
+        auto target_scale = timestamp_decimal->getScale();
+
+        DateTime64 start_timestamp = normalizeParameter(name, "start", start_timestamp_param, target_scale);
+        DateTime64 end_timestamp = normalizeParameter(name, "end", end_timestamp_param, target_scale);
+        DateTime64 step = normalizeParameter(name, "step", step_param, target_scale);
+        DateTime64 window = normalizeParameter(name, "window", window_param, target_scale);
+
+        if constexpr (is_predict)
+        {
+            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(target_scale));
+            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
+                (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
+        }
+        else
+        {
+            res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate_or_resets>>>
+                (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
+        }
     }
     else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
     {
-        return createWithTypes<UInt32, Int32, ValueType>(name, parameters, 0, make_function);
+        UInt64 start_timestamp = extractIntParameter(name, "start", start_timestamp_param);
+        UInt64 end_timestamp = extractIntParameter(name, "end", end_timestamp_param);
+        Int64 step = extractIntParameter(name, "step", step_param);
+        Int64 window = extractIntParameter(name, "window", window_param);
+
+        if constexpr (is_predict)
+        {
+            Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
+            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
+                (argument_types, start_timestamp, end_timestamp, step, window, 0, predict_offset);
+        }
+        else
+        {
+            res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate_or_resets>>>
+                (argument_types, start_timestamp, end_timestamp, step, window, 0);
+        }
     }
 
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1st argument (timestamp) for aggregate function {}",
-                    timestamp_type->getName(), name);
+    if (!res)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 1st argument (timestamp) for aggregate function {}",
+                        timestamp_type->getName(), name);
+
+    return res;
 }
 
-/// Entry point shared by every timeSeries*ToGrid function: validates the arguments, resolves the value type, and
-/// builds the function through the given factory (a generic lambda templated on timestamp, interval and value types).
-template <typename MakeFunction>
-AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings, MakeFunction && make_function)
+template <
+    bool is_rate_or_resets,
+    bool is_predict,
+    template <bool, typename, typename, typename, bool> class FunctionTraits,
+    template <typename> class Function
+>
+AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0 && (*settings)[Setting::allow_experimental_time_series_table] == 0)
         throw Exception(
@@ -250,18 +266,32 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
     const bool array_arguments = argument_types[1]->getTypeId() == TypeIndex::Array;
     const auto & value_type = array_arguments ? typeid_cast<const DataTypeArray *>(argument_types[1].get())->getNestedType() : argument_types[1];
 
+    AggregateFunctionPtr res;
     if (value_type->getTypeId() == TypeIndex::Float64)
-        return createWithValueType<Float64>(name, argument_types, parameters, array_arguments, make_function);
+    {
+        if (array_arguments)
+            res = createWithValueType<is_rate_or_resets, is_predict, true, Float64, FunctionTraits, Function>(name, argument_types, parameters);
+        else
+            res = createWithValueType<is_rate_or_resets, is_predict, false, Float64, FunctionTraits, Function>(name, argument_types, parameters);
+    }
     else if (value_type->getTypeId() == TypeIndex::Float32)
-        return createWithValueType<Float32>(name, argument_types, parameters, array_arguments, make_function);
+    {
+        if (array_arguments)
+            res = createWithValueType<is_rate_or_resets, is_predict, true, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+        else
+            res = createWithValueType<is_rate_or_resets, is_predict, false, Float32, FunctionTraits, Function>(name, argument_types, parameters);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
+    }
 
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-        "Illegal type {} of 2nd argument (value) for aggregate function {}", value_type->getName(), name);
+    return res;
 }
 
 }
 
-void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 {
     /// timeSeriesRateToGrid documentation
@@ -290,7 +320,6 @@ timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(times
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -311,14 +340,13 @@ FROM
         )",
         R"(
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                         │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                        │
+└───────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Using array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -330,8 +358,8 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
         )",
         R"(
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                           │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.06666667,0.1,0.083333336,NULL,NULL,0.083333336]                          │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -340,105 +368,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
     FunctionDocumentation documentation_timeSeriesRateToGrid = {description_timeSeriesRateToGrid, syntax_timeSeriesRateToGrid, arguments_timeSeriesRateToGrid, parameters_timeSeriesRateToGrid, returned_value_timeSeriesRateToGrid, examples_timeSeriesRateToGrid, introduced_in_timeSeriesRateToGrid, category_timeSeriesRateToGrid};
 
     factory.registerFunction("timeSeriesRateToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesRateToGrid});
-
-    /// timeSeriesIncreaseToGrid documentation
-    FunctionDocumentation::Description description_timeSeriesIncreaseToGrid = R"(
-Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like increase](https://prometheus.io/docs/prometheus/latest/querying/functions/#increase) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `increase` are considered within the specified time window.
-
-The value is the total extrapolated increase of a counter over the window. A decrease between consecutive samples is treated as a counter reset and counted towards the increase, so the result reflects the cumulative growth of the counter even when it restarts from zero.
-
-:::warning
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
-:::
-    )";
-    FunctionDocumentation::Syntax syntax_timeSeriesIncreaseToGrid = R"(
-timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
-    )";
-    FunctionDocumentation::Parameters parameters_timeSeriesIncreaseToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
-    };
-    FunctionDocumentation::Arguments arguments_timeSeriesIncreaseToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesIncreaseToGrid = {"Returns increase values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the increase value for a particular grid point.", {"Array(Nullable(Float64))"}};
-    FunctionDocumentation::Examples examples_timeSeriesIncreaseToGrid = {
-    {
-        "Basic usage with individual timestamp-value pairs",
-        R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
-WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
-    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
-    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
-    90 AS start_ts,       -- start of timestamp grid
-    90 + 120 AS end_ts,   -- end of timestamp grid
-    15 AS step_seconds,   -- step of timestamp grid
-    45 AS window_seconds  -- "staleness" window
-SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)
-FROM
-(
-    -- This subquery converts arrays of timestamps and values into rows of `timestamp`, `value`
-    SELECT
-        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
-        ts_and_val.1 AS timestamp,
-        ts_and_val.2 AS value
-);
-        )",
-        R"(
-┌─timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                     │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
-        )"
-    },
-    {
-        "Using array arguments",
-        R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
-WITH
-    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
-    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
-    90 AS start_ts,
-    90 + 120 AS end_ts,
-    15 AS step_seconds,
-    45 AS window_seconds
-SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
-        )",
-        R"(
-┌─timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                       │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesIncreaseToGrid = {26, 8};
-    FunctionDocumentation::Category category_timeSeriesIncreaseToGrid = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation_timeSeriesIncreaseToGrid = {description_timeSeriesIncreaseToGrid, syntax_timeSeriesIncreaseToGrid, arguments_timeSeriesIncreaseToGrid, parameters_timeSeriesIncreaseToGrid, returned_value_timeSeriesIncreaseToGrid, examples_timeSeriesIncreaseToGrid, introduced_in_timeSeriesIncreaseToGrid, category_timeSeriesIncreaseToGrid};
-
-    factory.registerFunction("timeSeriesIncreaseToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesIncreaseToGrid});
+        {createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>, documentation_timeSeriesRateToGrid});
 
     /// timeSeriesDeltaToGrid documentation
     FunctionDocumentation::Description description_timeSeriesDeltaToGrid = R"(
@@ -467,7 +397,6 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -488,14 +417,13 @@ FROM
         )",
         R"(
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                               │
+└───────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Using array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -508,8 +436,8 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
         )",
         R"(
 ┌─timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                   │
-└───────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,3,4.5,3.75,NULL,NULL,3.75]                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -518,16 +446,7 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     FunctionDocumentation documentation_timeSeriesDeltaToGrid = {description_timeSeriesDeltaToGrid, syntax_timeSeriesDeltaToGrid, arguments_timeSeriesDeltaToGrid, parameters_timeSeriesDeltaToGrid, returned_value_timeSeriesDeltaToGrid, examples_timeSeriesDeltaToGrid, introduced_in_timeSeriesDeltaToGrid, category_timeSeriesDeltaToGrid};
 
     factory.registerFunction("timeSeriesDeltaToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesDeltaToGrid});
+        {createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesExtrapolatedValueTraits, AggregateFunctionTimeseriesExtrapolatedValue>, documentation_timeSeriesDeltaToGrid});
 
     /// timeSeriesInstantRateToGrid documentation
     FunctionDocumentation::Description description_timeSeriesInstantRateToGrid = R"(
@@ -555,7 +474,6 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -576,14 +494,13 @@ FROM
         )",
         R"(
 ┌─timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.2,0.1,0.1,NULL,NULL,0.3]                                                       │
-└───────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.2,0.1,0.1,NULL,NULL,0.3]                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Using array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -596,8 +513,8 @@ SELECT timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_second
         )",
         R"(
 ┌─timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.2,0.1,0.1,NULL,NULL,0.3]                                                         │
-└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.2,0.1,0.1,NULL,NULL,0.3]                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -606,16 +523,7 @@ SELECT timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_second
     FunctionDocumentation documentation_timeSeriesInstantRateToGrid = {description_timeSeriesInstantRateToGrid, syntax_timeSeriesInstantRateToGrid, arguments_timeSeriesInstantRateToGrid, parameters_timeSeriesInstantRateToGrid, returned_value_timeSeriesInstantRateToGrid, examples_timeSeriesInstantRateToGrid, introduced_in_timeSeriesInstantRateToGrid, category_timeSeriesInstantRateToGrid};
 
     factory.registerFunction("timeSeriesInstantRateToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesInstantRateToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesInstantRateToGrid});
+        {createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>, documentation_timeSeriesInstantRateToGrid});
 
     /// timeSeriesInstantDeltaToGrid documentation
     FunctionDocumentation::Description description_timeSeriesInstantDeltaToGrid = R"(
@@ -644,7 +552,6 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -665,14 +572,13 @@ FROM
         )",
         R"(
 ┌─timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,2,1,1,NULL,NULL,3]                                                                │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,2,1,1,NULL,NULL,3]                                                               │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Using array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -685,8 +591,8 @@ SELECT timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_secon
         )",
         R"(
 ┌─timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,2,1,1,NULL,NULL,3]                                                                  │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,2,1,1,NULL,NULL,3]                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -695,16 +601,7 @@ SELECT timeSeriesInstantDeltaToGrid(start_ts, end_ts, step_seconds, window_secon
     FunctionDocumentation documentation_timeSeriesInstantDeltaToGrid = {description_timeSeriesInstantDeltaToGrid, syntax_timeSeriesInstantDeltaToGrid, arguments_timeSeriesInstantDeltaToGrid, parameters_timeSeriesInstantDeltaToGrid, returned_value_timeSeriesInstantDeltaToGrid, examples_timeSeriesInstantDeltaToGrid, introduced_in_timeSeriesInstantDeltaToGrid, category_timeSeriesInstantDeltaToGrid};
 
     factory.registerFunction("timeSeriesInstantDeltaToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesInstantDeltaToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesInstantDeltaToGrid});
+        {createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesInstantValueTraits, AggregateFunctionTimeseriesInstantValue>, documentation_timeSeriesInstantDeltaToGrid});
 
     /// timeSeriesDerivToGrid documentation
     FunctionDocumentation::Description description_timeSeriesDerivToGrid = R"(
@@ -732,7 +629,6 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
     {
         "Calculate derivative values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210]",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -760,7 +656,6 @@ FROM
     {
         "Same query with array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -782,16 +677,7 @@ SELECT timeSeriesDerivToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     FunctionDocumentation documentation_timeSeriesDerivToGrid = {description_timeSeriesDerivToGrid, syntax_timeSeriesDerivToGrid, arguments_timeSeriesDerivToGrid, parameters_timeSeriesDerivToGrid, returned_value_timeSeriesDerivToGrid, examples_timeSeriesDerivToGrid, introduced_in_timeSeriesDerivToGrid, category_timeSeriesDerivToGrid};
 
     factory.registerFunction("timeSeriesDerivToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesDerivToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesDerivToGrid});
+        {createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>, documentation_timeSeriesDerivToGrid});
     /// timeSeriesPredictLinearToGrid documentation
     FunctionDocumentation::Description description_timeSeriesPredictLinearToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates a [PromQL-like linear prediction](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) with a specified prediction timestamp offset from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `predict_linear` are considered within the specified time window.
@@ -819,7 +705,6 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
     {
         "Calculate predict_linear values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210] with a 60 second offset",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -848,7 +733,6 @@ FROM
     {
         "Same query with array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -871,17 +755,7 @@ SELECT timeSeriesPredictLinearToGrid(start_ts, end_ts, step_seconds, window_seco
     FunctionDocumentation documentation_timeSeriesPredictLinearToGrid = {description_timeSeriesPredictLinearToGrid, syntax_timeSeriesPredictLinearToGrid, arguments_timeSeriesPredictLinearToGrid, parameters_timeSeriesPredictLinearToGrid, returned_value_timeSeriesPredictLinearToGrid, examples_timeSeriesPredictLinearToGrid, introduced_in_timeSeriesPredictLinearToGrid, category_timeSeriesPredictLinearToGrid};
 
     factory.registerFunction("timeSeriesPredictLinearToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 5, "start_timestamp, end_timestamp, step, window, predict_offset");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                const Float64 predict_offset = extractFloatParameter(name, "predict_offset", parameters[4]) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(scale));
-                return std::make_shared<AggregateFunctionTimeseriesPredictLinearToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale, predict_offset);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesPredictLinearToGrid});
+        {createAggregateFunctionTimeseries<false, true, AggregateFunctionTimeseriesLinearRegressionTraits, AggregateFunctionTimeseriesLinearRegression>, documentation_timeSeriesPredictLinearToGrid});
 
     /// timeSeriesChangesToGrid documentation
     FunctionDocumentation::Description description_timeSeriesChangesToGrid = R"(
@@ -909,7 +783,6 @@ timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
     {
         "Calculate changes values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -937,7 +810,6 @@ FROM
     {
         "Same query with array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -959,16 +831,7 @@ SELECT timeSeriesChangesToGrid(start_ts, end_ts, step_seconds, window_seconds)(t
     FunctionDocumentation documentation_timeSeriesChangesToGrid = {description_timeSeriesChangesToGrid, syntax_timeSeriesChangesToGrid, arguments_timeSeriesChangesToGrid, parameters_timeSeriesChangesToGrid, returned_value_timeSeriesChangesToGrid, examples_timeSeriesChangesToGrid, introduced_in_timeSeriesChangesToGrid, category_timeSeriesChangesToGrid};
 
     factory.registerFunction("timeSeriesChangesToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesChangesToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesChangesToGrid});
+        {createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesChangesTraits, AggregateFunctionTimeseriesChanges>, documentation_timeSeriesChangesToGrid});
     /// timeSeriesResetsToGrid documentation
     FunctionDocumentation::Description description_timeSeriesResetsToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like resets](https://prometheus.io/docs/prometheus/latest/querying/functions/#resets) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `resets` are considered within the specified time window.
@@ -995,7 +858,6 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(tim
     {
         "Calculate resets values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -1023,7 +885,6 @@ FROM
     {
         "Same query with array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 3, 2, 6, 6, 4, 2, 0]::Array(Float32) AS values,
@@ -1045,16 +906,7 @@ SELECT timeSeriesResetsToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
     FunctionDocumentation documentation_timeSeriesResetsToGrid = {description_timeSeriesResetsToGrid, syntax_timeSeriesResetsToGrid, arguments_timeSeriesResetsToGrid, parameters_timeSeriesResetsToGrid, returned_value_timeSeriesResetsToGrid, examples_timeSeriesResetsToGrid, introduced_in_timeSeriesResetsToGrid, category_timeSeriesResetsToGrid};
 
     factory.registerFunction("timeSeriesResetsToGrid",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesResetsToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesResetsToGrid});
+        {createAggregateFunctionTimeseries<true, false, AggregateFunctionTimeseriesChangesTraits, AggregateFunctionTimeseriesChanges>, documentation_timeSeriesResetsToGrid});
 
     /// timeSeriesResampleToGridWithStaleness documentation
     FunctionDocumentation::Description description_timeSeriesResampleToGridWithStaleness = R"(
@@ -1084,7 +936,6 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to staleness window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -1105,14 +956,13 @@ FROM
         )",
         R"(
 ┌─timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,1,3,4,4,NULL,5,8]                                                                            │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,1,3,4,4,NULL,5,8]                                                                           │
+└────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
         "Using array arguments",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -1124,8 +974,8 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
         )",
         R"(
 ┌─timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,1,3,4,4,NULL,5,8]                                                                              │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,1,3,4,4,NULL,5,8]                                                                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -1134,16 +984,7 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
     FunctionDocumentation documentation_timeSeriesResampleToGridWithStaleness = {description_timeSeriesResampleToGridWithStaleness, syntax_timeSeriesResampleToGridWithStaleness, arguments_timeSeriesResampleToGridWithStaleness, parameters_timeSeriesResampleToGridWithStaleness, returned_value_timeSeriesResampleToGridWithStaleness, examples_timeSeriesResampleToGridWithStaleness, introduced_in_timeSeriesResampleToGridWithStaleness, category_timeSeriesResampleToGridWithStaleness};
 
     factory.registerFunction("timeSeriesResampleToGridWithStaleness",
-        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
-        {
-            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
-            {
-                return std::make_shared<AggregateFunctionTimeseriesToGridSparse<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
-            };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
-        },
-        documentation_timeSeriesResampleToGridWithStaleness});
+        {createAggregateFunctionTimeseries<false, false, AggregateFunctionTimeseriesToGridSparseTraits, AggregateFunctionTimeseriesToGridSparse>, documentation_timeSeriesResampleToGridWithStaleness});
     factory.registerAlias("timeSeriesLastToGrid", "timeSeriesResampleToGridWithStaleness");
 }
 

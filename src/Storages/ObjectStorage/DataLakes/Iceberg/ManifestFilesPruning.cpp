@@ -7,7 +7,6 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Common/logger_useful.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -117,7 +116,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     if (manifest_file.hasPartitionKey())
     {
         partition_key = &manifest_file.getPartitionKeyDescription();
-        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
         partition_key_condition.emplace(
             inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
@@ -133,7 +132,7 @@ ManifestFilesPruner::ManifestFilesPruner(
         ExpressionActionsPtr expression
             = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
-        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
+        ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
         min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
     }
 }
@@ -145,15 +144,11 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
     {
         const auto & partition_value = entry->parsed_entry->partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
-        for (size_t i = 0; i < index_value.size(); ++i)
+        for (auto & field : index_value)
         {
-            auto & field = index_value[i];
-            const auto & type = partition_key->data_types.at(i);
             // NULL_LAST
             if (field.isNull())
                 field = POSITIVE_INFINITY;
-            else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
-                field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
         }
 
         bool can_be_true = partition_key_condition->mayBeTrueInRange(

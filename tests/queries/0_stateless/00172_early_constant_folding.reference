@@ -11,5 +11,7 @@ ExpressionTransform × 10
 ExpressionTransform
   (MergingAggregated)
   MergingAggregatedTransform
-    (ReadFromPreparedSource)
-    SourceFromSingleChunk 0 → 1
+    (Expression)
+    ExpressionTransform
+      (ReadFromPreparedSource)
+      SourceFromSingleChunk 0 → 1

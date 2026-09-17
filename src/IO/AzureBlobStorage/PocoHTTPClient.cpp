@@ -7,39 +7,21 @@
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPClientSession.h>
-#include <Poco/String.h>
 #include <Poco/URI.h>
-#include <azure/core/http/http.hpp>
 #include <azure/core/http/policies/policy.hpp>
-#include <azure/storage/common/storage_exception.hpp>
-#include <azure/core/credentials/credentials.hpp>
 
 
 namespace DB::ErrorCodes
 {
     extern const int TOO_MANY_REDIRECTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
-}
-
-namespace DB::FailPoints
-{
-    extern const char azure_inject_forbidden_response[];
-    extern const char azure_inject_forbidden_response_once[];
-    extern const char azure_inject_auth_failure_on_request[];
-    extern const char azure_inject_auth_failure_on_request_once[];
-    extern const char azure_inject_poco_timeout[];
-    extern const char azure_inject_poco_timeout_once[];
-    extern const char azure_inject_bad_request[];
 }
 
 namespace ProfileEvents
@@ -152,44 +134,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
     Azure::Core::Http::Request & request,
     Azure::Core::Context const & context)
 {
-    /// Test-only: inject a 403 by returning it like the real transport. Returned (not thrown) so it goes
-    /// through the SDK RetryPolicy — a thrown exception would bypass it and test only the ClickHouse loops.
-    fiu_do_on(DB::FailPoints::azure_inject_forbidden_response,
-    {
-        auto injected = std::make_unique<Azure::Core::Http::RawResponse>(
-            1, 1, Azure::Core::Http::HttpStatusCode::Forbidden, "Forbidden (injected by failpoint)");
-        injected->SetBodyStream(std::make_unique<EmptyBodyStream>());
-        return injected;
-    });
-
-    /// Test-only: transient 403 — returned once, so the SDK retry recovers on the next attempt.
-    fiu_do_on(DB::FailPoints::azure_inject_forbidden_response_once,
-    {
-        auto injected = std::make_unique<Azure::Core::Http::RawResponse>(
-            1, 1, Azure::Core::Http::HttpStatusCode::Forbidden, "Forbidden (injected by failpoint)");
-        injected->SetBodyStream(std::make_unique<EmptyBodyStream>());
-        return injected;
-    });
-
-    /// Test-only: throw AuthenticationException on the read path (production throws it from the SDK token policy).
-    fiu_do_on(DB::FailPoints::azure_inject_auth_failure_on_request,
-    {
-        throw Azure::Core::Credentials::AuthenticationException("Authentication failed (injected by failpoint)");
-    });
-    fiu_do_on(DB::FailPoints::azure_inject_auth_failure_on_request_once,
-    {
-        throw Azure::Core::Credentials::AuthenticationException("Authentication failed (injected by failpoint)");
-    });
-
-    /// Test-only: non-retryable 400 (negative control) — a real failure must still report the part broken.
-    fiu_do_on(DB::FailPoints::azure_inject_bad_request,
-    {
-        auto injected = std::make_unique<Azure::Core::Http::RawResponse>(
-            1, 1, Azure::Core::Http::HttpStatusCode::BadRequest, "Bad request (injected by failpoint)");
-        injected->SetBodyStream(std::make_unique<EmptyBodyStream>());
-        return injected;
-    });
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AzureRequests};
 
     size_t redirects_left = max_redirects;
@@ -362,29 +306,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     const auto & method = request.GetMethod().ToString();
     const auto url = request.GetUrl();
 
-    /// Enforce remote_url_allow_hosts on the host actually used: only redirects
-    /// were re-checked before, but the request host can differ from the endpoint
-    /// validated at CREATE time (OneLake writes go to the `.dfs` host, reads to
-    /// `.blob`). Normalize scheme and host as Poco::URI does at CREATE time (the
-    /// scheme resolves the default port; the host is lower-cased) so both agree.
-    {
-        Poco::URI request_uri;
-        request_uri.setScheme(url.GetScheme());
-        std::string request_host = url.GetHost();
-        Poco::toLowerInPlace(request_host);
-        request_uri.setHost(request_host);
-        request_uri.setPort(url.GetPort());
-        remote_host_filter.checkURL(request_uri);
-    }
-
     try
     {
-        /// Test-only: raise a real Poco timeout so the TimeoutException -> TransportException path is what's tested.
-        fiu_do_on(DB::FailPoints::azure_inject_poco_timeout,
-            { throw Poco::TimeoutException("connect timed out (injected by failpoint)"); });
-        fiu_do_on(DB::FailPoints::azure_inject_poco_timeout_once,
-            { throw Poco::TimeoutException("connect timed out (injected by failpoint)"); });
-
         Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
         poco_request.setMethod(method);
@@ -423,18 +346,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
                 poco_request.set(header.name, header.value);
         }
 
-        /// Some SDK clients (e.g. Key Vault) do not set the `Content-Length` header themselves
-        /// and rely on the transport to compute it from the body stream (the removed curl-based
-        /// transport did that). Without it the request body is sent with no framing at all,
-        /// and Azure responds with `411 Length Required`. Body-less requests get a `NullBodyStream`,
-        /// so mirror the curl transport and skip only the methods that never carry a body.
-        if (method != "GET" && method != "HEAD"
-            && !poco_request.has(Poco::Net::HTTPRequest::CONTENT_LENGTH))
-        {
-            if (const auto * request_body_stream = request.GetBodyStream())
-                poco_request.setContentLength(request_body_stream->Length());
-        }
-
         if (method == "GET" || method == "HEAD")
             request_throttler.throttleHTTPGet();
         else if (method == "PUT" || method == "POST" || method == "PATCH")
@@ -461,8 +372,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         Stopwatch watch;
         std::ostream & request_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
 
-        observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
-        observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+        observeLatency(method, AzureLatencyType::Connect, connect_time);
+        observeLatency(method, first_byte_latency_type, first_byte_time);
         latency_recorded = true;
 
         if (auto * body_stream = request.GetBodyStream(); body_stream != nullptr && body_stream->Length() > 0)
@@ -471,7 +382,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             body_stream->Rewind();
 
             /// Manual copy
-            VectorWithMemoryTracking<uint8_t> buffer(8192);
+            std::vector<uint8_t> buffer(8192);
             while (auto read = body_stream->Read(buffer.data(), 8192))
             {
                 if (read > 0)
@@ -516,25 +427,14 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             if (redirects_left > 0)
             {
                 auto location = poco_response.get("location");
+                remote_host_filter.checkURL(Poco::URI(location));
 
                 if (!location.empty())
                 {
                     // Check if the redirect URL is allowed by the remote host filter
                     remote_host_filter.checkURL(Poco::URI(location));
-                    // Update request URL and retry. The Azure SDK Url parser calls
-                    // std::stoi on the port substring and throws std::invalid_argument /
-                    // std::out_of_range for malformed ports — translate to DB::Exception
-                    // so a malicious or buggy redirect target does not abort the server
-                    // in debug/sanitizer builds via getCurrentExceptionMessageAndPattern.
-                    try
-                    {
-                        request.GetUrl() = Azure::Core::Url(location);
-                    }
-                    catch (const std::logic_error & e)
-                    {
-                        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                            "Azure HTTP redirect Location header has malformed URL '{}': {}", location, e.what());
-                    }
+                    // Update request URL and retry
+                    request.GetUrl() = Azure::Core::Url(location);
                     return makeRequestInternalImpl(request, context, redirects_left - 1);
                 }
             }
@@ -557,21 +457,26 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     {
         if (!latency_recorded)
         {
-            observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
-            observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+            observeLatency(method, AzureLatencyType::Connect, connect_time);
+            observeLatency(method, first_byte_latency_type, first_byte_time);
         }
 
-        addMetric(method, AzureMetricType::Errors);
+        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
+        auto response = std::make_unique<Azure::Core::Http::RawResponse>(
+            1, 1, // HTTP/1.1
+            Azure::Core::Http::HttpStatusCode::RequestTimeout,
+            error_message.text);
 
-        /// Throw TransportException (retryable) for a timeout instead of a synthetic 408 that read as a broken part.
-        throw Azure::Core::Http::TransportException(getCurrentExceptionMessageAndPattern(true).text);
+        response->SetBodyStream(std::make_unique<EmptyBodyStream>());
+        addMetric(method, AzureMetricType::Errors);
+        return response;
     }
     catch (...)
     {
         if (!latency_recorded)
         {
-            observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
-            observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+            observeLatency(method, AzureLatencyType::Connect, connect_time);
+            observeLatency(method, first_byte_latency_type, first_byte_time);
         }
 
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(
@@ -586,23 +491,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     }
 }
 
-}
-
-/// Default transport for SDK pipelines created without an explicit transport,
-/// e.g. internal pipelines of `ManagedIdentityCredential` and `WorkloadIdentityCredential`.
-/// The SDK is built with `BUILD_TRANSPORT_CUSTOM_ADAPTER` and has no other transport.
-std::shared_ptr<Azure::Core::Http::HttpTransport> AzureSdkGetCustomHttpTransport()
-{
-    static const DB::RemoteHostFilter remote_host_filter;
-    static auto transport = std::make_shared<DB::PocoAzureHTTPClient>(
-        DB::PocoAzureHTTPClientConfiguration{
-            .remote_host_filter = remote_host_filter,
-            .max_redirects = 10,
-            .for_disk_azure = false,
-            .request_throttler = {},
-            .extra_headers = {},
-        });
-    return transport;
 }
 
 #endif

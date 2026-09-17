@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
 
 #include <Columns/ColumnVector.h>
@@ -23,30 +22,6 @@ SerializationDateTime64::SerializationDateTime64(
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
     , TimezoneMixin(time_zone_)
 {
-}
-
-UInt128 SerializationDateTime64::getHash(UInt32 scale_, const TimezoneMixin & time_zone_)
-{
-    SipHash hash;
-    hash.update("DateTime64");
-    hash.update(scale_);
-    auto tz = time_zone_.getTimeZone().getTimeZone();
-    hash.update(tz.size());
-    hash.update(tz);
-    hash.update(time_zone_.hasExplicitTimeZone());
-    return hash.get128();
-}
-
-void SerializationDateTime64::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    /// Hive timestamps are always the simple `yyyy-MM-dd HH:mm:ss.fffffffff` text, regardless of `date_time_output_format`.
-    /// Delegating to `serializeText` would honor that setting and could emit epoch seconds (`unix_timestamp`) or
-    /// `T...Z` (`iso`), which Hive cannot parse as a `TIMESTAMP`.
-    auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    if (settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
-        writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr, time_zone);
-    else
-        writeDateTimeText(value, scale, ostr, time_zone);
 }
 
 void SerializationDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -130,11 +105,6 @@ static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, 
     }
 }
 
-SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)
-{
-    return ISerialization::pooled(getHash(scale_, time_zone_), [&] { return new SerializationDateTime64(scale_, time_zone_); });
-}
-
 
 bool SerializationDateTime64::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
@@ -176,13 +146,9 @@ void SerializationDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
+    else /// Just 1504193808 or 01504193808
     {
-        readDateTime64AsRawValue(x, istr);
-    }
-    else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
-    {
-        readDateTime64AsNumber(x, scale, istr);
+        readIntText(x, istr);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -195,14 +161,9 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
+    else /// Just 1504193808 or 01504193808
     {
-        if (!tryReadDateTime64AsRawValue(x, istr))
-            return false;
-    }
-    else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
-    {
-        if (!tryReadDateTime64AsNumber(x, scale, istr))
+        if (!tryReadIntText(x, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
@@ -224,13 +185,9 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
-    {
-        readDateTime64AsRawValue(x, istr);
-    }
     else
     {
-        readDateTime64AsNumber(x, scale, istr);
+        readIntText(x, istr);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -243,14 +200,9 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
             return false;
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
-    {
-        if (!tryReadDateTime64AsRawValue(x, istr))
-            return false;
-    }
     else
     {
-        if (!tryReadDateTime64AsNumber(x, scale, istr))
+        if (!tryReadIntText(x, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);

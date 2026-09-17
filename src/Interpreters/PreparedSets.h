@@ -103,33 +103,16 @@ public:
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
-    /// Hash based on actual set element data, computed order-independently so that two IN-clause
-    /// sets with the same values (regardless of insertion order or duplicates) hash equal. Lives
-    /// only on `FutureSetFromTuple` because only tuple-literal sets have content available at
-    /// planning time; storage / subquery sets are matched by their structural (AST) hash via
-    /// `getHash()`. Callers must check the set is small enough to justify the O(N log N) cost
-    /// (see `query_plan_max_set_size_for_projection_match`).
-    Hash getContentHash() const;
     ASTPtr getSourceAST() const override { return ast; }
-    Columns getKeyColumns() const;
-    /// Number of rows on the right-hand side *before* deduplication — the full length of the
-    /// original `IN (...)` list, including repeated and `NULL` values. Available in O(1) and without
-    /// materializing anything, unlike `getKeyColumns`. The deduplicated count is `get`'s
-    /// `getTotalRowCount`. Useful for callers whose cost is proportional to the original list length
-    /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
-    size_t getInputRowCount() const;
+    Columns getKeyColumns();
 private:
-    void fillSetElementsOnce() const;
-    Columns getUniqueKeyColumns() const;
-    Hash computeContentHash() const;
+    void fillSetElementsOnce();
 
     Hash hash;
-    mutable Hash content_hash{};
     ASTPtr ast;
     SetPtr set;
-    mutable SetKeyColumns set_key_columns;
-    mutable OnceFlag fill_set_elements_once;
-    mutable OnceFlag content_hash_once;
+    SetKeyColumns set_key_columns;
+    OnceFlag fill_set_elements_once;
 };
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
@@ -185,11 +168,6 @@ public:
         const SizeLimits & network_transfer_limits,
         const PreparedSetsCachePtr & prepared_sets_cache);
 
-    /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
-    /// retain the values, and make the source run as a distributed plan when its shape allows
-    /// it. The following `build` call must skip the cache: a cached set has no values.
-    void prepareForDistributedPlan(const ContextPtr & context);
-
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
@@ -200,10 +178,6 @@ public:
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
-
-    /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
-    /// set that fills that table or through the table stored next to the set itself.
-    bool hasExternalTable() const;
 
 private:
     Hash hash;

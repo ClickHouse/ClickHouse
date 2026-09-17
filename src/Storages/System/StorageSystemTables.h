@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Interpreters/ActionsDAG.h>
 
 
@@ -21,16 +21,14 @@ getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered
 
 /** Implements the system table `tables`, which allows you to get information about all tables.
   */
-class StorageSystemTables final : public StorageWithCommonVirtualColumns
+class StorageSystemTables final : public IStorage
 {
 public:
     explicit StorageSystemTables(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemTables"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

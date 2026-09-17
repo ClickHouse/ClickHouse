@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <enable_packed_string_keys_in_aggregation>0</enable_packed_string_keys_in_aggregation>
-        </default>
-    </profiles>
-</clickhouse>

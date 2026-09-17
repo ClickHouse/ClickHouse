@@ -57,17 +57,14 @@ bool areComparable(UInt64 a, UInt64 b)
   */
 struct AggregateFunctionVarianceData
 {
-    void ALWAYS_INLINE update(Float64 val)
+    void update(const IColumn & column, size_t row_num)
     {
-        const Float64 delta = val - mean;
+        Float64 val = column.getFloat64(row_num);
+        Float64 delta = val - mean;
+
         ++count;
         mean += delta / static_cast<Float64>(count);
         m2 += delta * (val - mean);
-    }
-
-    void update(const IColumn & column, size_t row_num)
-    {
-        update(column.getFloat64(row_num));
     }
 
     void mergeWith(const AggregateFunctionVarianceData & source)
@@ -186,35 +183,7 @@ public:
         data(place).update(*columns[0], row_num);
     }
 
-    void addBatchSinglePlace(size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            IAggregateFunctionDataHelper::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
-            return;
-        }
-
-        if (const auto * col = typeid_cast<const ColumnFloat64 *>(columns[0]))
-        {
-            const Float64 * __restrict data_ptr = col->getData().data();
-            auto & state = data(place);
-
-            /// Devirtualizing this loop allows the compiler to keep intermediate values in registers
-            /// and utilize FMA, rather than forcing a 64-bit memory store on every row.
-            /// This alters the floating-point result at the ULP level, which is mathematically
-            /// acceptable but causes a known divergence in cross-engine SQLLogic tests against SQLite.
-            for (size_t i = row_begin; i < row_end; ++i)
-                state.update(data_ptr[i]);
-        }
-        else
-        {
-            auto & state = data(place);
-            for (size_t i = row_begin; i < row_end; ++i)
-                state.update(*columns[0], i);
-        }
-    }
-
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).mergeWith(data(rhs));
     }
@@ -452,7 +421,7 @@ public:
         this->data(place).update(*columns[0], *columns[1], row_num);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).mergeWith(this->data(rhs));
     }
@@ -507,7 +476,6 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
 
 }
 
-void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory)
 {
     /// varSampStable documentation
@@ -624,7 +592,7 @@ FROM test_data;
     });
 
     FunctionDocumentation::Description description_stddevSampStable = R"(
-The result is equal to the square root of [varSamp](/reference/functions/aggregate-functions/varSamp). Unlike [stddevSamp](/reference/functions/aggregate-functions/stddevSamp) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varSamp.md). Unlike [stddevSamp](../reference/stddevSamp.md) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_stddevSampStable = R"(
 stddevSampStable(x)
@@ -670,7 +638,7 @@ FROM test_data;
     }, documentation_stddevSampStable});
 
     FunctionDocumentation::Description description_stddevPopStable = R"(
-The result is equal to the square root of [varPop](/reference/functions/aggregate-functions/varPop). Unlike [stddevPop](/reference/functions/aggregate-functions/stddevPop), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_stddevPopStable = R"(
 stddevPopStable(x)
@@ -849,7 +817,7 @@ $$
 
 <br/>
 
-Similar to the [`corr`](/reference/functions/aggregate-functions/corr) function, but uses a numerically stable algorithm.
+Similar to the [`corr`](../reference/corr.md) function, but uses a numerically stable algorithm.
 As a result, `corrStable` is slower than `corr` but produces a more accurate result.
     )";
     FunctionDocumentation::Syntax corrStable_syntax = "corrStable(x, y)";

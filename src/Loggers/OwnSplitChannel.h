@@ -4,11 +4,10 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <deque>
+#include <map>
 #include <memory>
-
-#include <Common/DequeWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 
 #include <boost/noncopyable.hpp>
 
@@ -32,7 +31,7 @@ struct TextLogElement;
 using TextLogQueue = SystemLogQueue<TextLogElement>;
 
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
-using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
+using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
 
 class ExtendedLogMessage;
 enum class ThreadName : uint8_t;
@@ -88,7 +87,7 @@ public:
     void logSplit(
         const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name);
 
-    MapWithMemoryTracking<std::string, ChannelPtr> channels;
+    std::map<std::string, ChannelPtr> channels;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
     std::atomic<bool> stop_logging = false;
@@ -106,7 +105,7 @@ public:
     explicit AsyncLogMessageQueue(
         size_t max_size_, const ProfileEvents::Event & event_on_passed_message_, const ProfileEvents::Event & event_on_drop_message_);
 
-    using Queue = DequeWithMemoryTracking<AsyncLogMessagePtr>;
+    using Queue = std::deque<AsyncLogMessagePtr>;
 
     /// Enqueues a single message notification
     void enqueueMessage(AsyncLogMessagePtr message);
@@ -176,11 +175,11 @@ private:
     const size_t async_queue_size;
 
     /// Each channel has a different queue, and each one a single thread handling it
-    MapWithMemoryTracking<std::string, ChannelPtr> name_to_channels;
-    VectorWithMemoryTracking<OwnFormattingChannel *> channels;
-    VectorWithMemoryTracking<std::unique_ptr<AsyncLogMessageQueue>> queues;
-    VectorWithMemoryTracking<std::unique_ptr<Poco::Thread>> threads;
-    VectorWithMemoryTracking<std::unique_ptr<OwnRunnableForChannel>> runnables;
+    std::map<std::string, ChannelPtr> name_to_channels;
+    std::vector<OwnFormattingChannel *> channels;
+    std::vector<std::unique_ptr<AsyncLogMessageQueue>> queues;
+    std::vector<std::unique_ptr<Poco::Thread>> threads;
+    std::vector<std::unique_ptr<OwnRunnableForChannel>> runnables;
 
     /// system.text_log does not have a channel, but it's also async
     AsyncLogMessageQueue text_log_queue;

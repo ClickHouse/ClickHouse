@@ -1,9 +1,11 @@
 import copy
+import fnmatch
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
-from typing import Any, List, Optional
+from pathlib import Path
+from typing import Any, Iterable, List, Optional
 
 from . import Artifact
 from .utils import Shell, Utils
@@ -29,7 +31,6 @@ class Job:
         provides: Optional[List[str]] = None
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
-        command: Optional[str] = None
 
     @dataclass
     class Config:
@@ -42,15 +43,14 @@ class Job:
         # Job Run Command
         command: str
 
-        # Hard dependencies: Artifact.Config.name or Job.Config.name.
-        # Artifacts are downloaded; for job names the artifact report is
-        # downloaded. Dependencies affect job digest and filtering.
+        # What job requires
+        #   May be `Artifact.Config.name` (for physical artifacts) or `Job.Config.name` (for ordering only)
         requires: List[str] = field(default_factory=list)
 
-        # Ordering-only dependencies (job names). The listed jobs will run
-        # before this one, but nothing is downloaded and they do not affect
-        # the job digest or cache key.
-        run_after: List[str] = field(default_factory=list)
+        # If True, jobs listed in `requires` by `Job.Config.name` are treated as
+        # hard dependencies: they must run (and cannot be skipped as unaffected)
+        # unless their artifacts are already cached by CI.
+        needs_jobs_from_requires: bool = False
 
         # What job provides
         #   May be only `Artifact.Config.name`
@@ -68,39 +68,11 @@ class Job:
 
         run_unless_cancelled: bool = False
 
-        # Run even when an upstream job failed, but still honour the cache and
-        # the job filter. `run_unless_cancelled` above drops the whole run
-        # condition down to `!cancelled()`, which also means "ignore a cache
-        # hit and ignore `should_skip_job`" - wrong for a job that is merely
-        # expected to report on a red head (see the "Build profile diff" job in
-        # ci/defs/job_configs.py).
-        run_on_upstream_failure: bool = False
-
-        # If True, the job failure does not block PR merge, but the job
-        # is still shown as failed in the CI report.
-        allow_failure: bool = False
-
-        # If True, the job failure is hidden entirely: the CI report shows
-        # green status and the job does not block PR merge. Use for
-        # experimental jobs that are not yet stable enough to be enforced.
-        force_success: bool = False
+        allow_merge_on_failure: bool = False
 
         enable_commit_status: bool = False
 
         enable_gh_auth: bool = False
-
-        # If False, `actions/checkout` is generated with
-        # `persist-credentials: false`, so the workflow token is not written
-        # into the local git config (`http.<server>/.extraheader`). Set it for
-        # a job that runs untrusted code in the checkout and must not leave a
-        # GitHub credential within its reach; its plain `git fetch` runs
-        # unauthenticated, and anything privileged has to mint its own token
-        # with an explicit `GHAuth.auth(...)` call after the untrusted code
-        # has run. `enable_gh_auth` is refused together with this flag: it
-        # authenticates `gh` in the runner before the job command starts and
-        # would hand the untrusted code the very credential this flag keeps
-        # out of its reach.
-        checkout_persist_credentials: bool = True
 
         # If a job Result contains multiple sub-results, and only a specific sub-result should be sent to CIDB, set its name here.
         result_name_for_cidb: str = ""
@@ -110,27 +82,8 @@ class Job:
         # Per-job secrets (exported only for this job, not all jobs in the workflow)
         secrets: list = field(default_factory=list)
 
-        # If True, runner.py restores the submodule cache from S3 before the job starts
-        needs_submodules: bool = False
-
-        # List of commands to call before job starts
-        pre_hooks: List[str] = field(default_factory=list)
-
-        # List of commands to call after job completes
+        # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
-
-        def __post_init__(self):
-            # `enable_gh_auth` pre-authenticates `gh` before the job command
-            # starts, which recreates exactly the credential exposure that
-            # `checkout_persist_credentials=False` exists to prevent.
-            assert self.checkout_persist_credentials or not self.enable_gh_auth, (
-                f"Job [{self.name}]: checkout_persist_credentials=False keeps "
-                f"GitHub credentials away from the untrusted code the job runs, "
-                f"and enable_gh_auth=True would hand them right back by "
-                f"pre-authenticating gh before the job starts; mint a token "
-                f"with an explicit GHAuth.auth(...) call after the untrusted "
-                f"phase instead"
-            )
 
         def parametrize(self, *param_sets: "Job.ParamSet"):
             res = []
@@ -139,12 +92,9 @@ class Job:
                 assert (
                     not obj.provides
                 ), "Job.Config.provides must be empty for parametrized jobs"
-                if param_set.command:
-                    obj.command = param_set.command
                 if param_set.parameter:
                     obj.parameter = param_set.parameter
-                    if not param_set.command:
-                        obj.command = obj.command.format(PARAMETER=param_set.parameter)
+                    obj.command = obj.command.format(PARAMETER=param_set.parameter)
                 if param_set.runs_on:
                     obj.runs_on = param_set.runs_on
                 if param_set.timeout:
@@ -199,7 +149,7 @@ class Job:
             res.name = name
             return res
 
-        def set_requires(self, job, reset=False):
+        def set_dependency(self, job, reset=False):
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
                 job = [job]
@@ -210,27 +160,6 @@ class Job:
                     res.requires.append(job_)
                 elif isinstance(job_, Job.Config):
                     res.requires.append(job_.name)
-                else:
-                    Utils.raise_with_error(f"Invalid dependency type [{job_}]")
-            return res
-
-        def set_run_after(self, job, reset=False):
-            """
-            Return a copy of this `Job.Config` that must start after the named jobs.
-
-            `set_run_after` controls execution order only. Use `set_requires` when
-            the job consumes artifacts produced by another job.
-            """
-            res = copy.deepcopy(self)
-            if not (isinstance(job, list) or isinstance(job, tuple)):
-                job = [job]
-            if reset:
-                res.run_after = []
-            for job_ in job:
-                if isinstance(job_, str):
-                    res.run_after.append(job_)
-                elif isinstance(job_, Job.Config):
-                    res.run_after.append(job_.name)
                 else:
                     Utils.raise_with_error(f"Invalid dependency type [{job_}]")
             return res
@@ -278,19 +207,14 @@ class Job:
             res.provides = provides_res
             return res
 
-        def set_allow_failure(self, value=True):
+        def set_allow_merge_on_failure(self, value=True):
             res = copy.deepcopy(self)
-            res.allow_failure = value
+            res.allow_merge_on_failure = value
             return res
 
         def set_post_hooks(self, post_hooks):
             res = copy.deepcopy(self)
             res.post_hooks = post_hooks
-            return res
-
-        def set_timeout(self, timeout):
-            res = copy.deepcopy(self)
-            res.timeout = timeout
             return res
 
         @staticmethod
@@ -323,7 +247,7 @@ class Job:
                     # Check if included
                     for include in self.digest_config.include_paths:
                         include_norm = os.path.normpath(include)
-                        if PurePosixPath("/" + file).match("/" + include_norm) or file.startswith(
+                        if fnmatch.fnmatch(file, include_norm) or file.startswith(
                             include_norm + os.sep
                         ):
                             return True
@@ -331,17 +255,25 @@ class Job:
             # Optionally check for submodule changes
             if self.digest_config.with_git_submodules:
                 try:
-                    if not hasattr(Job.Config, "_submodule_paths_cache"):
-                        Job.Config._submodule_paths_cache = Shell.get_output(
-                            command="git config --file .gitmodules --get-regexp path | awk '{print $2}'",
-                            verbose=True,
-                        )
-                    if any(
-                        file in Job.Config._submodule_paths_cache
-                        for file in normalized_files
-                    ):
+                    submodule_paths_str = Shell.get_output(
+                        command="git config --file .gitmodules --get-regexp path | awk '{print $2}'",
+                        verbose=True,
+                    )
+                    if any(file in submodule_paths_str for file in normalized_files):
                         return True
                 except Exception as e:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
+
+        def __post_init__(self):
+            if self.timeout_shell_cleanup:
+                return
+            if self.run_in_docker:
+                container_name = (
+                    "praktika_"
+                    + hashlib.sha1(
+                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
+                    ).hexdigest()[:12]
+                )
+                self.timeout_shell_cleanup = f"docker rm -f {container_name}"
