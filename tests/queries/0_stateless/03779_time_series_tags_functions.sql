@@ -20,9 +20,9 @@ SELECT timeSeriesGroupToTags(fixed_group),
        timeSeriesGroupToTags(null_nullable_fixed_group)
 FROM
 (
-    SELECT timeSeriesTagsToGroup([], toFixedString('__name__', 8), toFixedString('fixed_metric', 12)) AS fixed_group,
-           timeSeriesTagsToGroup([], toFixedString('region', 6), CAST(toFixedString('eu', 2), 'Nullable(FixedString(2))')) AS nullable_fixed_group,
-           timeSeriesTagsToGroup([], toFixedString('removed', 7), CAST(NULL, 'Nullable(FixedString(2))')) AS null_nullable_fixed_group
+    SELECT timeSeriesTagsToGroup([], toFixedString('__name__', 16), toFixedString('fixed_metric', 16)) AS fixed_group,
+           timeSeriesTagsToGroup([], toFixedString('region', 16), CAST(toFixedString('eu', 16), 'Nullable(FixedString(16))')) AS nullable_fixed_group,
+           timeSeriesTagsToGroup([], toFixedString('removed', 16), CAST(NULL, 'Nullable(FixedString(16))')) AS null_nullable_fixed_group
 );
 
 SELECT '';
