@@ -1,13 +1,19 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -25,6 +31,7 @@ namespace ErrorCodes
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int BAD_ARGUMENTS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
+    extern const int UNKNOWN_SETTING;
 }
 
 
@@ -34,6 +41,42 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
+}
+
+
+void checkStorageSettingNames(const StorageFactory::Arguments & args)
+{
+    if (!args.storage_def || !args.storage_def->settings)
+        return;
+
+    const auto local_context = args.getLocalContext();
+
+    /// `mode` alone cannot tell a replay from user input: a `Replicated` database replays a
+    /// full-definition `ATTACH` on every secondary under `LoadingStrictnessLevel::ATTACH` (`attach`
+    /// outranks `secondary`), a definition re-derived from Keeper arrives as a plain `CREATE` with no
+    /// metadata transaction, and Shared Catalog secondaries re-execute the initiator's DDL. Only the
+    /// execution that judges the definition may refuse it: a secondary refusing what the initiator
+    /// committed would retry its queue entry forever.
+    const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay
+        = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_ddl_replay
+        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
+        return;
+
+    /// `InterpreterSetQuery::applySettingsFromQuery` has already moved to the query context every name
+    /// that is a query setting and not a setting of this engine, so a name that is neither is no
+    /// setting at all.
+    const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
+    for (const auto & change : args.storage_def->settings->changes)
+        if (!features.has_builtin_setting_fn(change.name) && !Settings::hasBuiltin(change.name))
+            throw Exception(
+                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", change.name, args.engine_name);
 }
 
 
