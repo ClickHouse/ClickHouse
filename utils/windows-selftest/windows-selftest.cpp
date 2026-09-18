@@ -17,6 +17,9 @@
 
 #include <base/getMemoryAmount.h>
 
+#include <readpassphrase.h>
+#include <readpassphrase_win32.h>
+
 #include <Poco/UnWindows.h>
 
 #include <cstdint>
@@ -281,6 +284,32 @@ void terminationRequestSignalsTheEventTheServerWaitsOn()
     CloseHandle(event);
 }
 
+/// The passphrase prompt needs a real console, which no CI job has, so only its two decisions are
+/// checked here: where the prompt is written, and which console mode the read runs under.
+void passphrasePromptDecisions()
+{
+    check(
+        readpassphrase_prompt_needs_console_output(1, 0) != 0,
+        "the prompt goes to the console when the passphrase is typed there and `stderr` is redirected");
+    check(
+        readpassphrase_prompt_needs_console_output(1, 1) == 0,
+        "the prompt stays on `stderr` when `stderr` is that same console");
+    check(
+        readpassphrase_prompt_needs_console_output(0, 0) == 0,
+        "the prompt stays on `stderr` when the passphrase is read from a redirected stdin");
+
+    const unsigned long original = ENABLE_INSERT_MODE | ENABLE_ECHO_INPUT;
+    const unsigned long hidden = readpassphrase_console_mode(original, 0);
+    const unsigned long echoed = readpassphrase_console_mode(original, RPP_ECHO_ON);
+
+    check((hidden & ENABLE_ECHO_INPUT) == 0, "echo is disabled while a passphrase is read");
+    check((echoed & ENABLE_ECHO_INPUT) != 0, "echo stays enabled with `RPP_ECHO_ON`");
+    check(
+        (hidden & ENABLE_LINE_INPUT) != 0 && (hidden & ENABLE_PROCESSED_INPUT) != 0,
+        "line and processed input stay enabled, so that editing and Ctrl+C keep working");
+    check((hidden & ENABLE_INSERT_MODE) != 0, "the unrelated bits of the original console mode are preserved");
+}
+
 }
 
 
@@ -298,6 +327,7 @@ int main(int, char **)
     jobObjectMemoryLimitIsDecidedFromTheFlags();
     memoryAmountRespectsTheJobObject();
     terminationRequestSignalsTheEventTheServerWaitsOn();
+    passphrasePromptDecisions();
 
     std::cout << (failures ? "FAILED: " + std::to_string(failures) + " check(s)\n" : "OK\n");
     return failures ? 1 : 0;

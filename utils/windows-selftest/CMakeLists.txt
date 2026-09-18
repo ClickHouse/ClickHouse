@@ -11,4 +11,4 @@
 # while parts of `src/` do not compile for Windows.
 
 add_executable (clickhouse-windows-selftest windows-selftest.cpp)
-target_link_libraries (clickhouse-windows-selftest PRIVATE _poco_net common)
+target_link_libraries (clickhouse-windows-selftest PRIVATE _poco_net common readpassphrase)
