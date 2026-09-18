@@ -221,6 +221,11 @@ tests_with_system_drop=( $(
         sort -u
 ) )
 for test_case in "${tests_with_system_drop[@]}"; do
+    # `SYSTEM DROP FILESYSTEM CACHE '<name>'` affects only the named cache, not the
+    # server-wide state, so a test which drops the cache it created itself can run in
+    # parallel. Skip a test if every `SYSTEM DROP` in it drops a cache by name.
+    grep -oiP "system\s+drop(\s+filesystem\s+cache\s+'[^']+')?" "$test_case" |
+        grep -qivP "filesystem\s+cache\s+'" || continue
     grep -qP '(--|#)\s*[Tt]ags:.*no-parallel' "$test_case" || echo "Test with SYSTEM DROP should have no-parallel tag: $test_case"
 done
 
