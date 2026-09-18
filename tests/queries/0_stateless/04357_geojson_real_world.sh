@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: long
+# Random settings limits: min_bytes_for_wide_part=(10485760, None)
+# 10485760 is this setting's default: a drawn 0 makes every part `Wide` whatever its size, and the
+# one file pair per substream that `Wide` stores is costly for `Geometry` and `JSON` on object storage.
 
 # Reads real-world public-domain GeoJSON datasets and exercises the parsed geometries with the geo
 # functions, so the test proves the geometry values are correct and usable, not merely parseable.
