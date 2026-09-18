@@ -59,13 +59,45 @@ void LDAPClient::RoleSearchParams::updateHash(SipHash & hash) const
 
 void LDAPClient::Params::updateHash(SipHash & hash) const
 {
+    ::updateHash(hash, static_cast<int>(protocol_version));
+
     ::updateHash(hash, host);
     ::updateHash(hash, port);
+
+    ::updateHash(hash, static_cast<int>(enable_tls));
+    ::updateHash(hash, tls_minimum_protocol_version.has_value());
+    if (tls_minimum_protocol_version)
+        ::updateHash(hash, static_cast<int>(*tls_minimum_protocol_version));
+    ::updateHash(hash, tls_maximum_protocol_version.has_value());
+    if (tls_maximum_protocol_version)
+        ::updateHash(hash, static_cast<int>(*tls_maximum_protocol_version));
+    ::updateHash(hash, static_cast<int>(tls_require_cert));
+    ::updateHash(hash, tls_cert_file);
+    ::updateHash(hash, tls_key_file);
+    ::updateHash(hash, tls_ca_cert_file);
+    ::updateHash(hash, tls_ca_cert_dir);
+    ::updateHash(hash, tls_cipher_suite);
+
+    ::updateHash(hash, static_cast<int>(sasl_mechanism));
+
     ::updateHash(hash, bind_dn);
     ::updateHash(hash, user);
     ::updateHash(hash, password);
-    ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
+    ::updateHash(hash, lookup_bind_dn);
+    ::updateHash(hash, lookup_password);
 
+    ::updateHash(hash, operation_timeout.has_value());
+    if (operation_timeout)
+        ::updateHash(hash, operation_timeout->count());
+    ::updateHash(hash, network_timeout.has_value());
+    if (network_timeout)
+        ::updateHash(hash, network_timeout->count());
+    ::updateHash(hash, search_timeout.count());
+    ::updateHash(hash, search_limit);
+
+    ::updateHash(hash, static_cast<int>(follow_referrals));
+
+    ::updateHash(hash, user_dn_detection.has_value());
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
 }
@@ -147,6 +179,30 @@ namespace
         return dest;
     }
 
+#if defined(LDAP_OPT_X_TLS_PROTOCOL_MIN) || defined(LDAP_OPT_X_TLS_PROTOCOL_MAX)
+    int toLDAPTLSProtocolVersion(LDAPClient::Params::TLSProtocolVersion version)
+    {
+        int value = 0;
+        switch (version)
+        {
+            case LDAPClient::Params::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
+            case LDAPClient::Params::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
+#ifdef LDAP_OPT_X_TLS_PROTOCOL_TLS1_3
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_3: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_3; break;
+#else
+            /// The constant appeared in OpenLDAP 2.4.47; older builds have `LDAP_OPT_X_TLS_PROTOCOL_MIN`/`MAX` but no way to name
+            /// TLS 1.3 to them. Refuse the configured value instead of guessing, in line with the other extensions in `openConnection`.
+            case LDAPClient::Params::TLSProtocolVersion::TLS1_3:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls1.3' is not supported by this build of libldap");
+#endif
+        }
+        return value;
+    }
+#endif
+
     auto replacePlaceholders(const String & src, const std::vector<std::pair<String, String>> & pairs)
     {
         String dest = src;
@@ -211,7 +267,7 @@ void LDAPClient::handleError(int result_code, String text)
     }
 }
 
-bool LDAPClient::openConnection()
+bool LDAPClient::openConnection(BindMode mode)
 {
     std::lock_guard lock(ldap_global_mutex);
 
@@ -260,22 +316,31 @@ bool LDAPClient::openConnection()
     handleError(ldap_set_option(handle, LDAP_OPT_KEEPCONN, LDAP_OPT_ON));
 #endif
 
+    /// The options below are extensions that not every libldap provides. When one is missing, the default behaviour
+    /// is left to the library as before, but a value that was configured explicitly is refused rather than ignored:
+    /// the operator asked for a bound that this build cannot enforce.
 #ifdef LDAP_OPT_TIMEOUT
     {
         ::timeval operation_timeout{};
-        operation_timeout.tv_sec = params.operation_timeout.count();
+        operation_timeout.tv_sec = params.operation_timeout.value_or(Params::default_operation_timeout).count();
         operation_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
     }
+#else
+    if (params.operation_timeout)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'operation_timeout' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_NETWORK_TIMEOUT
     {
         ::timeval network_timeout{};
-        network_timeout.tv_sec = params.network_timeout.count();
+        network_timeout.tv_sec = params.network_timeout.value_or(Params::default_network_timeout).count();
         network_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
     }
+#else
+    if (params.network_timeout)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'network_timeout' is not supported by this build of libldap");
 #endif
 
     {
@@ -288,19 +353,36 @@ bool LDAPClient::openConnection()
         handleError(ldap_set_option(handle, LDAP_OPT_SIZELIMIT, &size_limit));
     }
 
+    /// Like every other TLS option here, the protocol bounds have to be set before `LDAP_OPT_X_TLS_NEWCTX` below:
+    /// the new TLS context is built from the options accumulated on the handle at that moment.
 #ifdef LDAP_OPT_X_TLS_PROTOCOL_MIN
     {
-        int value = 0;
-        switch (params.tls_minimum_protocol_version)
-        {
-            case LDAPClient::Params::TLSProtocolVersion::SSL2:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL2;   break;
-            case LDAPClient::Params::TLSProtocolVersion::SSL3:   value = LDAP_OPT_X_TLS_PROTOCOL_SSL3;   break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_0: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_0; break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
-            case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
-        }
+        int value = toLDAPTLSProtocolVersion(params.tls_minimum_protocol_version.value_or(Params::default_tls_minimum_protocol_version));
         handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MIN, &value));
     }
+#else
+    if (params.tls_minimum_protocol_version)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_minimum_protocol_version' is not supported by this build of libldap");
+
+    /// Unlike the timeouts above, the default minimum is a security bound rather than a tuning knob, so an operator who
+    /// relies on the documented `tls1.2` floor has to learn that this build leaves the protocol version to the library.
+    /// There is nothing to enforce when TLS is off.
+    if (params.enable_tls != Params::TLSEnable::NO)
+        LOG_WARNING(getLogger("LDAPClient"),
+            "This build of libldap lacks LDAP_OPT_X_TLS_PROTOCOL_MIN: the default minimum TLS protocol version (tls1.2) "
+            "cannot be enforced for LDAP server {}:{}, the library negotiates any version it supports",
+            params.host, params.port);
+#endif
+
+#ifdef LDAP_OPT_X_TLS_PROTOCOL_MAX
+    if (params.tls_maximum_protocol_version)
+    {
+        int value = toLDAPTLSProtocolVersion(*params.tls_maximum_protocol_version);
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MAX, &value));
+    }
+#else
+    if (params.tls_maximum_protocol_version)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'tls_maximum_protocol_version' is not supported by this build of libldap");
 #endif
 
 #ifdef LDAP_OPT_X_TLS_REQUIRE_CERT
@@ -356,20 +438,40 @@ bool LDAPClient::openConnection()
     final_bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", final_user_name} });
     final_user_dn = final_bind_dn; // The default value... may be updated right after a successful bind.
 
+    /// In `Service` mode the bind credentials come from the configured lookup account; the
+    /// user being looked up still drives the `{user_name}` placeholder in `user_dn_detection`.
+    const String & bind_dn_to_use = (mode == BindMode::Service) ? params.lookup_bind_dn : final_bind_dn;
+    const String & password_to_use = (mode == BindMode::Service) ? params.lookup_password : params.password;
+
     switch (params.sasl_mechanism)
     {
         case LDAPClient::Params::SASLMechanism::SIMPLE:
         {
             ::berval cred{};
-            cred.bv_val = const_cast<char *>(params.password.c_str());
-            cred.bv_len = params.password.size();
+            cred.bv_val = const_cast<char *>(password_to_use.c_str());
+            cred.bv_len = password_to_use.size();
 
             {
-                const auto rc = ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
+                const auto rc = ldap_sasl_bind_s(handle, bind_dn_to_use.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
 
-                // Handle invalid credentials gracefully.
                 if (rc == LDAP_INVALID_CREDENTIALS)
+                {
+                    /// In `User` mode the user supplied the password, so invalid credentials
+                    /// is the canonical authentication-failed outcome and is returned to the
+                    /// caller as `false`.
+                    ///
+                    /// In `Service` mode the credentials come from the server-side
+                    /// `lookup_bind_dn` / `lookup_password` configuration. Invalid credentials
+                    /// here mean the lookup service account is mistyped, rotated, or revoked
+                    /// - a configuration error, not a "user not found" signal. Surfacing it
+                    /// as an exception keeps `EXECUTE AS <ldap_user>` from collapsing into
+                    /// `UNKNOWN_USER` and points the operator at the real problem.
+                    if (mode == BindMode::Service)
+                        throw Exception(ErrorCodes::LDAP_ERROR,
+                            "LDAP service-bind for lookup failed with invalid credentials; "
+                            "check the LDAP server's `lookup_bind_dn` and `lookup_password`");
                     return false;
+                }
 
                 handleError(rc);
             }
@@ -377,10 +479,23 @@ bool LDAPClient::openConnection()
             // Once bound, run the user DN search query and update the default value, if asked.
             if (params.user_dn_detection)
             {
-                const auto user_dn_search_results = search(*params.user_dn_detection);
+                /// In `Service` mode `user_dn_detection.base_dn` may contain `{user_name}`
+                /// (e.g. `cn={user_name},ou=users,...`), so an unknown impersonation target
+                /// resolves to a base DN that does not exist in the directory. The directory
+                /// returns `LDAP_NO_SUCH_OBJECT` from the search itself before any entry can
+                /// be enumerated; treat that as the same canonical "user does not exist"
+                /// signal as an empty result so `EXECUTE AS` collapses to `UNKNOWN_USER`
+                /// instead of surfacing a low-level `LDAP_ERROR`.
+                const auto user_dn_search_results = search(*params.user_dn_detection, /*tolerate_no_such_object=*/mode == BindMode::Service);
 
                 if (user_dn_search_results.empty())
+                {
+                    /// In `Service` mode an empty search result is the canonical signal that
+                    /// the user does not exist in the directory; surface it as a non-error.
+                    if (mode == BindMode::Service)
+                        return false;
                     throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: empty search results");
+                }
 
                 if (user_dn_search_results.size() > 1)
                     throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: more than one entry in the search results");
@@ -410,7 +525,7 @@ void LDAPClient::closeConnection() noexcept
     final_user_dn.clear();
 }
 
-LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
+LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params, bool tolerate_no_such_object)
 {
     std::lock_guard lock(ldap_global_mutex);
 
@@ -450,7 +565,10 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
         }
     });
 
-    handleError(ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs));
+    const int search_rc = ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs);
+    if (tolerate_no_such_object && search_rc == LDAP_NO_SUCH_OBJECT)
+        return result;
+    handleError(search_rc);
 
     for (
          auto * msg = ldap_first_message(handle, msgs);
@@ -597,6 +715,46 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
     return result;
 }
 
+bool LDAPSimpleAuthClient::find(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results)
+{
+    if (params.user.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP lookup of a user with empty name is not allowed");
+
+    if (!role_search_params != !role_search_results)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot return LDAP search results");
+
+    /// The service-bind path requires lookup credentials AND `user_dn_detection`. The DN
+    /// search is the only mechanism we have to confirm that the user actually exists in the
+    /// directory; without it any non-empty name would be silently accepted, which would let
+    /// an account holding `IMPERSONATE ON *` materialize arbitrary users.
+    if (params.lookup_bind_dn.empty() || !params.user_dn_detection)
+        return false;
+
+    SCOPE_EXIT({ closeConnection(); });
+
+    if (!openConnection(BindMode::Service))
+        return false;
+
+    if (role_search_params)
+    {
+        role_search_results->clear();
+        role_search_results->reserve(role_search_params->size());
+
+        try
+        {
+            for (const auto & params_instance : *role_search_params)
+                role_search_results->emplace_back(search(params_instance));
+        }
+        catch (...)
+        {
+            role_search_results->clear();
+            throw;
+        }
+    }
+
+    return true;
+}
+
 bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results)
 {
     if (params.user.empty())
@@ -645,7 +803,7 @@ void LDAPClient::handleError(const int, String)
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
-bool LDAPClient::openConnection()
+bool LDAPClient::openConnection(BindMode)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
@@ -654,12 +812,17 @@ void LDAPClient::closeConnection() noexcept
 {
 }
 
-LDAPClient::SearchResults LDAPClient::search(const SearchParams &)
+LDAPClient::SearchResults LDAPClient::search(const SearchParams &, bool)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
 bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList *, SearchResultsList *)
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+bool LDAPSimpleAuthClient::find(const RoleSearchParamsList *, SearchResultsList *)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
