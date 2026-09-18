@@ -46,6 +46,48 @@ protected:
             ActionsDAGWithInversionPushDown(&predicate, context, true), context, key_names, key_actions);
     }
 
+    static void expectRangeMaskWithExactness(
+        const KeyCondition & condition,
+        const std::vector<FieldRef> & left,
+        const std::vector<FieldRef> & right,
+        const DataTypes & types,
+        BoolMask expected)
+    {
+        const auto indices = condition.getUsedColumnsInOrder();
+        std::vector<FieldRef> sparse_left;
+        std::vector<FieldRef> sparse_right;
+        DataTypes sparse_types;
+        for (size_t index : indices)
+        {
+            sparse_left.push_back(left[index]);
+            sparse_right.push_back(right[index]);
+            sparse_types.push_back(types[index]);
+        }
+
+        std::vector<UInt8> equal_boundaries(left.size());
+        for (size_t i = 0; i < left.size(); ++i)
+            equal_boundaries[i] = Range::equals(left[i], right[i]);
+
+        /// Saturated components are ignored by the caller and need not retain their initial value.
+        for (BoolMask initial : {BoolMask(false, false), BoolMask::consider_only_can_be_true, BoolMask::consider_only_can_be_false})
+        {
+            SCOPED_TRACE(fmt::format("Initial mask: ({}, {})", initial.can_be_true, initial.can_be_false));
+            const auto dense = condition.checkInRangeWithExactness(left.size(), left.data(), right.data(), types, initial);
+            const auto sparse = condition.checkInRangeWithExactness(
+                indices, sparse_left.data(), sparse_right.data(), sparse_types, equal_boundaries, initial);
+            if (!initial.can_be_true)
+            {
+                EXPECT_EQ(dense.can_be_true, expected.can_be_true);
+                EXPECT_EQ(sparse.can_be_true, expected.can_be_true);
+            }
+            if (!initial.can_be_false)
+            {
+                EXPECT_EQ(dense.can_be_false, expected.can_be_false);
+                EXPECT_EQ(sparse.can_be_false, expected.can_be_false);
+            }
+        }
+    }
+
     ContextMutablePtr context;
     ActionsDAG dag;
 };
@@ -70,7 +112,7 @@ TEST_F(KeyConditionAtomGroups, ExtractedLaterAtomStartsItsOwnGroup)
     ASSERT_EQ(extracted.getRPN().size(), 1);
     EXPECT_FALSE(extracted.getRPN().front().continues_multi_atom_group);
     EXPECT_TRUE(extracted.isRelaxed());
-    EXPECT_TRUE(extracted.exactnessCondition().isRelaxed());
+    EXPECT_FALSE(extracted.canCheckExactness());
 
     /// The remaining necessary condition still prunes, but cannot prove that the leaf matches.
     const auto matching = extracted.checkInHyperrectangle(
@@ -109,7 +151,7 @@ TEST_F(KeyConditionAtomGroups, IndependentConjunctsDoNotCoverEachOthersRelaxedAt
     /// The exact remainder predicate comes from a different leaf than the relaxed equality atom.
     /// It cannot supply that leaf's falsity information when the original `x` atom is absent.
     EXPECT_TRUE(extracted.isRelaxed());
-    ASSERT_TRUE(extracted.exactnessCondition().isRelaxed());
+    ASSERT_FALSE(extracted.canCheckExactness());
     const auto matching = extracted.checkInHyperrectangle(
         {Range(Field(UInt64(5))), Range(Field(UInt64(2))), Range(Field(UInt64(1)))}, {type, type, type});
     EXPECT_TRUE(matching.can_be_true);
@@ -146,18 +188,113 @@ TEST_F(KeyConditionAtomGroups, ExtractedDisjunctionPreservesNestedGroups)
     for (size_t i = 0; i < expected_markers.size(); ++i)
         EXPECT_EQ(extracted.getRPN()[i].continues_multi_atom_group, expected_markers[i]);
 
-    const auto & exactness = extracted.exactnessCondition();
-    EXPECT_FALSE(exactness.isRelaxed());
+    EXPECT_TRUE(extracted.canCheckExactness());
     for (UInt64 value : {5, 6})
-    {
-        const auto matching = exactness.checkInHyperrectangle(
-            {Range(Field(Tuple{value, value}))}, {tuple_key.result_type});
-        EXPECT_TRUE(matching.can_be_true);
-        EXPECT_FALSE(matching.can_be_false);
-    }
-    const auto excluded = exactness.checkInHyperrectangle(
-        {Range(Field(Tuple{UInt64(7), UInt64(7)}))}, {tuple_key.result_type});
-    EXPECT_FALSE(excluded.can_be_true);
+        expectRangeMaskWithExactness(
+            extracted, {Tuple{value, value}}, {Tuple{value, value}}, {tuple_key.result_type}, BoolMask(true, false));
+    expectRangeMaskWithExactness(
+        extracted, {Tuple{UInt64(7), UInt64(7)}}, {Tuple{UInt64(7), UInt64(7)}}, {tuple_key.result_type}, BoolMask(false, true));
+}
+
+TEST_F(KeyConditionAtomGroups, ExactSiblingSuppliesFalsityWithoutLosingPruning)
+{
+    const auto type = std::make_shared<DataTypeUInt64>();
+    const auto & unused = dag.addInput("unused", type);
+    const auto & x = dag.addInput("x", type);
+    const auto & remainder = addFunction("modulo", {&x, &addConstant(3)});
+    const auto & predicate = addFunction("equals", {&x, &addConstant(5)});
+    auto condition = makeCondition(predicate, {&unused, &remainder, &x});
+
+    ASSERT_TRUE(condition.isRelaxed());
+    ASSERT_TRUE(condition.canCheckExactness());
+    ASSERT_EQ(condition.getUsedColumnsInOrder(), (std::vector<size_t>{1, 2}));
+
+    /// The exact equality proves the point matches even though the remainder atom is relaxed.
+    const std::vector<FieldRef> point{UInt64(0), UInt64(2), UInt64(5)};
+    EXPECT_EQ(condition.checkInRange(point.size(), point.data(), point.data(), {type, type, type}), BoolMask(true, true));
+    expectRangeMaskWithExactness(condition, point, point, {type, type, type}, BoolMask(true, false));
+
+    /// The remainder excludes this range even though the exact equality overlaps its `x` bounds.
+    expectRangeMaskWithExactness(condition,
+        {UInt64(0), UInt64(1), NEGATIVE_INFINITY}, {UInt64(0), UInt64(1), POSITIVE_INFINITY},
+        {type, type, type}, BoolMask(false, true));
+}
+
+TEST_F(KeyConditionAtomGroups, UncoveredRelaxedLeafPreventsExactness)
+{
+    const auto type = std::make_shared<DataTypeUInt64>();
+    const auto & x = dag.addInput("x", type);
+    const auto & y = dag.addInput("y", type);
+    const auto & remainder_x = addFunction("modulo", {&x, &addConstant(3)});
+    const auto & remainder_y = addFunction("modulo", {&y, &addConstant(3)});
+    const auto & x_predicate = addFunction("equals", {&x, &addConstant(5)});
+    const auto & y_predicate = addFunction("equals", {&y, &addConstant(2)});
+    const auto & predicate = addFunction("and", {&x_predicate, &y_predicate});
+    auto condition = makeCondition(predicate, {&remainder_x, &x, &remainder_y});
+
+    /// The exact atom for `x` covers its remainder sibling, but cannot prove the predicate on `y`.
+    ASSERT_FALSE(condition.canCheckExactness());
+    expectRangeMaskWithExactness(condition,
+        {UInt64(2), UInt64(5), UInt64(2)}, {UInt64(2), UInt64(5), UInt64(2)},
+        {type, type, type}, BoolMask(true, true));
+    expectRangeMaskWithExactness(condition,
+        {UInt64(2), UInt64(5), UInt64(1)}, {UInt64(2), UInt64(5), UInt64(1)},
+        {type, type, type}, BoolMask(false, true));
+}
+
+TEST_F(KeyConditionAtomGroups, MultiValueSetKeepsExactnessConservative)
+{
+    const auto & x = dag.addInput("x", std::make_shared<DataTypeUInt64>());
+    const auto & tuple_key = addFunction("tuple", {&x, &x});
+    const auto & first_tuple = addFunction("tuple", {&addConstant(5), &addConstant(5)});
+    const auto & second_tuple = addFunction("tuple", {&addConstant(6), &addConstant(6)});
+    const auto & values = addFunction("array", {&first_tuple, &second_tuple});
+    const auto & predicate = addFunction("has", {&values, &tuple_key});
+    auto condition = makeCondition(predicate, {&tuple_key});
+
+    /// The packed-tuple atom covers the relaxed component atom, but its two-element set keeps
+    /// the condition ineligible for exactness under the conservative `isRelaxed` contract.
+    ASSERT_EQ(condition.getRPN().size(), 3);
+    ASSERT_TRUE(condition.getRPN()[0].relaxed);
+    ASSERT_FALSE(condition.getRPN()[1].relaxed);
+    ASSERT_EQ(condition.getRPN()[1].function, KeyCondition::RPNElement::FUNCTION_IN_SET);
+    ASSERT_EQ(condition.getRPN()[1].set_index->size(), 2);
+    ASSERT_FALSE(condition.canCheckExactness());
+
+    for (UInt64 value : {5, 6})
+        expectRangeMaskWithExactness(
+            condition, {Tuple{value, value}}, {Tuple{value, value}}, {tuple_key.result_type}, BoolMask(true, true));
+    expectRangeMaskWithExactness(
+        condition, {Tuple{UInt64(7), UInt64(7)}}, {Tuple{UInt64(7), UInt64(7)}}, {tuple_key.result_type}, BoolMask(false, true));
+}
+
+TEST_F(KeyConditionAtomGroups, ExactSingleAtomNeedsNoDerivedCondition)
+{
+    const auto type = std::make_shared<DataTypeUInt64>();
+    const auto & x = dag.addInput("x", type);
+    const auto & predicate = addFunction("equals", {&x, &addConstant(5)});
+    auto condition = makeCondition(predicate, {&x});
+
+    ASSERT_FALSE(condition.isRelaxed());
+    ASSERT_TRUE(condition.canCheckExactness());
+    expectRangeMaskWithExactness(condition, {UInt64(5)}, {UInt64(5)}, {type}, BoolMask(true, false));
+    expectRangeMaskWithExactness(condition, {UInt64(6)}, {UInt64(6)}, {type}, BoolMask(false, true));
+}
+
+TEST_F(KeyConditionAtomGroups, AddedBoundUpdatesExactnessWithoutChangingCopies)
+{
+    const auto type = std::make_shared<DataTypeUInt64>();
+    const auto & x = dag.addInput("x", type);
+    const auto & remainder = addFunction("modulo", {&x, &addConstant(3)});
+    const auto & predicate = addFunction("equals", {&x, &addConstant(5)});
+    auto condition = makeCondition(predicate, {&remainder, &x});
+    const auto copy = condition;
+
+    ASSERT_TRUE(condition.addCondition(x.result_name, Range::createLeftBounded(UInt64(6), true)));
+    ASSERT_TRUE(condition.canCheckExactness());
+    ASSERT_TRUE(copy.canCheckExactness());
+    expectRangeMaskWithExactness(condition, {UInt64(2), UInt64(5)}, {UInt64(2), UInt64(5)}, {type, type}, BoolMask(false, true));
+    expectRangeMaskWithExactness(copy, {UInt64(2), UInt64(5)}, {UInt64(2), UInt64(5)}, {type, type}, BoolMask(true, false));
 }
 
 }

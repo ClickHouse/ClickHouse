@@ -189,6 +189,30 @@ public:
         BoolMask initial_mask,
         const Hyperrectangle * key_bounds = nullptr) const;
 
+    /// Like `checkInRange`, but exact atoms can supply `can_be_false` without the relaxation
+    /// introduced by their siblings in the same predicate group. All atoms still contribute to
+    /// `can_be_true` for pruning. This follows the eligibility rules of `canCheckExactness`;
+    /// ineligible conditions use the ordinary range check.
+    /// Components set to true in `initial_mask` are ignored by the caller and need no separate
+    /// evaluation. Their returned values are unspecified, as with `checkInRange`.
+    BoolMask checkInRangeWithExactness(
+        size_t key_size,
+        const FieldRef * left_keys,
+        const FieldRef * right_keys,
+        const DataTypes & data_types,
+        BoolMask initial_mask = BoolMask(false, false),
+        const Hyperrectangle * key_bounds = nullptr) const;
+
+    /// Checks the sparse representation accepted by `checkInRange`, with the same exactness rules.
+    BoolMask checkInRangeWithExactness(
+        const std::vector<size_t> & sparse_key_indices,
+        const FieldRef * sparse_left_keys,
+        const FieldRef * sparse_right_keys,
+        const DataTypes & sparse_data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        BoolMask initial_mask,
+        const Hyperrectangle * key_bounds = nullptr) const;
+
     const KeyOrder & getKeyOrder() const { return key_order; }
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
@@ -468,14 +492,13 @@ public:
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
 
-    /// The condition to consult for falsity decisions (`BoolMask::can_be_false` and `isRelaxed`),
-    /// e.g. by the exact-ranges collection in `MergeTreeDataSelectExecutor::markRangesFromPKRange`.
-    /// Usually this is the condition itself. But when a multi-atom group mixes an exact atom with
-    /// relaxed siblings, those siblings force `can_be_false` to `true` and make `isRelaxed` return
-    /// `true` even though the exact atom already represents the predicate leaf exactly. The
-    /// returned condition then has such relaxed atoms dropped: its `can_be_false` stays exact,
-    /// while the full condition keeps the atoms for stronger pruning (`can_be_true`).
-    const KeyCondition & exactnessCondition() const { return exactness_condition ? *exactness_condition : *this; }
+    /// Reports whether range checks can prove that all rows in a range match. This is eligibility,
+    /// not a result for a particular range; `checkInRangeWithExactness` evaluates the range itself.
+    /// A multi-atom group can have an exact atom whose relaxed siblings force `can_be_false` to
+    /// `true` and make `isRelaxed` return `true`. Removing those siblings can enable exactness while the
+    /// full condition retains their stronger pruning. Uncovered relaxed atoms and multi-value set
+    /// indexes remain subject to the conservative `isRelaxed` contract.
+    bool canCheckExactness() const { return exactness_condition || !isRelaxed(); }
 
     bool isSinglePoint() const { return single_point; }
 
@@ -842,6 +865,10 @@ private:
     /// Rebuilds the derived exactness condition after changing the RPN, without modifying shared copies.
     void updateExactnessCondition();
 
+    /// Combines pruning and falsity through the supplied range evaluator.
+    template <typename Evaluate>
+    BoolMask checkWithExactness(const Evaluate & evaluate, BoolMask initial_mask) const;
+
     /// In every multi-atom group that stands directly under `FUNCTION_NOT` and has at least one
     /// exact atom, drops the relaxed atoms: a relaxed atom forces the group's `can_be_false` to
     /// `true`, which would disable pruning through the exact atoms of the group under `NOT`.
@@ -932,7 +959,8 @@ private:
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
 
-    /// See `exactnessCondition`. Null when the condition is its own exactness condition.
+    /// Stores an eligible condition with covered relaxed siblings removed, used only for falsity checks.
+    /// It is null when the original condition suffices or no eligible derivative exists.
     std::shared_ptr<KeyCondition> exactness_condition;
 };
 }

@@ -1636,14 +1636,21 @@ void KeyCondition::updateExactnessCondition()
     /// When a multi-atom group mixes an exact atom with relaxed siblings, the siblings make the
     /// whole condition relaxed and force `can_be_false` to `true`, although the exact atom
     /// already represents the predicate leaf exactly. Derive the exactness condition without
-    /// them, so that falsity consumers (see `exactnessCondition`) are not pessimized by atoms
+    /// them, so that `checkInRangeWithExactness` can recover the falsity information lost to atoms
     /// that exist only for extra pruning.
     if (auto exactness_rpn = dropCoveredRelaxedAtoms(rpn, /*only_negated_groups*/ false))
     {
-        exactness_condition = std::make_shared<KeyCondition>(
+        auto candidate = std::make_shared<KeyCondition>(
             ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore);
-        exactness_condition->rpn = std::move(*exactness_rpn);
-        exactness_condition->key_order = key_order;
+        candidate->rpn = std::move(*exactness_rpn);
+        candidate->key_order = key_order;
+
+        /// Eligibility changes only with the RPN. Retaining only eligible derivatives avoids
+        /// rescanning them during every range check; unrelated relaxed leaves still prevent exactness.
+        if (candidate->isRelaxed())
+            exactness_condition.reset();
+        else
+            exactness_condition = std::move(candidate);
     }
     else
         exactness_condition.reset();
@@ -6228,6 +6235,51 @@ BoolMask KeyCondition::checkInRange(
         {
             return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
         });
+}
+
+template <typename Evaluate>
+BoolMask KeyCondition::checkWithExactness(const Evaluate & evaluate, BoolMask initial_mask) const
+{
+    if (!exactness_condition || initial_mask.can_be_false)
+        return evaluate(*this, initial_mask);
+
+    /// The full condition supplies pruning and the derivative supplies falsity. Saturated mask
+    /// components are ignored by the caller, so they need no separate evaluation.
+    BoolMask result = initial_mask.can_be_true
+        ? initial_mask
+        : evaluate(*this, BoolMask::consider_only_can_be_true);
+    result.can_be_false = evaluate(*exactness_condition, BoolMask::consider_only_can_be_false).can_be_false;
+    return result;
+}
+
+BoolMask KeyCondition::checkInRangeWithExactness(
+    size_t used_key_size,
+    const FieldRef * left_keys,
+    const FieldRef * right_keys,
+    const DataTypes & data_types,
+    BoolMask initial_mask,
+    const Hyperrectangle * key_bounds) const
+{
+    return checkWithExactness([&](const KeyCondition & condition, BoolMask mask)
+    {
+        return condition.checkInRange(used_key_size, left_keys, right_keys, data_types, mask, key_bounds);
+    }, initial_mask);
+}
+
+BoolMask KeyCondition::checkInRangeWithExactness(
+    const std::vector<size_t> & sparse_key_indices,
+    const FieldRef * sparse_left_keys,
+    const FieldRef * sparse_right_keys,
+    const DataTypes & sparse_data_types,
+    const std::vector<UInt8> & equal_boundaries_mask,
+    BoolMask initial_mask,
+    const Hyperrectangle * key_bounds) const
+{
+    return checkWithExactness([&](const KeyCondition & condition, BoolMask mask)
+    {
+        return condition.checkInRange(
+            sparse_key_indices, sparse_left_keys, sparse_right_keys, sparse_data_types, equal_boundaries_mask, mask, key_bounds);
+    }, initial_mask);
 }
 
 /// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
