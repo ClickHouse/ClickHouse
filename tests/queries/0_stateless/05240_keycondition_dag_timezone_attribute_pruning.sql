@@ -63,6 +63,8 @@ DROP TABLE IF EXISTS oracle_arr_tup_bool;
 DROP TABLE IF EXISTS k_arr_tup_bool;
 DROP TABLE IF EXISTS oracle_bool_in;
 DROP TABLE IF EXISTS k_bool_in;
+DROP TABLE IF EXISTS oracle_bool_cast;
+DROP TABLE IF EXISTS k_bool_cast;
 DROP TABLE IF EXISTS k_hour_arr;
 DROP TABLE IF EXISTS k_nul_key;
 DROP TABLE IF EXISTS k_nul_key_part;
@@ -342,18 +344,27 @@ SELECT 'control_bool_in_absent', count() FROM (SELECT b FROM k_bool_in WHERE b I
 -- `b::String` makes the transform DAG a bare `CAST` on the input, which `convertColumnForDeterministicDag`
 -- would otherwise apply straight to the `UInt8` element and render as `1` instead of the key's `true`.
 -- The leaf refusal has to be reached BEFORE that fast path, so this pair declines the atom instead.
+-- Both shapes below are load-bearing: a bare `count` over the key table is answered from part
+-- statistics without key analysis and prints the oracle whether or not the atom prunes correctly, and a
+-- one-element literal `IN` list is coerced to the key's own type before the transform sees the element,
+-- so it never reaches the refusal. Reading the rows through a subquery with the element coming from a
+-- subquery, as the rest of the file does, is what makes these rows fail without the fix.
 CREATE TABLE oracle_bool_cast (b Bool) ENGINE = Memory;
 INSERT INTO oracle_bool_cast SELECT number % 2 = 1 FROM numbers(16);
 CREATE TABLE k_bool_cast (b Bool) ENGINE = MergeTree ORDER BY b::String SETTINGS index_granularity = 1;
 INSERT INTO k_bool_cast SELECT number % 2 = 1 FROM numbers(16);
-SELECT 'oracle_bool_direct_cast_eq', count() FROM oracle_bool_cast WHERE b = 1::UInt8;
-SELECT 'key_bool_direct_cast_eq', count() FROM k_bool_cast WHERE b = 1::UInt8;
-SELECT 'oracle_bool_direct_cast_in', count() FROM oracle_bool_cast WHERE b IN (1::UInt8);
-SELECT 'key_bool_direct_cast_in', count() FROM k_bool_cast WHERE b IN (1::UInt8);
+SELECT 'oracle_bool_direct_cast_eq', count() FROM (SELECT b FROM oracle_bool_cast WHERE b = 1::UInt8);
+SELECT 'key_bool_direct_cast_eq', count() FROM (SELECT b FROM k_bool_cast WHERE b = 1::UInt8);
+SELECT 'oracle_bool_direct_cast_in', count() FROM (SELECT b FROM oracle_bool_cast WHERE b IN (SELECT 1::UInt8));
+SELECT 'key_bool_direct_cast_in', count() FROM (SELECT b FROM k_bool_cast WHERE b IN (SELECT 1::UInt8));
 -- The element that does carry the key's own name still prunes, so the refusal above is the leaf policy
--- rather than a blanket decline of the direct-`CAST` carrier.
-SELECT 'control_bool_direct_cast_exact', count() FROM k_bool_cast WHERE b = true;
-SELECT 'control_bool_direct_cast_exact_false', count() FROM k_bool_cast WHERE b = false;
+-- rather than a blanket decline of the direct-`CAST` carrier. A count cannot see that difference, so the
+-- plan row is what asserts it.
+SELECT 'control_bool_direct_cast_exact', count() FROM (SELECT b FROM k_bool_cast WHERE b = true);
+SELECT 'control_bool_direct_cast_exact_false', count() FROM (SELECT b FROM k_bool_cast WHERE b = false);
+SELECT 'control_bool_direct_cast_pruning_used',
+       countIf(explain LIKE '%Granules:%') > 0 AND countIf(explain LIKE '%Granules: 16/16%') = 0
+FROM (EXPLAIN indexes = 1 SELECT b FROM k_bool_cast WHERE b = true);
 
 CREATE TABLE oracle_arr_arr (a Array(Array(DateTime('UTC')))) ENGINE = Memory;
 INSERT INTO oracle_arr_arr SELECT [[toDateTime(1675195200, 'UTC')]];
@@ -638,6 +649,8 @@ DROP TABLE oracle_arr_tup_bool;
 DROP TABLE k_arr_tup_bool;
 DROP TABLE oracle_bool_in;
 DROP TABLE k_bool_in;
+DROP TABLE oracle_bool_cast;
+DROP TABLE k_bool_cast;
 DROP TABLE k_hour_arr;
 DROP TABLE k_map_keytype;
 DROP TABLE oracle_saf;
