@@ -48,6 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
+            {"min_rows_per_stream_for_gradual_resize", 0, 0, "New setting to opt in to starting `GROUP BY` aggregation with a single stream and switching to all aggregation streams in the pre-aggregation stage once the cumulative number of rows crosses the threshold. Disabled by default."},
+            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting (in bytes) that, paired with `min_rows_per_stream_for_gradual_resize`, controls when the `GROUP BY` pre-aggregation switches from one active stream to all aggregation streams in this stage."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -118,8 +120,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_max_bytes_in_data_file", std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), "New setting for the max bytes of an iceberg data file produced by compaction, separate from the insert-time limit."},
             {"enable_json_lazy_type_hints", false, false, "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."},
             {"s3_upload_checksum_algorithm", "", "", "New setting to choose the checksum algorithm for S3 uploads."},
-            {"min_rows_per_stream_for_gradual_resize", 0, 0, "New setting to opt in to starting `GROUP BY` aggregation with a single stream and switching to all aggregation streams in the pre-aggregation stage once the cumulative number of rows crosses the threshold. Disabled by default."},
-            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting (in bytes) that, paired with `min_rows_per_stream_for_gradual_resize`, controls when the `GROUP BY` pre-aggregation switches from one active stream to all aggregation streams in this stage."},
             {"network_compression_method", "LZ4", "ZSTD", "Switched the default compression method for client/server and server/server communication from `LZ4` to `ZSTD` to reduce network traffic."},
             {"network_zstd_compression_level", 1, 3, "Aligned the default network `ZSTD` compression level with the new default on-disk `ZSTD(3)` compression."},
             {"use_statistics_for_min_max_aggregation", false, true, "New setting to answer `min`, `max` and `count` aggregations without `GROUP BY` and filters from per-part column statistics for parts that have them materialized, reading only the remaining parts. previous_value=false so `compatibility` with versions before 26.9 keeps the optimization disabled and restores the pre-existing plan."},
