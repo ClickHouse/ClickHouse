@@ -213,6 +213,10 @@ DistributedSink::DistributedSink(
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
     , log(getLogger("DistributedSink"))
 {
+    /// A `Distributed` write starts a separate forwarded `INSERT`. Remote shards do not receive
+    /// `insert_source`, so clear it for local shards as well to keep attribution independent of locality.
+    context->setInsertSource(std::nullopt);
+
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
