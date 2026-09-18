@@ -36,6 +36,11 @@ SELECT x FROM (SELECT 1 AS x) AS a, (SELECT 2 AS y), (SELECT 3 AS x); -- { serve
 SELECT x FROM (SELECT 1 AS x) AS a JOIN (SELECT 2 AS y) ON true JOIN (SELECT 3 AS x) ON true; -- { serverError ALIAS_REQUIRED }
 SELECT x FROM (SELECT 1 AS x) JOIN (SELECT 2 AS x) AS b ON true; -- { serverError ALIAS_REQUIRED }
 
+SELECT '-- An identifier ambiguous between named table expressions is a plain ambiguity: no alias for a later subquery would fix it';
+SELECT x FROM (SELECT 1 AS x) AS a, (SELECT 2 AS x) AS b, (SELECT 3 AS x); -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT x FROM (SELECT 1 AS x) AS a JOIN (SELECT 2 AS x) AS b ON true JOIN (SELECT 3 AS x) ON true; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT a.x FROM (SELECT 1 AS x) AS a, (SELECT 2 AS x) AS b, (SELECT 3 AS x);
+
 SELECT '-- With prefer_column_name_to_alias an alias of the same name takes over the ambiguous identifier, so the subquery alias is not needed';
 SELECT item.brand + 1 AS brand, count() FROM item, (SELECT s_brand AS brand FROM sales), with_number GROUP BY brand ORDER BY brand SETTINGS prefer_column_name_to_alias = 1;
 SELECT item.brand + 1 AS brand, count() FROM item, (SELECT s_brand AS brand FROM sales) GROUP BY brand ORDER BY brand SETTINGS prefer_column_name_to_alias = 1;

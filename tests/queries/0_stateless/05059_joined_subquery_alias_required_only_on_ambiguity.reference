@@ -7,6 +7,8 @@
 6
 1
 -- Ambiguous identifier from an unaliased subquery or table function: the alias is required
+-- An identifier ambiguous between named table expressions is a plain ambiguity: no alias for a later subquery would fix it
+1
 -- With prefer_column_name_to_alias an alias of the same name takes over the ambiguous identifier, so the subquery alias is not needed
 101	4
 201	4
