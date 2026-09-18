@@ -22,10 +22,6 @@ SELECT '-- The IN is the grouping key';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT id IN (SELECT k FROM s) AS g, count() FROM t GROUP BY g);
 
-SELECT '-- The left argument is a grouping expression';
-SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN SELECT b + 1 AS t1 FROM t GROUP BY t1 HAVING t1 IN (SELECT k FROM s));
-
 SELECT '-- The left argument is an aggregate function';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT sum(b) AS x FROM t GROUP BY id HAVING x IN (SELECT k FROM s));

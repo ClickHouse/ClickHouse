@@ -68,6 +68,13 @@ FROM (EXPLAIN SELECT id IN (SELECT k FROM s), count() FROM t GROUP BY id);
 SELECT groupArray(c) FROM (SELECT id IN (SELECT k FROM s) AS c, count() FROM t GROUP BY id ORDER BY id) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(c) FROM (SELECT id IN (SELECT k FROM s) AS c, count() FROM t GROUP BY id ORDER BY id) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- The left argument is a grouping expression';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT b + 1 AS t1 FROM t GROUP BY t1 HAVING t1 IN (SELECT k FROM s));
+
+SELECT groupArray(t1) FROM (SELECT b + 1 AS t1 FROM t GROUP BY t1 HAVING t1 IN (SELECT k FROM s) ORDER BY t1) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(t1) FROM (SELECT b + 1 AS t1 FROM t GROUP BY t1 HAVING t1 IN (SELECT k FROM s) ORDER BY t1) SETTINGS rewrite_in_to_join = 1;
+
 SELECT '-- The subquery column has a different but comparable type';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT toUInt16(k) FROM s));

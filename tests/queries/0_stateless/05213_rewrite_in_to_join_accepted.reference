@@ -26,6 +26,10 @@
 1	0
 [1,1,0]
 [1,1,0]
+-- The left argument is a grouping expression
+1	0
+[2]
+[2]
 -- The subquery column has a different but comparable type
 1	0
 [1,1,0]
@@ -80,7 +84,7 @@
 1	0
 0
 0
--- The set size limit the still applies
+-- The set size limit still applies
 1	0
 -- IN subquery inside HAVING
 1	0
