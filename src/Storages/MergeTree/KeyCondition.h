@@ -357,13 +357,10 @@ public:
         /// Whether to relax the key condition (e.g., for LIKE queries without a perfect prefix).
         bool relaxed = false;
 
-        /// One predicate leaf may produce several atoms combined by AND (see `RPNBuilder`).
-        /// This flag is set on the second and subsequent atoms of such a group and on the AND
-        /// operators combining them — i.e. on every element that continues the group opened by
-        /// a preceding element (the group's first atom does not have it). The whole group
-        /// corresponds to a single element of the one-element-per-leaf RPN built with an empty
-        /// key (`key_condition_rpn_template`), which is what the skip-index disjunction
-        /// machinery uses for positions (see `KeyCondition::checkInHyperrectangle` and
+        /// Continues the preceding predicate leaf's atom group; `RPNBuilder::appendAtomGroup`
+        /// defines its layout. The whole group occupies one position in the RPN built with an empty key
+        /// (`key_condition_rpn_template`), which the skip-index disjunction machinery uses for positions
+        /// (see `KeyCondition::checkInHyperrectangle` and
         /// `mergePartialResultsForDisjunctions`).
         bool continues_multi_atom_group = false;
 
@@ -849,6 +846,9 @@ private:
     /// exact atom, drops the relaxed atoms: a relaxed atom forces the group's `can_be_false` to
     /// `true`, which would disable pruning through the exact atoms of the group under `NOT`.
     void dropRelaxedAtomsFromNegatedMultiAtomGroups();
+
+    /// Whether this element completes a predicate's atom group or is an independent logical operator.
+    static bool isAtomGroupEnd(const RPN & rpn, size_t position);
 
     /// Returns `rpn` with the relaxed atoms dropped from every multi-atom group that contains
     /// both an exact atom and a relaxed one (with `only_negated_groups`, only from the groups

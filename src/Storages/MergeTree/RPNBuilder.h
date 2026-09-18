@@ -259,8 +259,12 @@ public:
     explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomsFromTreeFunction & extract_atoms_from_tree_function_);
     RPNElements && extractRPN() &&;
 
-    /// Appends one predicate leaf as `atom0 atom1 AND atom2 AND ...`. Continuation markers let
-    /// consumers treat the entire group as one leaf. Moving iterators transfer ownership of atoms.
+    /// Appends one predicate leaf as `atom0 atom1 AND atom2 AND ...`. For element types with
+    /// `continues_multi_atom_group`, the first atom is unmarked, and every remaining atom and internal
+    /// `AND` is marked. Operators joining independent leaves are unmarked. Consumers can therefore
+    /// treat the entire group as one leaf, occupying one position in a one-element-per-leaf RPN.
+    /// Only atoms and their internal `AND` operators can continue a group; an unknown atom stands alone.
+    /// Moving iterators transfer ownership of atoms.
     template <typename Iterator>
     static void appendAtomGroup(RPNElements & target, Iterator begin, Iterator end)
     {

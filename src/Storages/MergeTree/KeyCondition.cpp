@@ -1593,26 +1593,6 @@ KeyCondition::KeyCondition(
 
     rpn = std::move(builder).extractRPN();
 
-    /// A multi-atom group is the run of RPN elements that one predicate leaf produced: when a leaf
-    /// constrains several key columns, `RPNBuilder` emits one atom per key column combined by AND
-    /// (`atom0 atom1 AND atom2 AND ...`) and marks every element after the first with
-    /// `continues_multi_atom_group`. The group stands where a single atom would have stood, and
-    /// consumers that rely on a one-element-per-leaf RPN layout treat the whole group as one
-    /// position (see `checkInHyperrectangle`).
-    ///
-    /// The multi-atom group structure must be well-formed: a group is opened by an unmarked
-    /// element, so the first RPN element never continues a group, and the marked elements
-    /// are only the atoms of a group and the ANDs combining them — never OR, NOT or
-    /// FUNCTION_UNKNOWN.
-    chassert(rpn.empty() || !rpn.front().continues_multi_atom_group);
-    chassert(std::none_of(rpn.begin(), rpn.end(), [](const RPNElement & element)
-    {
-        return element.continues_multi_atom_group
-            && (element.function == RPNElement::FUNCTION_OR
-                || element.function == RPNElement::FUNCTION_NOT
-                || element.function == RPNElement::FUNCTION_UNKNOWN);
-    }));
-
     dropRelaxedAtomsFromNegatedMultiAtomGroups();
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
@@ -1682,14 +1662,20 @@ void KeyCondition::dropRelaxedAtomsFromNegatedMultiAtomGroups()
         rpn = std::move(*filtered);
 }
 
+bool KeyCondition::isAtomGroupEnd(const RPN & rpn, size_t position)
+{
+    chassert(position < rpn.size());
+    return position + 1 == rpn.size() || !rpn[position + 1].continues_multi_atom_group;
+}
+
 std::optional<KeyCondition::RPN> KeyCondition::dropCoveredRelaxedAtoms(const RPN & rpn, bool only_negated_groups)
 {
     const auto find_group_end = [&](size_t i)
     {
-        size_t group_end = i + 1;
-        while (group_end < rpn.size() && rpn[group_end].continues_multi_atom_group)
-            ++group_end;
-        return group_end;
+        chassert(!rpn[i].continues_multi_atom_group);
+        while (!isAtomGroupEnd(rpn, i))
+            ++i;
+        return i + 1;
     };
 
     const auto group_qualifies = [&](size_t i, size_t group_end)
@@ -1777,6 +1763,8 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
 {
     if (!key_columns.contains(column))
         return false;
+
+    /// The bound is an independent leaf, so its outer `AND` does not continue the preceding group.
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, std::vector<size_t>{key_columns[column]}, range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
     updateExactnessCondition();
@@ -7285,14 +7273,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
         if (update_partial_disjunction_result_fn)
         {
-            /// All atoms produced from one predicate leaf (combined by AND) occupy a single
-            /// position in the RPN template used by `mergePartialResultsForDisjunctions`:
-            /// the template is built with an empty key, so every predicate leaf is exactly one
-            /// `FUNCTION_UNKNOWN` element there. Report the combined result once per group, at
-            /// the group's last element, under the group's canonical (template) position.
+            /// The empty-key RPN template used by `mergePartialResultsForDisjunctions` has one
+            /// element per predicate leaf; constant leaves can remain constants. Report each group's
+            /// combined result once, at its last element, under that leaf's template position.
             const size_t raw_pos = static_cast<size_t>(&element - rpn.data());
-            const bool group_continues = raw_pos + 1 < rpn.size() && rpn[raw_pos + 1].continues_multi_atom_group;
-            if (!group_continues)
+            if (isAtomGroupEnd(rpn, raw_pos))
             {
                 update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
                 ++element_idx;
@@ -8294,7 +8279,11 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
         for (size_t j = 0; j < ranges.size(); ++j)
         {
             const auto & range = ranges[j];
-            target.rpn.insert(target.rpn.end(), source.rpn.begin() + range.first, source.rpn.begin() + range.second);
+            chassert(range.first < range.second);
+            auto first = target.rpn.insert(target.rpn.end(), source.rpn.begin() + range.first, source.rpn.begin() + range.second);
+            /// A conjunct can start at a later atom of a leaf. Start a new group while preserving
+            /// the internal group boundaries of intact subexpressions, such as disjunctions.
+            first->continues_multi_atom_group = false;
             if (j > 0)
                 target.rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
