@@ -709,7 +709,7 @@ When reading an object from S3 (or an S3-compatible store such as GCS), check th
     DECLARE(Bool, use_native_gcs, false, R"(
 Experimental. Use the native Google Cloud Storage client (google-cloud-cpp, the GCS JSON API) for the `gcs` table function and dynamic disks with `object_storage_type = gcs`, instead of the default S3-compatibility path (the GCS XML API via the AWS SDK). The `GCS` table engine always uses the S3-compatibility path.
 
-The native client authenticates with Application Default Credentials, `google_adc_*` refresh-token credentials, or service-account keys rather than S3 HMAC access-key/secret pairs. Enable it to talk to GCS natively; leave it disabled (the default) to keep the existing S3-compatible behavior, including positional HMAC credentials.
+For the `gcs` table function, the native client authenticates with Application Default Credentials, `google_adc_*` refresh-token credentials, `NOSIGN` or `use_environment_credentials = 0` rather than S3 HMAC access-key/secret pairs. Service-account keys are available for server-configured GCS disks. Enable it to talk to GCS natively; leave it disabled (the default) to keep the existing S3-compatible behavior, including positional HMAC credentials.
 )", EXPERIMENTAL) \
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
