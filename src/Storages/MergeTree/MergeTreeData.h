@@ -1135,6 +1135,9 @@ public:
         const Settings & settings,
         ContextPtr local_context) const override;
 
+    /// Sets the index filename escaping of `metadata` from the current `escape_index_filenames` setting.
+    void applyEscapeIndexFilenamesSetting(StorageInMemoryMetadata & metadata) const;
+
     /// Change MergeTreeSettings
     void changeSettings(
         const ASTPtr & new_settings,

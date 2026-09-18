@@ -7030,7 +7030,6 @@ void StorageReplicatedMergeTree::alter(
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, true);
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
 
         if (statistics_changed)
         {
@@ -7041,6 +7040,8 @@ void StorageReplicatedMergeTree::alter(
 
         try
         {
+            /// changeSettings derives the index filename escaping, so it must publish after future_metadata.
+            changeSettings(future_metadata.settings_changes, table_lock_holder);
             /// Safe because the early max_query_size check already passed.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         }
@@ -7085,15 +7086,6 @@ void StorageReplicatedMergeTree::alter(
     {
         merge_strategy_picker.refreshState();
         auto old_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
-
-        /// changeSettings is the sole writer of the setting-derived escape fields and has
-        /// already committed them; carry them into future_metadata so the comment commit
-        /// below does not revert the index filename policy (commands.apply never sets them).
-        auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-        future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
-        for (auto & index : future_metadata.secondary_indices)
-            index.escape_filenames = committed_metadata->escape_index_filenames;
 
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
@@ -7103,6 +7095,8 @@ void StorageReplicatedMergeTree::alter(
 
         try
         {
+            /// changeSettings derives the index filename escaping, so it must publish after future_metadata.
+            changeSettings(future_metadata.settings_changes, table_lock_holder);
             /// Safe because the early max_query_size check already passed.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         }
@@ -7233,10 +7227,6 @@ void StorageReplicatedMergeTree::alter(
             /// future_metadata while metadata_copy grows). Check its size before mutating any in-memory state.
             checkMetadataDoesNotExceedMaxQuerySize(table_id, metadata_copy, query_context);
 
-            /// Just change settings
-            if (settings_are_changed)
-                changeSettings(metadata_copy.settings_changes, table_lock_holder);
-
             /// The comment is not replicated as of today, but we can implement it later.
             if (comment_is_changed)
             {
@@ -7247,6 +7237,10 @@ void StorageReplicatedMergeTree::alter(
 
             try
             {
+                /// changeSettings derives the index filename escaping, so it must publish after the comment.
+                if (settings_are_changed)
+                    changeSettings(metadata_copy.settings_changes, table_lock_holder);
+
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
             }
             catch (...)
