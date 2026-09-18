@@ -1143,11 +1143,11 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 8/8)' --workflow "BackportPR" --ci --timestamp
 
-  integration_tests_amd_tsan_1_6:
+  integration_tests_amd_tsan_1_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzYp') }}
-    name: "Integration tests (amd_tsan, 1/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAxLzgp') }}
+    name: "Integration tests (amd_tsan, 1/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1175,13 +1175,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/6)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 1/8)' --workflow "BackportPR" --ci --timestamp
 
-  integration_tests_amd_tsan_2_6:
+  integration_tests_amd_tsan_2_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzYp') }}
-    name: "Integration tests (amd_tsan, 2/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAyLzgp') }}
+    name: "Integration tests (amd_tsan, 2/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1209,13 +1209,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/6)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 2/8)' --workflow "BackportPR" --ci --timestamp
 
-  integration_tests_amd_tsan_3_6:
+  integration_tests_amd_tsan_3_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzYp') }}
-    name: "Integration tests (amd_tsan, 3/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCAzLzgp') }}
+    name: "Integration tests (amd_tsan, 3/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1243,13 +1243,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/6)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 3/8)' --workflow "BackportPR" --ci --timestamp
 
-  integration_tests_amd_tsan_4_6:
+  integration_tests_amd_tsan_4_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0LzYp') }}
-    name: "Integration tests (amd_tsan, 4/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA0Lzgp') }}
+    name: "Integration tests (amd_tsan, 4/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1277,13 +1277,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/6)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 4/8)' --workflow "BackportPR" --ci --timestamp
 
-  integration_tests_amd_tsan_5_6:
+  integration_tests_amd_tsan_5_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1LzYp') }}
-    name: "Integration tests (amd_tsan, 5/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA1Lzgp') }}
+    name: "Integration tests (amd_tsan, 5/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1311,13 +1311,13 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/6)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 5/8)' --workflow "BackportPR" --ci --timestamp
 
-  integration_tests_amd_tsan_6_6:
+  integration_tests_amd_tsan_6_8:
     runs-on: [self-hosted, amd-medium]
     needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2LzYp') }}
-    name: "Integration tests (amd_tsan, 6/6)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA2Lzgp') }}
+    name: "Integration tests (amd_tsan, 6/8)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1345,11 +1345,79 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/6)' --workflow "BackportPR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 6/8)' --workflow "BackportPR" --ci --timestamp
+
+  integration_tests_amd_tsan_7_8:
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA3Lzgp') }}
+    name: "Integration tests (amd_tsan, 7/8)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 7/8)' --workflow "BackportPR" --ci --timestamp
+
+  integration_tests_amd_tsan_8_8:
+    runs-on: [self-hosted, amd-medium]
+    needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF90c2FuLCA4Lzgp') }}
+    name: "Integration tests (amd_tsan, 8/8)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=.:./ci
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_tsan, 8/8)' --workflow "BackportPR" --ci --timestamp
 
   finish_workflow:
     runs-on: [self-hosted, arm-tiny]
-    needs: [build_amd_asan_ubsan, build_amd_darwin, build_amd_debug, build_amd_release, build_amd_tsan, build_arm_darwin, build_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_ubsan_db_disk_1_8, integration_tests_amd_asan_ubsan_db_disk_2_8, integration_tests_amd_asan_ubsan_db_disk_3_8, integration_tests_amd_asan_ubsan_db_disk_4_8, integration_tests_amd_asan_ubsan_db_disk_5_8, integration_tests_amd_asan_ubsan_db_disk_6_8, integration_tests_amd_asan_ubsan_db_disk_7_8, integration_tests_amd_asan_ubsan_db_disk_8_8, integration_tests_amd_tsan_1_6, integration_tests_amd_tsan_2_6, integration_tests_amd_tsan_3_6, integration_tests_amd_tsan_4_6, integration_tests_amd_tsan_5_6, integration_tests_amd_tsan_6_6, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3, stateless_tests_amd_asan_ubsan_distributed_plan_parallel, stress_test_amd_tsan, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
+    needs: [build_amd_asan_ubsan, build_amd_darwin, build_amd_debug, build_amd_release, build_amd_tsan, build_arm_darwin, build_arm_release, compatibility_check_amd_release, compatibility_check_arm_release, config_workflow, docker_keeper_image, docker_server_image, dockers_build_amd, dockers_build_arm, install_packages_amd_release, install_packages_arm_release, integration_tests_amd_asan_ubsan_db_disk_1_8, integration_tests_amd_asan_ubsan_db_disk_2_8, integration_tests_amd_asan_ubsan_db_disk_3_8, integration_tests_amd_asan_ubsan_db_disk_4_8, integration_tests_amd_asan_ubsan_db_disk_5_8, integration_tests_amd_asan_ubsan_db_disk_6_8, integration_tests_amd_asan_ubsan_db_disk_7_8, integration_tests_amd_asan_ubsan_db_disk_8_8, integration_tests_amd_tsan_1_8, integration_tests_amd_tsan_2_8, integration_tests_amd_tsan_3_8, integration_tests_amd_tsan_4_8, integration_tests_amd_tsan_5_8, integration_tests_amd_tsan_6_8, integration_tests_amd_tsan_7_8, integration_tests_amd_tsan_8_8, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3, stateless_tests_amd_asan_ubsan_distributed_plan_parallel, stress_test_amd_tsan, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
