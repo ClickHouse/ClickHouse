@@ -1786,6 +1786,7 @@ public:
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
+    bool hasSystemLogs() const;
 
     /// Call after initialization before using trace collector.
     void createTraceCollector();
