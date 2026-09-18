@@ -93,20 +93,20 @@ SELECT * FROM values('k String, v UInt64', ('a', 1))
 PIVOT (if(v > 0, v, 0) FOR k IN ('a' AS a)); -- { serverError UNKNOWN_FUNCTION,UNKNOWN_AGGREGATE_FUNCTION }
 
 -- Compound paths that are not the source qualifier are rejected rather than misclassified as grouping columns.
-SELECT * FROM values('k Tuple(x String), v UInt64', (tuple('a'), 1)) PIVOT (sum(v) FOR k.x IN ('a' AS a)); -- { clientError SYNTAX_ERROR }
+SELECT * FROM values('k Tuple(x String), v UInt64', (tuple('a'), 1)) PIVOT (sum(v) FOR k.x IN ('a' AS a)); -- { error SYNTAX_ERROR }
 
 -- Existing -If aggregates are deliberately rejected in the static parser rewrite.
 SELECT * FROM values('k String, v UInt64, ok UInt8', ('a', 1, 1))
 PIVOT (sumIf(v, ok) FOR k IN ('a' AS a)); -- { serverError ILLEGAL_AGGREGATION }
 
-SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(v), count() FOR k IN ('a' AS a)); -- { clientError SYNTAX_ERROR }
+SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(v), count() FOR k IN ('a' AS a)); -- { error SYNTAX_ERROR }
 
-SELECT * FROM values('k UInt64, v UInt64', (1, 1)) PIVOT (sum(v) FOR k IN ((1 + 0) AS one)); -- { clientError SYNTAX_ERROR }
+SELECT * FROM values('k UInt64, v UInt64', (1, 1)) PIVOT (sum(v) FOR k IN ((1 + 0) AS one)); -- { error SYNTAX_ERROR }
 
-SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(v) FOR k IN ('a' AS same, 'a' AS same)); -- { clientError SYNTAX_ERROR }
+SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(v) FOR k IN ('a' AS same, 'a' AS same)); -- { error SYNTAX_ERROR }
 
-SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(arrayMap(x -> x, [v])) FOR k IN ('a' AS a)); -- { clientError SYNTAX_ERROR }
+SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(arrayMap(x -> x, [v])) FOR k IN ('a' AS a)); -- { error SYNTAX_ERROR }
 
-SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(v) OVER () FOR k IN ('a' AS a)); -- { clientError SYNTAX_ERROR }
+SELECT * FROM values('k String, v UInt64', ('a', 1)) PIVOT (sum(v) OVER () FOR k IN ('a' AS a)); -- { error SYNTAX_ERROR }
 
 DROP TABLE pivot_static;
