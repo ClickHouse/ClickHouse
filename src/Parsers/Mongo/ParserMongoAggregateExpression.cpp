@@ -266,7 +266,7 @@ ASTPtr makeToDecimal(ASTPtr argument)
     auto is_exact = makeASTFunction(
         "match",
         makeASTFunction("toTypeName", argument),
-        makeLiteral(Field(String("^(Nullable\\(|LowCardinality\\()*(U?Int(8|16|32|64|128|256)|Bool)\\)*$"))));
+        makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int(8|16|32|64|128|256)|Bool)\)*$)"))));
     auto guard = makeASTFunction(
         "throwIf",
         makeASTFunction("not", std::move(is_exact)),
@@ -319,7 +319,7 @@ ASTPtr makeToDate(ASTPtr argument)
     auto is_a_number = makeASTFunction(
         "match",
         makeASTFunction("toTypeName", argument->clone()),
-        makeLiteral(Field(String("^(Nullable\\(|LowCardinality\\()*(U?Int|Float|Decimal)"))));
+        makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|Float|Decimal))"))));
     return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
 }
 
