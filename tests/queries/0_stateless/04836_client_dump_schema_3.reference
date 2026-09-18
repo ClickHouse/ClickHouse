@@ -36,11 +36,14 @@ bad-select view replayed: 1
 --- the prelude is scoped to what the dumped statements can reach ---
 no-mv schema, mv gate emitted: 0
 no-mv schema, ungated gate emitted: 0
-no-mv schema, analyzer gate emitted: 1
+no-mv schema, analyzer gate emitted: 0
 empty dump, any SET emitted: 0
 projection schema, analyzer gate emitted: 1
 projection schema, dead gates emitted: 0
---- the prelude carries all shared experimental settings unconditionally ---
+--- a plain dump replays under an unrelated analyzer constraint ---
+OK: constrained replay succeeded
+constrained replay table present: 1
+--- the prelude keeps the residual shared gates conservative ---
 unique-key gate present: 1
 suspicious-primary-key gate present: 1
 fuzz-functions gate present: 1
@@ -63,6 +66,10 @@ masked named collection refused: 1
 unresolvable remote() first argument refused: 1
 --- a named collection carried by a stored engine or dictionary source is reported ---
 engine carrier warned: 1
+nested engine carrier warned: 1
 dictionary carrier warned: 1
+ordinary scalar function warned: 0
 collections emitted into the dump: 0
 engine carrier dumped naming the collection: 1
+--- an RBAC-hidden named collection carrier is reported explicitly ---
+hidden carrier warned: 1

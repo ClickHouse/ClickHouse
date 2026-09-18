@@ -257,8 +257,7 @@ CREATE TABLE ${DB}.plain (x Int64) ENGINE = MergeTree ORDER BY tuple();
 $CLICKHOUSE_LOCAL --path "$NOMV_PATH" --dump-schema="${DB}" > "$NOMV_DUMP_FILE" 2>"$ERR_FILE"
 echo "no-mv schema, mv gate emitted: $(grep -c 'SET allow_materialized_view_with_bad_select' "$NOMV_DUMP_FILE")"
 echo "no-mv schema, ungated gate emitted: $(grep -c 'SET allow_experimental_time_series_table' "$NOMV_DUMP_FILE")"
-# Shared experimental settings are emitted unconditionally because CREATE replay re-enters
-# many of them (view/projection analysis, default-expression validation, suspicious-type checks).
+# Analyzer-only gates are omitted when no stored query text can reach them.
 echo "no-mv schema, analyzer gate emitted: $(grep -c 'SET allow_suspicious_types_in_group_by' "$NOMV_DUMP_FILE")"
 # Excluding every non-predefined database - clickhouse-local also carries `default` - leaves no
 # statement to replay, so there is nothing for a gate to guard and the prelude is dropped whole.
@@ -280,9 +279,40 @@ echo "projection schema, analyzer gate emitted: $(grep -c 'SET allow_suspicious_
 echo "projection schema, dead gates emitted: $(grep -cE 'SET (allow_experimental_window_functions|allow_experimental_hash_functions|allow_simdjson) = ' "$PROJ_DUMP_FILE")"
 rm -rf "$PROJ_PATH" "$PROJ_DUMP_FILE"
 
-echo '--- the prelude carries all shared experimental settings unconditionally ---'
-# Shared experimental settings are emitted for every dump because CREATE replay re-enters
-# many of them. Verify a plain table dump still carries representative gates from the shared list.
+echo '--- a plain dump replays under an unrelated analyzer constraint ---'
+CONSTRAINT_DB="${DB}_constraint"
+CONSTRAINT_USER="${DB}_constraint_user"
+CONSTRAINT_PROFILE="${DB}_constraint_profile"
+CONSTRAINT_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_constraint"
+CONSTRAINT_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_constraint.sql"
+rm -rf "$CONSTRAINT_PATH"
+$CLICKHOUSE_LOCAL --path "$CONSTRAINT_PATH" --multiquery --query "
+    CREATE DATABASE ${CONSTRAINT_DB};
+    CREATE TABLE ${CONSTRAINT_DB}.plain (x Int64) ENGINE = MergeTree ORDER BY tuple();
+"
+$CLICKHOUSE_LOCAL --path "$CONSTRAINT_PATH" --dump-schema="$CONSTRAINT_DB" > "$CONSTRAINT_DUMP_FILE" 2>"$ERR_FILE"
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${CONSTRAINT_DB};
+    DROP USER IF EXISTS ${CONSTRAINT_USER};
+    DROP SETTINGS PROFILE IF EXISTS ${CONSTRAINT_PROFILE};
+    CREATE SETTINGS PROFILE ${CONSTRAINT_PROFILE} SETTINGS allow_suspicious_types_in_group_by = 0 CONST;
+    CREATE USER ${CONSTRAINT_USER} SETTINGS PROFILE '${CONSTRAINT_PROFILE}';
+    GRANT CREATE DATABASE, CREATE TABLE ON *.* TO ${CONSTRAINT_USER};
+    GRANT TABLE ENGINE ON * TO ${CONSTRAINT_USER};
+"
+$CLICKHOUSE_CLIENT --user "$CONSTRAINT_USER" --multiquery --queries-file "$CONSTRAINT_DUMP_FILE" > /dev/null 2>"$ERR_FILE"
+rc=$?
+[[ $rc -eq 0 ]] && echo 'OK: constrained replay succeeded' || echo "FAIL: constrained replay rejected: $(cat "$ERR_FILE")"
+echo "constrained replay table present: $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.tables WHERE database = '${CONSTRAINT_DB}' AND name = 'plain'")"
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${CONSTRAINT_DB} SYNC;
+    DROP USER ${CONSTRAINT_USER};
+    DROP SETTINGS PROFILE ${CONSTRAINT_PROFILE};
+"
+rm -rf "$CONSTRAINT_PATH" "$CONSTRAINT_DUMP_FILE"
+
+echo '--- the prelude keeps the residual shared gates conservative ---'
+# Plain tables can still reach type, expression, key, and deprecated-syntax validators.
 SHARED_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_shared"
 SHARED_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_shared.sql"
 rm -rf "$SHARED_PATH"
@@ -325,11 +355,30 @@ echo '--- a remote() named collection on a loopback address names a local depend
 # readers sort before `zzz_nc_src`, so without the edge they would be dumped ahead of their source.
 NC_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc"
 NC_CONF="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc.xml"
+NC_USERS_CONF="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_users.xml"
 NC_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_dump.sql"
 rm -rf "$NC_PATH"
-# A collection's values read back as [HIDDEN] unless the instance is configured to show secrets.
+# Collection values require the server switch, format setting, and user grant together.
+cat > "$NC_USERS_CONF" <<EOF
+<clickhouse>
+    <profiles>
+        <default><format_display_secrets_in_show_and_select>1</format_display_secrets_in_show_and_select></default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <named_collection_control>1</named_collection_control>
+            <show_named_collections_secrets>1</show_named_collections_secrets>
+        </default>
+    </users>
+    <quotas><default></default></quotas>
+</clickhouse>
+EOF
 cat > "$NC_CONF" <<EOF
 <clickhouse>
+    <users_config>${NC_USERS_CONF}</users_config>
     <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
 </clickhouse>
 EOF
@@ -364,7 +413,7 @@ NC_REPLAY_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_replay"
 rm -rf "$NC_REPLAY_PATH"
 $CLICKHOUSE_LOCAL --config-file "$NC_CONF" --path "$NC_PATH" --format_display_secrets_in_show_and_select=1 \
     --dump-schema="${DB}" > "$NC_DUMP_FILE" 2>"$ERR_FILE"
-echo "readers warned about the collection: $(grep -c 'depends on named collection `nc_local`' "$ERR_FILE")"
+echo "readers warned about the collection: $(grep -c 'depends on named collection nc_local' "$ERR_FILE")"
 echo "collection emitted into the dump: $(grep -c 'CREATE NAMED COLLECTION' "$NC_DUMP_FILE")"
 echo "collection values leaked into the dump: $(grep -c '127\.0\.0\.1' "$NC_DUMP_FILE")"
 $CLICKHOUSE_LOCAL --path "$NC_REPLAY_PATH" --queries-file "$NC_DUMP_FILE" 2>"$ERR_FILE"
@@ -392,7 +441,7 @@ if $CLICKHOUSE_LOCAL --config-file "$NC_CONF" --path "$NC_PATH" --format_display
 else
     echo "unresolvable remote() first argument refused: $(grep -c 'neither a cluster nor a named collection' "$ERR_FILE")"
 fi
-rm -rf "$NC_PATH" "$NC_CONF"
+rm -rf "$NC_PATH" "$NC_CONF" "$NC_USERS_CONF"
 
 echo '--- a named collection carried by a stored engine or dictionary source is reported ---'
 # A collection reaches a persisted CREATE outside a view body too: a table engine keeps it as its
@@ -402,15 +451,20 @@ NCC_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_carrier_dump.
 rm -rf "$NCC_PATH"
 $CLICKHOUSE_LOCAL --path "$NCC_PATH" --multiquery --query "
 CREATE DATABASE ${DB};
-CREATE NAMED COLLECTION nc_url AS url = 'http://127.0.0.1:1/', format = 'TSV';
+CREATE NAMED COLLECTION nc_url AS url = 'http://127.0.0.1:1/', format = 'TSV', structure = 'id UInt64';
 CREATE NAMED COLLECTION nc_dict AS host = '127.0.0.1', port = 9000, db = '${DB}', table = 'nc_dict_src';
 CREATE TABLE ${DB}.nc_url_reader (id UInt64) ENGINE = URL(nc_url);
+CREATE TABLE ${DB}.nc_nested_url_reader (id UInt64) ENGINE = Remote('127.0.0.1:1', url(nc_url));
+CREATE TABLE ${DB}.nc_scalar_src (nc_url Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE VIEW ${DB}.nc_scalar_reader AS SELECT abs(nc_url) FROM ${DB}.nc_scalar_src;
 CREATE DICTIONARY ${DB}.nc_dict_reader (id UInt64, v String) PRIMARY KEY id
     SOURCE(CLICKHOUSE(NAME nc_dict)) LAYOUT(FLAT()) LIFETIME(0);
 "
 if $CLICKHOUSE_LOCAL --path "$NCC_PATH" --dump-schema="${DB}" > "$NCC_DUMP_FILE" 2>"$ERR_FILE"; then
-    echo "engine carrier warned: $(grep -c 'nc_url_reader` depends on named collection `nc_url`' "$ERR_FILE")"
-    echo "dictionary carrier warned: $(grep -c 'nc_dict_reader` depends on named collection `nc_dict`' "$ERR_FILE")"
+    echo "engine carrier warned: $(grep -c 'nc_url_reader depends on named collection nc_url' "$ERR_FILE")"
+    echo "nested engine carrier warned: $(grep -c 'nc_nested_url_reader depends on named collection nc_url' "$ERR_FILE")"
+    echo "dictionary carrier warned: $(grep -c 'nc_dict_reader depends on named collection nc_dict' "$ERR_FILE")"
+    echo "ordinary scalar function warned: $(grep -c 'nc_scalar_reader.*named collection' "$ERR_FILE")"
     echo "collections emitted into the dump: $(grep -c 'CREATE NAMED COLLECTION' "$NCC_DUMP_FILE")"
     echo "engine carrier dumped naming the collection: $(grep -c 'ENGINE = URL(nc_url)' "$NCC_DUMP_FILE")"
 else
@@ -418,4 +472,30 @@ else
 fi
 rm -rf "$NCC_PATH"
 rm -f "$NCC_DUMP_FILE"
+
+echo '--- an RBAC-hidden named collection carrier is reported explicitly ---'
+RBAC_DB="${DB}_nc_rbac"
+RBAC_USER="${DB}_nc_rbac_user"
+RBAC_COLLECTION="${DB}_nc_rbac_collection"
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${RBAC_DB};
+    DROP USER IF EXISTS ${RBAC_USER};
+    DROP NAMED COLLECTION IF EXISTS ${RBAC_COLLECTION};
+    CREATE DATABASE ${RBAC_DB};
+    CREATE NAMED COLLECTION ${RBAC_COLLECTION} AS url = 'http://127.0.0.1:1/', format = 'TSV';
+    CREATE TABLE ${RBAC_DB}.reader (id UInt64) ENGINE = URL(${RBAC_COLLECTION});
+    CREATE USER ${RBAC_USER};
+    GRANT SELECT, SHOW TABLES, SHOW COLUMNS ON *.* TO ${RBAC_USER};
+    GRANT SHOW DATABASES ON *.* TO ${RBAC_USER};
+"
+if $CLICKHOUSE_CLIENT --user "$RBAC_USER" --dump-schema="$RBAC_DB" > /dev/null 2>"$ERR_FILE"; then
+    echo "hidden carrier warned: $(grep -c "reader may depend on named collection ${RBAC_COLLECTION}" "$ERR_FILE")"
+else
+    echo "FAIL: restricted dump rejected: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP USER ${RBAC_USER};
+    DROP DATABASE ${RBAC_DB} SYNC;
+    DROP NAMED COLLECTION ${RBAC_COLLECTION};
+"
 rm -f "$ERR_FILE"

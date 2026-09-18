@@ -1,18 +1,8 @@
 #include <Client/SchemaDumper.h>
 
-#include <Databases/enableAllExperimentalSettings.h>
 #include <Client/IServerConnection.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/Exception.h>
-#include <Common/OptimizedRegularExpression.h>
-#include <Common/StringUtils.h>
-#include <Common/escapeForFileName.h>
-#include <Common/isLocalAddress.h>
-#include <Common/parseAddress.h>
-#include <Common/parseRemoteDescription.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <Core/Field.h>
@@ -21,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/TablesDependencyGraph.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
@@ -38,16 +29,27 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <base/EnumReflection.h>
 #include <Poco/Net/IPAddress.h>
+#include <Common/Exception.h>
+#include <Common/OptimizedRegularExpression.h>
+#include <Common/StringUtils.h>
+#include <Common/escapeForFileName.h>
+#include <Common/isLocalAddress.h>
+#include <Common/parseAddress.h>
+#include <Common/parseRemoteDescription.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <cctype>
@@ -260,11 +262,16 @@ std::vector<std::pair<String, String>> readPairArray(const Field & firsts_field,
     return result;
 }
 
+struct NamedCollectionDependencies
+{
+    bool unscannable = false;
+    std::vector<String> confirmed;
+    std::vector<String> unconfirmed;
+};
+
 /// One dumped table, with enough dependency information to order it for replay.
 struct TableInfo
 {
-    /// Its stored CREATE could not be parsed, so it was not scanned for named collections.
-    bool create_unscannable = false;
     String database;
     String name;
     String create_query;
@@ -272,16 +279,13 @@ struct TableInfo
     /// Database-less references no dumped database contains. They resolve against `database` on
     /// replay, which does not contain them either, so the dump cannot create them.
     std::vector<String> unresolved_references;
-    /// Named collections the stored CREATE names; they live on the server, not in a database.
-    std::vector<String> named_collections;
+    NamedCollectionDependencies named_collections;
 };
 
 /// One `system.tables` row as fetched, before implicit storage tables are filtered out and the
 /// final dependency list per table is assembled.
 struct RawTableRow
 {
-    /// Its stored CREATE could not be parsed, so it was not scanned for named collections.
-    bool create_unscannable = false;
     String database;
     String name;
     String engine;
@@ -291,7 +295,7 @@ struct RawTableRow
     std::vector<std::pair<String, String>> loading_dependencies;
     std::vector<std::pair<String, String>> dependents; /// views/dictionaries that read from this table
     std::vector<String> unresolved_references;
-    std::vector<String> named_collections;
+    NamedCollectionDependencies named_collections;
     String target_database; /// materialized view only: its `TO` target, explicit or implicit
     String target_table;
 };
@@ -1192,49 +1196,252 @@ void collectFunctionArgumentReferences(
     }
 }
 
-/// Collects the named collections a stored CREATE names - a leading identifier in a table/database
-/// engine or table function, a dictionary source's `name` key. Replay needs them already on the server.
-void collectNamedCollections(const IAST & node, const ClusterLocality & clusters, std::vector<String> & out)
+void addNamedCollectionDependency(const String & name, const ClusterLocality & clusters, NamedCollectionDependencies & dependencies)
 {
-    /// `cluster`/`clusterAllReplicas` take a cluster name there and refuse a collection outright.
-    if (const auto * function = node.as<ASTFunction>();
-        function && function->arguments && !isClusterTableFunctionName(function->name))
+    if (clusters.named_collections().contains(name))
+        dependencies.confirmed.push_back(name);
+    else
+        dependencies.unconfirmed.push_back(name);
+}
+
+bool tableFunctionUsesNamedCollections(std::string_view name)
+{
+    static constexpr std::string_view names[] = {
+        "remote",
+        "remoteSecure",
+        "url",
+        "urlCluster",
+        "mysql",
+        "postgresql",
+        "mongodb",
+        "jdbc",
+        "odbc",
+        "arrowFlight",
+        "arrowflight",
+        "bigquery",
+        "fuzzJSON",
+        "ytsaurus",
+        "s3",
+        "s3Cluster",
+        "gcs",
+        "cosn",
+        "oss",
+        "azureBlobStorage",
+        "azureBlobStorageCluster",
+        "hdfs",
+        "hdfsCluster",
+        "iceberg",
+        "icebergCluster",
+        "icebergS3",
+        "icebergS3Cluster",
+        "icebergAzure",
+        "icebergAzureCluster",
+        "icebergHDFS",
+        "icebergHDFSCluster",
+        "icebergLocal",
+        "icebergLocalCluster",
+        "deltaLake",
+        "deltaLakeCluster",
+        "deltaLakeS3",
+        "deltaLakeS3Cluster",
+        "deltaLakeAzure",
+        "deltaLakeAzureCluster",
+        "deltaLakeLocal",
+        "hudi",
+        "hudiCluster",
+        "paimon",
+        "paimonCluster",
+        "paimonS3",
+        "paimonS3Cluster",
+        "paimonAzure",
+        "paimonAzureCluster",
+        "paimonHDFS",
+        "paimonHDFSCluster",
+        "paimonLocal",
+    };
+    return std::ranges::find(names, name) != std::end(names);
+}
+
+bool tableEngineUsesNamedCollections(std::string_view name)
+{
+    static constexpr std::string_view names[] = {
+        "URL",
+        "MySQL",
+        "PostgreSQL",
+        "MaterializedPostgreSQL",
+        "MongoDB",
+        "JDBC",
+        "ODBC",
+        "ArrowFlight",
+        "BigQuery",
+        "FuzzJSON",
+        "YTsaurus",
+        "Redis",
+        "Kafka",
+        "NATS",
+        "RabbitMQ",
+        "Remote",
+        "RemoteSecure",
+        "S3",
+        "S3Queue",
+        "GCS",
+        "COSN",
+        "OSS",
+        "AzureBlobStorage",
+        "AzureQueue",
+        "HDFS",
+        "Iceberg",
+        "IcebergS3",
+        "IcebergAzure",
+        "IcebergHDFS",
+        "IcebergLocal",
+        "DeltaLake",
+        "DeltaLakeS3",
+        "DeltaLakeAzure",
+        "DeltaLakeLocal",
+        "Hudi",
+        "Paimon",
+        "PaimonS3",
+        "PaimonAzure",
+        "PaimonHDFS",
+        "PaimonLocal",
+    };
+    return std::ranges::find(names, name) != std::end(names);
+}
+
+bool databaseEngineUsesNamedCollections(std::string_view name)
+{
+    static constexpr std::string_view names[] = {
+        "S3",
+        "MySQL",
+        "PostgreSQL",
+        "MaterializedPostgreSQL",
+        "Remote",
+        "RemoteSecure",
+    };
+    return std::ranges::find(names, name) != std::end(names);
+}
+
+void collectNamedCollectionFromFunction(
+    const ASTFunction & function,
+    size_t slot,
+    bool classify_remote,
+    const ClusterLocality & clusters,
+    NamedCollectionDependencies & dependencies)
+{
+    if (!function.arguments || slot >= function.arguments->children.size())
+        return;
+
+    String name;
+    if (!tryGetIdentifierNameInto(function.arguments->children[slot], name))
+        return;
+
+    if (classify_remote)
     {
-        /// `tryGetNamedCollectionWithOverrides` reads the collection from the first argument; a
-        /// `*Cluster` table function erases the cluster name first, so its collection is the second.
-        size_t slot = function->name.ends_with("Cluster") && TableFunctionFactory::instance().isTableFunctionName(function->name) ? 1 : 0;
-        String name;
-        if (slot < function->arguments->children.size() && tryGetIdentifierNameInto(function->arguments->children[slot], name))
+        if (tryGetRemoteNamedCollection(function, name, clusters))
+            dependencies.confirmed.push_back(name);
+    }
+    else
+        addNamedCollectionDependency(name, clusters, dependencies);
+}
+
+void collectNamedCollectionsFromTableExpressions(
+    const IAST & node, const ClusterLocality & clusters, NamedCollectionDependencies & dependencies);
+
+void collectNamedCollectionsFromTableFunction(
+    const ASTFunction & function, const ClusterLocality & clusters, NamedCollectionDependencies & dependencies)
+{
+    const bool is_remote = isRemoteTableFunctionName(function.name) || function.name == "Remote" || function.name == "RemoteSecure";
+    if (tableFunctionUsesNamedCollections(function.name))
+    {
+        const size_t slot = function.name.ends_with("Cluster") ? 1 : 0;
+        collectNamedCollectionFromFunction(function, slot, is_remote, clusters, dependencies);
+    }
+
+    if (!function.arguments)
+        return;
+
+    for (const auto & argument : function.arguments->children)
+        collectNamedCollectionsFromTableExpressions(*argument, clusters, dependencies);
+
+    const auto collect_nested = [&](const ASTPtr & argument)
+    {
+        const auto * nested = argument ? argument->as<ASTFunction>() : nullptr;
+        if (nested && TableFunctionFactory::instance().isTableFunctionName(nested->name))
+            collectNamedCollectionsFromTableFunction(*nested, clusters, dependencies);
+    };
+
+    const auto & arguments = function.arguments->children;
+    if ((is_remote || isClusterTableFunctionName(function.name)) && arguments.size() >= 2)
+        collect_nested(arguments[1]);
+    else if (function.name == "loop" && arguments.size() == 1)
+        collect_nested(arguments[0]);
+    else if (function.name == "viewIfPermitted" && arguments.size() == 2)
+        collect_nested(arguments[1]);
+
+    if (is_remote)
+    {
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
-            /// `remote*` refuses a name it can classify as neither cluster nor collection, because its
-            /// locality decides a dependency edge; every other carrier only needs the name reported.
-            if (isRemoteTableFunctionName(function->name))
-            {
-                if (tryGetRemoteNamedCollection(*function, name, clusters))
-                    out.push_back(name);
-            }
-            else if (clusters.named_collections().contains(name))
-                out.push_back(name);
+            const auto * equals = arguments[i]->as<ASTFunction>();
+            if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+                continue;
+            String key;
+            if (tryGetIdentifierNameInto(equals->arguments->children[0], key) && (key == "database" || key == "db"))
+                collect_nested(equals->arguments->children[1]);
         }
     }
-    else if (const auto * pair = node.as<ASTPair>(); pair && pair->first == "name" && pair->second)
+}
+
+void collectNamedCollectionsFromTableExpressions(
+    const IAST & node, const ClusterLocality & clusters, NamedCollectionDependencies & dependencies)
+{
+    if (const auto * table_expression = node.as<ASTTableExpression>())
     {
+        if (const auto * function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr)
+            collectNamedCollectionsFromTableFunction(*function, clusters, dependencies);
+        if (table_expression->subquery)
+            collectNamedCollectionsFromTableExpressions(*table_expression->subquery, clusters, dependencies);
+        return;
+    }
+
+    for (const auto & child : node.children)
+        collectNamedCollectionsFromTableExpressions(*child, clusters, dependencies);
+}
+
+void collectDictionaryNamedCollection(
+    const ASTFunctionWithKeyValueArguments * source, const ClusterLocality & clusters, NamedCollectionDependencies & dependencies)
+{
+    static constexpr std::string_view source_names[] = {
+        "clickhouse",
+        "http",
+        "mongodb",
+        "mysql",
+        "postgresql",
+        "ytsaurus",
+    };
+    if (!source || !source->elements || std::ranges::find(source_names, source->name) == std::end(source_names))
+        return;
+
+    for (const auto & element : source->elements->children)
+    {
+        const auto * pair = element->as<ASTPair>();
+        if (!pair || pair->first != "name" || !pair->second)
+            continue;
         String name;
         if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
             name = literal->value.safeGet<String>();
         else
             tryGetIdentifierNameInto(pair->second, name);
-        if (!name.empty() && clusters.named_collections().contains(name))
-            out.push_back(name);
+        if (!name.empty())
+            addNamedCollectionDependency(name, clusters, dependencies);
     }
-    for (const auto & child : node.children)
-        collectNamedCollections(*child, clusters, out);
 }
 
-/// Parses a stored CREATE and collects every named collection it names. Refuses on a parse failure:
-/// a carrier missed here leaves the dump silently unreplayable.
-std::vector<String> namedCollectionsOfCreate(const String & create_query, const ClusterLocality & clusters, bool & unscannable)
+/// Parses one stored CREATE and records confirmed, hidden, or unscannable collection dependencies.
+NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query, const ClusterLocality & clusters)
 {
+    NamedCollectionDependencies dependencies;
     ASTPtr create_ast;
     try
     {
@@ -1243,15 +1450,29 @@ std::vector<String> namedCollectionsOfCreate(const String & create_query, const 
     }
     catch (const Exception &)
     {
-        /// The dump emits this CREATE verbatim either way, so a text this parser cannot read costs a
-        /// warning about that object, not the whole dump.
-        unscannable = true;
-        return {};
+        dependencies.unscannable = true;
+        return dependencies;
     }
 
-    std::vector<String> collections;
-    collectNamedCollections(*create_ast, clusters, collections);
-    return collections;
+    const auto * create = create_ast->as<ASTCreateQuery>();
+    if (!create)
+        return dependencies;
+
+    if (const auto * engine = create->storage ? create->storage->engine : nullptr; engine
+        && (create->getTable().empty() ? databaseEngineUsesNamedCollections(engine->name) : tableEngineUsesNamedCollections(engine->name)))
+    {
+        const bool classify_remote = !create->getTable().empty() && (engine->name == "Remote" || engine->name == "RemoteSecure");
+        collectNamedCollectionFromFunction(*engine, 0, classify_remote, clusters, dependencies);
+        if (classify_remote)
+            collectNamedCollectionsFromTableFunction(*engine, clusters, dependencies);
+    }
+    if (const auto * function = create->as_table_function ? create->as_table_function->as<ASTFunction>() : nullptr)
+        collectNamedCollectionsFromTableFunction(*function, clusters, dependencies);
+    if (create->select)
+        collectNamedCollectionsFromTableExpressions(*create->select, clusters, dependencies);
+    if (create->dictionary)
+        collectDictionaryNamedCollection(create->dictionary->source, clusters, dependencies);
+    return dependencies;
 }
 
 /// Combines server dependency columns with parsed view references and drops implicit storage.
@@ -1380,12 +1601,10 @@ std::vector<TableInfo> resolveTables(
         }
     }
 
-    /// A collection can be named anywhere in a stored CREATE - a table engine, a dictionary source,
-    /// a table function - so the whole statement is scanned rather than just a view's SELECT.
+    /// Scan only CREATE slots whose runtime parsers accept named collections.
     for (auto & row : rows)
         if (!row.create_query.empty())
-            row.named_collections
-                = namedCollectionsOfCreate(row.create_query, clusters, row.create_unscannable);
+            row.named_collections = namedCollectionsOfCreate(row.create_query, clusters);
 
     for (auto & row : rows)
     {
@@ -1517,7 +1736,6 @@ std::vector<TableInfo> resolveTables(
         table.dependencies = std::move(row.loading_dependencies);
         table.unresolved_references = std::move(row.unresolved_references);
         table.named_collections = std::move(row.named_collections);
-        table.create_unscannable = row.create_unscannable;
         /// A dependency on an omitted helper table is remapped onto the owning object - which is what
         /// creates the helper on replay - so the edge survives instead of dangling on a skipped row.
         for (auto & dependency : table.dependencies)
@@ -1543,9 +1761,14 @@ std::vector<TableInfo> resolveTables(
 /// Fetches and resolves every dumpable table in `databases`; see `resolveTables`. `undumped_databases`
 /// are the server's other databases, which a `merge(REGEXP(...), ...)` can still reach.
 std::vector<TableInfo> fetchTables(
-    IServerConnection & connection, const ConnectionTimeouts & timeouts, const ClientInfo & client_info, ContextPtr context,
-    const std::vector<String> & databases, const std::set<String> & undumped_databases,
-    const std::map<String, String> & database_queries, std::map<String, std::vector<String>> & database_named_collections)
+    IServerConnection & connection,
+    const ConnectionTimeouts & timeouts,
+    const ClientInfo & client_info,
+    ContextPtr context,
+    const std::vector<String> & databases,
+    const std::set<String> & undumped_databases,
+    const std::map<String, String> & database_queries,
+    std::map<String, NamedCollectionDependencies> & database_named_collections)
 {
     /// Resolved once per dump: the walkers gate `cluster*` calls on the server's cluster locality.
     ClusterLocality clusters;
@@ -1646,11 +1869,7 @@ std::vector<TableInfo> fetchTables(
 
     /// A database engine carries a collection the same way a table engine does.
     for (const auto & [db, create_query] : database_queries)
-    {
-        bool unscannable = false;
-        if (auto collections = namedCollectionsOfCreate(create_query, clusters, unscannable); !collections.empty())
-            database_named_collections.emplace(db, std::move(collections));
-    }
+        database_named_collections.emplace(db, namedCollectionsOfCreate(create_query, clusters));
 
     return resolveTables(fetchRawRows(connection, timeouts, client_info, databases, context->getSettingsRef()), clusters, undumped_databases, undumped_tables_by_db);
 }
@@ -1686,8 +1905,10 @@ void reportMaskedSecrets(
 }
 
 void reportDependenciesOutsideDumpSet(
-    const std::vector<TableInfo> & tables, const std::map<String, std::vector<String>> & database_named_collections,
-    const std::vector<String> & target_databases, std::ostream & err)
+    const std::vector<TableInfo> & tables,
+    const std::map<String, NamedCollectionDependencies> & database_named_collections,
+    const std::vector<String> & target_databases,
+    std::ostream & err)
 {
     std::set<String> dumped_databases(target_databases.begin(), target_databases.end());
 
@@ -1703,12 +1924,21 @@ void reportDependenciesOutsideDumpSet(
     /// include credentials, which a schema dump must not print, so it is reported rather than emitted.
     std::set<std::tuple<String, String, String>> collections;
     for (const auto & table : tables)
-        for (const auto & collection : table.named_collections)
+        for (const auto & collection : table.named_collections.confirmed)
             collections.emplace(table.database, table.name, collection);
+    std::set<std::tuple<String, String, String>> unconfirmed_collections;
+    for (const auto & table : tables)
+        for (const auto & collection : table.named_collections.unconfirmed)
+            unconfirmed_collections.emplace(table.database, table.name, collection);
     std::set<std::pair<String, String>> database_collections;
-    for (const auto & [database, names] : database_named_collections)
-        for (const auto & collection : names)
+    std::set<std::pair<String, String>> unconfirmed_database_collections;
+    for (const auto & [database, dependencies] : database_named_collections)
+    {
+        for (const auto & collection : dependencies.confirmed)
             database_collections.emplace(database, collection);
+        for (const auto & collection : dependencies.unconfirmed)
+            unconfirmed_database_collections.emplace(database, collection);
+    }
 
     /// The original session database is unknown; replay binds these names to the owner database.
     std::set<std::tuple<String, String, String>> unresolved;
@@ -1727,21 +1957,37 @@ void reportDependenciesOutsideDumpSet(
             << "created by this dump; its values can include credentials, so the dump does not carry them.\n";
 
     for (const auto & table : tables)
-        if (table.create_unscannable)
+        if (table.named_collections.unscannable)
             err << "Warning: the stored CREATE of " << backQuoteIfNeed(table.database) << "." << backQuoteIfNeed(table.name)
                 << " could not be parsed here, so it was not checked for named collections; it is dumped as it is stored.\n";
+
+    for (const auto & [database, name, collection] : unconfirmed_collections)
+        err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " may depend on named collection "
+            << backQuoteIfNeed(collection) << ", but this session cannot see that name in system.named_collections; "
+            << "the collection is not included in this dump.\n";
 
     for (const auto & [database, collection] : database_collections)
         err << "Warning: database " << backQuoteIfNeed(database) << " depends on named collection "
             << backQuoteIfNeed(collection) << ", which lives on the server rather than in a database and will not be "
             << "created by this dump; its values can include credentials, so the dump does not carry them.\n";
 
+    for (const auto & [database, dependencies] : database_named_collections)
+        if (dependencies.unscannable)
+            err << "Warning: the stored CREATE of database " << backQuoteIfNeed(database)
+                << " could not be parsed here, so it was not checked for named collections; it is dumped as it is stored.\n";
+
+    for (const auto & [database, collection] : unconfirmed_database_collections)
+        err << "Warning: database " << backQuoteIfNeed(database) << " may depend on named collection " << backQuoteIfNeed(collection)
+            << ", but this session cannot see that name in system.named_collections; "
+            << "the collection is not included in this dump.\n";
+
     for (const auto & [database, name, reference] : unresolved)
         err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " references "
             << backQuoteIfNeed(reference) << " without a database; no dumped database contains it, and on replay it "
             << "will resolve against " << backQuoteIfNeed(database) << ", which does not contain it either.\n";
 
-    if (!missing.empty() || !unresolved.empty() || !collections.empty() || !database_collections.empty())
+    if (!missing.empty() || !unresolved.empty() || !collections.empty() || !database_collections.empty() || !unconfirmed_collections.empty()
+        || !unconfirmed_database_collections.empty())
         err << "Warning: replaying this dump into a fresh instance requires those objects to already exist.\n";
 }
 
@@ -1982,17 +2228,20 @@ String replaySettingsPrelude(const std::set<String> & settings_known_to_server, 
     };
 
     String res;
-    /// Emit all shared experimental settings unconditionally — CREATE replay re-enters
-    /// many of them (view/projection analysis, default-expression validation, suspicious-type
-    /// checks, etc.) and narrowing the list risks making the dump non-self-contained.
-    /// Exclude three known-dead settings that cannot gate a replay on any schema.
+    /// Shared gates stay conservative except analyzer-only and dead settings proven absent.
     static const std::set<std::string_view> dead_settings = {
         "allow_experimental_window_functions",
         "allow_experimental_hash_functions",
         "allow_simdjson",
     };
+    static const std::set<std::string_view> analyzer_settings = {
+        "allow_suspicious_types_in_group_by",
+        "allow_suspicious_types_in_order_by",
+        "allow_experimental_correlated_subqueries",
+    };
     for (const auto & name : allExperimentalSettingNames())
-        if (settings_known_to_server.contains(name) && !dead_settings.contains(name))
+        if (settings_known_to_server.contains(name) && !dead_settings.contains(name)
+            && (!analyzer_settings.contains(name) || needs.analyzable_query_text))
             res += "SET " + name + " = 1;\n";
     /// Emit dump-specific gates only when the dumped AST proves they are needed.
     for (const auto & [name, value] : dump_specific)
@@ -2130,7 +2379,7 @@ void dumpDatabaseSchema(
         for (const auto & db : target_databases)
             undumped_databases.erase(db);
 
-        std::map<String, std::vector<String>> database_named_collections;
+        std::map<String, NamedCollectionDependencies> database_named_collections;
         tables = fetchTables(connection, timeouts, client_info, context, target_databases, undumped_databases,
             create_database_query_by_db, database_named_collections);
         reportDependenciesOutsideDumpSet(tables, database_named_collections, target_databases, err);
