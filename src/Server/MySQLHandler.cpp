@@ -749,6 +749,12 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
 
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
+
+        /// A well-formed client never sends more than the packet it declared in the
+        /// header. Without this check `packet_size - pos` underflows when pos > packet_size,
+        /// turning the copyData() below into an unbounded pre-auth read (read until EOF).
+        if (pos > packet_size)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Malformed MySQL handshake packet: received {} bytes, but packet declares {}", pos, packet_size);
         WriteBufferFromOwnString buf_for_handshake_response;
         buf_for_handshake_response.write(buf.data(), pos);
         copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
