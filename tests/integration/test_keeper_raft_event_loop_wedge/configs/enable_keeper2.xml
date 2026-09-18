@@ -21,8 +21,9 @@
                  Raft event loop. 100 ms compresses the time axis of the incident 50 times. -->
             <heart_beat_interval_ms>100</heart_beat_interval_ms>
             <raft_limits_reconnect_limit>1</raft_limits_reconnect_limit>
-            <!-- The wait for the replay lasts heart_beat_interval_ms * raft_limits_response_limit,
-                 200 ms here, so it always expires long before a replay of this size finishes. -->
+            <!-- The wait for the replay lasts heart_beat_interval_ms times one heartbeat less
+                 than the smaller of the two limits above, 100 ms here, so it always expires
+                 long before a replay of this size finishes. -->
             <raft_limits_response_limit>2</raft_limits_response_limit>
             <election_timeout_lower_bound_ms>1000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>2000</election_timeout_upper_bound_ms>

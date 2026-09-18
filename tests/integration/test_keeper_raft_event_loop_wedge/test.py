@@ -213,7 +213,7 @@ def test_raft_event_loop_is_not_wedged_by_log_replay(started_cluster):
         )
     assert waiting == 0, "a thread of the Raft event loop is still waiting for log preprocessing"
 
-    # The deadline is 200 ms here and the replay takes seconds, so every wait must have ended on
+    # The deadline is 100 ms here and the replay takes seconds, so every wait must have ended on
     # the deadline rather than because the replay finished underneath it.
     assert grep_log(node2, f"{WAIT_STOPPED}, preprocessed=false"), (
         "no wait for log preprocessing ended on its deadline"

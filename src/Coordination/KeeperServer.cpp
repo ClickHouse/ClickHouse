@@ -40,6 +40,8 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadStatus.h>
 
+#include <algorithm>
+
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
 #    include <openssl/ssl.h>
@@ -1046,7 +1048,7 @@ void KeeperServer::waitForLocalLogsPreprocessing()
     /// election and heartbeat timers and every RPC completion. No callback invoked from there
     /// may block for an unbounded time, or a slow local log replay stops the whole event loop
     /// instead of merely costing throughput. So only one thread waits, and only for as long as
-    /// the leader still expects a response.
+    /// answering still achieves something.
     if (threads_waiting_for_local_logs_preprocessing.fetch_add(1) != 0)
     {
         threads_waiting_for_local_logs_preprocessing.fetch_sub(1);
@@ -1059,8 +1061,18 @@ void KeeperServer::waitForLocalLogsPreprocessing()
 
     /// Read the values the instance is running with rather than the settings they came from:
     /// both are bounded where they enter NuRaft, so the product cannot overflow here.
+    ///
+    /// Two limits bound how long answering is still worth anything, both counted in heartbeats.
+    /// Past `reconnect_limit_` the leader replaces the connection and discards whatever arrives
+    /// on the old one, so the hint this response carries would be lost and have to be repeated
+    /// on the next round trip. Past `response_limit_` the cluster counts this node as not
+    /// responding and may expire the leader over it. One heartbeat is left as margin, because
+    /// the leader's timer starts when it sends and this one when the request is received, so
+    /// waiting for the whole limit means answering after it has already expired.
+    const auto raft_limits = nuraft::raft_server::get_raft_limits();
+    const uint64_t heartbeats_to_wait = std::min<uint64_t>(raft_limits.response_limit_, raft_limits.reconnect_limit_);
     const uint64_t wait_timeout_ms = static_cast<uint64_t>(raft_instance->get_current_params().heart_beat_interval_)
-        * nuraft::raft_server::get_raft_limits().response_limit_;
+        * (heartbeats_to_wait > 1 ? heartbeats_to_wait - 1 : 1);
 
     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
     bool preprocessed = keeper_context->waitLocalLogsPreprocessedOrShutdown(wait_timeout_ms);
