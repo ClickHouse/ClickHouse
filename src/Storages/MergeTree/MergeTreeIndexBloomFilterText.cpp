@@ -852,7 +852,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         auto & value = const_value.safeGet<String>();
         /// Validate the regexp before using its required substring to build
         /// the skip-index condition.
-        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
+        Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
         if (result.required_substring.empty() && result.alternatives.empty())
