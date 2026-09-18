@@ -233,6 +233,7 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
+    PAUSEABLE(storage_merge_tree_load_mutations_pause_before_read) \
     PAUSEABLE(merge_tree_drop_all_data_pause_before_removing_parts) \
     PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \

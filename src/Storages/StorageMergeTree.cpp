@@ -84,6 +84,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char storage_merge_tree_background_clear_old_parts_pause[];
+    extern const char storage_merge_tree_load_mutations_pause_before_read[];
     extern const char mt_merge_selecting_task_pause_when_scheduled[];
     extern const char mt_select_parts_to_mutate_no_free_threads[];
     extern const char mt_select_parts_to_mutate_max_part_size[];
@@ -160,6 +161,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int FAULT_INJECTED;
     extern const int INVALID_TRANSACTION;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace ActionLocks
@@ -1663,6 +1665,34 @@ void StorageMergeTree::loadDeduplicationLog()
     }
 }
 
+MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_name) const
+{
+    try
+    {
+        return MergeTreeMutationEntry(disk, relative_data_path, file_name);
+    }
+    catch (const Exception & e)
+    {
+        /// A readonly table over the directory of a live table (`table_disk` on a shared `plain_rewritable` endpoint)
+        /// does not own the entries: the owner removes one at any moment (`KILL MUTATION`, `clearOldMutations`), also
+        /// between the listing and this read. The table cannot load without the entry - a part below its version
+        /// would miss the commands - so the load fails, but with the reason instead of a missing object: the error
+        /// is transient, and the caller can retry once the metadata of the disk, which still lists the entry, is reloaded.
+        if (!disk->isReadOnly() || disk->checkUniqueId(disk->getUniqueId(fs::path(relative_data_path) / file_name)))
+            throw;
+
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The mutation entry {} of the readonly table {} was removed by the table that owns the directory while this "
+            "table was loading it. Reload the metadata of the disk (SYSTEM DROP DISK METADATA CACHE {}) and retry the "
+            "attach. The read failed with: {}",
+            file_name,
+            getStorageID().getNameForLogs(),
+            backQuoteIfNeed(disk->getName()),
+            e.message());
+    }
+}
+
 void StorageMergeTree::loadMutations()
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::loadMutations");
@@ -1680,7 +1710,9 @@ void StorageMergeTree::loadMutations()
         {
             if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
+                FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_load_mutations_pause_before_read);
+
+                MergeTreeMutationEntry entry = loadMutationEntry(disk, it->name());
                 UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
