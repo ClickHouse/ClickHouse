@@ -152,10 +152,10 @@ REGISTER_FUNCTION(DetectCharset)
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 Detects the character set of a non-UTF8-encoded input string.
 )";
@@ -177,10 +177,10 @@ Detects the character set of a non-UTF8-encoded input string.
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
 Prefer this version when your character set is UTF-16 or UTF-32.
