@@ -1,0 +1,10 @@
+-- CREATE stays refused
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- rows survive a reload from the stored definition
+100	t_sort
+100	t_part
+100	t_conc
+-- a constant key is still refused on attach
+(ILLEGAL_COLUMN)
