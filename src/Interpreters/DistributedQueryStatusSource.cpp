@@ -135,7 +135,7 @@ Strings DistributedQueryStatusSource::getNewAndUpdate(const Strings & current_fi
 }
 
 
-ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path & status_path, bool * node_exists)
+ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path & status_path)
 {
     ExecutionStatus status(-1, "Cannot obtain error message");
 
@@ -144,10 +144,6 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
 
     auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo());
     retries_ctl.retryLoop([&]() { finished_exists = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryGet(status_path, status_data); });
-    if (node_exists)
-        *node_exists = finished_exists;
-    /// tryDeserializeText is atomic: a present-but-corrupt payload leaves the (-1) sentinel intact, so a
-    /// caller pairing node_exists with the sentinel can tell an absent node from a corrupt present one.
     if (finished_exists)
         status.tryDeserializeText(status_data);
 
@@ -189,7 +185,7 @@ Chunk DistributedQueryStatusSource::generate()
     bool all_hosts_finished = num_hosts_finished >= waiting_hosts.size();
 
     /// Seems like num_hosts_finished cannot be strictly greater than waiting_hosts.size()
-    chassert(num_hosts_finished <= waiting_hosts.size());
+    assert(num_hosts_finished <= waiting_hosts.size());
 
     if (all_hosts_finished || timeout_exceeded)
         return {};

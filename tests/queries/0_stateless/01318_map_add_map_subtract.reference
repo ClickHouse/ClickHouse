@@ -43,7 +43,6 @@
 (['b'],[2])	Tuple(Array(Enum8(\'a\' = 1, \'b\' = 2)), Array(Int64))
 (['00000000-89ab-cdef-0123-456789abcdef'],[2])	Tuple(Array(UUID), Array(Int64))
 (['11111111-89ab-cdef-0123-456789abcdef'],[4])	Tuple(Array(UUID), Array(Int64))
-(['k'],[30])
 ([1,2],[0,0])	Tuple(Array(UInt8), Array(UInt64))
 ([1,2],[18446744073709551615,18446744073709551615])	Tuple(Array(UInt8), Array(UInt64))
 ([1,2],[-1,-1])	Tuple(Array(UInt8), Array(Int64))

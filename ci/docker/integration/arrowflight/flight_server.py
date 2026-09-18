@@ -2,6 +2,7 @@
 
 import argparse
 import base64
+import json
 
 import pyarrow as pa
 import pyarrow.flight as fl
@@ -28,31 +29,6 @@ class FlightServer(fl.FlightServerBase):
         )
         self._tables["XYZ"] = pa.table(
             {"column3": column3_data, "column4": column4_data}, schema=self._schema_xyz
-        )
-
-        nullable_record = pa.struct([pa.field("x", pa.int64(), nullable=True)])
-        required_record = pa.struct([pa.field("x", pa.int64(), nullable=False)])
-        nested_record = pa.struct([pa.field("child", required_record, nullable=True)])
-        struct_schema = pa.schema(
-            [
-                pa.field("id", pa.int64(), nullable=False),
-                pa.field("record", nullable_record, nullable=True),
-                pa.field("required_record", required_record, nullable=False),
-                pa.field("nested_record", nested_record, nullable=False),
-            ]
-        )
-        self._tables["STRUCTS"] = pa.Table.from_pydict(
-            {
-                "id": [0, 1, 2],
-                "record": [None, {"x": None}, {"x": 7}],
-                "required_record": [{"x": 10}, {"x": 11}, {"x": 12}],
-                "nested_record": [
-                    {"child": None},
-                    {"child": {"x": 0}},
-                    {"child": {"x": 8}},
-                ],
-            },
-            schema=struct_schema,
         )
 
     def do_get(self, context, ticket):

@@ -21,13 +21,12 @@ namespace ErrorCodes
 
 std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const ASTFunction & node)
 {
-    /// `ASTFunction::arguments` is optional: a function written without parentheses has none.
-    if (!node.arguments || node.arguments->children.size() != 2)
+    if (node.arguments->children.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
 
     const auto * lambda_args_tuple = node.arguments->children[0]->as<ASTFunction>();
 
-    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple" || !lambda_args_tuple->arguments)
+    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
         throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
 
     std::vector<String> names;
