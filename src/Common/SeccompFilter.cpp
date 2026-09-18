@@ -1,5 +1,14 @@
 #include <Common/SeccompFilter.h>
 
+/// Declared for the whole file, not inside the architecture branches below: each branch uses only
+/// some of these, and a declaration per branch is a duplicate to the style check, which reads the
+/// file as text.
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int SYSTEM_ERROR;
+}
+
 /// A policy is a list of system call numbers, and those are specific to an architecture, so only
 /// x86-64 and AArch64 are covered. The condition also keeps the kernel headers below out of the
 /// build on the architectures that do not need them: not every sysroot ClickHouse builds against
@@ -35,12 +44,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int SYSTEM_ERROR;
-}
 
 /// The system calls that `clickhouse-server` - and every process it forks, which inherits the
 /// filter - is allowed to make. Anything not named here gets the action configured by the
@@ -790,11 +793,6 @@ size_t installSeccompFilter(SeccompMode mode)
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int SYSTEM_ERROR;
-}
 
 size_t installSeccompFilter(SeccompMode mode)
 {
