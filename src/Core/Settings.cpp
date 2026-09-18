@@ -2236,9 +2236,7 @@ The number of streams that read simultaneously is capped by this multiplier as w
 )", 0) \
     \
     DECLARE(String, network_compression_method, "ZSTD", R"(
-The codec for compressing the client/server and server/server communication over the native protocol, and the response of an HTTP request made with `compress=1`, which uses the same frame format.
-
-The setting does not apply to the streaming-exchange channel of distributed queries, which always uses the server default codec: every compressed frame is self-describing, so the receiver detects the codec automatically.
+The codec for compressing the client/server and server/server communication over the native protocol, the response of an HTTP request made with `compress=1`, which uses the same frame format, and the streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`). Exchanges through temporary files use the default codec of the server.
 
 Possible values:
 
@@ -6017,10 +6015,22 @@ Enables using projections to filter part ranges even when projections are not se
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
+When enabled, a projection that can serve the query is used even if it requires reading more marks than the table itself, and the query fails with the `PROJECTION_NOT_USED` error when no projection can be used.
+
 Possible values:
 
 - 0 — Projection optimization is not obligatory.
 - 1 — Projection optimization is obligatory.
+)", 0) \
+    DECLARE(Bool, prefer_optimize_projection, false, R"(
+Makes the projection optimization prefer [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) over the table in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
+
+When enabled, a projection that can serve the query is used even if it requires reading more marks than the table itself, the same as with [force_optimize_projection](#force_optimize_projection), but the query does not fail when no projection can be used.
+
+Possible values:
+
+- 0 — Projections are chosen by their estimated cost.
+- 1 — A usable projection is chosen regardless of its estimated cost.
 )", 0) \
     DECLARE(String, force_optimize_projection_name, "", R"(
 If it is set to a non-empty string, check that this projection is used in the query at least once.
@@ -7450,7 +7460,7 @@ Maximum time to wait for a file segment which is being downloaded to the filesys
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
     DECLARE(UInt64, filesystem_cache_boundary_alignment, 0, R"(
-Filesystem cache boundary alignment. This setting is applied only for non-disk read (e.g. for cache of remote table engines / table functions, but not for storage configuration of MergeTree tables). Value 0 means no alignment.
+Filesystem cache boundary alignment. For non-disk read (e.g. for cache of remote table engines / table functions) value 0 means no alignment. For disk read (e.g. for MergeTree tables on a disk with cache) value 0 means that `boundary_alignment` from the cache configuration is used.
 )", 0) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
 Wait time to lock cache for space reservation for temporary data in filesystem cache
@@ -8323,6 +8333,11 @@ Use Iceberg partition pruning for Iceberg tables
 )", 0) \
     DECLARE(Bool, use_iceberg_manifest_list_partition_pruning, true, R"(
 Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
+)", 0) \
+    DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
+If enabled and the `schema` key of an Iceberg manifest file header carries a schema that differs from the schema already registered for the same schema-id from metadata.json, the metadata.json schema is used and the manifest header copy is ignored with a warning. If disabled, such a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
+
+The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 )", 0) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
