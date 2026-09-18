@@ -23,12 +23,17 @@ ${CLICKHOUSE_CLIENT} --query_id "$QID" -q "${QUERY}" > /dev/null
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
-# Both facts come from that one execution: the query produces exactly group_by_two_level_threshold
+# All facts come from that one execution: the query produces exactly group_by_two_level_threshold
 # keys, so whether it spills is decided per run, and a run that did not spill satisfies the
 # read_rows assertion trivially. LIMIT 1 rather than an aggregate, so that no row at all leaves both
 # values empty and fails loudly.
-read -r SPILLED READ_ROWS <<<"$(${CLICKHOUSE_CLIENT} -q "
-    SELECT ProfileEvents['ExternalAggregationMerge'], read_rows
+read -r SPILLED READ_ROWS IN_MEMORY_INPUTS IN_MEMORY_PATHS IN_MEMORY_BUCKETS <<<"$(${CLICKHOUSE_CLIENT} -q "
+    SELECT
+        ProfileEvents['ExternalAggregationMerge'],
+        read_rows,
+        ProfileEvents['AggregationInMemoryMergeInputVariants'],
+        ProfileEvents['AggregationInMemoryMergePathSingleLevel'] + ProfileEvents['AggregationInMemoryMergePathTwoLevel'],
+        ProfileEvents['AggregationInMemoryMergeBuckets']
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase()
         AND query_id = '${QID}' AND type = 'QueryFinish'
@@ -44,4 +49,10 @@ if [[ "$READ_ROWS" == "100000" ]]; then
     echo "read_rows_correct"
 else
     echo "read_rows_wrong:$READ_ROWS"
+fi
+
+if [[ "$IN_MEMORY_INPUTS" == "0" && "$IN_MEMORY_PATHS" == "0" && "$IN_MEMORY_BUCKETS" == "0" ]]; then
+    echo "in_memory_merge_events_absent"
+else
+    echo "in_memory_merge_events_present:$IN_MEMORY_INPUTS:$IN_MEMORY_PATHS:$IN_MEMORY_BUCKETS"
 fi
