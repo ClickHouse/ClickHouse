@@ -53,6 +53,15 @@ public:
         CacheChain cache_chain = {};
     };
 
+    /// The sizes one window is read with. Sampled once per window from the memory-pressure level, so
+    /// they are at or below `window_size` / `block_size`, and travel together: every rule stated in
+    /// terms of "the current window" must use `window_bytes`, not the base `window_size`.
+    struct BlockAndWindowSizes
+    {
+        size_t window_bytes;
+        size_t block_bytes;
+    };
+
     ReaderExecutor(
         std::shared_ptr<IFileBasedSourceReader> source,
         const StoredObjects & objects,
@@ -179,18 +188,26 @@ private:
     }
 
     size_t clampReach(size_t predicted_end, size_t phys_pos) const;
-    bool shouldOpenLongConnection() const;
+    /// `window_bytes` is the window this read serves, so the admission rule ("the run outlives the
+    /// current window") holds at every pressure level, not only where the window equals `window_size`.
+    bool shouldOpenLongConnection(size_t window_bytes) const;
     bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base);
+    ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, BlockAndWindowSizes sizes);
     /// The single source-read entry point; spans object boundaries via `OffsetMap::map`. A
     /// known-size short read is truncation and throws.
-    ChainedBuffers readSource(size_t file_offset, size_t want);
+    ChainedBuffers readSource(size_t file_offset, size_t want, BlockAndWindowSizes sizes);
     /// Serve the window through the cache chain: serve the cached prefix, then claim and fetch the
     /// miss ranges and populate them. A range another thread is already downloading is fetched
     /// through from source. Precondition: `!cache_chain.empty()`.
-    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve);
-    void dropLongConnection();
+    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve, BlockAndWindowSizes sizes);
+    /// Sample the memory-pressure level and derive the sizes it implies. The only place the level is
+    /// read, because sampling advances the sticky cooldown: once per `readNextWindow`, plus once in
+    /// the destructor, which has no window to inherit sizes from.
+    BlockAndWindowSizes sampleWindowSizes() const;
+    /// `sizes.block_bytes` bounds the scratch buffer the discarded tail is drained through, so a
+    /// drop under pressure holds no more than a read under the same pressure.
+    void dropLongConnection(BlockAndWindowSizes sizes);
 
     /// The only logical<->physical converters: physical = header-inclusive file coords; logical =
     /// payload coords. A raw `+/- data_start_offset` anywhere else is a bug.

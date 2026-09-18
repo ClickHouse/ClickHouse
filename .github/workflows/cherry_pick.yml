@@ -13,13 +13,13 @@ concurrency:
   cancel-in-progress: false
 on: # yamllint disable-line rule:truthy
   schedule:
-    # Every 20 minutes. Offset from round values (e.g. */20 -> :00/:20/:40),
+    # Every 10 minutes. Offset from round values (e.g. */10 -> :00/:10/:20),
     # which are popular and get their launches delayed by GitHub.
     #
     # A tick that fires while the Python loop is running is not wasted work: it is
     # the successor that starts as soon as the loop exits, and it is what restarts
-    # the loop within 20 minutes if a run dies early.
-    - cron: '9,29,49 * * * *'
+    # the loop within 10 minutes if a run dies early.
+    - cron: '9,19,29,39,49,59 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -46,7 +46,9 @@ jobs:
         with:
           clear-repository: true
           token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
-          fetch-depth: 0
+          # Bootstrap the selected script; it fetches complete history for the
+          # default branch and active backport branches before processing PRs.
+          fetch-depth: 1
       - name: Debug Info
         uses: ./.github/actions/debug
       - name: Cherry pick
