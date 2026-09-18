@@ -42,8 +42,7 @@ public:
         if (has_function_arguments_nodes.size() != 2)
             return;
 
-        /// Verify that the first argument is a constant array. An Array-typed scalar subquery is a constant too,
-        /// but a context-reading `__getScalar` call rather than a `ConstantNode` while `enable_scalar_subquery_optimization` is on.
+        /// Verify that the first argument is a constant array
         ColumnPtr first_arg_column;
         if (const auto * first_arg_constant = has_function_arguments_nodes[0]->as<ConstantNode>())
             first_arg_column = first_arg_constant->getColumn();
@@ -77,8 +76,7 @@ public:
 
         const auto second_arg_type = has_function_arguments_nodes[1]->getResultType();
         WhichDataType expr_data_type(second_arg_type);
-        /// in() takes Nullable from its needle into its result type while has() always returns UInt8,
-        /// and a Nullable needle is where the two disagree about NULL anyway.
+        /// in() takes Nullable and LowCardinality from its needle into its result type; has() always returns UInt8.
         if (isNullableOrLowCardinalityNullable(second_arg_type) ||
                 expr_data_type.isMap() || expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isVariant() || expr_data_type.isNothing())
             return;
@@ -117,8 +115,6 @@ public:
         if (!in_function_name)
             return;
 
-        /// in() also takes LowCardinality from its needle into its result type, so the needle is
-        /// stripped to keep this node UInt8; `Set::getElementTypes` strips it on the set side too.
         if (expr_data_type.isLowCardinality())
             has_function_arguments_nodes[1] = buildCastFunction(has_function_arguments_nodes[1], unwrapped_second_arg_type, getContext());
 

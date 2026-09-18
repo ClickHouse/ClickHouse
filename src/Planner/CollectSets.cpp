@@ -40,7 +40,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Set elements and the element types the set is keyed by, from a single-row constant column.
 std::pair<ColumnsWithTypeAndName, DataTypes> buildSetElementsForConstantColumn(
     const DataTypePtr & in_first_argument_type,
     const ColumnPtr & in_second_argument_column,
@@ -144,8 +143,6 @@ public:
         }
         else if (auto scalar_column = tryGetScalarSubqueryColumn(in_second_argument, planner_context.getQueryContext()))
         {
-            /// An Array-typed scalar subquery is a constant that stays a `__getScalar` call reading
-            /// the query context, and `RewriteHasToInPass` can put one on the right of `in`.
             auto [set, set_element_types] = buildSetElementsForConstantColumn(
                 in_first_argument->getResultType(), scalar_column, in_second_argument->getResultType(),
                 function_node->getFunctionName(), settings);

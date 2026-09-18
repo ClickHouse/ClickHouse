@@ -199,8 +199,7 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
 
     if (!left_operand_is_cast_to_set_source_type)
     {
-        /* Every other set source is a constant whose elements are converted TO the type of the left operand, so it
-         * yields a different set per left operand type and that type has to be part of the key.
+        /* We need to hash the type of the left operand because we can build different sets for different types.
          * (It's done for performance reasons. It's cheaper to convert a small set of values from literal to the type of the left operand.)
          *
          * For example in expression `(a :: Decimal(9, 1) IN (1.0, 2.5)) AND (b :: Decimal(9, 0) IN (1, 2.5))`
@@ -211,8 +210,7 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
         return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash);
     }
 
-    /// A subquery, a table or a StorageSet: the left operand is cast to the type of the set source, so no difference in types.
-    /// These are `subquery_or_table` in `PlannerActionsVisitor::makeSetForInFunction`, which picks the matching lookup: keep in sync.
+    /// For other cases we will cast left operand to the type of the set source, so no difference in types.
     return "__set_" + toString(set_source_hash);
 }
 
