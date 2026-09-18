@@ -115,10 +115,10 @@ struct StagingPipeline
         chassert(update.to_add.size() == 3);
     }
 
-    InputPort & input() { return partition->getInputPort(); }
-    OutputPort & output() { return publisher->getOutputs().front(); }
+    InputPort & input() const { return partition->getInputPort(); }
+    OutputPort & output() const { return publisher->getOutputs().front(); }
 
-    void prime()
+    void prime() const
     {
         ASSERT_EQ(publisher->prepare(), IProcessor::Status::NeedData);
         ASSERT_EQ(coalescing->prepare(), IProcessor::Status::NeedData);
@@ -148,7 +148,7 @@ struct StagingPipeline
         return false;
     }
 
-    void cancel(IProcessor::CancelReason reason = IProcessor::CancelReason::Unknown)
+    void cancel(IProcessor::CancelReason reason = IProcessor::CancelReason::Unknown) const
     {
         partition->cancel(reason);
         coalescing->cancel(reason);
