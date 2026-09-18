@@ -655,6 +655,29 @@ void considerEnablingParallelReplicas(
                 /// every mark, so the candidate is worse than the plan it replaces; decline rather than run it.
                 if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
                     return;
+                /// The candidate's reads have their filter actions only now, so the pass that tags a filter
+                /// step for the query condition cache - which runs early in this same optimization and gives
+                /// up when a read has none - saw nothing to tag, and the cache would never be populated by a
+                /// query this optimization rewrote. Re-walk it, as the passes that rebuild filter steps do.
+                if (optimization_settings.use_query_condition_cache)
+                {
+                    Stack qcc_stack;
+                    qcc_stack.push_back({.node = plan_with_parallel_replicas->getRootNode()});
+                    while (!qcc_stack.empty())
+                    {
+                        updateQueryConditionCache(qcc_stack, optimization_settings);
+
+                        auto & qcc_frame = qcc_stack.back();
+                        if (qcc_frame.next_child < qcc_frame.node->children.size())
+                        {
+                            auto * next_node = qcc_frame.node->children[qcc_frame.next_child];
+                            ++qcc_frame.next_child;
+                            qcc_stack.push_back({.node = next_node});
+                            continue;
+                        }
+                        qcc_stack.pop_back();
+                    }
+                }
 
 
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
