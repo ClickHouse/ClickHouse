@@ -266,6 +266,7 @@ namespace Setting
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsUInt64 dead_blobs_to_delay_insert;
     extern const SettingsUInt64 dead_blobs_to_throw_insert;
     extern const SettingsUInt64 parts_to_delay_insert;
@@ -380,6 +381,10 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -698,6 +703,20 @@ void MergeTreeData::MutationsSnapshotBase::addPatches(DataPartsVector patches_)
 
     patches_by_partition = getPatchPartsByPartition(patches_, params.max_mutation_versions);
     params.need_patch_parts = true;
+}
+
+bool MergeTreeData::MutationsSnapshotBase::hasLightweightDeletedMask() const
+{
+    if (params.has_lightweight_delete_parts)
+        return true;
+
+    return std::ranges::any_of(patches_by_partition, [](const auto & partition)
+    {
+        return std::ranges::any_of(partition.second, [](const auto & patch)
+        {
+            return patch->hasLightweightDelete();
+        });
+    });
 }
 
 NameSet MergeTreeData::MutationsSnapshotBase::getColumnsUpdatedInPatches() const
@@ -3018,7 +3037,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 if (unexpected)
                 {
                     LOG_DEBUG(log, "loadDataParts: Part {} is broken, but it's not expected to be in parts set, "
-                              " will not count it as suspicious broken part", res.part->name);
+                              "will not count it as suspicious broken part", res.part->name);
                     ++suspicious_broken_unexpected_parts;
                 }
                 else
@@ -4544,7 +4563,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     if (parts_to_remove.size() != sum_of_ranges + excluded_parts.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts"
+                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts "
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
@@ -7023,11 +7042,16 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
 
+    /// Write the removal metadata of the whole batch before touching the part states: without a
+    /// transaction a partially applied batch cannot be rolled back, see NonTransactionalRemovalLocks.
+    NonTransactionalRemovalLocks removal_locks;
+    for (const DataPartPtr & part : remove)
+        if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
+            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn, removal_locks);
+    removal_locks.store();
+
     for (const DataPartPtr & part : remove)
     {
-        if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
-            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn);
-
         if (part->getState() == MergeTreeDataPartState::Active)
         {
             removePartContributionToColumnAndSecondaryIndexSizes(part);
@@ -7086,6 +7110,37 @@ void MergeTreeData::removePartsFromWorkingSet(
 void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
     removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ true);
+}
+
+void MergeTreeData::checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const
+{
+    for (const auto & part : parts)
+    {
+        auto & version = *part->version;
+
+        if (kind == NonTransactionalRemovalKind::Republish)
+        {
+            if (!version.isCreationCommitted())
+                throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                    "Cannot non-transactionally move object {} whose creation_tid {} is not committed",
+                    version.getObjectName(), version.getInfo().creation_tid);
+        }
+        else if (version.isCreatedByUncommittedTransaction())
+        {
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                version.getObjectName(), version.getInfo().creation_tid);
+        }
+
+        /// The other way the later removal can be refused: another transaction is already removing the
+        /// part, so `lockRemovalTID` will not give up the lock. A part that is *already* removed is not
+        /// a problem -- the removal skips it -- but one that is merely locked is. Both this check and
+        /// the removal run under the same parts lock, so the answer cannot change in between.
+        if (!version.getInfo().isRemoved() && version.isRemovalTIDLocked())
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {}, it is locked for removal by another transaction",
+                version.getObjectName());
+    }
 }
 
 DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
@@ -7937,7 +7992,19 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             dead_blobs_over_threshold = dead_blobs_count - dead_blobs_to_delay_insert + 1;
     }
 
-    auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
+    size_t parts_count_in_partition = 0;
+    size_t size_of_partition = 0;
+    {
+        /// Smallest threshold that could trigger a throw or delay.
+        /// A zero parts_to_throw_insert means "throw on any part", so treat it as 1 to never skip.
+        UInt64 min_enabled_threshold = active_parts_to_throw_insert > 0 ? active_parts_to_throw_insert : 1;
+        if (active_parts_to_delay_insert > 0)
+            min_enabled_threshold = std::min(min_enabled_threshold, static_cast<UInt64>(active_parts_to_delay_insert));
+
+        /// If total number of parts is less than minimal threshold, avoid iterating over parts under lock
+        if (parts_count_in_total >= min_enabled_threshold)
+            std::tie(parts_count_in_partition, size_of_partition) = getMaxPartsCountAndSizeForPartition();
+    }
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
     size_t active_parts_over_threshold = 0;
 
@@ -11185,9 +11252,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         std::vector<DataPartsVector> covered_parts_for_commit;
         covered_parts_for_commit.reserve(precommitted_parts.size());
 
-        /// Track covered parts locked by non-transactional operations for cleanup on failure.
-        /// For transactional operations, MergeTreeTransaction rollback handles unlocking.
-        DataPartsVector locked_parts_to_cleanup;
+        std::vector<DataPartPtr> covering_parts;
+        covering_parts.reserve(precommitted_parts.size());
 
         for (const auto & part : precommitted_parts)
         {
@@ -11214,17 +11280,25 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
             }
 
-            /// Call addNewPartAndRemoveCovered only if there's no covering part.
-            /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
-            if (!covering_part)
-            {
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-                /// Track successfully locked parts for cleanup in case a later iteration fails.
-                if (!txn)
-                    locked_parts_to_cleanup.insert(locked_parts_to_cleanup.end(), covered_parts.begin(), covered_parts.end());
-            }
-
+            covering_parts.push_back(std::move(covering_part));
             covered_parts_for_commit.push_back(std::move(covered_parts));
+        }
+
+        /// Remove the covered parts. Skip when a covering part exists -- NOEXCEPT_SCOPE below
+        /// marks the precommitted part obsolete instead.
+        /// Without a transaction the whole batch is locked first and written afterwards, so that a
+        /// conflict on one covered part cannot leave the previous ones durably removed by a
+        /// statement that ends up failing. See NonTransactionalRemovalLocks.
+        {
+            NonTransactionalRemovalLocks removal_locks;
+            size_t idx = 0;
+            for (const auto & part : precommitted_parts)
+            {
+                if (!covering_parts[idx])
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts_for_commit[idx], txn, removal_locks);
+                ++idx;
+            }
+            removal_locks.store();
         }
 
 
@@ -11685,7 +11759,10 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
             return QueryProcessingStage::Enum::FetchColumns;
 
         /// Parallel replicas
-        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+        /// This branch is reached only with the analyzer disabled, and `parallel_replicas_plan_based`
+        /// requires the analyzer, so such a query reads locally: keep the stage local as well.
+        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState
+            && !settings[Setting::parallel_replicas_plan_based])
         {
             /// ReplicatedMergeTree
             if (supportsReplication())
@@ -11746,12 +11823,27 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
 }
 
-void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+namespace
 {
-    std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
+
+/// Two streams that render to the same file name, and so end up written into one file.
+struct StreamFileNameCollision
+{
+    String stream_name;
+    String full_stream_name;
+    String other_full_stream_name;
+    NameAndTypePair column;
+    /// Not set when both streams belong to `column`.
+    std::optional<NameAndTypePair> other_column;
+};
+
+/// File names are rendered as they would be for a part written with the given serialization versions.
+std::optional<StreamFileNameCollision> findStreamFileNameCollision(
+    const NamesAndTypesList & columns_list,
+    const MergeTreeSettings & settings,
+    MergeTreeMapSerializationVersion map_serialization_version,
+    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version)
+{
     SerializationInfo::Settings serialization_settings
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -11760,47 +11852,101 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
-        settings[MergeTreeSetting::map_serialization_version],
+        map_serialization_version,
         settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
+    enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
+    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
+    enumerate_settings.enumerate_dynamic_streams = false;
+
+    std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
 
     for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
+        std::optional<StreamFileNameCollision> collision;
 
         auto callback = [&](const auto & substream_path)
         {
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-            column_streams.emplace(stream_name, full_stream_name);
+            auto [it, inserted] = column_streams.emplace(stream_name, full_stream_name);
+            /// Keep the first one: which later collision gets reported would depend on the enumeration order.
+            if (!inserted && !collision)
+                collision = StreamFileNameCollision{stream_name, full_stream_name, it->second, column, {}};
         };
 
         auto serialization = column.type->getSerialization(serialization_settings);
-        serialization->enumerateStreams(callback);
+        auto substream_data = ISerialization::SubstreamData(serialization);
+        serialization->enumerateStreams(enumerate_settings, callback, substream_data);
+
+        if (collision)
+            return collision;
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
-            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
+            auto [it, inserted] = stream_name_to_column.emplace(stream_name, std::pair{full_stream_name, column});
             if (!inserted)
             {
-                const auto & [other_full_name, other_column_name] = it->second;
-                auto other_type = columns.getPhysical(other_column_name).type;
-
-                auto message = fmt::format(
-                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
-                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
-
-                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
-                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
-
-                if (throw_on_error)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
-
-                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
-                return;
+                const auto & [other_full_stream_name, other_column] = it->second;
+                return StreamFileNameCollision{stream_name, full_stream_name, other_full_stream_name, column, other_column};
             }
         }
     }
+
+    return {};
+}
+
+}
+
+void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+{
+    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+        ? Nested::collect(columns.getAllPhysical())
+        : columns.getAllPhysical();
+
+    MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
+    MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
+    MergeTreeMapSerializationVersion zero_level_map_version = settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
+    MergeTreeObjectSharedDataSerializationVersion zero_level_shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts];
+
+    auto collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
+
+    /// Zero-level parts (written by `INSERT`) may use different serialization versions than merged parts, and a
+    /// collision under either corrupts the parts written with it. Checked separately, as parts of different
+    /// configurations never share a file.
+    if (!collision && (zero_level_map_version != map_version || zero_level_shared_data_version != shared_data_version))
+        collision = findStreamFileNameCollision(columns_list, settings, zero_level_map_version, zero_level_shared_data_version);
+
+    if (!collision)
+        return;
+
+    String message = collision->other_column.has_value()
+        ? fmt::format(
+            "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
+            collision->column.name, collision->column.type->getName(),
+            collision->other_column->name, collision->other_column->type->getName(),
+            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name)
+        : fmt::format(
+            "Column '{} {}' has two streams ({} and {}) with collision in file name {}",
+            collision->column.name, collision->column.type->getName(),
+            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name);
+
+    /// Identical full names collide on their own; only distinct ones can have been merged by hashing.
+    if (collision->full_stream_name != collision->other_full_stream_name && settings[MergeTreeSetting::replace_long_file_name_to_hash])
+        message += collision->other_column.has_value()
+            ? ". It may be a collision between a filename for one column and a hash of filename for another column"
+              " (see setting 'replace_long_file_name_to_hash')"
+            : ". It may be a collision between a filename for one stream and a hash of filename for another stream"
+              " (see setting 'replace_long_file_name_to_hash')";
+
+    if (throw_on_error)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+    LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
@@ -13438,7 +13584,7 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
     if (!mutations_snapshot)
         return supports_trivial_count();
 
-    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts() && !mutations_snapshot->hasLightweightDeletedMask();
+    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasLightweightDeletedMask();
 }
 
 MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)
