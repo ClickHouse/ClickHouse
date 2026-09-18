@@ -100,18 +100,14 @@ public:
 
     uint64_t last_commit_index() override { return keeper_context->lastCommittedIndex(); }
 
-    /// Decides whether the leader should be asked to stop sending log entries. Installed by
-    /// `KeeperServer` before the Raft server starts, because the answer depends on state the
-    /// state machine cannot see. While unset the answer is no.
+    /// Decides whether the leader should be asked to stop sending log entries.
     void setAppendEntriesPauseCondition(std::function<bool()> condition)
     {
         append_entries_pause_condition = std::move(condition);
     }
 
-    /// A negative hint makes the leader fall back to heartbeats instead of resending entries as
-    /// fast as they are refused. NuRaft's default implementation returns 0, which means any
-    /// batch size is welcome. Evaluated on every response rather than latched: a pause
-    /// suppresses the very requests that would otherwise be the occasion to lift it.
+    /// -1 makes the leader fall back to heartbeats instead of resending entries.
+    ///  0 means any batch size is welcome.
     int64_t get_next_batch_size_hint_in_bytes() override
     {
         return append_entries_pause_condition && append_entries_pause_condition() ? -1 : 0;
