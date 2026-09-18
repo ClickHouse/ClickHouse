@@ -706,11 +706,14 @@ void considerEnablingParallelReplicas(
                         source_reading_step->getStorageID().getNameForLogs());
                 }
 
-                if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
-                {
-                    local_replica_plan_reading_step->setAnalyzedResult(analysis);
-                    local_replica_plan_reading_step->adoptFiltersFrom(*source_reading_step);
-                }
+                /// This read already carries the analysis, and it is this very one: the transplant above
+                /// pairs it with the same single-node read that `findReadingStep` returns here, installs
+                /// that read's analysis and filter state on it, and declines the candidate when any read
+                /// cannot be paired - so reaching this point means it was. Assert rather than install it a
+                /// second time. Firing here would mean the transplant's pairing and this descent disagree
+                /// about which read the decision was matched on, which is worth knowing about: the reads
+                /// would then be carrying ranges selected for another read's predicates.
+                chassert(local_replica_plan_reading_step->getAnalyzedResult() == analysis);
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
                 return;
