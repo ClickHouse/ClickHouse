@@ -2262,7 +2262,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
                         }
                     }
                 }
-                else if (recovered->isGenericCompression() || recovered->isNone())
+                else if (recovered->isGenericCompression() || recovered->isNone() || recovered->isEncryption())
                     result = recovered;
 
                 /// No generic-compression stage in the frame: it cannot prove the default codec
