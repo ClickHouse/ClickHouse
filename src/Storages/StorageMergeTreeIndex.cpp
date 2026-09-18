@@ -114,7 +114,19 @@ protected:
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
                 if (index_position < index_ptr->size())
                 {
-                    result_columns[pos] = index_ptr->at(index_position);
+                    auto index_column = index_ptr->at(index_position);
+
+                    /// The index holds the key column in the representation the part was written with, while
+                    /// column_type is the current one. Wrapping or unwrapping LowCardinality on a key column
+                    /// is allowed and does not rewrite parts that already exist.
+                    DataTypePtr index_column_type = removeLowCardinality(column_type);
+                    if (index_column->lowCardinality())
+                        index_column_type = std::make_shared<DataTypeLowCardinality>(index_column_type);
+
+                    if (!index_column_type->equals(*column_type))
+                        index_column = recursiveLowCardinalityTypeConversion(index_column, index_column_type, column_type);
+
+                    result_columns[pos] = std::move(index_column);
                 }
                 else
                 {
