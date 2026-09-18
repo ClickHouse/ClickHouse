@@ -295,7 +295,28 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                     }
                 }
 
-                if (engine_settings->changes.empty())
+                /// `SETTINGS name = DEFAULT` is parsed into `default_settings`, not `changes`; a reset of a
+                /// query setting is hoisted the same way, otherwise it would be silently dropped below.
+                for (auto it = engine_settings->default_settings.begin(); it != engine_settings->default_settings.end();)
+                {
+                    const String & name = *it;
+                    if (!engine_settings_support->isEngineSetting(name) && context_settings.has(name))
+                    {
+                        std::vector<String> names{name};
+                        context_->checkSettingsConstraintsForSettingsReset(names, SettingSource::QUERY);
+                        context_->resetSettingsToDefaultValue(names);
+                        it = engine_settings->default_settings.erase(it);
+                    }
+                    else
+                    {
+                        it++;
+                    }
+                }
+
+                /// Prune the clause only when nothing at all is left for the engine, so that a
+                /// remaining `= DEFAULT` or `param_x = ...` entry is still reported by the engine.
+                if (engine_settings->changes.empty() && engine_settings->default_settings.empty()
+                    && engine_settings->query_parameters.empty())
                     create_query->storage->reset(create_query->storage->settings);
             }
         }

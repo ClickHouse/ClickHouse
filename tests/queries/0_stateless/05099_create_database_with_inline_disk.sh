@@ -16,6 +16,8 @@ ${CLICKHOUSE_CLIENT} --multiline -q "
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_inline SYNC;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_engine_settings SYNC;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_query_settings SYNC;
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_reset SYNC;
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_param SYNC;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_unknown SYNC;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_memory SYNC;
 "
@@ -53,6 +55,22 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_engine_settings SY
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_engine_settings ENGINE = Atomic SETTINGS lazy_load_tables = 1, max_threads = 4"
 ${CLICKHOUSE_CLIENT} -q "SHOW CREATE DATABASE ${CLICKHOUSE_DATABASE}_engine_settings" --format TSVRaw
 
+echo '-- a query-setting reset and a parameterized query setting are hoisted next to an engine setting'
+${CLICKHOUSE_CLIENT} --max_threads 1 -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_reset SETTINGS lazy_load_tables = 1, max_threads = DEFAULT"
+${CLICKHOUSE_CLIENT} -q "SHOW CREATE DATABASE ${CLICKHOUSE_DATABASE}_reset" --format TSVRaw
+${CLICKHOUSE_CLIENT} --param_threads 3 -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_param SETTINGS lazy_load_tables = 1, max_threads = {threads:UInt64}"
+${CLICKHOUSE_CLIENT} -q "SHOW CREATE DATABASE ${CLICKHOUSE_DATABASE}_param" --format TSVRaw
+# The reset really reached the query context (`max_threads` is no longer a changed setting), and the
+# parameter was substituted before the value was applied.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "
+SELECT mapContains(Settings, 'max_threads'), Settings['max_threads']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Create'
+    AND (query LIKE 'CREATE DATABASE %\\_reset SETTINGS%' OR query LIKE 'CREATE DATABASE %\\_param SETTINGS%')
+ORDER BY event_time_microseconds
+"
+
 echo '-- a clause holding only query settings leaves no SETTINGS behind'
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_query_settings SETTINGS max_threads = 4"
 ${CLICKHOUSE_CLIENT} -q "SHOW CREATE DATABASE ${CLICKHOUSE_DATABASE}_query_settings" --format TSVRaw
@@ -74,6 +92,8 @@ ${CLICKHOUSE_CLIENT} --multiline -q "
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_inline SYNC;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_engine_settings SYNC;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_query_settings SYNC;
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_reset SYNC;
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_param SYNC;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_unknown SYNC;
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_memory SYNC;
 "
