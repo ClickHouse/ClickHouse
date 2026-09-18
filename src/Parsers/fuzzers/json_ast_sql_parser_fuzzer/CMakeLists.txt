@@ -7,10 +7,11 @@ set(PROTOBUF_GENERATE_CPP_APPEND_PATH TRUE)
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS json_ast.proto)
 set_source_files_properties(${PROTO_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-reserved-identifier -Wno-extra-semi-stmt -Wno-used-but-marked-unused -Wno-unreachable-code-return -Wno-nullability-extension -Wno-missing-prototypes -Wno-redundant-parens")
 
-# Shared by the fuzzer and the seed corpus converter.
-add_library(json_ast_fuzzer_proto STATIC ${PROTO_SRCS} ${PROTO_HDRS} JSONASTProtoConverter.cpp)
+# Shared by this fuzzer, `json_ast_sql_execution_fuzzer` (programs/local/fuzzers) and the seed corpus converter:
+# the generated protobuf code, the protobuf <-> JSON conversion and the JSON -> AST -> SQL pipeline stages.
+add_library(json_ast_fuzzer_proto STATIC ${PROTO_SRCS} ${PROTO_HDRS} JSONASTProtoConverter.cpp JSONASTFuzzerPipeline.cpp)
 target_include_directories(json_ast_fuzzer_proto SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_BINARY_DIR}")
-target_link_libraries(json_ast_fuzzer_proto PUBLIC ch_contrib::protobuf Poco::JSON clickhouse_common_io)
+target_link_libraries(json_ast_fuzzer_proto PUBLIC ch_contrib::protobuf Poco::JSON clickhouse_parsers)
 
 clickhouse_add_executable(json_ast_sql_parser_fuzzer json_ast_sql_parser_fuzzer.cpp)
 # contrib/libprotobuf-mutator/src/libfuzzer/libfuzzer_macro.h has no newline at end of file, and

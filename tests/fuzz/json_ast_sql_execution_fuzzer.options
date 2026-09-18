@@ -1,0 +1,21 @@
+[libfuzzer]
+# Each input is one query executed by an in-process clickhouse-local; --max_execution_time below cuts
+# runaway queries well before libFuzzer's timeout.
+timeout = 60
+max_len = 65536
+rss_limit_mb = 8192
+# One-time library initialization triggered by a query (e.g. the AWS SDK behind the `s3` table function) is
+# reported by libFuzzer's per-input leak check although it is not a leak; the end-of-process check of
+# LeakSanitizer stays enabled.
+detect_leaks = 0
+
+[fuzzer_arguments]
+--output-format=Null
+--max_execution_time=10
+--max_memory_usage=2000000000
+--max_parser_backtracks=10000
+--max_query_size=0
+--http_connection_timeout=1
+--http_send_timeout=1
+--http_receive_timeout=1
+--http_max_tries=1

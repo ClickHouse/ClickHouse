@@ -31,7 +31,12 @@ So it exercises, in one target:
 
 The target is parse-only and stateless: it does not create a `Context`, does not run the
 analyzer or interpreters, and never touches a server or the filesystem (except the optional dump
-file described below). Execution fuzzing with a restricted `Context` is a possible separate target.
+file described below). The companion target `json_ast_sql_execution_fuzzer`
+(programs/local/fuzzers) shares the generation stages and executes the SQL instead, see
+[Execution fuzzer](#execution-fuzzer) below.
+
+The stages live in `JSONASTFuzzerPipeline.h`/`.cpp` (part of the `json_ast_fuzzer_proto` library)
+so that both targets count, dump and report in the same way.
 
 ### Expected outcomes and findings {#expected-outcomes-and-findings}
 
@@ -219,6 +224,46 @@ The script runs `parseQueryToJSON` on every statement (any `clickhouse` binary w
 statements are only parsed), converts the JSON to protobuf, converts it back and compares, so a
 seed that the schema cannot represent fails the run. Statements whose AST nodes have no
 `writeJSON` (e.g. `GRANT`, `SHOW CREATE`, `INSERT ... VALUES`) cannot be seeds.
+
+## Execution fuzzer {#execution-fuzzer}
+
+`json_ast_sql_execution_fuzzer` (programs/local/fuzzers/json_ast_sql_execution_fuzzer.cpp) runs the
+same protobuf -> JSON -> AST -> SQL stages and then executes the SQL in an in-process
+`clickhouse local`, using the runner thread harness of `clickhouse_fuzzer`
+(programs/local/fuzzers/LocalFuzzerRunner.h). Before the first input the runner executes the fixture
+`json_ast_sql_execution_fuzzer_schema.sql`, which is embedded into the binary:
+
+- `t`: a `MergeTree` table with ~40 columns covering the scalar, nullable, low-cardinality, array,
+  tuple, map, nested, `JSON`, `Dynamic`, `Variant`, decimal, IP, UUID and enum types, with skip
+  indexes and a projection, 1000 rows;
+- `t1`, `t2` (join keys and timestamps), `t3`, `src`, `dst`, `tbl`, `empsalary` (window function
+  seeds), `lg` (`Log`), `nul` (`Null`), `jt` (`Join`), `st` (`Set`);
+- the view `v`, the materialized view `mv` and the dictionary `d`.
+
+The names are part of the `KnownString` vocabulary in `json_ast.proto` and of the seed queries, so
+mutated statements reference existing tables and columns and reach the analyzer, the planner and the
+processors instead of failing on name resolution. The fixture ends with `SET readonly = 2`, and only
+`SELECT`, `EXPLAIN`, `SHOW` and `CHECK TABLE` statements are executed (the rest is counted as
+skipped), so a mutated statement cannot destroy the fixture.
+
+Query errors are expected outcomes. Findings are crashes, sanitizer reports, `LOGICAL_ERROR`
+exceptions (fatal in sanitizer and debug builds) and hangs. `tests/fuzz/json_ast_sql_execution_fuzzer.options`
+passes `--max_execution_time=10` and network timeouts to `clickhouse local`, like `clickhouse_fuzzer`.
+
+```bash
+ninja -C build_fuzz json_ast_sql_execution_fuzzer
+EXEC_FUZZER=build_fuzz/programs/local/fuzzers/json_ast_sql_execution_fuzzer
+mkdir -p tmp/json_ast_exec_corpus
+$EXEC_FUZZER -timeout=60 -rss_limit_mb=8192 -max_len=65536 tmp/json_ast_exec_corpus tests/fuzz/json_ast_sql_parser_fuzzer.in \
+    -ignore_remaining_args=1 --max_execution_time=10 --max_memory_usage=2000000000
+```
+
+It consumes the same seed corpus as the parser fuzzer (`tests/fuzz/build.sh` copies it under the
+execution fuzzer's name). `JSON_AST_FUZZER_DUMP` and `JSON_AST_FUZZER_STATS` work as above;
+`JSON_AST_FUZZER_SCHEMA=<path>` replaces the built-in fixture with the statements from a file, e.g.
+to fuzz against a different schema. Reproduce a crash with the same `JSON_AST_FUZZER_DUMP=1 $EXEC_FUZZER crash-<sha1>`
+recipe; the `generated SQL` section can then be run with `clickhouse local --queries-file` after the
+fixture.
 
 ## Minimizing a corpus {#minimizing-a-corpus}
 

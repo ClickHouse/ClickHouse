@@ -16,6 +16,8 @@ cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/create_parser_fuzzer.in/
 
 # committed binary seed corpora (protobuf inputs cannot be derived from SQL files at build time)
 cp -r $SRC/tests/fuzz/json_ast_sql_parser_fuzzer.in $BIN/tests/fuzz/
+# the execution fuzzer consumes the same protobuf inputs
+cp -r $SRC/tests/fuzz/json_ast_sql_parser_fuzzer.in $BIN/tests/fuzz/json_ast_sql_execution_fuzzer.in
 
 # build corpus archives
 cd $BIN/tests/fuzz
