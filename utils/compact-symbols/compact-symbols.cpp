@@ -169,8 +169,11 @@ std::vector<DB::CompactSymbols::Symbol> readSymbols(const MappedFile & file)
         uint32_t name_offset = elfValue(symbol.st_name, little_endian);
         uint64_t address = elfValue(symbol.st_value, little_endian);
         uint64_t size = elfValue(symbol.st_size, little_endian);
+        uint16_t section_index = elfValue(symbol.st_shndx, little_endian);
 
-        if (!name_offset || !address || !size || name_offset >= strings_size)
+        if (!name_offset || !address || !size || name_offset >= strings_size
+            || ELF64_ST_TYPE(symbol.st_info) == STT_TLS
+            || section_index == SHN_UNDEF || section_index == SHN_ABS || section_index == SHN_COMMON)
             continue;
 
         const char * name = strings + name_offset;

@@ -1,6 +1,12 @@
 from praktika import Workflow
 
-from ci.defs.defs import BINARIES_WITH_LONG_RETENTION, DOCKERS, SECRETS, ArtifactConfigs
+from ci.defs.defs import (
+    BINARIES_WITH_LONG_RETENTION,
+    DOCKERS,
+    LOOM_SECRETS,
+    SECRETS,
+    ArtifactConfigs,
+)
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
@@ -37,11 +43,6 @@ workflow = Workflow.Config(
         *[job for job in JobConfigs.unittest_jobs if "fuzzer" not in job.name],
         *[
             job
-            for job in JobConfigs.integration_test_asan_master_jobs
-            if "asan" in job.name
-        ],
-        *[
-            job
             for job in JobConfigs.integration_test_jobs_required
             if any(t in job.name for t in ("asan", "release"))
         ],
@@ -63,7 +64,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
     ],
     dockers=DOCKERS,
-    secrets=SECRETS,
+    secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
@@ -74,6 +75,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/set_parent_pr_number.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/loom_code_refresh.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

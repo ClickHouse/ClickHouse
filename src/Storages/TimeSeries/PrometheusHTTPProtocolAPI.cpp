@@ -27,6 +27,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -185,6 +186,7 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
@@ -196,9 +198,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
+    evaluation_settings.time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(evaluation_settings.time_series_version);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
-        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+        = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type);
     UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
 
     if (!params.lookback_delta_param.empty())
@@ -240,16 +244,16 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
-    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    /// Isolate the settings required by generated PromQL from the request context.
+    auto query_context = Context::createCopy(getContext());
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        getContext()->setSetting("enable_materialized_cte", true);
+        query_context->setSetting("enable_materialized_cte", true);
 
     /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
-    getContext()->setSetting("allow_experimental_analyzer", true);
+    query_context->setSetting("allow_experimental_analyzer", true);
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     try
     {
@@ -409,10 +413,17 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseStringBlock(WriteBuffer & resp
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
+    if (result_block.rows() == 0)
+        return;
+
     const auto & timestamp_column = result_block.getByName(TimeSeriesColumnNames::Timestamp).column;
     auto timestamp_data_type = result_block.getByName(TimeSeriesColumnNames::Timestamp).type;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
     const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
+
+    WriteBufferFromOwnString timestamp_buffer;
+    writeTimestamp(timestamp_buffer, timestamp_column->getInt(0), timestamp_scale);
+    const std::string_view timestamp_text = timestamp_buffer.stringView();
 
     bool need_comma = !first;
 
@@ -433,8 +444,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
         writeString("\"value\":[", response);
 
         // Write timestamp
-        DateTime64 timestamp = timestamp_column->getInt(i);
-        writeTimestamp(response, timestamp, timestamp_scale);
+        writeString(timestamp_text, response);
 
         writeString(",", response);
 
@@ -451,7 +461,9 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
-    const auto & time_series_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
+    const auto & time_series_column_with_type
+        = result_block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion()));
+    const auto & time_series_column = time_series_column_with_type.column;
     const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
     const auto & offsets = array_column.getOffsets();
     const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
@@ -460,7 +472,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
     auto timestamp_data_type
         = typeid_cast<const DataTypeTuple &>(
-              *typeid_cast<const DataTypeArray &>(*result_block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+              *typeid_cast<const DataTypeArray &>(*time_series_column_with_type.type).getNestedType())
               .getElement(0);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
@@ -511,7 +523,8 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const String & end_param)
 {
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
+    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
     /// The optional `start` and `end` parameters are parsed the same way as on the query endpoints.
@@ -679,7 +692,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
-    /// The Metrics target table may declare its columns as String, LowCardinality(String) or Nullable(String),
+    /// The metric families target table may declare its columns as String, LowCardinality(String) or Nullable(String),
     /// so normalize them to plain strings with NULL meaning an empty string.
     auto normalize_column = [](const char * column_name)
     {
@@ -689,7 +702,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
             make_intrusive<ASTLiteral>(String{}));
     };
 
-    /// groupUniqArray() deduplicates the metadata entries of each metric family: the Metrics target table typically
+    /// groupUniqArray() deduplicates the metadata entries of each metric family: the metric families target table typically
     /// contains duplicate rows until they're merged. With `limit_per_metric` set it also caps the number of entries
     /// per family, choosing an arbitrary subset like Prometheus does. arraySort() and ORDER BY make the result deterministic.
     auto group_uniq_array = makeASTFunction(
@@ -708,17 +721,17 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     metadata_entries->setAlias("metadata");
 
     /// SELECT ifNull(toString(metric_family_name), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
-    /// FROM timeSeriesMetrics(database, table) [WHERE metric_family_name = metric]
+    /// FROM timeSeriesMetricFamilies(database, table) [WHERE metric_family_name = metric]
     /// GROUP BY ... ORDER BY ... [LIMIT limit]
     PrometheusQueryToSQL::SelectQueryBuilder builder;
     builder.select_list.push_back(std::move(metric_family));
     builder.select_list.push_back(std::move(metadata_entries));
     builder.from_table_function = makeASTFunction(
-        "timeSeriesMetrics",
+        "timeSeriesMetricFamilies",
         make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
         make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()));
 
-    /// Filter on the raw column so the primary key of the Metrics target table can be used.
+    /// Filter on the raw column so the primary key of the metric families target table can be used.
     if (!metric_param.empty())
         builder.where = makeASTFunction(
             "equals",
