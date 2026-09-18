@@ -47,6 +47,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"prefer_optimize_projection", false, false, "New setting: choose a usable projection regardless of its estimated cost, like `force_optimize_projection`, but without failing the query when no projection is used."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
+            {"obfuscate_seed", "", "", "New setting: seed string for the obfuscate table function."},
+            {"obfuscate_markov_order", 5, 5, "New setting: maximum context-buffer size for the obfuscate table function's legacy Markov model."},
+            {"obfuscate_markov_frequency_cutoff", 5, 5, "New setting: frequency cutoff for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_num_buckets_cutoff", 0, 0, "New setting: number-of-buckets cutoff for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_frequency_add", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."},
+            {"obfuscate_markov_frequency_desaturate", 0.0, 0.0, "New setting: frequency desaturation factor in [0,1] for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_determinator_sliding_window_size", 8, 8, "New setting: sliding-window size used to seed the RNG in the obfuscate table function's Markov model."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
         });
         addSettingsChanges(settings_changes_history, "26.9",

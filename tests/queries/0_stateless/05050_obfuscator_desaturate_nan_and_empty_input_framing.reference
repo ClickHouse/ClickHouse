@@ -1,0 +1,4 @@
+The option '--frequency-desaturate' must be in the range [0, 1]
+Float setting value must be finite
+a full generation pass over the input produced no rows
+output bytes: 0
