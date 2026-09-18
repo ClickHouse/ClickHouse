@@ -4882,6 +4882,51 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
     bool allow_relaxed_pruning,
     AtomGroup & group)
 {
+    const auto candidates = collectComparisonAtomCandidates(key_arg, info, func_name, constant, allow_relaxed_pruning);
+    if (candidates.empty())
+        return;
+
+    /// Candidates not yet marked relaxed are considered before already-relaxed ones.
+    /// Source order alone is not a precision order: one key column can be reachable both
+    /// through a relaxed monotonic transform and through an exact deterministic transform.
+    /// For `ORDER BY negate(x)` and `WHERE x = 5`, the monotonic transform proposes the relaxed
+    /// `negate(x) = -5` before the deterministic transform proposes the exact candidate for the
+    /// same key column. Keeping the relaxed one would make the whole key condition relaxed
+    /// (`isRelaxed`) and disable exact-range consumers such as `markRangesFromPKRange`.
+    /// So emission runs in two passes: first candidates that can still produce an exact atom,
+    /// including exact transformed candidates, then already-relaxed candidates for uncovered key columns.
+    /// Within a pass, candidates keep the source priority order. Atom construction may further relax a
+    /// candidate; selection does not rank completed atoms by final precision.
+    std::vector<bool> has_atom_for_key_column(num_key_columns, false);
+
+    for (bool relaxed_candidates_pass : {false, true})
+    {
+        for (const auto & candidate : candidates)
+        {
+            if (candidate.is_relaxed != relaxed_candidates_pass)
+                continue;
+
+            chassert(candidate.key_column_num < num_key_columns);
+            if (has_atom_for_key_column[candidate.key_column_num])
+                continue;
+
+            auto atom = tryBuildComparisonAtom(candidate, func_name, key_arg.getTreeContext().getQueryContext());
+            if (!atom)
+                continue;
+
+            group.atoms.emplace_back(std::move(*atom));
+            has_atom_for_key_column[candidate.key_column_num] = true;
+        }
+    }
+}
+
+std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparisonAtomCandidates(
+    const RPNBuilderTreeNode & key_arg,
+    const BuildInfo & info,
+    const std::string & func_name,
+    const ColumnWithTypeAndName & constant,
+    bool allow_relaxed_pruning)
+{
     const Field const_value = (*constant.column)[0];
     const DataTypePtr const_type = removeNullable(constant.type);
     chassert(!const_value.isNull() && !const_value.isNaN());
@@ -4892,48 +4937,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
     ColumnWithTypeAndName transform_constant = constant;
     transform_constant.column = assert_cast<const ColumnConst &>(*constant.column).getDataColumnPtr();
 
-    /// A candidate describes one possible atom of this comparison: a key column to
-    /// compare against, together with the constant in that column's key space.
-    struct ComparisonAtomCandidate
-    {
-        size_t key_column_num = 0;
-        /// This is the type of the matched key expression after `chain` is applied;
-        /// the comparison happens in this type.
-        DataTypePtr key_expr_type;
-        /// The check-time chain is stored in the atom and is applied to granule key
-        /// ranges during evaluation.
-        MonotonicFunctionsChain chain;
-        std::optional<size_t> argument_num_of_space_filling_curve;
-        Field const_value;
-        DataTypePtr const_type;
-        /// This is true when the transformed constant makes the atom relaxed, i.e. the
-        /// atom describes a superset of the matching values. Exact conversions keep it
-        /// false.
-        bool is_relaxed = false;
-        /// False when the key-side chain that produced the constant reverses comparison
-        /// order (see `TransformedConstant::chain_is_positive`); the comparison operator
-        /// must then be reversed as well.
-        bool chain_is_positive = true;
-    };
-
     std::vector<ComparisonAtomCandidate> candidates;
-
-    /// The predicate expression itself reaches a key column. The discovered chain stays
-    /// in the atom, and the constant is used as-is.
-    auto add_direct_key_candidate = [&](size_t key_column_num,
-                                        DataTypePtr key_expr_type,
-                                        MonotonicFunctionsChain chain,
-                                        std::optional<size_t> argument_num_of_space_filling_curve)
-    {
-        candidates.push_back(ComparisonAtomCandidate{
-            .key_column_num = key_column_num,
-            .key_expr_type = std::move(key_expr_type),
-            .chain = std::move(chain),
-            .argument_num_of_space_filling_curve = argument_num_of_space_filling_curve,
-            .const_value = const_value,
-            .const_type = const_type,
-            .is_relaxed = false});
-    };
 
     /// The constant was already pushed through a key-side recipe, so it compares
     /// against the key column directly and the check-time chain is empty.
@@ -4950,16 +4954,17 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             .chain_is_positive = transformed.chain_is_positive});
     };
 
-    /// Candidates are collected from three sources in priority order. The emission loop
-    /// below keeps the first candidate per key column, so the order is observable.
+    /// Candidates are collected from three sources in priority order. Atom selection preserves
+    /// this order within each relaxation pass and keeps the first usable atom per key column.
     ///
     /// When `analyze_index_with_multiple_key_columns_per_condition` is disabled, the leaf keeps at
     /// most one candidate: the sources are consulted in the same priority order, but only until
     /// one of them contributes, and the transform sources collect only their first key-wrapping
     /// recipe (see `transformConstantByMonotonicKeyFunctions` and
     /// `transformConstantByDeterministicKeyFunctions`), so no discarded candidates are ever
-    /// computed. If the transform of that recipe or the normalization of the single candidate
-    /// fails, the leaf produces no atom rather than falling back to another candidate.
+    /// computed. A failed transform leaves that source empty, so a later source may still
+    /// contribute. Once a candidate is collected, its failure during atom construction leaves
+    /// the leaf without an atom; other sources are not consulted again.
     const auto source_may_contribute = [&] { return multiple_key_columns_per_condition || candidates.empty(); };
 
     /// 1. The direct key match handles `func(key_expr, const)` where `key_expr` is a
@@ -4995,7 +5000,16 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
-            add_direct_key_candidate(key_column_num, std::move(key_expr_type), std::move(chain), argument_num_of_space_filling_curve);
+            /// The predicate expression itself reaches a key column. The discovered chain stays
+            /// in the atom, and the constant is used as-is.
+            candidates.push_back(ComparisonAtomCandidate{
+                .key_column_num = key_column_num,
+                .key_expr_type = std::move(key_expr_type),
+                .chain = std::move(chain),
+                .argument_num_of_space_filling_curve = argument_num_of_space_filling_curve,
+                .const_value = const_value,
+                .const_type = const_type,
+                .is_relaxed = false});
         }
     }
 
@@ -5086,10 +5100,9 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
     /// 3. The deterministic constant transform contributes candidates for the key columns
     /// that the sources above did not reach. For example, with `ORDER BY (concat(s, '_x'), s)`
     /// and `WHERE s = 'b'`, the direct match covers only `s`, and this source adds the
-    /// leading key column `concat(s, '_x')`. Candidates for key columns that are already
-    /// covered by an equally or more precise candidate (including the trivial identity
-    /// transform of a plain key column) are dropped by the deduplication below; an exact
-    /// injective candidate from this source outranks a relaxed monotonic one from source 2.
+    /// leading key column `concat(s, '_x')`. Duplicate candidates, including the trivial identity
+    /// transform of a plain key column, are dropped during atom selection. An exact injective
+    /// candidate from this source is considered before a relaxed monotonic one from source 2.
     /// Equality (in both polarities) is the only comparison that an arbitrary
     /// deterministic `f` translates: `x = c` implies `f(x) = f(c)`, but order
     /// comparisons are not preserved. `notEquals` is tolerable even though the
@@ -5108,267 +5121,203 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             add_transformed_constant_candidate(transformed, /*is_relaxed*/ !transformed.atom_is_exact);
     }
 
-    if (candidates.empty())
-        return;
+    return candidates;
+}
 
-    /// A candidate brought into the key column's comparison space. It holds the
-    /// (possibly relaxed) comparison function, the (possibly converted) constant from
-    /// which the atom range is built, and the pre-filled element into which the atom is
-    /// emitted.
-    struct NormalizedCandidate
-    {
-        std::string func_name;
-        Field const_value;
-        RPNElement element;
-    };
-
-    /// The normalization proceeds in three stages.
+std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
+    const ComparisonAtomCandidate & candidate, std::string func_name, const ContextPtr & context) const
+{
+    /// Atom construction proceeds in three stages.
     ///  1. It resolves the type mismatch between the matched key expression and the
-    ///     constant, either by an exact String conversion (pattern constants are kept
+    ///     constant, either by an exact `String` conversion (pattern constants are kept
     ///     as-is), or by the float-literal rewrite for integer keys (which may fold the
     ///     comparison to a constant), or by a conversion to the least supertype with
     ///     the corresponding cast appended to the check-time chain.
     ///  2. It weakens the comparison if the constant got relaxed anywhere: for example,
     ///     `x > 5` must weaken to `round(x) >= 5`.
-    ///  3. It pre-fills the element with the key column, the chain and the relaxation
-    ///     flag; the caller builds the atom range into it.
-    /// The lambda returns nullopt when no sound comparison can be built for this candidate.
-    auto normalize_candidate = [&](const ComparisonAtomCandidate & candidate, std::string candidate_func_name) -> std::optional<NormalizedCandidate>
+    ///  3. It accounts for the transform's direction and builds the atom's range, retaining
+    ///     the key column, check-time chain and relaxation flag.
+    /// It returns `std::nullopt` when no sound comparison can be built for this candidate.
+    bool is_relaxed = candidate.is_relaxed;
+
+    DataTypePtr key_expr_type = candidate.key_expr_type;
+    Field const_value = candidate.const_value;
+    DataTypePtr const_type = candidate.const_type;
+    MonotonicFunctionsChain chain = candidate.chain;
+
+    /// What the chain actually produces, which is what any cast appended below will be fed. This
+    /// stays unstripped: only the copy used to choose the comparison supertype is stripped.
+    DataTypePtr chain_result_type
+        = chain.empty() ? recursiveRemoveLowCardinality(key_expr_type) : chain.back()->getResultType();
+
+    key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
+
+    DataTypePtr key_expr_type_not_null;
+    bool key_expr_type_is_nullable = false;
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(key_expr_type.get()))
     {
-        bool is_relaxed = candidate.is_relaxed;
+        key_expr_type_is_nullable = true;
+        key_expr_type_not_null = nullable_type->getNestedType();
+    }
+    else
+        key_expr_type_not_null = key_expr_type;
 
-        DataTypePtr key_expr_type = candidate.key_expr_type;
-        Field candidate_const_value = candidate.const_value;
-        DataTypePtr candidate_const_type = candidate.const_type;
-        MonotonicFunctionsChain chain = candidate.chain;
+    /// Native integers and `DateTime`/`DateTime64` are accurately compared without a cast.
+    bool cast_not_needed
+        = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
+        && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
-        /// What the chain actually produces, which is what any cast appended below will be fed. This
-        /// stays unstripped: only the copy used to choose the comparison supertype is stripped.
-        DataTypePtr chain_result_type
-            = chain.empty() ? recursiveRemoveLowCardinality(key_expr_type) : chain.back()->getResultType();
-
-        key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
-
-        DataTypePtr key_expr_type_not_null;
-        bool key_expr_type_is_nullable = false;
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(key_expr_type.get()))
+    if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
+    {
+        if (const_value.getType() == Field::Types::String)
         {
-            key_expr_type_is_nullable = true;
-            key_expr_type_not_null = nullable_type->getNestedType();
+            /// These functions use the constant as a string pattern or prefix.
+            /// For example, if column is `FixedString` type, then in `startsWith(column, 'ab')`
+            /// and `column LIKE 'ab%'`, `'ab'` is used to build the prefix range `['ab', 'ac')`.
+            /// The literal must not be converted to the column type which is `FixedString`. If we
+            /// first convert it to `FixedString(N)`, it becomes `'ab\0...'`, and the range is built from
+            /// the padded value instead of from `'ab'`. This can lead to the upper bound being set to the
+            /// next padded value, for example `['ab\0...', 'ab\0...\1')`, instead of to the next prefix
+            /// range `['ab', 'ac')`. The padded range is too small and can miss values such as `'abc...'`
+            /// that still satisfy `startsWith(column, 'ab')` and `column LIKE 'ab%'`.
+            /// New functions should be added to this list only if their constant argument is used as a
+            /// pattern or prefix in the same way.
+            const bool should_keep_original_string_constant
+                = isStringOrFixedString(key_expr_type_not_null)
+                && (func_name == "like"
+                || func_name == "notLike"
+                || func_name == "startsWith"
+                || func_name == "startsWithUTF8"
+                || func_name == "match");
+
+            if (!should_keep_original_string_constant)
+            {
+                /// A `FixedString(N)` constant is stored as a `String` `Field` of N bytes,
+                /// right-padded with '\0', and compared zero-padded, so it can match more than
+                /// the single padded value while `convertFieldToType` below builds a point
+                /// range from the padding:
+                ///   - against a `String` key it matches the family `value` + trailing '\0'*
+                ///     (`'abc'`, `'abc\0'`, ...), not a point;
+                ///   - against a narrower `FixedString(M)` key (N > M) it keeps the N padded
+                ///     bytes, which no longer map into the key domain.
+                /// Either way the point range is unsound and prunes matching granules, so
+                /// decline this candidate. A wider-or-equal `FixedString(M)` key (`M >= N`) pads
+                /// the constant into exactly one key value, so a point range is sound.
+                /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
+                /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
+                /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
+                /// bytes and comparison semantics. Direct candidates only peel an outer `Nullable`, so
+                /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
+                /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
+                /// type is already `LowCardinality`/`Nullable`-stripped above).
+                const auto const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
+                if (WhichDataType(const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
+                {
+                    const size_t const_bytes = const_value.safeGet<String>().size();
+                    const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
+                    if (!fixed_key || fixed_key->getN() < const_bytes)
+                        return std::nullopt;
+                }
+
+                const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                if (const_value.isNull())
+                    return std::nullopt;
+                /// This exact conversion preserves the candidate's relaxation state.
+            }
         }
         else
-            key_expr_type_not_null = key_expr_type;
-
-        /// Native integers and DateTime/DateTime64 are accurately compared without cast.
-        bool cast_not_needed
-            = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
-            && (isNativeInteger(candidate_const_type) || isDateTimeOrDateTime64(candidate_const_type));
-
-        if (!cast_not_needed && !key_expr_type_not_null->equals(*candidate_const_type))
         {
-            if (candidate_const_value.getType() == Field::Types::String)
+            /// Convert a float constant to exact integer bounds: no integer exists between
+            /// `floor(x)` and `ceil(x)` for non-integer `x`. For example, `id < 100000.5`
+            /// is equivalent to `id <= 100000` for an integer key column.
+            RPNElement float_rewrite_element;
+            const bool float_literal_was_rewritten = tryRewriteFloatLiteralForIntKeyComparison(
+                key_expr_type_not_null, const_value, const_type, func_name, float_rewrite_element);
+            if (float_literal_was_rewritten
+                && (float_rewrite_element.function == RPNElement::ALWAYS_TRUE || float_rewrite_element.function == RPNElement::ALWAYS_FALSE))
             {
-                /// These functions use the constant as a string pattern or prefix.
-                /// For example, if column is `FixedString` type, then in `startsWith(column, 'ab')`
-                /// and `column LIKE 'ab%'`, `'ab'` is used to build the prefix range `['ab', 'ac')`.
-                /// The literal must not be converted to the column type which is `FixedString`. If we
-                /// first convert it to `FixedString(N)`, it becomes `'ab\0...'`, and the range is built from
-                /// the padded value instead of from `'ab'`. This can lead to the upper bound being set to the
-                /// next padded value, for example `['ab\0...', 'ab\0...\1')`, instead of to the next prefix
-                /// range `['ab', 'ac')`. The padded range is too small and can miss values such as `'abc...'`
-                /// that still satisfy `startsWith(column, 'ab')` and `column LIKE 'ab%'`.
-                /// New functions should be added to this list only if their constant argument is used as a
-                /// pattern or prefix in the same way.
-                const bool should_keep_original_string_constant
-                    = isStringOrFixedString(key_expr_type_not_null)
-                    && (candidate_func_name == "like"
-                    || candidate_func_name == "notLike"
-                    || candidate_func_name == "startsWith"
-                    || candidate_func_name == "startsWithUTF8"
-                    || candidate_func_name == "match");
-
-                if (!should_keep_original_string_constant)
-                {
-                    /// A `FixedString(N)` constant is stored as a `String` Field of N bytes,
-                    /// right-padded with '\0', and compared zero-padded, so it can match more than
-                    /// the single padded value while `convertFieldToType` below builds a point
-                    /// range from the padding:
-                    ///   - against a `String` key it matches the family `value` + trailing '\0'*
-                    ///     (`'abc'`, `'abc\0'`, ...), not a point;
-                    ///   - against a narrower `FixedString(M)` key (N > M) it keeps the N padded
-                    ///     bytes, which no longer map into the key domain.
-                    /// Either way the point range is unsound and prunes matching granules, so
-                    /// decline this candidate (fall back to a full scan). A wider-or-equal
-                    /// `FixedString(M)` key (M >= N) pads the constant into exactly one key value,
-                    /// so pruning stays correct and is left untouched.
-                    /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
-                    /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
-                    /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
-                    /// bytes and comparison semantics. Direct candidates only peel an outer `Nullable`, so
-                    /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
-                    /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
-                    /// type is already `LowCardinality`/`Nullable`-stripped above).
-                    const auto candidate_const_type_unwrapped = removeLowCardinalityAndNullable(candidate_const_type);
-                    if (WhichDataType(candidate_const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
-                    {
-                        const size_t const_bytes = candidate_const_value.safeGet<String>().size();
-                        const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
-                        if (!fixed_key || fixed_key->getN() < const_bytes)
-                            return std::nullopt;
-                    }
-
-                    candidate_const_value = convertFieldToType(candidate_const_value, *key_expr_type_not_null);
-                    if (candidate_const_value.isNull())
-                        return std::nullopt;
-                    /// This exact conversion preserves the candidate's relaxation state.
-                }
+                /// The comparison folded to a constant. Return it directly so `atom_map` does not
+                /// overwrite its `ALWAYS_TRUE` or `ALWAYS_FALSE` function.
+                float_rewrite_element.key_columns.push_back(candidate.key_column_num);
+                return float_rewrite_element;
             }
-            else
-            {
-                /// Convert a float constant to exact integer bounds: no integer exists between
-                /// `floor(x)` and `ceil(x)` for non-integer `x`. For example, `id < 100000.5`
-                /// is equivalent to `id <= 100000` for an integer key column.
-                RPNElement float_rewrite_element;
-                const bool float_literal_was_rewritten = tryRewriteFloatLiteralForIntKeyComparison(
-                    key_expr_type_not_null, candidate_const_value, candidate_const_type, candidate_func_name, float_rewrite_element);
-                if (float_literal_was_rewritten
-                    && (float_rewrite_element.function == RPNElement::ALWAYS_TRUE || float_rewrite_element.function == RPNElement::ALWAYS_FALSE))
-                {
-                    /// The comparison folded to a constant — return that element directly.
-                    float_rewrite_element.key_columns.push_back(candidate.key_column_num);
-                    return NormalizedCandidate{
-                        .func_name = std::move(candidate_func_name),
-                        .const_value = candidate_const_value,
-                        .element = std::move(float_rewrite_element)};
-                }
 
-                if (!float_literal_was_rewritten)
+            if (!float_literal_was_rewritten)
+            {
+                DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
+                if (!common_type)
+                    return std::nullopt;
+
+                if (!const_type->equals(*common_type))
                 {
-                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, candidate_const_type});
-                    if (!common_type)
+                    /// An unrepresentable constant cannot supply a comparison bound.
+                    Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                    if (converted.isNull())
                         return std::nullopt;
 
-                    if (!candidate_const_type->equals(*common_type))
-                    {
-                        // Replace direct call that throws exception with try version.
-                        Field converted = tryConvertFieldToType(candidate_const_value, *common_type, candidate_const_type.get(), {});
-                        if (converted.isNull())
-                            return std::nullopt;
+                    const_value = converted;
 
-                        candidate_const_value = converted;
-
-                        /// Only an exact conversion preserves the candidate's precision.
-                        if (!key_expr_type_not_null->equals(*common_type))
-                            is_relaxed = true;
-                    }
+                    /// Only an exact conversion preserves the candidate's precision.
                     if (!key_expr_type_not_null->equals(*common_type))
-                    {
-                        auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
-                            ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
-                            : common_type;
+                        is_relaxed = true;
+                }
+                if (!key_expr_type_not_null->equals(*common_type))
+                {
+                    auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
+                        ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
+                        : common_type;
 
-                        /// Declared against the type this cast is actually given, not the stripped
-                        /// `key_expr_type` used to pick the supertype.
-                        auto func_cast = createInternalCast(
-                            {chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, key_arg.getTreeContext().getQueryContext());
+                    /// Declared against the type this cast is actually given, not the stripped
+                    /// `key_expr_type` used to pick the supertype.
+                    auto func_cast = createInternalCast(
+                        {chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, context);
 
-                        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-                        if (!single_point && !func_cast->hasInformationAboutMonotonicity())
-                            return std::nullopt;
+                    /// A range containing a single value treats every function as positive monotonic.
+                    if (!single_point && !func_cast->hasInformationAboutMonotonicity())
+                        return std::nullopt;
 
-                        chain.push_back(func_cast);
-                    }
+                    chain.push_back(func_cast);
                 }
             }
-        }
-
-        /// The range endpoint must follow SQL comparison semantics, which do not order NaNs
-        /// after finite values as the `Field` total order does.
-        if (anyFieldSatisfies(candidate_const_value, isNaNField))
-            return std::nullopt;
-
-        /// Transformed constant must weaken the condition, for example "x > 5" must weaken to "round(x) >= 5".
-        if (is_relaxed)
-            relaxComparisonForTransformedConstant(candidate_func_name);
-
-        /// The constant has been transformed into the key-expression domain. If that
-        /// transformation reverses order, reverse the comparison operator too.
-        /// Symmetric operators such as `equals` and `notEquals` are unchanged.
-        if (!candidate.chain_is_positive)
-        {
-            if (auto reversed = reverseComparisonOperator(candidate_func_name); !reversed.empty())
-                candidate_func_name = String(reversed);
-        }
-
-        RPNElement element;
-        element.key_columns.push_back(candidate.key_column_num);
-        element.monotonic_functions_chain = std::move(chain);
-        element.argument_num_of_space_filling_curve = candidate.argument_num_of_space_filling_curve;
-        element.relaxed = is_relaxed;
-
-        return NormalizedCandidate{
-            .func_name = std::move(candidate_func_name),
-            .const_value = candidate_const_value,
-            .element = std::move(element)};
-    };
-
-    /// The deduplication per key column prefers precision over source order. Source
-    /// order alone is not a precision order: one key column can be reachable both
-    /// through the relaxed monotonic transform (source 2) and through the exact
-    /// deterministic transform (source 3). For `ORDER BY negate(x)` and `WHERE x = 5`,
-    /// source 2 proposes the relaxed `negate(x) = -5` before source 3 proposes the
-    /// exact candidate for the same key column; keeping the relaxed one would make the
-    /// whole key condition relaxed (`isRelaxed`) and disable exact-range consumers such
-    /// as `markRangesFromPKRange`. So emission runs in two passes: first the candidates
-    /// that can still produce an exact atom, including exact transformed candidates,
-    /// then the already-relaxed ones for the key columns that are still
-    /// uncovered. Within a pass, candidates keep the source priority order.
-    std::vector<bool> has_atom_for_key_column(num_key_columns, false);
-
-    for (bool relaxed_candidates_pass : {false, true})
-    {
-        for (const auto & candidate : candidates)
-        {
-            if (candidate.is_relaxed != relaxed_candidates_pass)
-                continue;
-
-            chassert(candidate.key_column_num < num_key_columns);
-            if (has_atom_for_key_column[candidate.key_column_num])
-                continue;
-
-            std::string candidate_func_name = func_name;
-
-            auto normalized = normalize_candidate(candidate, std::move(candidate_func_name));
-            if (!normalized)
-                continue;
-
-            /// If normalize_candidate folded the comparison to ALWAYS_TRUE/ALWAYS_FALSE
-            /// (e.g., via float-to-integer rewriting), emit the element directly without
-            /// passing it through atom_map (which would overwrite the function).
-            if (normalized->element.function == RPNElement::ALWAYS_TRUE
-                || normalized->element.function == RPNElement::ALWAYS_FALSE)
-            {
-                group.atoms.emplace_back(std::move(normalized->element));
-                has_atom_for_key_column[candidate.key_column_num] = true;
-                continue;
-            }
-
-            auto atom_it_for_candidate = atom_map.find(normalized->func_name);
-            chassert(atom_it_for_candidate != atom_map.end());
-
-            /// Outside an `Object` the key side carries the `UInt64` form of a boolean that `IColumn::get`
-            /// produces. `Field` comparison inside a container reads the tag before the value, so a
-            /// `Bool`-tagged element would order against the whole key domain, not against the booleans it holds.
-            normalizeBoolFields(normalized->const_value);
-
-            if (!atom_it_for_candidate->second(normalized->element, normalized->const_value))
-                continue;
-
-            group.atoms.emplace_back(std::move(normalized->element));
-            has_atom_for_key_column[candidate.key_column_num] = true;
         }
     }
 
+    /// The range endpoint must follow SQL comparison semantics, which do not order NaNs
+    /// after finite values as the `Field` total order does.
+    if (anyFieldSatisfies(const_value, isNaNField))
+        return std::nullopt;
+
+    /// A transformed constant must weaken the condition, for example `x > 5` becomes `round(x) >= 5`.
+    if (is_relaxed)
+        relaxComparisonForTransformedConstant(func_name);
+
+    /// The constant has been transformed into the key-expression domain. If that
+    /// transformation reverses order, reverse the comparison operator too.
+    /// Symmetric operators such as `equals` and `notEquals` are unchanged.
+    if (!candidate.chain_is_positive)
+    {
+        if (auto reversed = reverseComparisonOperator(func_name); !reversed.empty())
+            func_name = String(reversed);
+    }
+
+    RPNElement element;
+    element.key_columns.push_back(candidate.key_column_num);
+    element.monotonic_functions_chain = std::move(chain);
+    element.argument_num_of_space_filling_curve = candidate.argument_num_of_space_filling_curve;
+    element.relaxed = is_relaxed;
+
+    const auto atom_it = atom_map.find(func_name);
+    chassert(atom_it != atom_map.end());
+
+    /// Outside an `Object` the key side carries the `UInt64` form of a boolean that `IColumn::get`
+    /// produces. `Field` comparison inside a container reads the tag before the value, so a
+    /// `Bool`-tagged element would order against the whole key domain, not against the booleans it holds.
+    normalizeBoolFields(const_value);
+
+    if (!atom_it->second(element, const_value))
+        return std::nullopt;
+
+    return element;
 }
 
 void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, AtomGroup & group)

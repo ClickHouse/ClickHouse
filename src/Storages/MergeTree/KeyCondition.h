@@ -582,6 +582,29 @@ private:
         bool chain_is_positive = true;
     };
 
+    /// A comparison candidate identifies a matched key expression and a constant to compare with it.
+    struct ComparisonAtomCandidate
+    {
+        size_t key_column_num = 0;
+        /// This is the type of the matched key expression after `chain` is applied;
+        /// the comparison happens in this type.
+        DataTypePtr key_expr_type;
+        /// The check-time chain is stored in the atom and is applied to granule key
+        /// ranges during evaluation.
+        MonotonicFunctionsChain chain;
+        std::optional<size_t> argument_num_of_space_filling_curve;
+        Field const_value;
+        DataTypePtr const_type;
+        /// This flag is true when the transformed constant already describes a superset of matching values.
+        /// `tryBuildComparisonAtom` can further relax the constraint during type conversion; exact
+        /// conversions preserve this initial precision.
+        bool is_relaxed = false;
+        /// This flag is false when the key-side chain that produced the constant reverses comparison
+        /// order (see `TransformedConstant::chain_is_positive`); the comparison operator
+        /// must then be reversed as well.
+        bool chain_is_positive = true;
+    };
+
     /// The `extractAtoms*` family fills `group` with the atoms of one predicate leaf.
     /// A comparison like `ts >= X` may produce atoms for `toYYYYMM(ts)`, `toDate(ts)` and `ts`
     /// at once; a set atom may itself constrain several key columns. `RPNBuilder` combines the
@@ -623,6 +646,19 @@ private:
         const ColumnWithTypeAndName & constant,
         bool allow_relaxed_pruning,
         AtomGroup & group);
+
+    /// Collects direct candidates, then candidates from monotonic and deterministic constant transforms.
+    std::vector<ComparisonAtomCandidate> collectComparisonAtomCandidates(
+        const RPNBuilderTreeNode & key_arg,
+        const BuildInfo & info,
+        const std::string & func_name,
+        const ColumnWithTypeAndName & constant,
+        bool allow_relaxed_pruning);
+
+    /// Builds a complete comparison atom, including type conversion, relaxation and the final range.
+    /// Returns `std::nullopt` when the candidate cannot supply a sound constraint.
+    std::optional<RPNElement> tryBuildComparisonAtom(
+        const ComparisonAtomCandidate & candidate, std::string func_name, const ContextPtr & context) const;
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
