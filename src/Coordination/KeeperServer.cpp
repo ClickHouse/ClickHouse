@@ -1044,11 +1044,8 @@ void KeeperServer::resetLeaderMetrics()
 
 void KeeperServer::waitForLocalLogsPreprocessing()
 {
-    /// The caller is a thread of the Raft event loop, which also carries the listener, the
-    /// election and heartbeat timers and every RPC completion. No callback invoked from there
-    /// may block for an unbounded time, or a slow local log replay stops the whole event loop
-    /// instead of merely costing throughput. So only one thread waits, and only for as long as
-    /// answering still achieves something.
+    /// Runs on a thread of the Raft event loop - the same pool as the listener and the timers -
+    /// so blocking here without a bound stops the loop instead of merely costing throughput.
     if (threads_waiting_for_local_logs_preprocessing.fetch_add(1) != 0)
     {
         threads_waiting_for_local_logs_preprocessing.fetch_sub(1);
