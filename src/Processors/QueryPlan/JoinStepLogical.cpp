@@ -26,7 +26,9 @@
 #include <Functions/ComparisonNames.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/if.h>
 #include <Functions/isNotDistinctFrom.h>
+#include <Functions/isNull.h>
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
@@ -897,6 +899,38 @@ static void preferNullableRightKey(
     }
 }
 
+/// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
+/// of the nested type. NULL matches NULL through the first key, and the second one is not nullable, so the join skips
+/// no row for it. Fixed-width keys stay fixed-width this way, where wrapping the key into a tuple sends it down the
+/// generic serialized-key path.
+/// The split pays off for the keys that pack into a fixed-width or a string hash key. A compound nested type, which
+/// only a function like `if` produces under `Nullable`, keeps the tuple: `if` over a tuple runs per element and leaves
+/// the bytes under an outer NULL as they were, so equal NULLs would hash differently. `Nothing` has no value either.
+static bool canSplitNullSafeKey(const DataTypePtr & type)
+{
+    const auto value_type = removeLowCardinalityAndNullable(type);
+    return value_type->isValueRepresentedByNumber() || isStringOrFixedString(value_type);
+}
+
+static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
+{
+    const auto value_type = removeLowCardinalityAndNullable(key.getType());
+    auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(std::make_shared<FunctionIsNull>(/*use_analyzer_=*/ true)));
+    auto value = JoinActionRef::transform(
+        {is_null, key},
+        [&value_type](ActionsDAG & dag, std::vector<JoinExpressionActions::NodeRawPtr> nodes)
+        {
+            const auto & default_value
+                = dag.addColumn(value_type->createColumnConstWithDefaultValue(1), value_type, "__null_safe_key_default_" + value_type->getName());
+            const auto & not_null = dag.addFunction(FunctionFactory::instance().get("assumeNotNull", nullptr), {nodes[1]}, {});
+            return &dag.addFunction(
+                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false),
+                {nodes[0], &default_value, &not_null},
+                {});
+        });
+    return {std::move(is_null), std::move(value)};
+}
+
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
     std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
@@ -924,21 +958,36 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
-            /**
-                * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
-                * we need to wrap keys with a non-nullable type.
-                * The type `tuple` can be used for this purpose,
-                * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
-                * Thus, join algorithm will match keys with values tuple(NULL).
-                * Example:
-                *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
-                * This will be semantically transformed to:
-                *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
-                */
+            /// A null-safe key is what makes `TableJoin` reject a `StorageJoin`, whose prebuilt table cannot be probed
+            /// with a derived key.
+            if (canSplitNullSafeKey(lhs.getType()) && !planning_context.is_storage_join)
+            {
+                auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
+                auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
+                table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
+                used_expressions.insert(used_expressions.end(), {lhs_null, rhs_null});
+                lhs = std::move(lhs_value);
+                rhs = std::move(rhs_value);
+                null_safe_comparison = false;
+            }
+            else
+            {
+                /**
+                    * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
+                    * we need to wrap keys with a non-nullable type.
+                    * The type `tuple` can be used for this purpose,
+                    * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
+                    * Thus, join algorithm will match keys with values tuple(NULL).
+                    * Example:
+                    *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
+                    * This will be semantically transformed to:
+                    *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
+                    */
 
-            JoinActionRef::AddFunction wrap_nullsafe_function(std::make_shared<FunctionTuple>());
-            lhs = JoinActionRef::transform({lhs}, wrap_nullsafe_function);
-            rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
+                JoinActionRef::AddFunction wrap_nullsafe_function(std::make_shared<FunctionTuple>());
+                lhs = JoinActionRef::transform({lhs}, wrap_nullsafe_function);
+                rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
+            }
         }
 
         has_join_predicates = true;
