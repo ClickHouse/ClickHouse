@@ -352,15 +352,16 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         for (size_t axis_id : column.axis_ids)
             column.num_elements *= header.dimensions[layout.axis_dimensions[axis_id]].length;
 
-        /// A variable can declare the value that marks the data that is missing. A `char`
-        /// attribute holds one or more character sentinels, except for a `char` variable exposed
-        /// as strings: its attribute is one string sentinel after its trailing padding is removed.
+        /// A variable can declare the value that marks the data that is missing. The `_FillValue`
+        /// attribute must be scalar; `missing_value` may hold several sentinels. A `char` variable
+        /// exposed as strings is the exception to both: its attribute is one string sentinel, of any
+        /// length, after its trailing padding is removed.
         if (settings.netcdf.fill_value_as_null)
         {
             for (std::string_view attribute_name : {"_FillValue", "missing_value"})
             {
                 const auto * attribute = variable.tryGetAttribute(attribute_name);
-                if (attribute_name == "_FillValue" && variable.type != NetCDFType::Char
+                if (attribute_name == "_FillValue" && !column.has_string_length_dimension
                     && attribute && attribute->type == variable.type && attribute->num_elements != 1)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "The _FillValue attribute of the variable {} must be scalar, but has {} values",
@@ -1085,9 +1086,10 @@ case for a small type whose every value is present in the data: a `Nullable(UInt
 contains a `NULL` and all of the 256 values of `UInt8` cannot be written, and throws an exception.
 A column that has no `NULL`s at all is written without the attribute instead, and is read back as
 not `Nullable`. A String column works the same way: the `_FillValue` of a `char` variable is a
-string, chosen so that the data of the column does not contain it, so a `NULL` and an empty string
-stay different values. The chosen string can be longer than the longest string of the column, and
-then the length of the dimension of the variable grows to hold it.
+single character other than the zero byte, chosen so that the data of the column does not contain
+the string of that one character, so a `NULL` and an empty string stay different values. A column
+that contains a `NULL` and all of the 255 such one-character strings cannot be written, and throws
+an exception.
 
 ## Format settings {#format-settings}
 
