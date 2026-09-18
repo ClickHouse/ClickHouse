@@ -31,6 +31,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_http_get_redirects;
+}
+
 static const UInt64 max_block_size = 8192;
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -82,9 +87,19 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
 
 QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
 {
-    Poco::URI uri(configuration.url);
+    /// The buffer is created with delayed initialization disabled, so all redirects have already been
+    /// followed and `getCurrentURI` returns the URI of the final response. Detect the compression method
+    /// from it rather than from `configuration.url`: a redirect may point to an object with a different
+    /// extension (e.g. `/redirect` -> `/data.csv.gz`) and no `Content-Encoding` header.
+    String path = http_buffer_ptr->getCurrentURI().getPath();
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
-    auto compression_method = chooseCompressionMethod(uri.getPath(), http_request_compression_method_str);
+    auto compression_method = chooseCompressionMethod(path, http_request_compression_method_str);
+    /// The inverse redirect pattern must keep working too: a source URL with a compression suffix
+    /// (e.g. `/data.csv.gz`) may redirect to an opaque signed URL (e.g. `/signed-token`) that serves
+    /// the same compressed object without `Content-Encoding`. In that case the final URI does not
+    /// imply any compression method, so fall back to the suffix of the original source URL.
+    if (compression_method == CompressionMethod::None && http_request_compression_method_str.empty())
+        compression_method = chooseCompressionMethod(Poco::URI(configuration.url).getPath(), "");
     /// When the compression method came from the response's `Content-Encoding` header,
     /// `Content-Encoding: snappy` follows the HTTP standard wire format (snappy framing),
     /// independent of the user-tunable `snappy_mode`. When the method is instead inferred
@@ -128,6 +143,8 @@ BlockIO HTTPDictionarySource::loadAll()
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withHostFilter(configuration.created_from_ddl ? &context->getRemoteHostFilter() : nullptr)
+                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
@@ -146,6 +163,8 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withHostFilter(configuration.created_from_ddl ? &context->getRemoteHostFilter() : nullptr)
+                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
@@ -176,6 +195,8 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withHostFilter(configuration.created_from_ddl ? &context->getRemoteHostFilter() : nullptr)
+                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withOutCallback(std::move(out_stream_callback))
                    .withDelayInit(false)
@@ -207,6 +228,8 @@ BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const Vector
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withHostFilter(configuration.created_from_ddl ? &context->getRemoteHostFilter() : nullptr)
+                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withOutCallback(std::move(out_stream_callback))
                    .withDelayInit(false)
@@ -345,7 +368,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries)
+            .header_entries = std::move(header_entries),
+            .created_from_ddl = created_from_ddl
         };
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
