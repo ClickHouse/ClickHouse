@@ -17,7 +17,7 @@ In the ClickHouse Cloud console, open **Settings**, then select **Prepaid credit
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Prepaid credits under Account in the Settings sidebar" size="sm" />
 
-To use this feature, you need at least one of the following roles in an organization with committed contract credits allocated:
+To view prepaid credit balances, you need at least one of the following roles in an organization with committed contract credits allocated:
 
 - [Admin](/products/cloud/reference/security/console-roles#organization-roles)
 - [Billing](/products/cloud/reference/security/console-roles#organization-roles)
@@ -58,7 +58,7 @@ The table below the summary contains one row per organization:
 | Status | Description |
 | --- | --- |
 | **Active** | The organization has one or more prepaid credit balances that have not expired. |
-| **Expires soon** | The organization has only one active prepaid balance, and its expiration date is 60 days away. |
+| **Expires soon** | The organization has only one active prepaid balance, and it expires within 60 days. This status remains until the balance expires. |
 | **Expired** | All prepaid balances on the organization have expired. |
 | **Spent** | All prepaid balances on the organization have been consumed but have not expired. This status takes precedence over **Active**. |
 | **No Prepaid Credits** | The organization has no prepaid credits. |
@@ -68,6 +68,8 @@ The table below the summary contains one row per organization:
 ## Transfer credits {#transfer-credits}
 
 A credit transfer, also called a split, moves prepaid credits from a source organization to a target organization.
+
+To transfer credits, you need the [Manage billing details](/products/cloud/reference/security/console-roles#console-permissions) permission. The View billing details permission lets you view balances but does not allow transfers.
 
 1. Click **Transfer** in the source organization's row.
 2. Select an active credit grant. The panel lists the source organization's active grants and their expiration dates.
