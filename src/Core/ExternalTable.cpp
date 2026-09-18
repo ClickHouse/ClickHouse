@@ -1,9 +1,3 @@
-#include <Columns/ColumnTuple.h>
-#include <Core/Block.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <boost/program_options.hpp>
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/IStorage.h>
@@ -37,7 +31,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 http_max_multipart_form_data_size;
-    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace ErrorCodes
@@ -45,53 +38,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
 }
-
-static Block materializeScalar(InputFormatPtr input)
-{
-    Pipe pipe(std::move(input));
-    QueryPipeline pipeline(std::move(pipe));
-    PullingPipelineExecutor executor(pipeline);
-
-    Block block;
-    while (block.rows() == 0 && executor.pull(block)) {}
-    if (block.rows() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar input returned {} rows", block.rows());
-
-    Block tmp_block;
-    while (tmp_block.rows() == 0 && executor.pull(tmp_block)) {}
-    if (tmp_block.rows() > 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar input returned more than one block");
-
-    if (block.columns() == 1)
-        return block;
-
-    return Block(ColumnsWithTypeAndName{{
-        ColumnTuple::create(block.getColumns()),
-        std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
-        "tuple"
-    }});
-}
-
 ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef()[Setting::max_block_size]);
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").safeGet<UInt64>());
 
     auto data = std::make_unique<ExternalTableData>();
     data->pipe = std::make_unique<QueryPipelineBuilder>();
-    data->table_name = name;
     data->pipe->init(Pipe(std::move(input)));
+    data->table_name = name;
 
     return data;
-}
-
-Block BaseExternalTable::getScalar(ContextPtr context)
-{
-    initReadBuffer();
-    initSampleBlock();
-    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef()[Setting::max_block_size]);
-    return materializeScalar(std::move(input));
 }
 
 void BaseExternalTable::clear()
@@ -267,7 +225,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
         getContext()->addExternalTable(temporary_id.table_name, std::move(temporary_table));
     }
 
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     /// The schema of an external table is bound once, by the first part that names it (see the branch above),
     /// and the `_structure` / `_types` fields of every later part with the same name must describe that same

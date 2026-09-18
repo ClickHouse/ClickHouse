@@ -23,9 +23,9 @@ REGISTER_FUNCTION(CountSubstrings)
     FunctionDocumentation::Syntax syntax = "countSubstrings(haystack, needle[, start_pos])";
     FunctionDocumentation::Arguments arguments =
     {
-        {"haystack", "String in which the search is performed. [String](/reference/data-types/string) or [Enum](/reference/data-types/enum)."},
-        {"needle", "Substring to be searched. [String](/reference/data-types/string)."},
-        {"start_pos", "Position (1-based) in `haystack` at which the search starts. [UInt](/reference/data-types/int-uint). Optional."}
+        {"haystack", "String in which the search is performed. [String](../../sql-reference/data-types/string.md) or [Enum](../../sql-reference/data-types/enum.md)."},
+        {"needle", "Substring to be searched. [String](../../sql-reference/data-types/string.md)."},
+        {"start_pos", "Position (1-based) in `haystack` at which the search starts. [UInt](../../sql-reference/data-types/int-uint.md). Optional."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"The number of occurrences.", {"UInt64"}};
     FunctionDocumentation::Examples examples =

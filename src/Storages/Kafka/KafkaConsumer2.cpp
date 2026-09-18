@@ -388,7 +388,7 @@ ReadBufferPtr KafkaConsumer2::getNextMessage()
 
 void KafkaConsumer2::filterMessageErrors()
 {
-    chassert(current == messages.begin());
+    assert(current == messages.begin());
 
     StorageKafkaUtils::eraseMessageErrors(
         messages,
