@@ -7,6 +7,8 @@
 #include <Common/SettingSource.h>
 #include <Common/quoteString.h>
 
+#include <Access/SettingsProfilesInfo.h>
+
 #include <DataTypes/FieldToDataType.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -278,6 +280,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     auto updated_context = Context::createCopy(context);
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
+    Names contributed_names;
 
     if (select_settings)
     {
@@ -315,14 +318,29 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         {
             auto checked_changes = set_query.changes;
             updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
-            updated_context->applySettingsChanges(checked_changes);
+
+            /// Collect exactly which settings this clause contributes to the node's context,
+            /// including through an applied profile, so the Planner can later tell a genuine
+            /// opt-in (e.g. `use_query_cache`) from a value merely inherited from an outer scope (#119019).
+            std::vector<std::shared_ptr<const SettingsProfilesInfo>> applied_profiles;
+            updated_context->applySettingsChanges(checked_changes, &applied_profiles);
             settings_changes = set_query.changes;
+
+            for (const auto & change : set_query.changes)
+                contributed_names.push_back(change.name);
+            for (const auto & profile_info : applied_profiles)
+                for (const auto & setting_change : profile_info->settings)
+                    contributed_names.push_back(setting_change.name);
+
+            ::sort(contributed_names.begin(), contributed_names.end());
+            contributed_names.erase(std::unique(contributed_names.begin(), contributed_names.end()), contributed_names.end());
         }
     }
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
 
     auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
+    current_query_tree->setSettingsContributedNames(std::move(contributed_names));
 
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());

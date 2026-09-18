@@ -1,0 +1,35 @@
+-- a nested profile enabling use_query_cache creates a subquery cache entry
+3
+1
+-- a nested profile followed by an explicit use_query_cache = 0 does not create an entry
+3
+0
+-- an explicit use_query_cache = 1 followed by a profile that sets it to 0 does not create an entry
+3
+0
+-- a neutral profile (no use_query_cache mention), no outer use_query_cache anywhere, does not create an entry
+3
+0
+-- normalization: profile before make_distributed_plan still ends with the same adjustment as today
+3
+-- normalization: reverse order still gives today\'s result, proving no normalization point moved
+3
+-- a CTE referenced twice (cloned query tree) still produces subquery cache entries
+1
+-- EXPLAIN QUERY TREE output is unchanged by a profile-opted-in subquery
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1
+      PROJECTION COLUMNS
+        id UInt64
+      PROJECTION
+        LIST id: 4, nodes: 1
+          COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
+      JOIN TREE
+        TABLE id: 6, alias: __table2, table_name: default.t_05055
+      SETTINGS profile=qc_on_05055
