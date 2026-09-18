@@ -120,21 +120,11 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * APPLY(x -> (x + 1)
 SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","parameters":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":7}}]},"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- ASTFunction: a bare select query argument is parser-producible only in the table functions
--- `view(SELECT ...)` and `viewIfPermitted(SELECT ... ELSE f(...))`, and the formatter prints those
--- two shapes through branches that emit the name and the select and then return, so parameters, a
--- window and a NULLS action never reach the output; under any other name a bare select formats into
--- text that does not parse back. One row per rejected carrier: another function name, an extra
--- argument, a select in `parameters`, a select under a nested expression list, then the same
--- parameters / window / NULLS action carriers under the name `view` itself. The `position()` row
--- anchors the `replace()` rows, which would be vacuous if that serialization changed. The last four
--- rows carry the other select query node types the JSON format can build, none of which the
--- exact-type checks of the two accepted shapes match: `SelectQuery` and `SelectIntersectExceptQuery`
--- under an ordinary name, `SelectQuery` under `view` itself (whose accepted shape stays a
--- `SelectWithUnionQuery`), and `ProjectionSelectQuery`. The last three rows carry query output options
--- on the select child of an otherwise accepted shape, which `ParserSelectWithUnionQuery` never parses
--- while `ASTQueryWithOutput::formatImpl` always prints them; a query-local `SETTINGS` inside
--- `view(...)` belongs to the inner `SelectQuery` instead and round-trips above.
+-- ASTFunction: a bare select query argument is parser-producible only in `view(SELECT ...)` and
+-- `viewIfPermitted(SELECT ... ELSE f(...))`. One row per rejected carrier: another function name, an
+-- extra argument, `parameters`, a nested expression list, then parameters / window / NULLS action /
+-- query output options under `view` itself, and each other select query node type the format can
+-- build. The `position()` row anchors the `replace()` rows against a serialization change.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"Function","name":"any","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Function","name":"foo","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}},{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
@@ -154,15 +144,10 @@ SELECT formatQueryFromJSON('{"type":"Function","name":"viewIfPermitted","argumen
 
 -- ---------------------------------------------------------------------------
 -- An expression position holds an expression, and neither an expression list nor a select query is
--- one. Three boundaries own such positions: a function's `arguments` and `parameters`, the `APPLY`
--- transformer's own `parameters`, and the `REPLACE` transformer's replacement child. No parse puts
--- either node there, `QueryTreeBuilder::buildExpression` rejects both, and the formatter prints a
--- list child's own children inline, so one expression formats as several (a single nested list under
--- `plus` formats as `plus(1, 2)`, which parses back as two arguments, and the `APPLY` row formats
--- exactly like the `APPLY(quantiles(0.5, 0.9))` that round-trips above) or as none (`plus(, 1)`,
--- which does not parse), while a select child formats as `func(SELECT ...)`, which parses in no
--- expression context. One row per boundary and carrier. A nested list is parser-producible
--- elsewhere, in `GROUP BY GROUPING SETS ((a, b), (c))`, which round-trips above.
+-- one. One row per boundary and carrier, over the three boundaries that own such a position: a
+-- function's `arguments` and `parameters`, the `APPLY` transformer's own `parameters`, and the
+-- `REPLACE` replacement child. A nested list is parser-producible elsewhere, in
+-- `GROUP BY GROUPING SETS ((a, b), (c))`, which round-trips above.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"Function","name":"plus","arguments":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}},{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Function","name":"quantile","parameters":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"Float64","value":0.5}}]}]},"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }

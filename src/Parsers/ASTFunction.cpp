@@ -284,19 +284,9 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
-    /// The parser produces a bare select query function argument only inside the table functions
-    /// `view` and `viewIfPermitted` (`ViewLayer` is their only producer), and only ever as a
-    /// `SelectWithUnionQuery`, which is all `ParserSelectWithUnionQuery` builds: `view(SELECT ...)`
-    /// has exactly one argument, the select, and `viewIfPermitted(SELECT ... ELSE table_function(...))`
-    /// has exactly (select, function), because after `ELSE` only a function call is accepted; neither
-    /// form has parameters, a window or a NULLS action. In an expression context both names parse as
-    /// ordinary functions and a bare select cannot appear among their arguments at all. The formatter
-    /// prints those two shapes through branches that return early, so `parameters` and the
-    /// `finishFormatWithWindow` suffix (NULLS action, `OVER ...`) never reach the output, while query
-    /// output options do escape them, because `ASTQueryWithOutput::formatImpl` is `final` and
-    /// `ParserSelectWithUnionQuery` parses none. The checks are case-insensitive because the parser
-    /// dispatches to the table function parser on the lowercased name, so any spelling hits the same
-    /// parse-back constraints.
+    /// A bare select query argument is parser-producible only as `view(SELECT ...)` or
+    /// `viewIfPermitted(SELECT ... ELSE f(...))`, neither of which carries parameters, a window, a
+    /// NULLS action or query output options.
     bool is_view = equalsCaseInsensitive(name, "view");
     bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
     if (containsBareSelectQuery(arguments.get()) || containsBareSelectQuery(parameters.get()))
@@ -310,10 +300,8 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
             && getNullsAction() == NullsAction::EMPTY && !view_select->hasOutputOptions();
         if (!is_table_function_shape)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "A select query argument is only allowed in the table function 'view' (exactly one argument, a "
-                "`SelectWithUnionQuery`) or 'viewIfPermitted' (exactly two arguments, a `SelectWithUnionQuery` "
-                "followed by a function), without parameters, a window, a NULLS action or query output options, "
-                "during AST JSON deserialization");
+                "A select query argument is only allowed in 'view(SELECT ...)' or "
+                "'viewIfPermitted(SELECT ..., f(...))' during AST JSON deserialization");
 
         /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
         /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and
@@ -323,9 +311,7 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         name = is_view ? "view" : "viewIfPermitted";
     }
 
-    /// A child of `arguments` or `parameters` is an expression, and an expression list is not one:
-    /// `QueryTreeBuilder::buildExpression` accepts identifier, literal, matcher, function and subquery
-    /// nodes only, while the formatter prints such a child's own children inline.
+    /// A child of `arguments` or `parameters` is an expression, and an expression list is not one.
     if (hasExpressionListChild(arguments.get()) || hasExpressionListChild(parameters.get()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'arguments' and 'parameters' cannot have an expression list child during AST JSON deserialization");

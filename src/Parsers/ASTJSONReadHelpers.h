@@ -331,8 +331,7 @@ private:
     const Poco::JSON::Object & obj;
 };
 
-/// The select query node types the AST JSON format can build. `as` matches the exact type, and
-/// `ASTSelectIntersectExceptQuery` derives from `ASTSelectQuery`, so each one is listed.
+/// The select query node types the AST JSON format can build; `as` matches the exact type.
 bool isBareSelectQuery(const IAST * node);
 
 }
