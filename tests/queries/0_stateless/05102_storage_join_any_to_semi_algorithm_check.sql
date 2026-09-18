@@ -4,6 +4,11 @@
 -- execute, and the query failed with `NOT_IMPLEMENTED` while the same query with
 -- `query_plan_enable_optimizations = 0` ran. A plan rewrite must not decide whether a query runs.
 
+-- CI may inject False; pin it so the conversion pass under test always runs.
+SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
+-- The `Join` engine rejects a mismatched `join_use_nulls`, which is a different error unrelated to this test.
+SET join_use_nulls = 0;
+
 DROP TABLE IF EXISTS t_storage_join_left;
 DROP TABLE IF EXISTS t_storage_join_right;
 
