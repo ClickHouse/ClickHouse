@@ -1559,7 +1559,6 @@ namespace
             reading_query_info.wait(false);
         }
 
-        responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;
         output_format_processor.reset();
@@ -1568,9 +1567,19 @@ namespace
         nested_write_buffer = nullptr;
         compressing_write_buffer = nullptr;
         io = {};
+        ast.reset();
+        insert_query = nullptr;
+        output = {};
+        String{}.swap(input_format);
+        String{}.swap(input_data_delimiter);
+        String{}.swap(output_format);
+        result = GRPCResult{};
+        logs_queue.reset();
         thread_trace_context.reset();
         query_context.reset();
         query_scope.reset();
+        /// The responder and received messages were allocated before query accounting started.
+        responder.reset();
         session.reset();
     }
 
