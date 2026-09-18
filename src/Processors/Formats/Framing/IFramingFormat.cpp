@@ -40,10 +40,8 @@ namespace FailPoints
 namespace
 {
 
-/// Counts the bytes a framed service packet (progress, log, profile_events) adds to the response, so
-/// that a client can subtract its own progress-reporting traffic from the `NetworkSendBytes` it also
-/// sees, instead of showing it as query IO. Mirrors `CountServiceBytes` in `TCPHandler`. A null buffer
-/// disables the counting (see `IFramingFormat::service_bytes_out`).
+/// Counts framed service-packet bytes so that clients can exclude progress-reporting traffic from IO.
+/// A null buffer disables counting (see `IFramingFormat::service_bytes_out`).
 class CountServiceBytes
 {
 public:

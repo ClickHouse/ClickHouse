@@ -157,7 +157,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event NativeProtocolSend;
-    extern const Event NativeProtocolServiceBytes;
+    extern const Event NativeProtocolDataBytes;
     extern const Event ReadTaskRequestsSent;
     extern const Event MergeTreeReadTaskRequestsSent;
     extern const Event MergeTreeAllRangesAnnouncementsSent;
@@ -203,24 +203,12 @@ namespace DB::ErrorCodes
 
 namespace
 {
-/// Counts the bytes a service packet adds to the client connection, so that the client can subtract
-/// its own protocol overhead instead of reporting it as query IO.
-class CountServiceBytes
+void countNativeProtocolDataBytes(const DB::WriteBuffer & buffer, size_t bytes_before)
 {
-public:
-    explicit CountServiceBytes(const DB::WriteBuffer & buffer_) : buffer(buffer_), bytes_before(buffer_.count()) {}
-    ~CountServiceBytes()
-    {
-        /// Chunk framing can rewind the buffer by a few bytes, so do not assume a growing count.
-        const size_t bytes_after = buffer.count();
-        if (bytes_after > bytes_before)
-            ProfileEvents::increment(ProfileEvents::NativeProtocolServiceBytes, bytes_after - bytes_before);
-    }
-
-private:
-    const DB::WriteBuffer & buffer;
-    const size_t bytes_before;
-};
+    const size_t bytes_after = buffer.count();
+    if (bytes_after > bytes_before)
+        ProfileEvents::increment(ProfileEvents::NativeProtocolDataBytes, bytes_after - bytes_before);
+}
 
 // This function corrects the wrong client_name from the old client.
 // Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
@@ -1920,6 +1908,7 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
         return;
 
     initBlockOutput(state, totals);
+    const size_t bytes_before = out->count();
 
     writeVarUInt(Protocol::Server::Totals, *out);
     writeStringBinary("", *out);
@@ -1928,6 +1917,8 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
     if (state.maybe_compressed_out != out)
         state.maybe_compressed_out->next();
     out->finishChunk();
+    if (totals.rows() > 0)
+        countNativeProtocolDataBytes(*out, bytes_before);
 }
 
 
@@ -1937,6 +1928,7 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
         return;
 
     initBlockOutput(state, extremes);
+    const size_t bytes_before = out->count();
 
     writeVarUInt(Protocol::Server::Extremes, *out);
     writeStringBinary("", *out);
@@ -1945,6 +1937,8 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
     if (state.maybe_compressed_out != out)
         state.maybe_compressed_out->next();
     out->finishChunk();
+    if (extremes.rows() > 0)
+        countNativeProtocolDataBytes(*out, bytes_before);
 }
 
 
@@ -1952,8 +1946,6 @@ void TCPHandler::sendProfileEvents(QueryState & state)
 {
     if (!state.query_context->getSettingsRef()[Setting::send_profile_events])
         return;
-
-    CountServiceBytes service_bytes(*out);
 
     Stopwatch stopwatch;
     Block block = ProfileEvents::getProfileEvents(host_name, state.profile_queue, state.last_sent_snapshots);
@@ -3322,6 +3314,9 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
 
         throw;
     }
+
+    if (block.rows() > 0)
+        countNativeProtocolDataBytes(*out, prev_bytes_written_out);
 }
 
 void TCPHandler::sendLogData(
@@ -3461,8 +3456,6 @@ void TCPHandler::updateProgress(QueryState & state, const Progress & value)
 
 void TCPHandler::sendProgress(QueryState & state)
 {
-    CountServiceBytes service_bytes(*out);
-
     writeVarUInt(Protocol::Server::Progress, *out);
     auto increment = state.progress.fetchValuesAndResetPiecewiseAtomically();
     UInt64 current_elapsed_ns = state.watch.elapsedNanoseconds();
@@ -3492,8 +3485,6 @@ void TCPHandler::sendLogs(QueryState & state, std::shared_ptr<TCPHandlerPocoChun
 {
     if (!state.logs_queue)
         return;
-
-    CountServiceBytes service_bytes(*out);
 
     MutableColumns logs_columns;
     MutableColumns curr_logs_columns;

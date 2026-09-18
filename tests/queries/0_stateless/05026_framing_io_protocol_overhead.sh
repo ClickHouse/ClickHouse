@@ -6,10 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Over HTTP, `NetworkSendBytes` also carries the framed `progress` / `log` / `profile_events` packets a
-# live IO meter itself needs. `NativeProtocolServiceBytes` accounts for those packets on the native
-# protocol only, so framing needs its own counter; this pins it. (The Play UI only ever sees the
-# compressed path below, where nothing is counted, so it leaves `NetworkSendBytes` out of its meter.)
+# `FramingServiceBytes` covers HTTP service frames; HTTP queries must not emit `NativeProtocolDataBytes`.
 
 query_id_prefix="05026_framing_io_protocol_overhead_${CLICKHOUSE_DATABASE}"
 # `http_response_buffer_size` / `http_wait_end_of_query` (both randomized) put a `CascadeWriteBuffer`
@@ -50,9 +47,9 @@ done
 
 ${CLICKHOUSE_CLIENT} -q "
 SELECT
-    'framed idle query sends only service packets',
+    'framed idle query uses no native data packets',
     ProfileEvents['FramingServiceBytes'] > 0,
-    ProfileEvents['NativeProtocolServiceBytes'] = 0,
+    ProfileEvents['NativeProtocolDataBytes'] = 0,
     2 * ProfileEvents['FramingServiceBytes'] >= ProfileEvents['NetworkSendBytes']
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
@@ -60,19 +57,20 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish'
 
 ${CLICKHOUSE_CLIENT} -q "
 SELECT
-    'compressed framed idle query counts no service bytes',
+    'compressed framed idle query uses no native data packets',
     ProfileEvents['FramingServiceBytes'] = 0,
-    ProfileEvents['NativeProtocolServiceBytes'] = 0,
-    ProfileEvents['FramingServiceBytes'] <= ProfileEvents['NetworkSendBytes']
+    ProfileEvents['NativeProtocolDataBytes'] = 0,
+    ProfileEvents['NetworkSendBytes'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND current_database = currentDatabase() AND query_id = '${query_id_prefix}_gzip'"
 
 ${CLICKHOUSE_CLIENT} -q "
 SELECT
-    'compressed framed query streaming data keeps the meter positive',
+    'compressed framed result uses no native data packets',
     ProfileEvents['FramingServiceBytes'] = 0,
-    ProfileEvents['NetworkSendBytes'] > ProfileEvents['FramingServiceBytes']
+    ProfileEvents['NativeProtocolDataBytes'] = 0,
+    ProfileEvents['NetworkSendBytes'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND current_database = currentDatabase() AND query_id = '${query_id_prefix}_gzip_data'"

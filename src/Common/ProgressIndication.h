@@ -25,13 +25,8 @@ struct ThreadEventData
     UInt64 memory_usage = 0;
     UInt64 temp_data_on_disk_usage = 0;
 
-    /// Per-packet IO byte deltas except `NetworkSendBytes`.
+    /// Per-packet IO byte deltas, including explicit native result bytes when supported.
     UInt64 io_bytes = 0;
-
-    /// Per-packet `NetworkSendBytes` and the service-packet subset to subtract.
-    UInt64 network_send_bytes = 0;
-    UInt64 protocol_service_bytes = 0;
-    bool has_protocol_service_bytes = false;
 
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;

@@ -71,18 +71,6 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
     {
         total_cpu_ns += us_to_ns * new_host.second.time();
         total_io_bytes += new_host.second.io_bytes;
-
-        const auto previous_host = hosts_data.find(new_host.first);
-        const bool has_protocol_service_bytes = new_host.second.has_protocol_service_bytes
-            || (previous_host != hosts_data.end() && previous_host->second.has_protocol_service_bytes);
-        if (has_protocol_service_bytes)
-        {
-            const UInt64 send_bytes = new_host.second.network_send_bytes;
-            const UInt64 service_bytes = new_host.second.protocol_service_bytes;
-            total_io_bytes += send_bytes > service_bytes ? send_bytes - service_bytes : 0;
-        }
-
-        new_host.second.has_protocol_service_bytes = has_protocol_service_bytes;
         hosts_data[new_host.first] = new_host.second;
     }
     double now_ns = static_cast<double>(getElapsedNanoseconds());

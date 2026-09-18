@@ -212,8 +212,7 @@ namespace ProfileEvents
     extern const Event ReadWriteBufferFromHTTPBytes;
     extern const Event WriteBufferFromHTTPBytes;
     extern const Event NetworkReceiveBytes;
-    extern const Event NetworkSendBytes;
-    extern const Event NativeProtocolServiceBytes;
+    extern const Event NativeProtocolDataBytes;
 }
 
 namespace
@@ -2154,8 +2153,7 @@ void ClientBase::onProfileEvents(Block & block)
         std::string_view http_rw_bytes_name = ProfileEvents::getName(ProfileEvents::ReadWriteBufferFromHTTPBytes);
         std::string_view http_write_bytes_name = ProfileEvents::getName(ProfileEvents::WriteBufferFromHTTPBytes);
         std::string_view net_read_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkReceiveBytes);
-        std::string_view net_write_bytes_name = ProfileEvents::getName(ProfileEvents::NetworkSendBytes);
-        std::string_view protocol_service_bytes_name = ProfileEvents::getName(ProfileEvents::NativeProtocolServiceBytes);
+        std::string_view native_data_bytes_name = ProfileEvents::getName(ProfileEvents::NativeProtocolDataBytes);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2187,20 +2185,12 @@ void ClientBase::onProfileEvents(Block & block)
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
                 thread_times[host_name].temp_data_on_disk_usage = value;
-            /// IO excluding `NetworkSendBytes`, which requires the service-byte counter below.
             else if (
                 event_name == os_read_bytes_name || event_name == s3_read_bytes_name || event_name == azure_read_bytes_name
                 || event_name == os_write_bytes_name || event_name == s3_write_bytes_name || event_name == azure_write_bytes_name
-                || event_name == http_rw_bytes_name || event_name == http_write_bytes_name || event_name == net_read_bytes_name)
+                || event_name == http_rw_bytes_name || event_name == http_write_bytes_name || event_name == net_read_bytes_name
+                || event_name == native_data_bytes_name)
                 thread_times[host_name].io_bytes += value;
-            else if (event_name == net_write_bytes_name)
-                thread_times[host_name].network_send_bytes += value;
-            /// Its presence marks hosts whose native-protocol send bytes can be corrected safely.
-            else if (event_name == protocol_service_bytes_name)
-            {
-                thread_times[host_name].protocol_service_bytes += value;
-                thread_times[host_name].has_protocol_service_bytes = true;
-            }
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);

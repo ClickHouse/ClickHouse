@@ -1,1 +1,3 @@
-idle query sends only protocol service packets	1	1
+1
+result query sends native data packets	1
+idle query sends no native data packets	1	1

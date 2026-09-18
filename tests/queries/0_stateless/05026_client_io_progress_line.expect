@@ -46,9 +46,8 @@ expect {
     ":) " {}
 }
 
-# ~30 MB stream to the client's outfile, paced to ~3 seconds by the server-side sleeps (one per
-# 1 MB block), so ProfileEvents packets carry nonzero NetworkSendBytes deltas every ~100 ms.
-# FORMAT Null would not do: the server sends no data for it, and the IO meter would stay at zero.
+# ~30 MB stream paced to ~3 seconds, so ProfileEvents packets carry nonzero
+# `NativeProtocolDataBytes` deltas; `FORMAT Null` intentionally leaves the meter at zero.
 send -- "SELECT randomString(100000) AS s, sleepEachRow(0.01) FROM numbers(300) INTO OUTFILE '/dev/null' APPEND FORMAT TSV SETTINGS max_block_size = 10\r"
 expect -re {[0-9.]+ [A-Za-z]*B/s IO}
 expect "rows in set."
