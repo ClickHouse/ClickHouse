@@ -11,6 +11,7 @@ versions: 2
 SUPPORT_IS_DISABLED
 versions: 2
 10
+10
 -- refreshable MV APPEND TO delta with the setting off in its definition: the refresh fails, nothing committed
 SUPPORT_IS_DISABLED
 1	1

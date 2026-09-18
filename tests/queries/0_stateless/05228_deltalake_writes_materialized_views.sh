@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 $CLICKHOUSE_CLIENT --allow_delta_lake_writes=0 --query "INSERT INTO src VALUES (100, 'x')" 2>&1 | grep -o "SUPPORT_IS_DISABLED" | head -1
 versions
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM dl"
+$CLICKHOUSE_CLIENT --query "SELECT count() AS src_rows FROM src; SELECT count() AS delta_rows FROM dl"
 
 # enable_parallel_replicas = 0 in the refresh definitions: https://github.com/ClickHouse/ClickHouse/issues/120714
 echo "-- refreshable MV APPEND TO delta with the setting off in its definition: the refresh fails, nothing committed"
