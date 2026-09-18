@@ -114,6 +114,27 @@ WITH dictGet('d_112032', 'a', nid) = 'x' AS p SELECT count(p) FROM t2_120650 WHE
 SELECT 'skip index used', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', bfc) = 'x' SETTINGS force_data_skipping_indices = 'bf_idx';
 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', bfc) = 'x' SETTINGS force_data_skipping_indices = 'bf_idx', optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
 
+-- `force_primary_key` and `force_data_skipping_indices` throw on an unusable condition; neither checks
+-- that less data is read. The granules an index selects, compared with the granules it saw as a
+-- boolean, assert that too without putting a part layout in the reference. `toUInt64OrZero` makes an
+-- unexpected line shape print `0` rather than throw, so the row still fails loudly.
+SELECT 'granules pruned, const arm', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) = 'x') WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, const arm, rewrite off', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0) WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, subquery arm', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) LIKE 'x%') WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, subquery arm, rewrite off', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) LIKE 'x%' SETTINGS optimize_inverse_dictionary_lookup = 0) WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, lowcardinality PK', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) = 'x') WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, lowcardinality PK, rewrite off', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0) WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, skip index', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', bfc) = 'x') WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, skip index, rewrite off', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', bfc) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0) WHERE explain ILIKE '%Granules:%';
+
 -- The filter can be true where a conjunct under `not` or `or` is false, so those positions must not
 -- reach index analysis. A row here that stops throwing is a wrong-results bug, not a test nit.
 SELECT count() FROM t2_120650 WHERE NOT (dictGet('d_112032', 'a', nid) = 'x') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
@@ -153,16 +174,32 @@ SELECT 'and with a second set value, setting off', count() FROM t2_120650 WHERE 
 SELECT 'and with a second set value, rewrite off', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) = 'x' AND bfc IN (SELECT toUInt64(2)) SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 -- A `count` over the predicate itself is what a missing NULL restoration changes: it counts 1000
--- instead of 900, because the null-aware name answers `0` where the comparison answers NULL.
+-- instead of 900, because the null-aware name answers `0` where the comparison answers NULL. A
+-- `LowCardinality(Nullable)` key reaches index analysis through a `_CAST` the other keys do not, so
+-- both arms of that carrier are counted here too; in a `WHERE` a dropped NULL and a `0` are both
+-- filtered out and no row above would move.
 SELECT 'projection values', count(dictGet('d_112032', 'a', nid) = 'x'), sum(dictGet('d_112032', 'a', nid) = 'x'),
-       count(dictGet('d_112032', 'a', nid) LIKE 'x%'), sum(dictGet('d_112032', 'a', nid) LIKE 'x%') FROM t2_120650;
+       count(dictGet('d_112032', 'a', nid) LIKE 'x%'), sum(dictGet('d_112032', 'a', nid) LIKE 'x%'),
+       count(dictGet('d_112032', 'a', lc) = 'x'), sum(dictGet('d_112032', 'a', lc) = 'x'),
+       count(dictGet('d_112032', 'a', lc) LIKE 'x%'), sum(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t2_120650;
 SELECT 'projection values, setting off', count(dictGet('d_112032', 'a', nid) = 'x'), sum(dictGet('d_112032', 'a', nid) = 'x'),
-       count(dictGet('d_112032', 'a', nid) LIKE 'x%'), sum(dictGet('d_112032', 'a', nid) LIKE 'x%') FROM t2_120650 SETTINGS transform_null_in = 0;
+       count(dictGet('d_112032', 'a', nid) LIKE 'x%'), sum(dictGet('d_112032', 'a', nid) LIKE 'x%'),
+       count(dictGet('d_112032', 'a', lc) = 'x'), sum(dictGet('d_112032', 'a', lc) = 'x'),
+       count(dictGet('d_112032', 'a', lc) LIKE 'x%'), sum(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t2_120650 SETTINGS transform_null_in = 0;
 SELECT 'projection values, rewrite off', count(dictGet('d_112032', 'a', nid) = 'x'), sum(dictGet('d_112032', 'a', nid) = 'x'),
-       count(dictGet('d_112032', 'a', nid) LIKE 'x%'), sum(dictGet('d_112032', 'a', nid) LIKE 'x%') FROM t2_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
+       count(dictGet('d_112032', 'a', nid) LIKE 'x%'), sum(dictGet('d_112032', 'a', nid) LIKE 'x%'),
+       count(dictGet('d_112032', 'a', lc) = 'x'), sum(dictGet('d_112032', 'a', lc) = 'x'),
+       count(dictGet('d_112032', 'a', lc) LIKE 'x%'), sum(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t2_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
 WITH dictGet('d_112032', 'a', nid) = 'x' AS p SELECT 'shared node value', count(p) FROM t2_120650 WHERE p;
 WITH dictGet('d_112032', 'a', nid) = 'x' AS p SELECT 'shared node value, setting off', count(p) FROM t2_120650 WHERE p SETTINGS transform_null_in = 0;
 WITH dictGet('d_112032', 'a', nid) = 'x' AS p SELECT 'shared node value, rewrite off', count(p) FROM t2_120650 WHERE p SETTINGS optimize_inverse_dictionary_lookup = 0;
+
+-- No key maps to the constant, so the membership set is empty and the hint prunes every granule: the
+-- one shape where an unsound implication would drop all rows rather than a few. The predicate is still
+-- NULL for a NULL key, so the counts stay those of the un-rewritten query.
+SELECT 'empty key set', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) = 'zzz';
+SELECT 'empty key set projection', count(dictGet('d_112032', 'a', nid) = 'zzz'), sum(dictGet('d_112032', 'a', nid) = 'zzz') FROM t2_120650;
+SELECT 'empty key set projection, rewrite off', count(dictGet('d_112032', 'a', nid) = 'zzz'), sum(dictGet('d_112032', 'a', nid) = 'zzz') FROM t2_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 -- The hint is counted, not merely looked for: an alias reaches the pass once but the tree twice, and
 -- only the filter's occurrence may be hinted. `dictGet` is gone, so no per-row lookup is left behind.

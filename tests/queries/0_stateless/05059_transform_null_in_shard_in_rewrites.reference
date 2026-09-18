@@ -30,6 +30,14 @@ prewhere, key pruned	3
 and with a second set, key pruned	1
 shared node, key pruned	3
 skip index used	3
+granules pruned, const arm	1
+granules pruned, const arm, rewrite off	0
+granules pruned, subquery arm	1
+granules pruned, subquery arm, rewrite off	0
+granules pruned, lowcardinality PK	1
+granules pruned, lowcardinality PK, rewrite off	0
+granules pruned, skip index	1
+granules pruned, skip index, rewrite off	0
 where values	3	897	4	3	3	3
 where values, setting off	3	897	4	3	3	3
 where values, rewrite off	3	897	4	3	3	3
@@ -40,12 +48,15 @@ or inside and value, setting off	4
 and with a second set value	1
 and with a second set value, setting off	1
 and with a second set value, rewrite off	1
-projection values	900	3	900	3
-projection values, setting off	900	3	900	3
-projection values, rewrite off	900	3	900	3
+projection values	900	3	900	3	900	3	900	3
+projection values, setting off	900	3	900	3	900	3	900	3
+projection values, rewrite off	900	3	900	3	900	3	900	3
 shared node value	3
 shared node value, setting off	3
 shared node value, rewrite off	3
+empty key set	0
+empty key set projection	900	0
+empty key set projection, rewrite off	900	0
 where form indexHint	1
 where form nullIn	2
 where form if	1
