@@ -135,8 +135,9 @@ def waiting_thread_events(node):
     events = []
     for line in grep_log(node, f"{WAIT_STARTED}|{WAIT_STOPPED}"):
         match = LOG_LINE.match(line)
-        if match is None:
-            continue
+        assert match is not None, (
+            f"a wait line the bound is computed from could not be read: {line!r}"
+        )
         events.append((match.group(1), match.group(2), -1 if WAIT_STOPPED in line else +1))
     return events
 
@@ -326,7 +327,7 @@ def test_divergent_local_logs_are_reconciled(started_cluster):
     waiting = 0
     for timestamp, thread, delta in waiting_thread_events(node2):
         waiting += delta
-        assert waiting <= 1, (
+        assert 0 <= waiting <= 1, (
             f"{waiting} threads of the Raft event loop were waiting for log preprocessing at "
             f"{timestamp}, when thread {thread} started waiting"
         )
@@ -485,10 +486,14 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
 
         # And the bound held under that pressure, which is the whole point of this test.
         events = waiting_thread_events(node2)
+        assert events, (
+            "no thread entered the wait, so the bound below is checked against nothing - the "
+            "failpoint held one, so its start and its release both have to be in the log"
+        )
         waiting = 0
         for timestamp, thread, delta in events:
             waiting += delta
-            assert waiting <= 1, (
+            assert 0 <= waiting <= 1, (
                 f"{waiting} threads of the Raft event loop were waiting for log preprocessing "
                 f"at {timestamp}, when thread {thread} started waiting"
             )
