@@ -1088,8 +1088,8 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (!sort_description_for_merging.empty())
     {
-        serializeSortDescription(sort_description_for_merging, ctx.out);
-        serializeSortDescription(group_by_sort_description, ctx.out);
+        serializeSortDescription(sort_description_for_merging, ctx.out, ctx.version);
+        serializeSortDescription(group_by_sort_description, ctx.out, ctx.version);
     }
 
     writeVarUInt(params.keys.size(), ctx.out);
@@ -1149,8 +1149,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     SortDescription group_by_sort_description;
     if (has_in_order)
     {
-        deserializeSortDescription(sort_description_for_merging, ctx.in);
-        deserializeSortDescription(group_by_sort_description, ctx.in);
+        deserializeSortDescription(sort_description_for_merging, ctx.in, ctx.version, ctx.max_type_complexity);
+        deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
     }
 
     UInt64 num_keys = 0;
