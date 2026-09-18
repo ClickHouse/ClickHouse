@@ -281,15 +281,11 @@ void ServerApplication::handlePidFile(const std::string& name, const std::string
 
 namespace
 {
-    Poco::Event & terminationEvent()
-    {
-        static Poco::Event event;
-        return event;
-    }
-
     BOOL WINAPI consoleCtrlHandler(DWORD)
     {
-        terminationEvent().set();
+        /// Route Ctrl+C and Ctrl+Break through the same channel as `ServerApplication::terminate`
+        /// and `Process::requestTermination`, so that all three wake `waitForTerminationRequest`.
+        Poco::Util::ServerApplication::terminate();
         return 1;
     }
 }
@@ -298,7 +294,10 @@ namespace
 void ServerApplication::waitForTerminationRequest()
 {
     SetConsoleCtrlHandler(consoleCtrlHandler, 1);
-    terminationEvent().wait();
+    /// `Process::requestTermination` signals the named `POCOTRM<pid>` event, and that is the
+    /// documented way to ask a `ServerApplication` to shut down - wait for exactly that object.
+    Poco::NamedEvent termination_event(Poco::ProcessImpl::terminationEventName(Poco::Process::id()));
+    termination_event.wait();
     SetConsoleCtrlHandler(consoleCtrlHandler, 0);
 }
 
