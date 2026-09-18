@@ -9,6 +9,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/Context.h>
 
@@ -108,8 +109,20 @@ InToJoinAnalysisResults analyzeInToJoin(
         NameSet distinct_key_names;
         ActionsDAG::NodeRawConstPtrs distinct_key_outputs;
 
-        for (const auto * key_output : key_dag.getOutputs())
+        const auto subquery_columns = getSubqueryProjectionColumns(in_subquery.subquery);
+        const auto key_outputs = key_dag.getOutputs();
+
+        for (size_t i = 0; i < key_outputs.size(); ++i)
         {
+            const auto * key_output = key_outputs[i];
+
+            /// A set casts the key to its own type before probing it, so the join keys on that same cast.
+            auto subquery_column_type = removeNullable(removeLowCardinality(subquery_columns[i].type));
+            auto key_type = removeNullable(removeLowCardinality(key_output->result_type));
+            if (key_type->getName() != subquery_column_type->getName() && subquery_column_type->canBeInsideNullable())
+                key_output = &key_dag.addAccurateCastOrNull(
+                    *key_output, subquery_column_type, {}, planner_context->getQueryContext());
+
             has_computed_key |= key_output->type != ActionsDAG::ActionType::INPUT;
             in_subquery.key_column_names.push_back(key_output->result_name);
 

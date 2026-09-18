@@ -7,6 +7,7 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Joins.h>
 #include <Core/Settings.h>
@@ -81,18 +82,6 @@ bool isSetKeyComparableWithEquals(const DataTypePtr & lhs_type, const DataTypePt
 
     return isNativeNumber(lhs_base) && isNativeNumber(rhs_base)
         && tryGetLeastSupertype(DataTypes{lhs_base, rhs_base}) != nullptr;
-}
-
-/// Empty when the right side is not a subquery, or is correlated, in which case decorrelation handles it.
-NamesAndTypes getInSubqueryColumns(const QueryTreeNodePtr & subquery)
-{
-    if (const auto * node = subquery->as<QueryNode>())
-        return node->isCorrelated() ? NamesAndTypes{} : node->getProjectionColumns();
-
-    if (const auto * node = subquery->as<UnionNode>())
-        return node->isCorrelated() ? NamesAndTypes{} : node->computeProjectionColumns();
-
-    return {};
 }
 
 /// A constant the join carries over to the matched outer rows; the unmatched ones get 0 from the outer join.
@@ -205,7 +194,7 @@ QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
 {
     const auto & left_key = function_node.getArguments().getNodes()[0];
 
-    if (getInSubqueryColumns(function_node.getArguments().getNodes()[1]).size() > 1)
+    if (getSubqueryProjectionColumns(function_node.getArguments().getNodes()[1]).size() > 1)
     {
         /// A tuple written as `(a, b)` is compared element by element.
         const auto * tuple_node = left_key->as<FunctionNode>();
@@ -239,7 +228,7 @@ bool canRewriteInToJoin(
     if (arguments.size() != 2)
         return false;
 
-    auto subquery_columns = getInSubqueryColumns(arguments[1]);
+    auto subquery_columns = getSubqueryProjectionColumns(arguments[1]);
     if (subquery_columns.empty())
         return false;
 

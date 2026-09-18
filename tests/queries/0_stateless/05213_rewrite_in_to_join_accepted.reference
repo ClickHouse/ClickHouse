@@ -34,6 +34,18 @@
 1	0
 [1,1,0]
 [1,1,0]
+[0,0,0]
+[0,0,0]
+-- The subquery column is Bool, which the key is cast to like the set casts it
+1	0
+['0','1','1']
+['0','1','1']
+['1']
+['1']
+-- `Array(UInt8)` against `Array(Bool)`, which a set casts without normalizing the elements
+1	0
+['1','0','0']
+['1','0','0']
 -- The subquery is a union
 1	0
 [1,1,1]

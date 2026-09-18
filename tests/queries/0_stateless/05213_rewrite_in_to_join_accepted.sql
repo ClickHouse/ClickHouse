@@ -82,6 +82,26 @@ FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT toUInt16(k) FROM s));
 SELECT groupArray(c) FROM (SELECT id IN (SELECT toUInt16(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(c) FROM (SELECT id IN (SELECT toUInt16(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
 
+SELECT groupArray(c) FROM (SELECT id + 255 IN (SELECT toUInt8(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(c) FROM (SELECT id + 255 IN (SELECT toUInt8(k) FROM s) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- The subquery column is Bool, which the key is cast to like the set casts it';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id - 1 IN (SELECT true) AS c FROM t);
+
+SELECT groupArray(toString(c)) FROM (SELECT id - 1 IN (SELECT true) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(toString(c)) FROM (SELECT id - 1 IN (SELECT true) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
+
+SELECT groupArray(toString(c)) FROM (SELECT k IN (SELECT true) AS c FROM n ORDER BY k) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(toString(c)) FROM (SELECT k IN (SELECT true) AS c FROM n ORDER BY k) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- `Array(UInt8)` against `Array(Bool)`, which a set casts without normalizing the elements';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t);
+
+SELECT groupArray(toString(c)) FROM (SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(toString(c)) FROM (SELECT CAST([arr[1]], 'Array(UInt8)') IN (SELECT [true]) AS c FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
+
 SELECT '-- The subquery is a union';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s UNION ALL SELECT k FROM w));

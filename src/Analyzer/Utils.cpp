@@ -155,6 +155,17 @@ bool isNameOfInFunction(const std::string & function_name)
     return is_special_function_in;
 }
 
+NamesAndTypes getSubqueryProjectionColumns(const QueryTreeNodePtr & subquery)
+{
+    if (const auto * node = subquery->as<QueryNode>())
+        return node->isCorrelated() ? NamesAndTypes{} : node->getProjectionColumns();
+
+    if (const auto * node = subquery->as<UnionNode>())
+        return node->isCorrelated() ? NamesAndTypes{} : node->computeProjectionColumns();
+
+    return {};
+}
+
 bool isNameOfLocalInFunction(const std::string & function_name)
 {
     bool is_special_function_in = function_name == "in" ||
