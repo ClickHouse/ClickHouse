@@ -47,6 +47,15 @@ SELECT sum(length(URL)) FROM test.hits WHERE CounterID IN (SELECT a % 100000 FRO
 SELECT sum(length(URL)) FROM test.hits WHERE WatchID IN (SELECT a % 1000000 FROM t) FORMAT Null SETTINGS log_comment='3800_autopr_reuse_index_analysis_query_5';
 
 -- For Global IN-s now we can execute subquery twice with automatic parallel replicas :(
+--
+-- This one is 4 rather than 3 for the moment. A `GLOBAL IN` runs the subquery as a plan of its own, so
+-- Auto-PR is asked about it a second time, and letting `CreatingSetStep` through the "simple enough"
+-- gate is what now carries that second ask far enough to build a probe plan - whose index analysis is
+-- not reused. It then fails to find a matching node anyway, so the round is spent for nothing.
+--
+-- The branch `autopr-probe-does-not-materialize-subqueries` removes it: `Do not materialize subqueries
+-- while costing a plan that may be thrown away` takes this query to 2, below what it was before. Restore
+-- the number here when that lands. `autopr-transplant-index-analysis` does not affect it.
 SELECT sum(length(URL)) FROM test.hits WHERE WatchID GLOBAL IN (SELECT a % 1000000 FROM t) FORMAT Null SETTINGS log_comment='3800_autopr_reuse_index_analysis_query_6';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
