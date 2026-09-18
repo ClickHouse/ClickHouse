@@ -91,3 +91,10 @@ Row 1:
 mode:    untagged request
 b_type:  String
 b_value: 03803F00404040
+=== a request omitting the tagged type, where String is already taken ===
+multiple children mapping to the same ClickHouse type
+=== an unselected slot holding undefined bytes is not read ===
+dense_extra	JSON	{"x":1}
+dense_extra	UInt64	7
+sparse	JSON	{"x":1}
+sparse	UInt64	7

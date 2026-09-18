@@ -1563,9 +1563,19 @@ ColumnPtr RecordBatchDecoder::decodeUnion(
         {
             if (const auto * str = typeid_cast<const ColumnString *>(child_column.get()))
             {
-                const NullMap * child_nulls = child_null_map ? &child_null_map->getData() : nullptr;
+                /// A slot no visible row selects holds undefined bytes per the Arrow spec — a sparse child
+                /// has one per unselected row, and a dense one keeps whatever slicing left behind — so it
+                /// must take a default rather than be read as a value. A size-determined child was built
+                /// from the selected rows alone and has no such slots.
+                NullMap unreadable_storage;
+                const NullMap * unreadable = child_null_map ? &child_null_map->getData() : nullptr;
+                if (!size_determined)
+                    unreadable = unreadable
+                        ? unionNullMaps(*unreadable, &child_invisible, unreadable_storage)
+                        : &child_invisible;
+
                 if (MutableColumnPtr typed
-                    = deserializeOpaqueUnionChild(*str, child_nulls, opaque_type, child, settings))
+                    = deserializeOpaqueUnionChild(*str, unreadable, opaque_type, child, settings))
                 {
                     child_column = std::move(typed);
                     child_type = opaque_type;

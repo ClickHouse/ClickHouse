@@ -57,4 +57,58 @@ ${CLICKHOUSE_LOCAL} --multiquery --query "
     SELECT 'untagged request' AS mode, variantType(b) AS b_type, hex(toString(b)) AS b_value
     FROM file('${FILE}.binary', 'ArrowStream', 'b Variant(String, UInt64)') LIMIT 1 FORMAT Vertical;"
 
+# Not acting on the tag leaves the child as the `String` its Arrow type names, so a request that omits the
+# tagged type while listing `String` puts two children on one `Variant` alternative. That is rejected, as it
+# is for any two Arrow union children sharing a ClickHouse type - a `utf8` and a `large_utf8` child collide
+# the same way, with no opaque column involved.
+echo "=== a request omitting the tagged type, where String is already taken ==="
+${CLICKHOUSE_LOCAL} --query "
+    SELECT a FROM file('${FILE}.binary', 'ArrowStream', 'a Variant(String, UInt64)');" 2>&1 |
+    grep -o 'multiple children mapping to the same ClickHouse type' | head -1
+
+# A slot no row selects holds undefined bytes, which the opaque path must not read. Neither shape is written
+# by ClickHouse, so build them here: a sparse union, which gives every child a slot per row, and a dense one
+# whose child keeps a row nothing points at. The payload is taken from a file ClickHouse just wrote, so this
+# does not pin down the encoding itself.
+echo "=== an unselected slot holding undefined bytes is not read ==="
+${CLICKHOUSE_LOCAL} --query "
+    INSERT INTO FUNCTION file('${FILE}.one', 'ArrowStream')
+        SELECT CAST('{\"x\":1}'::JSON, 'Variant(JSON, UInt64)') AS v SETTINGS ${COMMON};"
+
+python3 - "${FILE}" <<'PY'
+import sys
+import pyarrow as pa
+
+stem = sys.argv[1]
+with pa.ipc.open_stream(f"{stem}.one") as reader:
+    batch = reader.read_next_batch()
+    field = batch.schema.field(0)
+    opaque = field.type.field(0)
+    payload = batch.column(0).field(0)[0].as_py()
+
+garbage = b"\xff\xff\xff\xff"
+other = pa.field("UInt64", pa.uint64(), nullable=False)
+child = pa.array([payload, garbage], type=pa.binary())
+types = pa.py_buffer(bytes([0, 1]))
+
+def write(suffix, union_type, buffers, children):
+    array = pa.UnionArray.from_buffers(union_type, 2, buffers, children=children)
+    writer = pa.ipc.new_stream(f"{stem}.{suffix}", pa.schema([pa.field("v", union_type)]))
+    writer.write(pa.record_batch([array], names=["v"]))
+    writer.close()
+
+write("dense_extra", pa.dense_union([opaque, other], [0, 1]),
+      [None, types, pa.py_buffer(b"".join(x.to_bytes(4, "little") for x in (0, 0)))],
+      [child, pa.array([7], type=pa.uint64())])
+write("sparse", pa.sparse_union([opaque, other], [0, 1]),
+      [None, types],
+      [child, pa.array([0, 7], type=pa.uint64())])
+PY
+
+for shape in dense_extra sparse; do
+    ${CLICKHOUSE_LOCAL} --query "
+        SELECT '${shape}' AS shape, variantType(v) AS type, toString(v) AS value
+        FROM file('${FILE}.${shape}', 'ArrowStream', 'v Variant(JSON, UInt64)');"
+done
+
 rm -f "${FILE}".*
