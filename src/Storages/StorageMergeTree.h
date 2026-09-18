@@ -137,6 +137,21 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
     MergeTreeCleanupThread cleanup_thread;
 
+    /// Automatic detaching of broken parts (see the detach_broken_parts_after_failed_merge setting).
+    /// When a merge or a read fails with a data-corruption error, the part is enqueued here
+    /// (through the broken_part_callback of MergeTreeData), then the background task validates
+    /// its checksums and detaches it with the "broken_" prefix if the corruption is confirmed.
+    std::mutex broken_parts_mutex;
+    std::set<String> broken_parts_to_check;
+    BackgroundSchedulePoolTaskHolder broken_part_check_task;
+    /// Accessed only from broken_part_check_task, so no synchronization is needed.
+    size_t detached_broken_parts_count = 0;
+    size_t detached_broken_parts_bytes = 0;
+
+    void enqueueBrokenPartForCheck(const String & part_name);
+    void checkAndDetachBrokenParts();
+    void checkAndDetachBrokenPart(const String & part_name);
+
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
     /// For block numbers.
