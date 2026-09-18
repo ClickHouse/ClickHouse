@@ -99,11 +99,15 @@ using SetMembers = std::vector<SetMember>;
 ///     or an unknown enum literal when `forbid_unknown_enum_values` is false;
 ///   - otherwise a size-1 column of `to_type` (which may hold NULL for a genuine NULL member).
 std::optional<ColumnPtr> convertColumnToTypeCheckEnum(
-    const IColumn & member, const DataTypePtr & from_type, const DataTypePtr & to_type, bool forbid_unknown_enum_values)
+    const IColumn & member,
+    const DataTypePtr & from_type,
+    const DataTypePtr & to_type,
+    const FormatSettings & format_settings,
+    bool forbid_unknown_enum_values)
 {
     try
     {
-        ColumnPtr result = convertColumnToTypeOrNull(member, from_type, to_type, {}, /*strict=*/true);
+        ColumnPtr result = convertColumnToTypeOrNull(member, from_type, to_type, format_settings, /*strict=*/true);
         if (!result)
             return std::nullopt;
         return result;
@@ -254,6 +258,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
                         *member_tuple.getColumnPtr(i),
                         rhs_tuple_element_types[i],
                         lhs_tuple_element_types[i],
+                        params.format_settings,
                         params.forbid_unknown_enum_values);
 
                     if (!converted)
@@ -307,7 +312,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
         column->reserve(members.size());
         for (const auto & member : members)
         {
-            auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.forbid_unknown_enum_values);
+            auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.format_settings, params.forbid_unknown_enum_values);
 
             bool need_insert_null = params.transform_null_in && column->isNullable();
             if (converted && (!(*converted)->isNullAt(0) || need_insert_null))
@@ -353,7 +358,11 @@ ColumnsWithTypeAndName createBlockFromCollection(
         for (; i < num_elements; ++i)
         {
             auto converted = convertColumnToTypeCheckEnum(
-                *member_tuple.getColumnPtr(i), rhs_element_unpacked_types[i], lhs_unpacked_types[i], params.forbid_unknown_enum_values);
+                *member_tuple.getColumnPtr(i),
+                rhs_element_unpacked_types[i],
+                lhs_unpacked_types[i],
+                params.format_settings,
+                params.forbid_unknown_enum_values);
             if (!converted)
                 break;
 

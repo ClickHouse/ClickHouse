@@ -596,8 +596,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             auto column = unwrapped_hint->createColumn();
             if (column->tryInsert(src))
             {
+                /// `CAST(x AS String)` writes numbers, decimals, dates and times with fixed text
+                /// (`FormatImpl` in `FunctionsConversion.h`), so `date_time_output_format` or
+                /// `decimal_trailing_zeros` do not apply to them, and it serializes every other type
+                /// with the query's format settings, so `bool_true_representation` does apply. Mirror
+                /// that split, or the set would hold a text that `CAST` never produces.
+                static const FormatSettings fixed_text_format_settings;
+                WhichDataType which_hint(*unwrapped_hint);
+                bool fixed_text = (which_hint.isNumber() && unwrapped_hint->getName() != "Bool")
+                    || which_hint.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64();
+
                 WriteBufferFromOwnString out;
-                unwrapped_hint->getDefaultSerialization()->serializeText(*column, 0, out, format_settings);
+                unwrapped_hint->getDefaultSerialization()->serializeText(
+                    *column, 0, out, fixed_text ? fixed_text_format_settings : format_settings);
                 return convertFieldToTypeImpl(out.str(), type, nullptr, format_settings, strict, convert_inexact_floats);
             }
         }

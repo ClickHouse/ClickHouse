@@ -2,6 +2,7 @@
 
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn_fwd.h>
+#include <Formats/FormatSettings.h>
 
 #include <memory>
 
@@ -17,6 +18,10 @@ struct GetSetElementParams
 {
     bool transform_null_in = true;
     bool forbid_unknown_enum_values = false;
+    /// The query's format settings, so that a member rendered to `String` (`'...' IN (toDateTime(...))`)
+    /// holds the same text that `CAST(x AS String)` produces under the same session settings, e.g.
+    /// `date_time_output_format` or `bool_true_representation`.
+    FormatSettings format_settings = {};
 };
 
 /** Get set elements for constant part of IN subquery.

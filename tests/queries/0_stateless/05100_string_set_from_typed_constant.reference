@@ -22,3 +22,14 @@ a String constant is unchanged
 1	0
 an Enum constant keeps the name, as it already did
 1	0
+the session output format settings apply exactly where CAST applies them
+2020-01-01 00:00:00
+1	0
+1	0
+2020-01-01 00:00:00
+2020-01-01 00:00:00
+yes
+1	0
+1	0
+yes
+yes

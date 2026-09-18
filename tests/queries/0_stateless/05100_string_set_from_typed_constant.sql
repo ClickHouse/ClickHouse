@@ -35,4 +35,26 @@ SELECT 'zz' IN ('zz'), 'zz' IN ('aa');
 SELECT 'an Enum constant keeps the name, as it already did';
 SELECT 'a' IN (CAST('a', 'Enum8(''a'' = 1)')), '1' IN (CAST('a', 'Enum8(''a'' = 1)'));
 
+-- The set is rendered as `CAST(x AS String)` renders the value under the same session settings: `CAST`
+-- writes dates and times with fixed text, so `date_time_output_format` changes neither, while it
+-- serializes a `Bool` with the query's settings, so `bool_true_representation` changes both together.
+SELECT 'the session output format settings apply exactly where CAST applies them';
+SET date_time_output_format = 'unix_timestamp';
+SELECT CAST(toDateTime('2020-01-01 00:00:00', 'UTC'), 'String');
+SELECT '2020-01-01 00:00:00' IN (toDateTime('2020-01-01 00:00:00', 'UTC')), '1577836800' IN (toDateTime('2020-01-01 00:00:00', 'UTC'));
+SELECT ('2020-01-01 00:00:00', 1) IN ((toDateTime('2020-01-01 00:00:00', 'UTC'), 1)), ('1577836800', 1) IN ((toDateTime('2020-01-01 00:00:00', 'UTC'), 1));
+SELECT x FROM values('x String', toDateTime('2020-01-01 00:00:00', 'UTC'));
+INSERT INTO t_string_set VALUES ('2020-01-01 00:00:00'), ('1577836800');
+SELECT v FROM t_string_set WHERE v IN (toDateTime('2020-01-01 00:00:00', 'UTC')) ORDER BY v;
+SET date_time_output_format = 'simple';
+
+SET bool_true_representation = 'yes';
+SELECT CAST(true, 'String');
+SELECT 'yes' IN (true), 'true' IN (true);
+SELECT ('yes', 1) IN ((true, 1)), ('true', 1) IN ((true, 1));
+SELECT x FROM values('x String', true);
+INSERT INTO t_string_set VALUES ('yes'), ('true');
+SELECT v FROM t_string_set WHERE v IN (true) ORDER BY v;
+SET bool_true_representation = 'true';
+
 DROP TABLE t_string_set;
