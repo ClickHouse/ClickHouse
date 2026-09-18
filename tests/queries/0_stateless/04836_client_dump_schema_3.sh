@@ -499,3 +499,58 @@ $CLICKHOUSE_CLIENT --multiquery --query "
     DROP NAMED COLLECTION ${RBAC_COLLECTION};
 "
 rm -f "$ERR_FILE"
+
+echo '--- a Remote database stays visible when system.tables hides remote databases ---'
+REMOTE_SOURCE_DB="${DB}_remote_source"
+REMOTE_DB="${DB}_remote_proxy"
+REMOTE_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_remote_database.sql"
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${REMOTE_DB};
+    DROP DATABASE IF EXISTS ${REMOTE_SOURCE_DB};
+    CREATE DATABASE ${REMOTE_SOURCE_DB};
+    CREATE TABLE ${REMOTE_SOURCE_DB}.visible_table (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${REMOTE_SOURCE_DB}', 'default', '');
+"
+if $CLICKHOUSE_CLIENT --show_remote_databases_in_system_tables=0 --dump-schema="${REMOTE_DB}" \
+    > "$REMOTE_DUMP_FILE" 2>"$ERR_FILE"; then
+    echo "remote table present: $(grep -c "CREATE TABLE ${REMOTE_DB}\.visible_table" "$REMOTE_DUMP_FILE")"
+else
+    echo "FAIL: remote database dump rejected: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT --multiquery --query "DROP DATABASE ${REMOTE_DB}; DROP DATABASE ${REMOTE_SOURCE_DB} SYNC;"
+rm -f "$REMOTE_DUMP_FILE" "$ERR_FILE"
+
+echo '--- a simple dump does not read protected cluster or macro metadata ---'
+LEAN_DB="${DB}_lean_rbac"
+LEAN_USER="${DB}_lean_rbac_user"
+LEAN_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_lean_rbac.sql"
+$CLICKHOUSE_CLIENT --multiquery --query "
+    DROP DATABASE IF EXISTS ${LEAN_DB};
+    DROP USER IF EXISTS ${LEAN_USER};
+    CREATE DATABASE ${LEAN_DB};
+    CREATE TABLE ${LEAN_DB}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
+    CREATE USER ${LEAN_USER};
+    GRANT SHOW DATABASES ON *.* TO ${LEAN_USER};
+    GRANT SHOW TABLES, SHOW COLUMNS ON ${LEAN_DB}.* TO ${LEAN_USER};
+    GRANT SELECT ON system.columns TO ${LEAN_USER};
+    GRANT SELECT ON system.databases TO ${LEAN_USER};
+    GRANT SELECT ON system.settings TO ${LEAN_USER};
+    GRANT SELECT ON system.tables TO ${LEAN_USER};
+"
+if $CLICKHOUSE_CLIENT --user "$LEAN_USER" --query "SELECT count() FROM system.clusters" > /dev/null 2>&1; then
+    echo 'FAIL: restricted user can read system.clusters'
+else
+    echo 'OK: system.clusters is denied'
+fi
+if $CLICKHOUSE_CLIENT --user "$LEAN_USER" --query "SELECT count() FROM system.macros" > /dev/null 2>&1; then
+    echo 'FAIL: restricted user can read system.macros'
+else
+    echo 'OK: system.macros is denied'
+fi
+if $CLICKHOUSE_CLIENT --user "$LEAN_USER" --dump-schema="${LEAN_DB}" > "$LEAN_DUMP_FILE" 2>"$ERR_FILE"; then
+    echo "restricted dump table present: $(grep -c "CREATE TABLE ${LEAN_DB}\.t" "$LEAN_DUMP_FILE")"
+else
+    echo "FAIL: restricted dump rejected: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT --multiquery --query "DROP USER ${LEAN_USER}; DROP DATABASE ${LEAN_DB} SYNC;"
+rm -f "$LEAN_DUMP_FILE" "$ERR_FILE"

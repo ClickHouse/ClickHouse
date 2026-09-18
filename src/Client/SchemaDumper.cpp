@@ -300,11 +300,8 @@ struct RawTableRow
     String target_table;
 };
 
-/// Detects whether `system.tables` queries for `database_list` need external-database visibility
-/// settings appended. `system.databases` always lists DataLakeCatalog and remote (MySQL /
-/// PostgreSQL) engines, but `system.tables` hides their tables unless the corresponding setting
-/// is enabled. Each setting is only appended when the server does not already provide it, to
-/// avoid a redundant SETTINGS clause that constraints or CONST profiles could reject.
+/// Detects when system.tables visibility settings must be enabled for selected external databases.
+/// Redundant SETTINGS clauses are avoided because constrained profiles can reject them.
 struct ExternalTableVisibility
 {
     bool show_datalake_catalogs = false;
@@ -319,7 +316,9 @@ ExternalTableVisibility detectExternalTableVisibility(
         "SELECT name FROM system.databases WHERE engine = 'DataLakeCatalog' AND name IN (" + database_list + ")", base_settings);
 
     auto remote_databases = fetchStringColumn(connection, timeouts, client_info,
-        "SELECT name FROM system.databases WHERE engine IN ('MySQL', 'PostgreSQL') AND name IN (" + database_list + ")", base_settings);
+        "SELECT name FROM system.databases WHERE engine IN ('MySQL', 'PostgreSQL', 'Remote', 'RemoteSecure') AND name IN ("
+            + database_list + ")",
+        base_settings);
 
     bool session_shows_catalogs = false;
     if (!datalake_databases.empty())
@@ -444,13 +443,16 @@ CreateTargets parseCreateTargets(const RawTableRow & row)
     return result;
 }
 
-/// Which clusters the connected server defines and which of those have local replicas: the gate
-/// `DDLDependencyVisitor::visitRemoteFunction` applies to `cluster`/`clusterAllReplicas` needs both.
-/// `remote`/`remoteSecure` address patterns are classified against the server's ports instead.
-struct ClusterLocality
+struct ClusterNames
 {
     std::set<String> known;
     std::set<String> local;
+};
+
+/// Cluster and server metadata used to classify distributed references as local dependencies.
+struct ClusterLocality
+{
+    std::function<const ClusterNames &()> names;
     /// What `parseRemoteFunctionArguments` compares a spelled-out port against; the secure port is
     /// fetched on first use because asking a server without one raises an error.
     UInt16 tcp_port = 0;
@@ -459,7 +461,7 @@ struct ClusterLocality
     bool treat_local_port_as_remote = false;
     /// `Context::tryGetCluster` expands macros before looking a cluster up, but a stored definition
     /// keeps the placeholder text, so the same expansion has to happen before the lookups here.
-    std::map<String, String> macros;
+    std::function<const std::map<String, String> &()> macros;
     /// Named collections the dump session can read, by name and then key. `remote*` resolves an
     /// identifier first argument against these before the clusters, so one can name a local address.
     /// Fetched on first use because most dumps contain no such call.
@@ -564,8 +566,8 @@ String resolveClusterOfFunction(const ASTFunction & function, const ClusterLocal
             "whether its table reference is a local dependency depends on the cluster's local replicas",
             function.formatForErrorMessage());
     if (cluster_name->contains('{'))
-        cluster_name = expandClusterMacros(*cluster_name, clusters.macros);
-    if (!clusters.known.contains(*cluster_name))
+        cluster_name = expandClusterMacros(*cluster_name, clusters.macros());
+    if (!clusters.names().known.contains(*cluster_name))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot resolve cluster {} of {} on the connected server for --dump-schema: "
             "whether its table reference is a local dependency depends on the cluster's local replicas",
@@ -637,7 +639,7 @@ const std::map<String, String> * tryGetRemoteNamedCollection(
     const auto & collections = clusters.named_collections();
     if (auto it = collections.find(name); it != collections.end())
         return &it->second;
-    if (clusters.known.contains(name))
+    if (clusters.names().known.contains(name))
         return nullptr;
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
         "Cannot resolve {} of {} on the connected server for --dump-schema: it names neither a cluster nor a named "
@@ -758,7 +760,7 @@ bool remoteFunctionHasLocalReplica(const ASTFunction & function, const ClusterLo
         if (const auto * collection = tryGetRemoteNamedCollection(function, name, clusters))
             return remoteDescriptionHasLocalReplica(
                 resolveRemoteNamedCollection(function, name, *collection, clusters).addresses, secure, clusters);
-        return clusters.local.contains(name);
+        return clusters.names().local.contains(name);
     }
     const auto * literal = first->as<ASTLiteral>();
     if (!literal || literal->value.getType() != Field::Types::String)
@@ -773,7 +775,7 @@ bool distributedFunctionReadsLocally(const ASTFunction & function, const Cluster
         return false;
     if (isClusterTableFunctionName(function.name))
         return function.arguments->children.size() >= 2
-            && clusters.local.contains(resolveClusterOfFunction(function, clusters));
+            && clusters.names().local.contains(resolveClusterOfFunction(function, clusters));
     /// A `remote*` call needs no second argument: a named collection can carry the table itself.
     return remoteFunctionHasLocalReplica(function, clusters);
 }
@@ -1770,13 +1772,23 @@ std::vector<TableInfo> fetchTables(
     const std::map<String, String> & database_queries,
     std::map<String, NamedCollectionDependencies> & database_named_collections)
 {
-    /// Resolved once per dump: the walkers gate `cluster*` calls on the server's cluster locality.
     ClusterLocality clusters;
     clusters.context = context;
-    for (auto & name : fetchStringColumn(connection, timeouts, client_info, "SELECT DISTINCT cluster FROM system.clusters", context->getSettingsRef()))
-        clusters.known.insert(std::move(name));
-    for (auto & name : fetchStringColumn(connection, timeouts, client_info, "SELECT DISTINCT cluster FROM system.clusters WHERE is_local", context->getSettingsRef()))
-        clusters.local.insert(std::move(name));
+    /// Most schemas need no cluster metadata, and reading system.clusters requires a separate grant.
+    clusters.names = [&, cached = std::optional<ClusterNames>{}]() mutable -> const ClusterNames &
+    {
+        if (!cached)
+        {
+            cached.emplace();
+            for (auto & name : fetchStringColumn(
+                     connection, timeouts, client_info, "SELECT DISTINCT cluster FROM system.clusters", context->getSettingsRef()))
+                cached->known.insert(std::move(name));
+            for (auto & name : fetchStringColumn(
+                     connection, timeouts, client_info, "SELECT DISTINCT cluster FROM system.clusters WHERE is_local", context->getSettingsRef()))
+                cached->local.insert(std::move(name));
+        }
+        return *cached;
+    };
     clusters.tcp_port = parse<UInt16>(
         fetchStringColumn(connection, timeouts, client_info, "SELECT toString(tcpPort())", context->getSettingsRef()).at(0));
     clusters.tcp_port_secure = [&, cached = std::optional<UInt16>{}]() mutable
@@ -1824,12 +1836,22 @@ std::vector<TableInfo> fetchTables(
         }
         return *cached;
     };
-    /// Both ordered by `macro`, so the two columns line up.
-    auto macro_names = fetchStringColumn(connection, timeouts, client_info, "SELECT macro FROM system.macros ORDER BY macro", context->getSettingsRef());
-    auto macro_values = fetchStringColumn(connection, timeouts, client_info, "SELECT substitution FROM system.macros ORDER BY macro", context->getSettingsRef());
-    if (macro_names.size() == macro_values.size())
-        for (size_t i = 0; i < macro_names.size(); ++i)
-            clusters.macros.emplace(std::move(macro_names[i]), std::move(macro_values[i]));
+    /// Macro metadata is needed only when a cluster name actually contains a placeholder.
+    clusters.macros = [&, cached = std::optional<std::map<String, String>>{}]() mutable -> const std::map<String, String> &
+    {
+        if (!cached)
+        {
+            cached.emplace();
+            auto names = fetchStringColumn(
+                connection, timeouts, client_info, "SELECT macro FROM system.macros ORDER BY macro", context->getSettingsRef());
+            auto values = fetchStringColumn(
+                connection, timeouts, client_info, "SELECT substitution FROM system.macros ORDER BY macro", context->getSettingsRef());
+            if (names.size() == values.size())
+                for (size_t i = 0; i < names.size(); ++i)
+                    cached->emplace(std::move(names[i]), std::move(values[i]));
+        }
+        return *cached;
+    };
 
     /// Fetch table names from undumped databases so unqualified references and empty-database
     /// merge() calls can be checked for ambiguity against them, not just against dumped databases.
@@ -2356,6 +2378,17 @@ void dumpDatabaseSchema(
         if (create_database_query.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Expected one row from SHOW CREATE DATABASE {}, got {}", backQuoteIfNeed(db), create_database_query.size());
+
+        ParserCreateQuery create_parser;
+        ASTPtr create_ast = parseQuery(
+            create_parser, create_database_query.front(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        const auto * create = create_ast->as<ASTCreateQuery>();
+        const auto * engine = create && create->storage ? create->storage->engine : nullptr;
+        /// Backup serializes its locator as a quoted string that its CREATE path rejects.
+        if (engine && engine->name == "Backup")
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot dump database {} for --dump-schema: SHOW CREATE DATABASE for the Backup engine is not replayable",
+                backQuoteIfNeed(db));
 
         /// Every server is born with `default`, so its CREATE must tolerate the existing one:
         /// a bare replay would otherwise stop on DATABASE_ALREADY_EXISTS before any user object.

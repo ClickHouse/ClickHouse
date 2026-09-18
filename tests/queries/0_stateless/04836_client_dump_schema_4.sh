@@ -27,9 +27,9 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ${DB}.src SELECT number FROM numbers(3)"
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none --database_replicated_allow_heavy_create=1 -q \
     "CREATE MATERIALIZED VIEW ${DB}.mv ENGINE = MergeTree ORDER BY n POPULATE AS SELECT n FROM ${DB}.src"
 
-stored_populate=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND positionCaseInsensitive(create_table_query, 'POPULATE')")
+stored_populate=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND match(create_table_query, '(?i)(^|[^A-Za-z0-9_])POPULATE([^A-Za-z0-9_]|$)')")
 $CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$DUMP_FILE" 2>"$ERR_FILE"
-dump_populate=$(grep -ci 'POPULATE' "$DUMP_FILE" || true)
+dump_populate=$(grep -Eci '(^|[^[:alnum:]_])POPULATE([^[:alnum:]_]|$)' "$DUMP_FILE" || true)
 heavy_gate=$(grep -c '^SET database_replicated_allow_heavy_create' "$DUMP_FILE" || true)
 echo "stored CREATE keeps POPULATE: $stored_populate"
 echo "dump keeps POPULATE: $dump_populate"
