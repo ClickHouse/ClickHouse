@@ -381,10 +381,10 @@ void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Estimates the compression ratio of a given column without compressing it.
 
-:::note
+<Note>
 For the examples below, the result will differ based on the default compression codec of the server.
 See [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "estimateCompressionRatio([codec, block_size_bytes, cast_to])(column)";
     FunctionDocumentation::Arguments arguments = {
