@@ -29,4 +29,19 @@
         <command_argument>{ print $1 + p }</command_argument>
         <execute_direct>1</execute_direct>
     </function>
+    <!-- A deterministic executable UDF. Unlike the two above it passes every determinism-based
+         eligibility check, which is what makes it interesting for the query plan cache
+         (04665_query_plan_cache_udf). -->
+    <function>
+        <type>executable</type>
+        <name>test_function_deterministic</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>awk -F'\t' '{print $1 + 1}'</command>
+        <execute_direct>0</execute_direct>
+        <deterministic>1</deterministic>
+    </function>
 </functions>

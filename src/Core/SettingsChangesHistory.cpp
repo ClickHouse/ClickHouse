@@ -47,6 +47,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"prefer_optimize_projection", false, false, "New setting: choose a usable projection regardless of its estimated cost, like `force_optimize_projection`, but without failing the query when no projection is used."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
+            {"allow_experimental_query_plan_cache", false, false, "New experimental setting for the query plan cache"},
+            {"enable_query_plan_cache", false, false, "New setting for the query plan cache"},
+            {"query_plan_cache_allow_scalar_subqueries", false, false, "New setting for the query plan cache"},
+            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for the query plan cache"},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
