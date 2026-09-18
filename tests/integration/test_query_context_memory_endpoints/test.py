@@ -96,16 +96,20 @@ def started_cluster():
             + "'",
             settings={"max_query_size": 2 * PAYLOAD_SIZE, "log_queries": 0},
         )
+        node.query(
+            "CREATE SETTINGS PROFILE context_memory_control SETTINGS "
+            "log_queries = 0, enable_time_series_aggregate_functions = 1, log_comment = ''"
+        )
         yield
     finally:
         cluster.shutdown()
 
 
 @contextlib.contextmanager
-def payload_user(limit, batching_limit):
+def payload_user(limit, batching_limit, profile="context_memory_payload"):
     user = "context_memory_" + uuid.uuid4().hex
     node.query(
-        f"CREATE USER {user} SETTINGS PROFILE context_memory_payload, "
+        f"CREATE USER {user} SETTINGS PROFILE {profile}, "
         f"{limit} = {PAYLOAD_SIZE // 2}, max_untracked_memory = {batching_limit}"
     )
     node.query(f"GRANT SELECT, INSERT, CREATE TEMPORARY TABLE ON *.* TO {user}")
@@ -348,10 +352,8 @@ def test_endpoint_setup_limit_and_recovery(endpoint, batching_limit, limit, leve
         run_endpoint(endpoint, user)
 
 
-@pytest.mark.parametrize("endpoint", ENDPOINTS)
-@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
-def test_endpoint_releases_context_memory(endpoint, batching_limit):
-    with payload_user("max_memory_usage", batching_limit) as user:
+def endpoint_cleanup_delta(endpoint, batching_limit, profile, expected_drift=None):
+    with payload_user("max_memory_usage", batching_limit, profile) as user:
         node.query(f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0")
         sentinel_id = str(uuid.uuid4())
         sentinel = node.get_query_request(
@@ -389,12 +391,33 @@ def test_endpoint_releases_context_memory(endpoint, batching_limit):
                 )
                 >= 16 * 1024 * 1024
             )
-            assert_eq_with_retry(
-                node, f"SELECT abs(({balance_query}) - ({before})) < 65536", "1"
-            )
+            delta_query = f"SELECT ({balance_query}) - ({before})"
+            if expected_drift is not None:
+                assert_eq_with_retry(
+                    node,
+                    f"SELECT abs(({delta_query}) - ({expected_drift})) < 65536",
+                    "1",
+                )
+            return int(node.query(delta_query))
         finally:
             node.query(f"KILL QUERY WHERE query_id = '{sentinel_id}' SYNC")
             sentinel.get_answer_and_error()
+
+
+@pytest.mark.parametrize("endpoint", ENDPOINTS)
+@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
+def test_endpoint_releases_context_memory(endpoint, batching_limit):
+    expected_drift = 0
+    if endpoint == "prometheus_write":
+        # Background inserts have accounting drift even without a large setup context.
+        # Compare identical writes with a small-context control, retaining the same
+        # tolerance for memory attributable to the copied 8 MiB setting.
+        expected_drift = endpoint_cleanup_delta(
+            endpoint, batching_limit, "context_memory_control"
+        )
+    endpoint_cleanup_delta(
+        endpoint, batching_limit, "context_memory_payload", expected_drift
+    )
 
 
 def test_postgres_multistatement_contexts():
