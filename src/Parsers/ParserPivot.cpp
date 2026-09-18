@@ -326,10 +326,11 @@ ASTPtr makePivotAggregate(const ASTPtr & aggregate, const ASTPtr & pivot_column,
 
     if (equalsCaseInsensitive(function->name, "count"))
     {
-        std::erase_if(function->arguments->children, [](const ASTPtr & child)
+        auto & children = function->arguments->children;
+        children.erase(std::remove_if(children.begin(), children.end(), [](const ASTPtr & child)
         {
             return child->as<ASTAsterisk>() || child->as<ASTQualifiedAsterisk>();
-        });
+        }), children.end());
     }
 
     /// Match aggregate FILTER: append the -If combinator and let semantic aggregate resolution
