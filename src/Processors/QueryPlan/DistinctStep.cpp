@@ -228,11 +228,6 @@ bool DistinctStep::tryScatterStreams(QueryPipelineBuilder & pipeline) const
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
-    /// Final deduplication can keep disjoint streams separate unless a consumer requires their original
-    /// order. Preliminary deduplication always processes each stream independently.
-    if (preserve_input_order && pipeline.getNumStreams() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Order-preserving DISTINCT requires a single input stream");
-
     const size_t external_threshold = getMaxBytesBeforeExternalDistinct(
         settings.max_bytes_before_external_distinct, settings.max_bytes_ratio_before_external_distinct);
     /// Constant keys produce at most one row and need no external storage.
@@ -247,10 +242,12 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         const bool single_stream_for_limits = external && settings.set_size_limits.hasLimits();
         if (single_stream_for_limits || !skip_stream_merging)
         {
-            /// Hash partitioning makes the streams disjoint, but changes their order. Sorted deduplication
-            /// needs equal prefix values to remain contiguous so it can deduplicate one range at a time.
-            const bool scattered = !single_stream_for_limits && parallel_distinct && distinct_sort_desc.empty()
-                && tryScatterStreams(pipeline);
+            /// Hash partitioning makes the streams disjoint, but changes their order: an input-order requirement
+            /// forbids it, and so does sorted deduplication, which needs equal prefix values to remain contiguous.
+            /// The requirement can outlive its `ORDER BY` when the optimizer removes a sort no consumer needs,
+            /// so the step may still receive several streams; they are merged like any other input.
+            const bool scattered = !single_stream_for_limits && parallel_distinct && !preserve_input_order
+                && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
             if (!scattered)
                 pipeline.resize(1);
         }

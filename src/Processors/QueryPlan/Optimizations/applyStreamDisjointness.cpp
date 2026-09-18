@@ -73,7 +73,8 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
         if (distinct->isPreliminary())
             return property;
 
-        /// Preserving global input order requires final `DISTINCT` to keep its single input stream.
+        /// An input-order requirement keeps the final `DISTINCT` on one merged stream: neither a skipped merge
+        /// nor hash partitioning may reorder its rows.
         if (distinct->preservesInputOrder())
             return {};
 
