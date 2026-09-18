@@ -3,12 +3,23 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 
 
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+extern const char aggregate_function_state_transfer_throw[];
+}
 
 
 /** Not an aggregate function, but an adapter of aggregate functions,
@@ -144,7 +155,16 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
+        auto & column = assert_cast<ColumnAggregateFunction &>(to);
+
+        fiu_do_on(FailPoints::aggregate_function_state_transfer_throw,
+        {
+            /// Only once the column holds an aliased state, which is the partial transfer to undo.
+            if (!column.empty())
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure in AggregateFunctionState::insertResultInto");
+        });
+
+        column.getData().push_back(place);
     }
 
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -152,12 +172,11 @@ public:
         assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
     }
 
-    void reserveForInsertResult(ConstAggregateDataPtr __restrict, IColumn & to) const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict, IColumn & to) const noexcept override
     {
-        /// insertResultInto aliases one state pointer into the column; reserve that one slot so the
-        /// push_back cannot reallocate and throw after ownership transfer has started.
-        auto & data = assert_cast<ColumnAggregateFunction &>(to).getData();
-        data.reserve(data.size() + 1);
+        /// insertResultInto aliased a state that `place` still owns, so the row must go without the
+        /// destroy that ColumnAggregateFunction::popBack performs.
+        assert_cast<ColumnAggregateFunction &>(to).popBackWithoutDestroy(1);
     }
 
     /// Aggregate function or aggregate function state.

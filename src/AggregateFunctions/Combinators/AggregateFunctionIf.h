@@ -240,12 +240,9 @@ public:
         nested_func->insertMergeResultInto(place, to, arena);
     }
 
-    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
     {
-        /// insertResultInto delegates to the nested function on the same place and column, so the
-        /// reservation must be forwarded too (otherwise a `-State` result reachable through `-If`
-        /// keeps the throwing transfer window when this is a `-Tuple` element).
-        nested_func->reserveForInsertResult(place, to);
+        nested_func->rollbackInsertResult(place, to);
     }
 
     bool allocatesMemoryInArena() const override

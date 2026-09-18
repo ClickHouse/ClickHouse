@@ -248,10 +248,25 @@ public:
             if (getFlag(place))
             {
                 if constexpr (merge)
+                {
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                    to_concrete.getNullMapData().push_back(false);
+                }
                 else
+                {
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(false);
+
+                    /// A nested call that threw has already restored the nested column itself.
+                    try
+                    {
+                        to_concrete.getNullMapData().push_back(false);
+                    }
+                    catch (...)
+                    {
+                        nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+                        throw;
+                    }
+                }
             }
             else
             {
@@ -277,19 +292,25 @@ public:
         insertResultIntoImpl<true>(place, to, arena);
     }
 
-    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
     {
-        /// Mirrors insertResultInto: it either transfers into `to` itself, or appends one null-map
-        /// entry and transfers into the nested column.
         if constexpr (result_is_nullable)
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
-            to_concrete.getNullMapData().reserve(to_concrete.getNullMapData().size() + 1);
-            nested_function->reserveForInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+            if (getFlag(place))
+            {
+                to_concrete.getNullMapData().pop_back();
+                nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+            }
+            else
+            {
+                /// insertResultInto appended a state the column itself owns, so this pop must destroy it.
+                to_concrete.popBack(1);
+            }
         }
         else
         {
-            nested_function->reserveForInsertResult(nestedPlace(place), to);
+            nested_function->rollbackInsertResult(nestedPlace(place), to);
         }
     }
 

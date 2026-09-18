@@ -221,6 +221,10 @@ public:
 
     void popBack(size_t n) override;
 
+    /// Removes the last n rows without destroying the states they point to, for rows that alias a state
+    /// owned elsewhere.
+    void popBackWithoutDestroy(size_t n);
+
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
     void filter(const Filter & filt) override;
