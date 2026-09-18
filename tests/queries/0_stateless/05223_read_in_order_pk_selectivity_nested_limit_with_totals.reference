@@ -1,0 +1,8 @@
+inner LIMIT below an outer WITH TOTALS LIMIT keeps read-in-order
+0
+inner LIMIT that reads till the end falls back to a parallel read
+1
+result
+10
+
+10

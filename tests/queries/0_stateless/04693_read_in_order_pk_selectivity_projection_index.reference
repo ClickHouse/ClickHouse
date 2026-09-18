@@ -1,0 +1,9 @@
+projection_index_pruning_keeps_in_order
+0
+reader_side_pruning_keeps_in_order
+0
+poor_selectivity_full_sort
+1
+correctness
+22	1600	1710
+22	1600	1710

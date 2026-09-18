@@ -1,0 +1,8 @@
+deferred_row_policy_keeps_in_order
+0
+deferred_prewhere_keeps_in_order
+0
+poor_pk_selectivity_final_full_sort
+1
+correctness
+1000
