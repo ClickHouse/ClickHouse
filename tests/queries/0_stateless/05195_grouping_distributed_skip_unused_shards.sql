@@ -14,8 +14,11 @@ CREATE TABLE t_05195_dist (id UInt64, value String) ENGINE = Distributed(test_cl
 -- what `optimize_distributed_group_by_sharding_key` does for a `GROUP BY` on the sharding key, and the
 -- query has to actually go over the network. Both are pinned here so that randomized settings cannot
 -- silently turn this into a different case: with the sharding-key aggregation off, the initiator merges
--- the groups of both shards and the `count()` below is 2 instead of 1.
-SET optimize_distributed_group_by_sharding_key = 1, prefer_localhost_replica = 0;
+-- the groups of both shards and the `count()` below is 2 instead of 1. Both shards of the test cluster
+-- point at the same table, so the `IN` list below has to be split per shard, or every group comes back
+-- from both shards: `optimize_skip_unused_shards_rewrite_in` is pinned for the result to be the same
+-- whichever value the randomized settings would have picked.
+SET optimize_distributed_group_by_sharding_key = 1, prefer_localhost_replica = 0, optimize_skip_unused_shards_rewrite_in = 1;
 
 SELECT 'the sharding key';
 SELECT grouping(id), id FROM t_05195_dist GROUP BY id ORDER BY id LIMIT 1;
