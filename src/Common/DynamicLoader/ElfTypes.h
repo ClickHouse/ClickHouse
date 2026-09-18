@@ -3,6 +3,19 @@
 #include <cstdint>
 #include <elf.h>
 
+/// The RELR relocation format postdates the <elf.h> of the sysroot ClickHouse builds against, so
+/// spell its tags out here. The values are the ones the ELF gABI assigns them, which is what the
+/// linker writes into `.dynamic` regardless of the header the loader was compiled with.
+#ifndef DT_RELRSZ
+#define DT_RELRSZ 35
+#endif
+#ifndef DT_RELR
+#define DT_RELR 36
+#endif
+#ifndef DT_RELRENT
+#define DT_RELRENT 37
+#endif
+
 
 /** Deciphered ELF (Executable and Linkable Format) data structures used by the dynamic loader.
   *

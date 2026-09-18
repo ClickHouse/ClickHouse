@@ -123,6 +123,11 @@ void * getThreadLocalAddress(const ThreadLocalStorageIndex & index)
 }
 
 
+/// Declared right here rather than in a header: the only callers are the relocations of a loaded
+/// module, which find it through `threadLocalStorageAccessor` below, so a header declaration would
+/// have no other user - but `-Wmissing-prototypes` wants one.
+extern "C" void * clickhouseDynamicLoaderThreadLocalAccessor(ThreadLocalStorageIndex * index);
+
 extern "C" void * clickhouseDynamicLoaderThreadLocalAccessor(ThreadLocalStorageIndex * index)
 {
     return getThreadLocalAddress(*index);

@@ -803,15 +803,22 @@ void LoadedLibrary::runInitializers()
     initializers_ran = true;
 
     /// glibc passes (argc, argv, envp) to initializers; a plain void() initializer simply ignores them.
+    /// The two signatures differ, so the cast goes through `void *`: casting between function
+    /// pointer types directly is what `-Wcast-function-type-strict` refuses.
     using Initializer = void (*)(int, char **, char **);
     static char * empty_argv[] = {nullptr};
 
+    auto as_initializer = [](void (*function)()) -> Initializer
+    {
+        return reinterpret_cast<Initializer>(reinterpret_cast<void *>(function));
+    };
+
     if (init_function != nullptr)
-        reinterpret_cast<Initializer>(init_function)(0, empty_argv, environ);
+        as_initializer(init_function)(0, empty_argv, environ);
 
     for (auto * function : init_array)
         if (function != nullptr)
-            reinterpret_cast<Initializer>(function)(0, empty_argv, environ);
+            as_initializer(function)(0, empty_argv, environ);
 }
 
 
