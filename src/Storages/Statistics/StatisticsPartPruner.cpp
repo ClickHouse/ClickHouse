@@ -397,12 +397,11 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 
     for (const auto & [col_name, col_type] : columns)
     {
-        const bool is_nullable_type = isNullableOrLowCardinalityNullable(col_type);
-        auto range = createRangeFromEstimate(estimates.at(col_name), is_nullable_type);
+        auto range = createRangeFromEstimate(estimates.at(col_name), isNullableOrLowCardinalityNullable(col_type));
 
         if (range.has_value())
             hyperrectangle.push_back(std::move(*range));
-        else if (is_nullable_type)
+        else if (isNullableOrLowCardinalityNullable(col_type))
             hyperrectangle.emplace_back(Range::createWholeUniverse());
         else
             hyperrectangle.emplace_back(Range::createWholeUniverseWithoutNull());
