@@ -1156,35 +1156,61 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
   * `t1` is at once the alias of `t0` and the name of the third table of the query. Without the
   * precedence the two readings are equally good and the identifier is reported as ambiguous.
   *
+  * A table name is whatever the table expression is visible as in the query, the same set of carriers
+  * `tryBindIdentifierToTableExpression` and `qualifierBindsToJoinSubtree` bind a qualifier to: the name
+  * of a table or of a temporary table, the name of a CTE a subquery or union stands for, and the name of
+  * a materialized CTE, which is registered under an internal temporary table name.
+  *
+  * The resolved identifiers are the columns themselves or, for a subcolumn of a subquery projection or of
+  * an `ALIAS` column and for a nested path of a compound expression, `getSubcolumn` / `tupleElement`
+  * wrappers around them; the wrappers are peeled, so that `SELECT t1.x.y ...` is treated like `t1.x`.
+  *
   * Any other pair of readings - a column of a subquery that is literally named `b.id`, two tables of the
   * same name in different databases, ... - is left alone, ambiguous as before.
   */
 static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
     const QueryTreeNodePtr & left_resolved_identifier,
     const QueryTreeNodePtr & right_resolved_identifier,
-    const std::string & qualifier)
+    const std::string & qualifier,
+    const IdentifierResolveScope & scope)
 {
-    auto get_column_source = [](const QueryTreeNodePtr & resolved_identifier) -> QueryTreeNodePtr
+    auto get_column_source = [](QueryTreeNodePtr resolved_identifier) -> TableExpressionNodePtr
     {
+        while (const auto * function = resolved_identifier->as<FunctionNode>())
+        {
+            if ((function->getFunctionName() != "getSubcolumn" && function->getFunctionName() != "tupleElement")
+                || function->getArguments().getNodes().empty())
+                return nullptr;
+
+            resolved_identifier = function->getArguments().getNodes().front();
+        }
+
         const auto * column = resolved_identifier->as<ColumnNode>();
-        return column ? column->getColumnSource() : nullptr;
+        return column ? column->getColumnSourceOrNull() : nullptr;
     };
 
-    auto resolved_by_alias = [&](const QueryTreeNodePtr & source)
+    auto resolved_by_alias = [&](const TableExpressionNodePtr & source)
     {
         return source && source->hasAlias() && source->getAlias() == qualifier;
     };
 
-    auto resolved_by_table_name = [&](const QueryTreeNodePtr & source)
+    auto resolved_by_table_name = [&](const TableExpressionNodePtr & source)
     {
-        const auto * table_node = source ? source->as<TableNode>() : nullptr;
-        if (!table_node)
+        if (!source)
             return false;
 
-        const auto & table_name
-            = table_node->isTemporaryTable() ? table_node->getTemporaryTableName() : table_node->getStorageID().table_name;
+        auto it = scope.table_expression_node_to_data.find(source);
+        if (it == scope.table_expression_node_to_data.end())
+            return false;
 
-        return table_name == qualifier;
+        if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+            return true;
+
+        if (const auto * table_node = source->as<TableNode>())
+            if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->cte_name == qualifier)
+                return true;
+
+        return false;
     };
 
     auto left_source = get_column_source(left_resolved_identifier);
@@ -1251,7 +1277,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
                      ? std::optional<JoinTableSide>{}
                      : choseSideByQualifierAliasFromJoin(
-                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup.identifier.front()))
+                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup.identifier.front(), scope))
         {
             if (*qualifier_alias_side == JoinTableSide::Right)
                 resolve_result = identifier;
@@ -1753,7 +1779,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
                      ? std::optional<JoinTableSide>{}
                      : choseSideByQualifierAliasFromJoin(
-                         left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier.front()))
+                         left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier.front(), scope))
         {
             resolved_side = qualifier_alias_side;
             resolved_identifier = (resolved_side == JoinTableSide::Left) ? left_resolved_identifier : right_resolved_identifier;
