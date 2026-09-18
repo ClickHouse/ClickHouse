@@ -85,3 +85,7 @@ variant key not rewritten	0
 dynamic key value	100	3
 dynamic key value, rewrite off	100	3
 dynamic key not rewritten	0
+correlated key value	3
+correlated key value, setting off	3
+correlated key value, rewrite off	3
+correlated key not hinted	0

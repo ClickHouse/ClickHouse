@@ -256,6 +256,13 @@ SELECT 'dynamic key value', count(dictGet('d_112032', 'a', dk) = 'x'), sum(dictG
 SELECT 'dynamic key value, rewrite off', count(dictGet('d_112032', 'a', dk) = 'x'), sum(dictGet('d_112032', 'a', dk) = 'x') FROM td_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
 SELECT 'dynamic key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', dk) = 'x') FROM td_120650) WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
 
+-- A correlated subquery is evaluated exactly once, and a hint is re-planned in its own actions DAG, which rejects one.
+SET allow_correlated_subqueries = 1;
+SELECT 'correlated key value', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x';
+SELECT 'correlated key value, setting off', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x' SETTINGS transform_null_in = 0;
+SELECT 'correlated key value, rewrite off', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'correlated key not hinted', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x') WHERE explain ILIKE '%function_name: indexHint%';
+
 DROP TABLE td_120650;
 DROP TABLE tv_120650;
 DROP TABLE t3_120650;
