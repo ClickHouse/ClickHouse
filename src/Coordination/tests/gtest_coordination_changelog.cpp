@@ -48,6 +48,7 @@ namespace ProfileEvents
 {
     extern const Event KeeperLogsEntryReadFromFile;
     extern const Event KeeperLogsReadAheadFillDecodedEntries;
+    extern const Event KeeperLogsReadAheadFillReopens;
     extern const Event KeeperLogsReadAheadCursorsInstalled;
     extern const Event KeeperLogsReadAheadScheduleRejected;
     extern const Event KeeperLogsReadAheadReadersCreated;
@@ -153,7 +154,7 @@ TEST(CoordinationSettingsLoadFromConfig, MapsObsoleteCommitLogsCacheSizeThreshol
     {
         SCOPED_TRACE("neither setting set, default");
         auto config = make_config();
-        EXPECT_EQ(get_commit_window_bytes_from_config(config), 500ull * 1024 * 1024);
+        EXPECT_EQ(get_commit_window_bytes_from_config(config), 16ull * 1024 * 1024);
     }
 }
 
@@ -3442,9 +3443,11 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadWedgedFill)
     appender.join();
 }
 
-// When a serve-wait timeout falls back to a direct read, the reader must be fast-forwarded past the
-// served range instead of leaving the fill task to re-decode it entry by entry.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
+// When a serve-wait timeout falls back to a direct read, the reader must be left alone: the fill
+// keeps its cursor and its open file, so the next request is served from the deque rather than
+// paying another fallback. It re-decodes the range the fallback served, which appendChunk clamps;
+// that waste is bounded by that range and paid once, not once per request.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackKeepsFillRunning)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "Read-ahead engine mechanics are independent of compression; body always uses "
@@ -3483,6 +3486,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
 
     const uint64_t decoded_baseline = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
     const uint64_t fallbacks_baseline = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadTimeoutFallbacks];
+    const uint64_t reopens_baseline = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillReopens];
 
     constexpr int32_t peer_id = 7;
 
@@ -3500,14 +3504,14 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
     for (size_t i = 0; i < 5; ++i)
         EXPECT_EQ((*first_batch)[i]->get_term(), static_cast<uint64_t>(i + 1));
 
-    // Still wedged: the stale cursor (captured before the fast-forward reset) has not yet been given
-    // a chance to run at all -- no decode should have happened yet.
+    // Still wedged: the cursor has not yet been given a chance to run at all -- no decode should
+    // have happened yet.
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries], decoded_baseline)
         << "The wedged fill must not have decoded anything before being unwedged";
 
     DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
 
-    // The reader must have been fast-forwarded to index 6, so this batch is served from the deque with
+    // advance_reader_to moved the deque front to index 6, so this batch is served from the deque with
     // no further timeout fallback.
     auto second_batch = changelog.log_entries_ext(6, 11, /*batch_size_hint_in_bytes=*/0, peer_id);
 
@@ -3520,11 +3524,18 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
     for (size_t i = 0; i < 5; ++i)
         EXPECT_EQ((*second_batch)[i]->get_term(), static_cast<uint64_t>(i + 6));
 
-    // The 5 legitimate entries for [6, 11) plus at most one wasted entry from the stale cursor's
-    // already-started chunk (chunk_size == 1 bounds the waste); without fast-forward this would be >=10.
+    // The fallback no longer resets the reader, so the cursor resumes where it was and re-decodes the
+    // already-served [1, 5] before appendChunk clamps it against decoded_front_index. That waste is
+    // bounded by the range the fallback served, which is what matters: it is paid once, not once per
+    // request, because the reader survives.
     const uint64_t decoded_total = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries] - decoded_baseline;
     EXPECT_GE(decoded_total, 5u) << "The fill must have decoded the legitimate entries for [6, 11)";
-    EXPECT_LE(decoded_total, 6u) << "The fill must not have re-decoded the already-served range [1, 5]";
+    EXPECT_LE(decoded_total, total) << "The re-decode must be bounded by the range the fallback served";
+
+    // The load-bearing property of keeping the reader: the fill never lost its open file, so the next
+    // request costs no reopen. Resetting it here used to drop held_buf and pay a fresh open per serve.
+    const uint64_t reopens_total = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillReopens] - reopens_baseline;
+    EXPECT_LE(reopens_total, 1u) << "The timeout fallback must not have cost the fill its open changelog file";
 }
 
 // A fill-task exception must not poison the shared read-ahead pool: the reader transitions to Error,

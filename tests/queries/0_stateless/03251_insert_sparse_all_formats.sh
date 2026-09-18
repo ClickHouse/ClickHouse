@@ -2,8 +2,8 @@
 # Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings, no-flaky-check
 # no-azure-blob-storage: too slow
 # no-msan: it is too slow
-# no-random-settings: this test is already slow, and randomized settings make it slower
-# no-flaky-check: one run already takes 320-600s on debug, so the repeated runs of the flaky check cannot fit in the per-test timeout
+# no-random-settings: serial loop over every I/O format on debug sits at the 600s per-test timeout; randomized query settings amplify wall-time ~3x and tip it over
+# no-flaky-check: any PR adding a format touches the reference file, and dozens of parallel debug reruns of this near-timeout loop over every I/O format spuriously hit the 600s limit
 
 set -e
 
