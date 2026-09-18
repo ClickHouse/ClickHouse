@@ -7,13 +7,11 @@
 #include <Common/iota.h>
 #include <Common/quoteString.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -87,22 +85,6 @@ extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
 
 namespace
 {
-
-bool isLossyCodecForType(const ASTPtr & codec, const DataTypePtr & type)
-{
-    bool is_lossy = false;
-    ISerialization::StreamCallback callback = [&](const auto & substream_path)
-    {
-        if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
-            return;
-
-        const auto substream_codec
-            = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get());
-        is_lossy = substream_codec->isLossyCompression();
-    };
-    type->getDefaultSerialization()->enumerateStreams(callback, type);
-    return is_lossy;
-}
 
 /// Everything about a projection's columns follows from its `SELECT`, so `CODEC` is the only property a
 /// declaration may override.

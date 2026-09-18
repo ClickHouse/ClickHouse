@@ -1124,19 +1124,7 @@ void MergeTreeData::checkProperties(
             if (!column || !column->codec)
                 continue;
 
-            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
-            /// so lossiness is resolved per substream the way the part writer resolves it.
-            bool is_lossy = false;
-            ISerialization::StreamCallback callback = [&](const auto & substream_path)
-            {
-                if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
-                    return;
-                is_lossy = CompressionCodecFactory::instance()
-                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
-            };
-            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
-
-            if (is_lossy)
+            if (isLossyCodecForType(column->codec, column->type))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Column {} is used in the sorting key or the partition key, so it cannot be compressed "
                     "with a lossy codec",

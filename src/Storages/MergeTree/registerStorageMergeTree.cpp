@@ -1937,9 +1937,17 @@ CREATE TABLE t
 ENGINE = MergeTree ORDER BY id;
 ```
 
-The column list is partial: only the columns whose codec you are overriding need to appear in it. Any
-column the projection query produces but the list omits keeps the codec the projection would otherwise
-use. Every column that does appear must be produced by the projection query.
+The column list is partial: only the columns whose codec you are overriding need to appear in it, and
+every column that does appear must be produced by the projection query. Columns omitted from the list
+use the table's default compression codec (`default_compression_codec` setting or server's `compression`).
+
+To distinguish a column list from a projection query, quote columns named `select` or `with` if they appear first:
+
+```sql
+PROJECTION p (`select` CODEC(ZSTD)) AS (SELECT id, `select` ORDER BY id)
+```
+
+Anywhere else in the list such a name needs no quoting.
 
 A projection's columns are otherwise determined entirely by its query, so `CODEC` is the only property a
 column may declare. Declaring a default expression, `COMMENT`, `TTL`, `STATISTICS`, a collation, column
@@ -1965,6 +1973,21 @@ ALTER TABLE t ADD PROJECTION p (ts CODEC(DoubleDelta), id UInt64 CODEC(NONE)) AS
 ALTER TABLE t MODIFY COLUMN ts DateTime64(3);   -- allowed: `ts` was declared without a type
 ALTER TABLE t MODIFY COLUMN id Int64;           -- rejected: `id` was declared as UInt64
 ```
+
+#### Changing a declared codec {#projection-column-codecs-changing}
+
+A declared codec cannot be changed in place. `ALTER TABLE ... MODIFY PROJECTION` only accepts
+`WITH SETTINGS` changes, and the column list is part of the projection's definition, so changing a codec
+means dropping the projection, adding it back with the new list, and materializing it:
+
+```sql
+ALTER TABLE t DROP PROJECTION p;
+ALTER TABLE t ADD PROJECTION p (ts CODEC(Delta, ZSTD(3))) AS (SELECT id, ts ORDER BY ts);
+ALTER TABLE t MATERIALIZE PROJECTION p;
+```
+
+`MATERIALIZE PROJECTION` rebuilds the projection for every part. This is considerably more expensive
+than changing a table column's codec, which is a metadata-only change taking effect lazily.
 
 #### Aggregate projections {#projection-column-codecs-aggregate}
 
@@ -2002,7 +2025,7 @@ Lossy codecs are rejected for projection columns. Projection selection is transp
 values in a projection would make the same query return different results depending on whether the
 optimizer reads the projection or the parent table.
 
-A server older than this feature cannot parse a projection column list, so a table using one will not load
+ClickHouse versions before 26.9 cannot parse a projection column list, so a table using one will not load
 on a downgrade, and `ALTER TABLE ... ADD PROJECTION` with a column list will fail on a replica that has not
 been upgraded yet. Upgrade every replica before using the syntax.
 

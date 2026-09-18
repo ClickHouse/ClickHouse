@@ -53,7 +53,7 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
         {"codecs",
          std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
          "Compression codecs of the projection's columns, by column name. Only columns with a codec of "
-         "their own are listed; the rest use the codec the projection would otherwise use."},
+         "their own are listed; the rest use the table's default compression codec."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);

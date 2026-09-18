@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -399,5 +400,19 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
     throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatForErrorMessage());
 }
 
+bool isLossyCodecForType(const ASTPtr & codec, const DataTypePtr & type)
+{
+    bool is_lossy = false;
+    ISerialization::StreamCallback callback = [&](const auto & substream_path)
+    {
+        if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+            return;
+
+        const auto substream_codec = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get());
+        is_lossy = substream_codec->isLossyCompression();
+    };
+    type->getDefaultSerialization()->enumerateStreams(callback, type);
+    return is_lossy;
+}
 
 }
