@@ -29,7 +29,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
+    extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -47,13 +47,13 @@ namespace
 {
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
+        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
             return;
 
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Wildcard expansion for `url` from HTTP index pages is experimental. "
-            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
+            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
     }
 
     ASTs makeWebObjectStorageEngineArgs(
@@ -579,7 +579,7 @@ Example:
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 ```
 
 ## Virtual Columns {#virtual-columns}

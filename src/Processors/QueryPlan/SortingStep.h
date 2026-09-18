@@ -179,7 +179,7 @@ public:
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
 
-    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
+    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_);
 
     /// Whether `pushLimitByIntoSort` attached a per-stream `LIMIT BY` prefilter to this step.
     bool hasLimitByHint() const { return !limit_by_columns.empty(); }
@@ -252,6 +252,7 @@ private:
     /// See `pushLimitByIntoSort`. Empty means no hint.
     Names limit_by_columns;
     UInt64 limit_by_group_length = 0;
+    bool limit_by_always_read_till_end = false;
 
     Processors scatter_stage;
     Processors sorting_stage;
