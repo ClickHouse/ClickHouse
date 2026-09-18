@@ -479,6 +479,11 @@ void VortexBlockInputFormat::prepareReader()
     if (need_only_count || plan.column_names.empty())
     {
         pending_rows_without_columns = plan.rows_to_read ? plan.rows_to_read->size() : vortex_ffi_reader_row_count(reader);
+        /// A scanless read still owes its consumer the row numbers it asked for: `_row_number` and
+        /// lazy materialization are not satisfied by a bare row count. `plan.rows_to_read` points
+        /// into `format_filter_info`, which this format keeps alive.
+        rows_without_columns_selection = plan.rows_to_read;
+        row_index_column = format_filter_info && format_filter_info->need_row_numbers;
         return;
     }
 
@@ -561,6 +566,28 @@ void VortexBlockInputFormat::prepareReader()
     scan = new_scan;
 }
 
+std::shared_ptr<ChunkInfoRowNumbers> VortexBlockInputFormat::rowNumbersWithoutColumns(UInt64 first_delivered, size_t num_rows) const
+{
+    /// No scan means no filter and no reordering: without a row selection the rows are the whole
+    /// file in its own order, so their numbers are consecutive.
+    if (!rows_without_columns_selection)
+        return std::make_shared<ChunkInfoRowNumbers>(first_delivered);
+
+    if (num_rows == 0)
+        return std::make_shared<ChunkInfoRowNumbers>(0);
+
+    const auto & selection = *rows_without_columns_selection;
+    const UInt64 first = selection[first_delivered];
+    const UInt64 last = selection[first_delivered + num_rows - 1];
+    if (last - first + 1 == num_rows)
+        return std::make_shared<ChunkInfoRowNumbers>(first);
+
+    auto info = std::make_shared<ChunkInfoRowNumbers>(first, IColumnFilter(last - first + 1, 0));
+    for (size_t i = 0; i < num_rows; ++i)
+        (*info->applied_filter)[selection[first_delivered + i] - first] = 1;
+    return info;
+}
+
 Chunk VortexBlockInputFormat::readWithoutColumns()
 {
     if (!pending_rows_without_columns)
@@ -568,6 +595,8 @@ Chunk VortexBlockInputFormat::readWithoutColumns()
 
     size_t num_rows = std::min<UInt64>(pending_rows_without_columns, DEFAULT_BLOCK_SIZE);
     pending_rows_without_columns -= num_rows;
+    const UInt64 first_delivered = rows_without_columns_delivered;
+    rows_without_columns_delivered += num_rows;
 
     auto batch = arrow::RecordBatch::Make(arrow::schema(arrow::FieldVector{}), num_rows, arrow::ArrayVector{});
     auto table = arrow::Table::FromRecordBatches({batch});
@@ -577,7 +606,12 @@ Chunk VortexBlockInputFormat::readWithoutColumns()
     SCOPE_EXIT({ returnConverter(std::move(converter)); });
 
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    return converter->arrowTableToCHChunk(*table, num_rows, nullptr, block_missing_values_ptr);
+    auto chunk = converter->arrowTableToCHChunk(*table, num_rows, nullptr, block_missing_values_ptr);
+
+    if (row_index_column)
+        chunk.getChunkInfos().add(rowNumbersWithoutColumns(first_delivered, num_rows));
+
+    return chunk;
 }
 
 Chunk VortexBlockInputFormat::read()
@@ -731,6 +765,8 @@ void VortexBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 
     pending_rows_without_columns = 0;
+    rows_without_columns_delivered = 0;
+    rows_without_columns_selection = nullptr;
     count_returned = false;
     block_missing_values.clear();
     approx_bytes_read_for_chunk = 0;

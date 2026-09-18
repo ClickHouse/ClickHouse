@@ -118,6 +118,10 @@ private:
     /// their number of rows matters.
     Chunk readWithoutColumns();
 
+    /// The row numbers of `num_rows` rows of a scanless read, starting at the `first_delivered`-th
+    /// row that read produces.
+    std::shared_ptr<ChunkInfoRowNumbers> rowNumbersWithoutColumns(UInt64 first_delivered, size_t num_rows) const;
+
     /// Runs the queued tasks of `queue`, and of the other queue too when both share a thread pool,
     /// until nothing is left to run. This is the body of a driver task. `shutdown_` is passed by
     /// value because the task may still be waiting in the pool when the reader is destroyed.
@@ -195,6 +199,12 @@ private:
 
     /// For queries that touch no column of the file at all and need only its number of rows.
     UInt64 pending_rows_without_columns = 0;
+    /// How many of those rows have been handed out already, which is what their row numbers are
+    /// counted from.
+    UInt64 rows_without_columns_delivered = 0;
+    /// The row selection such a read follows, when there is one: the row numbers then come from it
+    /// instead of being the consecutive rows of the file. Owned by `format_filter_info`.
+    const PaddedPODArray<UInt64, 4096> * rows_without_columns_selection = nullptr;
     bool count_returned = false;
 
     BlockMissingValues block_missing_values;
