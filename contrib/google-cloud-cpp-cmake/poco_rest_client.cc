@@ -196,6 +196,7 @@ class SessionPool {
       ::ClickHouse::PocoRestSessionStaleCheckOption::Type const& is_stale) {
     auto const now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mu_);
+    ExpireIdle(now);
     auto it = idle_.find(key);
     if (it == idle_.end()) return nullptr;
     auto& entries = it->second;
@@ -210,7 +211,7 @@ class SessionPool {
       // when ClickHouse supplied the probe -- anything the probe reports as not
       // idle, and let the caller connect afresh rather than discover the failure
       // mid-request or parse leftover bytes as its own response.
-      if (now - entry.returned_at >= kMaxIdleTime) continue;
+      if (IsExpired(entry, now)) continue;
       if (!entry.session->connected()) continue;
       if (is_stale && is_stale(*entry.session)) continue;
       return std::move(entry.session);
@@ -224,7 +225,13 @@ class SessionPool {
                std::size_t max_per_endpoint) {
     if (!session || !session->connected()) return;
     if (max_per_endpoint == 0) return;
+    auto const now = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mu_);
+    ExpireIdle(now);
+    // A session that has already served as many requests as its keep-alive
+    // policy allows, or that the peer asked to close after this response, is not
+    // worth retaining: the next borrower would have to reconnect it anyway.
+    if (session->isKeepAliveExpired()) return;
     auto& entries = idle_[key];
     // A cap lowered since the bucket filled up applies right away: trim the
     // oldest entries down to the new limit, so a reconfigured endpoint stops
@@ -236,7 +243,7 @@ class SessionPool {
                                           entries.size() - max_per_endpoint));
     }
     if (entries.size() >= max_per_endpoint) return;
-    entries.push_back({std::move(session), std::chrono::steady_clock::now()});
+    entries.push_back({std::move(session), now});
   }
 
  private:
@@ -245,10 +252,51 @@ class SessionPool {
     std::chrono::steady_clock::time_point returned_at;
   };
 
+  // Hard upper bound on how long a session may sit in the pool, whatever its own
+  // keep-alive policy says. It also bounds how long a socket of a bucket nobody
+  // borrows from again (an endpoint that stopped being used, or a proxy the
+  // resolver rotated away from) is kept around.
   static constexpr auto kMaxIdleTime = std::chrono::seconds(20);
+  // How often the whole pool is swept. Sweeping on every borrow and return would
+  // make each of them cost the size of the pool; once a second is frequent enough
+  // for sockets whose lifetime is bounded by `kMaxIdleTime` anyway.
+  static constexpr auto kSweepInterval = std::chrono::seconds(1);
+
+  bool IsExpired(Entry const& entry,
+                 std::chrono::steady_clock::time_point now) const {
+    if (now - entry.returned_at >= kMaxIdleTime) return true;
+    // Poco keeps the keep-alive policy of the session -- the timeout and the
+    // request budget ClickHouse configured, both possibly lowered by the peer's
+    // own `Keep-Alive` header -- and decides against them.
+    return entry.session->isKeepAliveExpired();
+  }
+
+  // Drops every session that outlived its keep-alive policy, in every bucket, and
+  // then the buckets left empty. Without this a session is only ever reconsidered
+  // when its own bucket is borrowed from: `Release` appends at the back and
+  // `Acquire` pops from the back, so a steady-state workload that keeps reusing
+  // one hot session would never look at the colder entries in front of it again,
+  // and a bucket abandoned after a proxy rotation would never be looked at at all.
+  // Both would then hold their sockets (and file descriptors) for the rest of the
+  // process lifetime. Called with the lock held.
+  void ExpireIdle(std::chrono::steady_clock::time_point now) {
+    if (now - last_sweep_ < kSweepInterval) return;
+    last_sweep_ = now;
+    for (auto it = idle_.begin(); it != idle_.end();) {
+      auto& entries = it->second;
+      entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                   [&](Entry const& entry) {
+                                     return IsExpired(entry, now);
+                                   }),
+                    entries.end());
+      it = entries.empty() ? idle_.erase(it) : std::next(it);
+    }
+  }
 
   std::mutex mu_;
   std::unordered_map<std::string, std::vector<Entry>> idle_;
+  std::chrono::steady_clock::time_point last_sweep_ =
+      std::chrono::steady_clock::now();
 };
 
 // Identifies connections that are interchangeable: same transport endpoint and
@@ -286,6 +334,9 @@ std::string SessionKey(
 struct SessionPoolTicket {
   std::string key;
   std::size_t max_per_endpoint = kDefaultMaxSessionsPerEndpoint;
+  // The proxy this request travels through, so a failure can be reported back to
+  // the resolver that handed it out (`PocoRestProxyErrorReportOption`).
+  Poco::Net::HTTPClientSession::ProxyConfig proxy;
 };
 
 // Returns a connected-or-connectable session for `uri`, reusing a pooled one when
@@ -337,6 +388,7 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   auto const key = SessionKey(uri, effective_proxy);
   if (ticket != nullptr) {
     ticket->key = key;
+    ticket->proxy = effective_proxy;
     if (options.has<ConnectionPoolSizeOption>()) {
       ticket->max_per_endpoint = options.get<ConnectionPoolSizeOption>();
     }
@@ -395,6 +447,23 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   // Without this Poco sends `Connection: Close` and the peer tears the socket
   // down after one response, which would make the pool useless.
   session->setKeepAlive(true);
+  // The keep-alive policy an operator configured (`http_keep_alive_timeout` /
+  // `http_keep_alive_max_requests`), applied to pooled sessions too for the same
+  // reason the timeouts above are: it belongs to the client making *this*
+  // request. Poco enforces both itself -- it counts the requests a session served
+  // and reconnects when either bound is reached -- and the pool consults the same
+  // verdict (`isKeepAliveExpired`) before retaining or handing out a session.
+  if (options.has<::ClickHouse::PocoRestKeepAliveOption>()) {
+    auto const& keep_alive = options.get<::ClickHouse::PocoRestKeepAliveOption>();
+    if (keep_alive.timeout.count() > 0) {
+      session->setKeepAliveTimeout(Poco::Timespan(
+          static_cast<Poco::Timespan::TimeDiff>(keep_alive.timeout.count()), 0));
+    }
+    if (keep_alive.max_requests > 0) {
+      session->setKeepAliveMaxRequests(
+          static_cast<int>(keep_alive.max_requests));
+    }
+  }
   return session;
 }
 
@@ -672,12 +741,30 @@ class PocoRestClient : public RestClient {
                                  options.get<CurlFollowLocationOption>();
 
     auto url = ComposeUrl(endpoint_, request, options);
+    // The proxy the last attempt was sent through. A failure of that attempt is
+    // reported back to whoever resolved it, so a cached dead proxy is dropped
+    // instead of being retried until its TTL expires -- the same thing the S3
+    // transport does with `PocoHTTPClientConfiguration::error_report`.
+    Poco::Net::HTTPClientSession::ProxyConfig used_proxy;
+    auto report_proxy_error = [&] {
+      if (used_proxy.host.empty()) return;
+      if (!options.has<::ClickHouse::PocoRestProxyErrorReportOption>()) return;
+      auto const& error_report =
+          options.get<::ClickHouse::PocoRestProxyErrorReportOption>();
+      if (error_report) error_report(used_proxy);
+    };
     try {
       for (int redirect = 0; redirect != kMaxRedirects; ++redirect) {
         auto response = MakeSingleRequest(context, request, method, payload,
-                                          url, options, auth_header);
+                                          url, options, auth_header,
+                                          &used_proxy);
         auto const status_code =
             static_cast<std::int32_t>(response->StatusCode());
+        // A server-side error can equally well come from the proxy in front of
+        // the server, which is why the S3 transport reports those too.
+        if (status_code >= HttpStatusCode::kMinInternalErrors) {
+          report_proxy_error();
+        }
         if (!follow_location ||
             status_code < HttpStatusCode::kMinRedirects ||
             status_code >= HttpStatusCode::kMinRequestErrors ||
@@ -703,9 +790,11 @@ class PocoRestClient : public RestClient {
       return Status(StatusCode::kUnavailable,
                     "too many redirects requesting " + url);
     } catch (Poco::TimeoutException const& e) {
+      report_proxy_error();
       return Status(StatusCode::kDeadlineExceeded,
                     "request to " + url + " timed out: " + e.displayText());
     } catch (Poco::Exception const& e) {
+      report_proxy_error();
       return Status(StatusCode::kUnavailable,
                     "request to " + url + " failed: " + e.displayText());
     }
@@ -716,7 +805,8 @@ class PocoRestClient : public RestClient {
       std::string const& method,
       std::vector<absl::Span<char const>> const& payload,
       std::string const& url, Options const& options,
-      std::pair<std::string, std::string> const& auth_header) const {
+      std::pair<std::string, std::string> const& auth_header,
+      Poco::Net::HTTPClientSession::ProxyConfig* used_proxy) const {
     // The URL is already fully percent-encoded by the storage layer, so parse it
     // with ClickHouse's `enable_url_encoding = false` extension: by default
     // `Poco::URI` percent-*decodes* the path when it parses a URL and re-encodes
@@ -729,6 +819,7 @@ class PocoRestClient : public RestClient {
     Poco::URI uri(url, /*enable_url_encoding=*/false);
     SessionPoolTicket ticket;
     auto session = MakeSession(uri, options, &ticket);
+    if (used_proxy != nullptr) *used_proxy = ticket.proxy;
 
     auto path = uri.getPathAndQuery();
     if (path.empty()) path = "/";
