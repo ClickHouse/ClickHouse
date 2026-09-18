@@ -2977,19 +2977,27 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 /** Expand the matchers nested inside a projection expression, in place.
   *
   * A matcher does not have to be the root of a projection item: its output can be consumed by a
-  * function producing a list of columns, as in `SELECT untuple((* REPLACE (-c AS c),))`.
+  * function producing a list of columns, as in `SELECT untuple((* REPLACE (-c AS c),))`, or it can
+  * appear in the window definition written in place, as in
+  * `SELECT row_number() OVER (PARTITION BY max(* REPLACE (-c AS c)))`.
   * Resolving a matcher registers the `REPLACE` mappings in the sibling clauses of the query, so with
   * `group_by_use_nulls`, where the projection is resolved after them, the nested matchers have to be
   * expanded in advance, exactly as the ones at the root of a projection item.
   *
-  * Only the arguments of ordinary functions are visited: matchers of lambdas and of subqueries belong
-  * to a different scope, and `count` drops an unqualified matcher instead of expanding it.
+  * Only the arguments of ordinary functions and the window definitions written in place are visited:
+  * matchers of lambdas and of subqueries belong to a different scope.
   */
 void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
 {
     auto * function_node = node->as<FunctionNode>();
-    if (!function_node || functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName()))
+    if (!function_node)
         return;
+
+    /** `count` and `countState` (possibly with combinators) drop an unqualified matcher argument instead of
+      * expanding it, see `resolveFunction`. Such an argument is left untouched here, otherwise `count(*)`
+      * would turn into `count(a, b)`. A qualified matcher stays a real argument and is expanded as usual.
+      */
+    const bool drops_unqualified_matchers = functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName());
 
     auto & argument_nodes = function_node->getArguments().getNodes();
     QueryTreeNodes expanded_argument_nodes;
@@ -2997,7 +3005,9 @@ void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
 
     for (auto & argument_node : argument_nodes)
     {
-        if (argument_node->getNodeType() == QueryTreeNodeType::MATCHER)
+        const auto * matcher_node = argument_node->as<MatcherNode>();
+
+        if (matcher_node && !(drops_unqualified_matchers && matcher_node->isUnqualified()))
         {
             resolveExpressionNode(argument_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             const auto & matched_nodes = argument_node->as<ListNode &>().getNodes();
@@ -3005,11 +3015,74 @@ void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             continue;
         }
 
-        expandMatchersInsideProjectionExpression(argument_node, scope);
+        if (!matcher_node)
+            expandMatchersInsideProjectionExpression(argument_node, scope);
+
         expanded_argument_nodes.push_back(argument_node);
     }
 
     argument_nodes = std::move(expanded_argument_nodes);
+
+    if (function_node->hasWindow())
+        expandMatchersInsideWindowDefinition(function_node->getWindowNode(), scope);
+}
+
+/** Expand the matchers of a window definition written in place, in place.
+  *
+  * `PARTITION BY` and `ORDER BY` of such a definition are resolved in the scope of the query, exactly as
+  * the projection expression carrying it, so their matchers have to be expanded together with it.
+  * A named window (`OVER w`) is not visited: its definition belongs to the `WINDOW` clause of the query.
+  */
+void QueryAnalyzer::expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    auto * window_node = node->as<WindowNode>();
+    if (!window_node)
+        return;
+
+    if (window_node->hasPartitionBy())
+    {
+        auto & partition_by_nodes = window_node->getPartitionBy().getNodes();
+        QueryTreeNodes expanded_partition_by_nodes;
+        expanded_partition_by_nodes.reserve(partition_by_nodes.size());
+
+        for (auto & partition_by_node : partition_by_nodes)
+        {
+            if (partition_by_node->getNodeType() == QueryTreeNodeType::MATCHER)
+            {
+                resolveExpressionNode(partition_by_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                const auto & matched_nodes = partition_by_node->as<ListNode &>().getNodes();
+                expanded_partition_by_nodes.insert(expanded_partition_by_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+                continue;
+            }
+
+            expandMatchersInsideProjectionExpression(partition_by_node, scope);
+            expanded_partition_by_nodes.push_back(partition_by_node);
+        }
+
+        partition_by_nodes = std::move(expanded_partition_by_nodes);
+    }
+
+    for (auto & order_by_node : window_node->getOrderBy().getNodes())
+    {
+        auto & sort_expression = order_by_node->as<SortNode &>().getExpression();
+
+        if (sort_expression->getNodeType() != QueryTreeNodeType::MATCHER)
+        {
+            expandMatchersInsideProjectionExpression(sort_expression, scope);
+            continue;
+        }
+
+        resolveExpressionNode(sort_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        const auto & matched_nodes = sort_expression->as<ListNode &>().getNodes();
+
+        /// The same restriction as in `resolveSortNodeList`, which resolves the matchers not expanded here.
+        if (matched_nodes.size() != 1)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Expression ORDER BY {} is not supported, matcher expression can only contain single column",
+                sort_expression->formatASTForErrorMessage());
+
+        sort_expression = matched_nodes.front();
+    }
 }
 
 /** Resolve window function window node.

@@ -248,6 +248,8 @@ private:
 
     void expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
 
+    void expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
+
     ProjectionName resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
 
     ProjectionNames resolveLambda(const QueryTreeNodePtr & lambda_node,
