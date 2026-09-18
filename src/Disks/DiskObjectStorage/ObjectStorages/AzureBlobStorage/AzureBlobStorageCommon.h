@@ -154,6 +154,11 @@ struct ConnectionParams
     AuthMethod auth_method;
     BlobClientOptions client_options;
 
+    /// Explicit workload identity IDs (e.g. from extra_credentials). The SDK credential
+    /// does not expose them back, so they are kept here for the delta-kernel path.
+    String workload_identity_client_id;
+    String workload_identity_tenant_id;
+
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
 
