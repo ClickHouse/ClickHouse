@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/Field.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MergeTree/MergeType.h>
@@ -10,9 +11,11 @@
 #include <Storages/MergeTree/BackgroundProcessList.h>
 #include <Interpreters/StorageID.h>
 #include <boost/noncopyable.hpp>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <vector>
 
 
 namespace CurrentMetrics
@@ -72,6 +75,18 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 struct Settings;
 
+/// State used to cancel a running merge/mutation pipeline from another thread (e.g. KILL MUTATION).
+/// It is kept in a `shared_ptr` (see `MergeListElement::pipeline_cancel_state`) so the cancellation
+/// hook that invokes it outlives the `MergeListElement` that owns the entry: the hook captures this
+/// state by value, so it never dereferences the (possibly already destroyed) merge list entry and
+/// never locks a mutex that belongs to a freed object.
+struct PipelineCancelState
+{
+    mutable std::mutex mutex;
+    std::function<void()> hook;
+};
+using PipelineCancelStatePtr = std::shared_ptr<PipelineCancelState>;
+
 
 struct MergeListElement : boost::noncopyable
 {
@@ -94,6 +109,12 @@ struct MergeListElement : boost::noncopyable
     Stopwatch watch;
     std::atomic<Float64> progress{};
     std::atomic<bool> is_cancelled{};
+
+    /// Optional hook to cancel the running merge/mutation pipeline when the entry
+    /// is cancelled (e.g. KILL MUTATION). Set and cleared by the owning task. The
+    /// `PipelineCancelState` keeps its mutex (and the hook) alive independently of this
+    /// entry, so a concurrent cancellation cannot touch a freed object.
+    PipelineCancelStatePtr pipeline_cancel_state = std::make_shared<PipelineCancelState>();
 
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_bytes_uncompressed{};
@@ -174,14 +195,54 @@ public:
 
     void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
     {
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
+        /// Mark entries as cancelled and collect their hooks under the merge list mutex, then invoke
+        /// the hooks after it is released: a hook cancels a running pipeline, which must not touch
+        /// the merge list under a lock. Marking is allocation-free and infallible and always precedes
+        /// hook collection, so no matching entry escapes cancellation; the hook pass is best-effort
+        /// and only affects how promptly the in-flight pipeline is interrupted. The whole collect must
+        /// not throw out of this function (a `std::function` copy can allocate, e.g. OOM): a throw here
+        /// would break the callers, e.g. `StorageMergeTree::killMutation` erases the entry before
+        /// calling us and must still remove the mutation file afterwards, and the for-loop of the
+        /// replicated `killMutation` must still cancel the remaining partitions. Marking has already
+        /// happened before collection, so a failure of the best-effort pass is logged and skipped
+        /// without undoing any cancellation.
+        std::vector<std::function<void()>> hooks_to_invoke;
+        try
         {
-            if ((partition_id.empty() || merge_element.partition_id == partition_id)
-                && merge_element.table_id == table_id
-                && merge_element.source_data_version < mutation_version
-                && merge_element.result_part_info.getDataVersion() >= mutation_version)
-                merge_element.is_cancelled = true;
+            std::lock_guard lock{mutex};
+            auto matches = [&](const MergeListElement & merge_element)
+            {
+                return (partition_id.empty() || merge_element.partition_id == partition_id)
+                    && merge_element.table_id == table_id
+                    && merge_element.source_data_version < mutation_version
+                    && merge_element.result_part_info.getDataVersion() >= mutation_version;
+            };
+            for (auto & merge_element : entries)
+                if (matches(merge_element))
+                    merge_element.is_cancelled = true;
+            for (auto & merge_element : entries)
+            {
+                if (!matches(merge_element))
+                    continue;
+                std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
+                if (merge_element.pipeline_cancel_state->hook)
+                    hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        for (const auto & hook : hooks_to_invoke)
+        {
+            try
+            {
+                hook();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
     }
 
@@ -189,13 +250,41 @@ public:
     /// Used on server shutdown, when their results would be discarded anyway.
     void cancelAll()
     {
-        /// The flag is set before iterating the list, and `insert` checks it after linking
-        /// the new entry into the list under the mutex, so an entry is either cancelled by
-        /// the loop below or observes the flag in `insert` - none can escape.
+        /// Cancel every running merge/mutation in the table, including a still in-flight pipeline.
+        /// `all_cancelled` prevents new entries from being inserted after this point (checked in `insert`).
+        /// As in `cancelPartMutations`, the allocation-free marking pass is infallible and precedes the
+        /// best-effort hook collection, so even if hook collection throws (OOM during `OOMCanary`
+        /// shutdown) no entry escapes cancellation; the throw never propagates, keeping the callers of
+        /// `cancelAll` (e.g. `OOMCanary`) consistent.
         all_cancelled = true;
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
-            merge_element.is_cancelled = true;
+        std::vector<std::function<void()>> hooks_to_invoke;
+        try
+        {
+            std::lock_guard lock{mutex};
+            for (auto & merge_element : entries)
+                merge_element.is_cancelled = true;
+            for (auto & merge_element : entries)
+            {
+                std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
+                if (merge_element.pipeline_cancel_state->hook)
+                    hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        for (const auto & hook : hooks_to_invoke)
+        {
+            try
+            {
+                hook();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 
     template <typename... Args>
@@ -209,13 +298,46 @@ public:
 
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)
     {
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
+        /// Cancel every running merge/mutation in the partition, including a still in-flight pipeline.
+        /// Same split into an infallible marking pass and a best-effort hook pass as the other cancels:
+        /// marking always precedes hook collection and a failure of the latter is logged and skipped,
+        /// never thrown out of this function.
+        std::vector<std::function<void()>> hooks_to_invoke;
+        try
         {
-            if (merge_element.table_id == table_id
-                && merge_element.partition_id == partition_id
-                && merge_element.result_part_info.min_block < delimiting_block_number)
-                merge_element.is_cancelled = true;
+            std::lock_guard lock{mutex};
+            auto matches = [&](const MergeListElement & merge_element)
+            {
+                return merge_element.table_id == table_id
+                    && merge_element.partition_id == partition_id
+                    && merge_element.result_part_info.min_block < delimiting_block_number;
+            };
+            for (auto & merge_element : entries)
+                if (matches(merge_element))
+                    merge_element.is_cancelled = true;
+            for (auto & merge_element : entries)
+            {
+                if (!matches(merge_element))
+                    continue;
+                std::lock_guard hook_lock{merge_element.pipeline_cancel_state->mutex};
+                if (merge_element.pipeline_cancel_state->hook)
+                    hooks_to_invoke.push_back(merge_element.pipeline_cancel_state->hook);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        for (const auto & hook : hooks_to_invoke)
+        {
+            try
+            {
+                hook();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
     }
 
