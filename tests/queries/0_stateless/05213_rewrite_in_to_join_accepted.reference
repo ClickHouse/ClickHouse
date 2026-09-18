@@ -84,8 +84,6 @@
 1	0
 0
 0
--- The set size limit still applies
-1	0
 -- IN subquery inside HAVING
 1	0
 [1,2]

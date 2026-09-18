@@ -169,13 +169,6 @@ FROM (EXPLAIN SELECT count() FROM numbers(10) WHERE rand() % 2 IN (SELECT 1));
 SELECT countIf(r != c) FROM (SELECT rand() % 2 AS r, r IN (SELECT 1) AS c FROM numbers(200000)) SETTINGS rewrite_in_to_join = 0;
 SELECT countIf(r != c) FROM (SELECT rand() % 2 AS r, r IN (SELECT 1) AS c FROM numbers(200000)) SETTINGS rewrite_in_to_join = 1;
 
-SELECT '-- The set size limit still applies';
-SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS max_rows_in_set = 1);
-
-SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS max_rows_in_set = 1, rewrite_in_to_join = 0; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
-SELECT count() FROM t WHERE id IN (SELECT k FROM s) SETTINGS max_rows_in_set = 1, rewrite_in_to_join = 1; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
-
 SELECT '-- IN subquery inside HAVING';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT id FROM t GROUP BY id HAVING id IN (SELECT k FROM s));

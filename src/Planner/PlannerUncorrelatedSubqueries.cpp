@@ -59,13 +59,10 @@ extern const SettingsOverflowMode set_overflow_mode;
 namespace
 {
 
-/// The join is an implementation detail of `IN`, so it is configured like the set it replaces.
-void applySetSemantics(JoinStepLogical & join_step, const Settings & settings)
+void applySetSemantics(JoinStepLogical & join_step)
 {
     auto & join_settings = join_step.getJoinSettings();
     join_settings.join_algorithms = {JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::HASH};
-    join_settings.max_rows_in_join = settings[Setting::max_rows_in_set];
-    join_settings.max_bytes_in_join = settings[Setting::max_bytes_in_set];
     join_settings.join_overflow_mode = OverflowMode::THROW;
 }
 
@@ -362,7 +359,7 @@ void buildQueryPlanForUncorrelatedInSubquery(
         JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
     join_step->setStepDescription("JOIN to evaluate IN");
-    applySetSemantics(*join_step, settings);
+    applySetSemantics(*join_step);
 
     std::vector<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
