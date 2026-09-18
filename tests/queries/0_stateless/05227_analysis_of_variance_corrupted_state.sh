@@ -29,6 +29,10 @@ expect_corrupted_data 'xs1 longer than xs2 and ns' \
 expect_corrupted_data 'ns shorter than xs1 and xs2' \
     "SELECT finalizeAggregation(CAST(unhex('01000000000000f03f01000000000000f03f00'), 'AggregateFunction(analysisOfVariance, Float64, UInt64)'))"
 
+# The first length prefix is a varint for MAX_GROUPS_NUMBER + 1: it is rejected before allocating.
+expect_corrupted_data 'too many groups' \
+    "SELECT finalizeAggregation(CAST(unhex('818040'), 'AggregateFunction(analysisOfVariance, Float64, UInt64)'))"
+
 # A genuine state still survives a roundtrip through `String` and finalizes to the same result.
 $CLICKHOUSE_LOCAL --query "
     SELECT finalizeAggregation(st) = finalizeAggregation(CAST(CAST(st, 'String'), 'AggregateFunction(analysisOfVariance, Float64, UInt64)'))
