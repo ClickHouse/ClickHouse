@@ -183,11 +183,17 @@ std::string_view getNullInFunctionName(std::string_view function_name);
 /// renames the `in` family, so a pass running later emits the un-renamed name, a remote shard or parallel
 /// replica renames it while re-analyzing the shipped AST, and the two sides then disagree about what the
 /// node is called (issue #112032). This is the same divergence `foldConstantCast` above exists for.
-/// Returns `std::nullopt` when the renaming would not preserve the node's meaning, in which case the caller
-/// must keep the expression it was going to replace: only `in` takes the default implementation for NULLs
-/// (`src/Functions/in.cpp`), which is what makes it propagate a NULL argument instead of comparing it and
-/// what makes its result `Nullable`. That adaptor examines the top-level argument type, so the two names
-/// agree in value and in type exactly when the left argument cannot itself be NULL.
+/// Returns `std::nullopt` when the renaming would not preserve the node's meaning: only `in` takes the
+/// default implementation for NULLs (`src/Functions/in.cpp`), which is what makes it propagate a NULL
+/// argument instead of comparing it and what makes its result `Nullable`. That adaptor examines the
+/// top-level argument type, so the two names agree in value and in type exactly when the left argument
+/// cannot itself be NULL.
+/// A caller that gets `std::nullopt` keeps the expression it was going to replace, or rebuilds it around
+/// the null-aware node with the swallowed NULL restored explicitly, in which case it may also hand that
+/// node to index analysis inside `indexHint`. The two reasons to decline are not interchangeable: a
+/// top-level `Nullable` argument differs from the null-aware name only in the NULL that name compares,
+/// while a `Variant` argument compares its NULL as a value and a dynamic structure is rejected by the
+/// `in` family outright.
 std::optional<String> getInFunctionNameForPassCreatedNode(
     const String & in_function_name, const DataTypePtr & left_argument_type, const ContextPtr & context);
 

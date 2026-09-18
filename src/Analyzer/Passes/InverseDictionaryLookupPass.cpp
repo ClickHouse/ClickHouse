@@ -267,6 +267,54 @@ bool canReplaceWithDictGetKeys(
     return supertype && supertype->equals(*stripped_attr_type);
 }
 
+/// `dictGet` propagates the NULL of a top-level `Nullable` key, and that is the NULL the null-aware
+/// name compares instead of propagating. A `Variant` key carries its NULL in a discriminator, so
+/// `dictGet` does not propagate it, and the `in` family rejects a dynamic structure outright, which
+/// `Nullable` and `LowCardinality` forward from the nested type.
+bool canRestoreNullForKey(const DataTypePtr & key_type)
+{
+    return isNullableOrLowCardinalityNullable(key_type) && !key_type->hasDynamicStructure();
+}
+
+/// Restores the NULL the null-aware name swallows, so the result equals `in`'s for every row.
+QueryTreeNodePtr restoreNullForNullKey(QueryTreeNodePtr key_expr, QueryTreeNodePtr set_membership, const ContextPtr & context)
+{
+    auto is_null_node = std::make_shared<FunctionNode>("isNull");
+    is_null_node->getArguments().getNodes().push_back(std::move(key_expr));
+    resolveOrdinaryFunctionNodeByName(*is_null_node, "isNull", context);
+
+    auto null_node = std::make_shared<ConstantNode>(Field{}, makeNullable(std::make_shared<DataTypeUInt8>()));
+
+    auto if_node = std::make_shared<FunctionNode>("if");
+    if_node->getArguments().getNodes() = {std::move(is_null_node), std::move(null_node), std::move(set_membership)};
+    resolveOrdinaryFunctionNodeByName(*if_node, "if", context);
+    return if_node;
+}
+
+/// `indexHint` returns 1 for every row and never evaluates its argument; index analysis reads that
+/// argument back out of the function object and uses it as a condition (`Functions/indexHint.h`).
+QueryTreeNodePtr makeIndexHint(QueryTreeNodePtr condition, const ContextPtr & context)
+{
+    auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
+    index_hint_node->getArguments().getNodes().push_back(std::move(condition));
+    resolveOrdinaryFunctionNodeByName(*index_hint_node, "indexHint", context);
+    return index_hint_node;
+}
+
+/// A new `and` rather than an argument appended to `filter`: the filter node can be shared, and a
+/// typed ancestor of it depends on its result type.
+QueryTreeNodePtr conjoin(QueryTreeNodePtr filter, QueryTreeNodes hints, const ContextPtr & context)
+{
+    auto and_node = std::make_shared<FunctionNode>("and");
+    auto & and_arguments = and_node->getArguments().getNodes();
+    and_arguments.push_back(std::move(filter));
+    for (auto & hint : hints)
+        and_arguments.push_back(std::move(hint));
+    and_node->markAsOperator();
+    resolveOrdinaryFunctionNodeByName(*and_node, "and", context);
+    return and_node;
+}
+
 class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>
 {
 public:
@@ -482,18 +530,31 @@ public:
 
                 /// Multiple keys -> key_expr IN <constant array-of-keys>
                 /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
-                const auto in_function_name = getInFunctionNameForPassCreatedNode(
-                    "in", dictget_function_info.key_expr_node->getResultType(), getContext());
-                if (!in_function_name)
+                const DataTypePtr key_type = dictget_function_info.key_expr_node->getResultType();
+                const auto in_function_name = getInFunctionNameForPassCreatedNode("in", key_type, getContext());
+                if (!in_function_name && !canRestoreNullForKey(key_type))
                     return;
+
+                /// The null-aware name is a fixed point of the renaming, so a shard re-analyzing the
+                /// shipped AST leaves it alone.
+                const String set_function_name = in_function_name ? *in_function_name : String(getNullInFunctionName("in"));
 
                 /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
                 auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
 
-                auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
+                auto in_function_node = std::make_shared<FunctionNode>(set_function_name);
                 in_function_node->markAsOperator();
                 in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
-                resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
+                resolveOrdinaryFunctionNodeByName(*in_function_node, set_function_name, getContext());
+
+                if (!in_function_name)
+                {
+                    auto replacement_node = preserve_result_type(
+                        restoreNullForNullKey(dictget_function_info.key_expr_node, in_function_node, getContext()));
+                    null_in_replacements.emplace(replacement_node.get(), in_function_node);
+                    node = std::move(replacement_node);
+                    return;
+                }
 
                 node = preserve_result_type(in_function_node);
                 return;
@@ -528,10 +589,12 @@ public:
             return;
 
         /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
-        const auto in_function_name = getInFunctionNameForPassCreatedNode(
-            "in", dictget_function_info.key_expr_node->getResultType(), getContext());
-        if (!in_function_name)
+        const DataTypePtr key_type = dictget_function_info.key_expr_node->getResultType();
+        const auto in_function_name = getInFunctionNameForPassCreatedNode("in", key_type, getContext());
+        if (!in_function_name && !canRestoreNullForKey(key_type))
             return;
+
+        const String set_function_name = in_function_name ? *in_function_name : String(getNullInFunctionName("in"));
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
         dict_table_function->getArguments().getNodes().push_back(dictget_function_info.dict_name_node);
@@ -578,11 +641,11 @@ public:
         }
         subquery_node->resolveProjectionColumns(key_cols);
 
-        auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
+        auto in_function_node = std::make_shared<FunctionNode>(set_function_name);
         in_function_node->markAsOperator();
         QueryTreeNodePtr querytree_subquery_node = subquery_node;
         in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
-        resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
+        resolveOrdinaryFunctionNodeByName(*in_function_node, set_function_name, getContext());
 
         /// Preserve the original result type of the comparison node.
         /// For example, original "equals(...)" might have result type Nullable(UInt8),
@@ -590,13 +653,58 @@ public:
         DataTypePtr original_result_type = node_function->getResultType();
 
         QueryTreeNodePtr replacement_node = in_function_node;
-        if (original_result_type && !in_function_node->getResultType()->equals(*original_result_type))
-            replacement_node = createCastFunction(in_function_node, original_result_type, getContext());
+        if (!in_function_name)
+            replacement_node = restoreNullForNullKey(dictget_function_info.key_expr_node, in_function_node, getContext());
+        if (original_result_type && !replacement_node->getResultType()->equals(*original_result_type))
+            replacement_node = createCastFunction(replacement_node, original_result_type, getContext());
+        if (!in_function_name)
+            null_in_replacements.emplace(replacement_node.get(), in_function_node);
 
         node = std::move(replacement_node);
     }
 
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        auto * query_node = node->as<QueryNode>();
+        if (!query_node || null_in_replacements.empty())
+            return;
+
+        addIndexHints(query_node->getWhere());
+        addIndexHints(query_node->getPrewhere());
+    }
+
 private:
+    void addIndexHints(QueryTreeNodePtr & filter)
+    {
+        if (!filter)
+            return;
+
+        QueryTreeNodes hints;
+        collectHintsFromFilterSpine(filter, hints);
+        if (!hints.empty())
+            filter = conjoin(filter, std::move(hints), getContext());
+    }
+
+    /// Only a conjunct reachable from the filter root through `and` alone is implied by the filter
+    /// being true; under `not` or `or` the filter can be true where the conjunct is false.
+    void collectHintsFromFilterSpine(const QueryTreeNodePtr & node, QueryTreeNodes & hints)
+    {
+        if (auto it = null_in_replacements.find(node.get()); it != null_in_replacements.end())
+        {
+            hints.push_back(makeIndexHint(it->second, getContext()));
+            /// One hint per replacement, even when the same node sits in the filter twice.
+            null_in_replacements.erase(it);
+            return;
+        }
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node || function_node->getFunctionName() != "and")
+            return;
+
+        for (const auto & argument : function_node->getArguments().getNodes())
+            collectHintsFromFilterSpine(argument, hints);
+    }
+
     bool isCreateTemporaryTableGranted()
     {
         if (!create_temporary_table_granted.has_value())
@@ -605,6 +713,10 @@ private:
     }
 
     std::optional<bool> create_temporary_table_granted;
+
+    /// Every node installed in place of a comparison that could only be rewritten with the
+    /// null-aware name, mapped to the set membership node inside it.
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> null_in_replacements;
 };
 
 }
