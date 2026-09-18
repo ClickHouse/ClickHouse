@@ -430,6 +430,17 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
+    /// background. Used to test that the loading is retried later instead of terminating the server.
+    extern const char merge_tree_load_outdated_parts_retryable_error[];
+    /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
+    /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
+    extern const char merge_tree_load_outdated_parts_pause[];
+}
+
+namespace ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -3498,9 +3509,41 @@ try
     /// Acquire shared lock because 'relative_data_path' is used while loading parts.
     TableLockHolder shared_lock;
     if (is_async)
-        shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+    {
+        shared_lock = tryLockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+        if (!shared_lock)
+        {
+            /// The table is being dropped, detached or restarted (e.g. by `SYSTEM RESTART REPLICA`).
+            /// It is not an inconsistency of the set of parts, so retry later instead of terminating:
+            /// if the table is going away, the task is deactivated in `shutdown` anyway.
+            LOG_DEBUG(log, "Cannot lock the table to load outdated data parts because it is being dropped or restarted, will retry later");
+            outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+            return;
+        }
+    }
 
     std::atomic_size_t num_loaded_parts = 0;
+
+    /// A retryable error (e.g. not enough memory or a network error) is not a sign of an inconsistent
+    /// set of parts, so the parts that failed with it are put back to the queue and loaded later.
+    ///
+    /// The workers collect them under a dedicated mutex and must not touch `outdated_data_parts_mutex`:
+    /// the cancellation branch below waits for all the workers while holding that mutex,
+    /// so a worker that takes it before its future becomes ready would deadlock
+    /// `DETACH`, `DROP`, shutdown and `SYSTEM RESTART REPLICA`. The failed parts are returned
+    /// to `outdated_unloaded_data_parts` only after all the workers have finished.
+    std::mutex failed_parts_mutex;
+    PartLoadingTreeNodes failed_parts;
+    std::exception_ptr retryable_exception;
+    std::atomic_bool has_retryable_exception = false;
+
+    /// Must be called after `runner.waitForAllToFinishAndRethrowFirstError()` and under `outdated_data_parts_mutex`.
+    auto requeue_failed_parts = [&]() TSA_REQUIRES(outdated_data_parts_mutex)
+    {
+        std::lock_guard lock(failed_parts_mutex);
+        outdated_unloaded_data_parts.insert(outdated_unloaded_data_parts.end(), failed_parts.begin(), failed_parts.end());
+        failed_parts.clear();
+    };
 
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
@@ -3520,6 +3563,7 @@ try
                 /// Wait for every scheduled task
                 /// In case of any exception it will be re-thrown and server will be terminated.
                 runner.waitForAllToFinishAndRethrowFirstError();
+                requeue_failed_parts();
 
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
@@ -3527,22 +3571,47 @@ try
                 return;
             }
 
-            if (outdated_unloaded_data_parts.empty())
+            /// Do not start loading the remaining parts if the loading is going to be retried later anyway.
+            if (outdated_unloaded_data_parts.empty() || has_retryable_exception)
                 break;
 
             part = outdated_unloaded_data_parts.back();
             outdated_unloaded_data_parts.pop_back();
         }
 
-        /// num_loaded_parts will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, replicated]()
+        /// The captured locals will outlive runner, so capturing by reference is ok
+        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts, &retryable_exception, &has_retryable_exception, replicated]()
         {
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
-            auto res = loadDataPartWithRetries(
-                my_part->info, my_part->name, my_part->disk,
-                DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-                loading_parts_max_backoff_ms, loading_parts_max_tries);
+            LoadPartResult res;
+            try
+            {
+                FailPointInjection::pauseFailPoint(FailPoints::merge_tree_load_outdated_parts_pause);
+
+                fiu_do_on(FailPoints::merge_tree_load_outdated_parts_retryable_error,
+                {
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable error while loading outdated part {}", my_part->name);
+                });
+
+                res = loadDataPartWithRetries(
+                    my_part->info, my_part->name, my_part->disk,
+                    DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
+                    loading_parts_max_backoff_ms, loading_parts_max_tries);
+            }
+            catch (...)
+            {
+                if (!isRetryableException(std::current_exception()))
+                    throw;
+
+                /// The part is not added to the set of parts if the loading failed, so it can be loaded again from scratch.
+                std::lock_guard lock(failed_parts_mutex);
+                failed_parts.push_back(my_part);
+                if (!retryable_exception)
+                    retryable_exception = std::current_exception();
+                has_retryable_exception = true;
+                return;
+            }
 
             ++num_loaded_parts;
             if (res.is_broken)
@@ -3558,6 +3627,28 @@ try
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// All the workers have finished, so no synchronization is needed to read `retryable_exception`.
+    if (has_retryable_exception)
+    {
+        size_t num_unloaded_parts = 0;
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            requeue_failed_parts();
+            num_unloaded_parts = outdated_unloaded_data_parts.size();
+        }
+
+        /// Synchronous loading (on table drop) has no task to retry with, so it fails fast as before.
+        if (!is_async)
+            std::rethrow_exception(retryable_exception);
+
+        LOG_WARNING(log, "Loading of outdated data parts was interrupted by a retryable error, will retry later. "
+            "Loaded {} parts, {} left unloaded. Error: {}",
+            num_loaded_parts.load(), num_unloaded_parts, getExceptionMessage(retryable_exception, /*with_stacktrace=*/ false));
+
+        outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+        return;
+    }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
