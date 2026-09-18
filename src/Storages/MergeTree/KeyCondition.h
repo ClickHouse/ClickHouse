@@ -596,22 +596,24 @@ private:
         DataTypePtr key_column_type;
         Field value;
         DataTypePtr type;
-        bool atom_is_exact = false;
-        /// False when the key-side chain that produced this constant reverses comparison
+        /// True when this transformation requires a relaxed atom. Otherwise, subsequent type
+        /// conversion and atom construction still determine whether the atom is exact.
+        bool requires_relaxed_atom = true;
+        /// True when the key-side chain that produced this constant reverses comparison
         /// order; the consumer must reverse the comparison operator accordingly.
-        bool chain_is_positive = true;
+        bool reverse_comparison = false;
     };
 
     /// A comparison candidate identifies a matched key expression and a constant to compare with it.
     struct ComparisonAtomCandidate
     {
         size_t key_column_num = 0;
-        /// This is the type of the matched key expression after `chain` is applied;
+        /// This is the type of the matched key expression after `monotonic_functions_chain` is applied;
         /// the comparison happens in this type.
         DataTypePtr key_expr_type;
         /// The check-time chain is stored in the atom and is applied to granule key
         /// ranges during evaluation.
-        MonotonicFunctionsChain chain;
+        MonotonicFunctionsChain monotonic_functions_chain;
         std::optional<size_t> argument_num_of_space_filling_curve;
         Field const_value;
         DataTypePtr const_type;
@@ -619,10 +621,10 @@ private:
         /// `tryBuildComparisonAtom` can further relax the constraint during type conversion; exact
         /// conversions preserve this initial precision.
         bool is_relaxed = false;
-        /// This flag is false when the key-side chain that produced the constant reverses comparison
-        /// order (see `TransformedConstant::chain_is_positive`); the comparison operator
+        /// This flag is true when the key-side chain that produced the constant reverses comparison
+        /// order (see `TransformedConstant::reverse_comparison`); the comparison operator
         /// must then be reversed as well.
-        bool chain_is_positive = true;
+        bool reverse_comparison = false;
     };
 
     /// The `extractAtoms*` family fills `group` with the atoms of one predicate leaf.
@@ -633,9 +635,9 @@ private:
     void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
     void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
     void extractAtomsFromConstant(const RPNBuilderTreeNode & node, AtomGroup & group);
-    /// A bare numeric key column used directly as a boolean condition (`WHERE flag`)
-    /// is analyzed as the comparison `flag != 0`, which may produce several atoms.
-    void extractBareKeyColumnAtoms(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
+    /// A bare numeric column used directly as a boolean condition (`WHERE flag`) is analyzed as
+    /// the comparison `flag != 0`, which may produce several atoms, including for derived keys.
+    void extractBareColumnAtoms(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
     void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const BuildInfo & info, AtomGroup & group);
     /// `rewritten_const_value` overrides the constant operand of the comparison, for a
     /// predicate whose constant is not one of the function arguments as written (`LIKE
@@ -707,7 +709,7 @@ private:
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
     /// The returned vector contains, for every key column, the chains of
-    /// `always_monotonic`-approved functions through which that key column computes
+    /// `allow_key_function`-approved functions through which that key column computes
     /// from the key subexpression `expr_name`. Each chain records whether it preserves
     /// or reverses comparison order (see `KeyWrappingChain::chain_is_positive`).
     /// When `first_match_only` is set, the search stops at the first collected chain.
@@ -716,7 +718,7 @@ private:
         const String & expr_name,
         const BuildInfo & info,
         bool first_match_only,
-        std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
+        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
     /// For every key column that is computed from the predicate expression `node` by a
     /// chain of `allow_key_function`-approved monotonic functions, this function
@@ -759,12 +761,10 @@ private:
         const BuildInfo & info,
         bool first_match_only) const;
 
-    /// Checks if node is a subexpression of any of key columns expressions,
-    /// wrapped by deterministic functions, and if so, returns `true`, and
-    /// specifies key column position / type. Besides that it produces the
-    /// transformation DAG which should be executed on set elements, to
-    /// transform them into key column values.
-    bool canSetValuesBeWrappedByDeterministicKeyFunctions(
+    /// Finds the first key column computable from `node` through deterministic functions and
+    /// returns its position, type, transformation DAG, and injectivity. The set analysis uses
+    /// the DAG to transform set elements into key column values.
+    bool tryGetDeterministicKeyTransform(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
@@ -772,14 +772,15 @@ private:
         DeterministicKeyTransformDag & out_transform,
         bool & out_is_injective) const;
 
-    /// Appends usable set-membership atoms for this predicate to `group`. Each atom may constrain
-    /// several key columns; `RPNBuilder` combines the group's atoms with `AND`.
-    void tryPrepareSetAtomsForIn(
+    /// Appends prepared set-membership atoms for this predicate to `group`. Each atom may constrain
+    /// several key columns. The caller finalizes their function kinds before `RPNBuilder` combines
+    /// the group's atoms with `AND`. An empty group means the predicate could not be analyzed.
+    void prepareSetAtomsForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         AtomGroup & group,
         bool allow_relaxed_pruning);
-    void tryPrepareSetAtomsForHas(
+    void prepareSetAtomsForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         AtomGroup & group,
@@ -790,7 +791,7 @@ private:
     {
         std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
         std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
-        DataTypes data_types;
+        DataTypes key_expr_types;
         /// The number of tuple components of the predicate expression (1 for a scalar or packed tuple).
         size_t args_count = 1;
         /// A non-injective transform makes the set check a superset of the matching values.
@@ -799,16 +800,17 @@ private:
 
     struct SetIndexAnalysisResult
     {
-        SetAtomCandidate components;
-        /// A tuple expression mapped onto one Tuple-typed key column needs a packed set column.
-        std::optional<SetAtomCandidate> whole_tuple;
+        SetAtomCandidate componentwise_candidate;
+        /// A tuple expression mapped onto one `Tuple`-typed key column needs a packed set column.
+        std::optional<SetAtomCandidate> packed_tuple_candidate;
         /// Predicate component indexes and key subexpression names that can supply additional atoms.
         /// Their transformation DAGs are collected only when building the group from the set columns.
-        std::vector<std::pair<size_t, String>> wrapped_expressions;
+        std::vector<std::pair<size_t, String>> transform_sources;
     };
 
     /// Converts a candidate's set columns into key space and builds its `MergeTreeSetIndex`.
-    static std::optional<RPNElement> tryBuildSetAtom(
+    /// The caller finalizes the prepared atom's function kind for the membership predicate.
+    static std::optional<RPNElement> tryPrepareSetAtom(
         const Columns & set_columns,
         const DataTypes & set_types,
         SetAtomCandidate candidate,
@@ -872,7 +874,7 @@ private:
     /// In every multi-atom group that stands directly under `FUNCTION_NOT` and has at least one
     /// exact atom, drops the relaxed atoms: a relaxed atom forces the group's `can_be_false` to
     /// `true`, which would disable pruning through the exact atoms of the group under `NOT`.
-    void dropRelaxedAtomsFromNegatedMultiAtomGroups();
+    void dropCoveredRelaxedAtomsFromNegatedGroups();
 
     /// Whether this element completes a predicate's atom group or is an independent logical operator.
     static bool isAtomGroupEnd(const RPN & rpn, size_t position);

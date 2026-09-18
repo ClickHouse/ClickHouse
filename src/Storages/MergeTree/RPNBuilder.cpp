@@ -589,7 +589,7 @@ namespace
 
 template <typename RPNElement>
 typename RPNBuilder<RPNElement>::ExtractAtomsFromTreeFunction
-makeExtractAtomsFromTreeFunction(const typename RPNBuilder<RPNElement>::ExtractAtomFromTreeFunction & extract_atom_from_tree_function)
+adaptSingleAtomExtractor(const typename RPNBuilder<RPNElement>::ExtractAtomFromTreeFunction & extract_atom_from_tree_function)
 {
     return [&](const RPNBuilderTreeNode & node, typename RPNBuilder<RPNElement>::AtomGroup & group)
     {
@@ -616,7 +616,7 @@ RPNBuilder<RPNElement>::RPNBuilder(
 {
     RPNBuilderTreeContext tree_context(query_context_);
 
-    auto extract_atoms_from_tree_function = makeExtractAtomsFromTreeFunction<RPNElement>(extract_atom_from_tree_function_);
+    auto extract_atoms_from_tree_function = adaptSingleAtomExtractor<RPNElement>(extract_atom_from_tree_function_);
 
     traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context), extract_atoms_from_tree_function);
 }
@@ -634,7 +634,7 @@ RPNBuilder<RPNElement>::RPNBuilder(
 template <typename RPNElement>
 RPNBuilder<RPNElement>::RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
 {
-    auto extract_atoms_from_tree_function = makeExtractAtomsFromTreeFunction<RPNElement>(extract_atom_from_tree_function_);
+    auto extract_atoms_from_tree_function = adaptSingleAtomExtractor<RPNElement>(extract_atom_from_tree_function_);
 
     traverseTree(node, extract_atoms_from_tree_function);
 }
