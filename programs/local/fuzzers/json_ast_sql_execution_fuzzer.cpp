@@ -96,23 +96,21 @@ size_t oracle_error_asymmetries = 0;
 bool isDeterministicForOracle(const std::string & sql)
 {
     static const char * forbidden[] = {
+        /// clauses whose result is not a multiset of rows or depends on the plan
         "LIMIT", "OFFSET", "FETCH", "OVER", "WINDOW", "SETTINGS", "FORMAT", "INTO OUTFILE", "system.",
+        /// randomness, time, environment
         "rand", "generateUUID", "generateRandom", "generateSerialID", "now(", "now64(", "today(", "yesterday(", "currentDatabase(",
-        "currentUser(", "hostName(", "uptime(", "version(", "timezone(", "serverTimezone(", "getSetting(",
-        "sleep", "randomString", "randomPrintable", "randomFixed", "fuzzBits", "shardNum", "shardCount", "getMacro",
-        "any(", "anyLast(", "anyHeavy(", "first_value", "last_value", "nth_value", "argMin(", "argMax(", "anyIf(",
-        "groupArray", "groupUniqArray", "groupArrayMovingSum", "groupArrayMovingAvg", "groupConcat", "arrayStringConcat",
-        "topK", "uniq", "quantile", "median", "histogram", "sequence", "windowFunnel", "retention", "kolmogorov",
-        "studentTTest", "welchTTest", "mannWhitney", "largestTriangle", "sparkbar", "exponential", "singleValueOrNull",
-        "arrayEnumerateUniq", "arrayEnumerateDense", "arrayJoin", "ARRAY JOIN", "hex(", "ignore(", "throwIf", "blockNumber(", "rowNumber",
-        "runningDifference", "runningAccumulate", "neighbor(", "toTypeName(", "dumpColumnStructure", "defaultValueOfArgumentType",
-        "byteSize", "materialize(", "isConstant(", "ifNotFinite", "min2", "max2", "file(", "url(", "s3(", "remote(", "cluster(",
-        "dictGet", "toStartOf", "toRelative", "formatDateTime", "dateDiff", "age(", "toUnixTimestamp", "fromUnixTimestamp",
-        "toDateTime(", "toDateTime64(", "toDate(", "toDate32(", "parseDateTime", "toYear", "toMonth", "toDay", "toHour",
-        "toMinute", "toSecond", "toQuarter", "toWeek", "toYYYY", "toISO", "addDays", "addHours", "subtractDays", "timeSlot",
-        "toInterval", "INTERVAL", "JSON", "Dynamic", "Variant", "Object", "toFloat", "Float32", "Float64", "e()", "pi()",
-        "/ ", "divide(", "avg(", "avgWeighted", "corr", "covar", "stddev", "varPop", "varSamp", "skew", "kurt", "geo", "point", "polygon",
-        "sum(", "sumKahan", "sumWithOverflow", "deltaSum", "cityHash64(*)",
+        "currentUser(", "hostName(", "uptime(", "version(", "timezone(", "serverTimezone(", "getSetting(", "getMacro", "shardNum", "shardCount",
+        "sleep", "randomString", "randomPrintable", "randomFixed", "fuzzBits", "file(", "url(", "s3(", "remote(", "cluster(",
+        /// ordering-dependent, approximate or plan-dependent functions
+        "any(", "anyLast(", "anyHeavy(", "first_value", "last_value", "nth_value", "argMin(", "argMax(", "anyIf(", "singleValueOrNull",
+        "groupArray", "groupUniqArray", "groupConcat", "arrayStringConcat", "topK", "uniq", "quantile", "median", "histogram",
+        "sequence", "windowFunnel", "retention", "kolmogorov", "studentTTest", "welchTTest", "mannWhitney", "largestTriangle", "sparkbar",
+        "exponential", "arrayEnumerateUniq", "arrayEnumerateDense", "blockNumber(", "rowNumber", "runningDifference", "runningAccumulate",
+        "neighbor(", "isConstant(", "throwIf", "defaultValueOfArgumentType", "dumpColumnStructure", "byteSize",
+        /// floating point (accumulation order and JIT differ between the two plans)
+        "toFloat", "Float32", "Float64", "e()", "pi()", "/ ", "divide(", "avg(", "avgWeighted", "corr", "covar", "stddev", "varPop", "varSamp",
+        "skew", "kurt", "geo", "point", "polygon", "sum(", "sumKahan", "sumWithOverflow", "deltaSum", "ifNotFinite",
     };
     for (const char * f : forbidden)
         if (sql.find(f) != std::string::npos)
