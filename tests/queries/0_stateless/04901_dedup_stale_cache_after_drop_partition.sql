@@ -42,3 +42,40 @@ WHERE database = currentDatabase() AND table = 't_04901_r2'
 
 DROP TABLE t_04901_r1 SYNC;
 DROP TABLE t_04901_r2 SYNC;
+
+-- DROP PART and DETACH PART remove the hash from Keeper without invalidating the cache on any
+-- replica, so one replica is enough to reach the same state (#120904).
+DROP TABLE IF EXISTS t_04901_drop_part SYNC;
+DROP TABLE IF EXISTS t_04901_detach_part SYNC;
+
+CREATE TABLE t_04901_drop_part (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04901/dp', 'r1') ORDER BY k;
+CREATE TABLE t_04901_detach_part (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04901/det', 'r1') ORDER BY k;
+
+-- A retried insert or a merge would change the part names below.
+SET insert_keeper_fault_injection_probability = 0;
+SYSTEM STOP MERGES t_04901_drop_part;
+SYSTEM STOP MERGES t_04901_detach_part;
+
+INSERT INTO t_04901_drop_part VALUES (1);
+INSERT INTO t_04901_drop_part VALUES (1);
+ALTER TABLE t_04901_drop_part DROP PART 'all_0_0_0';
+SELECT 'after drop part', count() FROM t_04901_drop_part;
+INSERT INTO t_04901_drop_part VALUES (1);
+SELECT 'after reinsert drop part', count() FROM t_04901_drop_part;
+
+INSERT INTO t_04901_detach_part VALUES (1);
+INSERT INTO t_04901_detach_part VALUES (1);
+ALTER TABLE t_04901_detach_part DETACH PART 'all_0_0_0';
+SELECT 'after detach part', count() FROM t_04901_detach_part;
+INSERT INTO t_04901_detach_part VALUES (1);
+SELECT 'after reinsert detach part', count() FROM t_04901_detach_part;
+
+SYSTEM FLUSH LOGS part_log;
+SELECT 'cache hit observed', table, sum(ProfileEvents['AsyncInsertCacheHits']) > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table IN ('t_04901_drop_part', 't_04901_detach_part')
+  AND event_type = 'NewPart' AND error = 0
+GROUP BY table ORDER BY table;
+
+DROP TABLE t_04901_drop_part SYNC;
+DROP TABLE t_04901_detach_part SYNC;
