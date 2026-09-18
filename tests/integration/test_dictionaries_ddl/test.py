@@ -518,6 +518,69 @@ def test_clickhouse_remote(started_cluster):
     ) == "17\n"
 
 
+# https://github.com/ClickHouse/ClickHouse/issues/48597
+def test_clickhouse_remote_same_name(started_cluster):
+    # A dictionary must not read itself, but that can only happen when the source is this very server.
+    # A table on another server that merely happens to share the dictionary's database and table name
+    # is a different object, and reading it is exactly what the dictionary is for.
+    node4.query("DROP TABLE IF EXISTS test.same_name", user="admin")
+    node4.query(
+        "CREATE TABLE test.same_name (id UInt64, SomeValue1 UInt8, SomeValue2 String) ENGINE = MergeTree() ORDER BY id",
+        user="admin",
+    )
+    node4.query("INSERT INTO test.same_name VALUES (17, 17, 'remote')", user="admin")
+
+    node3.query("DROP DICTIONARY IF EXISTS test.same_name", user="admin")
+    node3.query(
+        """
+        CREATE DICTIONARY test.same_name(
+            id UInt64,
+            SomeValue1 UInt8,
+            SomeValue2 String
+        )
+        PRIMARY KEY id
+        LAYOUT(FLAT())
+        SOURCE(CLICKHOUSE(HOST 'node4' PORT 9000 USER 'default' PASSWORD 'default' TABLE 'same_name' DB 'test'))
+        LIFETIME(MIN 1 MAX 10)
+        """,
+        user="admin",
+    )
+
+    assert (
+        node3.query(
+            "SELECT dictGetUInt8('test.same_name', 'SomeValue1', toUInt64(17))",
+            user="admin",
+        )
+        == "17\n"
+    )
+
+    # A source on the local server that names the dictionary itself is still refused.
+    node3.query("DROP DICTIONARY IF EXISTS test.self_reference", user="admin")
+    node3.query(
+        """
+        CREATE DICTIONARY test.self_reference(
+            id UInt64,
+            SomeValue1 UInt8,
+            SomeValue2 String
+        )
+        PRIMARY KEY id
+        LAYOUT(FLAT())
+        SOURCE(CLICKHOUSE(TABLE 'self_reference' DB 'test'))
+        LIFETIME(MIN 1 MAX 10)
+        """,
+        user="admin",
+    )
+    with pytest.raises(QueryRuntimeException, match="cannot be dictionary table"):
+        node3.query(
+            "SELECT dictGetUInt8('test.self_reference', 'SomeValue1', toUInt64(17))",
+            user="admin",
+        )
+
+    node3.query("DROP DICTIONARY test.same_name", user="admin")
+    node3.query("DROP DICTIONARY test.self_reference", user="admin")
+    node4.query("DROP TABLE test.same_name", user="admin")
+
+
 # https://github.com/ClickHouse/ClickHouse/issues/38450
 #  suggests placing 'secure' in named_collections
 def test_secure(started_cluster):

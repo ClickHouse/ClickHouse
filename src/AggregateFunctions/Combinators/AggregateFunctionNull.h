@@ -630,7 +630,8 @@ public:
 
         if (if_argument_pos >= 0)
         {
-            final_flags = std::make_unique<UInt8[]>(row_end);
+            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+            final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
             size_t included_elements = 0;
@@ -683,12 +684,18 @@ public:
         {
             if (!final_flags)
             {
-                final_flags = std::make_unique<UInt8[]>(row_end);
+                final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
                 final_flags_ptr = final_flags.get();
             }
 
-            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
-            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
+            /// The span holds a merged filter only when the buffer already is one of `nullable_filters`.
+            if (nullable_filters[0] != final_flags_ptr)
+            {
+                for (size_t i = row_begin; i < row_end; i++)
+                    final_flags[i] = nullable_filters[0][i];
+            }
+
+            for (size_t filter = 1; filter < nullable_filters.size(); filter++)
             {
                 for (size_t i = row_begin; i < row_end; i++)
                     final_flags[i] |= nullable_filters[filter][i];

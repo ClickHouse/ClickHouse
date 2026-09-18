@@ -1,0 +1,22 @@
+-- only CREATE granted
+denied
+denied
+denied
+denied
+denied
+-- the victim user kept its original password
+login ok
+-- the requirement does not depend on the entity already existing
+denied
+denied
+-- plain CREATE is unaffected
+allowed
+allowed
+-- DROP granted as well
+allowed
+allowed
+allowed
+allowed
+allowed
+-- the victim user now has the new password
+login ok

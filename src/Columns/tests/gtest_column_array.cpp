@@ -2,12 +2,19 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-
+#include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <gtest/gtest.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
+
+#include <thread>
+
+#include <gtest/gtest.h>
 
 using namespace DB;
 
@@ -26,6 +33,78 @@ ColumnArray::MutablePtr createArray(std::vector<UInt64> data_values, std::vector
 
     return ColumnArray::create(std::move(data), std::move(offsets));
 }
+
+/// The part of the column that appending empty values must leave alone.
+size_t nestedSize(const ColumnArray & column) { return column.getData().size(); }
+size_t nestedSize(const ColumnString & column) { return column.getChars().size(); }
+
+/// What the peak arms assert on, read off the column while it is still alive.
+struct Grown
+{
+    Int64 peak = 0;
+    size_t size = 0;
+    size_t nested_size = 0;
+    UInt64 last_offset = 0;
+};
+
+/// Grows a column of `create()` by `length` defaults on a dedicated thread and returns only numbers.
+/// The column must live and die inside that thread: a free on another thread is charged to that other
+/// thread's tracker, and a `ThreadStatus` of its own keeps this out of whatever `current_thread` the
+/// rest of `unit_tests_dbms` set up.
+template <typename Create>
+Grown grow(size_t length, Create && create)
+{
+    Grown grown;
+
+    std::thread measured([&]
+    {
+        ThreadStatus thread_status;
+        auto & thread_tracker = CurrentThread::get().memory_tracker;
+        /// An own tracker between the thread and the total one, so only what the column allocates is measured.
+        MemoryTracker scope_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/false);
+        MemoryTracker * prev_parent = thread_tracker.getParent();
+        Int64 prev_untracked_limit = CurrentThread::get().untracked_memory_limit;
+
+        /// Whatever the `ThreadStatus` constructor itself deferred must not be charged to `scope_tracker`.
+        CurrentThread::flushUntrackedMemory();
+        SCOPE_EXIT_SAFE({
+            CurrentThread::flushUntrackedMemory();
+            CurrentThread::get().untracked_memory_limit = prev_untracked_limit;
+            thread_tracker.setParent(prev_parent);
+        });
+
+        /// Without this the offsets' reallocations are batched below the 4 MiB default and never reach the tracker.
+        /// The tracker's counters are deliberately not reset: `resetCounters` would also drop its limits, and the
+        /// peak is read from `scope_tracker` anyway.
+        CurrentThread::get().untracked_memory_limit = 1;
+        thread_tracker.setParent(&scope_tracker);
+
+        {
+            auto column = create();
+            column->insertManyDefaults(length);
+
+            grown.peak = scope_tracker.getPeak();
+            grown.size = column->size();
+            grown.nested_size = nestedSize(*column);
+            grown.last_offset = column->getOffsets().back();
+        }
+
+        CurrentThread::flushUntrackedMemory();
+    });
+    measured.join();
+
+    return grown;
+}
+
+/// Large enough that the offsets array (8 bytes per element) dwarfs everything else the body allocates.
+constexpr size_t elements = 4'000'000;
+constexpr Int64 offsets_bytes = static_cast<Int64>(elements) * sizeof(IColumn::Offset);
+
+/// The shape that motivated the override: one default appended per row, many times.
+constexpr size_t rows_appended_one_by_one = 400'000;
+
+/// An offsets array holds 496 elements before it has to grow, so appending this many reallocates it.
+constexpr size_t appended_past_initial_capacity = 4096;
 
 }
 
@@ -77,6 +156,99 @@ TEST(ColumnArray, CutPreservesSharedLowCardinalityDictionary)
     EXPECT_EQ(cut_nested.getUInt(0), 30);
     EXPECT_EQ(cut_nested.getUInt(1), 10);
     EXPECT_EQ(cut_nested.getUInt(2), 20);
+}
+
+TEST(ColumnArray, InsertManyDefaultsPreSizesOffsets)
+{
+    auto grown = grow(elements, [] { return ColumnArray::create(ColumnUInt64::create()); });
+
+    /// Control, asserted first: the offsets really were appended, and the nested column was left alone.
+    ASSERT_EQ(grown.size, elements);
+    ASSERT_EQ(grown.nested_size, 0u);
+    ASSERT_EQ(grown.last_offset, 0u);
+
+    /// Asserted before the upper bound: holding the offsets needs at least their size, so a tracker that
+    /// recorded nothing leaves the peak at 0 and would satisfy any upper bound, old implementation included.
+    ASSERT_GE(grown.peak, offsets_bytes) << "tracker recorded nothing";
+
+    /// One reallocation peaks at the final size; the doubling chain peaks at ~1.5x it.
+    EXPECT_LT(grown.peak, offsets_bytes * 5 / 4) << "peak " << grown.peak << " vs offsets " << offsets_bytes;
+}
+
+TEST(ColumnArray, InsertManyDefaultsKeepsOffsetsAfterNonEmptyArrays)
+{
+    auto nested = ColumnUInt64::create();
+    nested->insert(Field(UInt64(1)));
+    nested->insert(Field(UInt64(2)));
+    auto offsets = ColumnUInt64::create();
+    offsets->insert(Field(UInt64(2)));
+    auto column = ColumnArray::create(std::move(nested), std::move(offsets));
+
+    /// More than the initial capacity, so the offsets are reallocated while the appended value is read.
+    /// Read by reference instead of by value, that value would sit in the freed buffer.
+    column->insertManyDefaults(appended_past_initial_capacity);
+
+    ASSERT_EQ(column->size(), appended_past_initial_capacity + 1);
+    ASSERT_EQ(column->getData().size(), 2u);
+    ASSERT_EQ((*column)[0], Field(Array{UInt64(1), UInt64(2)}));
+    for (size_t i = 1; i < appended_past_initial_capacity + 1; ++i)
+    {
+        ASSERT_EQ(column->getOffsets()[i], 2u) << "offset " << i;
+        ASSERT_EQ((*column)[i], Field(Array{})) << "row " << i;
+    }
+}
+
+TEST(ColumnArray, InsertManyDefaultsGrowsOffsetsGeometrically)
+{
+    /// Pre-sizing must stay geometric: `reserve_exact(size() + length)` would leave capacity == size after
+    /// every call, so appending one default per row would reallocate on each of them.
+    auto column = ColumnArray::create(ColumnUInt64::create());
+    for (size_t i = 0; i < rows_appended_one_by_one; ++i)
+        column->insertManyDefaults(1);
+
+    ASSERT_EQ(column->size(), rows_appended_one_by_one);
+    EXPECT_GT(column->getOffsets().capacity(), rows_appended_one_by_one);
+}
+
+TEST(ColumnString, InsertManyDefaultsPreSizesOffsets)
+{
+    auto grown = grow(elements, [] { return ColumnString::create(); });
+
+    /// Control, asserted first: the offsets really were appended, and no characters were written.
+    ASSERT_EQ(grown.size, elements);
+    ASSERT_EQ(grown.nested_size, 0u);
+    ASSERT_EQ(grown.last_offset, 0u);
+
+    ASSERT_GE(grown.peak, offsets_bytes) << "tracker recorded nothing";
+
+    EXPECT_LT(grown.peak, offsets_bytes * 5 / 4) << "peak " << grown.peak << " vs offsets " << offsets_bytes;
+}
+
+TEST(ColumnString, InsertManyDefaultsKeepsOffsetsAfterNonEmptyStrings)
+{
+    auto column = ColumnString::create();
+    column->insert(Field(String("abc")));
+
+    column->insertManyDefaults(appended_past_initial_capacity);
+
+    ASSERT_EQ(column->size(), appended_past_initial_capacity + 1);
+    ASSERT_EQ(column->getChars().size(), 3u); /// Strings here are not zero-terminated.
+    ASSERT_EQ(column->getDataAt(0), std::string_view("abc"));
+    for (size_t i = 1; i < appended_past_initial_capacity + 1; ++i)
+    {
+        ASSERT_EQ(column->getDataAt(i).size(), 0u) << "row " << i;
+        ASSERT_EQ(column->getOffsets()[i], 3u) << "offset " << i;
+    }
+}
+
+TEST(ColumnString, InsertManyDefaultsGrowsOffsetsGeometrically)
+{
+    auto column = ColumnString::create();
+    for (size_t i = 0; i < rows_appended_one_by_one; ++i)
+        column->insertManyDefaults(1);
+
+    ASSERT_EQ(column->size(), rows_appended_one_by_one);
+    EXPECT_GT(column->getOffsets().capacity(), rows_appended_one_by_one);
 }
 
 /// Skipped under debug/sanitizers: LOGICAL_ERROR aborts there, so EXPECT_THROW can't catch it.

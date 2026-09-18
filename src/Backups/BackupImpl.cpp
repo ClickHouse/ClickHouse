@@ -148,6 +148,17 @@ namespace
                 backup_name_for_logging,
                 field_name,
                 quoteString(file_name));
+
+        /// The name is kept verbatim, and `listFiles` cuts a directory prefix off it by byte offset, so a
+        /// name that is not already normalized yields a remainder that is rooted or escapes its directory.
+        /// Compare the strings: two `fs::path` objects compare element-wise, so "a//b" equals "a/b".
+        if (normalized.string() != file_name)
+            throw Exception(
+                ErrorCodes::INSECURE_PATH,
+                "Backup {}: <{}> {} is not a normalized path, which is not allowed",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
     }
 }
 
@@ -1388,7 +1399,11 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     if (size_and_checksum.first == 0)
     {
         /// Entry's data is empty.
-        if (write_mode == WriteMode::Rewrite)
+        /// The destination must exist afterwards either way: the non-empty path below writes through
+        /// writeFile(), which creates a missing file, while createFile() throws on an existing one.
+        const bool create_destination
+            = (write_mode == WriteMode::Rewrite) || !destination_disk->existsFile(destination_path);
+        if (create_destination)
         {
             if (sync)
             {
