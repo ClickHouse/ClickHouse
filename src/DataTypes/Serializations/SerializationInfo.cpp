@@ -276,6 +276,14 @@ void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) co
                 "Unexpected serialization kind {} in the received data",
                 ISerialization::kindToString(kind));
 
+        /// Each kind wraps the serialization once. A repeat nests a column inside its own layout,
+        /// which materialization does not unwrap: `ColumnSparse` over `ColumnSparse` stays sparse.
+        if (std::find(kind_stack.begin(), kind_stack.begin() + i, kind) != kind_stack.begin() + i)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Serialization kind {} occurs more than once in a kind stack",
+                ISerialization::kindToString(kind));
+
         /// A ColumnBLOB holds the serialized form of the whole column, so no other kind can wrap it.
         if (kind == ISerialization::Kind::DETACHED && i + 1 != kind_stack.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization kind Detached must be the last kind in a kind stack");
@@ -311,7 +319,8 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in, ISerializati
         {
             size_t num_kinds = 0;
             readVarUInt(num_kinds, in);
-            /// Every kind wraps the serialization once, so no writer produces a longer stack.
+            /// Refuse an impossible peer-declared count before reading that many kinds;
+            /// `checkKindStack` rejects the same stacks afterwards by their shape.
             if (num_kinds > magic_enum::enum_count<ISerialization::Kind>())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many serialization kinds in a kind stack: {}", num_kinds);
 

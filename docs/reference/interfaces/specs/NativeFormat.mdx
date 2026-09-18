@@ -199,7 +199,7 @@ The `count` is the full stack length **including the leading `DEFAULT` entry** t
 **Kind stack validity.** A decoder rejects a malformed stack with `INCORRECT_DATA` rather than building the serialization it describes:
 
 - the stack starts with `DEFAULT`;
-- `count` is at most the number of kinds, since each kind wraps the serialization once;
+- no kind occurs more than once, since each kind wraps the serialization once — a repeat would nest a column inside its own layout, such as a `ColumnSparse` whose values column is itself sparse, which no materialization step unwraps back to a full column. This also bounds `count` by the number of kinds;
 - `DETACHED`, when present, is the last entry, because a `ColumnBLOB` holds the serialized form of the whole column and nothing can wrap it.
 
 **Recursive `kind_stack` for `Tuple` columns.** The `kind_stack` payload above is the byte (or `COMBINATION` sequence) for one column's own serialization info. A `Tuple` carries a `SerializationInfoTuple`, which first writes the tuple's *own* kind-stack payload and then writes one full kind-stack payload for *each* element, in order; a decoder reads back the same recursive structure. So for `Tuple(A, B, C)` the field-4 bytes are `[tuple_kind][A_kind][B_kind][C_kind]`, and each element payload is itself recursive if that element is again a composite. The `has_custom_serialization` byte (field 3) is set whenever the tuple's own info *or any element's* info is non-default, so a `Tuple` whose only special element is sparse or replicated still triggers the kind-stack payload. A decoder that reads only the single leading enum byte for a `Tuple` will stop too early and misread the remaining element-kind bytes as column data.

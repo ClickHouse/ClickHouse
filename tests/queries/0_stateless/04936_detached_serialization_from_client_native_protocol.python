@@ -280,6 +280,14 @@ def main():
     tuple_block += bytes([KIND_STACK_DEFAULT])  # element 1
     runScenario("detached tuple element", tuple_block, "Unexpected serialization kind Detached")
 
+    # A repeated kind nests a column inside its own layout: a ColumnSparse whose values column is
+    # itself sparse never materializes back to a full column of the declared type.
+    runScenario(
+        "repeated kind",
+        externalTableBlock("UInt64", combinationKindStack([KIND_DEFAULT, KIND_SPARSE, KIND_SPARSE])),
+        "occurs more than once",
+    )
+
     # Every kind stack starts with Default.
     runScenario(
         "kind stack without default",
