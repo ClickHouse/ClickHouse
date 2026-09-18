@@ -263,8 +263,8 @@ SELECT 'correlated key value, setting off', count() FROM t2_120650 WHERE dictGet
 SELECT 'correlated key value, rewrite off', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0;
 SELECT 'correlated key not hinted', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x') WHERE explain ILIKE '%function_name: indexHint%';
 
--- The `in` family keeps a top-level `Nullable` argument as one key column, so a dictionary with more
--- than one key column cannot be served by the restored-NULL rewrite; those keys keep their comparison.
+-- A complex key is a tuple of declared columns whatever its width, and the set holds bare key values,
+-- so a complex-key dictionary keeps its comparison at any width.
 DROP DICTIONARY IF EXISTS cd_120650;
 CREATE DICTIONARY cd_120650 (k1 UInt64, k2 String, a String) PRIMARY KEY k1, k2
 SOURCE(CLICKHOUSE(QUERY 'SELECT arrayJoin([1, 2, 3]) AS k1, \'s\' AS k2, \'x\' AS a'))
@@ -282,6 +282,23 @@ SELECT 'complex key equals value', count(dictGet('cd_120650', 'a', nt) = 'x'), s
 SELECT 'complex key equals value, rewrite off', count(dictGet('cd_120650', 'a', nt) = 'x'), sum(dictGet('cd_120650', 'a', nt) = 'x') FROM t4_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
 SELECT 'complex key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t4_120650 WHERE dictGet('cd_120650', 'a', nt) LIKE 'x%') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
 
+DROP DICTIONARY IF EXISTS cd1_120650;
+CREATE DICTIONARY cd1_120650 (k1 UInt64, a String) PRIMARY KEY k1
+SOURCE(CLICKHOUSE(QUERY 'SELECT arrayJoin([1, 2, 3]) AS k1, \'x\' AS a'))
+LAYOUT(complex_key_hashed()) LIFETIME(0);
+
+DROP TABLE IF EXISTS t5_120650;
+CREATE TABLE t5_120650 (nt1 Nullable(Tuple(UInt64))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t5_120650 SELECT if(number % 10 = 0, NULL, tuple(number)) FROM numbers(100);
+
+SELECT 'one column complex key like value', count(dictGet('cd1_120650', 'a', nt1) LIKE 'x%'), sum(dictGet('cd1_120650', 'a', nt1) LIKE 'x%') FROM t5_120650;
+SELECT 'one column complex key like value, rewrite off', count(dictGet('cd1_120650', 'a', nt1) LIKE 'x%'), sum(dictGet('cd1_120650', 'a', nt1) LIKE 'x%') FROM t5_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'one column complex key equals value', count(dictGet('cd1_120650', 'a', nt1) = 'x'), sum(dictGet('cd1_120650', 'a', nt1) = 'x') FROM t5_120650;
+SELECT 'one column complex key equals value, rewrite off', count(dictGet('cd1_120650', 'a', nt1) = 'x'), sum(dictGet('cd1_120650', 'a', nt1) = 'x') FROM t5_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'one column complex key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t5_120650 WHERE dictGet('cd1_120650', 'a', nt1) LIKE 'x%') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+
+DROP TABLE t5_120650;
+DROP DICTIONARY cd1_120650;
 DROP TABLE t4_120650;
 DROP DICTIONARY cd_120650;
 DROP TABLE td_120650;

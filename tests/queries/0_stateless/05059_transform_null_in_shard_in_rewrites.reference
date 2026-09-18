@@ -96,3 +96,8 @@ complex key where, rewrite off	3
 complex key equals value	90	3
 complex key equals value, rewrite off	90	3
 complex key not rewritten	0
+one column complex key like value	90	3
+one column complex key like value, rewrite off	90	3
+one column complex key equals value	90	3
+one column complex key equals value, rewrite off	90	3
+one column complex key not rewritten	0
