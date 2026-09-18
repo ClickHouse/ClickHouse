@@ -48,8 +48,8 @@ UPDATE t_mutation_batch_over_patch SET c = 1 WHERE id = 5;
 
 ALTER TABLE t_mutation_batch_over_patch DELETE WHERE 0;
 
-SELECT 'delete, on the fly';
-SELECT id, c FROM t_mutation_batch_over_patch ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+-- The result of an on-the-fly read of a pending lightweight `DELETE` over a later patch part is
+-- not checked here: it is the subject of https://github.com/ClickHouse/ClickHouse/pull/119306.
 
 SYSTEM START MERGES t_mutation_batch_over_patch;
 SET mutations_sync = 2;
