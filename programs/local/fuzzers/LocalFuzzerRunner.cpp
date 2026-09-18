@@ -144,6 +144,8 @@ enum class FuzzerState
 };
 std::atomic<FuzzerState> state{FuzzerState::NONE};
 String query;
+/// When set, the runner executes this instead of `query` for the current input.
+std::function<void(DB::ContextMutablePtr)> runner_task;
 
 std::optional<std::thread> runner;
 pthread_t runner_thread_id{};
@@ -368,6 +370,13 @@ void initialize(const int * argc, char *** argv, const String & setup_queries)
         abort();
 }
 
+void runOnRunnerThread(std::function<void(ContextMutablePtr)> task)
+{
+    runner_task = std::move(task);
+    runQuery("");
+    runner_task = nullptr;
+}
+
 void runQuery(const String & query_text)
 {
     /// Mark the start of this iteration before installing/handling SIGALRM so
@@ -482,7 +491,10 @@ void DB::ClientBase::runLibFuzzer()
 
             try
             {
-                processQueryText(query);
+                if (runner_task)
+                    runner_task(client_context);
+                else
+                    processQueryText(query);
                 /// The bulk of query exceptions are caught inside `executeMultiQuery` and only
                 /// recorded here; print them on request to see why fuzzed queries fail.
                 if (print_query_errors && (server_exception || client_exception))

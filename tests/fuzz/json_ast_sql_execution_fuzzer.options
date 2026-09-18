@@ -11,6 +11,10 @@ detect_leaks = 0
 
 [fuzzer_arguments]
 --output-format=Null
+# clickhouse-local installs its own fatal signal handler, which replaces libFuzzer's; without console
+# logging an abort inside a query would end the process silently.
+--logger.console=1
+--logger.level=fatal
 --max_execution_time=2
 # Infinite sources (`numbers()`, `generateRandom()`) otherwise run until the time limit on every input.
 --max_rows_to_read=1000000

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <base/types.h>
+#include <Interpreters/Context_fwd.h>
+
+#include <functional>
 
 /// In-process `clickhouse local` harness shared by the libFuzzer targets that execute SQL
 /// (`clickhouse_fuzzer`, `json_ast_sql_execution_fuzzer`).
@@ -26,5 +29,10 @@ void initialize(const int * argc, char *** argv, const String & setup_queries);
 /// swallowed like in interactive mode (printed when `CLICKHOUSE_FUZZER_PRINT_QUERY_ERRORS=1` is set);
 /// a non-`DB::Exception` exception aborts the process.
 void runQuery(const String & query);
+
+/// Runs `task` on the runner thread with the session context of the in-process `clickhouse local`
+/// (the same one `runQuery` uses, so it sees the fixture and the session settings) and returns when it
+/// has finished. Exceptions escaping `task` abort the process; the task must handle query errors itself.
+void runOnRunnerThread(std::function<void(ContextMutablePtr)> task);
 
 }
