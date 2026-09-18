@@ -10,9 +10,6 @@
             -->
             <table_function_remote_max_addresses>200</table_function_remote_max_addresses>
 
-            <!-- Beta; on so that fuzzed INSERTs into DeltaLake tables reach the writer. -->
-            <allow_delta_lake_writes>1</allow_delta_lake_writes>
-
             <!--
                 Don't let the fuzzer change this setting (I've actually seen it
                 do this before).
