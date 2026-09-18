@@ -903,9 +903,15 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
     /// used to die at once on the first write into the closed pipe. The two are told apart by
     /// volume: a stray line or two is a few bytes, a stream is not, so stdout is read up to a
     /// pipe's worth of bytes and closed after that - the next write then hits the closed pipe and
-    /// the child dies on `SIGPIPE`, as it did before this wait existed. With the status checked
-    /// the stdout stays open however much arrives: the child has to reach its own exit for its
-    /// status to mean anything.
+    /// the child dies on `SIGPIPE`, as it did before this wait existed. That is the contract, and
+    /// it is a narrower one than "late stderr is always seen": a command that writes more than a
+    /// pipe's worth of output past its rows and *then* its diagnostic is treated as the endless
+    /// kind, and the diagnostic is lost with it. The alternative - keeping stdout open for as long
+    /// as a stderr sink is wanted - would make every `LIMIT` over a streaming command wait out
+    /// the whole termination budget under the default `stderr_reaction`, which is the common
+    /// case; a diagnostic behind 64 KiB of stray output is not. With the status checked the
+    /// stdout stays open however much arrives: the child has to reach its own exit for its status
+    /// to mean anything.
     static constexpr size_t stray_stdout_limit = 64 * 1024;
     size_t stdout_bytes_drained = 0;
 
@@ -967,7 +973,15 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
             = check_exit_status && config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds == 0;
         const UInt64 remaining_ms = unbounded ? poll_step_ms : remainingTerminationTimeoutMs();
         if (remaining_ms == 0)
+        {
+            /// Out of time for the exit, not for what has already arrived: whatever the child has
+            /// written by now is sitting in the pipes, costs nothing to read (`FIONREAD`, exact
+            /// reads), and under `stderr_reaction` `throw` is the verdict this wait exists to
+            /// deliver. A grace period of zero in particular must not turn into "the last words
+            /// are dropped".
+            readBufferedOutput(drain_fds, stderr_sink);
             return false;
+        }
 
         /// Capped so that a child which simply stops writing is still reaped promptly: a pipe that
         /// goes quiet reports nothing until its write end is closed, so the loop must come back to

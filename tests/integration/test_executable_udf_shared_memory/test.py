@@ -1687,23 +1687,26 @@ def test_shared_memory_udf_stray_byte_after_the_probe_cannot_poison_the_next_bor
     # then writes one stray byte. The probe cannot catch that - it is one instant - so the byte is
     # sitting on the worker's stdout when the next query borrows it.
     #
-    # What matters is what the next query does with it. Read as a bare status varint it is a
+    # What matters is what the next query does with it. Read as a bare status varint it would be a
     # perfectly plausible frame - `0` is success, and the rest of the real frame shifts into the
     # offset and size fields - so the query could come back with the right number of rows and the
-    # wrong values in them. A silently wrong answer is the one outcome none of the other checks
-    # would catch. The request id makes the frame self-identifying: the byte lands where this
-    # query's own id should be, and the mismatch fails the query instead of answering it.
+    # wrong values in them. But before the first request is sent the byte is provably not this
+    # query's: nothing has been asked yet. So the worker is discarded at the borrow, a replacement
+    # is started, and the query is answered correctly by it - not failed for what the previous
+    # query's command did. The request id stays as the last line, for a byte that lands between
+    # the borrow-time probe and the request.
     assert node.query("SELECT test_function_shm_stray_byte_after_probe_pool_python(1)") == "Key 1\n"
+    regions_before = shm_region_count()
 
     # Give the worker time to litter its stdout while it sits idle in the pool.
     time.sleep(3)
 
-    with pytest.raises(Exception) as exc:
-        node.query("SELECT test_function_shm_stray_byte_after_probe_pool_python(2)")
-
-    assert "answered request" in str(exc.value), str(exc.value)
-
-    assert node.query("SELECT 1") == "1\n"
+    discards_before = profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards")
+    assert node.query("SELECT test_function_shm_stray_byte_after_probe_pool_python(2)") == "Key 2\n"
+    assert profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before + 1
+    assert node.contains_in_log("had unread output on its stdout when it was borrowed")
+    # The replacement inherited the same region: nothing was created or leaked.
+    assert shm_region_count() == regions_before
 
 
 def test_shared_memory_udf_stderr_written_on_the_way_out_still_throws(started_cluster):

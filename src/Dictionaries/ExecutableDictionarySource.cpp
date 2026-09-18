@@ -349,6 +349,8 @@ Setting fields:
 | `implicit_key` | The executable source file can return only values, and the correspondence to the requested keys is determined implicitly by the order of rows in the result. Default value is `false`. |
 | `execute_direct` | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](/reference/settings/server-settings/settings/user#user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional. |
 | `send_chunk_header` | Controls whether to send row count before sending a chunk of data to process. Default value is `false`. Optional. |
+| `stderr_reaction` | What is done with the command's `stderr` output: `none` (read and discarded), `log` (logged at once), `log_first` (the first 4 KiB logged after the command exits), `log_last` (the last 4 KiB), `throw` (any output fails the load; with `log_first`/`log_last` and a non-zero exit code the output is included in the exception). Default value is `log_last`. Optional. |
+| `check_exit_code` | Whether a non-zero exit code of the command fails the dictionary load. Default value is `true`. Optional. |
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 )DOCS_MD",

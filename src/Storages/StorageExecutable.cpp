@@ -328,6 +328,9 @@ Here are the relevant settings for an `Executable` table:
 - `command_write_timeout`
   - Description: Timeout for writing data to command stdin in milliseconds
   - Default value: 10000
+- `stderr_reaction`
+  - Description: What is done with the command's stderr output: `none` (read and discarded), `log` (logged at once), `log_first` (the first 4 KiB logged after the command exits), `log_last` (the last 4 KiB), `throw` (any output fails the query; with `log_first`/`log_last` and a non-zero exit code the output is included in the exception)
+  - Default value: none
 - `check_exit_code`
   - Description: Check the exit code of the command once it has finished writing its output: a non-zero exit code, or a command that has not exited within `command_termination_timeout` after that, fails the query
   - Default value: false
@@ -557,6 +560,9 @@ Here are the relevant settings for an `Executable` table:
 - `command_write_timeout`
   - Description: Timeout for writing data to command stdin in milliseconds
   - Default value: 10000
+- `stderr_reaction`
+  - Description: What is done with the command's stderr output: `none` (read and discarded), `log` (logged at once), `log_first` (the first 4 KiB logged after the command exits), `log_last` (the last 4 KiB), `throw` (any output fails the query; with `log_first`/`log_last` and a non-zero exit code the output is included in the exception)
+  - Default value: none
 - `check_exit_code`
   - Description: Check the exit code of the command once it has finished writing its output: a non-zero exit code, or a command that has not exited within `command_termination_timeout` after that, fails the query
   - Default value: false

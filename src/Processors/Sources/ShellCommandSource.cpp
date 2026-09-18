@@ -443,6 +443,9 @@ public:
     /// frame is accounted for and a leftover is a protocol violation. They do not for the pipe
     /// transport, where a format reader may legitimately hold buffered bytes it did not parse, and
     /// only what is still in the kernel pipe is evidence that the command spoke out of turn.
+    /// Whether a pipe holds bytes nobody has read: what a pooled process wrote after its last answer.
+    static bool pipeHasPendingOutput(int fd) noexcept { return (pipePendingEvents(fd) & POLLIN) != 0; }
+
     ChannelState channelState(bool consider_buffered_output = true) const noexcept
     {
         const Int16 stdout_events = pipePendingEvents(stdout_fd);
@@ -1776,10 +1779,22 @@ namespace
                     = state.stderr_has_unread_output ? timeout_command_out.consumePendingStderr() : String{};
 
                 if (state.stdout_hung_up && !state.stdout_has_unread_output)
-                    LOG_DEBUG(
-                        getLogger("ShellCommandSource"),
-                        "The process of a pooled command exited after answering, so it was not returned to the "
-                        "pool.");
+                {
+                    /// What it said on its way out is the one clue to why it exited, and this is
+                    /// the only place that reads it: nothing else looks at a discarded worker's
+                    /// pipes before they are closed.
+                    if (leftover_stderr.empty())
+                        LOG_DEBUG(
+                            getLogger("ShellCommandSource"),
+                            "The process of a pooled command exited after answering, so it was not returned to the "
+                            "pool.");
+                    else
+                        LOG_WARNING(
+                            getLogger("ShellCommandSource"),
+                            "The process of a pooled command exited after answering, so it was not returned to the "
+                            "pool. Stderr: {}",
+                            leftover_stderr);
+                }
                 else
                     LOG_WARNING(
                         getLogger("ShellCommandSource"),
@@ -2164,6 +2179,35 @@ namespace
                                 command->getPid(),
                                 leftover_stderr);
 
+                        command.reset();
+                        command = command_holder->buildCommand();
+                    }
+
+                    /// A worker that wrote to its stdout after it was handed back is replaced as
+                    /// well, and for the same reason the hand-back probe would have discarded it,
+                    /// had the bytes been there in time: they are an earlier borrow's, and this
+                    /// borrow has not sent anything yet, so they can only be read as the beginning
+                    /// of *its* answer. The request id would catch that - the frame would carry
+                    /// the wrong id - but catching it means failing this query for what the
+                    /// previous one's command did. Seen here, before the first request, the bytes
+                    /// are provably not this query's, and the worker is dropped for a fresh one
+                    /// instead. Its stdin is closed first, so that a worker written to exit on EOF
+                    /// does so at once rather than sitting out the termination timeout.
+                    if (worker_is_reused && TimeoutReadBufferFromFileDescriptor::pipeHasPendingOutput(command->out.getFD()))
+                    {
+                        const String leftover_stderr = readLeftoverStderrOfExitedProcess(*command);
+                        LOG_WARNING(
+                            getLogger("ShellCommandSharedMemorySource"),
+                            "The process of an executable UDF (pid {}) had unread output on its stdout when it was "
+                            "borrowed, so it wrote after the response of an earlier invocation; it is discarded and a "
+                            "replacement is started for this borrow. The command must write nothing but the response "
+                            "frame.{}{}",
+                            command->getPid(),
+                            leftover_stderr.empty() ? "" : " Stderr: ",
+                            leftover_stderr);
+                        ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryDirtyChannelDiscards);
+
+                        command->in.close();
                         command.reset();
                         command = command_holder->buildCommand();
                     }
