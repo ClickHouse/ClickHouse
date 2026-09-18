@@ -36,6 +36,13 @@ detect_leaks = 0
 --send_timeout=2
 --external_storage_connect_timeout_sec=1
 --external_storage_rw_timeout_sec=1
+# The S3 client retries a connection failure hundreds of times with backoff, and query cancellation waits for it.
+--s3_retry_attempts=1
+--s3_max_redirects=1
+--s3_connect_timeout_ms=500
+--s3_request_timeout_ms=1000
+--s3_max_single_read_retries=1
+--backup_restore_s3_retry_attempts=1
 --http_connection_timeout=1
 --http_send_timeout=1
 --http_receive_timeout=1
