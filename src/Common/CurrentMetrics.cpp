@@ -194,6 +194,9 @@
     M(DDLWorkerThreads, "Number of threads in the DDLWorker thread pool for ON CLUSTER queries.") \
     M(DDLWorkerThreadsActive, "Number of threads in the DDLWORKER thread pool for ON CLUSTER queries running a task.") \
     M(DDLWorkerThreadsScheduled, "Number of queued or active jobs in the DDLWORKER thread pool for ON CLUSTER queries.") \
+    M(AIFunctionThreads, "Number of threads in the AI function request thread pool.") \
+    M(AIFunctionThreadsActive, "Number of threads in the AI function request thread pool running a task.") \
+    M(AIFunctionThreadsScheduled, "Number of queued or active jobs in the AI function request thread pool.") \
     M(StorageDistributedThreads, "Number of threads in the StorageDistributed thread pool.") \
     M(StorageDistributedThreadsActive, "Number of threads in the StorageDistributed thread pool running a task.") \
     M(StorageDistributedThreadsScheduled, "Number of queued or active jobs in the StorageDistributed thread pool.") \

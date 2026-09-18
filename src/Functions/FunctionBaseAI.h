@@ -154,7 +154,8 @@ public:
     };
 
     /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching,
-    /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
+    /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP
+    /// call, and up to `max_concurrent_requests` of those calls are in flight at once.
     /// Accumulates into `result`, so the batches completed before a throw stay visible to the caller.
     static void embedTexts(
         IAIProvider & provider,
@@ -163,6 +164,7 @@ public:
         const String & function_name,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
+        size_t max_concurrent_requests,
         UInt64 max_retries,
         UInt64 retry_delay_ms,
         bool throw_on_error,

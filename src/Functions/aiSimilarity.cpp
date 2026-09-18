@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
+    extern const SettingsNonZeroUInt64 ai_function_max_concurrent_requests;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
 
@@ -145,6 +146,7 @@ public:
         UInt64 retry_delay_ms = settings[Setting::ai_function_retry_initial_delay_ms].value;
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
+        size_t max_concurrent_requests = static_cast<size_t>(settings[Setting::ai_function_max_concurrent_requests].value);
 
         /// Shared across every AI function call in the query
         auto quota_tracker = getContext()->getAIQuotaTracker();
@@ -194,8 +196,8 @@ public:
 
         FunctionBaseAI::EmbeddingResult embedding_result;
         FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
-            timeouts, embedding_result);
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_concurrent_requests, max_retries,
+            retry_delay_ms, throw_on_error, *quota_tracker, timeouts, embedding_result);
 
         const auto & embeddings = embedding_result.embeddings;
 

@@ -98,6 +98,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Slow endpoint, used to observe how many requests an AI function has in flight at once.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_slow AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/slow', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         instance.query(
             f"CREATE NAMED COLLECTION ai_error AS "
             f"provider = 'openai', "
@@ -2365,3 +2373,73 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
     assert subquery_only == 64, (
         f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
     )
+
+
+SLOW_CALL = "aiClassify(toString(number), ['positive','negative'], map('credentials', 'ai_slow'))"
+
+
+def _concurrency_stats():
+    return json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/concurrency"]
+        )
+    )
+
+
+def _reset_concurrency():
+    instance.exec_in_container(
+        ["curl", "-s", f"http://localhost:{MOCK_PORT}/reset-concurrency"]
+    )
+
+
+def test_max_concurrent_requests_controls_requests_in_flight(started_cluster):
+    """`ai_function_max_concurrent_requests` decides how many provider requests an AI function has
+    in flight, and nothing else does: the same query shape and the same data give one request at a
+    time at 1, and several at 8."""
+    observed = {}
+    for concurrency in (1, 8):
+        _reset_concurrency()
+        qid = unique_query_id(f"ai_concurrency_{concurrency}")
+        instance.query(
+            f"SELECT {SLOW_CALL} FROM numbers(16) FORMAT Null",
+            settings={"ai_function_max_concurrent_requests": concurrency},
+            query_id=qid,
+        )
+        stats = _concurrency_stats()
+        assert stats["requests"] == 16, (
+            f"expected one request per row, got {stats['requests']} at "
+            f"ai_function_max_concurrent_requests={concurrency}"
+        )
+        assert int(get_profile_events(qid)["api_calls"]) == 16
+        observed[concurrency] = stats["max_concurrency"]
+
+    assert observed[1] == 1, (
+        f"ai_function_max_concurrent_requests=1 must issue requests one at a time, "
+        f"saw {observed[1]} in flight"
+    )
+    assert 2 <= observed[8] <= 8, (
+        f"ai_function_max_concurrent_requests=8 must overlap requests without exceeding the "
+        f"limit, saw {observed[8]} in flight"
+    )
+
+
+def test_max_concurrent_requests_keeps_api_call_quota_exact(started_cluster):
+    """Concurrency must not let the API-call quota drift: a slot is reserved before each request is
+    dispatched, so the cap stays exact no matter how many requests are in flight."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_concurrency_quota")
+    instance.query(
+        f"SELECT {SLOW_CALL} FROM numbers(64) FORMAT Null",
+        settings={
+            "ai_function_max_concurrent_requests": 8,
+            "ai_function_max_api_calls_per_query": 5,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    stats = _concurrency_stats()
+    assert stats["requests"] == 5, (
+        f"the provider saw {stats['requests']} requests, but ai_function_max_api_calls_per_query = 5 "
+        "is an exact cap even with concurrent requests"
+    )
+    assert int(get_profile_events(qid)["api_calls"]) == 5
