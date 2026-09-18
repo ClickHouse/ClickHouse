@@ -13,11 +13,51 @@
 
 #include "readpassphrase.h"
 
+/* The original installs temporary signal handling so that an interrupt cannot leave the caller's
+ * terminal with echo disabled. The console equivalent is a control handler that restores the mode
+ * and then declines the event, so the application's own handler still runs. `SetConsoleCtrlHandler`
+ * calls handlers in reverse registration order, so this one runs before the process-wide one. */
+static HANDLE restore_console_handle = INVALID_HANDLE_VALUE;
+static DWORD restore_console_mode = 0;
+static volatile LONG restore_console_armed = 0;
+
+static BOOL WINAPI restoreConsoleModeHandler(DWORD type)
+{
+    (void)type;
+    if (InterlockedCompareExchange(&restore_console_armed, 0, 1) == 1)
+        SetConsoleMode(restore_console_handle, restore_console_mode);
+    return FALSE;
+}
+
+/* The prompt must go to the terminal the passphrase is typed on, as the original writes it to the
+ * tty it reads from. `stderr` is only the right destination when it has not been redirected away
+ * from that console. */
+static void writePrompt(HANDLE output, const char * text)
+{
+    WCHAR wide[1024];
+    int converted;
+    DWORD written = 0;
+
+    if (output == INVALID_HANDLE_VALUE)
+    {
+        fputs(text, stderr);
+        fflush(stderr);
+        return;
+    }
+
+    converted = MultiByteToWideChar(CP_UTF8, 0, text, -1, wide, (int)(sizeof(wide) / sizeof(wide[0])));
+    if (converted > 1)
+        WriteConsoleW(output, wide, (DWORD)(converted - 1), &written, NULL);
+}
+
 char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
 {
     HANDLE input;
     HANDLE own_input = INVALID_HANDLE_VALUE;
+    HANDLE output = INVALID_HANDLE_VALUE;
+    HANDLE own_output = INVALID_HANDLE_VALUE;
     DWORD original_mode = 0;
+    DWORD unused_mode = 0;
     BOOL is_console;
     size_t length;
     char * p;
@@ -55,12 +95,21 @@ char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
         return NULL;
     }
 
-    if (prompt && *prompt)
+    /* When the passphrase is typed on the console, the prompt has to appear there too - otherwise
+     * `clickhouse-client.exe < query.sql 2>prompt.log` waits for a keystroke with nothing on
+     * screen. `stderr` is reused only when it is itself that console. */
+    if (is_console)
     {
-        /* To stderr, as the original does, so that a redirected stdout does not swallow it. */
-        fputs(prompt, stderr);
-        fflush(stderr);
+        if (!GetConsoleMode(GetStdHandle(STD_ERROR_HANDLE), &unused_mode))
+        {
+            own_output = CreateFileA(
+                "CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+            output = own_output;
+        }
     }
+
+    if (prompt && *prompt)
+        writePrompt(output, prompt);
 
     if (is_console)
     {
@@ -69,6 +118,12 @@ char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
             mode |= ENABLE_ECHO_INPUT;
         else
             mode &= ~(DWORD)ENABLE_ECHO_INPUT;
+
+        restore_console_handle = input;
+        restore_console_mode = original_mode;
+        InterlockedExchange(&restore_console_armed, 1);
+        SetConsoleCtrlHandler(restoreConsoleModeHandler, TRUE);
+
         SetConsoleMode(input, mode);
     }
 
@@ -92,14 +147,19 @@ char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
 
     if (is_console)
     {
-        SetConsoleMode(input, original_mode);
+        if (InterlockedCompareExchange(&restore_console_armed, 0, 1) == 1)
+            SetConsoleMode(input, original_mode);
+        SetConsoleCtrlHandler(restoreConsoleModeHandler, FALSE);
+
         if (!(flags & RPP_ECHO_ON))
         {
             /* The user's Enter was not echoed, so the cursor is still on the prompt's line. */
-            fputs("\n", stderr);
-            fflush(stderr);
+            writePrompt(output, "\n");
         }
     }
+
+    if (own_output != INVALID_HANDLE_VALUE)
+        CloseHandle(own_output);
 
     if (own_input != INVALID_HANDLE_VALUE)
         CloseHandle(own_input);
