@@ -2,10 +2,10 @@
 
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Processors/Transforms/DistinctSetMemoryTracker.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <optional>
-#include <unordered_map>
 
 namespace DB
 {
@@ -59,8 +59,8 @@ public:
     /// followed by an exact deduplicating consumer. The transform frees its set when this threshold is
     /// exceeded or projected growth and filtering exceed its remaining budget. Subsequent rows pass
     /// through, giving up any remaining local limit hint. Zero disables this memory policy.
-    /// `report_set_size_` attaches retained set-byte increments to output chunks for global limit
-    /// accounting by `DistinctLimitTransform` over disjoint streams.
+    /// `shared_set_bytes_` accounts for retained set memory across disjoint streams and attaches
+    /// snapshots to output chunks for global limit accounting by `DistinctLimitTransform`.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -69,7 +69,7 @@ public:
         bool allow_abandoning_ = false,
         bool skip_null_keys_ = false,
         UInt64 max_bytes_before_pass_through_ = 0,
-        bool report_set_size_ = false);
+        DistinctSetMemoryTracker::SharedCounter shared_set_bytes_ = nullptr);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -77,6 +77,8 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
+    /// Outlives the set so its contribution is removed after the retained allocations are released.
+    DistinctSetMemoryTracker set_memory;
     /// An absent filter means subsequent chunks pass through without deduplication.
     std::optional<DistinctSetFilter> distinct_set;
     const UInt64 limit_hint;
@@ -84,45 +86,6 @@ private:
     std::optional<DeduplicationAbandonController> abandon_controller;
 
     const UInt64 max_bytes_before_pass_through;
-
-    /// Report set growth so the global limit processor can sum the sizes of the disjoint partitions.
-    const bool report_set_size;
-    /// Bytes already reported in output chunks. Parallel final deduplication never frees its set,
-    /// so subsequent reports contain nonnegative increments rather than counting the same bytes again.
-    UInt64 reported_set_bytes = 0;
-};
-
-/// Enforce size limits on the combined sets of parallel final `DISTINCT` transforms.
-/// Each input keeps its corresponding output so downstream steps can reuse the disjoint streams.
-/// A `BREAK` limit emits the chunk that reaches the limit before closing every input, including
-/// partitions that emit no rows and may otherwise keep reading.
-class DistinctLimitTransform final : public IProcessor
-{
-public:
-    DistinctLimitTransform(const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams);
-
-    String getName() const override { return "DistinctLimitTransform"; }
-
-    Status prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs) override;
-    Status prepare() override;
-
-private:
-    struct PortPair
-    {
-        InputPort & input;
-        OutputPort & output;
-        bool is_finished = false;
-    };
-
-    Status preparePair(PortPair & pair);
-
-    std::vector<PortPair> port_pairs;
-    std::unordered_map<const Port *, PortPair *> port_to_pair;
-    size_t num_finished_port_pairs = 0;
-    const SizeLimits size_limits;
-    UInt64 rows = 0;
-    UInt64 bytes = 0;
-    bool limit_reached = false;
 };
 
 }

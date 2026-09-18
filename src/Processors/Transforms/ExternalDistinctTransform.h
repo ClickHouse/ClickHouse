@@ -3,6 +3,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
+#include <Processors/Transforms/DistinctSetMemoryTracker.h>
 #include <Processors/Transforms/DistinctSpillLayout.h>
 #include <Processors/Transforms/SortingTransform.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -38,6 +39,8 @@ class DistinctSortedTransform;
 class ExternalDistinctTransform final : public IProcessor
 {
 public:
+    /// A non-null `shared_set_bytes_` reports memory snapshots to `DistinctLimitTransform`, which
+    /// enforces the limits across all streams. In that mode, `set_size_limits_` must be unlimited.
     ExternalDistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -47,7 +50,8 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_,
         size_t max_block_size_rows_,
-        bool preserve_input_order_);
+        bool preserve_input_order_,
+        DistinctSetMemoryTracker::SharedCounter shared_set_bytes_ = nullptr);
 
     ~ExternalDistinctTransform() override;
 
@@ -194,6 +198,8 @@ private:
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
+    /// Outlives the state that owns the set and its suppression-key extractor.
+    DistinctSetMemoryTracker set_memory;
     State state;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;

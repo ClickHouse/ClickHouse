@@ -139,6 +139,9 @@ public:
         /// allocated column memory. The byte target is soft because a key or an allocation can exceed
         /// it; zero disables it. `max_rows` must be positive. An empty vector marks exhaustion.
         virtual MutableColumns next(size_t max_rows, size_t max_bytes) = 0;
+
+        /// Retained hash-table and arena memory, zero after the final key is extracted.
+        virtual size_t getTotalByteCount() const = 0;
     };
 
     /// Transfers the hash table, arena, and key metadata into an extractor. With `Columns`, the result

@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/DistinctLimitTransform.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/ExternalDistinctTransform.h>
@@ -234,23 +235,16 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     const bool external = !pre_distinct && external_threshold
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty();
 
-    if (!pre_distinct)
+    if (!pre_distinct && !skip_stream_merging)
     {
-        /// Size limits over several disjoint streams are enforced by one limit processor fed by the in-memory
-        /// transforms, which report their set sizes. A spilling transform enforces them only within its own
-        /// stream, so with spilling enabled the limits keep the final deduplication in a single stream.
-        const bool single_stream_for_limits = external && settings.set_size_limits.hasLimits();
-        if (single_stream_for_limits || !skip_stream_merging)
-        {
-            /// Hash partitioning makes the streams disjoint, but changes their order: an input-order requirement
-            /// forbids it, and so does sorted deduplication, which needs equal prefix values to remain contiguous.
-            /// The requirement can outlive its `ORDER BY` when the optimizer removes a sort no consumer needs,
-            /// so the step may still receive several streams; they are merged like any other input.
-            const bool scattered = !single_stream_for_limits && parallel_distinct && !preserve_input_order
-                && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
-            if (!scattered)
-                pipeline.resize(1);
-        }
+        /// Hash partitioning makes the streams disjoint, but changes their order: an input-order requirement
+        /// forbids it, and so does sorted deduplication, which needs equal prefix values to remain contiguous.
+        /// The requirement can outlive its `ORDER BY` when the optimizer removes a sort no consumer needs,
+        /// so the step may still receive several streams; they are merged like any other input.
+        const bool scattered = parallel_distinct && !preserve_input_order
+            && distinct_sort_desc.empty() && tryScatterStreams(pipeline);
+        if (!scattered)
+            pipeline.resize(1);
     }
 
     /// Size limits apply to the combined set across all disjoint streams, whether inherited from the
@@ -279,6 +273,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         return;
     }
 
+    const auto shared_set_bytes = global_limits ? std::make_shared<std::atomic<UInt64>>(0) : nullptr;
     if (external)
     {
         if (!build_settings.temp_data_on_disk)
@@ -300,37 +295,39 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
                 return std::make_shared<ExternalDistinctTransform>(
                     header,
-                    settings.set_size_limits,
+                    local_limits,
                     limit_hint,
                     columns,
                     external_threshold,
                     tmp_data_on_disk,
                     settings.min_free_disk_space,
                     settings.max_block_size,
-                    preserve_input_order);
+                    preserve_input_order,
+                    shared_set_bytes);
             });
-        return;
     }
+    else
+    {
+        /// Preliminary hashing is optional: a downstream step deduplicates its output exactly. Releasing
+        /// its set under memory pressure can send more duplicates through intervening steps such as sorting.
+        const UInt64 pass_through_threshold = pre_distinct ? external_threshold : 0;
 
-    /// Preliminary hashing is optional: a downstream step deduplicates its output exactly. Releasing
-    /// its set under memory pressure can send more duplicates through intervening steps such as sorting.
-    const UInt64 pass_through_threshold = pre_distinct ? external_threshold : 0;
+        /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
+        /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
+        /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
+        const bool allow_abandoning = pre_distinct && build_settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
 
-    /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
-    /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
-    /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
-    const bool allow_abandoning = pre_distinct && build_settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
 
-    pipeline.addSimpleTransform(
-        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
-
-            return std::make_shared<DistinctTransform>(
-                header, local_limits, limit_hint, columns,
-                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold, /*report_set_size_=*/ global_limits);
-        });
+                return std::make_shared<DistinctTransform>(
+                    header, local_limits, limit_hint, columns,
+                    allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold, shared_set_bytes);
+            });
+    }
 
     /// The parallel final outputs are already disjoint, so a later merge needs no further deduplication.
     /// Global limit accounting keeps their stream assignments intact for downstream steps to reuse.

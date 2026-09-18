@@ -1,3 +1,5 @@
+-- Retain the in-memory sets so combined byte limits do not depend on when individual streams finish.
+SET max_bytes_before_external_distinct = 0, max_bytes_ratio_before_external_distinct = 0;
 SET max_threads = 4;
 SET max_block_size = 16;
 SET enable_parallel_replicas = 0;
