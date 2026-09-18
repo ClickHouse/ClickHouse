@@ -394,7 +394,7 @@ TEST(GCSHeaderTranslation, ResponseMetadataReachesTheSDK)
     EXPECT_EQ(it->second, "analytics");
 }
 
-/// The commit fence of an Iceberg snapshot, a backup lock file or a plain_rewritable metadata restore,
+/// The commit fence of an Iceberg snapshot or a backup lock file,
 /// as the real client puts it on the wire: it has to arrive as the precondition GCS evaluates, because
 /// the spelling it replaces is one GCS accepts on a write and then ignores.
 TEST(GCSHeaderTranslation, ConditionalCreateLeavesInTheGoogleSpelling)

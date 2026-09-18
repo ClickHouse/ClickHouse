@@ -633,6 +633,19 @@ struct ChecksumRecordingInjection : InjectionModel
     std::vector<String> complete_part_sha256_checksums;
 };
 
+/// Returning nullopt lets the write land, so a success-path case can assert on the fence the request
+/// that stored the object carried.
+struct PutObjectRecordIfNoneMatchInjection : InjectionModel
+{
+    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
+    {
+        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        return std::nullopt;
+    }
+
+    std::vector<std::string> seen_if_none_match;
+};
+
 /// Fails the first `fail_times` CompleteMultipartUpload calls with the un-typed MinIO `InvalidPart`
 /// eventual-consistency error, then lets the real mock store handle the rest. The AWS SDK cannot map
 /// <Code>InvalidPart</Code> to a typed model error, so it produces UNKNOWN as the error type and keeps
@@ -2097,6 +2110,9 @@ TEST_P(SyncAsync, SinglepartConditionalPutOnGCSStillSucceeds) {
     client = MockS3::Client::CreateClient(bucket, /* is_s3express_bucket */ false, MockS3::Client::gcs_endpoint);
     ASSERT_TRUE(client->isClientForGCS());
 
+    auto injection = std::make_shared<MockS3::PutObjectRecordIfNoneMatchInjection>();
+    setInjectionModel(injection);
+
     auto buffer = getWriteBuffer("conditional_put_gcs", conditionalCreateWriteSettings());
     buffer->write('A');
 
@@ -2108,8 +2124,8 @@ TEST_P(SyncAsync, SinglepartConditionalPutOnGCSStillSucceeds) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_put_gcs"], "A");
-    ASSERT_FALSE(bStore.put_if_none_match.empty());
-    EXPECT_EQ(bStore.put_if_none_match[0], "*");
+    ASSERT_FALSE(injection->seen_if_none_match.empty());
+    EXPECT_EQ(injection->seen_if_none_match[0], "*");
 }
 
 /// In-range control for the provider predicate: S3 does evaluate the fence on a multipart completion,
