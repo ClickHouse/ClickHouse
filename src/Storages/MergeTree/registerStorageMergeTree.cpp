@@ -1238,6 +1238,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.relative_data_path,
             metadata,
             context,
+            args.getLocalContext(),
             date_column_name,
             merging_params,
             std::move(storage_settings),
@@ -1251,6 +1252,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         metadata,
         args.mode,
         context,
+        args.getLocalContext(),
         date_column_name,
         merging_params,
         std::move(storage_settings));

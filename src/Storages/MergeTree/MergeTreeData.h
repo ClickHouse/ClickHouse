@@ -521,9 +521,12 @@ public:
     ///
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
+    /// `local_context_` is the executing statement's context, used for the metadata validation done here
+    /// and never stored. On a user CREATE/ATTACH it is what authorises expressions in index arguments.
     MergeTreeData(const StorageID & table_id_,
                   StorageInMemoryMetadata metadata_,
                   ContextMutablePtr context_,
+                  ContextPtr local_context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
@@ -1926,8 +1929,8 @@ protected:
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
-        bool attach = false,
-        ContextPtr local_context = nullptr);
+        bool attach,
+        ContextPtr local_context);
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 

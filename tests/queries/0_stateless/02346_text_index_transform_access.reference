@@ -1,0 +1,11 @@
+1. The boundary: a direct call is denied.
+2. The same function in a preprocessor is denied too.
+3. And in a postprocessor.
+4. A privileged call nested below a String-typed top level is denied.
+5. ALTER ... ADD INDEX is denied on the same grounds.
+6. An unprivileged expression is unaffected.
+1
+7. With the privilege the same expression is accepted: this is authorization, not a blocklist.
+1
+8. An existing index stays readable without the privilege: it is authorized when defined, not per reader.
+1

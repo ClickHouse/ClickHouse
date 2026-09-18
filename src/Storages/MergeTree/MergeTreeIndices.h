@@ -386,8 +386,10 @@ class MergeTreeIndexFactory : private boost::noncopyable
 public:
     static MergeTreeIndexFactory & instance();
 
-    using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)>;
-    void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const;
+    /// `context` authorises user-supplied expressions in index arguments, so on CREATE/ALTER/ATTACH it
+    /// must be the submitter's. It carries no user on server load, where they were authorised already.
+    using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context)>;
+    void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context) const;
 
     using Creator = std::function<MergeTreeIndexPtr(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)>;
     MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;
@@ -414,27 +416,27 @@ private:
 };
 
 MergeTreeIndexPtr minmaxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
 
 MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
 
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
 #endif
 
 MergeTreeIndexPtr ginIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void ginIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void ginIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 

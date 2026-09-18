@@ -9,6 +9,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -35,7 +36,7 @@ struct MergeTreeIndexTextInlineFilter
 class MergeTreeIndexTextPostprocessor
 {
 public:
-    MergeTreeIndexTextPostprocessor(ASTPtr expression_ast, const IndexDescription & index_description);
+    MergeTreeIndexTextPostprocessor(ASTPtr expression_ast, const IndexDescription & index_description, ContextPtr context);
 
     /// Applies the postprocessor to all tokens in one batch execution.
     /// Tokens mapped to an empty string are removed.
