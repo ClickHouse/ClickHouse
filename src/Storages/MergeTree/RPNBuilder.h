@@ -201,9 +201,9 @@ public:
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
   *
-  * Alternatively, client may provide ExtractAtomsFromTreeFunction that populates a list of one or more RPNElements
-  * corresponding to a leaf node (atoms). If the list has more than one element, RPNBuilder will AND them together
-  * (i.e. emit `atom0 atom1 AND atom2 AND ...` in RPN). An empty list means the node could not be converted.
+  * Alternatively, the client may provide `ExtractAtomsFromTreeFunction`, which fills an initially empty
+  * `AtomGroup` with the atoms of one predicate leaf. `RPNBuilder` combines them with `AND` (emitting
+  * `atom0 atom1 AND atom2 AND ...` in RPN). An empty group means the leaf could not be converted.
  */
 /// `indexHint` exists so that index analysis can see a condition that is never executed. A consumer
 /// that analyses indexes has to descend into it - that is the whole point of the hint. A consumer
@@ -232,8 +232,18 @@ class RPNBuilder
 {
 public:
     using RPNElements = std::vector<RPNElement>;
+
+    /// Atoms of one predicate leaf, before logical operators are inserted into the RPN.
+    /// The group contains no logical operators; constant-folded atoms are allowed. It may be empty
+    /// when the leaf cannot be analyzed, or contain a single `FUNCTION_UNKNOWN` atom carrying metadata
+    /// from a single-atom callback.
+    struct AtomGroup
+    {
+        std::vector<RPNElement> atoms;
+    };
+
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
-    using ExtractAtomsFromTreeFunction = std::function<void (const RPNBuilderTreeNode & node, RPNElements & out)>;
+    using ExtractAtomsFromTreeFunction = std::function<void (const RPNBuilderTreeNode & node, AtomGroup & group)>;
 
     explicit RPNBuilder(
         const ActionsDAG::Node * filter_actions_dag_node,

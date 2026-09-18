@@ -591,9 +591,9 @@ template <typename RPNElement>
 typename RPNBuilder<RPNElement>::ExtractAtomsFromTreeFunction
 makeExtractAtomsFromTreeFunction(const typename RPNBuilder<RPNElement>::ExtractAtomFromTreeFunction & extract_atom_from_tree_function)
 {
-    return [&](const RPNBuilderTreeNode & node, typename RPNBuilder<RPNElement>::RPNElements & out)
+    return [&](const RPNBuilderTreeNode & node, typename RPNBuilder<RPNElement>::AtomGroup & group)
     {
-        out.clear();
+        chassert(group.atoms.empty());
 
         RPNElement element;
         if (!extract_atom_from_tree_function(node, element))
@@ -603,7 +603,7 @@ makeExtractAtomsFromTreeFunction(const typename RPNBuilder<RPNElement>::ExtractA
             element.function = RPNElement::FUNCTION_UNKNOWN;
         }
 
-        out.emplace_back(std::move(element));
+        group.atoms.emplace_back(std::move(element));
     };
 }
 }
@@ -704,12 +704,12 @@ void RPNBuilder<RPNElement>::traverseTree(
         }
     }
 
-    RPNElements atoms;
-    extract_atoms_from_tree_function(node, atoms);
+    AtomGroup group;
+    extract_atoms_from_tree_function(node, group);
 
-    if (!atoms.empty())
+    if (!group.atoms.empty())
     {
-        appendAtomGroup(rpn_elements, std::make_move_iterator(atoms.begin()), std::make_move_iterator(atoms.end()));
+        appendAtomGroup(rpn_elements, std::make_move_iterator(group.atoms.begin()), std::make_move_iterator(group.atoms.end()));
         return;
     }
 

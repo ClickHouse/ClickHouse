@@ -521,6 +521,8 @@ private:
         const Hyperrectangle & sparse_hyperrectangle,
         const DataTypes & sparse_key_types) const;
 
+    using AtomGroup = RPNBuilder<RPNElement>::AtomGroup;
+
     /// Information used when building a KeyCondition out of ActionsDAG.
     struct BuildInfo
     {
@@ -580,19 +582,18 @@ private:
         bool chain_is_positive = true;
     };
 
-    /// The `extractAtoms*` family fills `out` with the atoms of one predicate leaf.
-    /// It produces one atom per key column that the predicate can constrain, so a
-    /// single condition like `ts >= X` may produce atoms for `toYYYYMM(ts)`,
-    /// `toDate(ts)` and `ts` at once. RPNBuilder combines multiple atoms with AND
-    /// (it emits `atom0 atom1 AND atom2 AND ...`). An empty `out` means that the leaf
-    /// could not be analyzed; such a leaf becomes FUNCTION_UNKNOWN.
-    void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
-    void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
-    void extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out);
+    /// The `extractAtoms*` family fills `group` with the atoms of one predicate leaf.
+    /// A comparison like `ts >= X` may produce atoms for `toYYYYMM(ts)`, `toDate(ts)` and `ts`
+    /// at once; a set atom may itself constrain several key columns. `RPNBuilder` combines the
+    /// group's atoms with `AND` (emitting `atom0 atom1 AND atom2 AND ...`). An empty group means
+    /// that the leaf could not be analyzed; such a leaf becomes `FUNCTION_UNKNOWN`.
+    void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
+    void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
+    void extractAtomsFromConstant(const RPNBuilderTreeNode & node, AtomGroup & group);
     /// A bare numeric key column used directly as a boolean condition (`WHERE flag`)
-    /// produces the single atom `flag != 0`.
-    void extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
-    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const BuildInfo & info, RPN & out);
+    /// is analyzed as the comparison `flag != 0`, which may produce several atoms.
+    void extractBareKeyColumnAtoms(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group);
+    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const BuildInfo & info, AtomGroup & group);
     /// `rewritten_const_value` overrides the constant operand of the comparison, for a
     /// predicate whose constant is not one of the function arguments as written (`LIKE
     /// pattern ESCAPE 'c'`, where the escape character is folded into the pattern). The key
@@ -602,7 +603,7 @@ private:
         const BuildInfo & info,
         const std::string & func_name,
         bool allow_relaxed_pruning,
-        RPN & out,
+        AtomGroup & group,
         const Field * rewritten_const_value = nullptr,
         const DataTypePtr & rewritten_const_type = nullptr);
     /// `key <=> NULL` is "key IS NULL", so it produces the `isNull` atom, but only for a
@@ -612,7 +613,7 @@ private:
         const RPNBuilderTreeNode & key_arg,
         const BuildInfo & info,
         const Field & const_value,
-        RPN & out);
+        AtomGroup & group);
     /// The shared core of comparison-atom extraction; the comparison is already in
     /// `key_expr <op> const` form. `constant` holds a `ColumnConst` whose value is neither NULL nor NaN.
     void extractComparisonAtomsForKeyArgument(
@@ -621,7 +622,7 @@ private:
         const std::string & func_name,
         const ColumnWithTypeAndName & constant,
         bool allow_relaxed_pruning,
-        RPN & out);
+        AtomGroup & group);
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
@@ -715,17 +716,17 @@ private:
         DeterministicKeyTransformDag & out_transform,
         bool & out_is_injective) const;
 
-    /// If it's possible to make one or more RPNElements that will filter values (possibly tuples) by a set,
-    /// append them to `out`. (If multiple atoms are produced, RPNBuilder will AND them.)
+    /// Appends usable set-membership atoms for this predicate to `group`. Each atom may constrain
+    /// several key columns; `RPNBuilder` combines the group's atoms with `AND`.
     void tryPrepareSetAtomsForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPN & out,
+        AtomGroup & group,
         bool allow_relaxed_pruning);
     void tryPrepareSetAtomsForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
-        RPN & out,
+        AtomGroup & group,
         bool allow_relaxed_pruning);
 
     /// The inputs for one set atom, with one mapping, transform, and type per matched key column.
@@ -762,9 +763,9 @@ private:
     /// deterministic set-transforming DAG.
     SetIndexAnalysisResult analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg, const BuildInfo & info);
 
-    /// Appends the set atoms for one `IN` or `has` predicate using its materialized set and analyzed
-    /// key mappings. `wrapped_expressions` supplies the tuple components from which deterministic
-    /// transforms can derive atoms for remaining key columns. Deduplication is local to this predicate.
+    /// Appends to `group` the set atoms for its `IN` or `has` predicate using the materialized set
+    /// and analyzed key mappings. `wrapped_expressions` supplies the tuple components from which
+    /// deterministic transforms can derive atoms for remaining key columns. Coverage is local to the group.
     /// `has_element_type` supplies the occupied element type of a `has` array, so every atom checks
     /// that conversion preserves its comparison semantics.
     void appendSetAtoms(
@@ -774,7 +775,7 @@ private:
         SetIndexAnalysisResult analysis,
         const std::vector<std::pair<size_t, String>> & wrapped_expressions,
         bool allow_relaxed_pruning,
-        RPN & out,
+        AtomGroup & group,
         const DataTypePtr & has_element_type = nullptr);
 
     /// Checks that the index can not be used.

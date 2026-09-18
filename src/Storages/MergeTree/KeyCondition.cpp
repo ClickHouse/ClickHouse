@@ -1586,9 +1586,9 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
-    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, std::vector<RPNElement> & out)
+    RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, AtomGroup & group)
     {
-        extractAtomsFromTree(node, info, out);
+        extractAtomsFromTree(node, info, group);
     });
 
     rpn = std::move(builder).extractRPN();
@@ -3327,24 +3327,23 @@ void KeyCondition::appendSetAtoms(
     SetIndexAnalysisResult analysis,
     const std::vector<std::pair<size_t, String>> & wrapped_expressions,
     bool allow_relaxed_pruning,
-    RPN & out,
+    AtomGroup & group,
     const DataTypePtr & has_element_type)
 {
-    const size_t first_atom = out.size();
     const size_t args_count = analysis.components.args_count;
     if (auto atom = tryBuildSetAtom(set_columns, set_types, std::move(analysis.components), allow_relaxed_pruning, has_element_type))
-        out.emplace_back(std::move(*atom));
+        group.atoms.emplace_back(std::move(*atom));
 
     if (analysis.whole_tuple)
         if (auto atom = tryBuildSetAtom(set_columns, set_types, std::move(*analysis.whole_tuple), allow_relaxed_pruning, has_element_type))
-            out.emplace_back(std::move(*atom));
+            group.atoms.emplace_back(std::move(*atom));
 
-    /// Direct atoms for this predicate take priority over its additional wrapped-set candidates.
-    /// Earlier output belongs to other predicates and must not suppress this predicate's atoms.
+    /// Atoms for the predicate's components and whole tuple take priority over additional
+    /// wrapped-set candidates for the same key columns.
     std::vector<bool> has_atom_for_key_column(num_key_columns, false);
-    for (size_t i = first_atom; i < out.size(); ++i)
+    for (const auto & atom : group.atoms)
     {
-        for (size_t column_idx : out[i].key_columns)
+        for (size_t column_idx : atom.key_columns)
         {
             chassert(column_idx < num_key_columns);
             has_atom_for_key_column[column_idx] = true;
@@ -3391,7 +3390,7 @@ void KeyCondition::appendSetAtoms(
                 has_atom_for_key_column[column_idx] = true;
             }
 
-            out.emplace_back(std::move(*candidate_atom));
+            group.atoms.emplace_back(std::move(*candidate_atom));
         }
     }
 }
@@ -3399,7 +3398,7 @@ void KeyCondition::appendSetAtoms(
 void KeyCondition::tryPrepareSetAtomsForIn(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
-    RPN & out,
+    AtomGroup & group,
     bool allow_relaxed_pruning)
 {
     if (func.getArgumentsSize() != 2)
@@ -3448,7 +3447,7 @@ void KeyCondition::tryPrepareSetAtomsForIn(
     const auto set_types = future_set->getTypes();
 
     appendSetAtoms(
-        info, set_columns, set_types, std::move(analysis), wrapped_expressions, allow_relaxed_pruning, out);
+        info, set_columns, set_types, std::move(analysis), wrapped_expressions, allow_relaxed_pruning, group);
 }
 
 /// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
@@ -3489,7 +3488,7 @@ static DataTypePtr narrowVariantToOccupiedAlternatives(
 void KeyCondition::tryPrepareSetAtomsForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
-    RPN & out,
+    AtomGroup & group,
     bool allow_relaxed_pruning)
 {
     chassert(func.getFunctionName() == "has" || func.getFunctionName() == "notHas");
@@ -3564,7 +3563,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     {
         /// has([], x) is always false and notHas([], x) is always true - we can fold the condition
         /// to a constant.
-        out.emplace_back(func.getFunctionName() == "has" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE);
+        group.atoms.emplace_back(func.getFunctionName() == "has" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE);
         return;
     }
 
@@ -3601,7 +3600,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     DataTypes set_types = {array_nested_type};
 
     appendSetAtoms(
-        info, set_columns, set_types, std::move(analysis), wrapped_expressions, allow_relaxed_pruning, out, checked_element_type);
+        info, set_columns, set_types, std::move(analysis), wrapped_expressions, allow_relaxed_pruning, group, checked_element_type);
 }
 
 
@@ -4431,49 +4430,49 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
-/// This function is called by RPNBuilder once for every leaf of the predicate tree. RPNBuilder walks the
-/// WHERE expression and handles the logical operators itself, so only the nodes between them reach this
-/// function. For example, `WHERE a = 1 AND (b < 2 OR c IN (1, 2))` has three leaves, and this function is
-/// called separately for `a = 1`, for `b < 2` and for `c IN (1, 2)`.
+/// This function is called by `RPNBuilder` once for every leaf of the predicate tree. `RPNBuilder` walks
+/// the `WHERE` expression and handles the logical operators itself, so only the nodes between them reach
+/// this function. For example, `WHERE a = 1 AND (b < 2 OR c IN (1, 2))` has three leaves, and this function
+/// is called separately for `a = 1`, for `b < 2` and for `c IN (1, 2)`.
 ///
 /// For each leaf, it tries to build the atoms for all key columns that the leaf can constrain, one after
 /// another. For example, for a table with `ORDER BY (toYYYYMM(ts), toDate(ts), ts)` and the simple
-/// condition `WHERE ts >= X`, this call fills `out` with three atoms: `toYYYYMM(ts) >= toYYYYMM(X)`,
+/// condition `WHERE ts >= X`, this call fills `group` with three atoms: `toYYYYMM(ts) >= toYYYYMM(X)`,
 /// `toDate(ts) >= toDate(X)` and `ts >= X`.
 ///
-/// RPNBuilder then combines the produced atoms with AND in place of the leaf (it emits
-/// `atom0 atom1 AND atom2 AND ...` in the RPN). An empty `out` means that the leaf could not be analyzed,
-/// and RPNBuilder turns it into FUNCTION_UNKNOWN.
-void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
+/// `RPNBuilder` then combines the produced atoms with `AND` in place of the leaf (it emits
+/// `atom0 atom1 AND atom2 AND ...` in the RPN). An empty group means that the leaf could not be analyzed,
+/// and `RPNBuilder` turns it into `FUNCTION_UNKNOWN`.
+void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group)
 {
-    out.clear();
+    chassert(group.atoms.empty());
 
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
     {
         /// If the inferred result type is Nullable(Nothing) at the query analysis stage,
         /// we don't analyze this node further as its condition will always be false.
-        out.emplace_back(RPNElement::ALWAYS_FALSE);
+        group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
         return;
     }
 
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".
     if (node.isFunction())
     {
-        extractAtomsFromFunction(node, info, out);
+        extractAtomsFromFunction(node, info, group);
     }
     else
     {
         /// For example, `ORDER BY a` and `WHERE 0 AND a = 1`, where this leaf is the constant `0`.
-        extractAtomsFromConstant(node, out);
+        extractAtomsFromConstant(node, group);
 
         /// For example, `ORDER BY flag` and `WHERE flag`, where this leaf is the bare column `flag`.
-        if (out.empty())
-            extractBareKeyColumnAtom(node, info, out);
+        if (group.atoms.empty())
+            extractBareKeyColumnAtoms(node, info, group);
     }
 }
 
-void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
+void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group)
 {
     /** This function routes one predicate-leaf function to the matching extraction path. The supported
       * functions are the comparisons (< > = != <= >=, the `like` family, `match`, `startsWith`), the IN
@@ -4511,14 +4510,14 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     /// relaxed deterministic atoms, which evaluation treats as unknown instead of using for pruning.
     const bool allow_relaxed_pruning = !no_relaxed_atom_functions.contains(func_name);
 
-    /// This fills the function kind and the range/set of every prepared element in `out` via the
-    /// atom_map builder. The set, unary and polygon builders reached from here always succeed and
+    /// This fills the function kind and the range/set of every prepared element in `group` via the
+    /// `atom_map` builder. The set, unary and polygon builders reached from here always succeed and
     /// ignore the value argument; comparison atoms pass the real constant in
     /// `extractBinaryComparisonAtoms` instead.
     auto finalize_atoms = [&]
     {
         Field unused_value;
-        for (auto & element : out)
+        for (auto & element : group.atoms)
         {
             /// Constant-folded elements (e.g. `has([], x)` folds to ALWAYS_FALSE) are already complete;
             /// the builder would overwrite their function kind.
@@ -4535,7 +4534,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
     if (func_name == "pointInPolygon")
     {
-        extractPointInPolygonAtom(func, info, out);
+        extractPointInPolygonAtom(func, info, group);
         finalize_atoms();
         return;
     }
@@ -4543,7 +4542,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     /// IN / NOT IN
     if (functionIsInOrGlobalInOperator(func_name))
     {
-        tryPrepareSetAtomsForIn(func, info, out, allow_relaxed_pruning);
+        tryPrepareSetAtomsForIn(func, info, group, allow_relaxed_pruning);
         finalize_atoms();
         return;
     }
@@ -4551,7 +4550,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     /// has(const_array, key) / notHas(const_array, key)
     if (func_name == "has" || func_name == "notHas")
     {
-        tryPrepareSetAtomsForHas(func, info, out, allow_relaxed_pruning);
+        tryPrepareSetAtomsForHas(func, info, group, allow_relaxed_pruning);
         finalize_atoms();
         return;
     }
@@ -4592,14 +4591,14 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         element.monotonic_functions_chain = std::move(chain);
         element.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        out.emplace_back(std::move(element));
+        group.atoms.emplace_back(std::move(element));
         finalize_atoms();
         return;
     }
     /// Binary comparisons of a key expression with a constant.
     else if (num_args == 2)
     {
-        extractBinaryComparisonAtoms(func, info, func_name, allow_relaxed_pruning, out);
+        extractBinaryComparisonAtoms(func, info, func_name, allow_relaxed_pruning, group);
     }
     /// `LIKE pattern ESCAPE 'c'` and `NOT LIKE pattern ESCAPE 'c'` arrive here as a
     /// 3-argument function call `like(col, pattern, escape_char)`. Fold the escape
@@ -4631,11 +4630,11 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
             = Field(likePatternWithCustomEscapeToLikePattern(pattern_field.safeGet<String>(), escape_str[0]));
 
         extractBinaryComparisonAtoms(
-            func, info, func_name, allow_relaxed_pruning, out, &rewritten_like_pattern, pattern_type);
+            func, info, func_name, allow_relaxed_pruning, group, &rewritten_like_pattern, pattern_type);
     }
 }
 
-void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const BuildInfo & info, RPN & out)
+void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const BuildInfo & info, AtomGroup & group)
 {
     /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
     /// For polygons with holes, we will ignore the holes for the index analysis.
@@ -4737,7 +4736,7 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
     /// costly `intersects` checks
     boost::geometry::envelope(element.polygon->ring, element.polygon->bbox);
 
-    out.emplace_back(std::move(element));
+    group.atoms.emplace_back(std::move(element));
 }
 
 void KeyCondition::extractBinaryComparisonAtoms(
@@ -4745,7 +4744,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
     const BuildInfo & info,
     const std::string & func_name,
     bool allow_relaxed_pruning,
-    RPN & out,
+    AtomGroup & group,
     const Field * rewritten_const_value,
     const DataTypePtr & rewritten_const_type)
 {
@@ -4784,11 +4783,11 @@ void KeyCondition::extractBinaryComparisonAtoms(
         /// to the NULL granule exactly, instead of declining and scanning every granule.
         if (func_name == "isNotDistinctFrom")
         {
-            extractIsNullAtomForNotDistinctFrom(func.getArgumentAt(1 - const_arg_pos), info, const_value, out);
+            extractIsNullAtomForNotDistinctFrom(func.getArgumentAt(1 - const_arg_pos), info, const_value, group);
             return;
         }
 
-        out.emplace_back(RPNElement::ALWAYS_FALSE);
+        group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
         return;
     }
 
@@ -4806,13 +4805,13 @@ void KeyCondition::extractBinaryComparisonAtoms(
 
         if (func_name == "notEquals")
         {
-            out.emplace_back(RPNElement::ALWAYS_TRUE);
+            group.atoms.emplace_back(RPNElement::ALWAYS_TRUE);
             return;
         }
 
         if (func_name == "equals")
         {
-            out.emplace_back(RPNElement::ALWAYS_FALSE);
+            group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
             return;
         }
 
@@ -4831,7 +4830,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
         key_side_func_name = reversed;
     }
 
-    extractComparisonAtomsForKeyArgument(key_arg, info, key_side_func_name, constant, allow_relaxed_pruning, out);
+    extractComparisonAtomsForKeyArgument(key_arg, info, key_side_func_name, constant, allow_relaxed_pruning, group);
 }
 
 /// `key <=> NULL` is "key IS NULL", so it is analyzed with the `isNull` atom. That atom
@@ -4841,7 +4840,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
 /// `isNull(k)` and prune a granule the predicate does not cover (wrong results). Such a key
 /// gets no atom at all, which falls back to a scan and is always correct.
 void KeyCondition::extractIsNullAtomForNotDistinctFrom(
-    const RPNBuilderTreeNode & key_arg, const BuildInfo & info, const Field & const_value, RPN & out)
+    const RPNBuilderTreeNode & key_arg, const BuildInfo & info, const Field & const_value, AtomGroup & group)
 {
     DataTypePtr key_expr_type;
     size_t key_column_num = size_t(-1);
@@ -4867,21 +4866,21 @@ void KeyCondition::extractIsNullAtomForNotDistinctFrom(
     if (!atom_it->second(element, const_value))
         return;
 
-    out.emplace_back(std::move(element));
+    group.atoms.emplace_back(std::move(element));
 }
 
 /// This is the shared core of comparison-atom extraction: the comparison is already in
 /// `key_expr <op> const` form (`func_name` is the key-side operator, the constant is not
 /// NULL or NaN). Besides `extractBinaryComparisonAtoms`, it also serves predicates that
 /// only imply a comparison, such as a bare boolean key column (`WHERE flag` implies
-/// `flag != 0`, see `extractBareKeyColumnAtom`).
+/// `flag != 0`, see `extractBareKeyColumnAtoms`).
 void KeyCondition::extractComparisonAtomsForKeyArgument(
     const RPNBuilderTreeNode & key_arg,
     const BuildInfo & info,
     const std::string & func_name,
     const ColumnWithTypeAndName & constant,
     bool allow_relaxed_pruning,
-    RPN & out)
+    AtomGroup & group)
 {
     const Field const_value = (*constant.column)[0];
     const DataTypePtr const_type = removeNullable(constant.type);
@@ -5349,7 +5348,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             if (normalized->element.function == RPNElement::ALWAYS_TRUE
                 || normalized->element.function == RPNElement::ALWAYS_FALSE)
             {
-                out.emplace_back(std::move(normalized->element));
+                group.atoms.emplace_back(std::move(normalized->element));
                 has_atom_for_key_column[candidate.key_column_num] = true;
                 continue;
             }
@@ -5365,14 +5364,14 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             if (!atom_it_for_candidate->second(normalized->element, normalized->const_value))
                 continue;
 
-            out.emplace_back(std::move(normalized->element));
+            group.atoms.emplace_back(std::move(normalized->element));
             has_atom_for_key_column[candidate.key_column_num] = true;
         }
     }
 
 }
 
-void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out)
+void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, AtomGroup & group)
 {
     Field const_value;
     DataTypePtr const_type;
@@ -5383,16 +5382,16 @@ void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN
 
     /// For cases where it says, for example, `WHERE 0 AND something`.
     if (const_value.isNull())
-        out.emplace_back(RPNElement::ALWAYS_FALSE);
+        group.atoms.emplace_back(RPNElement::ALWAYS_FALSE);
     else if (const_value.getType() == Field::Types::UInt64)
-        out.emplace_back(const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+        group.atoms.emplace_back(const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
     else if (const_value.getType() == Field::Types::Int64)
-        out.emplace_back(const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+        group.atoms.emplace_back(const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
     else if (const_value.getType() == Field::Types::Float64)
-        out.emplace_back(const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+        group.atoms.emplace_back(const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
 }
 
-void KeyCondition::extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
+void KeyCondition::extractBareKeyColumnAtoms(const RPNBuilderTreeNode & node, const BuildInfo & info, AtomGroup & group)
 {
     /// A bare numeric column used directly as a boolean condition, for example `WHERE id` or
     /// `WHERE flag`. We only reach this point for a non-function, non-constant node (functions and
@@ -5432,7 +5431,7 @@ void KeyCondition::extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, con
         "notEquals",
         zero,
         /*allow_relaxed_pruning=*/ false,
-        out);
+        group);
 }
 
 
