@@ -114,5 +114,8 @@ ${CLICKHOUSE_CLIENT} -q "select * from traceView(query_id = 'no-such-query-id-05
 # trace_id and query_id are mutually exclusive.
 ${CLICKHOUSE_CLIENT} -q "select * from traceView('$trace_id', query_id = 'x')" 2>&1 \
     | grep -o -m1 'exactly one of trace_id and query_id' || echo 'exclusivity error: FAIL'
+# An argument given twice, positionally and by name, is an error rather than last-wins.
+${CLICKHOUSE_CLIENT} -q "select * from traceView('$trace_id', timeline_width = 10, timeline_width = 20)" 2>&1 \
+    | grep -o -m1 "argument 'timeline_width' is given twice" || echo 'duplicate-argument error: FAIL'
 
 ${CLICKHOUSE_CLIENT} -q "drop table dist_over_two_shards_tv"

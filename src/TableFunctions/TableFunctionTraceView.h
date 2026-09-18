@@ -15,6 +15,8 @@ class TableFunctionTraceView : public ITableFunction
 {
 public:
     static constexpr auto name = "traceView";
+    static constexpr UInt64 default_timeline_width = 40;
+    static constexpr UInt64 max_timeline_width = 1024;
 
     std::string getName() const override { return name; }
 
@@ -35,7 +37,7 @@ private:
     /// most recent trace of that query when the function executes.
     UUID trace_id{};
     String query_id;
-    UInt64 timeline_width = 40;
+    UInt64 timeline_width = default_timeline_width;
     String cluster;
 };
 

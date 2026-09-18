@@ -26,6 +26,8 @@
 #include <fmt/format.h>
 
 #include <array>
+#include <functional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -36,97 +38,114 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Arguments are positional (trace_id, timeline_width, cluster), and any of them can instead
+/// be given as `name = value`. `query_id` exists only in the named form: a query id cannot be
+/// told apart from a trace id positionally, because server-generated query ids are UUIDs too.
+constexpr std::array<std::string_view, 3> positional_names{"trace_id", "timeline_width", "cluster"};
+
+/// `name = value` -> (name, value); anything else -> (the name of the position, the argument).
+std::pair<String, ASTPtr> splitNamedArgument(const ASTPtr & arg, size_t position)
+{
+    const auto * equals = arg->as<ASTFunction>();
+    if (!equals || equals->name != "equals")
+        return {String(positional_names[position]), arg};
+
+    const auto * identifier = equals->arguments->children.at(0)->as<ASTIdentifier>();
+    if (!identifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table function 'traceView': the left side of a named argument must be an identifier, got '{}'",
+            arg->formatForErrorMessage());
+
+    return {identifier->name(), equals->arguments->children.at(1)};
+}
+
+UUID parseTraceId(const ASTPtr & value)
+{
+    const auto * literal = value->as<ASTLiteral>();
+
+    if (literal && literal->value.getType() == Field::Types::UUID)
+        return literal->value.safeGet<UUID>();
+
+    if (literal && literal->value.getType() == Field::Types::String)
+    {
+        const auto & text = literal->value.safeGet<String>();
+        ReadBufferFromString buf(text);
+        UUID uuid;
+        readUUIDText(uuid, buf);
+        if (!buf.eof())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function 'traceView': cannot parse '{}' as a trace_id UUID", text);
+        return uuid;
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Table function 'traceView' requires a String or UUID trace_id, got '{}'", value->formatForErrorMessage());
+}
+
+}
+
 void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (!function || !function->arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments", getName());
 
-    auto & args = function->arguments->children;
-    if (args.empty() || args.size() > 3)
+    const auto & args = function->arguments->children;
+    if (args.empty() || args.size() > positional_names.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Table function '{}' requires 1 to 3 arguments: trace_id|query_id [, timeline_width [, cluster]], got {}",
-            getName(), args.size());
-
-    /// Arguments are positional (trace_id, timeline_width, cluster) but each can also be
-    /// given as `name = value`. `query_id` exists only in the named form: a query id cannot
-    /// be told apart from a trace id positionally, because server-generated query ids are
-    /// UUIDs themselves.
-    static constexpr std::array<std::string_view, 3> positional_names{"trace_id", "timeline_width", "cluster"};
+            "Table function '{}' requires 1 to {} arguments: trace_id|query_id [, timeline_width [, cluster]], got {}",
+            getName(), positional_names.size(), args.size());
 
     bool has_trace_id = false;
-    for (size_t i = 0; i < args.size(); ++i)
+
+    /// One parser per parameter; each owns the validation of its value.
+    using Parser = std::function<void(const ASTPtr &)>;
+    const std::unordered_map<std::string_view, Parser> parsers
     {
-        String param_name{positional_names[i]};
-        ASTPtr value = args[i];
-
-        if (const auto * equals = args[i]->as<ASTFunction>(); equals && equals->name == "equals")
+        {"trace_id", [&](const ASTPtr & value)
         {
-            const auto * identifier = equals->arguments->children.at(0)->as<ASTIdentifier>();
-            if (!identifier)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function '{}': the left side of a named argument must be an identifier, got '{}'",
-                    getName(), args[i]->formatForErrorMessage());
-            param_name = identifier->name();
-            value = equals->arguments->children.at(1);
-        }
-
-        value = evaluateConstantExpressionOrIdentifierAsLiteral(value, context);
-
-        if (param_name == "trace_id")
-        {
-            const auto * trace_id_literal = value->as<ASTLiteral>();
-            if (!trace_id_literal)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function '{}' requires a constant trace_id", getName());
-
-            if (trace_id_literal->value.getType() == Field::Types::UUID)
-            {
-                trace_id = trace_id_literal->value.safeGet<UUID>();
-            }
-            else if (trace_id_literal->value.getType() == Field::Types::String)
-            {
-                const auto & trace_id_str = trace_id_literal->value.safeGet<String>();
-                ReadBufferFromString buf(trace_id_str);
-                readUUIDText(trace_id, buf);
-                if (!buf.eof())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Table function '{}': cannot parse '{}' as a trace_id UUID", getName(), trace_id_str);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function '{}' requires a String or UUID trace_id, got '{}'",
-                    getName(), value->formatForErrorMessage());
-            }
+            trace_id = parseTraceId(value);
             has_trace_id = true;
-        }
-        else if (param_name == "query_id")
+        }},
+        {"query_id", [&](const ASTPtr & value)
         {
             query_id = checkAndGetLiteralArgument<String>(value, "query_id");
             if (query_id.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function '{}': query_id must not be empty", getName());
-        }
-        else if (param_name == "timeline_width")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': query_id must not be empty", getName());
+        }},
+        {"timeline_width", [&](const ASTPtr & value)
         {
             timeline_width = checkAndGetLiteralArgument<UInt64>(value, "timeline_width");
-            if (timeline_width == 0 || timeline_width > 1024)
+            if (timeline_width == 0 || timeline_width > max_timeline_width)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function '{}': timeline_width must be in [1, 1024], got {}", getName(), timeline_width);
-        }
-        else if (param_name == "cluster")
+                    "Table function '{}': timeline_width must be in [1, {}], got {}", getName(), max_timeline_width, timeline_width);
+        }},
+        {"cluster", [&](const ASTPtr & value)
         {
             cluster = checkAndGetLiteralArgument<String>(value, "cluster");
             /// Fail early with a clear error instead of a confusing one from the internal query.
             context->getCluster(cluster);
-        }
-        else
-        {
+        }},
+    };
+
+    std::unordered_set<String> seen;
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        auto [param_name, value] = splitNamedArgument(args[i], i);
+
+        auto parser = parsers.find(param_name);
+        if (parser == parsers.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}': unknown argument '{}'; expected trace_id, query_id, timeline_width or cluster",
                 getName(), param_name);
-        }
+
+        if (!seen.insert(param_name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': argument '{}' is given twice", getName(), param_name);
+
+        parser->second(evaluateConstantExpressionOrIdentifierAsLiteral(value, context));
     }
 
     if (has_trace_id == !query_id.empty())

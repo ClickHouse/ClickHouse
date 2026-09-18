@@ -12,3 +12,4 @@ Cannot parse uuid
 timeline_width must be in
 No trace found for query_id
 exactly one of trace_id and query_id
+argument 'timeline_width' is given twice
