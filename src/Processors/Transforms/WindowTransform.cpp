@@ -3457,7 +3457,7 @@ percent_rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion])
 ```
 
 The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
@@ -3526,7 +3526,7 @@ cume_dist ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion])
 ```
 
 The default and required window frame definition is `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
@@ -3668,9 +3668,9 @@ Divides the ordered rows within a partition into a specified number of buckets (
 ```sql
 ntile (buckets)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING] | [window_name])
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion]] | [window_name])
 FROM table_name
-WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING [frame_exclusion])
 ```
 
 The argument `buckets` must be a constant positive integer.

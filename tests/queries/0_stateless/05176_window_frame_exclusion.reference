@@ -37,6 +37,12 @@ the ranking functions do not look at the frame, so an exclusion leaves them alon
 0	1	1	1
 0	1	1	2
 1	3	2	3
+ntile does not look at the frame either, so an exclusion leaves it alone
+0	1	1	1
+0	1	1	1
+1	1	1	1
+1	2	2	2
+2	2	2	2
 percent_rank and cume_dist require the default frame, and an exclusion is not a change to it
 0	0	0.5	0	0.5
 0	0	0.5	0	0.5

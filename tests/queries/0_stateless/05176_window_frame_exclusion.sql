@@ -48,6 +48,13 @@ SELECT v,
     row_number() OVER (ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS rn
 FROM (SELECT toUInt8(number % 2) AS v FROM numbers(3)) ORDER BY v, rn;
 
+SELECT 'ntile does not look at the frame either, so an exclusion leaves it alone';
+SELECT v,
+    ntile(2) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS current_row,
+    ntile(2) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP) AS group_,
+    ntile(2) OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS plain
+FROM (SELECT toUInt8(number % 3) AS v FROM numbers(5)) ORDER BY v, plain;
+
 SELECT 'percent_rank and cume_dist require the default frame, and an exclusion is not a change to it';
 SELECT v,
     percent_rank() OVER (ORDER BY v RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) AS pr,
