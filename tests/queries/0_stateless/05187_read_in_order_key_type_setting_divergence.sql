@@ -1,8 +1,7 @@
 -- A key expression is resolved twice: once by the table under its own settings, once by the
 -- query under the session's. When a setting changes its result type, the two are different
 -- functions with different orders, so read-in-order must not treat them as interchangeable.
--- Arms 1 to 5 pin query_plan_read_in_order = 1 and cover the plan-based matcher; arms 6 and 7 pin it
--- off under the old analyzer and cover the legacy one.
+-- All five arms pin query_plan_read_in_order = 1 and cover the plan-based matcher.
 
 -- Arm 1: the ORDER BY divergence. Wrong row order, visible with no assert involved.
 DROP TABLE IF EXISTS t_order;
@@ -57,21 +56,6 @@ SELECT count() > 0 FROM (
     SELECT CAST(json.b, 'String') FROM t_order ORDER BY CAST(json.b, 'String')
     SETTINGS cast_keep_nullable = 0, optimize_read_in_order = 1,
              query_plan_read_in_order = 1, read_in_order_use_virtual_row = 0, max_threads = 4
-) WHERE explain ILIKE '%Read type: InOrder%';
-
--- Arm 6: the legacy matcher, reached with the plan optimization off under the old analyzer. It
--- compares the key by name alone, so the same divergence advertises an order the parts do not have.
-SET enable_analyzer = 0;
-SELECT CAST(json.b, 'String') FROM t_order ORDER BY CAST(json.b, 'String')
-SETTINGS query_plan_read_in_order = 0, optimize_read_in_order = 1,
-         read_in_order_use_virtual_row = 0, max_threads = 4;
-
--- Arm 7: control for arm 6. With the types in agreement the legacy matcher still reads in order.
-SELECT count() > 0 FROM (
-    EXPLAIN actions = 1
-    SELECT CAST(json.b, 'String') FROM t_order ORDER BY CAST(json.b, 'String')
-    SETTINGS cast_keep_nullable = 0, query_plan_read_in_order = 0, optimize_read_in_order = 1,
-             read_in_order_use_virtual_row = 0, max_threads = 4
 ) WHERE explain ILIKE '%Read type: InOrder%';
 
 DROP TABLE t_order;

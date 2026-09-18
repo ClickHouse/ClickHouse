@@ -50,7 +50,8 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_COMP
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX = 8;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS = 9;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING = 10;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS = 11;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -118,7 +119,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 18 registers the `Filling` step and adds the `WITH FILL` bounds (`FROM`, `TO`, `STEP`,
 /// `STALENESS` and the column alias) to a serialized sort description, so a plan with
 /// `ORDER BY ... WITH FILL` can be shipped in full.
-/// Version 19 adds a second flags byte on `AggregatingStep` carrying `group_by_keys_semantically_constant`
+/// Version 19 writes a per-step serialization version next to every step, so a step can change its
+/// own bytes without moving this global version (see the constant below).
+/// Version 19 also adds a second flags byte on `AggregatingStep` carrying `group_by_keys_semantically_constant`
 /// (bit 1), which keeps the gradual pre-aggregation resize off for `GROUP BY materialize(1)`-like keys
 /// on the shard, and `gradual_resize_enabled` (bit 2), which keeps it on for the pre-aggregation of a
 /// user `GROUP BY` only. Left off the wire towards older peers, which fall back to the header-based
@@ -149,7 +152,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORD
 /// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
 /// mixed-version cluster fails at plan time.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
-/// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
+/// First query-plan serialization version that registers a `LimitRange` step. Gates serializing a
 /// `LimitRangeStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
 /// First query-plan serialization version that carries the estimate-derived decisions of
@@ -161,6 +164,15 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_AL
 /// bounds in a serialized sort description. Gates `FillingStep::serialize` and the fill payload in
 /// `serializeSortDescription`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP = 18;
+/// First query-plan serialization version that writes a per-step serialization version next to each
+/// step. Each step owns its version and bumps it on any change to its bytes; the version travels on
+/// the wire so a reader refuses a step version it does not know rather than misparsing it. The global
+/// version then only needs to move once per release, not on every step change.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS = 19;
+/// First global query-plan version that writes version 1 of `Distinct` and `PreDistinct`, adding the
+/// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
+/// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
 /// First query-plan serialization version with the second flags byte on `AggregatingStep`, whose bit 1
 /// is `group_by_keys_semantically_constant` and whose bit 2 is `gradual_resize_enabled`. Not gated by
 /// throwing: an older peer simply does not get the byte and falls back to the header-based constness
