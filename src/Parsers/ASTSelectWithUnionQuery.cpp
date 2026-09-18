@@ -287,6 +287,10 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
                  || select_child->as<ASTSelectIntersectExceptQuery>()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "`SelectWithUnionQuery` 'list_of_selects' must contain only select queries during AST JSON deserialization");
+    /// `ParserSelectWithUnionQuery` lifts a one-element chain, so a union of one union is parser-impossible.
+    if (list_of_selects->children.size() == 1 && list_of_selects->children[0]->as<ASTSelectWithUnionQuery>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A single-element 'list_of_selects' cannot hold a nested `SelectWithUnionQuery` during AST JSON deserialization");
     children.push_back(list_of_selects);
 
     /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
