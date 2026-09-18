@@ -125,7 +125,6 @@ UnityV2Catalog::UnityV2Catalog(
     const std::string & auth_scope_,
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
-    bool oauth_server_use_request_body_,
     DB::ContextPtr context_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
@@ -134,7 +133,6 @@ UnityV2Catalog::UnityV2Catalog(
     , log(getLogger("UnityV2Catalog(" + catalog_ + ")"))
     , auth_scope(auth_scope_)
     , oauth_server_uri(oauth_server_uri_)
-    , oauth_server_use_request_body(oauth_server_use_request_body_)
 {
     maybeSetAuthHeader(catalog_credential_, auth_header_);
     if (auth_header)
@@ -192,11 +190,8 @@ AccessToken UnityV2Catalog::retrieveAccessToken() const
     else
         url = Poco::URI(oauth_server_uri);
 
-    if (oauth_server_use_request_body)
-        return requestOAuthToken(getContext(), url, getOAuthRequestParams());
-
-    url.setRawQuery(getOAuthRequestParams());
-    return requestOAuthToken(getContext(), url, "");
+    /// Always in the body; `oauth_server_use_request_body = 0` is accepted but ignored (unsafe, kept for other catalogs).
+    return requestOAuthToken(getContext(), url, getOAuthRequestParams());
 }
 
 void UnityV2Catalog::ensureBearerToken(bool force_refresh) const

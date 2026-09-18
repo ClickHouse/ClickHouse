@@ -29,7 +29,6 @@ public:
         const std::string & auth_scope_,
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
-        bool oauth_server_use_request_body_,
         DB::ContextPtr context_);
 
     ~UnityV2Catalog() override;
@@ -83,7 +82,6 @@ private:
     std::string client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
-    bool oauth_server_use_request_body = true;
     bool use_oauth = false;
 
     /// Guards the token and everything derived from it, because `iceberg_rest_catalog` embeds the token in its auth header.
