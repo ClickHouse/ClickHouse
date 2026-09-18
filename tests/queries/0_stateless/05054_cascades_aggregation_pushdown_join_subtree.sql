@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- The pushed side of a `cascades_aggregation_pushdown` here is a JOIN SUBTREE, not a table scan
 -- (the header, statistics and condition columns all come from a join), plus the repeated
 -- pushdown through two joins. Every executed scenario runs twice - through the cascades
