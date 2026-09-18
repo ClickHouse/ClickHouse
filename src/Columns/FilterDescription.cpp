@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/TargetSpecific.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -74,6 +75,19 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     {
         const ColumnConst & column_const = assert_cast<const ColumnConst &>(column);
         (column_const.getBool(0) ? always_true : always_false) = true;
+        return;
+    }
+
+    /// A LowCardinality filter whose rows all map to the same dictionary key is decided by that one
+    /// value; the scan stops at the first differing index. This is a property of the block, not of
+    /// the query, so it is recognized here rather than by returning a `ColumnConst` from the
+    /// function, which would surface through `isConstant`. Empty columns are never constant, which
+    /// keeps headers safe: they are evaluated on zero rows, and a constant filter in a header is
+    /// taken to hold for the whole query.
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        if (indexesHaveSingleValue(column_low_cardinality->getIndexes()))
+            (column_low_cardinality->getBool(0) ? always_true : always_false) = true;
     }
 }
 
@@ -105,6 +119,11 @@ static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
 
 ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
 {
+    /// Drop LowCardinality from inside a constant before expanding it, otherwise the expansion first
+    /// materializes one dictionary index per row and only then the filter itself.
+    if (isColumnConst(*column))
+        column = column->convertToFullColumnIfLowCardinality();
+
     column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
     ColumnPtr null_map_column;
