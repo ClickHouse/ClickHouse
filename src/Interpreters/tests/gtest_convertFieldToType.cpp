@@ -104,6 +104,79 @@ INSTANTIATE_TEST_SUITE_P(
     })
 );
 
+/// The source type hint reaches container elements. 2020-01-01 00:00:00 UTC is 1577836800.
+INSTANTIATE_TEST_SUITE_P(
+    ContainerElementsCarryTheHint,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "Array(DateTime64(3, 'UTC'))",
+            Field(Array{DecimalField<DateTime64>(DateTime64(1577836800000), 3)}),
+            "Array(DateTime('UTC'))",
+            Field(Array{Field(static_cast<UInt64>(1577836800))})
+        },
+        {
+            "Tuple(DateTime64(3, 'UTC'), String)",
+            Field(Tuple{DecimalField<DateTime64>(DateTime64(1577836800000), 3), Field(String("x"))}),
+            "Tuple(DateTime('UTC'), String)",
+            Field(Tuple{Field(static_cast<UInt64>(1577836800)), Field(String("x"))})
+        },
+        {
+            "Map(String, DateTime64(3, 'UTC'))",
+            Field(Map{Tuple{Field(String("k")), DecimalField<DateTime64>(DateTime64(1577836800000), 3)}}),
+            "Map(String, DateTime('UTC'))",
+            Field(Map{Tuple{Field(String("k")), Field(static_cast<UInt64>(1577836800))}})
+        },
+    })
+);
+
+/// The hint arrives as the caller declared it, wrappers included.
+INSTANTIATE_TEST_SUITE_P(
+    WrappedSourceTypeHint,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "Nullable(DateTime64(3, 'UTC'))",
+            DecimalField<DateTime64>(DateTime64(123'000), 3),
+            "DateTime('UTC')",
+            Field(static_cast<UInt64>(123))
+        },
+        // This branch casts the hint to `DataTypeDateTime`, so the pointer itself has to be unwrapped.
+        {
+            "LowCardinality(DateTime('UTC'))",
+            Field(static_cast<UInt64>(123 * Day)),
+            "Date",
+            Field(static_cast<UInt64>(123))
+        },
+    })
+);
+
+/// A `Variant` hint stands for the one alternative with the field's tag; two candidates leave no hint.
+INSTANTIATE_TEST_SUITE_P(
+    VariantSourceTypeHint,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        {
+            "Array(Variant(DateTime64(3, 'UTC'), String))",
+            Field(Array{DecimalField<DateTime64>(DateTime64(1577836800000), 3)}),
+            "Array(DateTime('UTC'))",
+            Field(Array{Field(static_cast<UInt64>(1577836800))})
+        },
+        {
+            "Tuple(Variant(Enum8('7' = 3)))",
+            Field(Tuple{Field(static_cast<Int64>(3))}),
+            "Tuple(String)",
+            Field(Tuple{Field(String("7"))})
+        },
+        {
+            "Variant(DateTime64(3, 'UTC'), Decimal64(3))",
+            DecimalField<DateTime64>(DateTime64(123'000), 3),
+            "DateTime('UTC')",
+            std::nullopt
+        },
+    })
+);
+
 INSTANTIATE_TEST_SUITE_P(
     Date32ToDateTime64,
     ConvertFieldToTypeTest,
