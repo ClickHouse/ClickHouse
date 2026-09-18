@@ -210,9 +210,9 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
 }
 
-inline double rowsForJoinCost(const std::optional<UInt64> & estimated_rows, UInt64 unknown_relation_rows)
+inline UInt64 rowsForJoinCost(const std::optional<UInt64> & estimated_rows, UInt64 unknown_relation_rows)
 {
-    return static_cast<double>(estimated_rows.value_or(unknown_relation_rows));
+    return estimated_rows.value_or(unknown_relation_rows);
 }
 
 inline double computeJoinCost(
@@ -221,8 +221,8 @@ inline double computeJoinCost(
     const SelectivityEstimate & selectivity,
     UInt64 unknown_relation_rows)
 {
-    double lhs = rowsForJoinCost(left->estimated_rows, unknown_relation_rows);
-    double rhs = rowsForJoinCost(right->estimated_rows, unknown_relation_rows);
+    double lhs = static_cast<double>(rowsForJoinCost(left->estimated_rows, unknown_relation_rows));
+    double rhs = static_cast<double>(rowsForJoinCost(right->estimated_rows, unknown_relation_rows));
     return left->cost + right->cost + estimateJoinedRows(selectivity, lhs, rhs);
 }
 

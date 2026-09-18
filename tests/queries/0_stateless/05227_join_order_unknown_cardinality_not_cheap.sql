@@ -65,6 +65,52 @@ SELECT rel FROM (
     )
 ) WHERE rel != '' ORDER BY n;
 
+-- A semi/anti join filters its preserved side, so charging it an unestimated relation's row count
+-- defers a selective filter behind the larger join. Only DPsub with a conflict detector reorders them.
+-- The expected order joins `t_big` after the filter and differs from the written order, so a plan that
+-- keeps the query's own order fails these blocks as well.
+SELECT 'dpsub semi, conflict detector';
+SELECT rel FROM (
+    SELECT rowNumberInAllBlocks() AS n, extract(explain, 'ReadFromMergeTree \(.*\.(\w+)\)') AS rel
+    FROM (
+        EXPLAIN SELECT count() FROM t_small_a
+        SEMI LEFT JOIN t_unknown ON t_small_a.id = t_unknown.id AND t_unknown.tag = 'x'
+        INNER JOIN t_big ON t_small_a.id = t_big.id
+        INNER JOIN t_small_b ON t_small_a.id = t_small_b.id
+        SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
+                 query_plan_optimize_join_order_use_conflict_detector_a = 1, enable_parallel_replicas = 0
+    )
+) WHERE rel != '' ORDER BY n;
+
+SELECT 'dpsub anti, conflict detector';
+SELECT rel FROM (
+    SELECT rowNumberInAllBlocks() AS n, extract(explain, 'ReadFromMergeTree \(.*\.(\w+)\)') AS rel
+    FROM (
+        EXPLAIN SELECT count() FROM t_small_a
+        ANTI LEFT JOIN t_unknown ON t_small_a.id = t_unknown.id AND t_unknown.tag = 'x'
+        INNER JOIN t_big ON t_small_a.id = t_big.id
+        INNER JOIN t_small_b ON t_small_a.id = t_small_b.id
+        SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
+                 query_plan_optimize_join_order_use_conflict_detector_a = 1, enable_parallel_replicas = 0
+    )
+) WHERE rel != '' ORDER BY n;
+
+SELECT 'semi result';
+SELECT count() FROM t_small_a
+SEMI LEFT JOIN t_unknown ON t_small_a.id = t_unknown.id AND t_unknown.tag = 'x'
+INNER JOIN t_big ON t_small_a.id = t_big.id
+INNER JOIN t_small_b ON t_small_a.id = t_small_b.id
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
+         query_plan_optimize_join_order_use_conflict_detector_a = 1;
+
+SELECT 'anti result';
+SELECT count() FROM t_small_a
+ANTI LEFT JOIN t_unknown ON t_small_a.id = t_unknown.id AND t_unknown.tag = 'x'
+INNER JOIN t_big ON t_small_a.id = t_big.id
+INNER JOIN t_small_b ON t_small_a.id = t_small_b.id
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
+         query_plan_optimize_join_order_use_conflict_detector_a = 1;
+
 SELECT 'result';
 SELECT count() FROM t_big, t_small_a, t_small_b, t_unknown
 WHERE t_big.id = t_small_a.id AND t_small_a.id = t_small_b.id

@@ -13,5 +13,19 @@ t_big
 t_small_a
 t_small_b
 t_unknown
+dpsub semi, conflict detector
+t_big
+t_unknown
+t_small_a
+t_small_b
+dpsub anti, conflict detector
+t_big
+t_unknown
+t_small_a
+t_small_b
+semi result
+10
+anti result
+0
 result
 10
