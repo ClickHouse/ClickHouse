@@ -253,20 +253,8 @@ size_t maxRowsFittingOneArrowBatch(
         }
         default:
         {
-            /// A type with no Arrow equivalent becomes a `Binary` column of the per-row `getDataAt` bytes.
-            /// Unrecognized types land here too, so a type added later splits rather than overflows.
-            if (type->haveMaximumSizeOfValue())
-            {
-                const size_t value_size = type->getMaximumSizeOfValueInMemory();
-                return value_size == 0 ? num_rows : std::min<size_t>(num_rows, MAX_ARROW_BUFFER_SIZE / value_size);
-            }
-            UInt64 total = 0;
-            for (size_t row = begin; row != end; ++row)
-            {
-                total += column.getDataAt(row).size();
-                if (total > MAX_ARROW_BUFFER_SIZE)
-                    return row - begin;
-            }
+            /// A type with no Arrow equivalent is written by serializing each value, so bounding its
+            /// encoded size would mean serializing twice. The encoder rejects a batch that overflows.
             return num_rows;
         }
     }

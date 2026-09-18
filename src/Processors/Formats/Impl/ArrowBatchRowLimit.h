@@ -25,6 +25,9 @@ constexpr UInt64 MAX_ARROW_BUFFER_SIZE = std::numeric_limits<Int32>::max() - 1;
 /// dictionary. A dictionary larger than one buffer is not covered at all: its bytes do not depend on the
 /// row count, because `ColumnLowCardinality::insertRangeFrom` keeps a shared source dictionary whole, so
 /// every slice re-emits it. Arrow rejects such a chunk.
+///
+/// A type with no Arrow equivalent is not covered either, since only serializing its values reveals their
+/// encoded size. Both uncovered shapes are rejected by the writer instead of being split.
 size_t maxRowsFittingOneArrowBatch(
     const IColumn & column, const DataTypePtr & type, size_t begin, size_t end, bool fixed_string_as_fixed_byte_array);
 
