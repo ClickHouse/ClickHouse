@@ -782,6 +782,9 @@ private:
         SetAtomCandidate components;
         /// A tuple expression mapped onto one Tuple-typed key column needs a packed set column.
         std::optional<SetAtomCandidate> whole_tuple;
+        /// Predicate component indexes and key subexpression names that can supply additional atoms.
+        /// Their transformation DAGs are collected only when building the group from the set columns.
+        std::vector<std::pair<size_t, String>> wrapped_expressions;
     };
 
     /// Converts a candidate's set columns into key space and builds its `MergeTreeSetIndex`.
@@ -792,16 +795,18 @@ private:
         bool allow_relaxed_pruning,
         const DataTypePtr & has_element_type);
 
-    /// This function maps the predicate expression whose values are tested for set
-    /// membership (the left-hand side of IN, or the element argument of `has`) onto
-    /// key columns. It produces one `KeyTuplePositionMapping` per tuple component that
-    /// reaches a key column, either directly through a monotonic chain or via a
-    /// deterministic set-transforming DAG.
-    SetIndexAnalysisResult analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg, const BuildInfo & info);
+    /// Maps the predicate expression whose values are tested for set membership (the left-hand side
+    /// of `IN`, or the element argument of `has`) onto key columns. Each matched tuple component has
+    /// one `KeyTuplePositionMapping`, reaching a key column through a monotonic chain or a deterministic
+    /// set-transforming DAG. The result also identifies source expressions for additional wrapped-set
+    /// atoms, when allowed.
+    /// Returns no result when there are no candidate mappings or source expressions. The set is not materialized.
+    std::optional<SetIndexAnalysisResult> tryAnalyzePredicateExpressionForSetIndex(
+        const RPNBuilderTreeNode & arg, const BuildInfo & info, bool allow_relaxed_pruning);
 
     /// Appends to `group` the set atoms for its `IN` or `has` predicate using the materialized set
-    /// and analyzed key mappings. `wrapped_expressions` supplies the tuple components from which
-    /// deterministic transforms can derive atoms for remaining key columns. Coverage is local to the group.
+    /// and its analysis. Initial component and packed-tuple atoms take priority over additional
+    /// deterministic transforms for the remaining key columns. Coverage is local to the group.
     /// `has_element_type` supplies the occupied element type of a `has` array, so every atom checks
     /// that conversion preserves its comparison semantics.
     void appendSetAtoms(
@@ -809,7 +814,6 @@ private:
         const Columns & set_columns,
         const DataTypes & set_types,
         SetIndexAnalysisResult analysis,
-        const std::vector<std::pair<size_t, String>> & wrapped_expressions,
         bool allow_relaxed_pruning,
         AtomGroup & group,
         const DataTypePtr & has_element_type = nullptr);
