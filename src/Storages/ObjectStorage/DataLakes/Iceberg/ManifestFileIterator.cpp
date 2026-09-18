@@ -9,6 +9,7 @@
 
 #include <base/arithmeticOverflow.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -18,6 +19,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -39,6 +41,11 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool iceberg_tolerate_conflicting_manifest_schemas;
 }
 
 namespace ProfileEvents
@@ -315,7 +322,10 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
 
-    schema_processor.addIcebergTableSchema(schema_object);
+    schema_processor.addIcebergTableSchema(
+        schema_object,
+        IcebergSchemaProcessor::SchemaSource::ManifestFile,
+        context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
 
     /// Every entry of this manifest carries one partition value per spec field, including the
     /// fields skipped in buildPartitionKeyFromSpec, so this count is the arity its partition tuples must have.
@@ -539,9 +549,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
                 {
-                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
-                    /// form can still be a value the column holds, so this is not on its own a malformed
-                    /// manifest and stays out of the warning log.
+                    /// Pruning is skipped either way, but a bound narrower than the column is what a promotion
+                    /// (`int` -> `long`) leaves stored, and at scale 38 a bound that only loses its widened form
+                    /// can still be a value the column holds, so this is not on its own a malformed manifest.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "
@@ -639,9 +649,7 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
 
     auto pruner = std::make_unique<ManifestFilesPruner>(
         *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), *this, context);
-    auto * raw_ptr = pruner.get();
-    pruners_by_schema_id.emplace(schema_id, std::move(pruner));
-    return raw_ptr;
+    return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 
 bool ManifestFileIterator::isInitialized() const
