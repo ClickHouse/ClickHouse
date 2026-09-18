@@ -194,7 +194,7 @@ TEST(ColumnsCache, RemovePartDropsOnlyItsEntries)
 TEST(ColumnsCache, EvictedEntriesLeaveNoIndexBehind)
 {
     /// Room for a few entries of 800 rows of UInt64 in every shard.
-    auto cache = makeCache(ColumnsCache::NUM_SHARDS * 20000);
+    auto cache = makeCache(ColumnsCache::numberOfShards(20000) * 20000);
     TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
     const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
@@ -252,7 +252,7 @@ TEST(ColumnsCache, ClearAllAndRemoveTableGenerationsDoNotCancelOut)
 TEST(ColumnsCache, OversizedEntryRejected)
 {
     /// Every shard holds 2 KiB: one granule of 100 rows of UInt64 fits, eight do not.
-    auto cache = makeCache(ColumnsCache::NUM_SHARDS * 2048);
+    auto cache = makeCache(ColumnsCache::numberOfShards(2048) * 2048);
     TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
     const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
@@ -359,7 +359,7 @@ TEST(ColumnsCache, AutoResizeYieldsMemoryAndGrowsBack)
 
     /// The usage of the rest grows past what the limit leaves: entries are evicted.
     EXPECT_TRUE(cache.autoResize(static_cast<Int64>(limit - full_size / 2 + cache.sizeInBytes()), limit));
-    EXPECT_LE(cache.sizeInBytes(), full_size / 2 + ColumnsCache::NUM_SHARDS * 16);
+    EXPECT_LE(cache.sizeInBytes(), full_size / 2 + ColumnsCache::MAX_SHARDS * 16);
     EXPECT_LT(cache.count(), 100u);
     EXPECT_GT(cache.count(), 0u);
 

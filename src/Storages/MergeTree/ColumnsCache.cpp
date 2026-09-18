@@ -77,10 +77,11 @@ ColumnsCache::ColumnsCache(
     : configured_max_size_in_bytes(max_size_in_bytes)
     , effective_max_size_in_bytes(max_size_in_bytes)
 {
-    const size_t shard_max_size = (max_size_in_bytes + NUM_SHARDS - 1) / NUM_SHARDS;
-    const size_t shard_max_count = max_count ? (max_count + NUM_SHARDS - 1) / NUM_SHARDS : 0;
-    shards.reserve(NUM_SHARDS);
-    for (size_t i = 0; i < NUM_SHARDS; ++i)
+    const size_t num_shards = numberOfShards(max_size_in_bytes);
+    const size_t shard_max_size = (max_size_in_bytes + num_shards - 1) / num_shards;
+    const size_t shard_max_count = max_count ? (max_count + num_shards - 1) / num_shards : 0;
+    shards.reserve(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
         shards.push_back(std::make_unique<Shard>(*this, cache_policy, size_in_bytes_metric, count_metric, shard_max_size, shard_max_count, size_ratio));
 }
 
@@ -92,12 +93,12 @@ std::vector<ColumnsCache::MappedPtr> ColumnsCache::getMany(const UInt128 & colum
     std::vector<MappedPtr> result(num_keys);
 
     /// The keys of a column spread over the shards; each shard is locked once for its keys.
-    std::vector<std::vector<size_t>> positions_by_shard(NUM_SHARDS);
+    std::vector<std::vector<size_t>> positions_by_shard(shards.size());
     for (size_t i = 0; i < num_keys; ++i)
         positions_by_shard[shardIndex(Key{column_identity, first_stripe + i})].push_back(i);
 
     std::vector<Key> keys;
-    for (size_t shard = 0; shard < NUM_SHARDS; ++shard)
+    for (size_t shard = 0; shard < shards.size(); ++shard)
     {
         const auto & positions = positions_by_shard[shard];
         if (positions.empty())
@@ -465,7 +466,7 @@ void ColumnsCache::clearAll()
 
 void ColumnsCache::setShardsMaxSize(size_t total_max_size_in_bytes)
 {
-    const size_t shard_max_size = (total_max_size_in_bytes + NUM_SHARDS - 1) / NUM_SHARDS;
+    const size_t shard_max_size = (total_max_size_in_bytes + shards.size() - 1) / shards.size();
     for (auto & shard : shards)
         shard->setMaxSizeInBytes(shard_max_size);
 }

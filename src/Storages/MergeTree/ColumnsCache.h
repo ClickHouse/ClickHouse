@@ -9,6 +9,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/IMemoryReleasableCache.h>
 #include <Columns/IColumn.h>
+#include <Core/Defines.h>
 #include <Core/UUID.h>
 
 namespace DB
@@ -39,7 +40,7 @@ class MergeTreeIndexGranularity;
 /// does not mix tables.
 struct ColumnsCacheKey
 {
-    UInt128 column_identity;
+    UInt128 column_identity = 0;
     size_t stripe = 0;
 
     bool operator==(const ColumnsCacheKey & other) const = default;
@@ -95,7 +96,7 @@ struct ColumnsCacheEntry
     ColumnPtr column;
 
     /// What the key was made of, for `system.columns_cache` and for the per-part index.
-    UUID table_uuid;
+    UUID table_uuid = UUIDHelpers::Nil;
     String part_name;
     String column_name;
     UInt64 schema_identity = 0;
@@ -149,6 +150,11 @@ struct ColumnsCacheWeightFunction
 /// Sharded by key, like the userspace page cache, so that the threads of a query - and of the
 /// queries running next to it - do not contend on one mutex: a read looks up one entry per
 /// column per stripe (see `ColumnsCacheKey`), and these lookups go to different shards.
+///
+/// Every shard gets an equal share of the size, and an entry has to fit into the probationary
+/// segment of its shard to be admitted, so a small cache is split into fewer shards: one per
+/// `BYTES_PER_SHARD` of the configured size, up to `MAX_SHARDS`. The number of shards is fixed at
+/// construction; a cache that is enlarged by a configuration reload keeps its shards.
 class ColumnsCache : public IMemoryReleasableCache
 {
 public:
@@ -156,7 +162,10 @@ public:
     using Mapped = ColumnsCacheEntry;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    static constexpr size_t NUM_SHARDS = 16;
+    static constexpr size_t MAX_SHARDS = 16;
+    static constexpr size_t BYTES_PER_SHARD = 256_MiB;
+
+    static size_t numberOfShards(size_t max_size_in_bytes) { return std::clamp<size_t>(max_size_in_bytes / BYTES_PER_SHARD, 1, MAX_SHARDS); }
 
     ColumnsCache(
         const String & cache_policy,
@@ -298,7 +307,7 @@ private:
 
     std::vector<std::unique_ptr<Shard>> shards;
 
-    static size_t shardIndex(const Key & key) { return ColumnsCacheKeyHash{}(key) % NUM_SHARDS; }
+    size_t shardIndex(const Key & key) const { return ColumnsCacheKeyHash{}(key) % shards.size(); }
     Shard & shardOf(const Key & key) { return *shards[shardIndex(key)]; }
 
     struct PartIdentifier
@@ -359,7 +368,7 @@ private:
     }
 
     /// The size of the cache as configured, and the size in effect, which `autoResize` lowers
-    /// while the server is short of memory. Every shard gets a `NUM_SHARDS`-th of it.
+    /// while the server is short of memory. Every shard gets an equal share of it.
     std::atomic<size_t> configured_max_size_in_bytes;
     std::atomic<size_t> effective_max_size_in_bytes;
 
