@@ -25,6 +25,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -638,16 +639,22 @@ private:
 
         QueryPipelineBuilder pipeline;
 
-        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter(
-                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
-            pipeline = interpreter.buildQueryPipeline();
-        }
-        else
-        {
-            InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
-            pipeline = interpreter.buildQueryPipeline();
+            /// Mark this region to avoid counting the `QueryExecutionCounters` metrics several times:
+            /// the pipeline is built again for every source block.
+            QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(view_id.getFullTableName());
+
+            if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                InterpreterSelectQueryAnalyzer interpreter(
+                    select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
+                pipeline = interpreter.buildQueryPipeline();
+            }
+            else
+            {
+                InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
+                pipeline = interpreter.buildQueryPipeline();
+            }
         }
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
