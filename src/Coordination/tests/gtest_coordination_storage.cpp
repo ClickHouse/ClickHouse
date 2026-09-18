@@ -1195,9 +1195,11 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
         ASSERT_EQ(multi_response.responses.size(), 2);
         const auto & first_response = dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*multi_response.responses[0]);
         const auto & second_response = dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*multi_response.responses[1]);
+        const std::unordered_set<String> expected_names{"a", "b", "c", "d", "e", "f", "g", "h"};
         EXPECT_EQ(first_response.error, Error::ZOK);
         EXPECT_EQ(second_response.error, Error::ZOK);
-        EXPECT_NE(first_response.names, second_response.names);
+        EXPECT_EQ(std::unordered_set<String>(first_response.names.begin(), first_response.names.end()), expected_names);
+        EXPECT_EQ(std::unordered_set<String>(second_response.names.begin(), second_response.names.end()), expected_names);
     }
 
     {

@@ -12,7 +12,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/StringUtils.h>
@@ -20,6 +19,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/logger_useful.h>
+#include <Common/shuffle.h>
 #include <Common/thread_local_rng.h>
 
 #include <Coordination/CoordinationSettings.h>
@@ -1207,28 +1207,12 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperL
 }
 /// LIST Request ///
 
-static UInt64 listWithOptionsRank(
-    int64_t session_id,
-    Coordination::XID outer_xid,
-    size_t subrequest_index,
-    std::string_view path,
-    std::string_view child_name)
-{
-    SipHash hash(static_cast<UInt64>(session_id), static_cast<UInt64>(outer_xid));
-    hash.update(static_cast<UInt64>(subrequest_index));
-    hash.update(path);
-    hash.update(child_name);
-    return hash.get64();
-}
-
 template <typename Storage>
 static Coordination::ZooKeeperResponsePtr processLocal(
     const Coordination::ZooKeeperListWithOptionsRequest & zk_request,
     Storage & storage,
     int64_t session_id,
-    bool check_acl,
-    Coordination::XID outer_xid,
-    size_t subrequest_index)
+    bool check_acl)
 {
     ProfileEvents::increment(ProfileEvents::KeeperListWithOptionsRequest);
     auto response = std::static_pointer_cast<Coordination::ZooKeeperListWithOptionsResponse>(zk_request.makeResponse());
@@ -1271,16 +1255,6 @@ static Coordination::ZooKeeperResponsePtr processLocal(
     const bool materialize_shuffled_subtree = zk_request.options.recursive && zk_request.options.shuffle;
     std::vector<String> shuffled_subtree_candidates;
 
-    const auto sort_by_rank = [&](auto & candidates)
-    {
-        std::ranges::sort(candidates, [&](const String & lhs, const String & rhs)
-        {
-            const UInt64 lhs_rank = listWithOptionsRank(session_id, outer_xid, subrequest_index, zk_request.path, lhs);
-            const UInt64 rhs_rank = listWithOptionsRank(session_id, outer_xid, subrequest_index, zk_request.path, rhs);
-            return lhs_rank == rhs_rank ? lhs < rhs : lhs_rank < rhs_rank;
-        });
-    };
-
     const auto append_result = [&](std::string_view relative, const auto * child)
     {
         if (zk_request.options.max_results != 0 && response->names.size() >= zk_request.options.max_results)
@@ -1306,7 +1280,12 @@ static Coordination::ZooKeeperResponsePtr processLocal(
     {
         std::vector<String> children = storage.nodes.listCommittedChildrenNames(zk_request.path);
         if (zk_request.options.shuffle)
-            sort_by_rank(children);
+        {
+            if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
+                partial_shuffle(children.begin(), children.end(), zk_request.options.max_results, thread_local_rng);
+            else
+                std::shuffle(children.begin(), children.end(), thread_local_rng);
+        }
 
         if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
         {
@@ -1328,7 +1307,7 @@ static Coordination::ZooKeeperResponsePtr processLocal(
         const String parent_path = frontier[current];
         std::vector<String> children = storage.nodes.listCommittedChildrenNames(parent_path);
         if (zk_request.options.shuffle && !materialize_shuffled_subtree)
-            sort_by_rank(children);
+            std::shuffle(children.begin(), children.end(), thread_local_rng);
 
         for (const String & child_name : children)
         {
@@ -1377,7 +1356,11 @@ static Coordination::ZooKeeperResponsePtr processLocal(
 
     if (materialize_shuffled_subtree)
     {
-        sort_by_rank(shuffled_subtree_candidates);
+        if (zk_request.options.max_results != 0 && shuffled_subtree_candidates.size() > zk_request.options.max_results)
+            partial_shuffle(
+                shuffled_subtree_candidates.begin(), shuffled_subtree_candidates.end(), zk_request.options.max_results, thread_local_rng);
+        else
+            std::shuffle(shuffled_subtree_candidates.begin(), shuffled_subtree_candidates.end(), thread_local_rng);
 
         for (const String & relative : shuffled_subtree_candidates)
         {
@@ -1399,7 +1382,7 @@ static Coordination::ZooKeeperResponsePtr
 process(const Coordination::ZooKeeperListWithOptionsRequest & zk_request, Storage & storage, KeeperStorage::DeltaRange deltas, int64_t session_id)
 {
     chassert(deltas.empty());
-    return processLocal(zk_request, storage, session_id, /*check_acl=*/true, zk_request.xid, /*subrequest_index=*/0);
+    return processLocal(zk_request, storage, session_id, /*check_acl=*/true);
 }
 
 /// CHECK Request ///
@@ -2473,7 +2456,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processLocalRequests(
         const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(T & concrete_zk_request)
         {
             if constexpr (std::same_as<T, Coordination::ZooKeeperListWithOptionsRequest>)
-                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl, task.outer_xid, task.subrequest_index);
+                response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
             else
                 response = processLocal(concrete_zk_request, *this, task.session_id, check_acl);
         };
