@@ -48,6 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
             {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
+            {"enable_join_runtime_filters_index_analysis", false, true, "The JOIN runtime filters became a Production tier feature. Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side. Only join keys that are primary key columns of the probe side or are covered by a `minmax`, `set` or `bloom_filter` skip index there are pruned, so the pass either prunes granules that cannot match or does nothing. With `use_skip_indexes_on_data_read = 0` the pruning is off but the build side still records the key range of the filter."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -97,7 +98,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "The JOIN runtime filters became a Production tier feature."},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "The JOIN runtime filters became a Production tier feature."},
             {"join_runtime_filter_min_probe_rows", 1000, 1000, "The JOIN runtime filters became a Production tier feature."},
-            {"enable_join_runtime_filters_index_analysis", false, true, "The JOIN runtime filters became a Production tier feature. Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side. Only join keys that are primary key columns of the probe side or are covered by a `minmax`, `set` or `bloom_filter` skip index there are pruned, so the pass either prunes granules that cannot match or does nothing. With `use_skip_indexes_on_data_read = 0` the pruning is off but the build side still records the key range of the filter."},
+            {"enable_join_runtime_filters_index_analysis", false, false, "The JOIN runtime filters became a Production tier feature."},
             {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"enable_trino_dialect", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."},
