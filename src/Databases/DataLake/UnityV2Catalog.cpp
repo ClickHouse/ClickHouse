@@ -183,10 +183,6 @@ std::string UnityV2Catalog::getOAuthRequestParams() const
 
 AccessToken UnityV2Catalog::retrieveAccessToken() const
 {
-    DB::HTTPHeaderEntries headers;
-    headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
-    headers.emplace_back("Accept", "application/json");
-
     Poco::URI url;
     if (oauth_server_uri.empty())
     {
@@ -196,33 +192,11 @@ AccessToken UnityV2Catalog::retrieveAccessToken() const
     else
         url = Poco::URI(oauth_server_uri);
 
-    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (oauth_server_use_request_body)
-        out_stream_callback = [params = getOAuthRequestParams()](std::ostream & os) { os << params; };
-    else
-        url.setRawQuery(getOAuthRequestParams());
+        return requestOAuthToken(getContext(), url, getOAuthRequestParams());
 
-    const std::string effective_oauth_uri = url.toString();
-    auto [res_json, json_str] = makeHTTPRequestAndReadJSON(
-        effective_oauth_uri, getContext(), /* bearer_token = */ "", {}, headers,
-        Poco::Net::HTTPRequest::HTTP_POST, std::move(out_stream_callback));
-
-    if (res_json.isEmpty())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Empty response from OAuth server {}", effective_oauth_uri);
-
-    const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
-
-    AccessToken result;
-    result.token = object->get("access_token").extract<String>();
-
-    /// Expire the cached token at 90% of its lifetime, to renew it before the server rejects it.
-    if (object->has("expires_in"))
-    {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        result.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
-    }
-
-    return result;
+    url.setRawQuery(getOAuthRequestParams());
+    return requestOAuthToken(getContext(), url, "");
 }
 
 void UnityV2Catalog::ensureBearerToken(bool force_refresh) const
