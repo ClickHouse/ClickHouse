@@ -28,6 +28,7 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -372,6 +373,13 @@ void UnityV2Catalog::createTable(
     const String & table_location,
     Poco::JSON::Object::Ptr metadata_content) const
 {
+    /// Only Delta tables are registered here. An Iceberg `CREATE TABLE` reaches this method with Iceberg
+    /// table metadata (it carries `schemas`, not `fields`) and would need the Unity Iceberg REST endpoint.
+    if (!metadata_content->has("fields"))
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Creating Iceberg tables in a Unity catalog is not supported, only Delta Lake tables can be created");
+
     auto fields = metadata_content->getArray("fields");
     if (!fields)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema fields are missing for Unity createTable");
