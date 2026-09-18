@@ -23,6 +23,7 @@ no file exceeds the limit by more than one chunk: 1
 all rows committed: 1
 readable rows: 200000
 partition directories: 2
+partitions with more than one data file: 2
 -- default limits (1M rows, 1 GiB): the same INSERT stays in a single file
 versions: 1
 data files in latest commit: 1
