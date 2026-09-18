@@ -262,13 +262,25 @@ struct QuantilePrometheusHistogramArrayData
             }
         }
 
-        void add(size_t index, CumulativeHistogramValue value, size_t target_grid_size)
+        bool contains(size_t index) const
+        {
+            if (dense)
+                return present[index] != 0;
+
+            const UInt32 index_uint32 = static_cast<UInt32>(index);
+            auto it = std::lower_bound(sparse_values.begin(), sparse_values.end(), index_uint32,
+                [](const SparseValue & lhs, UInt32 rhs) { return lhs.index < rhs; });
+            return it != sparse_values.end() && it->index == index_uint32;
+        }
+
+        bool add(size_t index, CumulativeHistogramValue value, size_t target_grid_size)
         {
             if (dense)
             {
+                const bool is_new = !present[index];
                 values[index] += value;
                 present[index] = 1;
-                return;
+                return is_new;
             }
 
             const UInt32 index_uint32 = static_cast<UInt32>(index);
@@ -284,6 +296,7 @@ struct QuantilePrometheusHistogramArrayData
                 if (it != sparse_values.end() && it->index == index_uint32)
                 {
                     it->value += value;
+                    return false;
                 }
                 else
                 {
@@ -295,29 +308,40 @@ struct QuantilePrometheusHistogramArrayData
             }
 
             /// A sparse entry is larger than a dense value plus its presence byte. Promote once
-            /// the dense representation is no more expensive, while keeping sparse histograms
-            /// proportional to the number of populated grid positions.
+            /// around half occupancy to avoid sparse representation overhead.
             if (sparse_values.size() >= (target_grid_size + 1) / 2)
                 promoteToDense(target_grid_size);
+
+            return true;
         }
 
-        void merge(const Bucket & rhs, size_t rhs_grid_size, size_t target_grid_size)
+        size_t countNewValues(const Bucket & rhs, size_t rhs_grid_size) const
+        {
+            size_t result = 0;
+            rhs.forEach(rhs_grid_size, [this, &result](size_t index, CumulativeHistogramValue) { result += !contains(index); });
+            return result;
+        }
+
+        size_t merge(const Bucket & rhs, size_t rhs_grid_size, size_t target_grid_size)
         {
             if (dense)
             {
-                rhs.forEach(rhs_grid_size, [this, target_grid_size](size_t index, CumulativeHistogramValue value) { add(index, value, target_grid_size); });
-                return;
+                size_t result = 0;
+                rhs.forEach(rhs_grid_size, [this, target_grid_size, &result](size_t index, CumulativeHistogramValue value) { result += add(index, value, target_grid_size); });
+                return result;
             }
 
             if (rhs.dense)
             {
-                rhs.forEach(rhs_grid_size, [this, target_grid_size](size_t index, CumulativeHistogramValue value) { add(index, value, target_grid_size); });
-                return;
+                size_t result = 0;
+                rhs.forEach(rhs_grid_size, [this, target_grid_size, &result](size_t index, CumulativeHistogramValue value) { result += add(index, value, target_grid_size); });
+                return result;
             }
 
             if (rhs.sparse_values.empty())
-                return;
+                return 0;
 
+            const size_t old_size = sparse_values.size();
             PODArray<SparseValue, 0> merged;
             merged.reserve(sparse_values.size() + rhs.sparse_values.size());
 
@@ -345,8 +369,11 @@ struct QuantilePrometheusHistogramArrayData
             }
 
             sparse_values.swap(merged);
-            if (sparse_values.size() >= (target_grid_size + 1) / 2)
+            const size_t new_size = sparse_values.size();
+            if (new_size >= (target_grid_size + 1) / 2)
                 promoteToDense(target_grid_size);
+
+            return new_size - old_size;
         }
 
         template <typename Func>
@@ -405,11 +432,12 @@ struct QuantilePrometheusHistogramArrayData
     static constexpr UInt8 FORMAT_VERSION = 1;
     static constexpr size_t MAX_GRID_SIZE = 0xFFFFFF;
     static constexpr size_t MAX_BUCKETS = 1ULL << 20;
-    static constexpr size_t MAX_DESERIALIZED_ENTRIES = 1ULL << 26;
+    static constexpr size_t MAX_ENTRIES = 1ULL << 26;
 
     Map buckets;
     PODArray<UInt8> has_values;
     size_t grid_size = 0;
+    size_t num_values = 0;
 
     void ensureGridSize(size_t new_grid_size)
     {
@@ -426,6 +454,28 @@ struct QuantilePrometheusHistogramArrayData
 
         has_values.resize_fill(new_grid_size);
         grid_size = new_grid_size;
+    }
+
+    [[noreturn]] void throwTooManyBuckets(size_t count) const
+    {
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many buckets in aggregate function quantilePrometheusHistogramArray (maximum: {}): {}",
+            MAX_BUCKETS, count);
+    }
+
+    [[noreturn]] void throwTooManyValues(size_t count) const
+    {
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many values in aggregate function quantilePrometheusHistogramArray (maximum: {}): {}",
+            MAX_ENTRIES, count);
+    }
+
+    void ensureLimits(size_t additional_buckets, size_t additional_values) const
+    {
+        if (buckets.size() > MAX_BUCKETS || additional_buckets > MAX_BUCKETS - buckets.size())
+            throwTooManyBuckets(buckets.size() + additional_buckets);
+        if (num_values > MAX_ENTRIES || additional_values > MAX_ENTRIES - num_values)
+            throwTooManyValues(num_values + additional_values);
     }
 
     void add(const IColumn ** columns, size_t row_num)
@@ -453,6 +503,25 @@ struct QuantilePrometheusHistogramArrayData
         }
 
         Bucket * bucket = nullptr;
+        size_t additional_values = 0;
+
+        if (has_valid_le)
+        {
+            if (auto it = buckets.find(le))
+                bucket = &it->getMapped();
+
+            for (size_t t = 0; t < num_steps; ++t)
+            {
+                const size_t value_index = values_begin + t;
+                if (null_map && (*null_map)[value_index])
+                    continue;
+                if (!bucket || !bucket->contains(t))
+                    ++additional_values;
+            }
+
+            if (additional_values)
+                ensureLimits(bucket ? 0 : 1, additional_values);
+        }
 
         for (size_t t = 0; t < num_steps; ++t)
         {
@@ -474,16 +543,34 @@ struct QuantilePrometheusHistogramArrayData
 
             if (bucket)
             {
+                bool is_new = false;
                 if constexpr (is_float)
-                    bucket->add(t, values_nested->getFloat64(value_index), grid_size);
+                    is_new = bucket->add(t, values_nested->getFloat64(value_index), grid_size);
                 else
-                    bucket->add(t, values_nested->getUInt(value_index), grid_size);
+                    is_new = bucket->add(t, values_nested->getUInt(value_index), grid_size);
+                num_values += is_new;
             }
         }
     }
 
     void merge(const QuantilePrometheusHistogramArrayData & rhs)
     {
+        size_t additional_buckets = 0;
+        size_t additional_values = 0;
+        for (const auto & rhs_pair : rhs.buckets)
+        {
+            size_t new_values = rhs_pair.getMapped().numValues();
+            if (auto it = buckets.find(rhs_pair.getKey()))
+                new_values = it->getMapped().countNewValues(rhs_pair.getMapped(), rhs.grid_size);
+            else
+                ++additional_buckets;
+
+            if (new_values > MAX_ENTRIES || additional_values > MAX_ENTRIES - new_values)
+                throwTooManyValues(num_values + additional_values + new_values);
+            additional_values += new_values;
+        }
+        ensureLimits(additional_buckets, additional_values);
+
         ensureGridSize(rhs.grid_size);
 
         for (size_t t = 0; t < rhs.grid_size; ++t)
@@ -492,12 +579,14 @@ struct QuantilePrometheusHistogramArrayData
         for (const auto & rhs_pair : rhs.buckets)
         {
             auto & bucket = buckets[rhs_pair.getKey()];
-            bucket.merge(rhs_pair.getMapped(), rhs.grid_size, grid_size);
+            num_values += bucket.merge(rhs_pair.getMapped(), rhs.grid_size, grid_size);
         }
     }
 
     void serialize(WriteBuffer & buf) const
     {
+        ensureLimits(0, 0);
+
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
         writeVarUInt(grid_size, buf);
         writeVarUInt(buckets.size(), buf);
@@ -531,6 +620,7 @@ struct QuantilePrometheusHistogramArrayData
         buckets.clear();
         grid_size = 0;
         has_values.clear();
+        num_values = 0;
 
         size_t new_grid_size = 0;
         readVarUInt(new_grid_size, buf);
@@ -544,9 +634,7 @@ struct QuantilePrometheusHistogramArrayData
         readVarUInt(num_buckets, buf);
 
         if (num_buckets > MAX_BUCKETS)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                "Too many buckets in serialized aggregate function quantilePrometheusHistogramArray (maximum: {}): {}",
-                MAX_BUCKETS, num_buckets);
+            throwTooManyBuckets(num_buckets);
 
         ensureGridSize(new_grid_size);
 
@@ -558,18 +646,19 @@ struct QuantilePrometheusHistogramArrayData
         {
             UnderlyingType le = 0;
             readBinaryLittleEndian(le, buf);
+            if (isNaN(le))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid NaN bucket upper bound in serialized aggregate function quantilePrometheusHistogramArray");
 
-            size_t num_values = 0;
-            readVarUInt(num_values, buf);
-            if (num_values > grid_size || num_values > MAX_DESERIALIZED_ENTRIES || total_values > MAX_DESERIALIZED_ENTRIES - num_values)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                    "Too many values in serialized aggregate function quantilePrometheusHistogramArray (maximum: {}): {}",
-                    MAX_DESERIALIZED_ENTRIES, num_values);
-            total_values += num_values;
+            size_t num_serialized_values = 0;
+            readVarUInt(num_serialized_values, buf);
+            if (num_serialized_values > grid_size || num_serialized_values > MAX_ENTRIES || total_values > MAX_ENTRIES - num_serialized_values)
+                throwTooManyValues(total_values + num_serialized_values);
+            total_values += num_serialized_values;
 
             auto & bucket = buckets[le];
-            bucket.sparse_values.reserve(std::min(num_values, size_t{4096}));
-            for (size_t j = 0; j < num_values; ++j)
+            bucket.sparse_values.reserve(std::min(num_serialized_values, size_t{4096}));
+            for (size_t j = 0; j < num_serialized_values; ++j)
             {
                 size_t index = 0;
                 readVarUInt(index, buf);
@@ -577,10 +666,14 @@ struct QuantilePrometheusHistogramArrayData
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Invalid grid index {} in serialized aggregate function quantilePrometheusHistogramArray (grid size: {})",
                         index, grid_size);
+                if (!has_values[index])
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Grid index {} has no value in serialized aggregate function quantilePrometheusHistogramArray",
+                        index);
 
                 CumulativeHistogramValue value = 0;
                 readBinaryLittleEndian(value, buf);
-                bucket.add(index, value, grid_size);
+                this->num_values += bucket.add(index, value, grid_size);
             }
         }
     }
