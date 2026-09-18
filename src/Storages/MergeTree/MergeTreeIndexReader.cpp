@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
+#include <Storages/MergeTree/SkippingIndexCache.h>
 
 namespace DB
 {
@@ -77,6 +78,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     MarkCache * mark_cache_,
     UncompressedCache * uncompressed_cache_,
     VectorSimilarityIndexCache * vector_similarity_index_cache_,
+    SkippingIndexCache * skipping_index_cache_,
     MergeTreeReaderSettings settings_)
     : index(index_)
     , data_part_info(std::move(data_part_info_))
@@ -85,8 +87,24 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     , mark_cache(mark_cache_)
     , uncompressed_cache(uncompressed_cache_)
     , vector_similarity_index_cache(vector_similarity_index_cache_)
+    , skipping_index_cache(skipping_index_cache_)
     , settings(std::move(settings_))
 {
+    /// Projection parts are never Active, so they are not cached.
+    auto concrete_part = data_part_info->getDataPart();
+    if (concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
+        cache_key_prefix = concrete_part->getIndexCacheKeyPrefix();
+
+    /// Decided once here: switching to the uncached path later would deserialize into a granule shared with the cache.
+    if (cache_key_prefix.empty() || !index->supportsGranuleCache() || (skipping_index_cache && skipping_index_cache->maxSizeInBytes() == 0))
+        skipping_index_cache = nullptr;
+    else
+        skipping_index_cache_key
+            = {cache_key_prefix,
+               data_part_info->getChecksums().getTotalChecksumUInt128(),
+               index->getFileName(),
+               SkippingIndexCache::hashIndexDefinition(index->index),
+               0};
 }
 
 MergeTreeIndexReader::~MergeTreeIndexReader() = default;
@@ -99,7 +117,26 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     const auto & checksums = data_part_info->getChecksums();
     auto index_format = index->getDeserializedFormat(*data_part_info, index->getFileName());
     auto index_name = index->getFileName();
-    auto last_mark = getLastMark(all_mark_ranges);
+
+    /// Blocks of granules are loaded into the cache as a whole, so the stream must cover whole blocks.
+    MarkRanges widened_mark_ranges;
+    if (skipping_index_cache)
+    {
+        for (const auto & range : all_mark_ranges)
+        {
+            /// A real check, not an assert: an empty range would underflow `range.end - 1` below.
+            if (range.begin >= range.end)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid mark range [{}, {}) for index {}", range.begin, range.end, index->getFileName());
+            auto begin = SkippingIndexCache::blockRange(range.begin / SkippingIndexCache::GRANULES_PER_ENTRY, marks_count).begin;
+            auto end = SkippingIndexCache::blockRange((range.end - 1) / SkippingIndexCache::GRANULES_PER_ENTRY, marks_count).end;
+            if (!widened_mark_ranges.empty() && widened_mark_ranges.back().end >= begin)
+                widened_mark_ranges.back().end = std::max(widened_mark_ranges.back().end, end);
+            else
+                widened_mark_ranges.emplace_back(begin, end);
+        }
+    }
+    const MarkRanges & stream_mark_ranges = skipping_index_cache ? widened_mark_ranges : all_mark_ranges;
+    auto last_mark = getLastMark(stream_mark_ranges);
 
     for (const auto & substream : index_format.substreams)
     {
@@ -116,7 +153,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
             substream.extension,
             data_part_info,
             marks_count,
-            all_mark_ranges,
+            stream_mark_ranges,
             mark_cache,
             uncompressed_cache,
             patchSettings(settings, substream.type));
@@ -131,58 +168,90 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     version = index_format.version;
 }
 
+void MergeTreeIndexReader::loadGranule(MergeTreeIndexGranulePtr & res, size_t mark, const IMergeTreeIndexCondition * condition, const MarkRanges * readable_ranges)
+{
+    initStreamIfNeeded();
+
+    if (stream_mark != mark)
+    {
+        for (const auto & stream : stream_holders)
+            stream->seekToMark(mark);
+    }
+
+    if (!res)
+        res = index->createIndexGranule();
+
+    MergeTreeIndexDeserializationState state
+    {
+        .version = version,
+        .condition = condition,
+        .part_info = *data_part_info,
+        .index = *index,
+        .readable_ranges = readable_ranges,
+        .skip_postings_deserialization = false,
+    };
+
+    /// The position of the stream is unknown if deserialization throws.
+    stream_mark = -1;
+    res->deserializeBinaryWithMultipleStreams(streams, state);
+    stream_mark = mark + 1;
+}
+
+MergeTreeIndexGranules MergeTreeIndexReader::loadBlockOfGranules(size_t block_number)
+{
+    auto block = SkippingIndexCache::blockRange(block_number, marks_count);
+
+    MergeTreeIndexGranules granules;
+    granules.reserve(block.end - block.begin);
+    for (size_t mark = block.begin; mark < block.end; ++mark)
+    {
+        MergeTreeIndexGranulePtr granule;
+        loadGranule(granule, mark, /*condition=*/ nullptr, /*readable_ranges=*/ nullptr);
+        granules.push_back(std::move(granule));
+    }
+    return granules;
+}
+
 void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
 {
-    auto load_func = [this, mark, condition, readable_ranges](auto & res)
+    if (skipping_index_cache)
     {
-        initStreamIfNeeded();
-
-        if (stream_mark != mark)
+        /// One cache lookup per block of granules. The granules are shared with other readers, so they must never be modified.
+        size_t block_number = mark / SkippingIndexCache::GRANULES_PER_ENTRY;
+        if (!current_block || skipping_index_cache_key.block_number != block_number)
         {
-            for (const auto & stream : stream_holders)
-                stream->seekToMark(mark);
+            auto key = skipping_index_cache_key;
+            key.block_number = block_number;
+            current_block = skipping_index_cache->getOrSet(key, [this, block_number] { return loadBlockOfGranules(block_number); });
+            skipping_index_cache_key.block_number = block_number;
         }
 
-        if (!res)
-            res = index->createIndexGranule();
-
-        MergeTreeIndexDeserializationState state
-        {
-            .version = version,
-            .condition = condition,
-            .part_info = *data_part_info,
-            .index = *index,
-            .readable_ranges = readable_ranges,
-            .skip_postings_deserialization = false,
-        };
-
-        res->deserializeBinaryWithMultipleStreams(streams, state);
-        stream_mark = mark + 1;
-    };
+        /// A real check, not an assert: this indexes into an object shared with other queries through the cache,
+        /// so an out-of-range mark must not turn into an out-of-bounds read.
+        if (mark % SkippingIndexCache::GRANULES_PER_ENTRY >= current_block->granules.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mark {} is outside the cached block {} of index {} ({} granules, {} marks in part)",
+                mark, block_number, index->getFileName(), current_block->granules.size(), marks_count);
+        granule = current_block->granules[mark % SkippingIndexCache::GRANULES_PER_ENTRY];
+        return;
+    }
 
     /// Not all skip indexes are created equal. Vector similarity indexes typically have a high index granularity (e.g. GRANULARITY
     /// 1000000), and as a result they tend to be very large (hundreds of megabytes). Besides IO, repeated de-serialization consumes lots of
     /// CPU cycles as the on-disk and the in-memory format differ. We therefore keep the deserialized vector similarity granules in a cache.
     ///
-    /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
-    /// would create too much lock contention in the cache (this was learned the hard way).
-    /// Don't populate the cache for parts which are not Active (e.g. Outdated after a mutation).
-    /// Such parts will be removed soon and caching them is wasteful.
-    /// Also note that the cache key must use `getRelativePathOfActivePart` (not `getFullPath`) to match
-    /// the key used during eviction in `IMergeTreeDataPart::removeFromVectorIndexCache`.
-    /// The cache key needs the part itself; without one the granule is loaded directly.
-    auto concrete_part = data_part_info->getDataPart();
-    if (index->isVectorSimilarityIndex() && concrete_part && concrete_part->getState() == MergeTreeDataPartState::Active)
+    /// The same cannot be done per granule for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip
+    /// index granules would create too much lock contention in the cache (this was learned the hard way). Instead, indexes which support it
+    /// are cached in blocks of granules by the skipping index cache above.
+    if (index->isVectorSimilarityIndex() && !cache_key_prefix.empty())
     {
-        VectorSimilarityIndexCacheKey key{concrete_part->getDataPartStorage().getDiskName() + ":" + concrete_part->getRelativePathOfActivePart(),
-                                          index->getFileName(),
-                                          mark};
-
-        granule = vector_similarity_index_cache->getOrSet(key, load_func);
+        VectorSimilarityIndexCacheKey key{cache_key_prefix, index->getFileName(), mark};
+        granule = vector_similarity_index_cache->getOrSet(key, [&](auto & res) { loadGranule(res, mark, condition, readable_ranges); });
     }
     else
     {
-        load_func(granule);
+        loadGranule(granule, mark, condition, readable_ranges);
     }
 }
 
