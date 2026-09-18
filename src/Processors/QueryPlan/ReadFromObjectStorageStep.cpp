@@ -3,6 +3,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
 #include <Interpreters/QueryConsumedObjectSets.h>
+#include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
@@ -41,6 +42,11 @@ namespace Setting
     extern const SettingsBool s3_validate_etag_on_read;
 }
 
+namespace FailPoints
+{
+    extern const char object_storage_pause_before_repeated_read[];
+}
+
 namespace
 {
 
@@ -51,8 +57,8 @@ namespace
 class CapturingObjectIterator : public IObjectIterator
 {
 public:
-    CapturingObjectIterator(ObjectIterator inner_, QueryConsumedObjectSetsPtr consumed_object_sets_, UUID table_uuid_)
-        : inner(std::move(inner_)), consumed_object_sets(std::move(consumed_object_sets_)), table_uuid(table_uuid_)
+    CapturingObjectIterator(ObjectIterator inner_, QueryConsumedObjectSetsPtr consumed_object_sets_, UUID table_uuid_, size_t read_index_)
+        : inner(std::move(inner_)), consumed_object_sets(std::move(consumed_object_sets_)), table_uuid(table_uuid_), read_index(read_index_)
     {
     }
 
@@ -70,7 +76,7 @@ public:
                 object.last_modified = metadata->last_modified.epochTime();
                 object.has_metadata = true;
             }
-            consumed_object_sets->add(table_uuid, std::move(object));
+            consumed_object_sets->add(table_uuid, read_index, std::move(object));
         }
         return object_info;
     }
@@ -88,6 +94,9 @@ private:
     ObjectIterator inner;
     QueryConsumedObjectSetsPtr consumed_object_sets;
     UUID table_uuid;
+    /// Which read of the table this is: the reads of one table are captured apart, so that a query
+    /// whose reads consumed different object sets is not validated against their union.
+    size_t read_index;
 };
 
 }
@@ -266,9 +275,12 @@ void ReadFromObjectStorageStep::createIterator()
                 /// object at all is distinguishable from "this table was never read". Otherwise the
                 /// finalization check would fall back to a fresh listing and could reproduce the
                 /// pre-read hash of an object set the query never read. See `beginCapture`.
-                consumed_object_sets->beginCapture(storage_id.uuid);
+                const size_t read_index = consumed_object_sets->beginCapture(storage_id.uuid);
+                /// Lets a test change the object set between two reads of the same table in one query.
+                if (read_index > 0)
+                    FailPointInjection::pauseFailPoint(FailPoints::object_storage_pause_before_repeated_read);
                 iterator_wrapper = std::make_shared<CapturingObjectIterator>(
-                    std::move(iterator_wrapper), std::move(consumed_object_sets), storage_id.uuid);
+                    std::move(iterator_wrapper), std::move(consumed_object_sets), storage_id.uuid, read_index);
             }
         }
     }

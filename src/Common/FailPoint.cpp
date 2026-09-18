@@ -375,6 +375,7 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
     PAUSEABLE(object_storage_source_pause_before_virtual_columns) \
+    PAUSEABLE(object_storage_pause_before_repeated_read) \
     REGULAR(keeper_changelog_readahead_fill_exception) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_delay_root_cause_report) \

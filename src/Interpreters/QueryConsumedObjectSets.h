@@ -8,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <vector>
 
 
@@ -36,19 +37,41 @@ struct QueryConsumedObjectSets
         /// False when the read could not attach object metadata (e.g. no ETag). `getModificationHash`
         /// then fails closed for the table rather than risk an unsound comparison.
         bool has_metadata = false;
+
+        auto asTuple() const { return std::tie(path, etag, size, last_modified, has_metadata); }
+        bool operator<(const Object & rhs) const { return asTuple() < rhs.asTuple(); }
+        bool operator==(const Object & rhs) const { return asTuple() == rhs.asTuple(); }
+    };
+
+    using ObjectSet = std::vector<Object>;
+
+    /// What every read of a table consumed, for `StorageObjectStorage::getModificationHash`.
+    struct ConsumedObjects
+    {
+        /// The object set each read of the table consumed, canonicalized (path-sorted, exact duplicates
+        /// collapsed). Meaningful only when `reads_agree` is true.
+        ObjectSet objects;
+        /// False when two reads of the same table in one query consumed different object sets: the
+        /// query result was then assembled from more than one state of the table (an object appeared,
+        /// changed or disappeared between the reads), so there is no single object set the result could
+        /// be validated against. Taking the union of the reads instead would let the pre-read set `{a, b}`
+        /// match a result built from reads of `{a, b}` and of `{a}`.
+        bool reads_agree = true;
     };
 
     /// Called when a read of `table_uuid` installs the capture, before it consumes its first object.
+    /// Returns the index of this read; every object the read consumes is added under it, so that the
+    /// reads of one table stay apart even when they run concurrently.
     /// It creates an empty captured set, so that "the read consumed no object at all" is distinct from
     /// "nothing was captured for this table". Without it a read that consumes zero objects would make
     /// `getModificationHash` fall back to a fresh listing at finalization, which reopens the listing
     /// race in the `A -> {} -> A` direction: the pre-read hash lists `A`, the read sees no object at
     /// all, and the relist reproduces `A`, so a result produced from no data is stored under the key of
     /// the object set `A`. With the empty set captured, the two hashes differ and the entry is dropped.
-    void beginCapture(const UUID & table_uuid);
+    size_t beginCapture(const UUID & table_uuid);
 
     /// Called (possibly concurrently from several read streams) for every object the read consumes.
-    void add(const UUID & table_uuid, Object object);
+    void add(const UUID & table_uuid, size_t read_index, Object object);
 
     /// Called when a read of `table_uuid` prunes the object set (e.g. a `_path`/`_file` or
     /// Hive-partition filter narrows the iterator result): the consumed set is then a filtered subset
@@ -63,12 +86,18 @@ struct QueryConsumedObjectSets
 
     /// The objects consumed for `table_uuid`, or nullopt if no read of it installed a capture (e.g. the
     /// table was not read, or this is the pre-read check that runs before the plan was built). A read
-    /// that consumed no object returns an empty vector, not nullopt - see `beginCapture`.
-    std::optional<std::vector<Object>> get(const UUID & table_uuid) const;
+    /// that consumed no object returns an empty set, not nullopt - see `beginCapture`.
+    std::optional<ConsumedObjects> get(const UUID & table_uuid) const;
+
+    /// Path-sorted with exact duplicates collapsed, so that two enumerations of the same object set in
+    /// a different order compare and hash equal. Only byte-identical entries collapse: the same path
+    /// with two different `ETag`s (the object changed between two enumerations) keeps both entries.
+    static void canonicalize(ObjectSet & objects);
 
 private:
     mutable std::mutex mutex;
-    std::map<UUID, std::vector<Object>> objects_by_table;
+    /// One consumed set per read of the table, in the order the reads installed their capture.
+    std::map<UUID, std::vector<ObjectSet>> objects_by_table;
     std::set<UUID> pruned_tables;
 };
 
