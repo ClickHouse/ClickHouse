@@ -18,7 +18,7 @@ void StudentTTest::clear()
 void StudentTTest::add(size_t distribution, double value)
 {
     if (distribution > 1)
-        throw std::logic_error("Distribution number for Student's T-Test must be eigther 0 or 1");
+        throw std::logic_error("Distribution number for Student's T-Test must be either 0 or 1");
     data[distribution].add(value);
 }
 
