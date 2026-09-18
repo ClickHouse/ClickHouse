@@ -68,6 +68,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool async_insert_select_as_async_insert;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
@@ -284,6 +285,18 @@ void stripInitiatorOnlySettings(Settings & settings)
         settings[Setting::implicit_table_at_top_level].changed = false;
     }
 
+    /// `async_insert_select_as_async_insert` gates the initiator's local `INSERT ... SELECT` async-queue
+    /// route, which the `parallel_distributed_insert_select` path never reaches on the initiator. A shard
+    /// resolves its own value (including through the forwarded `compatibility`), so the initiator's copy is
+    /// redundant, and forwarding this name to an older shard on a rolling upgrade triggers `UNKNOWN_SETTING`.
+    /// Its default is `true`.
+    if (settings[Setting::async_insert_select_as_async_insert].changed
+        || !settings[Setting::async_insert_select_as_async_insert])
+    {
+        settings[Setting::async_insert_select_as_async_insert] = true;
+        settings[Setting::async_insert_select_as_async_insert].changed = false;
+    }
+
     /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
     /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
     /// the shard must resolve it against its own default database.
@@ -303,6 +316,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "format", "input_format", "output_format", "default_format", "compression",
     "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
     "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+    "async_insert_select_as_async_insert",
     "database",
 };
 

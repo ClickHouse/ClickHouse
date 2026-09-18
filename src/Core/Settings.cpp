@@ -5698,6 +5698,9 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
+
+Pair this with an explicit `max_insert_threads` setting: the optimization caps the `SELECT` to
+`max_insert_threads` reading threads, which changes how many blocks the `SELECT` produces.
 )", 0) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
 Allow to execute alters which affects not only tables metadata, but also data on disk
@@ -7331,6 +7334,9 @@ If disabled and the INSERT query contains inline data, the server will not send 
     \
     DECLARE(Bool, async_insert, true, R"(
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
+)", 0) \
+    DECLARE(Bool, async_insert_select_as_async_insert, true, R"(
+Whether a user-initiated `INSERT ... SELECT` may use the asynchronous insert queue when `async_insert` is enabled and the query is eligible (a single small block into a `MergeTree`-family destination with no dependent views). When disabled, `INSERT ... SELECT` always runs synchronously regardless of `async_insert`. Internal inserts (refreshable materialized view, `POPULATE`, `CREATE TABLE ... AS SELECT`) are always synchronous and ignore this setting.
 )", 0) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
 If true wait for processing of asynchronous insertion.

@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
             {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
+            {"async_insert_select_as_async_insert", false, true, "New setting: an eligible user-initiated `INSERT ... SELECT` may now use the asynchronous insert queue when `async_insert` is enabled. `compatibility` below 26.9 restores the previous behavior where `INSERT ... SELECT` was never asynchronous."},
             {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
             {"allow_experimental_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
             {"enable_nullable_tuple_type", false, true, "`Nullable(Tuple)` is now GA"},
