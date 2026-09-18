@@ -242,6 +242,9 @@ def test_leader_election_after_rolling_membership_change(started_cluster):
     for n in remaining:
         keeper_utils.wait_until_connected(cluster, n, timeout=60.0)
 
+    # Re-discover the leader after the membership change.
+    leader = keeper_utils.get_leader(cluster, remaining)
+
     # Step 3: Add node5 to the cluster.  node1/3/4 are active at this point,
     # so node5 can connect to them during startup (async Keeper init).
     cfg5 = _get_generated_cfg(node_names, 5)
@@ -281,8 +284,12 @@ def test_leader_election_after_rolling_membership_change(started_cluster):
 
     time.sleep(2)
 
-    for n in [leader, node4, node5]:
+    active_nodes = [leader, node4, node5]
+    for n in active_nodes:
         keeper_utils.wait_until_connected(cluster, n, timeout=60.0)
+
+    # Re-discover the leader after the membership change.
+    leader = keeper_utils.get_leader(cluster, active_nodes)
 
     # Step 5: Add node6 to the cluster.  node1/4/5 are active at this point,
     # so node6 can connect to them during startup (async Keeper init).
