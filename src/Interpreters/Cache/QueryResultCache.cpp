@@ -1,5 +1,4 @@
 #include <Interpreters/Cache/QueryResultCache.h>
-
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -22,14 +21,17 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
+#include <Common/thread_local_rng.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
+#include <random>
 
 
 namespace ProfileEvents
@@ -60,12 +62,23 @@ namespace Setting
     extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
     extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsString query_cache_tag;
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsOverflowMode join_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
 {
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
+    extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
 }
 
 namespace
@@ -227,7 +240,7 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check, bool throw_on_error)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -241,14 +254,22 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
         const QueryResultCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
 
         if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
+        {
+            if (!throw_on_error)
+                return false;
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
                 "The query result was not cached because the query contains a non-deterministic function."
                 " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless, or omit caching");
+        }
 
         if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
+        {
+            if (!throw_on_error)
+                return false;
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
                 "The query result was not cached because the query contains a system table."
                 " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless, or omit caching");
+        }
 
         if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
@@ -256,6 +277,21 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
     }
 
     return false;
+}
+
+void throwIfQueryResultCacheUsedWithNonThrowOverflowMode(const Settings & settings)
+{
+    if (settings[Setting::read_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
+        || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::result_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::timeout_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::set_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::join_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::transfer_overflow_mode] != OverflowMode::THROW
+        || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW)
+        throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
 }
 
 namespace
@@ -593,6 +629,130 @@ bool QueryResultCache::IsStale::operator()(const Key & key) const
 {
     return (key.expires_at < std::chrono::system_clock::now());
 };
+
+bool QueryResultCache::CoalescingKey::operator==(const CoalescingKey & other) const
+{
+    return ast_hash == other.ast_hash
+        && is_subquery == other.is_subquery
+        && share_between_users == other.share_between_users
+        && (share_between_users || (user_id == other.user_id && current_user_roles == other.current_user_roles));
+}
+
+size_t QueryResultCache::CoalescingKeyHasher::operator()(const CoalescingKey & key) const
+{
+    SipHash hash;
+    hash.update(key.ast_hash.low64);
+    hash.update(key.is_subquery);
+    hash.update(key.share_between_users);
+    if (!key.share_between_users)
+    {
+        hash.update(key.user_id.has_value());
+        if (key.user_id.has_value())
+            hash.update(*key.user_id);
+        hash.update(key.current_user_roles.size());
+        for (const auto & role : key.current_user_roles)
+            hash.update(role);
+    }
+    return hash.get64();
+}
+
+QueryResultCache::HerdTokenPtr QueryResultCache::tryBecomeHerdExecutorImpl(const CoalescingKey & key, const String & query_id)
+{
+    auto it = herd_tokens.find(key);
+    if (it != herd_tokens.end() && it->second->generation == clear_generation)
+        return nullptr; /// another query already owns this key and is executing
+
+    auto token = std::make_shared<HerdToken>(query_id, clear_generation);
+    token->mutex.lock(); /// never contended: nobody else can see `token` yet
+    herd_tokens[key] = token;
+    return token;
+}
+
+QueryResultCache::HerdTokenPtr QueryResultCache::tryBecomeHerdExecutor(const CoalescingKey & key, const String & query_id)
+{
+    std::lock_guard lock(mutex);
+    return tryBecomeHerdExecutorImpl(key, query_id);
+}
+
+QueryResultCache::HerdTokenPtr QueryResultCache::acquireOrWaitHerdToken(
+    const CoalescingKey & key,
+    std::chrono::milliseconds timeout,
+    const String & query_id,
+    const std::function<bool()> & is_cancelled)
+{
+    HerdTokenPtr existing_token;
+    {
+        std::lock_guard lock(mutex);
+
+        auto it = herd_tokens.find(key);
+        const bool found_current_token = it != herd_tokens.end() && it->second->generation == clear_generation;
+
+        if (!found_current_token)
+            return tryBecomeHerdExecutorImpl(key, query_id);
+
+        /// A query must never wait on its own in-flight execution (e.g. the same subquery appears twice in one
+        /// query), that would deadlock. Treat this exactly like "no token found": the caller re-probes the cache
+        /// (a miss, since the owning query hasn't finished) and executes independently.
+        if (!query_id.empty() && it->second->owner_query_id == query_id)
+            return nullptr;
+
+        existing_token = it->second;
+    }
+
+    /// Poll with try_lock_for so we can honor both cancellation and timeout without a condition_variable.
+    /// The executor unlocks the mutex exactly once when releasing the token.
+    static constexpr auto poll_interval = std::chrono::milliseconds(100);
+    /// Jitter prevents concurrent waiters from polling in lockstep and stampeding the mutex when a token dies.
+    static constexpr auto poll_jitter_max = std::chrono::milliseconds(40);
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+
+    while (true)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline)
+            break;
+
+        const std::chrono::steady_clock::duration remaining = deadline - now;
+        const auto jitter = std::chrono::milliseconds(std::uniform_int_distribution<int64_t>(0, poll_jitter_max.count())(thread_local_rng));
+        const std::chrono::steady_clock::duration wait_for = std::min<std::chrono::steady_clock::duration>(poll_interval + jitter, remaining);
+
+        if (existing_token->mutex.try_lock_for(wait_for))
+        {
+            /// The executor finished (successfully or not). Its result, if any, is already visible in the cache.
+            existing_token->mutex.unlock();
+            return nullptr;
+        }
+
+        if (existing_token->abandoned.load())
+            return nullptr; /// another waiter already gave up on this exact token; don't wait for our own timeout too
+
+        if (is_cancelled())
+            return nullptr; /// caller is expected to detect and report the cancellation itself
+    }
+
+    /// Timed out: remove the token (if still current) and mark it abandoned so other waiters bail out immediately.
+    {
+        std::lock_guard lock(mutex);
+        auto it = herd_tokens.find(key);
+        if (it != herd_tokens.end() && it->second == existing_token)
+        {
+            herd_tokens.erase(it);
+            existing_token->abandoned.store(true);
+        }
+    }
+
+    return nullptr;
+}
+
+void QueryResultCache::releaseHerdToken(const CoalescingKey & key, const HerdTokenPtr & token)
+{
+    token->mutex.unlock();
+
+    std::lock_guard lock(mutex);
+    auto it = herd_tokens.find(key);
+    if (it != herd_tokens.end() && it->second == token)
+        herd_tokens.erase(it);
+}
 
 QueryResultCacheWriter::QueryResultCacheWriter(
     Cache & cache_,
@@ -993,6 +1153,10 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
+
+    /// Bump generation so new queries don't coalesce onto pre-clear executors. Already-waiting queries are unaffected.
+    /// Bumped unconditionally even for tagged clears (we're assuming that SYSTEM CLEAR QUERY CACHE is rare)
+    ++clear_generation;
 }
 
 size_t QueryResultCache::maxSizeInBytes() const
