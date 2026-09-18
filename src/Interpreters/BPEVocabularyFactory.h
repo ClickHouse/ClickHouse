@@ -25,6 +25,9 @@ namespace DB
   * `vocabulary` holds the same content inline instead, for a vocabulary small enough to be written
   * out in the configuration.
   *
+  * `<format>huggingface</format>` reads a Hugging Face `tokenizer.json` instead of a `.tiktoken` file.
+  * Such a file carries its own pre-tokenizer, so it is declared without a `pretokenizer`.
+  *
   * A vocabulary is immutable and is shared by every query that names it. It is reloaded when the
   * file it came from changes, which is what the modification time and size it was read at are for:
   * a vocabulary of a hundred thousand tokens is not something to parse per query, and not something
@@ -43,6 +46,7 @@ private:
         /// Empty for a vocabulary written out in the configuration.
         String path;
         BPEPretokenizer pretokenizer = BPEPretokenizer::Cl100k;
+        bool huggingface = false;
         /// Of the file, or of the inline content, so that a changed vocabulary is picked up.
         UInt64 modification_time = 0;
         UInt64 size = 0;

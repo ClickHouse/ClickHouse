@@ -185,6 +185,23 @@ the GPT-2, `r50k_base` and `p50k_base` vocabularies, `cl100k` for `cl100k_base`,
 </bpe_vocabularies>
 ```
 
+A vocabulary can also be read from the `tokenizer.json` of a Hugging Face model with a byte-level BPE
+tokenizer, which is how most open models ship theirs (Llama 3, Qwen, DeepSeek, Phi-4, OLMo,
+StarCoder, GPT-NeoX and others). That file carries its own pre-tokenizer, normalization and merges,
+so it is declared with a `format` and without a `pretokenizer`:
+
+```xml
+<bpe_vocabularies>
+    <qwen2_5>
+        <path>/var/lib/clickhouse/tokenizers/qwen2_5/tokenizer.json</path>
+        <format>huggingface</format>
+    </qwen2_5>
+</bpe_vocabularies>
+```
+
+Its added tokens are found in the text, as the `tokenizers` library finds them, except the special
+ones. SentencePiece, WordPiece and Unigram models are not supported.
+
 The text is tokenized as text: a vocabulary has no special tokens, so a piece of the text that reads
 like one, such as `<|endoftext|>`, is tokenized the way any other text is.
 

@@ -32,10 +32,27 @@ BPEVocabularyPtr BPEVocabularyFactory::get(const String & name, const Poco::Util
             "There is no BPE vocabulary named '{}'. Vocabularies are declared in the `bpe_vocabularies` "
             "section of the server configuration", name);
 
-    if (!config.has(key + ".pretokenizer"))
+    const String format = config.getString(key + ".format", "tiktoken");
+    if (format != "tiktoken" && format != "huggingface")
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The BPE vocabulary '{}' is declared without a `pretokenizer`", name);
-    const BPEPretokenizer pretokenizer = parseBPEPretokenizer(config.getString(key + ".pretokenizer"));
+            "The BPE vocabulary '{}' has the format '{}', expected 'tiktoken' or 'huggingface'", name, format);
+    const bool huggingface = format == "huggingface";
+
+    BPEPretokenizer pretokenizer = BPEPretokenizer::HuggingFace;
+    if (huggingface)
+    {
+        if (config.has(key + ".pretokenizer"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The BPE vocabulary '{}' is a `tokenizer.json`, which carries its own pre-tokenizer, "
+                "so it is declared without a `pretokenizer`", name);
+    }
+    else
+    {
+        if (!config.has(key + ".pretokenizer"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The BPE vocabulary '{}' is declared without a `pretokenizer`", name);
+        pretokenizer = parseBPEPretokenizer(config.getString(key + ".pretokenizer"));
+    }
 
     const bool has_path = config.has(key + ".path");
     const bool has_inline = config.has(key + ".vocabulary");
@@ -76,7 +93,8 @@ BPEVocabularyPtr BPEVocabularyFactory::get(const String & name, const Poco::Util
         std::lock_guard lock(mutex);
         const auto it = loaded.find(name);
         if (it != loaded.end() && it->second.path == path && it->second.pretokenizer == pretokenizer
-            && it->second.modification_time == modification_time && it->second.size == size)
+            && it->second.huggingface == huggingface && it->second.modification_time == modification_time
+            && it->second.size == size)
             return it->second.vocabulary;
     }
 
@@ -88,10 +106,10 @@ BPEVocabularyPtr BPEVocabularyFactory::get(const String & name, const Poco::Util
         ReadBufferFromFile in(path);
         readStringUntilEOF(contents, in);
     }
-    auto vocabulary = BPEVocabulary::parse(contents, pretokenizer);
+    auto vocabulary = huggingface ? BPEVocabulary::parseHuggingFace(contents) : BPEVocabulary::parse(contents, pretokenizer);
 
     std::lock_guard lock(mutex);
-    loaded[name] = Entry{path, pretokenizer, modification_time, size, vocabulary};
+    loaded[name] = Entry{path, pretokenizer, huggingface, modification_time, size, vocabulary};
     return vocabulary;
 }
 
