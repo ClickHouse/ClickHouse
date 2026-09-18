@@ -263,6 +263,9 @@ namespace ProfileEvents
     extern const Event SelectedMarks;
     extern const Event SelectedMarksTotal;
     extern const Event SelectQueriesWithPrimaryKeyUsage;
+    extern const Event DistributedPlanWorkerPartsReceived;
+    extern const Event DistributedPlanWorkerPartsScanned;
+    extern const Event DistributedPlanWorkerPartsPruned;
 }
 
 namespace DB
@@ -3492,20 +3495,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     size_t parts_before_pk = 0;
     bool add_index_stat_row_for_pk_expand = false;
 
-    res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
+    res_parts = MergeTreeDataSelectExecutor::filterParts(
         parts,
-        indexes->partition_pruner,
-        indexes->minmax_idx_condition,
-        indexes->part_values,
+        *indexes,
         metadata_snapshot,
         data,
+        query_info_,
+        mutations_snapshot,
         context_,
         max_block_numbers_to_read.get(),
         log,
         result.index_stats);
-
-    res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
-        res_parts, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
 
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
@@ -3728,7 +3728,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
             if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
             {
-                size_t hash = outputs.front()->getHash();
+                size_t hash = queryConditionCacheHash(outputs.front()->getHash(), reader_settings.query_condition_cache_settings_salt);
                 if (top_k_filter_info)
                     boost::hash_combine(hash, top_k_filter_info->condition_hash);
                 condition_hash = hash;
@@ -4905,9 +4905,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     logPredicateStatistics(result);
 
-    /// A distributed worker reads exactly the bucket described by its per-read bucket task parameter: its
-    /// marks, whether it needs a FINAL merge, and (for a merge layer) the borders + index. Match the marks
-    /// to local parts by name; a missing part is a retryable error (the replica diverged by merge or lag).
+    /// A distributed worker reads its per-read bucket task parameter: the coordinator's marks, whether it
+    /// needs a FINAL merge, and (for a merge layer) the borders + index. Marks are matched to local parts by
+    /// name, and a part this replica no longer has is a retryable error (it diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
         /// Read this task's lanes from this read's own bucket parameter, in the layout
@@ -4938,6 +4938,46 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 readVarUInt(bucket.index, buf);
             }
             distributed_read_task_buckets.push_back(std::move(bucket));
+        }
+
+        /// The coordinator selects parts without this worker's index analysis, so its marks can name a part
+        /// this read pruned. Such a part holds no row the query can match (the worker filters rows with the
+        /// same shipped IN set it prunes with), so drop it; a name the snapshot lacks too is really gone.
+        {
+            NameSet shortlisted_parts;
+            for (const auto & part : result.parts_with_ranges)
+                shortlisted_parts.insert(part.data_part->info.getPartNameV1());
+            NameSet snapshot_parts;
+            if (prepared_parts)
+                for (const auto & part : *prepared_parts)
+                    snapshot_parts.insert(part.data_part->info.getPartNameV1());
+
+            NameSet received_parts;
+            NameSet scanned_parts;
+            for (auto & bucket : distributed_read_task_buckets)
+            {
+                RangesInDataPartsDescription marks_to_read;
+                for (auto & part_desc : bucket.marks)
+                {
+                    const String part_name = part_desc.info.getPartNameV1();
+                    received_parts.insert(part_name);
+                    if (shortlisted_parts.contains(part_name))
+                    {
+                        scanned_parts.insert(part_name);
+                        marks_to_read.push_back(std::move(part_desc));
+                    }
+                    else if (!snapshot_parts.contains(part_name))
+                        throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                            "Distributed read: part {} selected by the coordinator is not available on this replica "
+                            "(diverged by merge or replication lag); retry the query", part_name);
+                }
+                bucket.marks = std::move(marks_to_read);
+            }
+
+            /// The coordinator can split one part's marks over several lanes, so count part names, not entries.
+            ProfileEvents::increment(ProfileEvents::DistributedPlanWorkerPartsReceived, received_parts.size());
+            ProfileEvents::increment(ProfileEvents::DistributedPlanWorkerPartsScanned, scanned_parts.size());
+            ProfileEvents::increment(ProfileEvents::DistributedPlanWorkerPartsPruned, received_parts.size() - scanned_parts.size());
         }
 
         /// A FINAL worker keeps all local parts and resolves each lane's marks against them in
@@ -6114,6 +6154,67 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
     return false;
 }
 
+
+RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
+{
+    if (analyzed_result_ptr || !indexes)
+        return getParts();
+
+    /// Share all part filters with `selectRangesToRead`, including the snapshot boundary and statistics.
+    /// Keep this snapshot temporary: `PREWHERE` optimization can still change filters,
+    /// so execution must filter again with the final conditions.
+    IndexStats unused_stats;
+    return MergeTreeDataSelectExecutor::filterParts(
+        getParts(), *indexes, getStorageMetadata(), data, query_info, mutations_snapshot, getContext(),
+        max_block_numbers_to_read.get(), log, unused_stats);
+}
+
+IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
+    const Names & columns, const RangesInDataParts & parts) const
+{
+    const bool calculate_subcolumn_sizes
+        = getContext()->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
+
+    /// Filtering and index analysis only ever remove whole parts from the snapshot, so an equal count means
+    /// the same part set. Nothing was pruned: keep the table-wide estimate the storage already caches instead
+    /// of measuring every part and column again, exactly as before pruned parts were taken into account.
+    const size_t parts_before_pruning = analyzed_result_ptr ? analyzed_result_ptr->total_parts : prepared_parts->size();
+    if (parts.size() == parts_before_pruning)
+        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+
+    IStorage::ColumnSizeByName result;
+    for (const auto & part : parts)
+    {
+        for (const auto & column_name : columns)
+        {
+            const auto column = part.data_part->tryGetColumn(column_name);
+            if (!column)
+                continue;
+
+            const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
+                ? part.data_part->getSubcolumnSize(column_name)
+                : part.data_part->getColumnSize(column->getNameInStorage());
+            result[column_name].add(size);
+        }
+    }
+
+    /// `Compact` parts do not publish per-column sizes, so a selection made only of them measures nothing,
+    /// while the wide parts that were pruned away would still describe the relative column sizes.
+    /// Keep the table-wide estimate in that case, exactly as when no parts are pruned.
+    const bool nothing_measured = std::ranges::all_of(result, [](const auto & entry) { return entry.second.data_compressed == 0; });
+    if (!parts.empty() && nothing_measured)
+        return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+
+    return result;
+}
+
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(
+    const Names & required_columns, const RangesInDataParts & parts) const
+{
+    if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
+        return nullptr;
+    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
+}
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimatorForPrewhere(
     const Names & required_columns, const ActionsDAG::Node * predicate) const
