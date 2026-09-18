@@ -35,6 +35,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * APPLY(quantiles(0.5, 0.9))
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * REPLACE (a + 1 AS a) FROM t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION ALL (SELECT 2 UNION DISTINCT SELECT 3)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM view(SELECT 1 UNION ALL SELECT 2)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION ALL SELECT 2 FORMAT Null'));
 
 -- ---------------------------------------------------------------------------
 -- ASTAlterCommand: parser-owned children are restored by concrete type. `col_decl` must be an
@@ -159,9 +160,13 @@ SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_D
 SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Asterisk","transformers":{"type":"ColumnsTransformerList","children":[{"type":"ColumnsReplaceTransformer","children":[{"type":"ColumnsReplaceTransformerReplacement","name":"a","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}]}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- ASTSelectWithUnionQuery: a parse never leaves a union whose only select is another union,
--- because `ParserSelectWithUnionQuery` lifts such a one-element chain out of its wrapper. One row
--- per carrier: the select query node itself, then the same wrapper as the blessed `view` argument.
+-- ASTSelectWithUnionQuery / ASTSelectIntersectExceptQuery: an element of a set operation chain is
+-- never a one-select chain of its own (`ParserSelectWithUnionQuery` lifts it) and never carries
+-- query output options (`ParserQueryWithOutput` attaches those to the outermost query only). One
+-- row per carrier: the wrapper alone, the wrapper as the blessed `view` argument, then an element
+-- carrying `FORMAT` under each of the two set operation nodes.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON('{"type":"Function","name":"view","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":0}}]}},{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}},{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}}]},"list_of_modes":["UNION_ALL"],"format_ast":{"type":"Identifier","name":"Null"}}]},"list_of_modes":["UNION_ALL"]}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectIntersectExceptQuery","final_operator":"INTERSECT ALL","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}},{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}}]},"format_ast":{"type":"Identifier","name":"Null"}}]}]}}'); -- { serverError BAD_ARGUMENTS }
