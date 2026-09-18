@@ -73,52 +73,52 @@ INSERT INTO data_json SELECT '{"a":1}'::JSON;
 -- agree), and whether the pass left the `dictGet` call in place.
 
 SELECT 'variant key', (SELECT count() FROM data_variant WHERE dictGet('dict_keys_123', 'a', vk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_variant WHERE dictGet('dict_keys_123', 'a', vk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'variant key declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_keys_123', 'a', vk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'variant key declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_keys_123', 'a', vk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'variant key, dict has key 0', (SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'variant key, dict has key 0, declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'variant key, dict has key 0, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'variant key, single-key dict', (SELECT sum(dictGet('dict_key_2', 'a', vk) = 'x') FROM data_variant SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT sum(dictGet('dict_key_2', 'a', vk) = 'x') FROM data_variant SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'variant key, single-key dict, declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT sum(dictGet('dict_key_2', 'a', vk) = 'x') FROM data_variant SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'variant key, single-key dict, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT sum(dictGet('dict_key_2', 'a', vk) = 'x') FROM data_variant SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'variant key, LIKE', (SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0), (SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 0, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0);
-SELECT 'variant key, LIKE, declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0);
+SELECT 'variant key, LIKE, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0);
 
 SELECT 'variant key, no dict key matches', (SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) = 'zzz' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) = 'zzz' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'variant key, no dict key matches, declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) = 'zzz' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'variant key, no dict key matches, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_keys_012', 'a', vk) = 'zzz' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'dynamic key', (SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_123', 'a', dk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_123', 'a', dk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'dynamic key declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_123', 'a', dk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'dynamic key declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_123', 'a', dk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'dynamic key, dict has key 0', (SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_012', 'a', dk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_012', 'a', dk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'dynamic key, dict has key 0, declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_012', 'a', dk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'dynamic key, dict has key 0, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_012', 'a', dk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'dynamic key, single-key dict', (SELECT sum(dictGet('dict_key_2', 'a', dk) = 'x') FROM data_dynamic SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT sum(dictGet('dict_key_2', 'a', dk) = 'x') FROM data_dynamic SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'dynamic key, single-key dict, declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT sum(dictGet('dict_key_2', 'a', dk) = 'x') FROM data_dynamic SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'dynamic key, single-key dict, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT sum(dictGet('dict_key_2', 'a', dk) = 'x') FROM data_dynamic SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'dynamic key, LIKE', (SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_012', 'a', dk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0), (SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_012', 'a', dk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 0, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0);
-SELECT 'dynamic key, LIKE, declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_012', 'a', dk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0);
+SELECT 'dynamic key, LIKE, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_dynamic WHERE dictGet('dict_keys_012', 'a', dk) LIKE 'x' SETTINGS optimize_inverse_dictionary_lookup = 1, optimize_or_like_chain = 0, optimize_rewrite_like_perfect_affix = 0);
 
 SELECT 'dynamic array element key', (SELECT count() FROM data_array_dynamic WHERE dictGet('dict_keys_012', 'a', adk[1]) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_array_dynamic WHERE dictGet('dict_keys_012', 'a', adk[1]) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'dynamic array element key declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_array_dynamic WHERE dictGet('dict_keys_012', 'a', adk[1]) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'dynamic array element key declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_array_dynamic WHERE dictGet('dict_keys_012', 'a', adk[1]) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'dynamic in complex key', (SELECT count() FROM data_dynamic WHERE dictGet('dict_complex_keys_012', 'a', (dk, 's')) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_dynamic WHERE dictGet('dict_complex_keys_012', 'a', (dk, 's')) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'dynamic in complex key declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_dynamic WHERE dictGet('dict_complex_keys_012', 'a', (dk, 's')) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'dynamic in complex key declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_dynamic WHERE dictGet('dict_complex_keys_012', 'a', (dk, 's')) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'variant in complex key', (SELECT count() FROM data_variant WHERE dictGet('dict_complex_keys_012', 'a', (vk, 's')) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_variant WHERE dictGet('dict_complex_keys_012', 'a', (vk, 's')) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'variant in complex key declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_complex_keys_012', 'a', (vk, 's')) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'variant in complex key declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_variant WHERE dictGet('dict_complex_keys_012', 'a', (vk, 's')) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'variant key in projection', (SELECT sum(dictGet('dict_keys_123', 'a', vk) = 'x') FROM data_variant SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT sum(dictGet('dict_keys_123', 'a', vk) = 'x') FROM data_variant SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'variant key in projection declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT sum(dictGet('dict_keys_123', 'a', vk) = 'x') FROM data_variant SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'variant key in projection declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT sum(dictGet('dict_keys_123', 'a', vk) = 'x') FROM data_variant SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'json key', (SELECT count() FROM data_json WHERE dictGet('dict_json_key', 'a', jk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_json WHERE dictGet('dict_json_key', 'a', jk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'json key declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_json WHERE dictGet('dict_json_key', 'a', jk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'json key declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_json WHERE dictGet('dict_json_key', 'a', jk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 -- A `Nullable` key propagates its NULL through the `dictGet` key conversion, so the rewrite stays
 -- equivalent and must keep being applied. Same dictionaries and NULL pattern as the cases above.
 
 SELECT 'nullable key, dict has key 0', (SELECT count() FROM data_nullable WHERE dictGet('dict_keys_012', 'a', nk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_nullable WHERE dictGet('dict_keys_012', 'a', nk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'nullable key, dict has key 0, declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_nullable WHERE dictGet('dict_keys_012', 'a', nk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'nullable key, dict has key 0, declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_nullable WHERE dictGet('dict_keys_012', 'a', nk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
 
 SELECT 'nullable key', (SELECT count() FROM data_nullable WHERE dictGet('dict_keys_123', 'a', nk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1), (SELECT count() FROM data_nullable WHERE dictGet('dict_keys_123', 'a', nk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0);
-SELECT 'nullable key declined', countIf(explain ILIKE '%function_name: dictGet%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_nullable WHERE dictGet('dict_keys_123', 'a', nk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);
+SELECT 'nullable key declined', countIf(explain ILIKE '%function_name: dictGet,%') > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM data_nullable WHERE dictGet('dict_keys_123', 'a', nk) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 1);

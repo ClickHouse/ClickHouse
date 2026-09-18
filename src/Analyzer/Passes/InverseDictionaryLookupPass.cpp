@@ -150,12 +150,17 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
     return false;
 }
 
-/// `Variant`, `Dynamic` and `JSON` carry NULL in a discriminator instead of a `Nullable` wrapper.
-/// `dictGet` casts its key argument to the dictionary's key type (`IDictionary::convertKeyColumns`),
-/// which turns such a NULL into that type's default and looks that key up, while `IN` and `=` treat the
-/// same row as NULL. A `Nullable` key is unaffected: there the cast propagates the NULL.
+/// Comparing the key against the dictionary's keys cannot reproduce `dictGet`'s own key handling for a
+/// key type with a dynamic structure or a nested `Variant`, so the rewrite is not equivalent there.
+/// For `Variant` and `Dynamic` the divergence is the key conversion: `dictGet` casts the key to the
+/// dictionary's key type (`IDictionary::convertKeyColumns`), and such a key carries NULL in a
+/// discriminator instead of a `Nullable` wrapper, so the cast turns a NULL row into that type's default
+/// and looks that key up, while `IN` and `=` treat the row as NULL. A `Nullable` key is unaffected:
+/// there the cast propagates the NULL. A `JSON` key diverges with no conversion at all
+/// (`convertKeyColumns` skips a key whose type already equals the dictionary's key type): the key
+/// constant folded into the rewrite does not compare equal to the same value read from a column.
 /// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
-bool keyHoldsNullOutsideNullable(const IDataType & key_type)
+bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
 {
     if (key_type.hasDynamicStructure())
         return true;
@@ -336,7 +341,7 @@ public:
             return;
         }
 
-        if (keyHoldsNullOutsideNullable(*dictget_function_info.key_expr_node->getResultType()))
+        if (keyTypeBreaksInverseLookupEquivalence(*dictget_function_info.key_expr_node->getResultType()))
             return;
 
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
