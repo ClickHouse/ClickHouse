@@ -1496,13 +1496,6 @@ void validateUnityV2Settings(const DatabaseDataLakeSettings & database_settings)
                         "Pass the token as `catalog_credential = '<token>'`, or an OAuth service principal "
                         "as `catalog_credential = '<client_id>:<client_secret>'`");
     }
-
-    if (!database_settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "`oauth_server_use_request_body = 0` is not supported for Unity catalog with `use_unity_catalog_v2`: "
-                        "the OAuth client-credentials request always sends parameters in the request body");
-    }
 }
 
 }

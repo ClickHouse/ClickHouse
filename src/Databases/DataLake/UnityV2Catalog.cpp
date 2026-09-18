@@ -162,8 +162,8 @@ AccessToken UnityV2Catalog::retrieveAccessToken() const
         effective_oauth_uri = base.toString();
     }
 
-    /// The parameters always go into the request body, as RFC 6749 requires;
-    /// `oauth_server_use_request_body = 0` is rejected on CREATE DATABASE.
+    /// The parameters always go into the request body, as RFC 6749 requires.
+    /// `oauth_server_use_request_body` is accepted but ignored, like the legacy Unity catalog does.
     String encoded_auth_scope;
     String encoded_client_id;
     String encoded_client_secret;
