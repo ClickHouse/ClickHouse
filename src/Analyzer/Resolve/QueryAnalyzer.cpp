@@ -110,7 +110,8 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool validate_group_by_all_key_types;
+    extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -149,6 +150,23 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
+/// Must run for every reference: clones of one body can resolve differently.
+void checkMaterializedCTESubqueryIsNotCorrelated(
+    const QueryTreeNodePtr & subquery,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node)
+{
+    const bool is_correlated = subquery->as<QueryNode>()
+        ? subquery->as<QueryNode>()->isCorrelated()
+        : subquery->as<UnionNode>()->isCorrelated();
+    if (is_correlated)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Materialized CTE '{}' cannot be correlated. In scope {}",
+            cte_name,
+            scope_node->formatASTForErrorMessage());
+}
 
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
@@ -276,7 +294,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePt
         }
     }
 
-    validateCorrelatedSubqueries(node);
+    validateCorrelatedSubqueries(node, scope.context);
     inlineMaterializedCTEIfNeeded(node, context);
 }
 
@@ -322,7 +340,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Tab
     else
         resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    validateCorrelatedSubqueries(node);
+    validateCorrelatedSubqueries(node, scope.context);
 }
 
 static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
@@ -1440,11 +1458,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         return resolve_result;
 
     CorrelatedColumnsCollector correlated_columns_collector{resolved_identifier, identifier_resolve_context.scope_to_resolve_alias_expression, node_to_scope_map};
-    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+    if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Resolved identifier '{}' in parent scope to expression '{}' with correlated columns '{}'"
-            " (Enable 'allow_experimental_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
+            " (Enable 'allow_correlated_subqueries' setting to allow correlated subqueries execution). In scope {}",
             identifier_lookup.identifier.getFullName(),
             resolved_identifier->formatASTForErrorMessage(),
             fmt::join(correlated_columns_collector.get() | std::views::transform([](const auto & e) { return e->template as<ColumnNode>()->getColumnName(); }), "', '"),
@@ -1553,15 +1571,40 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         if (unlikely(prefer_column_name_to_alias))
         {
+            bool can_check_aliases = identifier_resolve_context.allow_to_check_aliases && !already_in_resolve_process;
+            bool ambiguous_in_join_tree = false;
+
             if (identifier_resolve_context.allow_to_check_join_tree)
             {
-                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+                /** A column name that is ambiguous between joined tables but also names an alias resolves to the alias,
+                  * as the old analyzer did (`JoinToSubqueryTransformVisitor`, `allow_ambiguous = got_alias`).
+                  * Example: SELECT t1.x AS x FROM t1, t2, t3 WHERE ... ORDER BY x
+                  */
+                bool alias_can_take_over = can_check_aliases
+                    && identifier_lookup.isExpressionLookup()
+                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FULL_NAME) != nullptr;
+
+                if (alias_can_take_over)
+                {
+                    auto tolerant_lookup = identifier_lookup;
+                    tolerant_lookup.allow_ambiguous_join_tree_identifier = true;
+                    resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(tolerant_lookup, scope);
+                    ambiguous_in_join_tree = resolve_result.ambiguous_in_join_tree;
+                }
+                else
+                {
+                    resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+                }
             }
 
-            if (identifier_resolve_context.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
+            if (can_check_aliases && !resolve_result.resolved_identifier)
             {
                 resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_context);
             }
+
+            /// No alias took over: resolve from the join tree again to throw the original `AMBIGUOUS_IDENTIFIER`.
+            if (ambiguous_in_join_tree && !resolve_result.resolved_identifier)
+                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
         }
         else
         {
@@ -2609,6 +2652,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
+                    /// A lambda body can only learn a matched column's name from this map; the FUNCTION branch below also reads its alias.
+                    node_to_projection_name.emplace(node, result_projection_names.back());
+
                     auto lambda_expression_to_resolve = expression_node->clone();
                     auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
@@ -3390,14 +3436,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                             ctes_in_resolve_process.erase(resolved_identifier_node);
 
-                            const bool mat_subquery_is_correlated = mat_subquery->as<QueryNode>()
-                                ? mat_subquery->as<QueryNode>()->isCorrelated()
-                                : mat_subquery->as<UnionNode>()->isCorrelated();
-                            if (mat_subquery_is_correlated)
-                                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                                    "Materialized CTE '{}' cannot be correlated. In scope {}",
-                                    materialized_cte_ptr->cte_name,
-                                    scope.scope_node->formatASTForErrorMessage());
+                            checkMaterializedCTESubqueryIsNotCorrelated(mat_subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                         }
 
                         /// Create temp table only if no other clone has done it yet.
@@ -4186,7 +4225,7 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
 
 /** Resolve GROUP BY clause.
   */
-void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope, bool validate_key_types)
 {
     QueryTreeNodes nullable_group_by_keys;
 
@@ -4208,7 +4247,10 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         {
             for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
             {
-                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+                if (validate_key_types)
+                    validateGroupByKeyType(group_by_elem->getResultType(), scope);
+                /// Outside the guard: the promotion to Nullable is what `group_by_use_nulls` asks for,
+                /// independently of whether the key types are validated.
                 if (scope.group_by_use_nulls)
                     nullable_group_by_keys.push_back(group_by_elem);
             }
@@ -4227,7 +4269,9 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
         {
-            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+            if (validate_key_types)
+                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+            /// Outside the guard, for the same reason as in the grouping-sets branch above.
             if (scope.group_by_use_nulls)
                 nullable_group_by_keys.push_back(group_by_elem);
         }
@@ -6152,14 +6196,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     if (cte_map_node)
                         ctes_in_resolve_process.erase(cte_map_node);
 
-                    bool is_correlated = subquery->as<QueryNode>()
-                        ? subquery->as<QueryNode>()->isCorrelated()
-                        : subquery->as<UnionNode>()->isCorrelated();
-                    if (is_correlated)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                            "Materialized CTE '{}' cannot be correlated. In scope {}",
-                            cte_name,
-                            scope.scope_node->formatASTForErrorMessage());
+                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, cte_name, scope.scope_node);
 
                     const auto & projection_columns = subquery->as<QueryNode>()
                         ? subquery->as<QueryNode>()->getProjectionColumns()
@@ -6186,6 +6223,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                    /// A clone can resolve correlated even when the storage-initializing clone did not
+                    /// (identifiers may bind to outer scope here). The first-reference branch above
+                    /// already rejects correlation; this branch must do the same.
+                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, materialized_cte_ptr->cte_name, scope.scope_node);
 
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
                     verifyMaterializedCTESubqueryMatchesStorage(
@@ -6684,6 +6726,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
+    /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
+    /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
+    const bool query_is_group_by_all = query_node_typed.isGroupByAll();
+
     if (!scope.group_by_use_nulls)
     {
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
@@ -6783,7 +6829,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasGroupBy())
-        resolveGroupByNode(query_node_typed, scope);
+        resolveGroupByNode(
+            query_node_typed,
+            scope,
+            /* validate_key_types */ !query_is_group_by_all
+                || scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types]);
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -6969,8 +7019,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         expandTuplesInList(query_node_typed.getGroupBy().getNodes());
 
-        for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+        /// Only the acceptance check is optional; the tuple expansion above is not.
+        if (scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types])
+        {
+            for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+        }
     }
 
     tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
