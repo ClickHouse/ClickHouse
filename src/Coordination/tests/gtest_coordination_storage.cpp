@@ -6,9 +6,12 @@
 
 #include <Coordination/KeeperStorage.h>
 
+#include <Common/shuffle.h>
+#include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
+
 #include <unordered_set>
 
 TEST_P(CoordinationTest, TestSystemNodeModify)
@@ -1175,31 +1178,46 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
     }
 
     {
+        const std::vector<String> names{"a", "b", "c", "d", "e", "f", "g", "h"};
+        const std::vector<String> prefix(names.begin(), names.begin() + 3);
+        const std::unordered_set<String> expected_names(names.begin(), names.end());
+
+        UInt64 shuffle_seed = 0;
+        std::vector<String> expected_shuffled_names;
+        std::vector<String> expected_partial_shuffled_names;
+        bool found_non_identity_shuffle = false;
+        for (; shuffle_seed < 1024; ++shuffle_seed)
+        {
+            expected_shuffled_names = names;
+            pcg64 full_rng;
+            full_rng.seed(shuffle_seed);
+            shuffle_with_limit(expected_shuffled_names.begin(), expected_shuffled_names.end(), 0, full_rng);
+
+            expected_partial_shuffled_names = names;
+            pcg64 partial_rng;
+            partial_rng.seed(shuffle_seed);
+            shuffle_with_limit(expected_partial_shuffled_names.begin(), expected_partial_shuffled_names.end(), 3, partial_rng);
+            expected_partial_shuffled_names.resize(3);
+
+            if (expected_shuffled_names != names && expected_partial_shuffled_names != prefix)
+            {
+                found_non_identity_shuffle = true;
+                break;
+            }
+        }
+        ASSERT_TRUE(found_non_identity_shuffle);
+
         ListOptions options;
         options.shuffle = true;
-        const auto make_list_request = [&]
-        {
-            auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
-            request->path = "/list_with_options_shuffle";
-            request->options = options;
-            return request;
-        };
-        const Requests list_requests {make_list_request(), make_list_request()};
-        const auto request = std::make_shared<ZooKeeperMultiRequest>(list_requests, ACLs{});
-        request->xid = ++zxid;
+        const auto & shuffled_response = list("/list_with_options_shuffle", options);
+        EXPECT_EQ(shuffled_response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(shuffled_response.names.begin(), shuffled_response.names.end()), expected_names);
 
-        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 1, .request = request}};
-        const auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
-        ASSERT_EQ(responses.size(), 1);
-        const auto & multi_response = dynamic_cast<const ZooKeeperMultiReadResponse &>(*responses[0].response);
-        ASSERT_EQ(multi_response.responses.size(), 2);
-        const auto & first_response = dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*multi_response.responses[0]);
-        const auto & second_response = dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*multi_response.responses[1]);
-        const std::unordered_set<String> expected_names{"a", "b", "c", "d", "e", "f", "g", "h"};
-        EXPECT_EQ(first_response.error, Error::ZOK);
-        EXPECT_EQ(second_response.error, Error::ZOK);
-        EXPECT_EQ(std::unordered_set<String>(first_response.names.begin(), first_response.names.end()), expected_names);
-        EXPECT_EQ(std::unordered_set<String>(second_response.names.begin(), second_response.names.end()), expected_names);
+        options.max_results = 3;
+        const auto & partial_shuffled_response = list("/list_with_options_shuffle", options);
+        EXPECT_EQ(partial_shuffled_response.error, Error::ZOK);
+        EXPECT_EQ(partial_shuffled_response.names.size(), options.max_results);
+        EXPECT_TRUE(partial_shuffled_response.truncated);
     }
 
     {

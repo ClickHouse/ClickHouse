@@ -1280,12 +1280,7 @@ static Coordination::ZooKeeperResponsePtr processLocal(
     {
         std::vector<String> children = storage.nodes.listCommittedChildrenNames(zk_request.path);
         if (zk_request.options.shuffle)
-        {
-            if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
-                partial_shuffle(children.begin(), children.end(), zk_request.options.max_results, thread_local_rng);
-            else
-                std::shuffle(children.begin(), children.end(), thread_local_rng);
-        }
+            shuffle_with_limit(children.begin(), children.end(), zk_request.options.max_results, thread_local_rng);
 
         if (zk_request.options.max_results != 0 && children.size() > zk_request.options.max_results)
         {
@@ -1356,11 +1351,8 @@ static Coordination::ZooKeeperResponsePtr processLocal(
 
     if (materialize_shuffled_subtree)
     {
-        if (zk_request.options.max_results != 0 && shuffled_subtree_candidates.size() > zk_request.options.max_results)
-            partial_shuffle(
-                shuffled_subtree_candidates.begin(), shuffled_subtree_candidates.end(), zk_request.options.max_results, thread_local_rng);
-        else
-            std::shuffle(shuffled_subtree_candidates.begin(), shuffled_subtree_candidates.end(), thread_local_rng);
+        shuffle_with_limit(
+            shuffled_subtree_candidates.begin(), shuffled_subtree_candidates.end(), zk_request.options.max_results, thread_local_rng);
 
         for (const String & relative : shuffled_subtree_candidates)
         {
