@@ -70,6 +70,19 @@ std::map<std::string, uint64_t> readAllMetricsFromStatFile(ReadBufferFromFile & 
 
 using Metrics = std::map<std::string_view, uint64_t>;
 
+std::optional<uint64_t> findMetric(const Metrics & metrics, std::string_view key)
+{
+    auto it = metrics.find(key);
+    if (it == metrics.end())
+        return std::nullopt;
+    return it->second;
+}
+
+uint64_t getMetric(const Metrics & metrics, std::string_view key)
+{
+    return findMetric(metrics, key).value_or(0);
+}
+
 void readMetricsFromStatFile(
     ReadBufferFromFile & buf,
     Metrics & metrics,
@@ -118,16 +131,21 @@ void readMetricsFromStatFile(
         metrics[*it] = value;
     }
 
-    if (print_warnings)
+    for (const auto * it = keys.begin(); it != keys.end(); ++it)
     {
-        for (const auto * it = keys.begin(); it != keys.end(); ++it)
+        uint64_t key_bit = 1ull << (it - keys.begin());
+        if (seen_mask & key_bit)
+            continue;
+
+        /// A requested key that is absent from the file must not be reported as a zero value:
+        /// callers distinguish "the kernel does not expose this statistic" from a real zero
+        /// (e.g. `CGroupMemoryInactiveFile` is omitted rather than published as 0).
+        metrics.erase(*it);
+
+        if (print_warnings)
         {
-            uint64_t key_bit = 1ull << (it - keys.begin());
-            if (!(seen_mask & key_bit))
-            {
-                *warnings_printed = true;
-                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
-            }
+            *warnings_printed = true;
+            LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
         }
     }
 }
@@ -140,9 +158,25 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
+        /// Only the keys needed for the usage value are parsed here, so that the long-existing usage path
+        /// does not depend on the fields that are read only for the `CGroupMemoryInactiveFile` metric.
         readMetricsFromStatFile(buf, metrics, {"rss"}, &warnings_printed);
-        auto it = metrics.find("rss");
-        return it != metrics.end() ? it->second : 0;
+        return calculateUsage(metrics);
+    }
+
+    CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
+    {
+        std::lock_guard lock(mutex);
+        buf.rewind();
+        /// Use total_inactive_file for cgroups v1 to get the hierarchical value
+        /// (includes child cgroups), matching Kubernetes cadvisor behavior.
+        readMetricsFromStatFile(buf, metrics, {"rss", "total_inactive_file"}, &warnings_printed);
+
+        CgroupsMemoryUsageAndInactive result;
+        result.usage = calculateUsage(metrics);
+        /// Keep "the key is absent" distinct from a real zero: an older kernel may not expose it at all.
+        result.inactive_file = findMetric(metrics, "total_inactive_file");
+        return result;
     }
 
     std::string dumpAllStats() override
@@ -153,6 +187,12 @@ struct CgroupsV1Reader : ICgroupsReader
     }
 
 private:
+    /// The single source of truth for the cgroups v1 usage value.
+    static uint64_t calculateUsage(const Metrics & metrics)
+    {
+        return getMetric(metrics, "rss");
+    }
+
     std::mutex mutex;
     ReadBufferFromFile buf TSA_GUARDED_BY(mutex);
     Metrics metrics TSA_GUARDED_BY(mutex);
@@ -167,25 +207,24 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
+        /// Only the keys needed for the usage value are parsed here, so that the long-existing usage path
+        /// does not depend on the fields that are read only for the `CGroupMemoryInactiveFile` metric.
+        readMetricsFromStatFile(stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable"}, &warnings_printed);
+        return calculateUsage(metrics);
+    }
+
+    CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() override
+    {
+        std::lock_guard lock(mutex);
+        stat_buf.rewind();
         readMetricsFromStatFile(
-            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable"}, &warnings_printed);
+            stat_buf, metrics, {"anon", "sock", "kernel", "slab_reclaimable", "inactive_file"}, &warnings_printed);
 
-        auto get = [](const Metrics & m, std::string_view key) -> uint64_t
-        {
-            auto it = m.find(key);
-            return it != m.end() ? it->second : 0;
-        };
-
-        /// anon + sock: actual process memory.
-        /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
-        /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
-        /// before invoking the OOM killer, so it should not count against the application's memory budget.
-        uint64_t usage = get(metrics, "anon") + get(metrics, "sock");
-        uint64_t kernel = get(metrics, "kernel");
-        uint64_t slab_reclaimable = get(metrics, "slab_reclaimable");
-        if (kernel > slab_reclaimable)
-            usage += kernel - slab_reclaimable;
-        return usage;
+        CgroupsMemoryUsageAndInactive result;
+        result.usage = calculateUsage(metrics);
+        /// Keep "the key is absent" distinct from a real zero: an older kernel may not expose it at all.
+        result.inactive_file = findMetric(metrics, "inactive_file");
+        return result;
     }
 
     std::string dumpAllStats() override
@@ -196,6 +235,21 @@ struct CgroupsV2Reader : ICgroupsReader
     }
 
 private:
+    /// The single source of truth for the cgroups v2 usage value.
+    /// anon + sock: actual process memory.
+    /// kernel - slab_reclaimable: non-reclaimable kernel memory (pagetables, kernel_stack, slab_unreclaimable).
+    /// slab_reclaimable is excluded because the kernel reclaims it synchronously under memory pressure
+    /// before invoking the OOM killer, so it should not count against the application's memory budget.
+    static uint64_t calculateUsage(const Metrics & metrics)
+    {
+        uint64_t usage = getMetric(metrics, "anon") + getMetric(metrics, "sock");
+        uint64_t kernel = getMetric(metrics, "kernel");
+        uint64_t slab_reclaimable = getMetric(metrics, "slab_reclaimable");
+        if (kernel > slab_reclaimable)
+            usage += kernel - slab_reclaimable;
+        return usage;
+    }
+
     std::mutex mutex;
     ReadBufferFromFile stat_buf TSA_GUARDED_BY(mutex);
     Metrics metrics TSA_GUARDED_BY(mutex);
@@ -242,6 +296,25 @@ std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsRead
 
     chassert(version == CgroupsVersion::V1);
     return std::make_shared<CgroupsV1Reader>(cgroup_path);
+}
+
+CgroupsMemoryUsageAndOptionalInactive ICgroupsReader::readMemoryUsageAndOptionalInactiveFile()
+{
+    CgroupsMemoryUsageAndOptionalInactive result;
+    try
+    {
+        auto stats = readMemoryUsageAndInactiveFile();
+        result.usage = stats.usage;
+        result.inactive_file = stats.inactive_file;
+    }
+    catch (...)
+    {
+        /// A malformed inactive-file line must not take down the pre-existing usage-based
+        /// metrics; `readMemoryUsage` parses only the fields the usage value is made of.
+        tryLogCurrentException("CgroupsReader");
+        result.usage = readMemoryUsage();
+    }
+    return result;
 }
 
 namespace MemoryWorkerHelpers

@@ -15,6 +15,25 @@
 namespace DB
 {
 
+/// Result of the combined read of the usage value and the inactive-file statistic.
+/// `inactive_file` is empty when the kernel does not expose the corresponding key
+/// (`inactive_file` on cgroup v2, `total_inactive_file` on cgroup v1) in `memory.stat`:
+/// an absent statistic must not be reported as a real zero.
+struct CgroupsMemoryUsageAndInactive
+{
+    uint64_t usage = 0;
+    std::optional<uint64_t> inactive_file;
+};
+
+/// Result of the best-effort combined read used by the asynchronous metrics: the usage value is
+/// always present, while `inactive_file` is empty if the inactive-file fields could not be parsed
+/// or are not present in `memory.stat` at all.
+struct CgroupsMemoryUsageAndOptionalInactive
+{
+    uint64_t usage = 0;
+    std::optional<uint64_t> inactive_file;
+};
+
 struct ICgroupsReader
 {
     enum class CgroupsVersion : uint8_t
@@ -34,6 +53,16 @@ struct ICgroupsReader
     virtual ~ICgroupsReader() = default;
 
     virtual uint64_t readMemoryUsage() = 0;
+
+    virtual CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() = 0;
+
+    /// Combined read for the asynchronous metrics (`CGroupMemoryUsed` etc. plus the newer
+    /// `CGroupMemoryInactiveFile`). Parses `memory.stat` once via `readMemoryUsageAndInactiveFile`
+    /// in the common case. A failure to parse the inactive-file fields must not suppress the
+    /// pre-existing usage-based metrics for the update cycle, so on failure the usage is re-read
+    /// via the usage-only `readMemoryUsage` path (which does not depend on those fields) and
+    /// `inactive_file` is left empty. Only a failure of the usage path itself propagates.
+    CgroupsMemoryUsageAndOptionalInactive readMemoryUsageAndOptionalInactiveFile();
 
     virtual std::string dumpAllStats() = 0;
 };
