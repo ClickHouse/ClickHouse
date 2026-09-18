@@ -124,6 +124,7 @@ AGGREGATION_OPERATOR:
     | 'topk'
     | 'quantile'
     | 'limitk'
+    | 'limit_ratio'
 ;
 
 FUNCTION options {

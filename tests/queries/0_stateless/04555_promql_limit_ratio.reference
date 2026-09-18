@@ -1,0 +1,13 @@
+-- limit_ratio(1, up): the whole ratio, keeps all 6 series.
+6
+-- limit_ratio(0, up): empty ratio, keeps nothing.
+0
+-- limit_ratio(-1, up): the whole complement, keeps all 6 series.
+6
+-- limit_ratio(1.5, up): out-of-range r is clamped to 1, keeps all 6 series.
+6
+-- limit_ratio(0.5, up) and limit_ratio(-0.5, up) keep complementary, reproducible subsets.
+r=0.5:  host2 host4 host6 
+r=-0.5: host1 host3 host5 
+-- limit_ratio keeps the original series labels (including the metric name).
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
