@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
-#include <Common/PODArray_fwd.h>
+#include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -221,7 +221,7 @@ private:
     SegmentData readSegmentData(ReadBuffer & in, PaddedPODArray<char> & buffer);
 
     /// All segments. Filled on encode only: decode reads the payload from the buffer passed to it.
-    std::string compressed_data;
+    PODArray<char> compressed_data;
     /// Last encoded/decoded row id
     uint32_t prev_row_id = 0;
     /// Row ids in the current segment

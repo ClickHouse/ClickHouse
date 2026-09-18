@@ -3,8 +3,7 @@
 #include <Compression/PFor.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Common/Exception.h>
-
-#include <array>
+#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -35,7 +34,7 @@ namespace
     class BitpackingPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
-        size_t encodeBlock(std::span<uint32_t> deltas, std::string & out) override
+        size_t encodeBlock(std::span<uint32_t> deltas, PODArray<char> & out) override
         {
             auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(deltas);
             size_t needed_bytes_with_header = needed_bytes_without_header + 1;
@@ -99,17 +98,19 @@ namespace
     class PForPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
-        size_t encodeBlock(std::span<uint32_t> deltas, std::string & out) override
+        size_t encodeBlock(std::span<uint32_t> deltas, PODArray<char> & out) override
         {
-            /// `scratch` holds one block, so an oversized input would overrun it.
+            /// `MAX_BLOCK_BYTES` bounds one block, so an oversized input would overrun the reserved tail.
             if (deltas.empty() || deltas.size() > BLOCK_SIZE)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "PFor block must hold 1 to {} values, got {}", BLOCK_SIZE, deltas.size());
 
-            /// Encode into scratch: resizing `out` to the worst case would zero-fill it on every block.
-            const size_t written = PFor::encodeBlocks<uint32_t>(deltas, PFor::Delta::none, scratch.data());
-            chassert(written > 0 && written <= scratch.size());
-            out.append(reinterpret_cast<const char *>(scratch.data()), written);
+            /// The encoded size is only known afterwards; `PODArray::resize` does not zero-fill, so grow to the bound and shrink.
+            const size_t offset = out.size();
+            out.resize(offset + MAX_BLOCK_BYTES);
+            const size_t written = PFor::encodeBlocks<uint32_t>(deltas, PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
+            chassert(written > 0 && written <= MAX_BLOCK_BYTES);
+            out.resize(offset + written);
             return written;
         }
 
@@ -134,8 +135,6 @@ namespace
 
     private:
         static constexpr size_t MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(BLOCK_SIZE);
-
-        std::array<uint8_t, MAX_BLOCK_BYTES> scratch{};
     };
 
 }

@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Storages/MergeTree/IPostingListCodec.h>
+#include <Common/PODArray_fwd.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
-#include <string>
 
 namespace DB
 {
@@ -23,7 +23,7 @@ public:
     virtual ~IPostingListBlockCodec() = default;
 
     /// Append one encoded block of `deltas` (1..BLOCK_SIZE values) to `out`. Returns the number of bytes appended.
-    virtual size_t encodeBlock(std::span<uint32_t> deltas, std::string & out) = 0;
+    virtual size_t encodeBlock(std::span<uint32_t> deltas, PODArray<char> & out) = 0;
 
     /// Decode one block of `count` (1..BLOCK_SIZE) delta values from `in` into `out` (which must hold at least
     /// `count` slots), advancing `in` past the consumed bytes. Returns the number of bytes consumed.
