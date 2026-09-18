@@ -128,7 +128,7 @@ Inside a stage, an expression may use:
 
 `$map` and `$filter` bind their element to the variable named by `as`, which defaults to `$$this`. `$$NOW` is the current time; the other system variables are not supported.
 
-`$literal` hands its argument on as a value, arrays and embedded documents included: the operators inside it are not evaluated, while the Extended JSON wrappers are converted the way a stored document converts them. `$dateFromString` reads a text that names no offset of its own in the `timezone` the operator names, and in UTC when it names none; its `onError` and `onNull` fields answer a value of their own for a text that cannot be read and are refused rather than dropped.
+`$literal` hands its argument on as a value, arrays and embedded documents included: the operators inside it are not evaluated, while the Extended JSON wrappers are converted the way a stored document converts them. `$dateFromString` reads a text that names no offset of its own in the `timezone` the operator names, and in UTC when it names none; its `onError` and `onNull` fields answer a value of their own for a text that cannot be read and are refused rather than dropped. `$dateTrunc`, `$dateAdd`, `$dateSubtract` and `$dateDiff` honour their `timezone`, which is the time zone the calendar arithmetic runs in: a day added across a change of the daylight saving time is 23 or 25 hours long there. `$dateTrunc` and `$dateDiff` start a week on Sunday, as MongoDB does, unless `startOfWeek` names Monday; a week starting on another day is refused, as is a `binSize` other than `1`. Any other field of these operators is an error rather than a dropped request.
 
 A `$regexFind` becomes the `match`, `idx` and `captures` fields of its result document, following the same mapping of a nested field onto an `a.b` column as everywhere else:
 
@@ -155,7 +155,7 @@ Creating a collection that already exists is the `NamespaceExists` error, as it 
 
 The values are stored as the [`JSON` type infers them](/sql-reference/data-types/newjson#reading-json-paths-as-sub-columns), so a date arrives as a date and reads back as a BSON date. A string that is written the way a date is - `"2019-01-01 00:00:00"` - is stored as a date as well, and reads back as one rather than as the string it was.
 
-A collection that does not exist reads as empty, as it does in MongoDB: `find` returns an empty cursor, `count` returns `0`, `distinct` returns no values and `aggregate` returns an empty cursor. An `update` or a `delete` of such a collection matches no document and is a no-op rather than an error, also as in MongoDB.
+A collection that does not exist reads as empty, as it does in MongoDB: `find` returns an empty cursor, `count` returns `0`, `distinct` returns no values and `aggregate` returns an empty cursor. An `update` or a `delete` of such a collection matches no document and is a no-op rather than an error, also as in MongoDB. The same holds when the collection - or its database - is dropped by another session while the command runs.
 
 ### Limitations {#limitations}
 
@@ -175,6 +175,7 @@ The limitations that hold for either shape are:
 
 - An `update` is translated into `ALTER TABLE ... UPDATE` and a `delete` into `DELETE FROM`, which are mutations. A write is acknowledged when it has been written, so the endpoint waits for the mutation to finish on this server before it answers: the new value is visible to the `find` that follows, and a mutation that fails is reported as a failed write rather than only in the log. An insert is written synchronously for the same reason - the endpoint never inherits an `async_insert` of the user's profile.
 - The number of documents affected by `update` and `delete` is always reported as `0`.
+- An `update` statement is `updateMany` only and a `delete` statement is `deleteMany` only: `multi: false` (`updateOne`), `upsert: true` and `limit: 1` (`deleteOne`) cannot be expressed as a mutation of a table with no unique key, so they are refused. Such a statement is a fault of the whole command rather than a write error of one statement: it is refused before any statement of the command runs, so a bulk write that carries one writes nothing.
 - Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch. A result whose reply would exceed the advertised `maxBsonObjectSize` (16 MiB) is an error rather than an oversized reply: ask for less at a time, with a filter, a projection, `limit` and `skip`. The replies to `distinct`, `listCollections` and `listDatabases` have the same bound.
 - A `Float32` or `Float64` column that holds `NaN` or an infinity reads back as a BSON double with that value, but such a value cannot be inserted over the wire protocol: BSON extended JSON has no plain-JSON form for it here, so the insert is an error.
 - An explicitly inserted `null` becomes a `Dynamic` column when it is the first value of its field, and the default of the column type otherwise: a typed column always has a value.
