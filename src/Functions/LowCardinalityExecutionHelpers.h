@@ -150,6 +150,37 @@ struct LowCardinalityArrayView
     }
 };
 
+/// Pair analogue of existsByDictionaryMatches: two element-aligned LowCardinality columns sharing
+/// `offsets`, each with its own dictionary-match bitmap; returns whether any element matches on BOTH sides.
+inline ColumnUInt8::MutablePtr combinedExistsByDictionaryMatches(
+    const ColumnLowCardinality & key_elements,
+    const PaddedPODArray<UInt8> & key_matches,
+    const ColumnLowCardinality & value_elements,
+    const PaddedPODArray<UInt8> & value_matches,
+    const ColumnArray::Offsets & offsets,
+    size_t rows)
+{
+    auto result = ColumnUInt8::create();
+    auto & result_data = result->getData();
+    result_data.resize_fill(rows);
+
+    for (size_t row = 0; row != rows; ++row)
+    {
+        size_t begin = offsets[ssize_t(row) - 1];
+        size_t end = offsets[row];
+        for (size_t i = begin; i != end; ++i)
+        {
+            if (key_matches[key_elements.getIndexAt(i)] && value_matches[value_elements.getIndexAt(i)])
+            {
+                result_data[row] = 1;
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
 /// Evaluate a predicate over LC dictionary entries, either over the whole dictionary or only over
 /// dictionary indexes used by this block. [evaluate] must return a UInt8 column sized like its input.
 template <typename Evaluate>
