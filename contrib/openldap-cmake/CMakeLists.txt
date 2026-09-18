@@ -98,6 +98,7 @@ target_compile_definitions(_lber
 
 set(_ldap_srcs
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/abandon.c"
+    "${OPENLDAP_SOURCE_DIR}/libraries/libldap/account_usability.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/add.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/addentry.c"
     "${OPENLDAP_SOURCE_DIR}/libraries/libldap/assertion.c"
