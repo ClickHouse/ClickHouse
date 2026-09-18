@@ -762,9 +762,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// Only for the test that puts the bound of one waiting thread under pressure.
     const bool never_pause = coordination_settings[CoordinationSetting::nuraft_test_disable_append_entries_pause];
 
-    /// Silencing the leader is only safe once the commit index it has already sent covers the
-    /// whole on-disk tail: the replay can then finish without it, while a node whose tail
-    /// diverges still needs requests carrying entries to learn where the two logs match.
     state_machine->setAppendEntriesPauseCondition([this, never_pause]
     {
         return !never_pause
