@@ -288,9 +288,6 @@ SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 namespace
 {
 
-/// Ids come from a counter shared by the whole query, so that a set subquery and a step in another
-/// plan can refer to the same one. Outside a query -- a unit test constructing a set directly --
-/// there is no counter and no document to link, so 0 is as good as anything.
 size_t nextSubqueryId()
 {
     return CurrentThread::isInitialized() ? CurrentThread::get().getNextSubqueryIndex() : 0;
@@ -511,13 +508,6 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (!plan)
         return;
 
-    /// Optimized before the capture rather than inside `buildQueryPipeline`, which is what the
-    /// interpreter does for the query's own plan. Optimization rewrites the plan -- it merges and
-    /// replaces steps, and pushes filters into `PREWHERE` -- so a capture taken before it would
-    /// describe a shape that never ran, would hold the pretty names of steps that no longer exist,
-    /// and would record which subqueries a step consumes onto steps that are then discarded.
-    /// `applyDistributedPlanFallbackToLocal` comes first because `buildQueryPipeline` would
-    /// otherwise do it, and `optimize` needs the decision already applied to its settings.
     auto optimization_settings = makeInplaceBuildOptimizationSettings(context);
     plan->applyDistributedPlanFallbackToLocal(optimization_settings);
     plan->optimize(optimization_settings);
@@ -735,7 +725,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// Returns false when the pipeline stopped without creating the set.
     auto run_plan = [&](QueryPlan & plan_to_run)
     {
-        /// See `buildSetInplace`: optimized first, then captured, then built without optimizing again.
         auto optimization_settings = makeInplaceBuildOptimizationSettings(context);
         plan_to_run.applyDistributedPlanFallbackToLocal(optimization_settings);
         plan_to_run.optimize(optimization_settings);

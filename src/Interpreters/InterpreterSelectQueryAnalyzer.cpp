@@ -500,10 +500,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-    /// Step descriptions produced by optimizations (e.g. merged expressions) are passed through
-    /// IQueryPlanStep::setStepDescription(description, limit), which truncates to `limit` — and the
-    /// default 0 discards them entirely. The strings are formatted regardless, so raising the limit
-    /// only stops the result being thrown away.
     if (plan_profiler)
         optimization_settings.max_step_description_length = plan_profiler->getMaxDescriptionLength();
 

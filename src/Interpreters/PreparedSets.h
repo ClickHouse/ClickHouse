@@ -251,11 +251,7 @@ public:
     /// set that fills that table or through the table stored next to the set itself.
     bool hasExternalTable() const;
 
-    /// Identifies this subquery within the query, for `system.query_log.query_plan`. The set may be
-    /// built during planning, in a pipeline of its own that is linked from nowhere in the query's
-    /// plan; the id is what lets the stored document say which step then used the result. Assigned
-    /// here, at the one place the subquery is created, and read by both ends -- never recomputed
-    /// from the subquery, so the two ends cannot disagree about it.
+    /// Identifies this subquery
     size_t getSubqueryId() const { return subquery_id; }
 
 private:

@@ -3117,9 +3117,7 @@ static BlockIO executeQueryImpl(
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
                         /// A cache hit builds no plan and runs no pipeline, so there is nothing to
-                        /// capture. Said here because the query never reaches canEnableProfiler,
-                        /// which is below this branch, and would otherwise leave `query_plan` empty
-                        /// with nothing to explain it.
+                        /// capture.
                         QueryPlanProfiler::declineCapture(
                             context, "the result came from the query result cache, so no plan was executed");
 
@@ -3154,15 +3152,15 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                /// Has to happen before the interpreter exists: the interpreter plans on a copy
-                /// of this context, and what enabling the profiler switches on has to be in force
-                /// while the planner runs.
                 if (QueryPlanProfiler::canEnableProfiler(context, out_ast, internal))
                     context->enablePlanProfiler();
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
+                /// This assignment is done here instead of using the `context` that is available inside the Interpreters
+                /// to avoid situations where Interpreters are created inside the other interpreter and end up overwriting
+                /// the captured plan. For example: recursive CTEs
                 if (interpreter)
                     interpreter->setPlanProfiler(context->getPlanProfiler());
 
