@@ -295,7 +295,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromS3 was canceled."
+                "WriteBufferFromS3 was canceled. "
                 "The file might not be written to S3. "
                 "{}.",
                 getVerboseLogDetails());
@@ -516,9 +516,6 @@ std::optional<S3::RequestChecksum::Algorithm> WriteBufferFromS3::getUploadChecks
     /// dropped under FIPS, leaving the upload with no checksum header - the safe pre-flexible-checksum behavior).
     /// `GCS` is never an `S3Express` bucket, so this check can short-circuit before the `S3Express` handling.
     if (client_ptr->isClientForGCS())
-        return std::nullopt;
-
-    if (client_ptr->isChecksumDisabled() && !client_ptr->isS3ExpressBucket())
         return std::nullopt;
 
     return S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket());
