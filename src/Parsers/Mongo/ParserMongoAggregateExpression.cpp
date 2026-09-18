@@ -1,5 +1,6 @@
 #include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 
+#include <cstring>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -13,6 +14,7 @@
 #include <Parsers/Mongo/Utils.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -295,28 +297,82 @@ std::string parseVariableName(const rapidjson::Value & argument, const char * de
     return std::string(stringView(it->value));
 }
 
-/// The interval a date unit of `$dateAdd` and `$dateSubtract` adds up.
-std::string dateIntervalFunction(const rapidjson::Value & unit, std::string_view operator_name)
+/// The function that adds a date unit of `$dateAdd` (and, with `add` replaced by `subtract`, of
+/// `$dateSubtract`). Unlike `plus` with an interval, these take the time zone the calendar
+/// arithmetic runs in, which is what the `timezone` of the operator names.
+std::string dateAddFunction(const rapidjson::Value & unit, std::string_view operator_name)
 {
     if (!unit.IsString())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'unit' of '{}' must be a string", operator_name);
 
-    static const std::unordered_map<std::string_view, std::string> intervals = {
-        {"year", "toIntervalYear"},
-        {"quarter", "toIntervalQuarter"},
-        {"month", "toIntervalMonth"},
-        {"week", "toIntervalWeek"},
-        {"day", "toIntervalDay"},
-        {"hour", "toIntervalHour"},
-        {"minute", "toIntervalMinute"},
-        {"second", "toIntervalSecond"},
-        {"millisecond", "toIntervalMillisecond"},
+    static const std::unordered_map<std::string_view, std::string> functions = {
+        {"year", "addYears"},
+        {"quarter", "addQuarters"},
+        {"month", "addMonths"},
+        {"week", "addWeeks"},
+        {"day", "addDays"},
+        {"hour", "addHours"},
+        {"minute", "addMinutes"},
+        {"second", "addSeconds"},
+        {"millisecond", "addMilliseconds"},
     };
 
-    auto it = intervals.find(stringView(unit));
-    if (it == intervals.end())
+    auto it = functions.find(stringView(unit));
+    if (it == functions.end())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The unit '{}' of '{}' is not supported", stringView(unit), operator_name);
     return it->second;
+}
+
+/// The `unit` of `$dateTrunc` and `$dateDiff`, which is a string naming a part of a date.
+std::string_view dateUnit(const rapidjson::Value & argument, std::string_view operator_name)
+{
+    const auto & unit = requireMember(argument, "unit", operator_name);
+    if (!unit.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'unit' of '{}' must be a string", operator_name);
+    return stringView(unit);
+}
+
+/// The `timezone` of a date operator, if it names one: the time zone its calendar arithmetic
+/// runs in, which decides where a day, a week or a month begins and how long a day is.
+ASTPtr parseTimezoneMember(const rapidjson::Value & argument)
+{
+    auto it = argument.FindMember("timezone");
+    if (it == argument.MemberEnd())
+        return nullptr;
+    return parseMongoAggregateExpression(it->value);
+}
+
+/** The `mode` of `toStartOfWeek` for the `startOfWeek` of `$dateTrunc` and `$dateDiff`. Mongo
+  * starts a week on Sunday unless the operator says otherwise, and ClickHouse can start one on
+  * Sunday (mode 0) or on Monday (mode 1); a week that starts on another day is refused rather than
+  * counted from a day the operator did not ask for. It matters for the `week` unit only, as in
+  * Mongo, where the field is ignored for every other unit.
+  */
+UInt64 startOfWeekMode(const rapidjson::Value & argument, std::string_view operator_name)
+{
+    auto it = argument.FindMember("startOfWeek");
+    if (it == argument.MemberEnd())
+        return 0;
+    if (!it->value.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'startOfWeek' of '{}' must be a string", operator_name);
+
+    auto day = Poco::toLower(std::string(stringView(it->value)));
+    if (day == "sunday" || day == "sun")
+        return 0;
+    if (day == "monday" || day == "mon")
+        return 1;
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "A week of '{}' can start on Sunday or on Monday only, a 'startOfWeek' of '{}' is not supported",
+        operator_name, stringView(it->value));
+}
+
+/// `toStartOfWeek(date, mode[, timezone])`: the first day of the week a date falls in.
+ASTPtr makeStartOfWeek(ASTPtr date, UInt64 mode, const ASTPtr & timezone)
+{
+    auto result = makeASTFunction("toStartOfWeek", std::move(date), makeLiteral(Field(mode)));
+    if (timezone)
+        result->arguments->children.push_back(timezone->clone());
+    return result;
 }
 
 /** The regular expression of `$regexFind` and `$regexMatch`: the `regex` field - a bare pattern
@@ -563,11 +619,27 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
     if (name == "$dateTrunc")
     {
+        /// A `binSize` groups several units into one bin, counted from the year 2000; only the
+        /// bin of one unit, which is what the field defaults to, is answered here.
+        static const std::unordered_set<std::string_view> supported_members{"date", "unit", "binSize", "timezone", "startOfWeek"};
+        rejectUnknownMembers(argument, name, supported_members);
+        if (auto bin_size_it = argument.FindMember("binSize"); bin_size_it != argument.MemberEnd())
+            if (!bin_size_it->value.IsNumber() || bin_size_it->value.GetDouble() != 1)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a 'binSize' of 1 is supported in '{}'", name);
+
         auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
-        const auto & unit = requireMember(argument, "unit", name);
-        if (!unit.IsString())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'unit' of '$dateTrunc' must be a string");
-        return makeASTFunction("dateTrunc", makeLiteral(Field(String(stringView(unit)))), date);
+        auto unit = dateUnit(argument, name);
+        auto timezone = parseTimezoneMember(argument);
+        auto start_of_week = startOfWeekMode(argument, name);
+
+        /// `dateTrunc` starts a week on Monday; the start of the week Mongo means is a different day.
+        if (unit == "week")
+            return makeStartOfWeek(std::move(date), start_of_week, timezone);
+
+        auto result = makeASTFunction("dateTrunc", makeLiteral(Field(String(unit))), std::move(date));
+        if (timezone)
+            result->arguments->children.push_back(std::move(timezone));
+        return result;
     }
 
     if (name == "$regexMatch")
@@ -735,22 +807,51 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
     if (name == "$dateAdd" || name == "$dateSubtract")
     {
+        static const std::unordered_set<std::string_view> supported_members{"startDate", "unit", "amount", "timezone"};
+        rejectUnknownMembers(argument, name, supported_members);
+
         auto start = parseMongoAggregateExpression(requireMember(argument, "startDate", name));
         auto amount = parseMongoAggregateExpression(requireMember(argument, "amount", name));
-        auto interval = makeASTFunction(dateIntervalFunction(requireMember(argument, "unit", name), name), std::move(amount));
-        return makeASTFunction(name == "$dateAdd" ? "plus" : "minus", std::move(start), std::move(interval));
+        auto function = dateAddFunction(requireMember(argument, "unit", name), name);
+        if (name == "$dateSubtract")
+            function.replace(0, strlen("add"), "subtract");
+
+        /// A day, a month or a year added in a time zone is as long as the calendar of that time
+        /// zone makes it - 23 or 25 hours around a change of the daylight saving time - which the
+        /// time zone argument of `addDays` and its kin decides.
+        auto result = makeASTFunction(function, std::move(start), std::move(amount));
+        if (auto timezone = parseTimezoneMember(argument))
+            result->arguments->children.push_back(std::move(timezone));
+        return result;
     }
 
     if (name == "$dateDiff")
     {
-        const auto & unit = requireMember(argument, "unit", name);
-        if (!unit.IsString())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'unit' of '$dateDiff' must be a string");
-        return makeASTFunction(
-            "dateDiff",
-            makeLiteral(Field(String(stringView(unit)))),
-            parseMongoAggregateExpression(requireMember(argument, "startDate", name)),
-            parseMongoAggregateExpression(requireMember(argument, "endDate", name)));
+        static const std::unordered_set<std::string_view> supported_members{"startDate", "endDate", "unit", "timezone", "startOfWeek"};
+        rejectUnknownMembers(argument, name, supported_members);
+
+        auto unit = dateUnit(argument, name);
+        auto start = parseMongoAggregateExpression(requireMember(argument, "startDate", name));
+        auto end = parseMongoAggregateExpression(requireMember(argument, "endDate", name));
+        auto timezone = parseTimezoneMember(argument);
+
+        /// The difference in weeks is the number of starts of a week between the two dates, and
+        /// where a week starts is what `startOfWeek` says; `dateDiff` counts from Monday only.
+        if (unit == "week")
+        {
+            auto start_of_week = startOfWeekMode(argument, name);
+            auto days = makeASTFunction(
+                "dateDiff",
+                makeLiteral(Field(String("day"))),
+                makeStartOfWeek(std::move(start), start_of_week, timezone),
+                makeStartOfWeek(std::move(end), start_of_week, timezone));
+            return makeASTFunction("intDiv", std::move(days), makeLiteral(Field(UInt64(7))));
+        }
+
+        auto result = makeASTFunction("dateDiff", makeLiteral(Field(String(unit))), std::move(start), std::move(end));
+        if (timezone)
+            result->arguments->children.push_back(std::move(timezone));
+        return result;
     }
 
     if (name == "$regexFind" || name == "$regexFindAll")
