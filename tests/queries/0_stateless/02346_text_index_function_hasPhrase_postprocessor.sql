@@ -233,6 +233,7 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d') SETT
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d', 'splitByString([\'()\'])');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc()d') SETTINGS force_data_skipping_indices = 'idx';
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bc') SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a()d');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a()d') SETTINGS use_skip_indexes = 0;
 SELECT '-- value outside a filter';
@@ -254,6 +255,7 @@ SETTINGS index_granularity = 1;
 INSERT INTO tab VALUES (1, 'x-y()z'), (2, 'zz');
 
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'x-y');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'x-y') SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'x-y()z');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'x-y()z') SETTINGS use_skip_indexes = 0;
 
@@ -295,6 +297,7 @@ SETTINGS index_granularity = 1;
 INSERT INTO tab VALUES (1, 'A.B C'), (2, 'zz');
 
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a.b');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a.b') SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a.b c');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'a.b c') SETTINGS use_skip_indexes = 0;
 
@@ -316,6 +319,7 @@ INSERT INTO tab VALUES (1, 'abcd ef'), (2, 'zzzzzz');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'cd e', 'ngrams(3)');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'cd e', 'ngrams(3)') SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bcd', 'ngrams(3)');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'bcd', 'ngrams(3)') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 
@@ -398,6 +402,46 @@ INSERT INTO tab VALUES (1, 'A()BC()D'), (2, NULL);
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(ifNull(message, 'default'), 'bc()d');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(ifNull(message, 'default'), 'bc()d') SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(ifNull(message, 'default'), 'a()d');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(ifNull(message, 'default'), 'a()d') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+SELECT '17. An Array phrase is a sequence.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(message))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'A B A'), (2, 'A A B'), (3, 'zz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', 'b', 'a']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', 'b', 'a']) SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', 'a', 'b']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['a', 'a', 'b']) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '18. An Array phrase with positions.';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, postprocessor = lower(message), support_phrase_search = 1)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, allow_experimental_text_index_phrase_search = 1;
+
+INSERT INTO tab VALUES (1, 'The QUICK Brown fox'), (2, 'The Brown QUICK fox'), (3, 'zz');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'brown']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'brown']) SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'fox']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, ['quick', 'fox']) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 

@@ -54,12 +54,14 @@
 [1]
 [1]
 [1]
+[1]
 []
 []
 -- value outside a filter
 1	1
 2	0
 9. A token that is a separator of splitByNonAlpha but not of the index tokenizer.
+[1]
 [1]
 [1]
 [1]
@@ -74,7 +76,9 @@
 [1]
 [1]
 [1]
+[1]
 12. A gram that spans a space.
+[1]
 [1]
 [1]
 [1]
@@ -100,3 +104,14 @@
 [1]
 [1]
 []
+[]
+17. An Array phrase is a sequence.
+[1]
+[1]
+[2]
+[2]
+18. An Array phrase with positions.
+[1]
+[1]
+[2]
+[2]
