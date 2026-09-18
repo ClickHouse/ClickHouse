@@ -2288,7 +2288,7 @@ void StorageMergeTree::loadMutations(bool reloading)
                         auto & loaded = existing->second;
                         if (!loaded.tid.isNonTransactional() && !loaded.csn && mayMutateSharedStorage())
                         {
-                            if (auto csn = TransactionLog::getCSN(loaded.tid))
+                            if (auto csn = TransactionManager::getCSN(loaded.tid))
                                 loaded.writeCSN(csn);
                         }
                         continue;
