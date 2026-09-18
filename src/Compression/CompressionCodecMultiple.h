@@ -14,8 +14,8 @@ public:
     explicit CompressionCodecMultiple(Codecs codecs_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDesc() const override;
-    ASTPtr getFullCodecDesc() const;
+    ASTPtr getCodecDescription() const override;
+    ASTPtr getFullCodecDescription() const;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
