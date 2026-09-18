@@ -6397,3 +6397,140 @@ def test_create_table_concurrent_race_attaches(started_cluster):
 
     instance.query(f"DROP TABLE {table_a}")
     instance.query(f"DROP TABLE {table_b}")
+
+
+def test_cdf_is_not_duplicated_by_cluster_carriers(started_cluster):
+    """A change data feed read is served by a delta-kernel iterator that never asks the
+    initiator for a read task, so a carrier that fans the read out over a cluster runs the
+    whole feed on every node. Every such carrier must refuse the read instead; ordinary
+    cluster reads of the same table, and of other object storage engines, must keep
+    distributing.
+    """
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = started_cluster.spark_session
+    table_name = randomize_table_name("test_cdf_cluster_carriers")
+    path = f"/{table_name}"
+
+    # Commit 0, before the feed is enabled.
+    spark.createDataFrame([(1, "aa"), (2, "bb"), (3, "cc")]).toDF("a", "b").write.format(
+        "delta"
+    ).save(path)
+    spark.sql(f"CREATE TABLE {table_name} USING DELTA LOCATION '{path}'")
+    # Commit 1 enables the feed, so the feed only reports commits after it.
+    spark.sql(
+        f"""
+ALTER TABLE {table_name}
+SET TBLPROPERTIES ('delta.minReaderVersion'='1', 'delta.minWriterVersion'='2', delta.enableChangeDataFeed = true)
+        """
+    )
+    # Commit 2. Two rows, so the feed (2), the whole table (5) and the feed duplicated
+    # across the two nodes of `cluster` (4) are three different numbers.
+    spark.createDataFrame([(4, "dd"), (5, "ee")]).toDF("a", "b").write.format(
+        "delta"
+    ).mode("append").save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{table_name}/"
+    non_cluster = f"deltaLake('{url}', 'minio', '{minio_secret_key}')"
+    cluster_fn = f"deltaLakeCluster(cluster, '{url}', 'minio', '{minio_secret_key}')"
+    cdf = {
+        "delta_lake_snapshot_start_version": 2,
+        "delta_lake_snapshot_end_version": 2,
+    }
+    columns = "a, b, _change_type, _commit_version"
+
+    def shards(tag):
+        """`Shards` is incremented once per shard by ReadFromCluster::initializePipeline, so
+        it is absent - reads as 0 - when the read was not distributed at all."""
+        instance.query("SYSTEM FLUSH LOGS query_log")
+        return instance.query(
+            f"SELECT ProfileEvents['Shards'] FROM system.query_log"
+            f" WHERE log_comment = '{tag}' AND type = 'QueryFinish' AND is_initial_query"
+            f" ORDER BY event_time_microseconds DESC LIMIT 1"
+        ).strip()
+
+    # Arm 1: the baseline every other arm is compared against.
+    feed = instance.query(
+        f"SELECT {columns} FROM {non_cluster} ORDER BY ALL", settings=cdf
+    ).strip()
+    assert feed == "4\tdd\tinsert\t2\n5\tee\tinsert\t2", feed
+
+    # Arm 2: the cluster table function the user writes by hand.
+    error = instance.query_and_get_error(
+        f"SELECT {columns} FROM {cluster_fn} ORDER BY ALL", settings=cdf
+    )
+    assert "NOT_IMPLEMENTED" in error, error
+    assert "change data feed is not supported with distributed processing" in error, error
+    # The remedy, and not merely the word `deltaLake`: the error quotes the failing query back, so
+    # a substring the query itself contains would prove nothing about the message.
+    assert "Use the non-cluster deltaLake table function" in error, error
+
+    # Arm 2b: time travel is not a change feed. It is pinned into the metadata snapshot and
+    # consumed by the initiator's file iterator, so it distributes correctly and must keep
+    # doing so - this is what catches a refusal keyed on "cluster plus a Delta setting".
+    tag = f"{table_name}_timetravel"
+    time_travel = instance.query(
+        f"SELECT a, b FROM {cluster_fn} ORDER BY ALL",
+        settings={"delta_lake_snapshot_version": 0, "log_comment": tag},
+    ).strip()
+    assert time_travel == "1\taa\n2\tbb\n3\tcc", time_travel
+    assert shards(tag) == "2"
+
+    # Arm 3: the plain table function, promoted to the cluster by parallel replicas. The
+    # promotion has to be declined, so the read stays local and keeps working.
+    tag = f"{table_name}_parallel_replicas"
+    promoted = instance.query(
+        f"SELECT {columns} FROM {non_cluster} ORDER BY ALL",
+        settings={
+            **cdf,
+            "enable_parallel_replicas": 1,
+            "cluster_for_parallel_replicas": "cluster",
+            "log_comment": tag,
+        },
+    ).strip()
+    assert promoted == feed, promoted
+    assert shards(tag) == "0"
+
+    # Arm 4: an ordinary cluster read of the same table, with no Delta setting at all. `count()`
+    # is answered from the Delta metadata on the initiator, so the witness is taken from a query
+    # that has to read the data files.
+    tag = f"{table_name}_latest"
+    latest_on_cluster = instance.query(
+        f"SELECT sum(a) FROM {cluster_fn}", settings={"log_comment": tag}
+    ).strip()
+    assert latest_on_cluster == instance.query(f"SELECT sum(a) FROM {non_cluster}").strip()
+    assert latest_on_cluster == "15"
+    assert instance.query(f"SELECT count() FROM {cluster_fn}").strip() == "5"
+    assert shards(tag) == "2"
+
+    # Arm 5: the routing predicates are generic over every object storage engine, so a feed
+    # bound left in the session settings must not stop a non-Delta cluster read from fanning
+    # out. Both sums read the table's data files directly, as plain parquet, and each row is
+    # counted once by the fan-out.
+    parquet_glob = f"{url}**.parquet"
+    tag = f"{table_name}_s3cluster"
+    on_cluster = instance.query(
+        f"SELECT sum(a) FROM s3Cluster(cluster, '{parquet_glob}', 'minio', '{minio_secret_key}')",
+        settings={"delta_lake_snapshot_start_version": 2, "log_comment": tag},
+    ).strip()
+    assert (
+        on_cluster
+        == instance.query(
+            f"SELECT sum(a) FROM s3('{parquet_glob}', 'minio', '{minio_secret_key}')"
+        ).strip()
+    )
+    assert on_cluster == "15"
+    assert shards(tag) == "2"
+
+    # Arm 6: an outer distributed query whose inner table expression is the cluster function. It
+    # returned the feed once per outer shard. Either the initiator boundary or the follower-side
+    # backstop can refuse it, so only the shared part of the message is asserted here.
+    error = instance.query_and_get_error(
+        f"SELECT sum(c) FROM remote('node1,node2', view("
+        f"SELECT count() AS c FROM {cluster_fn}"
+        f" SETTINGS delta_lake_snapshot_start_version = 2, delta_lake_snapshot_end_version = 2))"
+    )
+    assert "NOT_IMPLEMENTED" in error, error
+    assert "change data feed" in error, error

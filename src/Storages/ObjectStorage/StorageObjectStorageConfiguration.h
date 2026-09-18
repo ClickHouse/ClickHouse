@@ -151,6 +151,7 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
     virtual bool isIcebergConfiguration() const { return false; }
+    virtual bool isDeltaLakeConfiguration() const { return false; }
 
     virtual bool supportsFullyQualifiedPaths() const { return false; }
 

@@ -50,7 +50,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=[],
+            main_configs=["configs/remote_servers.xml"],
             user_configs=[],
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
@@ -1688,3 +1688,62 @@ def test_register_existing_delta_table_requires_kernel(started_cluster):
             settings={"allow_experimental_database_unity_catalog": 1},
         )
         node1.query(f"DROP TABLE IF EXISTS default.{creator}")
+
+
+def test_cdf_under_parallel_replicas_is_refused(started_cluster):
+    """A catalog table read is promoted to the cluster by `cluster_for_parallel_replicas`, which
+    fans a change data feed read out over the cluster - and the feed is not divisible, so every
+    node would return the whole feed. The read has to be refused instead. One replica is enough:
+    the assertion is the refusal, not a row count.
+    """
+    node1 = started_cluster.instances["node1"]
+    table_name = f"test_cdf_parallel_replicas_{uuid.uuid4()}".replace("-", "_")
+    table_path = f"/var/lib/clickhouse/user_files/tmp/{table_name}"
+    db_name = f"db_{table_name}"
+    schema_name = f"schema_{table_name}"
+
+    # Version 0 creates the table with the feed enabled, version 1 inserts the row it reports.
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA {schema_name}",
+            f"""CREATE TABLE {schema_name}.{table_name} (event_date DATE, data STRING)
+USING Delta location '{table_path}'
+TBLPROPERTIES (
+  delta.enableChangeDataFeed = true
+)""",
+            f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), 'hello'",
+        ],
+    )
+
+    node1.query(
+        f"""
+drop database if exists {db_name};
+create database {db_name}
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
+        """,
+        settings={"allow_database_unity_catalog": "1"},
+    )
+
+    parallel_replicas = {
+        "enable_parallel_replicas": 1,
+        "cluster_for_parallel_replicas": "one_node_cluster",
+    }
+
+    error = node1.query_and_get_error(
+        f"SELECT event_date, data, _commit_version FROM {db_name}.`{schema_name}.{table_name}`",
+        settings={**parallel_replicas, "delta_lake_snapshot_start_version": 1},
+    )
+    assert "NOT_IMPLEMENTED" in error, error
+    assert "change data feed" in error, error
+
+    # Without a feed bound the same read under the same settings must still work. This is what
+    # catches a refusal keyed on something broader than the feed bounds.
+    assert (
+        "2024-10-01\thello"
+        == node1.query(
+            f"SELECT event_date, data FROM {db_name}.`{schema_name}.{table_name}`",
+            settings=parallel_replicas,
+        ).strip()
+    )
