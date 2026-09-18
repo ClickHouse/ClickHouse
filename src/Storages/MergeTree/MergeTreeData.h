@@ -652,7 +652,7 @@ public:
         bool hasAlterMutations() const final { return counters.num_alter > 0; }
         bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
         bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
-        bool hasLightweightDeletedMask() const final { return params.has_lightweight_delete_parts; }
+        bool hasLightweightDeletedMask() const final;
 
     protected:
         NameSet getColumnsUpdatedInPatches() const;
