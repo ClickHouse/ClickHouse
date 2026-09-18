@@ -96,6 +96,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         {
             scope_data->subqueries.clear();
             scope_data->materialized_ctes.clear();
+            scope_data->cte_declaration_scopes.clear();
         }
     }
     const Data & scope = scope_data ? *scope_data : data;
@@ -112,6 +113,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
             if (!new_data)
                 new_data = scope;
             new_data->subqueries.erase(ast_with_elem->name);
+            new_data->cte_declaration_scopes.erase(ast_with_elem->name);
             new_data->materialized_ctes.insert(ast_with_elem->name);
         }
 
@@ -236,6 +238,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                     auto literal_it = data.literals.find(name);
                     if (literal_it != data.literals.end())
                     {
+                        /// A recording pass only classifies references; it must not re-substitute the literals the first pass inlined.
                         if (!data.kept_cte_references)
                         {
                             auto old_alias = func.arguments->children[1]->tryGetAlias();
