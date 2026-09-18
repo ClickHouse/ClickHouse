@@ -95,6 +95,17 @@ public:
 #endif
     }
 
+    /// Only DeltaLake can onboard an existing table from a columnless CREATE (schema read from the
+    /// `_delta_log`); Iceberg's create path still requires an explicit schema, so it keeps the default.
+    bool supportsCreateFromExistingTableInCatalog() const override
+    {
+#if USE_PARQUET
+        return std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>;
+#else
+        return false;
+#endif
+    }
+
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
@@ -211,6 +222,14 @@ public:
         if (ready_object_storage)
             return ready_object_storage;
         return BaseStorageConfiguration::createObjectStorage(context, is_readonly, refresh_credentials_callback);
+    }
+
+    void check(ContextPtr context) override
+    {
+        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
+            this->checkFormat();
+        else
+            BaseStorageConfiguration::check(context);
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override

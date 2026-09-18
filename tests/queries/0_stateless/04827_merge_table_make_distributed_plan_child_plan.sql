@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Distributing the child plans of a `Merge` table under `make_distributed_plan` is supported
 -- (see 04367_distributed_plan_merge_scatter_multishard), with one exception: when the query has
 -- subquery sets (`IN (SELECT ...)`). A `Merge` table materializes its child plans lazily, while
