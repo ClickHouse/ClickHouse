@@ -13,6 +13,9 @@ SELECT formatQueryFromJSON('{"type":"AlterQuery","alter_object":"BOGUS","table":
 -- AlterCommand: `command_type` is required (a missing key would otherwise be silently deserialized as ADD_COLUMN).
 SELECT formatQueryFromJSON('{"type":"AlterQuery","alter_object":"TABLE","table":"t","command_list":{"type":"ExpressionList","children":[{"type":"AlterCommand"}]}}'); -- { serverError BAD_ARGUMENTS }
 
+-- AlterCommand (MODIFY CONSTRAINT): requires `constraint_decl`, which `formatImpl` dereferences unconditionally.
+SELECT formatQueryFromJSON('{"type":"AlterCommand","command_type":"MODIFY_CONSTRAINT"}'); -- { serverError BAD_ARGUMENTS }
+
 -- DropQuery: at least one of database/table/database_and_tables is required.
 SELECT formatQueryFromJSON('{"type":"DropQuery","kind":"Drop"}'); -- { serverError BAD_ARGUMENTS }
 
@@ -96,3 +99,4 @@ SELECT formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('DROP TABLE t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE DATABASE d'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM START db.t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY CONSTRAINT c CHECK x > 0'));
