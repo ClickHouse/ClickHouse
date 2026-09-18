@@ -155,8 +155,7 @@ private:
 
 void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
 
-/// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Only a
-/// freshly supplied definition is judged; a stored or replayed one is left alone.
+/// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Judges only a fresh definition.
 void checkStorageSettingNames(const StorageFactory::Arguments & args);
 
 }

@@ -2597,7 +2597,6 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
-            /// Before the dispatch below, so a delegated definition is judged under `URL`'s own settings.
             checkStorageSettingNames(args);
 
             /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.

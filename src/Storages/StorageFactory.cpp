@@ -51,12 +51,9 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
 
     const auto local_context = args.getLocalContext();
 
-    /// `mode` alone cannot tell a replay from user input: a `Replicated` database replays a
-    /// full-definition `ATTACH` on every secondary under `LoadingStrictnessLevel::ATTACH` (`attach`
-    /// outranks `secondary`), a definition re-derived from Keeper arrives as a plain `CREATE` with no
-    /// metadata transaction, and Shared Catalog secondaries re-execute the initiator's DDL. Only the
-    /// execution that judges the definition may refuse it: a secondary refusing what the initiator
-    /// committed would retry its queue entry forever.
+    /// Each term marks a definition this server did not judge: `attach` outranks `secondary` in
+    /// `LoadingStrictnessLevel`, Keeper recovery carries no metadata transaction, and Shared Catalog
+    /// secondaries re-execute the initiator's DDL. A secondary refusing one retries its queue entry forever.
     const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
     const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
 #if CLICKHOUSE_CLOUD
@@ -69,9 +66,8 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
         || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
         return;
 
-    /// `InterpreterSetQuery::applySettingsFromQuery` has already moved to the query context every name
-    /// that is a query setting and not a setting of this engine, so a name that is neither is no
-    /// setting at all.
+    /// `InterpreterSetQuery::applySettingsFromQuery` has already moved to the query context every name that
+    /// is a query setting and not a setting of this engine, so a name that is neither is no setting at all.
     const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
     chassert(features.has_builtin_setting_fn != nullptr);
     auto check = [&](std::string_view name)
@@ -83,8 +79,7 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
 
     for (const auto & change : args.storage_def->settings->changes)
         check(change.name);
-    /// `name = DEFAULT` is parsed into `default_settings`, not into `changes`, and is serialized back
-    /// into the stored definition, so a name that is a setting nowhere has to be refused in both forms.
+    /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the stored definition.
     for (const auto & name : args.storage_def->settings->default_settings)
         check(name);
 }
