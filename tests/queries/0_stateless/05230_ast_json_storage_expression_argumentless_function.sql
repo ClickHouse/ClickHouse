@@ -1,5 +1,5 @@
 -- A storage-metadata expression is consumed before analysis: `KeyDescription::getKeyFromAST`,
--- `IndicesDescription::getIndexFromAST` and `TTLDescription::getTTLFromAST` run the legacy
+-- `IndexDescription::getIndexFromAST` and `TTLDescription::getTTLFromAST` run the legacy
 -- `TreeRewriter`/`ExpressionAnalyzer` over the raw AST, where `MarkTableIdentifiersMatcher` (for the
 -- `in` family) and `ActionsMatcher` (for `arrayJoin`/`grouping`) intercept the function name before any
 -- arity check and dereference `ASTFunction::arguments`. Inside an expression the parser always fills
@@ -112,8 +112,8 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (a UInt8, d 
 -- as well, not only one sitting at the slot's root.
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (a UInt8) ENGINE = MergeTree ORDER BY (a, a IN (1))'), ',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}', '')); -- { serverError BAD_ARGUMENTS }
 
--- The same guard for the slots below, whose payloads replace a whole node instead of deleting a member:
--- each `from` string must occur exactly once, and the edited document must still parse.
+-- The same guard for the three payloads below, the last of which replaces a whole node rather than
+-- deleting a member: each `from` string must occur exactly once, and the result must still parse.
 SELECT
     isValidJSON(replace(parseQueryToJSON('INSERT INTO TABLE FUNCTION file(''p_{_partition_id}.csv'', ''CSV'', ''a UInt8'') PARTITION BY a IN (1) SELECT 1'), ',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}', '')),
     countSubstrings(parseQueryToJSON('INSERT INTO TABLE FUNCTION file(''p_{_partition_id}.csv'', ''CSV'', ''a UInt8'') PARTITION BY a IN (1) SELECT 1'), ',"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}'),
