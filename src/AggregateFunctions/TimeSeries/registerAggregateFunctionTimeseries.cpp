@@ -11,6 +11,8 @@ void registerAggregateFunctionTimeseriesChanges(AggregateFunctionFactory & facto
 void registerAggregateFunctionTimeseriesToGridSparse(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesCompensatedSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesCount(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesFirstToGrid(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesMadToGrid(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesMin(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesPresentToGrid(AggregateFunctionFactory & factory);
@@ -29,6 +31,8 @@ void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
     registerAggregateFunctionTimeseriesToGridSparse(factory);
     registerAggregateFunctionTimeseriesCompensatedSum(factory);
     registerAggregateFunctionTimeseriesCount(factory);
+    registerAggregateFunctionTimeseriesFirstToGrid(factory);
+    registerAggregateFunctionTimeseriesMadToGrid(factory);
     registerAggregateFunctionTimeseriesMax(factory);
     registerAggregateFunctionTimeseriesMin(factory);
     registerAggregateFunctionTimeseriesPresentToGrid(factory);

@@ -186,6 +186,8 @@ FUNCTION options {
     | 'present_over_time'
     | 'ts_of_min_over_time'
     | 'ts_of_max_over_time'
+    | 'first_over_time'
+    | 'mad_over_time'
     | 'acos'
     | 'acosh'
     | 'asin'
