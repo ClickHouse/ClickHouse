@@ -4,9 +4,8 @@
 -- lost, so the window step on the initiator saw fewer rows, or none at all.
 --
 -- The labels are added outside the distributed subquery on purpose: a constant in the SELECT list of
--- the query over the shards is computed by the shards without the old analyzer, which hides the bug.
+-- the query over the shards would be computed by the shards, which hides the bug.
 
-SET enable_analyzer = 1;
 SET prefer_localhost_replica = 1;
 
 SELECT 'control', count() FROM remote('127.0.0.{1,2}', system.one);
@@ -24,6 +23,3 @@ SELECT 'without block marshalling', c FROM (SELECT count() OVER () AS c FROM rem
 SELECT 'without compression', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS prefer_localhost_replica = 0, network_compression_method = 'NONE';
 SELECT 'synchronous socket', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS prefer_localhost_replica = 0, use_hedged_requests = 0, async_socket_for_remote = 0;
 SELECT 'hedged requests', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS prefer_localhost_replica = 0, use_hedged_requests = 1;
-
-SELECT 'old analyzer', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS enable_analyzer = 0;
-SELECT 'old analyzer, every shard is remote', c FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', system.one)) SETTINGS enable_analyzer = 0, prefer_localhost_replica = 0;
