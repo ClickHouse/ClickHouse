@@ -51,6 +51,7 @@
 
 #include <json_ast.pb.h>
 
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -94,26 +95,35 @@ size_t oracle_error_asymmetries = 0;
 
 /// Functions and clauses whose result legitimately depends on the run: randomness, time, the
 /// environment, ordering-dependent aggregates, approximate algorithms, non-total-order `LIMIT`.
-bool isDeterministicForOracle(const std::string & sql)
+bool isDeterministicForOracle(const std::string & sql_original)
 {
+    /// Function names are case-insensitive for the aliases (`ARRAY_AGG`, `ANY`) and the SQL keeps the
+    /// user's case, so compare in lower case; the entries below are lower case too.
+    std::string sql = " " + sql_original + " ";
+    for (char & c : sql)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     static const char * forbidden[] = {
-        /// clauses whose result is not a multiset of rows or depends on the plan
-        "LIMIT", "OFFSET", "FETCH", "OVER", "WINDOW", "SETTINGS", "FORMAT", "INTO OUTFILE", "system.",
-        /// randomness, time, environment
-        "rand", "generateUUID", "generateRandom", "generateSerialID", "now(", "now64(", "today(", "yesterday(", "currentDatabase(",
-        "currentUser(", "hostName(", "uptime(", "version(", "timezone(", "serverTimezone(", "getSetting(", "getMacro", "shardNum", "shardCount",
-        "sleep", "randomString", "randomPrintable", "randomFixed", "fuzzBits", "file(", "url(", "s3(", "remote(", "cluster(",
-        "arrayShuffle", "arrayPartialShuffle", /// seeded per block, see report 09
-        "viewExplain", "EXPLAIN", /// the plan text legitimately depends on the settings
-        /// ordering-dependent, approximate or plan-dependent functions
-        "any(", "anyLast(", "anyHeavy(", "first_value", "last_value", "nth_value", "argMin(", "argMax(", "anyIf(", "singleValueOrNull",
-        "groupArray", "groupUniqArray", "groupConcat", "arrayStringConcat", "topK", "uniq", "quantile", "median", "histogram",
-        "sequence", "windowFunnel", "retention", "kolmogorov", "studentTTest", "welchTTest", "mannWhitney", "largestTriangle", "sparkbar",
-        "exponential", "arrayEnumerateUniq", "arrayEnumerateDense", "blockNumber(", "rowNumber", "runningDifference", "runningAccumulate",
-        "neighbor(", "isConstant(", "throwIf", "defaultValueOfArgumentType", "dumpColumnStructure", "byteSize",
-        /// floating point (accumulation order and JIT differ between the two plans)
-        "toFloat", "Float32", "Float64", "e()", "pi()", "/ ", "divide(", "avg(", "avgWeighted", "corr", "covar", "stddev", "varPop", "varSamp",
-        "skew", "kurt", "geo", "point", "polygon", "sum(", "sumKahan", "sumWithOverflow", "deltaSum", "ifNotFinite",
+        /// lower case; clauses whose result is not a multiset of rows or depends on the plan, randomness,
+        /// time, environment, ordering-dependent or sampling aggregates and their aliases, approximate
+        /// algorithms, floating point (accumulation order and JIT differ between the variants)
+        " limit ", " offset ", " fetch ", " over (", " over ", " window ", " settings ", " format ", "into outfile", "system.", "rand",
+        "generateuuid", "generaterandom", "generateserialid", "now(", "now64(", "today(", "yesterday(",
+        "currentdatabase(", "currentuser(", "hostname(", "uptime(", "version(", "timezone(", "servertimezone(",
+        "getsetting(", "getmacro", "shardnum", "shardcount", "sleep", "randomstring", "randomprintable",
+        "randomfixed", "fuzzbits", "file(", "url(", "s3(", "remote(", "cluster(", "arrayshuffle",
+        "arraypartialshuffle", "viewexplain", "explain", "any(", "anylast(", "anyheavy(", "first_value", "last_value",
+        "nth_value", "argmin(", "argmax(", "anyif(", "singlevalueornull", "grouparray", "groupuniqarray",
+        "groupconcat", "arraystringconcat", "topk", "uniq", "quantile", "median", "histogram", "sequence",
+        "windowfunnel", "retention", "kolmogorov", "studentttest", "welchttest", "mannwhitney", "largesttriangle",
+        "sparkbar", "exponential", "arrayenumerateuniq", "arrayenumeratedense", "blocknumber(", "rownumber",
+        "runningdifference", "runningaccumulate", "neighbor(", "isconstant(", "throwif", "defaultvalueofargumenttype",
+        "dumpcolumnstructure", "bytesize", "tofloat", "float32", "float64", "e()", "pi()", "/ ", "divide(", "avg(",
+        "avgweighted", "corr", "covar", "stddev", "varpop", "varsamp", "skew", "kurt", "geo", "point", "polygon",
+        "sum(", "sumkahan", "sumwithoverflow", "deltasum", "ifnotfinite", "array_agg", "grouparraysample",
+        "grouparraylast", "arrayconcatagg", "any_value", "anyrespectnulls", "any_respect_nulls",
+        "anylastrespectnulls", "approx_top", "groupbitmap", "sumdistinct", "sum_distinct", "avgdistinct",
+        "groupnumericindexedvector", "mapagg", "maparg", "distinctdynamictypes", "distinctjsonpaths", "string_agg",
+        "listagg",
     };
     for (const char * f : forbidden)
         if (sql.find(f) != std::string::npos)
