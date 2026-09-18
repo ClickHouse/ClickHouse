@@ -284,7 +284,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> /* catalog */,
         StorageID /* storage_id */)
     {
-        return {};
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
     }
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
