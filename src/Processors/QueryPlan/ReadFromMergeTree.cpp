@@ -863,6 +863,15 @@ Pipe ReadFromMergeTree::readInOrder(
     const bool has_hard_limit_below_one_block = read_type != ReadType::Default && read_limit && read_limit < block_size.max_block_size_rows;
     const bool has_soft_limit_below_one_block = read_type != ReadType::Default && query_task_size_limit && query_task_size_limit < block_size.max_block_size_rows;
 
+    /// The soft-limit threshold is the one part of the read-in-order contract a shipped fragment used
+    /// to lose (it does not follow from `read_limit`, which an intervening filter or join zeroes), so
+    /// log the sizing decision: it is the only externally observable difference between a worker that
+    /// replayed the contract in full and one that rebuilt it with the defaults.
+    if (read_type != ReadType::Default)
+        LOG_TRACE(log, "Reading in order with read limit {} and soft limit threshold {}: first task is {}",
+            read_limit, query_task_size_limit,
+            (has_hard_limit_below_one_block || has_soft_limit_below_one_block) ? "a single range" : "the whole range set");
+
     const bool use_virtual_row = virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
     const bool use_virtual_row_per_block = use_virtual_row && context->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
 
@@ -7134,6 +7143,13 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             writeVarUInt(query_info.input_order_info->used_prefix_of_sorting_key_size, ctx.out);
             writeIntBinary(static_cast<Int8>(query_info.input_order_info->direction), ctx.out);
             writeVarUInt(query_info.input_order_info->limit, ctx.out);
+            /// The soft-limit threshold the coordinator chose. It is not derivable from the three fields
+            /// above: an outer `LIMIT` that could not be pushed into the reader leaves
+            /// `input_order_info->limit` zero while still sizing the first in-order task by the limit
+            /// (`has_soft_limit_below_one_block` in `readInOrder`). Without it the worker reads a whole
+            /// range where the coordinator asked for a single one. Step version 1 of this step.
+            if (ctx.step_version >= 1)
+                writeVarUInt(query_task_size_limit, ctx.out);
         }
     }
     else if (ship_input_order_info)
@@ -7201,6 +7217,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     size_t input_order_prefix_size = 0;
     Int8 input_order_direction = 1;
     UInt64 input_order_limit = 0;
+    UInt64 input_order_task_size_limit = 0;
     bool has_input_order_info = false;
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
     {
@@ -7212,6 +7229,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
             readVarUInt(input_order_prefix_size, ctx.in);
             readIntBinary(input_order_direction, ctx.in);
             readVarUInt(input_order_limit, ctx.in);
+            if (ctx.step_version >= 1)
+                readVarUInt(input_order_task_size_limit, ctx.in);
         }
     }
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
@@ -7279,18 +7298,23 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         /// exchange pair collapses, which means the read was made distributed.
         if (has_input_order_info)
         {
+            /// The soft-limit threshold is replayed through the `query_limit` argument, which is
+            /// exactly what the coordinator passed: `query_task_size_limit` is `query_limit` when it is
+            /// set and the read limit otherwise, so feeding it back here reproduces both
+            /// `query_task_size_limit` and `has_outer_limit` on the worker. A peer that predates step
+            /// version 1 sends nothing, which leaves the threshold at zero, i.e. the pre-branch sizing.
             if (!read_from_merge_tree_step->requestReadingInOrder(
-                    input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
+                    input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit,
+                    input_order_task_size_limit))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Coordinator asked for a read-in-order distributed read that this node refused");
 
-            /// Only the prefix, direction and limit travel on the wire. The rest of the contract --
-            /// `prefer_multiple_streams`, `has_outer_limit`, `query_task_size_limit` and the
-            /// virtual-row conversion -- is not serialized, and every one of those fields can only
-            /// *disable* the per-part `PrefetchingConcat` path. Replaying the contract without them
-            /// would therefore let a worker prefetch where the coordinator had decided it must not
-            /// (a per-stream `LIMIT BY` prefilter, an outer `LIMIT`, aggregation-in-order), so fail
-            /// closed and keep the pre-existing one-stream-per-part read here.
+            /// The rest of the contract -- `prefer_multiple_streams` and the virtual-row conversion --
+            /// is not serialized, and both of those fields can only *disable* the per-part
+            /// `PrefetchingConcat` path. Replaying the contract without them would therefore let a
+            /// worker prefetch where the coordinator had decided it must not (a per-stream `LIMIT BY`
+            /// prefilter, aggregation-in-order), so fail closed and keep the pre-existing
+            /// one-stream-per-part read here.
             read_from_merge_tree_step->disablePerPartPrefetching();
         }
         read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
@@ -7304,7 +7328,11 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromMergeTree", ReadFromMergeTree::deserialize);
+    /// Version 1 appends the read-in-order soft-limit threshold to the read-in-order contract of a
+    /// bucketed read.
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER_SOFT_LIMIT}};
+    registry.registerStep("ReadFromMergeTree", ReadFromMergeTree::deserialize, versions);
 }
 
 }

@@ -395,12 +395,12 @@ public:
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
 
     /// Set on a step that replays a read-in-order contract it received only in part.
-    /// `serialize` ships the prefix/direction/limit of `input_order_info` and nothing else, so a
-    /// worker that rebuilds the step from the wire cannot know whether the coordinator had
-    /// disabled the per-part `PrefetchingConcat` path (`prefer_multiple_streams`, `has_outer_limit`,
-    /// `query_task_size_limit`, the virtual-row conversion). Missing contract fields only ever
-    /// *enable* prefetching, so the rebuilt step must fail closed and keep it off rather than
-    /// re-enable a path the coordinator rejected.
+    /// `serialize` ships the prefix/direction/limit of `input_order_info` and the soft-limit
+    /// threshold (`query_task_size_limit`, which also restores `has_outer_limit`), and nothing else,
+    /// so a worker that rebuilds the step from the wire still cannot know whether the coordinator had
+    /// disabled the per-part `PrefetchingConcat` path through `prefer_multiple_streams` or the
+    /// virtual-row conversion. Missing contract fields only ever *enable* prefetching, so the rebuilt
+    /// step must fail closed and keep it off rather than re-enable a path the coordinator rejected.
     void disablePerPartPrefetching() { per_part_prefetching_disabled = true; }
 
     /// Restore the full post-`requestReadingInOrder` state that is not carried by `query_info`.
