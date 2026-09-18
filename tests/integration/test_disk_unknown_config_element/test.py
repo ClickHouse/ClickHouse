@@ -51,7 +51,9 @@ def test_unknown_element_is_reported_on_reload(start_cluster):
     assert "checked_disk" in node.query("SELECT name FROM system.disks")
 
     # An option of this disk type that was not in the section before is accepted.
-    write_disk_configuration(node, "<keep_free_space_bytes>1024</keep_free_space_bytes>")
+    write_disk_configuration(
+        node, "<keep_free_space_bytes>1024</keep_free_space_bytes>"
+    )
     node.query("SYSTEM RELOAD CONFIG")
     assert "checked_disk" in node.query("SELECT name FROM system.disks")
 
@@ -63,6 +65,8 @@ def test_unknown_element_is_reported_on_reload(start_cluster):
     assert "checked_disk" in node.query("SELECT name FROM system.disks")
 
     # And the server recovers once the typo is removed.
-    write_disk_configuration(node, "<keep_free_space_bytes>1024</keep_free_space_bytes>")
+    write_disk_configuration(
+        node, "<keep_free_space_bytes>1024</keep_free_space_bytes>"
+    )
     node.query("SYSTEM RELOAD CONFIG")
     assert "checked_disk" in node.query("SELECT name FROM system.disks")
