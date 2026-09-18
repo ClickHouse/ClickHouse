@@ -48,11 +48,12 @@ SELECT (SELECT groupArray((x, l)) FROM (SELECT arrayJoin(arraySort(a)) AS x, len
      = (SELECT groupArray((x, l)) FROM (SELECT arrayJoin(arraySort(a)) AS x, length(arraySort(a)) AS l FROM t_reuse ORDER BY x) SETTINGS query_plan_lower_array_join_function = 0);
 DROP TABLE t_reuse;
 
--- rand() keeps one value per source row: such a DAG is not lowered
-SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1) <= 2;
+-- rand() is drawn once per output row, like with the ARRAY JOIN clause; the setting restores one draw per source row
+SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1) = 6;
+SELECT (SELECT count(DISTINCT r) FROM (SELECT arrayJoin([1, 2, 3]) AS e, rand() AS r FROM numbers(2)) SETTINGS query_plan_lower_array_join_function = 1, arrayjoin_nondeterministic_functions_before_expansion = 1) <= 2;
 
--- and neither is a WHERE with rand() next to the arrayJoin
-SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') = 0 FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e FROM numbers(2) WHERE e > 0 AND rand() % 2 = 0 SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
+-- a WHERE with rand() next to the arrayJoin lowers as well
+SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e FROM numbers(2) WHERE e > 0 AND rand() % 2 = 0 SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
 -- but a deterministic filter over the same arrayJoin still lowers
 SELECT countIf(explain LIKE '%ArrayJoin (ARRAY JOIN)%') > 0 FROM (EXPLAIN SELECT arrayJoin([1, 2, 3]) AS e FROM numbers(2) WHERE e > 1 SETTINGS query_plan_lower_array_join_function = 1, serialize_query_plan = 0);
 -- an unused element still multiplies the rows, and the join still lowers

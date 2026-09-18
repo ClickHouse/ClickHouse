@@ -6859,6 +6859,9 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
 )", 0) \
+    DECLARE(Bool, arrayjoin_nondeterministic_functions_before_expansion, false, R"(
+When the `arrayJoin` function is lowered to an `ARRAY JOIN` step, a non-deterministic function next to it that does not depend on the joined value, such as `rand()` or `generateUUIDv4()`, is evaluated after the expansion, once per output row, like with the `ARRAY JOIN` clause. Enable to evaluate it before the expansion, once per source row, as older versions did for the `arrayJoin` function.
+)", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.

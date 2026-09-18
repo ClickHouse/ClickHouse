@@ -3041,7 +3041,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
-std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoin() const
+std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoin(bool nondeterministic_before_expansion) const
 {
     const Node * array_join = nullptr;
     for (const auto & node : nodes)
@@ -3054,7 +3054,22 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
         return {};
 
     /// ARRAY_JOIN and its argument go to `before`, the rest to `after`; the crossing columns get unique names.
-    auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true, /*avoid_duplicate_inputs=*/true);
+    std::unordered_set<const Node *> split_nodes{array_join};
+    if (nondeterministic_before_expansion)
+    {
+        std::unordered_set<const Node *> depends_on_join{array_join};
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            for (const auto & node : nodes)
+                if (!depends_on_join.contains(&node) && std::ranges::any_of(node.children, [&](const Node * child) { return depends_on_join.contains(child); }))
+                    changed = depends_on_join.insert(&node).second || changed;
+        }
+        for (const auto & node : nodes)
+            if (!depends_on_join.contains(&node) && isNonDeterministicOrStateful(node))
+                split_nodes.insert(&node);
+    }
+    auto split_res = split(split_nodes, /*create_split_nodes_mapping=*/true, /*avoid_duplicate_inputs=*/true);
     ActionsDAG before = std::move(split_res.first);
     ActionsDAG after = std::move(split_res.second);
     const Node * aj_before = split_res.split_nodes_mapping.at(array_join);

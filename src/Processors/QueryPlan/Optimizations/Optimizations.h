@@ -97,6 +97,7 @@ struct Optimization
         /// AND in this mode.
         bool short_circuit_function_evaluation_disabled = false;
         bool lower_array_join_function = false;
+        bool array_join_nondeterministic_before_expansion = false;
         bool enable_lazy_columns_replication = false;
     };
 

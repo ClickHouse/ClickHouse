@@ -468,7 +468,9 @@ public:
     struct SplitArrayJoinResult;
 
     /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
-    std::optional<SplitArrayJoinResult> extractFirstArrayJoin() const;
+    /// With `nondeterministic_before_expansion`, a non-deterministic or stateful node that does not depend on the join
+    /// goes to `before` too, so it is drawn once per source row.
+    std::optional<SplitArrayJoinResult> extractFirstArrayJoin(bool nondeterministic_before_expansion = false) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of
     /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.

@@ -61,6 +61,7 @@ struct QueryPlanOptimizationSettings
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
+    bool array_join_nondeterministic_before_expansion;
     bool enable_lazy_columns_replication;
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
