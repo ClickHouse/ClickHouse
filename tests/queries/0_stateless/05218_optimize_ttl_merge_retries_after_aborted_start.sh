@@ -16,7 +16,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # rewrite for the whole timeout. Here the failure is injected right where the parts are tagged; the
 # next `OPTIMIZE` must then select the TTL merge again and drop the expired row.
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_ttl_failed_start SYNC"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_ttl_aborted_start SYNC"
 
 # A single part with one expired and one live row, so its only possible merge is a `TTLDelete`
 # rewrite. `ttl_only_drop_parts = 0` keeps it a rewrite instead of a part drop (a `TTLDrop` merge
@@ -24,18 +24,18 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_ttl_failed_start SYNC"
 # test instead of merely slow. TTL merges stay stopped until everything else is in place, so that
 # nothing can rewrite the part ahead of the `OPTIMIZE` below.
 $CLICKHOUSE_CLIENT --query "
-    CREATE TABLE t_ttl_failed_start (k UInt64, d DateTime)
+    CREATE TABLE t_ttl_aborted_start (k UInt64, d DateTime)
     ENGINE = MergeTree ORDER BY k
     TTL d + INTERVAL 1 SECOND
     SETTINGS optimize_on_insert = 0, ttl_only_drop_parts = 0, merge_with_ttl_timeout = 10000"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM STOP TTL MERGES t_ttl_failed_start"
-$CLICKHOUSE_CLIENT --query "INSERT INTO t_ttl_failed_start VALUES (1, now() - INTERVAL 1 DAY), (2, now() + INTERVAL 1 DAY)"
+$CLICKHOUSE_CLIENT --query "SYSTEM STOP TTL MERGES t_ttl_aborted_start"
+$CLICKHOUSE_CLIENT --query "INSERT INTO t_ttl_aborted_start VALUES (1, now() - INTERVAL 1 DAY), (2, now() + INTERVAL 1 DAY)"
 
 cleanup() {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT mt_fail_selected_merge_before_start_once" 2>/dev/null
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled" 2>/dev/null
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_ttl_failed_start SYNC" 2>/dev/null
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_ttl_aborted_start SYNC" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -45,15 +45,15 @@ trap cleanup EXIT
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled"
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT mt_merge_selecting_task_pause_when_scheduled PAUSE"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM START TTL MERGES t_ttl_failed_start"
+$CLICKHOUSE_CLIENT --query "SYSTEM START TTL MERGES t_ttl_aborted_start"
 
 # The first `OPTIMIZE` selects the TTL merge and fails before starting it.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT mt_fail_selected_merge_before_start_once"
-$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_ttl_failed_start" 2>&1 | grep -m1 -o "FAULT_INJECTED"
-$CLICKHOUSE_CLIENT --query "SELECT 'rows after failed optimize', count() FROM t_ttl_failed_start"
+$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_ttl_aborted_start" 2>&1 | grep -m1 -o "FAULT_INJECTED"
+$CLICKHOUSE_CLIENT --query "SELECT 'rows after failed optimize', count() FROM t_ttl_aborted_start"
 
 # The second one must select the TTL merge again and drop the expired row.
-$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_ttl_failed_start"
-$CLICKHOUSE_CLIENT --query "SELECT 'rows after optimize', count(), min(k) FROM t_ttl_failed_start"
+$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_ttl_aborted_start"
+$CLICKHOUSE_CLIENT --query "SELECT 'rows after optimize', count(), min(k) FROM t_ttl_aborted_start"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT mt_merge_selecting_task_pause_when_scheduled"
