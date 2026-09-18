@@ -4,6 +4,9 @@
 -- whose only parentheses are `(?i)` or `(?i:...)` the strip fired while `extract` was returning the
 -- whole match, and the result was silently truncated.
 
+-- The test pins that the rewrite fires (or does not), so it must not depend on the randomized default.
+SET optimize_rewrite_regexp_functions = 1;
+
 SELECT 'a pure flag group';
 SELECT extract(materialize('aBcd'), '(?i)b.*$'), extract(materialize('aBcd'), '(?i)b.*$') SETTINGS optimize_rewrite_regexp_functions = 0;
 SELECT extract(materialize('abcd'), '(?s)b.*$'), extract(materialize('abcd'), '(?s)b.*$') SETTINGS optimize_rewrite_regexp_functions = 0;
@@ -35,7 +38,6 @@ SELECT extract(materialize('aBcd'), '(?i:(b)).*$'), extract(materialize('aBcd'),
 SELECT extract(materialize('abcd'), '(a)(?:b).*$'), extract(materialize('abcd'), '(a)(?:b).*$') SETTINGS optimize_rewrite_regexp_functions = 0;
 
 -- The results above are the same with and without the rewrite, so pin that the rewrite does fire.
-SET enable_analyzer = 1;
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('aBcd'), '(?i:(b)).*$');
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('abcd'), '(a)(?:b).*$');
 -- ... and that it does not fire without a capture group.
