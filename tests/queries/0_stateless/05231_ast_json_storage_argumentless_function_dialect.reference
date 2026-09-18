@@ -1,0 +1,33 @@
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+has no 'arguments' list
+must be a list of TTL elements
+has no 'arguments' list
+has no 'arguments' list
+TTL d + toIntervalDay(1)
+TTL d + toIntervalDay(1) RECOMPRESS CODEC(ZSTD(3))
+TTL d + toIntervalDay(1) GROUP BY a SET d = max(d)
+has no 'arguments' list
+PARTITION BY a % 8
+PRIMARY KEY a
+ORDER BY (a, b)
+SAMPLE BY a
+INDEX i a TYPE minmax GRANULARITY 1
+CODEC(LZ4)
+TTL d + toIntervalDay(2)
+GROUP BY a SET d = max(d)
+1

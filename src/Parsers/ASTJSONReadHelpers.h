@@ -170,6 +170,15 @@ public:
     /// `CODEC`/`STATISTICS` element, an index `TYPE`). Returns nullptr when the key is absent.
     ASTPtr readExpressionChild(const char * key) const;
 
+    /// `readExpressionChild`'s screen applied to every element of the "children" array.
+    ASTs readExpressionChildren() const;
+
+    /// `readChildOfType<ASTFunction>` with that screen applied to the restored function's ARGUMENTS
+    /// and not to the function node itself, for a slot holding a legitimately argument-less function
+    /// whose arguments are expressions: the deprecated positional `MergeTree(date, key, granularity)`
+    /// engine arguments become key expressions in `registerStorageMergeTree`.
+    ASTPtr readFunctionChildWithExpressionArguments(const char * key) const;
+
     /// Read a child AST node and require it to be a string `ASTLiteral` (both the node type and the
     /// `Field` value category). Slots like `COMMENT`/`COLLATE` are parser-produced via
     /// `ParserStringLiteral`; downstream code reads them as `child->as<ASTLiteral &>().value.safeGet<String>()`,

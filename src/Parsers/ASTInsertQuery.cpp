@@ -134,7 +134,7 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(table_function);
     }
 
-    child = r.readChild("partition_by");
+    child = r.readExpressionChild("partition_by");
     if (child)
     {
         partition_by = child;

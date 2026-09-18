@@ -13,6 +13,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -251,12 +252,21 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
 
-    /// `order_by`, `sample_by`, `predicate`, `ttl`, `settings_resets`, `execute_args` and similar
-    /// are arbitrary expressions/lists with no single parser-produced node type, so they are
-    /// restored generically.
+    /// `predicate`, `snapshot_desc` and `execute_args` are arbitrary expressions/lists with no single
+    /// parser-produced node type, so they are restored generically.
     auto readRawChild = [&](const char * key, IAST *& field)
     {
         auto child = r.readChild(key);
+        if (child)
+        {
+            field = child.get();
+            children.push_back(std::move(child));
+        }
+    };
+
+    auto readExprChild = [&](const char * key, IAST *& field)
+    {
+        auto child = r.readExpressionChild(key);
         if (child)
         {
             field = child.get();
@@ -283,8 +293,8 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 
     readTypedChild.operator()<ASTColumnDeclaration>("col_decl", col_decl);
     readTypedChild.operator()<ASTIdentifier>("column", column);
-    readRawChild("order_by", order_by);
-    readRawChild("sample_by", sample_by);
+    readExprChild("order_by", order_by);
+    readExprChild("sample_by", sample_by);
     readTypedChild.operator()<ASTIndexDeclaration>("index_decl", index_decl);
     readTypedChild.operator()<ASTIdentifier>("index", index);
     readTypedChild.operator()<ASTConstraintDeclaration>("constraint_decl", constraint_decl);
@@ -370,7 +380,20 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         comment = comment_child.get();
         children.push_back(std::move(comment_child));
     }
-    readRawChild("ttl", ttl);
+    readExprChild("ttl", ttl);
+    /// `TTLDescription::getTTLFromAST` reads a child that is not an `ASTTTLElement` as a column TTL,
+    /// so `ttl` carries the same list-of-`ASTTTLElement` contract as `ASTStorage`'s `ttl_table`.
+    if (ttl)
+    {
+        const auto * ttl_list = ttl->as<ASTExpressionList>();
+        if (!ttl_list)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'ttl' must be a list of TTL elements during AST JSON deserialization");
+        for (const auto & ttl_element : ttl_list->children)
+            if (!ttl_element || !ttl_element->as<ASTTTLElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'ttl' must be a list of TTL elements during AST JSON deserialization");
+    }
     readTypedChild.operator()<ASTSetQuery>("settings_changes", settings_changes);
     /// `settings_resets` is an `ASTExpressionList` of `ASTIdentifier` (the reset setting names).
     readTypedChild.operator()<ASTExpressionList>("settings_resets", settings_resets);

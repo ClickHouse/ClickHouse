@@ -147,19 +147,19 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     /// `engine` (`ASTFunction`) and `settings` (`ASTSetQuery`) are concrete typed members; a wrong node
     /// type from malformed `clickhouse_json` would otherwise reach `set` as a `LOGICAL_ERROR` cast
     /// failure instead of a user-facing `BAD_ARGUMENTS`. The remaining slots are arbitrary expressions.
-    auto child = r.readChildOfType<ASTFunction>("engine");
+    auto child = r.readFunctionChildWithExpressionArguments("engine");
     if (child)
         set(engine, child);
 
-    child = r.readChild("partition_by");
+    child = r.readExpressionChild("partition_by");
     if (child)
         set(partition_by, child);
 
-    child = r.readChild("primary_key");
+    child = r.readExpressionChild("primary_key");
     if (child)
         set(primary_key, child);
 
-    child = r.readChild("order_by");
+    child = r.readExpressionChild("order_by");
     if (child)
         set(order_by, child);
 
@@ -167,7 +167,7 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(unique_key, child);
 
-    child = r.readChild("sample_by");
+    child = r.readExpressionChild("sample_by");
     if (child)
         set(sample_by, child);
 
