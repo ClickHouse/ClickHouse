@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/Preconditions.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoWithRetries.h>
 
 #include <filesystem>
 #include <memory>
@@ -48,6 +49,8 @@ private:
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
+    /// Set after all validation and before the write, so `undo` runs exactly when `execute` may have changed object
+    /// storage; see `blob_move_attempted` of the move operation.
     bool write_attempted = false;
 
 public:
@@ -75,7 +78,6 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
-    std::unordered_set<std::string> changed_paths;
 
     std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path);
     void rewriteSingleDirectory(const std::filesystem::path & from, const std::filesystem::path & to, const DirectoryRemoteInfo & remote_info, WriteBuffer & buffer);
@@ -103,6 +105,7 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     DirectoryRemoteInfo info;
+    /// Set once `info` is captured and before the removal; see `blob_move_attempted` of the move operation.
     bool remove_attempted = false;
 
 public:
@@ -138,6 +141,7 @@ private:
     std::optional<StoredObject> replaced_blob;
 
 public:
+    /// Records a file in the filesystem and changes nothing in object storage, so it has nothing to reverse.
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
         std::string path_,
         StoredObject object_,
@@ -169,8 +173,8 @@ private:
     /// the blob is first copied to a temporary location.
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
-    bool copy_started = false;
-    bool remove_started = false;
+    /// Set once both keys are known and before the first write; see `blob_move_attempted` of the move operation.
+    bool blob_removal_attempted = false;
 
     /// Otherwise the file is removed from the explicit file list of the directory (switching the directory to that form
     /// if needed), and the blob is removed after the commit if this was its last link.
@@ -208,6 +212,7 @@ private:
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
+    /// Set once both keys are known and before the copy; see `blob_move_attempted` of the move operation.
     bool copy_attempted = false;
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
@@ -287,9 +292,10 @@ private:
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
-    bool moved_existing_source_file{false};
-    bool moved_existing_target_file{false};
-    bool moved_file{false};
+    /// Set once the keys above are known and before the first write, so that `undo` knows `execute` may have changed
+    /// object storage. It does not claim that any particular write landed; `undo` finds that out for itself.
+    bool blob_move_attempted{false};
+    bool had_existing_target{false};
 
 public:
     MetadataStorageFromPlainObjectStorageMoveFileOperation(
