@@ -97,23 +97,34 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     /** `arrayFilters` chooses which elements of an array a positional update writes and a
       * `collation` changes which documents the filter matches, so a statement that asks for either
       * is refused rather than written by other rules. A `hint` only names an index to read by,
-      * which changes nothing about what is written. The statements are checked before any of them
-      * runs: an option that is not implemented is a fault of the command rather than a write error
-      * of one statement, and no part of such a command is executed.
+      * which changes nothing about what is written. `multi: false` (`updateOne`) cannot be
+      * expressed as a ClickHouse mutation over an unordered table and `upsert` has no counterpart
+      * either, so both are refused instead of being silently widened into `updateMany` or dropped.
+      * The statements are checked before any of them runs: an option that is not implemented is a
+      * fault of the command rather than a write error of one statement, and no part of such a
+      * command is executed - a refused shape after a statement that already ran would be a partial
+      * write the client cannot safely retry.
       */
     for (const auto & update_spec : sections[1].documents)
     {
         static const std::unordered_set<String> supported_fields{"q", "u", "multi", "upsert", "hint", "comment"};
-        rejectUnsupportedFields(update_spec.getRapidJSONRepresentation(), supported_fields, "update statement", "update");
+        auto json_representation = update_spec.getRapidJSONRepresentation();
+        rejectUnsupportedFields(json_representation, supported_fields, "update statement", "update");
+
+        auto multi_it = json_representation.FindMember("multi");
+        if (multi_it == json_representation.MemberEnd() || !multi_it->value.IsBool() || !multi_it->value.GetBool())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'update' command supports only 'multi: true' (updateMany); updating a single document is not supported");
+
+        auto upsert_it = json_representation.FindMember("upsert");
+        if (upsert_it != json_representation.MemberEnd() && upsert_it->value.IsBool() && upsert_it->value.GetBool())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'update' command does not support 'upsert: true'");
     }
 
-    /// The 'update' command carries one or more update specs, each with its own 'q', 'u',
-    /// 'multi', and 'upsert'. Execute every spec; 'multi: false' (updateOne) cannot be
-    /// expressed as a ClickHouse mutation over an unordered table and 'upsert' has no
-    /// counterpart either, so both are rejected instead of being silently widened into
-    /// updateMany or dropped.
-    /// Each spec is translated before it is run, so a malformed update is still an error for a
-    /// collection that does not exist.
+    /// The 'update' command carries one or more update specs, each with its own 'q' and 'u'.
+    /// Execute every spec. Each spec is translated before it is run, so a malformed update is
+    /// still an error for a collection that does not exist.
     bson_t * bson_doc = bson_new();
     bson_t write_errors;
     bool has_write_errors = false;
@@ -135,16 +146,6 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
                 /// column is always the dotted path, so the filter of an `update` is normalized the
                 /// same way as the one of a `find` or a `delete`.
                 serialized_filter = modifyFilter(serialized_filter);
-
-                auto multi_it = json_representation.FindMember("multi");
-                if (multi_it == json_representation.MemberEnd() || !multi_it->value.IsBool() || !multi_it->value.GetBool())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The 'update' command supports only 'multi: true' (updateMany); updating a single document is not supported");
-
-                auto upsert_it = json_representation.FindMember("upsert");
-                if (upsert_it != json_representation.MemberEnd() && upsert_it->value.IsBool() && upsert_it->value.GetBool())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'update' command does not support 'upsert: true'");
             }
 
             auto mongo_dialect_query = fmt::format("db.{}.updateMany({}, {})", collection.collection, serialized_filter, serialized_update);
@@ -175,7 +176,17 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
             /// an update of zero documents rather than an error.
             if (objectExists(executor, "TABLE", collection.getQualifiedName()))
             {
-                executor->execute(alter_query);
+                try
+                {
+                    executor->execute(alter_query);
+                }
+                catch (const Exception & e)
+                {
+                    /// The collection was dropped after the probe: the update matches no document
+                    /// all the same.
+                    if (!failedOnMissingCollection(e, executor, collection))
+                        throw;
+                }
             }
         }
         catch (const Exception & e)

@@ -188,7 +188,7 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
     /// Mongo reads a collection that does not exist as empty rather than raising an error, the same
     /// way `find`, `count` and `distinct` do here. The pipeline is translated first, so that a
     /// malformed one is still an error.
-    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+    auto reply_for_missing_collection = [&]
     {
         /// A `$unionWith` reads a collection of its own, and the documents it contributes do not
         /// depend on the collection the command names, so an empty cursor would be the wrong
@@ -203,9 +203,22 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
                 collection.getQualifiedName());
 
         return makeEmptyCursorReply(collection);
-    }
+    };
 
-    return executeSelectIntoCursor(sql_query, collection, executor, holds_documents);
+    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+        return reply_for_missing_collection();
+
+    try
+    {
+        return executeSelectIntoCursor(sql_query, collection, executor, holds_documents);
+    }
+    catch (const Exception & e)
+    {
+        /// The collection was dropped after the probe: it is read as empty all the same.
+        if (!failedOnMissingCollection(e, executor, collection))
+            throw;
+        return reply_for_missing_collection();
+    }
 }
 
 void registerAggregateHandler(HandlerRegitstry * registry)

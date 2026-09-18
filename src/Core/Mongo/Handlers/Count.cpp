@@ -91,10 +91,19 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     Int64 count = 0;
     if (objectExists(executor, "TABLE", collection.getQualifiedName()))
     {
-        auto output = executor->execute(fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_query));
+        try
+        {
+            auto output = executor->execute(fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_query));
 
-        /// A ClickHouse table is free to hold more rows than an `int32` can count.
-        count = std::stoll(output);
+            /// A ClickHouse table is free to hold more rows than an `int32` can count.
+            count = std::stoll(output);
+        }
+        catch (const Exception & e)
+        {
+            /// The collection was dropped after the probe: its count is 0 all the same.
+            if (!failedOnMissingCollection(e, executor, collection))
+                throw;
+        }
     }
 
     bson_t * bson_doc = bson_new();

@@ -123,7 +123,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     /// Mongo reads a collection that does not exist as empty rather than raising an error, so
     /// its distinct values are `[]`. The query is translated first, so that a malformed query
     /// is still an error.
-    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+    auto make_empty_reply = []
     {
         bson_t * empty_reply = bson_new();
 
@@ -136,7 +136,10 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         std::vector<Document> result;
         result.emplace_back(empty_reply);
         return result;
-    }
+    };
+
+    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+        return make_empty_reply();
 
     /** The reply is `{"values": [...], "ok": 1}`, and the values keep the types of the column
       * (see `appendTypedValue`). The rows are streamed into the reply one by one - as one array
@@ -201,6 +204,14 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
                 "The result is larger than the largest reply that can be sent ({} bytes). "
                 "Ask for less at a time, with a filter in 'query'",
                 MAX_BSON_OBJECT_SIZE);
+    }
+    catch (const Exception & e)
+    {
+        bson_destroy(reply);
+        /// The collection was dropped after the probe: its distinct values are `[]` all the same.
+        if (!failedOnMissingCollection(e, executor, collection))
+            throw;
+        return make_empty_reply();
     }
     catch (...)
     {

@@ -139,7 +139,17 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
         return makeEmptyCursorReply(collection);
 
-    return executeSelectIntoCursor(sql_query, collection, executor, holds_documents);
+    try
+    {
+        return executeSelectIntoCursor(sql_query, collection, executor, holds_documents);
+    }
+    catch (const Exception & e)
+    {
+        /// The collection was dropped after the probe: it is read as empty all the same.
+        if (!failedOnMissingCollection(e, executor, collection))
+            throw;
+        return makeEmptyCursorReply(collection);
+    }
 }
 
 void registerFindHandler(HandlerRegitstry * registry)

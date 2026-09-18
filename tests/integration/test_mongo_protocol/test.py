@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 import struct
+import threading
 import time
 
 import bson
@@ -579,6 +580,139 @@ def test_ordered_bulk_mutation_reports_the_successful_prefix(started_cluster):
         )
     assert error.value.details["writeErrors"][0]["index"] == 1
     assert wait_for(lambda: collection.estimated_document_count() == 1)
+
+
+def test_a_bulk_command_with_an_unsupported_shape_writes_nothing(started_cluster):
+    """A shape this endpoint does not implement - `updateOne`, `upsert`, `deleteOne` - is a fault
+    of the whole command, so a valid statement before it in the same bulk command must not have
+    been written either: a partial write of a refused command is not safe to retry."""
+    node = cluster.instances["node"]
+    client = make_client()
+    collection = client["db"]["bulk_unsupported_shape"]
+
+    collection.drop()
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.bulk_unsupported_shape (id Int64, value Int64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    collection.insert_many([{"id": 1, "value": 1}, {"id": 2, "value": 2}])
+
+    for refused in (
+        pymongo.UpdateOne({"id": 2}, {"$set": {"value": 0}}),
+        pymongo.UpdateMany({"id": 2}, {"$set": {"value": 0}}, upsert=True),
+    ):
+        with pytest.raises(pymongo.errors.PyMongoError):
+            collection.bulk_write([pymongo.UpdateMany({"id": 1}, {"$inc": {"value": 1}}), refused])
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.bulk_write([pymongo.DeleteMany({"id": 1}), pymongo.DeleteOne({"id": 2})])
+
+    # An acknowledged write is synchronous here, so what the first statement would have written
+    # is visible right away if it ran.
+    found = sorted(collection.find({}), key=lambda document: document["id"])
+    assert without_ids(found) == [{"id": 1, "value": 1}, {"id": 2, "value": 2}]
+
+    # The same statements, unordered, are refused the same way: the shape is checked before the
+    # order of the statements matters.
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.bulk_write(
+            [pymongo.UpdateMany({"id": 1}, {"$inc": {"value": 1}}), pymongo.UpdateOne({"id": 2}, {"$set": {"value": 0}})],
+            ordered=False,
+        )
+    found = sorted(collection.find({}), key=lambda document: document["id"])
+    assert without_ids(found) == [{"id": 1, "value": 1}, {"id": 2, "value": 2}]
+
+
+def test_a_namespace_dropped_after_its_probe_is_still_missing(started_cluster):
+    """The commands that read a missing collection as empty, or write to it as matching nothing,
+    probe for it first; a `drop` of another session between the probe and the statement must
+    not turn that promise into a plain error. The failpoint holds every command after its probe,
+    the collection (or the database) is dropped meanwhile, and the command then runs its
+    statement over a namespace that is gone."""
+    node = cluster.instances["node"]
+    client = make_client()
+
+    def while_dropped(action, drop_query):
+        node.query("SYSTEM ENABLE FAILPOINT mongo_pause_after_namespace_probe", password="123")
+        try:
+            outcome = {}
+
+            def run():
+                try:
+                    outcome["result"] = action()
+                except Exception as e:  # pylint: disable=broad-except
+                    outcome["error"] = e
+
+            thread = threading.Thread(target=run)
+            thread.start()
+            # The command is held after its probe, and this returns once it is there.
+            node.query("SYSTEM WAIT FAILPOINT mongo_pause_after_namespace_probe PAUSE", password="123")
+            node.query(drop_query, password="123")
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT mongo_pause_after_namespace_probe", password="123")
+        thread.join(timeout=60)
+        assert not thread.is_alive()
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["result"]
+
+    def fresh_collection(name):
+        node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+        node.query(f"DROP TABLE IF EXISTS db.{name}", password="123")
+        node.query(
+            f"CREATE TABLE db.{name} (id Int64, value Int64) ENGINE = MergeTree ORDER BY id",
+            password="123",
+        )
+        collection = client["db"][name]
+        collection.insert_many([{"id": 1, "value": 1}, {"id": 2, "value": 2}])
+        return collection
+
+    drop = "DROP TABLE db.dropped_after_probe"
+
+    collection = fresh_collection("dropped_after_probe")
+    assert while_dropped(lambda: list(collection.find({})), drop) == []
+
+    collection = fresh_collection("dropped_after_probe")
+    assert while_dropped(lambda: collection.count_documents({}), drop) == 0
+
+    collection = fresh_collection("dropped_after_probe")
+    assert while_dropped(lambda: collection.distinct("id"), drop) == []
+
+    collection = fresh_collection("dropped_after_probe")
+    assert while_dropped(lambda: list(collection.aggregate([{"$match": {"id": 1}}])), drop) == []
+
+    collection = fresh_collection("dropped_after_probe")
+    result = while_dropped(lambda: collection.update_many({"id": 1}, {"$set": {"value": 0}}), drop)
+    assert result.acknowledged and result.matched_count == 0
+
+    collection = fresh_collection("dropped_after_probe")
+    result = while_dropped(lambda: collection.delete_many({"id": 1}), drop)
+    assert result.acknowledged and result.deleted_count == 0
+
+    node.query("CREATE DATABASE IF NOT EXISTS dropped_db_after_probe", password="123")
+    node.query(
+        "CREATE TABLE dropped_db_after_probe.coll (id Int64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    assert (
+        while_dropped(
+            lambda: client["dropped_db_after_probe"].list_collection_names(),
+            "DROP DATABASE dropped_db_after_probe",
+        )
+        == []
+    )
+
+    # An error of the same code about another table is still an error: a view over a table that
+    # is gone exists itself, so the command it names is not read as empty.
+    node.query("DROP TABLE IF EXISTS db.view_base", password="123")
+    node.query("DROP TABLE IF EXISTS db.view_over_dropped", password="123")
+    node.query("CREATE TABLE db.view_base (id Int64) ENGINE = MergeTree ORDER BY id", password="123")
+    node.query("CREATE VIEW db.view_over_dropped AS SELECT * FROM db.view_base", password="123")
+    node.query("DROP TABLE db.view_base", password="123")
+    with pytest.raises(pymongo.errors.PyMongoError):
+        list(client["db"]["view_over_dropped"].find({}))
+    node.query("DROP TABLE db.view_over_dropped", password="123")
 
 
 def test_update_one_and_upsert_are_rejected(started_cluster):

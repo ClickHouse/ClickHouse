@@ -66,22 +66,30 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
 
     /** A `collation` changes which documents a filter matches, so a statement that asks for one is
       * refused rather than deleting by a different comparison. A `hint` only names an index to read
-      * by, which changes nothing about what is deleted. The statements are checked before any of
-      * them runs: an option that is not implemented is a fault of the command rather than a write
-      * error of one statement, and no part of such a command is executed.
+      * by, which changes nothing about what is deleted. `limit: 1` (`deleteOne`) cannot be expressed
+      * as a ClickHouse mutation over an unordered table, so it is refused instead of being silently
+      * widened into `deleteMany`. The statements are checked before any of them runs: an option
+      * that is not implemented is a fault of the command rather than a write error of one
+      * statement, and no part of such a command is executed - a refused shape after a statement
+      * that already ran would be a partial write the client cannot safely retry.
       */
     for (const auto & delete_spec : documents[1].documents)
     {
         static const std::unordered_set<String> supported_fields{"q", "limit", "hint", "comment"};
-        rejectUnsupportedFields(delete_spec.getRapidJSONRepresentation(), supported_fields, "delete statement", "delete");
+        auto json_representation = delete_spec.getRapidJSONRepresentation();
+        rejectUnsupportedFields(json_representation, supported_fields, "delete statement", "delete");
+
+        auto limit_it = json_representation.FindMember("limit");
+        if (limit_it != json_representation.MemberEnd() && !(limit_it->value.IsNumber() && limit_it->value.GetDouble() == 0))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'delete' command supports only 'limit: 0' (deleteMany); deleting a limited number of documents is not "
+                "supported");
     }
 
-    /// The 'delete' command carries one or more delete specs, each with its own 'q' filter
-    /// and 'limit'. Execute every spec; 'limit: 1' (deleteOne) cannot be expressed as a
-    /// ClickHouse mutation over an unordered table, so it is rejected instead of being
-    /// silently widened into deleteMany.
-    /// Each spec is translated before it is run, so a malformed filter is still an error for a
-    /// collection that does not exist.
+    /// The 'delete' command carries one or more delete specs, each with its own 'q' filter.
+    /// Execute every spec. Each spec is translated before it is run, so a malformed filter is
+    /// still an error for a collection that does not exist.
     bson_t * bson_doc = bson_new();
     bson_t write_errors;
     bool has_write_errors = false;
@@ -97,13 +105,6 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
                 auto filter_it = json_representation.FindMember("q");
                 if (filter_it == json_representation.MemberEnd())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain the 'q' filter");
-
-                auto limit_it = json_representation.FindMember("limit");
-                if (limit_it != json_representation.MemberEnd() && !(limit_it->value.IsNumber() && limit_it->value.GetDouble() == 0))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The 'delete' command supports only 'limit: 0' (deleteMany); deleting a limited number of documents is not "
-                        "supported");
 
                 rapidjson::StringBuffer buffer;
                 rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -142,7 +143,17 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
             /// a delete of zero documents rather than an error.
             if (objectExists(executor, "TABLE", collection.getQualifiedName()))
             {
-                executor->execute(sql_query);
+                try
+                {
+                    executor->execute(sql_query);
+                }
+                catch (const Exception & e)
+                {
+                    /// The collection was dropped after the probe: the delete matches no document
+                    /// all the same.
+                    if (!failedOnMissingCollection(e, executor, collection))
+                        throw;
+                }
             }
         }
         catch (const Exception & e)

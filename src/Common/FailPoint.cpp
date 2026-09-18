@@ -176,6 +176,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_is_active_remove) \
     PAUSEABLE(smt_create_table_pause_before_replicas_check) \
+    PAUSEABLE(mongo_pause_after_namespace_probe) \
     PAUSEABLE(dummy_pausable_failpoint) \
     PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \

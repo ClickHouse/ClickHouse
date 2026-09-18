@@ -147,6 +147,20 @@ std::vector<Document> makeEmptyCursorReply(const CollectionRef & collection);
   */
 bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object_kind, const String & name);
 
+/** Whether an error of a statement over `collection` says that the collection - or the database it
+  * belongs to - is gone. The commands that read a missing collection as empty, or write to it as
+  * matching nothing, probe for it first, but a `drop` of another session between the probe and
+  * the statement fails the statement with `UNKNOWN_TABLE` or `UNKNOWN_DATABASE`, and the command
+  * must still answer what it promised rather than leak the error. The probe is repeated on such an
+  * error, so that a statement that failed over another table it reads - a view over a dropped
+  * table, a collection of a `$unionWith` - is reported as the error it is: an error of the right
+  * code is not by itself an error about the collection.
+  */
+bool failedOnMissingCollection(const Exception & e, std::shared_ptr<QueryExecutor> executor, const CollectionRef & collection);
+
+/// The same for a command that names a database rather than a collection, such as `listCollections`.
+bool failedOnMissingDatabase(const Exception & e, std::shared_ptr<QueryExecutor> executor, const String & database);
+
 struct IHandler
 {
     virtual std::vector<String> getIdentifiers() const = 0;

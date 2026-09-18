@@ -24,6 +24,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
@@ -37,6 +38,13 @@ namespace DB::ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
+extern const int UNKNOWN_DATABASE;
+extern const int UNKNOWN_TABLE;
+}
+
+namespace DB::FailPoints
+{
+extern const char mongo_pause_after_namespace_probe[];
 }
 
 namespace DB::MongoProtocol
@@ -1057,7 +1065,26 @@ bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object
       * `ContextAccess.cpp`), so the probe needs no privilege beyond the command it precedes.
       */
     auto output = executor->execute(fmt::format("EXISTS {} {}", object_kind, name));
+
+    /// A test drops the object here, between the probe and the statement the probe precedes.
+    FailPointInjection::pauseFailPoint(FailPoints::mongo_pause_after_namespace_probe);
+
     return !output.empty() && output[0] == '1';
+}
+
+static bool isMissingNamespaceError(const Exception & e)
+{
+    return e.code() == ErrorCodes::UNKNOWN_TABLE || e.code() == ErrorCodes::UNKNOWN_DATABASE;
+}
+
+bool failedOnMissingCollection(const Exception & e, std::shared_ptr<QueryExecutor> executor, const CollectionRef & collection)
+{
+    return isMissingNamespaceError(e) && !objectExists(executor, "TABLE", collection.getQualifiedName());
+}
+
+bool failedOnMissingDatabase(const Exception & e, std::shared_ptr<QueryExecutor> executor, const String & database)
+{
+    return isMissingNamespaceError(e) && !objectExists(executor, "DATABASE", backQuoteIfNeed(database));
 }
 
 Header makeResponseHeader(Header request_header, Int32 message_size, Int32 response_id)

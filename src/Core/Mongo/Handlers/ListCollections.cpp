@@ -55,7 +55,18 @@ std::vector<Document> ListCollectionsHandler::handle(
     /// returns an empty cursor rather than an error.
     std::vector<std::string> names;
     if (objectExists(executor, "DATABASE", backQuoteIfNeed(database)))
-        names = splitByNewline(executor->execute(fmt::format("SHOW TABLES FROM {}", backQuoteIfNeed(database))));
+    {
+        try
+        {
+            names = splitByNewline(executor->execute(fmt::format("SHOW TABLES FROM {}", backQuoteIfNeed(database))));
+        }
+        catch (const Exception & e)
+        {
+            /// The database was dropped after the probe: it has no collections all the same.
+            if (!failedOnMissingDatabase(e, executor, database))
+                throw;
+        }
+    }
 
     /// The reply is `{"cursor": {"firstBatch": [...], "id": 0, "ns": "<db>.$cmd.listCollections"}, "ok": 1}`.
     bson_t cursor;
