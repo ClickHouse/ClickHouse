@@ -2095,16 +2095,56 @@ To add an LDAP server as a remote user directory of users that are not defined l
 |----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `roles` | section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect. |
 | `server` | one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                            |
+| `role_mapping` | section with LDAP search parameters and rules that map the search results to local role names; can be repeated, all sections are applied. See the sub-parameters below and the [mapping pipeline](/operations/external-authenticators/ldap#ldap-role-mapping-pipeline). |
+
+**`role_mapping` sub-parameters**
+
+| Setting | Description |
+|---------|-------------|
+| `base_dn` | template used to construct the base DN for the LDAP search; `{user_name}`, `{bind_dn}` and `{user_dn}` are substituted with the actual user name, bind DN and user DN. |
+| `scope` | scope of the LDAP search: `base`, `one_level`, `children` or `subtree` (the default). |
+| `search_filter` | template used to construct the search filter; `{user_name}`, `{bind_dn}`, `{user_dn}` and `{base_dn}` are substituted. Special characters must be escaped properly in XML. |
+| `attribute` | attribute whose values are returned by the LDAP search, `cn` by default. The special value `dn` returns the DN of each found entry. |
+| `prefix` | prefix expected in front of each value returned by the search; it is removed and the rest of the value becomes the name of a local role. Compared case-sensitively. Empty by default. |
+| `rdn_attribute` | if set, each value returned by the search is parsed as a DN and replaced by the value of its first RDN of this type, compared case-insensitively. For example, `cn` turns the Active Directory `memberOf` value `CN=clickhouse_admins,OU=Groups,DC=example,DC=com` into `clickhouse_admins`. Values that are not DNs or have no such RDN are ignored. Requires a non-empty `groups` list or a non-empty `prefix`. |
+| `groups` | optional allow-list of `<group>` entries; when non-empty, values matching none of the entries are ignored. A plain name is compared ASCII-case-insensitively with the value after `rdn_attribute` extraction. A full DN (an entry containing `=`, requires `rdn_attribute`) is compared with the raw value before extraction and pins the container, which is recommended for Active Directory because group CNs are unique only per container. The configured spelling becomes the role name, `prefix` is removed afterwards, so every entry (for a DN, its `rdn_attribute` value) must start with the configured `prefix`. Empty, duplicate, unparsable and prefix-less entries are rejected at startup. |
 
 **Example**
 
 ```xml
 <ldap>
     <server>my_ldap_server</server>
-        <roles>
-            <my_local_role1 />
-            <my_local_role2 />
-        </roles>
+    <roles>
+        <my_local_role1 />
+        <my_local_role2 />
+    </roles>
+    <role_mapping>
+        <base_dn>ou=groups,dc=example,dc=com</base_dn>
+        <scope>subtree</scope>
+        <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+        <attribute>cn</attribute>
+        <prefix>clickhouse_</prefix>
+    </role_mapping>
+</ldap>
+```
+
+**Example (Active Directory, roles from the user's `memberOf` attribute)**
+
+```xml
+<ldap>
+    <server>my_ad_server</server>
+    <role_mapping>
+        <base_dn>{user_dn}</base_dn>
+        <scope>base</scope>
+        <search_filter>(objectClass=*)</search_filter>
+        <attribute>memberOf</attribute>
+        <rdn_attribute>cn</rdn_attribute>
+        <groups>
+            <group>CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com</group>
+            <group>clickhouse_admins</group>
+        </groups>
+        <prefix>clickhouse_</prefix>
+    </role_mapping>
 </ldap>
 ```
 
