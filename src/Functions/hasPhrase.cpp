@@ -395,11 +395,11 @@ because "brown" appears between "quick" and "fox".
 └─────────────────────────────────────────────────────┘
         )"},
            {"Token sequence given as arrays",
-            "SELECT hasPhrase(['a', 'b', 'c'], ['a', 'b'], 'array')",
+            "SELECT hasPhrase(['a', 'b', 'c'], ['a', 'b'])",
             R"(
-┌─hasPhrase(['a', 'b', 'c'], ['a', 'b'], 'array')─┐
-│                                               1 │
-└─────────────────────────────────────────────────┘
+┌─hasPhrase(['a', 'b', 'c'], ['a', 'b'])─┐
+│                                      1 │
+└────────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
