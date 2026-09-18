@@ -97,6 +97,7 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char mt_lightweight_update_pause_after_block_allocation[];
 }
 
 namespace Setting
@@ -1305,6 +1306,9 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     size_t timeout_ms = saturatedMilliseconds(context_copy->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds()).count();
     waitForCommittingInsertsAndMutations(block_number, timeout_ms);
 
+    /// Here the block number of the update is reserved in `committing_blocks`, but its patch part is not committed yet.
+    FailPointInjection::pauseFailPoint(FailPoints::mt_lightweight_update_pause_after_block_allocation);
+
     for (const auto & partition_id : all_partitions)
     {
         if (!partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
@@ -1989,6 +1993,15 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
+    /// A lightweight update reserves its block number in `committing_blocks` before its patch part is committed
+    /// (see `updateLightweight`), so a mutation with a higher version must not be executed until the update is
+    /// committed: `MutateTask` would either miss the patch (it is not visible yet, and it is never applied to the
+    /// result part because that part has a higher data version), or apply it before the commands of the mutations
+    /// with a lower version. The same is done for a replicated table in `ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation`.
+    /// The committing blocks are taken before the patch parts, so that an update committed in between is seen
+    /// at least in one of the two places.
+    auto min_update_block = getMinUpdateBlockNumber(getCommittingBlocks());
+
     /// Patch parts are applied to the source part before any of the mutation commands are evaluated,
     /// and the set of applied patches is bounded from above by the data version of the result part.
     /// So a batch of mutations squashed into a single task must not span the version of a patch part:
@@ -1997,7 +2010,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     for (const auto & patch : getPatchPartsVectorForInternalUsage())
         patch_versions_by_partition[patch->info.getOriginalPartitionId()].insert(patch->info.getDataVersion());
 
-    auto mutations_end_it = current_mutations_by_version.end();
+    /// Block numbers of mutations and updates come from the same increment, so an update is never equal to a mutation version.
+    auto mutations_end_it = min_update_block ? current_mutations_by_version.upper_bound(*min_update_block) : current_mutations_by_version.end();
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (currently_merging_mutating_parts.contains(part))
@@ -2011,8 +2025,20 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-        if (mutations_begin_it == mutations_end_it)
+        if (mutations_begin_it == current_mutations_by_version.end())
             continue;
+
+        if (mutations_begin_it == mutations_end_it)
+        {
+            LOG_DEBUG(
+                log,
+                "Will not mutate part {} to version {} yet because the lightweight update with block number {} is not committed yet",
+                part->name,
+                mutations_begin_it->first,
+                *min_update_block);
+            current_parts_postpone_reasons[part->name] = PostponeReasons::LIGHTWEIGHT_UPDATE_NOT_COMMITTED;
+            continue;
+        }
 
         fiu_do_on(FailPoints::mt_select_parts_to_mutate_max_part_size, { max_source_part_size = 1; });
         if (max_source_part_size < part->getBytesOnDisk())
