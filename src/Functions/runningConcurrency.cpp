@@ -40,6 +40,11 @@ namespace DB
             return true;
         }
 
+        bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
+        }
+
     private:
         template <typename ArgDataType>
         ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
