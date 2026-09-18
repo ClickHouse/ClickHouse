@@ -610,15 +610,21 @@ private:
             if (auto throttler = CurrentThread::getWriteThrottler())
                 Session::setSendThrottler(throttler);
 
+            /// Drop the streams of the previous request before issuing this one. Poco frees them
+            /// inside its `sendRequest`, which can then throw - a borrowed keep-alive socket that
+            /// turns out to be dead and whose reconnect fails - leaving the pointers below dangling
+            /// for the destructor to dereference.
+            request_stream = nullptr;
+            request_stream_completed = false;
+
+            response_stream = nullptr;
+            response_stream_completed = false;
+
             std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
             chassert(result.exceptions() & std::ios::badbit);
             ++requests_on_socket;
 
             request_stream = &result;
-            request_stream_completed = false;
-
-            response_stream = nullptr;
-            response_stream_completed = false;
 
             return result;
         }
