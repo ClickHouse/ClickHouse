@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest, no-msan, no-parallel-replicas
 # Tag no-fasttest: delta-kernel pulls in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
+# Tag no-parallel-replicas: INSERT SELECT from MergeTree into DeltaLake commits once per replica, https://github.com/ClickHouse/ClickHouse/issues/120714
 
 # Writes through a regular MV (setting must be on the inserting session) and a refreshable
 # `APPEND TO` MV (setting in the view's SETTINGS clause); one version per push, fail closed otherwise.
