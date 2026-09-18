@@ -1776,7 +1776,8 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 
 SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr query_context) const
 {
-    /// A named collection's settings are recorded by the settings object; the definition wins over them.
+    /// What a named collection supplied is recorded by `loadSettingsFromNamedCollection` in the settings object
+    /// (a `SettingsWithRecordedOrigin`), so enumeration reports it; the definition wins over it.
     auto settings = withOriginFromDefinition(rabbitmq_settings->enumerateSettings(), getStorageID(), query_context);
 
     /// What the table works with. The constructor expands macros in these, and lets the `rabbitmq` server config

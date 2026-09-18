@@ -1,0 +1,3 @@
+bytes_to_delay_insert	654321	1	definition
+flush_on_detach	1	1	config
+max_delay_to_insert	60	0	default

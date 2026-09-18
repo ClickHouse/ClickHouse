@@ -72,8 +72,14 @@ struct KafkaSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    /// Assigns as the `SETTINGS` clause does: the setting no longer counts as supplied by a named collection.
-    void set(std::string_view name, const Field & value);
+    /// Assigns a value the engine chose itself, over whatever a loader assigned: unlike `operator[]` alone,
+    /// the setting no longer counts as supplied by a named collection.
+    template <typename FieldType>
+    void setByEngine(SettingIndex<KafkaSettings, FieldType> setting, typename FieldType::ValueType value)
+    {
+        (*this)[setting] = value;
+        forgetOriginAtOffset(setting.offset);
+    }
 
     SettingsChanges getFormatSettings() const;
 
@@ -83,6 +89,8 @@ struct KafkaSettings
     DECLARE_SETTINGS_ENUMERATION(KafkaSettings)
 
 private:
+    void forgetOriginAtOffset(size_t offset);
+
     std::unique_ptr<KafkaSettingsImpl> impl;
 };
 

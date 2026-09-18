@@ -201,9 +201,9 @@ StorageKafka::StorageKafka(
     if (auto mode = getStreamingHandleErrorMode();
         mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
-        /// Through `set`: a value pinned here is the engine's, whichever source supplied the one it replaces.
-        kafka_settings->set("input_format_allow_errors_num", 0);
-        kafka_settings->set("input_format_allow_errors_ratio", 0);
+        /// A value pinned here is the engine's, whichever source supplied the one it replaces.
+        kafka_settings->setByEngine(KafkaSetting::input_format_allow_errors_num, 0);
+        kafka_settings->setByEngine(KafkaSetting::input_format_allow_errors_ratio, 0);
     }
 
     StorageInMemoryMetadata storage_metadata;

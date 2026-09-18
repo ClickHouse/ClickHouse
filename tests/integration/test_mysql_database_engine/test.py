@@ -188,6 +188,57 @@ def test_table_settings_for_mysql_database(started_cluster):
         clickhouse_node.query("DROP DATABASE test_settings_database")
 
 
+def test_table_settings_for_mysql_database_from_named_collection(started_cluster):
+    """A `MySQL` database built from a named collection hands the collection's settings to every table it
+    makes, and the tables report them as the collection's.
+
+    The settings object records what the collection supplied as it loads it, and the database copies that
+    object into each table - so the source reaches a table the database made long after it was created,
+    including for a key whose value is the compiled-in default, which no comparison of values could attribute.
+    A setting the engine arguments override is the arguments', not the collection's.
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_settings_nc_database")
+        mysql_node.query("CREATE DATABASE test_settings_nc_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_settings_nc_database`.`t` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_nc_database")
+        clickhouse_node.query("DROP NAMED COLLECTION IF EXISTS mysql_settings_nc")
+        try:
+            clickhouse_node.query(
+                "CREATE NAMED COLLECTION mysql_settings_nc AS "
+                f"host = 'mysql80', port = 3306, user = 'root', password = '{mysql_pass}', "
+                "database = 'test_settings_nc_database', "
+                "connection_pool_size = 7, connection_max_tries = 3, connection_wait_timeout = 9"
+            )
+            clickhouse_node.query(
+                "CREATE DATABASE test_settings_nc_database ENGINE = MySQL(mysql_settings_nc, connection_wait_timeout = 11)"
+            )
+
+            assert clickhouse_node.query(
+                "SELECT name, value, source FROM system.table_settings "
+                "WHERE database = 'test_settings_nc_database' AND table = 't' "
+                "AND name IN ('connection_pool_size', 'connection_max_tries', 'connection_wait_timeout') ORDER BY name"
+            ) == (
+                # `3` is the compiled-in default of `connection_max_tries`: the collection still supplied it.
+                "connection_max_tries\t3\tnamed_collection\n"
+                "connection_pool_size\t7\tnamed_collection\n"
+                "connection_wait_timeout\t11\tother\n"
+            )
+        finally:
+            clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_nc_database")
+            clickhouse_node.query("DROP NAMED COLLECTION IF EXISTS mysql_settings_nc")
+            mysql_node.query("DROP DATABASE IF EXISTS test_settings_nc_database")
+
+
 def test_mysql_ddl_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(

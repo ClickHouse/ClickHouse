@@ -1,6 +1,8 @@
 -- pinned by the engine: its own value, not the collection's; the rest is still the collection's
 input_format_allow_errors_num	0	other
+input_format_allow_errors_ratio	0	other
 kafka_max_block_size	4242	named_collection
--- not pinned: both are the collection's
+-- not pinned: all are the collection's
 input_format_allow_errors_num	5	named_collection
+input_format_allow_errors_ratio	0.5	named_collection
 kafka_max_block_size	4242	named_collection

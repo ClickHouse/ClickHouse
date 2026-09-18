@@ -1208,12 +1208,12 @@ bool resolveCredentialSource(
                 ErrorCodes::BAD_ARGUMENTS, "The credentials of the named collection cannot be dropped by an empty `nats_credentials`");
     }
 
-    /// Through `set`, so that the dropped setting is no longer reported as the named collection's: the
+    /// Through `setByEngine`, so that the dropped setting is no longer reported as the named collection's: the
     /// collection supplied it, but it no longer explains anything the table holds.
     if (credential_file_from_query && credentials_from_collection)
-        nats_settings.set("nats_credentials", String{});
+        nats_settings.setByEngine(NATSSetting::nats_credentials, String{});
     else if (credentials_from_query && credential_file_from_collection)
-        nats_settings.set("nats_credential_file", String{});
+        nats_settings.setByEngine(NATSSetting::nats_credential_file, String{});
 
     /// Whatever path is left is the one the collection defines, and it is accepted only when the
     /// collection itself comes from the server configuration file.
@@ -1694,7 +1694,8 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 
 SettingDescriptions StorageNATS::getTableSettings(ContextPtr query_context) const
 {
-    /// A named collection's settings are recorded by the settings object; the definition wins over them.
+    /// What a named collection supplied is recorded by `loadSettingsFromNamedCollection` in the settings object
+    /// (a `SettingsWithRecordedOrigin`), so enumeration reports it; the definition wins over it.
     auto settings = withOriginFromDefinition(nats_settings->enumerateSettings(), getStorageID(), query_context);
 
     /// What the table works with. The constructor expands macros in these and, when the table defines no

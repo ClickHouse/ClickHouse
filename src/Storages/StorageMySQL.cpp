@@ -960,6 +960,8 @@ ColumnsDescription doQueryResultStructure(
 
 SettingDescriptions StorageMySQL::getTableSettings(ContextPtr query_context) const
 {
+    /// What a named collection supplied is recorded by `loadSettingsFromNamedCollection` in the settings object
+    /// (a `SettingsWithRecordedOrigin`), so enumeration reports it; the definition wins over it.
     return withOriginFromDefinition(mysql_settings->enumerateSettings(), getStorageID(), query_context);
 }
 

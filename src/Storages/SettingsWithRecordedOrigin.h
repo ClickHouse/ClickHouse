@@ -17,9 +17,10 @@ namespace DB
 ///
 /// The marks live in the settings object, so they travel with every copy of it - from the server's baseline
 /// into each table, from a database into each table it makes. A later `set` clears them, so a setting
-/// belongs to whoever assigned it last: the table's own `SETTINGS` clause included. An assignment through
-/// `operator[]` and `resetToDefault` bypass `set` and keep the mark: engines use the first only to adjust a
-/// value in place, and a reset clears the changed bit, so enumeration reports the default.
+/// belongs to whoever assigned it last: the table's own `SETTINGS` clause included, and a reset to the
+/// default. An assignment through `operator[]` bypasses `set` and keeps the mark, which suits an engine that
+/// adjusts a value in place, such as by expanding macros; one that replaces a value calls the settings'
+/// `setByEngine`, which forgets it through `forgetOriginAtOffset`.
 ///
 /// One bit per setting and source, as `SettingsImpl` in `Core/Settings.cpp` records its own `compatibility`
 /// marks: the number of settings is known at compile time, so this allocates nothing.
@@ -28,11 +29,25 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
 {
     void set(std::string_view name, const Field & value) override
     {
-        if (const size_t index = settingIndex(name); index != npos)
-            for (auto & bitmap : recorded)
-                bitmap[index / 64] &= ~(1ULL << (index % 64));
+        forget(settingIndex(name));
         BaseSettings<TTraits>::set(name, value);
     }
+
+    /// Hide the base versions, which are not virtual, so that a reset forgets the source as well.
+    void resetToDefault(std::string_view name)
+    {
+        forget(settingIndex(name));
+        BaseSettings<TTraits>::resetToDefault(name);
+    }
+    void resetToDefault()
+    {
+        recorded = {};
+        BaseSettings<TTraits>::resetToDefault();
+    }
+
+    /// For an assignment through `operator[]`, which bypasses `set`: forgets the source of the setting whose
+    /// field is at `offset` in the settings data, as a `SettingIndex` stores it.
+    void forgetOriginAtOffset(size_t offset) { forget(TTraits::Accessor::instance().findByOffset(offset)); }
 
     /// `set`, then records `origin` for the setting. Only the sources in `recordable_origins`.
     template <SettingOrigin origin>
@@ -63,6 +78,13 @@ private:
     static constexpr size_t num_words = (static_cast<size_t>(TTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
 
     std::array<std::array<UInt64, num_words>, recordable_origins.size()> recorded = {};
+
+    void forget(size_t index)
+    {
+        if (index != npos)
+            for (auto & bitmap : recorded)
+                bitmap[index / 64] &= ~(1ULL << (index % 64));
+    }
 
     static size_t settingIndex(std::string_view name)
     {

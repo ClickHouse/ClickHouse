@@ -107,9 +107,9 @@ void NATSSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & nam
     loadSettingsFromNamedCollection(*impl, *named_collection);
 }
 
-void NATSSettings::set(std::string_view name, const Field & value)
+void NATSSettings::forgetOriginAtOffset(size_t offset)
 {
-    impl->set(name, value);
+    impl->forgetOriginAtOffset(offset);
 }
 
 SettingsChanges NATSSettings::getFormatSettings() const

@@ -122,9 +122,9 @@ void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & na
     loadSettingsFromNamedCollection(*impl, *named_collection);
 }
 
-void KafkaSettings::set(std::string_view name, const Field & value)
+void KafkaSettings::forgetOriginAtOffset(size_t offset)
 {
-    impl->set(name, value);
+    impl->forgetOriginAtOffset(offset);
 }
 
 void KafkaSettings::sanityCheck(ContextPtr global_context) const

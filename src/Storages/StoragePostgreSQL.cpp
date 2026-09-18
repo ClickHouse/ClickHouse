@@ -134,7 +134,8 @@ SettingDescriptions StoragePostgreSQL::getTableSettings(ContextPtr query_context
     /// follow for server-backed values. `loadFromQueryContext` assigns all of them, so the changed flag says
     /// nothing here and the source has to come from the value.
     ///
-    /// Except for what a named collection supplied, which the settings object records: neither the session's
+    /// Except for what a named collection supplied, which `loadSettingsFromNamedCollection` records in the
+    /// settings object (a `SettingsWithRecordedOrigin`) and `setOriginByValue` leaves alone: neither the session's
     /// nor a default, and the value cannot reveal it, since a collection may well state the default.
     SettingDescriptions descriptions = settings.enumerateSettings();
     setOriginByValue(descriptions);

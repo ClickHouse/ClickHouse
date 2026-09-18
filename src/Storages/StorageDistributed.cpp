@@ -2864,8 +2864,9 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 SettingDescriptions StorageDistributed::getTableSettings(ContextPtr query_context) const
 {
     /// A `Distributed` table starts from the server-effective settings - the `distributed` config section
-    /// applied over the compiled defaults, which the table's copy records - and then applies its own
-    /// `SETTINGS` clause.
+    /// applied over the compiled defaults, which `DistributedSettings::loadFromConfig` records in the settings
+    /// object (a `SettingsWithRecordedOrigin`) and the table's copy keeps, so enumeration reports it - and then
+    /// applies its own `SETTINGS` clause.
     auto settings = distributed_settings->enumerateSettings();
 
     /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings into the

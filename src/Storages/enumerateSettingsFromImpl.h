@@ -38,9 +38,8 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsImplType & impl)
             described.masked_value = maskEngineSettingValue(described.name, setting.getValue(), described.value);
         described.origin = setting.isValueChanged() ? SettingOrigin::Other : SettingOrigin::Default;
 
-        /// Only for a changed setting: `resetToDefault` bypasses `set`, so it keeps the mark but clears the changed
-        /// bit, and an unchanged setting is reported as `Default`. A recorded value that merely equals the default
-        /// is still changed, and keeps its source.
+        /// Only for a changed setting, since an unchanged one is the default's. A recorded value that merely equals
+        /// the default is still changed, and keeps its source.
         if constexpr (requires { impl.recordedOrigin(described.name); })
             if (described.origin == SettingOrigin::Other)
                 if (const auto recorded = impl.recordedOrigin(described.name))

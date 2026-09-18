@@ -14410,7 +14410,9 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
 SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) const
 {
     /// A `MergeTree` table starts from the server's settings, built by applying the `compatibility` setting and
-    /// then the `<merge_tree>` config section; the table's copy records which of the two assigned each setting.
+    /// then the `<merge_tree>` config section. The settings object is a `SettingsWithRecordedOrigin`, and
+    /// `applyCompatibilitySetting` and `loadFromConfig` record which of the two assigned each setting; the table's
+    /// copy keeps the marks, so enumeration reports them.
     const auto merge_tree_settings = getSettings();
     auto settings = merge_tree_settings->enumerateSettings();
 
