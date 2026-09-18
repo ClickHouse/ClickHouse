@@ -5155,6 +5155,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             /// Reject it for a stored target; `CLEAR COLUMN missing IF EXISTS` is a no-op.
             /// Nested-parent existence is physical-only: a dotted ALIAS/EPHEMERAL prefix is
             /// not stored and must stay a no-op, matching `getMutationStageDecision`.
+            /// `hasColumnOrNested` scans the whole `n.*` range so a mixed prefix such as
+            /// `` `n.x` ALIAS `` then physical `` `n.y` `` is still a stored target.
             /// CLEAR of a UNIQUE KEY column is rejected by ALTER_OF_COLUMN_IS_FORBIDDEN below.
             if (command.type == AlterCommand::DROP_COLUMN && command.clear
                 && !uk_set.contains(command.column_name)

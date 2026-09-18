@@ -981,8 +981,14 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
 bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto range = getNameRange(columns, column_name);
-    return range.first != range.second &&
-        defaultKindToGetKind(range.first->default_desc.kind) & kind;
+    /// Nested prefixes can mix kinds (for example `` `n.x` UInt32 ALIAS id, `n.y` UInt32 ``).
+    /// Inspect every member of the `column_name.*` range, not only the first match.
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (defaultKindToGetKind(it->default_desc.kind) & kind)
+            return true;
+    }
+    return false;
 }
 
 bool ColumnsDescription::hasDefaults() const

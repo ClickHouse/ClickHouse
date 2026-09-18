@@ -224,6 +224,9 @@ public:
     bool hasNotAlias(const String & column_name) const;
     bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
+    /// True if `column_name` itself or any flattened `column_name.*` member matches `kind`.
+    /// Nested prefixes can mix kinds (for example an `ALIAS` then a physical column), so this
+    /// scans the whole prefix range rather than only the first match.
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
 
     bool hasOnlyOrdinary() const;
