@@ -377,6 +377,15 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
              TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database, materialized_views_in_database);
 }
 
+/// These engines run their ingestion in a background job that only `startup` starts.
+static bool isPushSourceEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> push_source_engines
+        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
+
+    return push_source_engines.contains(engine_name);
+}
+
 void DatabaseOrdinary::loadTableFromMetadata(
     ContextMutablePtr local_context,
     const String & file_path,
@@ -437,8 +446,10 @@ void DatabaseOrdinary::loadTableFromMetadata(
             /// A named collection is a server-level object of its own that a user may drop and an admin may
             /// remove from the configuration, so a stored definition naming a missing one is a dangling
             /// reference rather than corrupt metadata: it must fail that one table, not the whole load.
+            /// A push source is excluded: a stand-in answers neither its rename veto nor its streaming classification.
             if (e.code() == ErrorCodes::NAMED_COLLECTION_DOESNT_EXIST
                 && mode == LoadingStrictnessLevel::FORCE_ATTACH
+                && !(query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name))
                 && canUseLazyStandIn(query, name, mode))
             {
                 tryLogCurrentException(
@@ -453,15 +464,6 @@ void DatabaseOrdinary::loadTableFromMetadata(
             throw;
         }
     }
-}
-
-/// These engines run their ingestion in a background job that only `startup` starts.
-static bool isPushSourceEngine(const String & engine_name)
-{
-    static const std::unordered_set<std::string_view> push_source_engines
-        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
-
-    return push_source_engines.contains(engine_name);
 }
 
 bool DatabaseOrdinary::canUseLazyStandIn(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
