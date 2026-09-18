@@ -550,7 +550,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
     /// and its subcomponents S1, S2
     initDPsubScratch();
 
-    Checker checker(n, *this);
+    Checker checker(n, *this, query_graph.unknown_relation_rows);
     Enumerator enumerator(n, max_nr_ccps, log);
     enumerator.enumerate(checker, query_graph);
 

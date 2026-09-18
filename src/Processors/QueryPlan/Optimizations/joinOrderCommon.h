@@ -210,10 +210,21 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
 }
 
-inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
+/// An absent cardinality is charged `unknown_relation_rows`, so a relation the optimizer cannot
+/// estimate never looks cheaper to join than one it can.
+inline double rowsForJoinCost(const std::optional<UInt64> & estimated_rows, UInt64 unknown_relation_rows)
 {
-    double lhs = static_cast<double>(left->estimated_rows.value_or(1));
-    double rhs = static_cast<double>(right->estimated_rows.value_or(1));
+    return static_cast<double>(estimated_rows.value_or(unknown_relation_rows));
+}
+
+inline double computeJoinCost(
+    const DPJoinEntryPtr & left,
+    const DPJoinEntryPtr & right,
+    const SelectivityEstimate & selectivity,
+    UInt64 unknown_relation_rows)
+{
+    double lhs = rowsForJoinCost(left->estimated_rows, unknown_relation_rows);
+    double rhs = rowsForJoinCost(right->estimated_rows, unknown_relation_rows);
     return left->cost + right->cost + estimateJoinedRows(selectivity, lhs, rhs);
 }
 
