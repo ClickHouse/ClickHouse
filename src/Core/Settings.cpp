@@ -1304,6 +1304,14 @@ Allows or restricts using [Variant](/reference/data-types/variant) and [Dynamic]
     DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
 Allows or restricts using [Variant](/reference/data-types/variant) and [Dynamic](/reference/data-types/dynamic) types in ORDER BY keys.
 )", 0) \
+    DECLARE(Bool, validate_group_by_all_key_types, true, R"(
+Controls whether the grouping keys that `GROUP BY ALL` expands the `SELECT` expressions into are checked against [allow_suspicious_types_in_group_by](#allow_suspicious_types_in_group_by). Disable it to restore the behavior of versions before 26.7, which accepted a [Variant](/reference/data-types/variant) or [Dynamic](/reference/data-types/dynamic) key written as `GROUP BY ALL`, for example a grouping key that is an untyped JSON subpath. Takes effect only when the analyzer is enabled (`enable_analyzer = 1`, the default); with the old analyzer such a key was rejected before 26.7 as well, so there is nothing to restore there. An explicit `GROUP BY` is unaffected and keeps rejecting such a key either way, so this is narrower than setting `allow_suspicious_types_in_group_by`, which also permits them in an explicit `GROUP BY`.
+
+Possible values:
+
+- 0 - The key types `GROUP BY ALL` expands into are not validated.
+- 1 - They are validated, as an explicit `GROUP BY` validates its own keys.
+)", 0) \
     DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
 Enables or disables default implementation for Variant type in comparison functions.
 )", 0) \
@@ -2285,9 +2293,7 @@ The number of streams that read simultaneously is capped by this multiplier as w
 )", 0) \
     \
     DECLARE(String, network_compression_method, "ZSTD", R"(
-The codec for compressing the client/server and server/server communication over the native protocol, and the response of an HTTP request made with `compress=1`, which uses the same frame format.
-
-The setting does not apply to the streaming-exchange channel of distributed queries, which always uses the server default codec: every compressed frame is self-describing, so the receiver detects the codec automatically.
+The codec for compressing the client/server and server/server communication over the native protocol, the response of an HTTP request made with `compress=1`, which uses the same frame format, and the streaming exchange between the tasks of a distributed query plan (`make_distributed_plan`). Exchanges through temporary files use the default codec of the server.
 
 Possible values:
 
@@ -3516,6 +3522,26 @@ In case of ORDER BY with LIMIT, when memory usage is higher than specified thres
 If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
 )", 0) \
     \
+    DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
+Query memory threshold, in bytes, for spilling `DISTINCT` data to disk. Actual memory usage can exceed
+this threshold.
+
+`0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
+the smaller is used. Set both settings to `0` to disable spilling.
+
+See [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory).
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
+Fraction of available server or user memory used to calculate the external `DISTINCT` threshold at
+the start of execution. For example, `0.5` uses half of the available memory.
+
+Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
+server or user memory limit, the ratio has no effect.
+
+`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
+use `max_bytes_before_external_distinct`, leaving room for additional memory usage.
+)", 0) \
+    \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.
@@ -4595,7 +4621,7 @@ If the setting is set to `0`, the table function does not make Nullable columns 
     DECLARE(Bool, external_table_strict_query, false, R"(
 If it is set to true, a filter on the columns of an external table (`MySQL`, `PostgreSQL`, `SQLite`, `ODBC`, `JDBC`) that cannot be pushed down to the external database is rejected with an exception instead of being applied locally after the data is fetched.
 
-The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of the external table is not a case for this setting: these table engines do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. With the analyzer (the default), the check runs only where a filter could be pushed down at all: when the external table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of the external table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side (for example `WHERE r.flag`) or mixes it with the external table inside one non-`AND` expression (for example `WHERE l.id = 1 OR r.flag`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected. With the old analyzer (`enable_analyzer = 0`) this scoping does not apply: the whole outer filter is checked when the external table is the first table of the join tree, including a predicate on the joined side, and a joined right-hand external table is not checked.
+The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of the external table is not a case for this setting: these table engines do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. The check runs only where a filter could be pushed down at all: when the external table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of the external table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side (for example `WHERE r.flag`) or mixes it with the external table inside one non-`AND` expression (for example `WHERE l.id = 1 OR r.flag`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected.
 )", 0) \
     \
     DECLARE(Bool, allow_hyperscan, true, R"(
@@ -5298,7 +5324,7 @@ Possible values: true, false
     DECLARE(Bool, optimize_or_like_chain, true, R"(
 Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable — for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, are end-anchored (do not end in an unescaped `%`; Vectorscan matches `$` before a final newline, so the rewrite would widen the filter), or the haystack is `FixedString`/`Enum` — the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
 
-The optimization is applied only with the analyzer (`enable_analyzer = 1`, the default); with the old analyzer (`enable_analyzer = 0`) the `OR` chain is left unchanged. For pure `LIKE`/`ILIKE`/`match` `OR` chains the original expressions are preserved in `indexHint()` to allow index analysis; mixed `OR` chains that include non-`LIKE` branches intentionally skip `indexHint()` wrapping so that ranges matching only the non-`LIKE` branch are not pruned. The `multiMatchAny` rewrite honors `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`.
+For pure `LIKE`/`ILIKE`/`match` `OR` chains the original expressions are preserved in `indexHint()` to allow index analysis; mixed `OR` chains that include non-`LIKE` branches intentionally skip `indexHint()` wrapping so that ranges matching only the non-`LIKE` branch are not pruned. The `multiMatchAny` rewrite honors `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`.
 
 A chain is rewritten only when it has enough branches sharing the same left-hand-side expression to make the rewrite reliably faster than short-circuit `OR` evaluation: at least `optimize_or_like_chain_min_substrings` branches for the `multiSearchAny` path, and at least `optimize_or_like_chain_min_patterns` branches for the `multiMatchAny` path.
 )", 0) \
@@ -5339,6 +5365,7 @@ These functions can be transformed:
 - [count](/reference/functions/aggregate-functions/count) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
 - [mapKeys](/reference/functions/regular-functions/tuple-map-functions#mapKeys) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapValues](/reference/functions/regular-functions/tuple-map-functions#mapValues) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [has](/reference/functions/regular-functions/array-functions#has) and [notHas](/reference/functions/regular-functions/array-functions#notHas) for `Map` to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -6001,10 +6028,22 @@ Enables using projections to filter part ranges even when projections are not se
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
+When enabled, a projection that can serve the query is used even if it requires reading more marks than the table itself, and the query fails with the `PROJECTION_NOT_USED` error when no projection can be used.
+
 Possible values:
 
 - 0 — Projection optimization is not obligatory.
 - 1 — Projection optimization is obligatory.
+)", 0) \
+    DECLARE(Bool, prefer_optimize_projection, false, R"(
+Makes the projection optimization prefer [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) over the table in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
+
+When enabled, a projection that can serve the query is used even if it requires reading more marks than the table itself, the same as with [force_optimize_projection](#force_optimize_projection), but the query does not fail when no projection can be used.
+
+Possible values:
+
+- 0 — Projections are chosen by their estimated cost.
+- 1 — A usable projection is chosen regardless of its estimated cost.
 )", 0) \
     DECLARE(String, force_optimize_projection_name, "", R"(
 If it is set to a non-empty string, check that this projection is used in the query at least once.
@@ -6136,11 +6175,19 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
     DECLARE(Int64, iceberg_expire_default_max_ref_age_ms, std::numeric_limits<Int64>::max(), R"(
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 10_MiB, R"(
-Threshold for compaction data files in iceberg.
+    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
+Data files smaller than this are selected for compaction.
+
+The default is `0.75` of the documented default of the Iceberg table property `write.target-file-size-bytes`
+(512 MiB), which is how the `rewrite_data_files` procedure derives its `min-file-size-bytes` option,
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
-Threshold for compaction data files in iceberg.
+    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
+Data files larger than this are selected for compaction.
+
+The default is `1.8` of the documented default of the Iceberg table property `write.target-file-size-bytes`
+(512 MiB), which is how the `rewrite_data_files` procedure derives its `max-file-size-bytes` option,
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", 0) \
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Threshold for compaction data files in iceberg.
@@ -6387,10 +6434,6 @@ only when col is of String or FixedString type.
     DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
-
-<Note>
-Supported only with the analyzer (`enable_analyzer = 1`).
-</Note>
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
@@ -6928,7 +6971,7 @@ Possible values:
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
 )", 0) \
     DECLARE(Bool, query_plan_short_circuit_constant_false_join, true, R"(
-Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to the analyzer (`enable_analyzer = 1`) and to non-distributed plans.
+Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to non-distributed plans.
 )", 0) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
 Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
@@ -7449,7 +7492,7 @@ Maximum time to wait for a file segment which is being downloaded to the filesys
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
     DECLARE(UInt64, filesystem_cache_boundary_alignment, 0, R"(
-Filesystem cache boundary alignment. This setting is applied only for non-disk read (e.g. for cache of remote table engines / table functions, but not for storage configuration of MergeTree tables). Value 0 means no alignment.
+Filesystem cache boundary alignment. For non-disk read (e.g. for cache of remote table engines / table functions) value 0 means no alignment. For disk read (e.g. for MergeTree tables on a disk with cache) value 0 means that `boundary_alignment` from the cache configuration is used.
 )", 0) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
 Wait time to lock cache for space reservation for temporary data in filesystem cache
@@ -7808,7 +7851,7 @@ Only has an effect in ClickHouse Cloud. A period of credentials refresh.
 Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
 )", 0) \
     DECLARE(UInt64, write_through_distributed_cache_buffer_size, 0, R"(
-Only has an effect in ClickHouse Cloud. Set buffer size for write-through distributed cache. If 0, will use buffer size which would have been used if there was not distributed cache.
+Only has an effect in ClickHouse Cloud. The maximum size of the buffer which is written to distributed cache servers, per write buffer. It is independent of the buffer which is written to the object storage: that one keeps growing towards the upload part size. If 0, `DBMS_DEFAULT_BUFFER_SIZE` (1 MiB) is used. The buffer starts at `adaptive_write_buffer_initial_size` and grows up to this size only as the stream is written, so that a part does not allocate it for every stream it writes.
 )", 0) \
     DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
 Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
@@ -8323,6 +8366,11 @@ Use Iceberg partition pruning for Iceberg tables
     DECLARE(Bool, use_iceberg_manifest_list_partition_pruning, true, R"(
 Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
 )", 0) \
+    DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
+If enabled and the `schema` key of an Iceberg manifest file header carries a schema that differs from the schema already registered for the same schema-id from metadata.json, the metadata.json schema is used and the manifest header copy is ignored with a warning. If disabled, such a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
+
+The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
+)", 0) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
@@ -8349,7 +8397,7 @@ Replace external dictionary sources to Null on restore. Useful for testing purpo
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
 )", 0, enable_parallel_replicas) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
-Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_analyzer = 1`, `enable_parallel_replicas != 0`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`.
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_parallel_replicas != 0`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
@@ -8511,8 +8559,10 @@ Allow database engine `DataLakeCatalog` with `catalog_type = 'glue'`
 Cloud default value: `1`.
 )", BETA, allow_experimental_database_glue_catalog) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
-Allow the analyzer.
-)", IMPORTANT, enable_analyzer) \
+Obsolete since v26.9: the analyzer cannot be disabled anymore.
+
+The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 the old query analysis was deprecated and this setting was frozen at its only supported value, `1`: an attempt to set it to `0` is rejected, and the `compatibility` setting no longer reverts it. Remove `enable_analyzer = 0` from queries, session settings, settings profiles and client configurations. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
+)", IMPORTANT | SettingsTierType::OBSOLETE, enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
 )", 0) \
@@ -8520,7 +8570,7 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
     )", 0) \
     DECLARE(Bool, analyzer_compatibility_allow_non_aggregate_in_having, false, R"(
-When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the old analyzer (`enable_analyzer = 0`). Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy `PredicateExpressionsOptimizer` behavior. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
+When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the query analysis that ClickHouse used before v24.3. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy `PredicateExpressionsOptimizer` behavior. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
@@ -8544,8 +8594,6 @@ This makes outer queries that reference such columns by their qualified names wo
 ```sql
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
-
-Takes effect only when the analyzer is enabled (`enable_analyzer = 1`).
 )", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
@@ -8658,7 +8706,7 @@ Enables a two-stage approximate vector search without index (brute force scan) o
 2. rescore the found vectors against original, full-precision vectors.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
@@ -8764,14 +8812,26 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
     DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
-    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
+    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 512_MiB, R"(
 Max bytes of iceberg parquet data file on insert operation.
+
+The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
+see https://iceberg.apache.org/docs/1.5.2/configuration/. Note that ClickHouse compares the limit against the
+uncompressed size of the data written into the file so far, while the Iceberg property targets the size of the
+resulting file, and that `iceberg_insert_max_rows_in_data_file` caps the file independently of its size.
 )", 0) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum so that compaction merges eligible files into as few output files as possible. Keeping this above the size compaction can actually produce would make every output file stay below `iceberg_data_file_size_lower_threshold_compaction` and be re-selected forever.
+Max rows of an iceberg parquet data file produced by compaction. Defaults to the maximum, so the size limit
+`iceberg_compaction_max_bytes_in_data_file` alone decides how much data goes into an output file, the same way
+Iceberg has no row-count counterpart of `write.target-file-size-bytes`.
 )", 0) \
-    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, std::numeric_limits<UInt64>::max(), R"(
-Max bytes of an iceberg parquet data file produced by compaction. Defaults to the maximum so that compaction merges eligible files into as few output files as possible.
+    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
+Max bytes of an iceberg parquet data file produced by compaction.
+
+The default mirrors the documented default of the Iceberg table property `write.target-file-size-bytes` (512 MiB),
+see https://iceberg.apache.org/docs/1.5.2/configuration/. Keep it above
+`iceberg_data_file_size_lower_threshold_compaction`, otherwise every output file stays below the lower threshold
+and is selected for compaction again.
 )", 0) \
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
@@ -8958,6 +9018,13 @@ Use hash tables that store the join keys alone, without a reference to a right r
     DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
 Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_json_lazy_type_hints, false, R"(
+Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
+
+With this setting enabled, `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` that only adds or changes
+type hints is a metadata-only operation: the type hints are applied at query time for existing parts and
+materialized during inserts and background merges instead of rewriting the historical data.
+)", BETA, allow_experimental_json_lazy_type_hints) \
     DECLARE(Bool, enable_hash_join_row_store, true, R"(
 Enable transforming the payload of a hash join into a row-major layout.
 )", 0) \
@@ -9083,9 +9150,6 @@ The maximum number of rows in the right table to determine whether to rerange th
     DECLARE_WITH_ALIAS(Bool, allow_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
 )", EXPERIMENTAL, allow_experimental_join_right_table_sorting) \
-    DECLARE_WITH_ALIAS(Bool, enable_json_lazy_type_hints, false, R"(
-Enable lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
-)", EXPERIMENTAL, allow_experimental_json_lazy_type_hints) \
     DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
 If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
 Set to false to force the old full-mutation behavior.
@@ -9253,10 +9317,13 @@ Allow to clean up old data files during Iceberg compaction.
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 30, R"(
+    DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 100, R"(
 Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
 If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
 Requires allow_experimental_iceberg_compaction to be enabled.
+
+The default mirrors the documented default of the Iceberg table property `commit.manifest.min-count-to-merge` (100),
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_iceberg_remove_orphan_files, false, R"(
 Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
@@ -9279,7 +9346,6 @@ Make distributed query plan.
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
-- `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
 )", PRIVATE_PREVIEW) \

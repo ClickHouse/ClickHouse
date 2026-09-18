@@ -1785,6 +1785,7 @@ public:
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
+    bool hasSystemLogs() const;
 
     /// Call after initialization before using trace collector.
     void createTraceCollector();
@@ -2207,6 +2208,7 @@ public:
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
+    void reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;
