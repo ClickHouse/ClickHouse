@@ -41,7 +41,6 @@ PromQLRangeSumByStep::PromQLRangeSumByStep(
     AggregateFunctionPtr sum_function_,
     Strings labels_to_keep_,
     size_t max_output_groups_,
-    SeriesDictionaryReadiness dictionary_readiness_,
     bool parallel_processing_requested_)
     : ITransformingStep(input_header_, PromQLRangeSumByTransform::transformHeader(sum_function_), getTraits())
     , collector(std::move(collector_))
@@ -49,7 +48,6 @@ PromQLRangeSumByStep::PromQLRangeSumByStep(
     , sum_function(std::move(sum_function_))
     , labels_to_keep(std::move(labels_to_keep_))
     , max_output_groups(max_output_groups_)
-    , dictionary_readiness(dictionary_readiness_)
     , parallel_processing_requested(parallel_processing_requested_)
 {
 }
@@ -70,7 +68,6 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
              sum_function_ptr = sum_function,
              labels = labels_to_keep,
              group_limit = max_output_groups,
-             readiness = dictionary_readiness,
              full_group_guard](const SharedHeader & header)
             {
                 return std::make_shared<PromQLRangeSumByTransform>(
@@ -80,7 +77,6 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
                     sum_function_ptr,
                     labels,
                     group_limit,
-                    readiness,
                     full_group_guard);
             });
 
@@ -123,11 +119,10 @@ void PromQLRangeSumByStep::transformPipeline(QueryPipelineBuilder & pipeline, co
          rate_function_ptr = rate_function,
          sum_function_ptr = sum_function,
          labels = labels_to_keep,
-         group_limit = max_output_groups,
-         readiness = dictionary_readiness](const SharedHeader & header)
+         group_limit = max_output_groups](const SharedHeader & header)
         {
             return std::make_shared<PromQLRangeSumByTransform>(
-                header, collector_ptr, rate_function_ptr, sum_function_ptr, labels, group_limit, readiness);
+                header, collector_ptr, rate_function_ptr, sum_function_ptr, labels, group_limit);
         });
 }
 

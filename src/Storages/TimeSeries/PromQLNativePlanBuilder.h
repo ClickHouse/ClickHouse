@@ -13,6 +13,13 @@ namespace DB
 class PrometheusQueryTree;
 class QueryPlan;
 
+/// Checks whether an exact range-sum subtree and every samples target which the
+/// selector may choose satisfy the native `VECTOR_GRID` contract.
+bool canBuildPromQLNativeVectorGridPlan(
+    const PrometheusQueryTree & promql_query,
+    const PrometheusQueryEvaluationSettings & evaluation_settings,
+    ContextPtr context);
+
 /// Builds the native execution plan for a supported PromQL expression.
 /// Returns false without changing `query_plan` when the expression or storage layout is unsupported.
 bool tryBuildPromQLNativePlan(

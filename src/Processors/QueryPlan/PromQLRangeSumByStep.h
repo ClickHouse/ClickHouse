@@ -13,7 +13,6 @@ class PromQLRangeSumByStep final : public ITransformingStep
 {
 public:
     using CollectorPtr = PromQLRangeSumByTransform::CollectorPtr;
-    using SeriesDictionaryReadiness = PromQLRangeSumByTransform::SeriesDictionaryReadiness;
 
     PromQLRangeSumByStep(
         SharedHeader input_header_,
@@ -22,7 +21,6 @@ public:
         AggregateFunctionPtr sum_function_,
         Strings labels_to_keep_,
         size_t max_output_groups_,
-        SeriesDictionaryReadiness dictionary_readiness_ = SeriesDictionaryReadiness::PublishedNativeDictionary,
         bool parallel_processing_requested_ = false);
 
     String getName() const override { return "PromQLRangeSumBy"; }
@@ -42,7 +40,6 @@ private:
     AggregateFunctionPtr sum_function;
     Strings labels_to_keep;
     size_t max_output_groups;
-    SeriesDictionaryReadiness dictionary_readiness;
     bool parallel_processing_requested;
     bool parallel_processing_enabled = false;
 };

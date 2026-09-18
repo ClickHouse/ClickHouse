@@ -41,7 +41,6 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     AggregateFunctionPtr sum_function_,
     Strings labels_to_keep_,
     size_t max_output_groups_,
-    SeriesDictionaryReadiness dictionary_readiness_,
     FullGroupGuardPtr full_group_guard_)
     : IAccumulatingTransform(input_header, transformHeader(sum_function_))
     , collector(std::move(collector_))
@@ -49,7 +48,6 @@ PromQLRangeSumByTransform::PromQLRangeSumByTransform(
     , sum_function(std::move(sum_function_))
     , labels_to_keep(std::move(labels_to_keep_))
     , max_output_groups(max_output_groups_)
-    , dictionary_readiness(dictionary_readiness_)
     , full_group_guard(std::move(full_group_guard_))
     , rate_place(rate_function ? rate_function->sizeOfData() : 0, rate_function ? rate_function->alignOfData() : 1)
 {
@@ -102,12 +100,6 @@ PromQLRangeSumByTransform::~PromQLRangeSumByTransform()
 
 void PromQLRangeSumByTransform::consume(Chunk chunk)
 {
-    if (dictionary_readiness == SeriesDictionaryReadiness::PublishedNativeDictionary
-        && !collector->isNativeSeriesDictionaryBuilt())
-        throw Exception(
-            ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-            "PromQL native range sum cannot read samples before the series dictionary is published");
-
     const auto & columns = chunk.getColumns();
     const auto & id_column = *columns[id_position];
     const auto * time_series_column = columns[time_series_position].get();

@@ -145,7 +145,6 @@ bool tryBuildPromQLRangeSumByPlan(
         sum_function,
         std::move(range_sum_query.labels_to_keep),
         max_output_groups,
-        PromQLRangeSumByStep::SeriesDictionaryReadiness::SelectorSetDependency,
         context->getSettingsRef()[Setting::enable_promql_native_parallel_processing]));
 
     return true;
@@ -177,6 +176,37 @@ void convertToTargetHeader(
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(convert_actions)));
 }
 
+}
+
+bool canBuildPromQLNativeVectorGridPlan(
+    const PrometheusQueryTree & promql_query,
+    const PrometheusQueryEvaluationSettings & evaluation_settings,
+    ContextPtr context)
+{
+    if (!extractPromQLRangeSumByQuery(
+            promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE)
+        || !hasCompatibleEvaluationSettings(evaluation_settings))
+        return false;
+
+    auto time_series_storage = storagePtrToTimeSeries(
+        DatabaseCatalog::instance().getTable(evaluation_settings.time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+
+    const auto can_read_target_in_order = [&](ViewTarget::Kind target_kind)
+    {
+        auto target = time_series_storage->tryGetTargetTable(target_kind, context);
+        if (!target)
+            return target_kind == ViewTarget::RecentSamples;
+        auto target_metadata = target->getInMemoryMetadataPtr(context, false);
+        return StorageTimeSeriesSelector::canReadSamplesInOrder(target, target_metadata);
+    };
+
+    /// A recent-samples read can cross its TTL admission boundary between
+    /// fragment admission and pipeline construction. Require both possible
+    /// targets to preserve `(id, bucket)` so a valid query always falls back
+    /// to SQL before the external native fragment is installed.
+    return can_read_target_in_order(ViewTarget::Samples)
+        && can_read_target_in_order(ViewTarget::RecentSamples);
 }
 
 bool tryBuildPromQLNativePlan(
@@ -285,10 +315,12 @@ bool tryBuildPromQLNativeVectorGridPlan(
     const PrometheusQueryEvaluationSettings & evaluation_settings,
     size_t max_output_groups)
 {
+    if (!canBuildPromQLNativeVectorGridPlan(promql_query, evaluation_settings, context))
+        return false;
+
     auto native_query = extractPromQLRangeSumByQuery(
         promql_query, evaluation_settings.mode == PrometheusQueryEvaluationMode::QUERY_RANGE);
-    if (!native_query || !hasCompatibleEvaluationSettings(evaluation_settings))
-        return false;
+    chassert(native_query);
 
     QueryPlan native_plan;
     if (!tryBuildPromQLRangeSumByPlan(

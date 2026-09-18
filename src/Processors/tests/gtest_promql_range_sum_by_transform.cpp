@@ -159,7 +159,7 @@ TagsPtr makeTags(String namespace_value, String series)
     return tags;
 }
 
-std::shared_ptr<Collector> makeCollector()
+std::shared_ptr<Collector> makeCollector(bool duplicate_full_tags = false)
 {
     auto collector = std::make_shared<Collector>();
     auto ids = ColumnUInt64::create();
@@ -169,25 +169,9 @@ std::shared_ptr<Collector> makeCollector()
 
     VectorWithMemoryTracking<TagsPtr> tags;
     tags.emplace_back(makeTags("a", "one"));
-    tags.emplace_back(makeTags("a", "two"));
+    tags.emplace_back(duplicate_full_tags ? makeTags("a", "one") : makeTags("a", "two"));
     tags.emplace_back(makeTags("b", "three"));
 
-    collector->startNativeSeriesDictionaryBuild();
-    collector->storeTagsForNativeSeriesDictionary(std::move(ids), tags);
-    collector->finishNativeSeriesDictionaryBuild();
-    return collector;
-}
-
-std::shared_ptr<Collector> makeStandardCollector(bool duplicate_full_tags = false)
-{
-    auto collector = std::make_shared<Collector>();
-    auto ids = ColumnUInt64::create();
-    ids->insertValue(1);
-    ids->insertValue(2);
-
-    VectorWithMemoryTracking<TagsPtr> tags;
-    tags.emplace_back(makeTags("a", "one"));
-    tags.emplace_back(duplicate_full_tags ? makeTags("a", "one") : makeTags("a", "two"));
     collector->storeTags(std::move(ids), tags);
     return collector;
 }
@@ -215,8 +199,6 @@ QueryPipeline makePipeline(
     const AggregateFunctionPtr & sum_function,
     Strings labels_to_keep,
     size_t max_output_groups = 1024,
-    PromQLRangeSumByTransform::SeriesDictionaryReadiness dictionary_readiness
-        = PromQLRangeSumByTransform::SeriesDictionaryReadiness::PublishedNativeDictionary,
     PromQLRangeSumByTransform::FullGroupGuardPtr full_group_guard = nullptr)
 {
     auto source = std::make_shared<ChunksSource>(header, std::move(chunks));
@@ -226,7 +208,6 @@ QueryPipeline makePipeline(
         sum_function,
         std::move(labels_to_keep),
         max_output_groups,
-        dictionary_readiness,
         std::move(full_group_guard));
     Pipe pipe(source);
     pipe.addTransform(transform);
@@ -449,22 +430,6 @@ TEST(PromQLRangeSumByTransform, RejectsDecreasingIdentifiers)
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY);
 }
 
-TEST(PromQLRangeSumByTransform, RejectsSamplesBeforeDictionaryPublication)
-{
-    const auto samples_type = makeSamplesType();
-    const auto header = makeInputHeader(samples_type);
-    const auto collector = std::make_shared<Collector>();
-    const auto rate_function = makeRateFunction(samples_type);
-    const auto sum_function = makeSumFunction(rate_function);
-
-    Chunks chunks;
-    chunks.emplace_back(makeSamplesChunk(samples_type, {1}, {{{0, 0.0}, {10, 10.0}}}));
-    auto pipeline = makePipeline(header, std::move(chunks), collector, rate_function, sum_function, Strings{"namespace"});
-    PullingPipelineExecutor executor(pipeline);
-    Chunk output;
-    expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY);
-}
-
 TEST(PromQLRangeSumByTransform, EnforcesOutputGroupLimit)
 {
     const auto samples_type = makeSamplesType();
@@ -482,11 +447,11 @@ TEST(PromQLRangeSumByTransform, EnforcesOutputGroupLimit)
     expectExceptionCode([&] { executor.pull(output); }, ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
 }
 
-TEST(PromQLRangeSumByTransform, UsesSelectorSetDependencyCollector)
+TEST(PromQLRangeSumByTransform, UsesPopulatedTagsCollector)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
-    const auto collector = makeStandardCollector();
+    const auto collector = makeCollector();
     const auto rate_function = makeRateFunction(samples_type);
     const auto sum_function = makeSumFunction(rate_function);
 
@@ -502,8 +467,7 @@ TEST(PromQLRangeSumByTransform, UsesSelectorSetDependencyCollector)
         rate_function,
         sum_function,
         Strings{"namespace"},
-        1024,
-        PromQLRangeSumByTransform::SeriesDictionaryReadiness::SelectorSetDependency);
+        1024);
 
     PullingPipelineExecutor executor(pipeline);
     Chunk output;
@@ -516,7 +480,7 @@ TEST(PromQLRangeSumByTransform, RejectsDifferentIdentifiersWithSameFullTags)
 {
     const auto samples_type = makeSamplesType();
     const auto header = makeInputHeader(samples_type);
-    const auto collector = makeStandardCollector(/*duplicate_full_tags=*/true);
+    const auto collector = makeCollector(/*duplicate_full_tags=*/true);
     const auto rate_function = makeRateFunction(samples_type);
     const auto sum_function = makeSumFunction(rate_function);
 
@@ -532,8 +496,7 @@ TEST(PromQLRangeSumByTransform, RejectsDifferentIdentifiersWithSameFullTags)
         rate_function,
         sum_function,
         Strings{"namespace"},
-        1024,
-        PromQLRangeSumByTransform::SeriesDictionaryReadiness::SelectorSetDependency);
+        1024);
 
     PullingPipelineExecutor executor(pipeline);
     Chunk output;
@@ -697,7 +660,6 @@ TEST(PromQLRangeSumByTransform, RejectsSameFullTagsAcrossLanesWithSharedGuard)
         sum_function,
         Strings{"namespace"},
         1024,
-        PromQLRangeSumByTransform::SeriesDictionaryReadiness::PublishedNativeDictionary,
         full_group_guard);
     PullingPipelineExecutor first_executor(first_lane);
     Chunk first_output;
@@ -714,7 +676,6 @@ TEST(PromQLRangeSumByTransform, RejectsSameFullTagsAcrossLanesWithSharedGuard)
         sum_function,
         Strings{"namespace"},
         1024,
-        PromQLRangeSumByTransform::SeriesDictionaryReadiness::PublishedNativeDictionary,
         full_group_guard);
     PullingPipelineExecutor second_executor(second_lane);
     Chunk second_output;

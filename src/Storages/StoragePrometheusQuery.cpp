@@ -372,22 +372,29 @@ void StoragePrometheusQuery::readImpl(
         if (fragment_node)
         {
             auto fragment_query = clonePromQLSubtree(fragment_node, config.promql_query->getTimestampScale());
-            String fragment_name = "__promql_native_fragment_" + toString(UUIDHelpers::generateV4());
-            std::ranges::replace(fragment_name, '-', '_');
+            if (canBuildPromQLNativeVectorGridPlan(*fragment_query, config.evaluation_settings, context))
+            {
+                String fragment_name = "__promql_native_fragment_" + toString(UUIDHelpers::generateV4());
+                std::ranges::replace(fragment_name, '-', '_');
 
-            TemporaryTableHolder fragment_holder(
-                query_context,
-                [fragment_query, evaluation_settings = config.evaluation_settings,
-                 max_output_groups = context->getSettingsRef()[Setting::max_promql_native_output_groups]](const StorageID & table_id)
-                {
-                    return std::make_shared<StoragePromQLNativeFragment>(
-                        table_id, fragment_query, evaluation_settings, max_output_groups);
-                });
-            query_context->addExternalTable(fragment_name, std::move(fragment_holder));
-            native_fragment = PrometheusQueryToSQL::NativeFragmentDescription{
-                .node = fragment_node,
-                .table_name = std::move(fragment_name),
-            };
+                TemporaryTableHolder fragment_holder(
+                    query_context,
+                    [fragment_query, evaluation_settings = config.evaluation_settings,
+                     max_output_groups = context->getSettingsRef()[Setting::max_promql_native_output_groups]](const StorageID & table_id)
+                    {
+                        return std::make_shared<StoragePromQLNativeFragment>(
+                            table_id, fragment_query, evaluation_settings, max_output_groups);
+                    });
+                query_context->addExternalTable(fragment_name, std::move(fragment_holder));
+                native_fragment = PrometheusQueryToSQL::NativeFragmentDescription{
+                    .node = fragment_node,
+                    .table_name = std::move(fragment_name),
+                };
+            }
+            else
+            {
+                LOG_INFO(log, "The PromQL fragment is not compatible with the native VECTOR_GRID contract; using the SQL plan");
+            }
         }
     }
 

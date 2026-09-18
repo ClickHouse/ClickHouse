@@ -44,16 +44,6 @@ public:
 
     using FullGroupGuardPtr = std::shared_ptr<FullGroupGuard>;
 
-    enum class SeriesDictionaryReadiness
-    {
-        /// A dedicated tags pipeline published a complete native dictionary.
-        PublishedNativeDictionary,
-
-        /// The selector's `id IN (tags subquery)` dependency populated the ordinary collector.
-        /// Missing identifiers still fail closed in `getGroupByID`.
-        SelectorSetDependency,
-    };
-
     PromQLRangeSumByTransform(
         SharedHeader input_header,
         CollectorPtr collector_,
@@ -61,7 +51,6 @@ public:
         AggregateFunctionPtr sum_function_,
         Strings labels_to_keep_,
         size_t max_output_groups_,
-        SeriesDictionaryReadiness dictionary_readiness_ = SeriesDictionaryReadiness::PublishedNativeDictionary,
         /// Optional query-wide duplicate full-group check shared by parallel lanes.
         FullGroupGuardPtr full_group_guard_ = nullptr);
 
@@ -87,7 +76,6 @@ private:
     AggregateFunctionPtr sum_function;
     Strings labels_to_keep;
     const size_t max_output_groups;
-    const SeriesDictionaryReadiness dictionary_readiness;
     const FullGroupGuardPtr full_group_guard;
 
     size_t id_position = 0;
