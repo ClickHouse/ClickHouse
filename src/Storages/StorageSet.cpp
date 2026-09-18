@@ -352,7 +352,7 @@ void StorageSetOrJoinBase::finishInterruptedMutation()
     if (!disk->existsFile(path + mutation_commit_file_name))
         return;
 
-    UInt64 mutation_id;
+    UInt64 mutation_id = 0;
     {
         auto commit_buf = disk->readFile(path + mutation_commit_file_name, getReadSettings());
         readIntText(mutation_id, *commit_buf);
