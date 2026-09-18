@@ -1,5 +1,4 @@
--- Disabled by default
--- Enabled after setting
+-- Registered
 aiGenerate
 -- aiGenerate: too few arguments
 -- aiGenerate: too many arguments
@@ -15,7 +14,7 @@ aiGenerate
 0
 -- Nonexistent named collection
 -- aiGenerate return type
-result	String
+String
 -- NULL input returns NULL
 1
 -- Empty string input accepted
@@ -48,13 +47,12 @@ ai_function_embedding_max_batch_size	100
 ai_function_max_api_calls_per_query	1000
 ai_function_max_input_tokens_per_query	1000000
 ai_function_max_output_tokens_per_query	500000
-ai_function_max_retries	0
+ai_function_max_retries	1
 ai_function_request_timeout_sec	60
 ai_function_retry_initial_delay_ms	1000
 ai_function_text_default_credentials	
 ai_function_throw_on_error	1
 ai_function_throw_on_quota_exceeded	1
-allow_experimental_ai_functions	0
 -- aiClassify: registered
 aiClassify
 -- aiClassify: too few arguments
@@ -64,10 +62,26 @@ aiClassify
 -- aiClassify: wrong type for categories (Array of non-String)
 -- aiClassify: empty categories array
 -- aiClassify: return type
-result	String
+String
 -- aiClassify: empty input executes
 0
 -- aiClassify: with temperature
+0
+-- aiFilter: registered
+aiFilter
+-- aiFilter: too few arguments
+-- aiFilter: too many arguments
+-- aiFilter: non-constant condition
+-- aiFilter: wrong type for condition
+-- aiFilter: empty condition
+-- aiFilter: empty condition on empty input
+-- aiFilter: return type
+result	UInt8
+-- aiFilter: Nullable return type
+result	Nullable(UInt8)
+-- aiFilter: empty input executes
+0
+-- aiFilter: with temperature
 0
 -- aiExtract: registered
 aiExtract
@@ -75,7 +89,7 @@ aiExtract
 -- aiExtract: too many arguments
 -- aiExtract: non-constant instruction
 -- aiExtract: return type
-result	String
+String
 -- aiExtract: JSON schema mode accepted
 0
 -- aiExtract: malformed JSON schema
@@ -91,8 +105,22 @@ aiTranslate
 -- aiTranslate: non-constant target language
 -- aiTranslate: empty target language
 -- aiTranslate: return type
-result	String
+String
 -- aiTranslate: with instructions and temperature
+0
+-- aiRedact: registered
+aiRedact
+-- aiRedact: too few arguments
+-- aiRedact: too many arguments
+-- aiRedact: non-constant categories
+-- aiRedact: wrong type for categories (not array)
+-- aiRedact: wrong type for categories (Array of non-String)
+-- aiRedact: empty categories array accepted (default categories)
+0
+0
+-- aiRedact: return type
+String
+-- aiRedact: with replacement and temperature
 0
 -- aiEmbed: registered
 aiEmbed
@@ -108,9 +136,9 @@ aiEmbed
 -- aiEmbed: model supplied as a positional argument resolves
 0
 -- aiEmbed: return type
-result	Array(Float32)
+Array(Float32)
 -- aiEmbed: return type with dimensions
-result	Array(Float32)
+Array(Float32)
 -- aiEmbed: empty input executes
 0
 -- aiEmbed: empty input with dimensions
@@ -120,7 +148,7 @@ result	Array(Float32)
 -- aiEmbed: batch size setting default
 100
 -- aiEmbed: Nullable(String) input return type
-result	Array(Float32)
+Array(Float32)
 -- aiEmbed: NULL input → []
 0
 -- aiSimilarity: registered
@@ -149,9 +177,13 @@ result	Nullable(Float32)
 1	0
 -- aiClassify: DEFAULT survives INSERT (no exception)
 1	0
+-- aiFilter: DEFAULT survives INSERT (no exception)
+1	0
 -- aiExtract: DEFAULT survives INSERT (no exception)
 1	0
 -- aiTranslate: DEFAULT survives INSERT (no exception)
+1	0
+-- aiRedact: DEFAULT survives INSERT (no exception)
 1	0
 -- aiSimilarity: NULL/empty operands and failed embeddings score NULL
 1
@@ -159,4 +191,3 @@ result	Nullable(Float32)
 1
 -- aiSimilarity: DEFAULT survives INSERT (no exception)
 1	1
--- Re-disabled blocks function

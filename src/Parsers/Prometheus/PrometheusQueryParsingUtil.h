@@ -46,7 +46,8 @@ struct PrometheusQueryParsingUtil
                                   UInt32 timestamp_scale,
                                   TimestampType & res_timestamp,
                                   String * error_message = nullptr,
-                                  size_t * error_pos = nullptr);
+                                  size_t * error_pos = nullptr,
+                                  bool allow_octal_literals = false);
 
     /// Parses a timestamp which can be either an integer or floating-point number of seconds,
     /// or a hexadecimal number of seconds, or a duration with time units.
@@ -55,7 +56,8 @@ struct PrometheusQueryParsingUtil
                                  UInt32 timestamp_scale,
                                  DurationType & res_duration,
                                  String * error_message = nullptr,
-                                 size_t * error_pos = nullptr);
+                                 size_t * error_pos = nullptr,
+                                 bool allow_octal_literals = false);
 
     /// Parses the range in a range selector, for example for "[1h30m]" the function parses "1h30m".
     static bool tryParseSelectorRange(std::string_view input,

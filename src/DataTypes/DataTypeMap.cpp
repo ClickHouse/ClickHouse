@@ -184,7 +184,7 @@ void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) co
 /// creating a `SerializationMapKeyValue` that knows how to read only the relevant bucket,
 /// and optionally pre-extracting the values from an existing column.
 /// The subcolumn name must start with "key_" followed by the text-serialized key value.
-std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
     /// Only subcolumns of the form "key_<serialized_key>" are supported.
     if (!subcolumn_name.starts_with(KEY_SUBCOLUMN_PREFIX))
@@ -218,8 +218,11 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
         map_serialization.getMapSerializationVersion(),
         key_column->getPtr(),
         nested);
-    std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(key_value_serialization);
-    res->type = value_type;
+    auto res = std::make_unique<SubcolumnInfo>();
+    res->data = SubstreamData(key_value_serialization).withType(value_type);
+
+    res->substreams_path.emplace_back(ISerialization::Substream::MapKeyValue);
+    res->substreams_path.back().name_of_substream = subcolumn_name;
 
     /// If a column is available, pre-extract the values for the requested key.
     if (data.column)
@@ -227,7 +230,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
         const auto & column_map = assert_cast<const ColumnMap &>(*data.column);
         auto value_column = value_type->createColumn();
         extractKeyValueFromMap(*column_map.getNestedColumnPtr(), *key_column->getPtr(), *value_column, 0, data.column->size());
-        res->column = std::move(value_column);
+        res->data.column = std::move(value_column);
     }
 
     return res;
@@ -289,7 +292,7 @@ SELECT m['key2'] FROM tab;
 ```
 
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
-To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
+To check whether a key exists in a map, you can use function [mapContains](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey).
 
 ```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
@@ -306,7 +309,7 @@ SELECT m['key1'] FROM tab;
 
 ## Converting Tuple to Map {#converting-tuple-to-map}
 
-Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#CAST):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST):
 
 **Example**
 
@@ -391,11 +394,11 @@ The serialization layer computes which bucket the requested key belongs to and r
 
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
 
-:::note
+<Note>
 Since version 26.8, `with_buckets` serialization preserves the original key order: an additional `bucket_indexes` substream records which bucket every key-value pair was taken from, so the map is reassembled in the order it was written instead of in bucket order.
 
 Parts written by earlier versions do not contain that substream. Their maps are still reassembled in bucket order, and the original key order cannot be restored for them because it was never stored on disk — rewriting such a part (by a merge or `OPTIMIZE FINAL`) freezes the bucket order it currently has instead of recovering the insertion order. With `basic` serialization, the key order from inserted maps has always been preserved.
-:::
+</Note>
 
 The bucket count can vary between parts. When parts with different bucket counts are merged, the new part's bucket count is recalculated from the merged statistics. Parts with `basic` and `with_buckets` serialization can coexist in the same table and are merged transparently.
 
@@ -436,7 +439,7 @@ If bucketed `Map` serialization does not fit your use case, there are two altern
 
 #### Using the JSON Data Type {#using-the-json-data-type}
 
-The [JSON](/sql-reference/data-types/newjson) data type stores each frequent path as a separate dynamic subcolumn. Paths that exceed the `max_dynamic_paths` limit go into a [shared data structure](/sql-reference/data-types/newjson#shared-data-structure), which can use `advanced` serialization for optimized single-path reads. See the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better) for a detailed overview of the `advanced` serialization.
+The [JSON](/reference/data-types/newjson) data type stores each frequent path as a separate dynamic subcolumn. Paths that exceed the `max_dynamic_paths` limit go into a [shared data structure](/reference/data-types/newjson#shared-data-structure), which can use `advanced` serialization for optimized single-path reads. See the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better) for a detailed overview of the `advanced` serialization.
 
 | Aspect             | `Map` with buckets                                                                             | `JSON`                                                                                                                                                           |
 |--------------------|------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -477,8 +480,8 @@ Manual sharding is beneficial when vertical merges are important for reducing me
 
 **See Also**
 
-- [map()](/sql-reference/functions/tuple-map-functions#map) function
-- [CAST()](/sql-reference/functions/type-conversion-functions#CAST) function
+- [map()](/reference/functions/regular-functions/tuple-map-functions#map) function
+- [CAST()](/reference/functions/regular-functions/type-conversion-functions#CAST) function
 - [-Map combinator for Map datatype](/reference/functions/aggregate-functions/combinators#-map)
 
 ## Related content {#related-content}

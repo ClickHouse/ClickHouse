@@ -877,11 +877,13 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
 {
     /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
     ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
-    ///      [, nats_url = 'nats://user:password@host:4222'], ...)
+    ///      [, nats_url = 'nats://user:password@host:4222']
+    ///      [, nats_server_list = 'nats://user:password@host:4222,...'], ...)
     /// The only positional argument the engine accepts is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
     /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
     /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
+    /// `nats_server_list` is hidden whole because each list entry can carry userinfo credentials.
     /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
@@ -1098,6 +1100,16 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
         /// PostgreSQL('host:port', 'database', 'user', 'password')
         findMySQLDatabaseSecretArguments();
     }
+    else if (engine_name == "Remote" || engine_name == "RemoteSecure")
+    {
+        /// Remote('addresses_expr', 'database', 'user', 'password')
+        /// RemoteSecure(...) - same as Remote(...)
+        /// The password is the last positional argument (or `password = ...` in the named-collection
+        /// form), exactly like the MySQL/PostgreSQL database engines. Note this differs from the
+        /// `Remote`/`RemoteSecure` *table* engine signature (which also has a table name), so the
+        /// database engine cannot reuse `findRemoteFunctionSecretArguments`.
+        findMySQLDatabaseSecretArguments();
+    }
     else if (engine_name == "S3")
     {
         /// S3('url', 'access_key_id', 'secret_access_key')
@@ -1110,6 +1122,11 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     else if (engine_name == "Backup")
     {
         findBackupDatabaseSecretArguments();
+    }
+    else if (engine_name == "URL")
+    {
+        /// URL('base_url')
+        findURLSecretArguments();
     }
 }
 

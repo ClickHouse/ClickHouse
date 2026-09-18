@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cstring>
 
+/// For `ZSTD_findDecompressedSize`, which `zstd.h` exposes only to static linkers.
+#define ZSTD_STATIC_LINKING_ONLY
 #include <zstd.h>
 #include <lz4frame.h>
 
@@ -24,6 +26,141 @@ namespace ErrorCodes
 
 namespace DB::ArrowIPC
 {
+
+namespace
+{
+/// Reads a little-endian unsigned of `Bytes` from `p`, which must hold that many bytes.
+template <size_t Bytes>
+UInt64 readLittleEndian(const char * p)
+{
+    UInt64 v = 0;
+    for (size_t i = 0; i < Bytes; ++i)
+        v |= static_cast<UInt64>(static_cast<unsigned char>(p[i])) << (8 * i);
+    return v;
+}
+
+/// The most the blocks of one LZ4 frame can expand to, without decompressing any of them: each
+/// block's output is capped both by the frame's maximum block size and by what its own stored bytes
+/// can encode, and those per-block caps summed bound the frame. `header_size` is where its blocks begin.
+UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size_t size, size_t header_size)
+{
+    /// `LZ4F_getBlockSize` maps these, but is declared only in the static-linking section of
+    /// `lz4frame.h`, which does not compile here.
+    UInt64 max_block_size = 0;
+    switch (info.blockSizeID)
+    {
+        case LZ4F_max64KB: max_block_size = 64 * 1024; break;
+        case LZ4F_max256KB: max_block_size = 256 * 1024; break;
+        case LZ4F_max1MB: max_block_size = 1024 * 1024; break;
+        case LZ4F_max4MB: max_block_size = 4 * 1024 * 1024; break;
+        /// The parsed header accepts no other value; bound any by the smallest block size regardless.
+        default: max_block_size = 64 * 1024; break;
+    }
+
+    static constexpr UInt32 UNCOMPRESSED_BLOCK_FLAG = 0x80000000;
+    static constexpr size_t BLOCK_HEADER_SIZE = 4;
+    static constexpr size_t CHECKSUM_SIZE = 4;
+    /// `block_size` is at most 4 MiB, so multiplying by this cannot wrap. UInt64 rather than size_t
+    /// so `std::min` below deduces one type from both arguments where the two spellings differ.
+    static constexpr UInt64 MAX_LZ4_BLOCK_EXPANSION = 255;
+
+    UInt64 bound = 0;
+    size_t pos = header_size;
+    while (true)
+    {
+        if (BLOCK_HEADER_SIZE > size - pos)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer ends inside an LZ4 block header");
+        const auto block_header = static_cast<UInt32>(readLittleEndian<BLOCK_HEADER_SIZE>(src + pos));
+        pos += BLOCK_HEADER_SIZE;
+        if (block_header == 0)
+            break;
+        const size_t block_size = block_header & ~UNCOMPRESSED_BLOCK_FLAG;
+        if (block_size > max_block_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer has an oversized LZ4 block");
+        if (block_size > size - pos)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer ends inside an LZ4 block");
+        pos += block_size;
+        if (info.blockChecksumFlag == LZ4F_blockChecksumEnabled)
+        {
+            if (CHECKSUM_SIZE > size - pos)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer ends inside an LZ4 block checksum");
+            pos += CHECKSUM_SIZE;
+        }
+        /// An uncompressed block is stored verbatim, so it expands to exactly its stored bytes.
+        if (block_header & UNCOMPRESSED_BLOCK_FLAG)
+        {
+            bound += block_size;
+            continue;
+        }
+        /// A compressed block cannot expand past what its own stored bytes can encode either.
+        bound += std::min(max_block_size, block_size * MAX_LZ4_BLOCK_EXPANSION);
+    }
+    if (info.contentChecksumFlag == LZ4F_contentChecksumEnabled)
+    {
+        if (CHECKSUM_SIZE > size - pos)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer ends inside an LZ4 content checksum");
+        pos += CHECKSUM_SIZE;
+    }
+    /// Decompression accepts exactly one frame and no trailing bytes, so reject them here rather than
+    /// bounding a payload that cannot decode and allocating for it first.
+    if (pos != size)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Compressed Arrow IPC buffer has {} bytes after its LZ4 frame", size - pos);
+    return bound;
+}
+}
+
+FrameContentBound frameContentBound(CompressionCodec codec, const char * src, size_t size)
+{
+    if (codec == CompressionCodec::Zstd)
+    {
+        /// Both calls walk every frame of the payload, as the decompression call does, so their result
+        /// stays comparable to the caller's prefix for concatenated and skippable-prefixed frames too.
+        const UInt64 declared = ZSTD_findDecompressedSize(src, size);
+        if (declared == ZSTD_CONTENTSIZE_ERROR)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
+        if (declared != ZSTD_CONTENTSIZE_UNKNOWN)
+            return FrameContentBound{declared, true};
+        /// A frame may omit its size, and then only its block structure bounds it.
+        const UInt64 bound = ZSTD_decompressBound(src, size);
+        if (bound == ZSTD_CONTENTSIZE_ERROR)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
+        return FrameContentBound{bound, false};
+    }
+
+    /// LZ4F_getFrameInfo consumes the header into the context, so the context must be fresh (it is
+    /// discarded here) and cannot be one that a later decompression pass reuses.
+    LZ4F_dctx * dctx = nullptr;
+    if (LZ4F_isError(LZ4F_createDecompressionContext(&dctx, LZ4F_getVersion())))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot create LZ4 decompression context");
+    LZ4F_frameInfo_t info;
+    size_t header_size = size;
+    const size_t ret = LZ4F_getFrameInfo(dctx, &info, src, &header_size);
+    LZ4F_freeDecompressionContext(dctx);
+    if (LZ4F_isError(ret))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid LZ4 frame: {}", LZ4F_getErrorName(ret));
+
+    /// A skippable frame carries no blocks and produces nothing, so it cannot expand at all.
+    if (info.frameType == LZ4F_skippableFrame)
+        return FrameContentBound{0, false};
+
+    const UInt64 bound = lz4BlockOutputBound(info, src, size, header_size);
+    /// `contentSize` reads 0 both when the field is absent and when it records zero, so a zero cannot
+    /// be treated as a size; the blocks are then all there is to go on.
+    if (info.contentSize == 0)
+        return FrameContentBound{bound, false};
+    /// A recorded size above what the blocks can produce describes no possible frame, and
+    /// decompression rejects it, so reject it here rather than allocating for either value first.
+    if (info.contentSize > bound)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Compressed Arrow IPC buffer's LZ4 frame declares {} uncompressed bytes but its blocks can "
+            "produce at most {}", info.contentSize, bound);
+    /// Decompression enforces a recorded size exactly, so a prefix differing from it at all is forged.
+    return FrameContentBound{info.contentSize, true};
+}
 
 Compressor::~Compressor()
 {

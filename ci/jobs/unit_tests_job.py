@@ -38,11 +38,53 @@ if __name__ == "__main__":
     )
     profraw_files = [f.strip() for f in profraw_files if f.strip()]
 
+    # All coverage bookkeeping stays inside this guard: only the instrumented
+    # job emits .profraw files and declares a coverage artifact; the sanitizer
+    # unit-test jobs emit none and must not touch JOB_CONFIG here.
     if profraw_files:
         # Merge profraw files into profdata
         print("Collecting and merging LLVM coverage files...")
         print(f"Found {len(profraw_files)} .profraw files")
 
+        # Name the profile after this job's own coverage artifact, so the
+        # aggregation can tell which shards arrived from the filenames alone.
+        # JOB_CONFIG has been through dump()/get() by the time a job body runs,
+        # so it is a plain dict here.
+        provides = (Info().job_config or {}).get("provides")
+        assert (
+            isinstance(provides, list)
+            and len(provides) == 1
+            and isinstance(provides[0], str)
+            and provides[0]
+        ), f"expected exactly one provided artifact name, got {provides!r}"
+        merged_file = f"./{provides[0]}.profdata"
+
+        # llvm-profdata truncates its -o target in place instead of replacing
+        # it, so a stale profile at the target name must be removed first.
+        if os.path.exists(merged_file):
+            print(f"Removing pre-existing {merged_file}")
+            os.unlink(merged_file)
+
+        # ERROR means the binary died before writing gtest.json, so the .profraw
+        # covers only part of the run; FAIL is a completed run and still publishes.
+        if R.is_error():
+            print(
+                "ERROR: the unit-test binary did not run to completion, so this "
+                "shard's coverage is incomplete; publishing no profile"
+            )
+            profraw_files = []
+
+        # A zero-length .profraw is silently accepted by llvm-profdata at every
+        # --failure-mode; treat it as an incomplete shard and publish no profile.
+        empty_files = [f for f in profraw_files if os.path.getsize(f) == 0]
+        if empty_files:
+            print(
+                f"ERROR: {len(empty_files)} .profraw files are empty, so this shard's "
+                f"coverage is incomplete; publishing no profile: {', '.join(empty_files)}"
+            )
+            profraw_files = []
+
+    if profraw_files:
         # Auto-detect available LLVM profdata tool
         llvm_profdata = None
         for ver in ["22", "21", "20", "19", "18", "17", "16", ""]:
@@ -56,21 +98,15 @@ if __name__ == "__main__":
         else:
             print(f"Using {llvm_profdata} to merge coverage files")
 
-            # Merge all profraw files to current directory
-            merged_file = "./unit-tests.profdata"
-            merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
+            # --failure-mode=any makes the merge all-or-nothing: on any invalid
+            # input it exits non-zero and writes no file, so the shard is simply
+            # absent (and the aggregate job reports SKIPPED with the shard name)
+            # instead of contributing a silently short profile.
+            merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=any {' '.join(profraw_files)} -o {merged_file} 2>&1"
             merge_output = Shell.get_output(merge_cmd, verbose=True)
+            if not os.path.exists(merged_file):
+                print(f"ERROR: coverage merge produced no profile:\n{merge_output}")
 
-            # Check for corrupted files in the output
-            corrupted_files = [
-                line
-                for line in merge_output.split("\n")
-                if "invalid instrumentation profile" in line
-                or "file header is corrupt" in line
-            ]
-            if corrupted_files:
-                print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
-                for corrupted in corrupted_files:
-                    print(f"  {corrupted}")
-
-    R.complete_job()
+    # Failing unit tests are still a complete coverage measurement, and the runner
+    # uploads `provides` artifacts on failure only when this flag is set.
+    R.complete_job(do_not_block_pipeline_on_failure="llvm_coverage" in job_name)

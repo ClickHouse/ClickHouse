@@ -72,7 +72,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   ### 認証
 
-  認証は初期化時にクライアントごとに設定します。サポートされている認証方式は 3 つあります。パスワード、アクセストークン、SSL クライアント証明書です。
+  認証は初期化フェーズでクライアントごとに設定されます。サポートされる認証方式は 3 種類あります：パスワード、アクセストークン、SSL クライアント証明書。
 
   パスワードによる認証を行うには、`setUsername(String)` および `setPassword(String)` を呼び出してユーザー名とパスワードを設定する必要があります。
 
@@ -104,7 +104,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   ```
 
   <Note>
-    SSL 認証は、本番環境ではトラブルシューティングが難しいことがあります。これは、SSL ライブラリが返すエラーの多くに十分な情報が含まれていないためです。たとえば、クライアント証明書と秘密鍵が一致していない場合、サーバーは接続を即座に切断します (HTTP の場合は、HTTP リクエストが一切送信されない接続開始段階で切断されるため、レスポンスも返されません) 。
+    SSL 認証は、本番環境ではトラブルシューティングが難しいことがあります。これは、SSL ライブラリが返すエラーの多くに十分な情報が含まれていないためです。たとえば、クライアント証明書と秘密鍵が一致していない場合、サーバーは接続を即座に切断します (HTTP の場合は、HTTP リクエストがまったく送信されない接続開始段階で切断されるため、レスポンスも返されません) 。
 
     証明書と秘密鍵の検証には、[openssl](https://docs.openssl.org/master/man1/openssl/) などのツールを使用してください。
 
@@ -117,7 +117,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   ## 設定
 
   すべての設定は、各値のスコープとコンテキストが明確になるように、インスタンスメソッド (別名: 設定メソッド) で定義されています。
-  主要な設定パラメーターは単一のスコープ (クライアントまたは操作) で定義され、互いに上書きされることはありません。
+  主要な設定パラメーターは、単一のスコープ (クライアントまたは操作) で定義され、互いに上書きしません。
 
   設定はクライアントの作成時に定義されます。`com.clickhouse.client.api.Client.Builder` を参照してください。
 
@@ -212,9 +212,9 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     <Tab title="サーバー設定">
       | Method                                          | Arguments                        | Description                                                                                                                                                   | Default   | Key                      |
       | ----------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------ |
-      | `serverSetting(String name, String value)`      | `name` - 設定名<br />`value` - 設定値  | 各クエリとともにサーバーに渡す設定を指定します。個々の操作の設定で上書きできます。[設定一覧](/ja/concepts/features/configuration/settings/settings-query-level)                                               | `none`    | `none`                   |
+      | `serverSetting(String name, String value)`      | `name` - 設定名<br />`value` - 設定値  | 各クエリの送信時にサーバーへ渡す設定を指定します。個別の操作設定で上書きできます。[設定一覧](/ja/concepts/features/configuration/settings/settings-query-level)                                               | `none`    | `none`                   |
       | `serverSetting(String name, Collection values)` | `name` - 設定名<br />`values` - 設定値 | 複数の値を持つ設定をサーバーに渡すよう指定します。たとえば [ロール](/ja/concepts/features/interfaces/http#setting-role-with-query-parameters) です。                                                | `none`    | `none`                   |
-      | `setOption("custom_settings_prefix", value)`    | `value` - プレフィックス文字列             | サーバーに渡すカスタム設定のプレフィックスを指定します。サーバー設定と一致している必要があります。[ClickHouse Docs](/ja/concepts/features/configuration/settings/settings-query-level#custom_settings) を参照してください。 | `custom_` | `custom_settings_prefix` |
+      | `setOption("custom_settings_prefix", value)`    | `value` - プレフィックス文字列             | サーバーに渡すカスタム設定のプレフィックスを指定します。サーバー設定と整合している必要があります。[ClickHouse Docs](/ja/concepts/features/configuration/settings/settings-query-level#custom_settings) を参照してください。 | `custom_` | `custom_settings_prefix` |
     </Tab>
 
     <Tab title="タイムゾーン">
@@ -262,7 +262,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   my-app-01/1.0 clickhouse-java-v2/0.9.6-SNAPSHOT (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
   ```
 
-  アプリケーションは、自身を識別するために独自の HTTP ヘッダー `User-Agent` を設定できます。ただし、`clickhouse-java-v2/0.9.6-SNAPSHOT` という文字列がヘッダーの末尾に追加されます。
+  アプリケーションは、自身を識別するために独自の HTTP ヘッダー `User-Agent` を設定できます。ただし、`clickhouse-java-v2/0.9.6-SNAPSHOT` の部分がヘッダーの末尾に追加されます。
 
   ### オペレーションの識別
 
@@ -444,7 +444,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **戻り値**
 
-  `InsertResponse` 型のFuture — 操作の結果およびサーバーサイドのメトリクスなどの追加情報。
+  `InsertResponse` 型の Future — 操作の結果およびサーバー側のメトリクスなどの追加情報。
 
   **例**
 
@@ -582,7 +582,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   `sqlQuery` をそのまま送信します。また、サーバーがSQL式をコンパイルできるように、クエリパラメータも送信します。
 
-  **シグネチャ**
+  **署名**
 
   ```java
   CompletableFuture<QueryResponse> query(String sqlQuery, Map<String, Object> queryParams, QuerySettings settings)
@@ -590,7 +590,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **パラメーター**
 
-  `sqlQuery` - プレースホルダー `{}` を含むSQLエクスプレッション。
+  `sqlQuery` - プレースホルダー `{}` を含む SQL 式。
 
   `queryParams` - サーバー上で SQL 式を完成させるための変数を格納するマップ。
 
@@ -670,18 +670,18 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **設定方法**
 
-  | メソッド                                              | 説明                                                                                                                          |
-  | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                      | 操作に割り当てるクエリ ID を設定します。                                                                                                      |
-  | `setFormat(ClickHouseFormat format)`              | レスポンスのフォーマットを設定します。完全な一覧は `RowBinaryWithNamesAndTypes` を参照してください。                                                           |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | サーバー上での操作の実行時間を設定します。読み取りタイムアウトには影響しません。                                                                                    |
-  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | レスポンスを送信する前にクエリが終了するまで待機するよう、サーバーに要求します。                                                                                    |
-  | `setUseServerTimeZone(Boolean useServerTimeZone)` | サーバーのタイムゾーン (クライアント設定を参照) を使用して、操作結果の日付/時刻型を解析します。既定値は `false` です。                                                          |
-  | `setUseTimeZone(String timeZone)`                 | サーバーに、時刻変換で `timeZone` を使用するよう要求します。[session&#95;timezone](/ja/reference/settings/session-settings#session_timezone)を参照してください。 |
-  | `serverSetting(String name, String value)`        | 操作に対する個別のサーバー設定を行います。                                                                                                       |
-  | `serverSetting(String name, Collection values)`   | 操作に対して、個別のサーバー設定に複数の値を設定します。コレクションの各項目は `String` 値である必要があります。                                                               |
-  | `setDBRoles(Collection dbRoles)`                  | 操作の実行前に設定するDBロールを指定します。コレクション内の要素は`String`値である必要があります。                                                                      |
-  | `setOption(String option, Object value)`          | 構成オプションを生の形式で設定します。これはサーバー設定ではありません。                                                                                        |
+  | メソッド                                              | 説明                                                                                                                                |
+  | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | 操作に割り当てるクエリ ID を設定します。                                                                                                            |
+  | `setFormat(ClickHouseFormat format)`              | レスポンスのフォーマットを設定します。完全な一覧は `RowBinaryWithNamesAndTypes` を参照してください。                                                                 |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | サーバー上での操作の実行時間を設定します。読み取りタイムアウトには影響しません。                                                                                          |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | レスポンスを送信する前にクエリが終了するまで待機するよう、サーバーに要求します。                                                                                          |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | サーバーのタイムゾーン (クライアント設定を参照) を使用して、操作結果の日付/時刻型を解析します。既定値は `false` です。                                                                |
+  | `setUseTimeZone(String timeZone)`                 | サーバーに、時刻変換で `timeZone` を使用するよう要求します。[session&#95;timezone](/ja/reference/settings/session-settings/other#session_timezone)を参照してください。 |
+  | `serverSetting(String name, String value)`        | 操作に対する個別のサーバー設定を行います。                                                                                                             |
+  | `serverSetting(String name, Collection values)`   | 操作に対して、個別のサーバー設定に複数の値を設定します。コレクションの各項目は `String` 値である必要があります。                                                                     |
+  | `setDBRoles(Collection dbRoles)`                  | 操作の実行前に設定する DB ロールを指定します。コレクションの項目は `String` 値である必要があります。                                                                         |
+  | `setOption(String option, Object value)`          | 構成オプションを生の形式で設定します。これはサーバー設定ではありません。                                                                                              |
 
   ### QueryResponse
 
@@ -790,7 +790,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **注意:** ストリーミング方式では、データがネットワークストリームから直接読み取られるため、読み取りが遅いとサーバーの書き込みタイムアウトが発生する可能性があります。十分な読み取り速度を確保してください。
 
-  ### Array の読み取り
+  ### 配列の読み取り
 
   **`ClickHouseBinaryFormatReader` のメソッド**
 

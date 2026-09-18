@@ -512,9 +512,9 @@ void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & facto
 {
     /// varSampStable documentation
     FunctionDocumentation::Description description_varSampStable = R"(
-Calculate the sample variance of a data set. Unlike [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
+Calculate the sample variance of a data set. Unlike [`varSamp`](/reference/functions/aggregate-functions/varSamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
 
-The sample variance is calculated using the same formula as [`varSamp`](/sql-reference/aggregate-functions/reference/varSamp):
+The sample variance is calculated using the same formula as [`varSamp`](/reference/functions/aggregate-functions/varSamp):
 
 $$
 \frac{\Sigma{(x - \bar{x})^2}}{n-1}
@@ -574,7 +574,7 @@ SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
     /// varPopStable documentation
     FunctionDocumentation::Description description_varPopStable = R"(
 Returns the population variance.
-Unlike [`varPop`](/sql-reference/aggregate-functions/reference/varPop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
+Unlike [`varPop`](/reference/functions/aggregate-functions/varPop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm.
 It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_varPopStable = R"(
@@ -724,7 +724,7 @@ $$
 
 <br/>
 
-It is similar to [`covarSamp`](/sql-reference/aggregate-functions/reference/covarsamp) but uses a numerically stable algorithm.
+It is similar to [`covarSamp`](/reference/functions/aggregate-functions/covarSamp) but uses a numerically stable algorithm.
 As a result, `covarSampStable` is slower than `covarSamp` but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax covarSampStable_syntax = "covarSampStable(x, y)";
@@ -799,7 +799,7 @@ $$
 
 <br/>
 
-It is similar to the [`covarPop`](/sql-reference/aggregate-functions/reference/covarpop) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
+It is similar to the [`covarPop`](/reference/functions/aggregate-functions/covarPop) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
     )";
     FunctionDocumentation::Syntax covarPopStable_syntax = "covarPopStable(x, y)";
     FunctionDocumentation::Arguments covarPopStable_arguments = {

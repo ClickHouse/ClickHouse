@@ -7,6 +7,13 @@ SET parallel_replicas_prefer_local_join=1;
 
 -- Keep the parallelized side oriented as written (the randomizer may flip this).
 SET query_plan_join_swap_table='false';
+-- Keep the single-replica plan and the candidate replicas plan identical: randomized join-order
+-- statistics (query_plan_optimize_join_order_randomize) produce different cardinality estimates in
+-- the two plan builds, which can flip the runtime filter's join_runtime_filter_min_probe_rows
+-- threshold in only one of them; the plans then diverge, AutoPR skips the instrumentation
+-- (fail-closed), and output_bytes stays 0. Pin the runtime filter settings to their defaults
+-- instead of disabling them, so the default code path stays covered.
+SET query_plan_optimize_join_order_randomize=0, enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows=1000;
 
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
@@ -27,7 +34,12 @@ CREATE TABLE oj_right_tbl (key UInt64) ENGINE = MergeTree ORDER BY key
 AS SELECT number FROM numbers(200000);
 
 -- INNER JOIN, join is the top of the replicas plan: ~200K matched payloads.
-SELECT t1.payload FROM oj_left_tbl AS t1 INNER JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_inner';
+-- Single stream for this case only: the estimate extrapolates the whole output through a compression
+-- ratio measured on 5 of the first 25 blocks, counted by one counter shared by every stream, and this
+-- case emits few enough blocks that a single sampled block decides the ratio. A short block measures
+-- a ratio below 1 (per-block framing on a few rows), so with several streams the estimate depends on
+-- which block wins that ordinal. LEFT/RIGHT emit several times more blocks and stay multi-stream.
+SELECT t1.payload FROM oj_left_tbl AS t1 INNER JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_inner', max_threads=1;
 
 -- LEFT JOIN, join is the top: all 1M left payloads pass through.
 SELECT t1.payload FROM oj_left_tbl AS t1 LEFT JOIN oj_right_tbl AS t2 USING (key) FORMAT Null SETTINGS log_comment='04305_join_left';
@@ -44,12 +56,15 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Fail if the collected output-byte estimate is missing (0, i.e. the join was not instrumented) or
--- deviates from the recorded baseline by more than 2x. Baselines are stable run-to-run because
--- the data is deterministic.
+-- deviates from the recorded baseline by more than 2x. The data is deterministic, so the estimate
+-- moves only with the randomized read geometry, which keeps it within a few percent of these values.
+-- They are calibrated for the `ZSTD(3)` default codec: the estimator serializes the output columns
+-- with `getDefaultCodec`, so switching the default from `LZ4` to `ZSTD(3)` (#108786) shrank each of
+-- them by ~1.68x.
 WITH map(
-    '04305_join_inner', 3943574,
-    '04305_join_left',  19636492,
-    '04305_join_right', 19629360) AS expected
+    '04305_join_inner', 2342133,
+    '04305_join_left',  11707843,
+    '04305_join_right', 11866147) AS expected
 SELECT format('{} {} {}', log_comment, output_bytes, expected[log_comment])
 FROM (
     SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS output_bytes

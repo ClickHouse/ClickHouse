@@ -47,11 +47,13 @@ import SystemLogParameters from '/snippets/ja/_system-log-parameters.mdx';
   ## query_log
 </div>
 
-[log&#95;queries=1](/ja/reference/settings/session-settings) が設定されている場合に、受信したクエリをログに記録するための設定です。
+[log&#95;queries=1](/ja/reference/settings/session-settings/log-queries#log_queries) が設定されている場合に、受信したクエリをログに記録するための設定です。
 
 クエリは別個のファイルではなく、[system.query&#95;log](/ja/reference/system-tables/query_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (以下を参照) 。
 
 <SystemLogParameters />
+
+`enable_user_query_log` パラメータ (デフォルトで有効) は、[`system.user_query_log`](/ja/reference/system-tables/user_query_log) を作成します。これにより、各ユーザーはテーブル自体へのアクセスを必要とせずに、設定されたクエリログテーブル内の自身のレコードを確認できます。これはクエリログがローカルに保存されている場合にのみ機能します。`engine` が別のサーバーに委譲する場合 (たとえば `Distributed`) は、`system.user_query_log` が ClickHouse プロトコルのサーバー境界をまたいでユーザーごとのアクセスチェックを強制できず、そのようなバックエンドからの読み取りを拒否するため、`enable_user_query_log` を無効にしてください。
 
 テーブルが存在しない場合、ClickHouse が作成します。ClickHouse サーバー の更新時にクエリログの構造が変更された場合は、古い構造のテーブルはリネームされ、新しいテーブルが自動的に作成されます。
 
@@ -67,6 +69,7 @@ import SystemLogParameters from '/snippets/ja/_system-log-parameters.mdx';
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -146,7 +149,7 @@ Regexp ベースのルールです。保存前にクエリとすべてのログ�
   ## query_thread_log
 </div>
 
-[log&#95;query&#95;threads=1](/ja/reference/settings/session-settings#log_query_threads) 設定で受信したクエリのスレッドを記録するための設定です。
+[log&#95;query&#95;threads=1](/ja/reference/settings/session-settings/log-query#log_query_threads) 設定で受信したクエリのスレッドを記録するための設定です。
 
 クエリは個別のファイルではなく、[system.query&#95;thread&#95;log](/ja/reference/system-tables/query_thread_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (下記参照) 。
 
@@ -173,7 +176,7 @@ Regexp ベースのルールです。保存前にクエリとすべてのログ�
   ## query_views_log
 </div>
 
-[log&#95;query&#95;views=1](/ja/reference/settings/session-settings#log_query_views) 設定を指定して受信したクエリに応じて、ビュー (ライブビュー、マテリアライズドビューなど) をログに記録するための設定です。
+[log&#95;query&#95;views=1](/ja/reference/settings/session-settings/log-query#log_query_views) 設定を指定して受信したクエリに応じて、ビュー (ライブビュー、マテリアライズドビューなど) をログに記録するための設定です。
 
 クエリは別個のファイルではなく、[system.query&#95;views&#95;log](/ja/reference/system-tables/query_views_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (以下を参照) 。
 
