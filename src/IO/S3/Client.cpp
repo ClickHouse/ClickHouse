@@ -563,8 +563,7 @@ bool Client::isObjectWrittenWithIdempotencyId(
     if (isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
 
-    /// Spell the type out: `WithBucket` returns the SDK's base request, so `auto` slices ours away and
-    /// the call skips the api mode, extra headers and region/URI overrides this client applies.
+    /// Not `HeadObjectRequest().WithBucket(...)`: that returns the SDK's base, so `auto` drops our wrapper.
     HeadObjectRequest head_request;
     head_request.SetBucket(bucket);
     head_request.SetKey(key);
