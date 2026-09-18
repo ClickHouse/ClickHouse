@@ -6,10 +6,27 @@
          (which rely on the background ConfigReloader) are snappy. -->
     <config_reload_interval_ms>1000</config_reload_interval_ms>
     <prometheus>
-        <endpoint>/metrics</endpoint>
         <port>9363</port>
-        <metrics>true</metrics>
-        <events>true</events>
-        <asynchronous_metrics>true</asynchronous_metrics>
+        <handlers>
+            <metrics>
+                <url>/metrics</url>
+                <handler>
+                    <type>metrics</type>
+                    <metrics>true</metrics>
+                    <events>true</events>
+                    <asynchronous_metrics>true</asynchronous_metrics>
+                </handler>
+            </metrics>
+            <!-- A Prometheus query surface: the handler builds its own query context, so it must
+                 install the client-liveness callback itself (see
+                 `test_prometheus_client_disconnect_while_waiting_in_queue`). -->
+            <promql_query>
+                <url>/api/v1/query</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_time_series</table>
+                </handler>
+            </promql_query>
+        </handlers>
     </prometheus>
 </clickhouse>

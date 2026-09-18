@@ -587,6 +587,86 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
     pool.join()
 
 
+def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
+    """
+    The Prometheus HTTP handlers (PromQL query, remote read, remote write) build
+    their own query context in `PrometheusRequestHandler::ImplWithContext::makeContext`
+    instead of going through `HTTPHandler`, so they must install the client-liveness
+    callback themselves. Without it, a `/prometheus/*` client that disconnects while
+    its query waits in the admission queue keeps its place until `queue_max_wait_ms`.
+
+    Same strategy as `test_client_disconnect_while_waiting_in_queue`, but the queued
+    request is a PromQL query on the Prometheus port. Unknown URL parameters of that
+    handler are applied as settings, so `queue_max_wait_ms` makes the difference
+    observable: with the callback the waiter is gone within the 500 ms liveness poll,
+    without it the queue stays non-empty for 30 s.
+    """
+    node.query(
+        "CREATE TABLE IF NOT EXISTS default.prometheus_time_series ENGINE = TimeSeries",
+        settings={"allow_experimental_time_series_table": 1},
+    )
+
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"prom_disconnect_blocker_{prefix}_{i}" for i in range(2)]
+
+    pool = Pool(4)
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    try:
+        for qid in blocker_ids:
+            pool.apply_async(run_blocker, (qid,))
+
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+
+        params = urllib.parse.urlencode({
+            "query": "up",
+            "queue_max_wait_ms": "30000",
+        })
+        http_request = (
+            f"GET /api/v1/query?{params} HTTP/1.1\r\n"
+            f"Host: {node.ip_address}\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        )
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        sock.connect((node.ip_address, 9363))
+        sock.sendall(http_request.encode())
+
+        # Give the server time to translate the PromQL query and enter the queue.
+        time.sleep(1.0)
+
+        queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
+        assert queue_len >= 1, f"Expected queue length >= 1, got {queue_len}"
+
+        # Abruptly close the connection — send RST.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
+        sock.close()
+
+        # Wait for the alive check to detect the disconnect (interval=500ms, give 1.5s).
+        time.sleep(1.5)
+
+        queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
+        assert queue_len == 0, f"Expected queue length 0 after disconnect, got {queue_len}"
+    finally:
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+        pool.close()
+        pool.join()
+
+
 def check_client_disconnect_while_replacing_query(target):
     """
     Verify that a replacement query whose HTTP client disconnects while the old
