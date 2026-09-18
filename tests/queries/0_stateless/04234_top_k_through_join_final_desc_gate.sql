@@ -10,7 +10,7 @@
 -- pins the relevant settings on and checks that an inner `Sort + Limit` is injected.
 -- `optimize_read_in_reverse_order_final = 0` keeps the rejection in place, because
 -- `ReplacingMergeTree` can read in reverse order with FINAL when it is enabled
--- (see 05077_top_k_through_join_final_reverse_order).
+-- (see 05193_top_k_through_join_final_reverse_order).
 
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
