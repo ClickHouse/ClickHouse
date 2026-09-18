@@ -6,8 +6,6 @@
 
 #include <Coordination/KeeperStorage.h>
 
-#include <Common/shuffle.h>
-#include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
@@ -1145,6 +1143,7 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
         create("/list_with_options_shuffle/" + String(child_name));
 
     {
+        SCOPED_TRACE("List direct children");
         const auto & response = list("/list_with_options", {});
         ASSERT_EQ(response.error, Error::ZOK);
         EXPECT_EQ(std::unordered_set<String>(response.names.begin(), response.names.end()), (std::unordered_set<String>{"a", "b"}));
@@ -1154,6 +1153,7 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
     }
 
     {
+        SCOPED_TRACE("List recursive children with metadata");
         ListOptions options;
         options.recursive = true;
         options.with_stat = true;
@@ -1167,6 +1167,7 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
     }
 
     {
+        SCOPED_TRACE("List persistent children with a result limit");
         ListOptions options;
         options.filter = ListRequestType::PERSISTENT_ONLY;
         options.max_results = 1;
@@ -1178,40 +1179,28 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
     }
 
     {
-        const std::vector<String> names{"a", "b", "c", "d", "e", "f", "g", "h"};
-        const std::vector<String> prefix(names.begin(), names.begin() + 3);
-        const std::unordered_set<String> expected_names(names.begin(), names.end());
-
-        UInt64 shuffle_seed = 0;
-        std::vector<String> expected_shuffled_names;
-        std::vector<String> expected_partial_shuffled_names;
-        bool found_non_identity_shuffle = false;
-        for (; shuffle_seed < 1024; ++shuffle_seed)
-        {
-            expected_shuffled_names = names;
-            pcg64 full_rng;
-            full_rng.seed(shuffle_seed);
-            shuffle_with_limit(expected_shuffled_names.begin(), expected_shuffled_names.end(), 0, full_rng);
-
-            expected_partial_shuffled_names = names;
-            pcg64 partial_rng;
-            partial_rng.seed(shuffle_seed);
-            shuffle_with_limit(expected_partial_shuffled_names.begin(), expected_partial_shuffled_names.end(), 3, partial_rng);
-            expected_partial_shuffled_names.resize(3);
-
-            if (expected_shuffled_names != names && expected_partial_shuffled_names != prefix)
-            {
-                found_non_identity_shuffle = true;
-                break;
-            }
-        }
-        ASSERT_TRUE(found_non_identity_shuffle);
+        SCOPED_TRACE("Shuffle complete results and a result prefix");
+        const std::unordered_set<String> expected_names{"a", "b", "c", "d", "e", "f", "g", "h"};
 
         ListOptions options;
         options.shuffle = true;
         const auto & shuffled_response = list("/list_with_options_shuffle", options);
         EXPECT_EQ(shuffled_response.error, Error::ZOK);
         EXPECT_EQ(std::unordered_set<String>(shuffled_response.names.begin(), shuffled_response.names.end()), expected_names);
+
+        const auto first_names = shuffled_response.names;
+        bool observed_different_order = false;
+        for (size_t attempt = 0; attempt < 10; ++attempt)
+        {
+            const auto & retried_response = list("/list_with_options_shuffle", options);
+            ASSERT_EQ(retried_response.error, Error::ZOK);
+            if (retried_response.names != first_names)
+            {
+                observed_different_order = true;
+                break;
+            }
+        }
+        EXPECT_TRUE(observed_different_order);
 
         options.max_results = 3;
         const auto & partial_shuffled_response = list("/list_with_options_shuffle", options);
@@ -1221,6 +1210,7 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
     }
 
     {
+        SCOPED_TRACE("List recursive children relative to the root");
         ListOptions options;
         options.recursive = true;
         const auto & response = list("/", options);
