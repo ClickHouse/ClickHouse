@@ -174,6 +174,7 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
             {
                 if (!nopr_node->step->supportsDataflowStatisticsCollection())
                 {
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
                     LOG_TRACE(
                         getLogger("optimizeTree"),
                         "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
@@ -450,6 +451,7 @@ void considerEnablingParallelReplicas(
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
     {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
         LOG_TRACE(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
         return;
     }
@@ -473,7 +475,10 @@ void considerEnablingParallelReplicas(
     /// Now we need to identify the reading step that should be instrumented for statistics collection
     ReadFromMergeTree * source_reading_step = findReadingStep(*corresponding_node_in_single_replica_plan);
     if (!source_reading_step)
+    {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
         return;
+    }
 
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
@@ -484,6 +489,7 @@ void considerEnablingParallelReplicas(
     /// parallel replicas for plans that are cheaper to execute locally. Skip the optimization instead.
     if (corresponding_node_in_single_replica_plan->step.get() == source_reading_step)
     {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
         LOG_TRACE(
             getLogger("optimizeTree"),
             "The matched node is the reading step itself, cannot estimate the amount of data sent to the initiator. "
@@ -495,6 +501,7 @@ void considerEnablingParallelReplicas(
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
     {
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
         LOG_TRACE(getLogger("optimizeTree"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
         return;
     }
@@ -608,15 +615,17 @@ void considerEnablingParallelReplicas(
                         local_replica_plan_reading_step->getStorageID().getNameForLogs(),
                         source_reading_step->getStorageID().getNameForLogs());
                 }
-                /// The one event that says the optimization changed this query. `ParallelReplicasQueryCount`
-                /// does not: building the plan above increments it even when the plan is thrown away.
-                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
                 LOG_DEBUG(
                     getLogger("optimizeTree"),
                     "Replacing the plan with the parallel replicas one for hash {}",
                     single_replica_plan_node_hash);
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
+                /// The one event that says the optimization changed this query. `ParallelReplicasQueryCount`
+                /// does not: building the plan above increments it even when the plan is thrown away. Counted
+                /// after the swap, not before: both calls above can throw, and a query that failed on the way
+                /// there did not get the optimization applied to it.
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
                 return;
             }
         }
