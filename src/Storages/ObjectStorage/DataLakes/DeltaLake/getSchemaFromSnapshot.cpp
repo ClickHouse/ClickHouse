@@ -100,11 +100,9 @@ public:
     {
         DB::NamesAndTypesList names_and_types;
         DB::NameToNameMap physical_names_map;
-        /// Dotted paths of `timestamp_ntz` leaves, spelled the way the Parquet writer spells them.
         std::unordered_set<String> timestamp_ntz_paths;
-        /// Writer paths claimed by a leaf field that is not a `timestamp_ntz` leaf. A Delta field name may
-        /// contain a dot, so two different leaves can flatten to one dotted path; a path claimed by both
-        /// is ambiguous and must keep the default annotation.
+        /// A Delta field name may contain a dot, so two leaves can flatten to one writer path. Such a
+        /// path cannot select an annotation and must keep the default one.
         std::unordered_set<String> non_ntz_writer_paths;
     };
     SchemaResult getSchemaResult();
@@ -112,8 +110,8 @@ public:
 
 private:
     struct Field;
-    /// What kind of node owns the list being visited, which decides a child's writer-path component.
-    /// `element`/`key`/`value` are the Parquet writer's own words; the kernel's child names may differ.
+    /// `element`/`key`/`value` are the Parquet writer's own words for array and map children; the
+    /// kernel's child names may differ.
     enum class ParentKind { Struct, Array, Map };
 
     DB::NamesAndTypesList getNamesAndTypesFromList(
@@ -156,8 +154,6 @@ private:
         /// when it is int8 and when it is bool.
         bool is_bool = false;
 
-        /// Delta `timestamp` and `timestamp_ntz` are both DateTime64(6), so `type` cannot say which,
-        /// and only `timestamp_ntz` is a wall clock time.
         bool is_timestamp_ntz = false;
     };
     using Fields = std::vector<Field>;
@@ -299,7 +295,6 @@ private:
             .visit_binary = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::String>>,
             .visit_date = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::Date32>>,
             .visit_timestamp = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64>>,
-            /// The trailing `true` is is_timestamp_ntz.
             .visit_timestamp_ntz = &visitorWrapper<simpleTypeVisitor<DB::TypeIndex::DateTime64, false, true>>,
             .visit_variant = &visitorWrapper<visitVariant>,
         };
@@ -485,7 +480,6 @@ SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
     SchemaResult result;
     result.names_and_types = getNamesAndTypesFromList(0, "", "", "", ParentKind::Struct, result);
     chassert(result.names_and_types.size() == type_lists[0]->size());
-    /// A path claimed by more than one field cannot select an annotation, so drop it.
     for (const auto & path : result.non_ntz_writer_paths)
         result.timestamp_ntz_paths.erase(path);
     return result;
@@ -600,8 +594,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
         }
         chassert(type);
-        /// Only a leaf path is ever looked up (`preparePrimitiveColumn`), so only a leaf can make a path
-        /// ambiguous; a container that flattens onto a leaf's path never competes for the annotation.
+        /// Only leaf paths are ever looked up (`preparePrimitiveColumn`), so only a leaf can claim one.
         if (field.is_timestamp_ntz)
             result.timestamp_ntz_paths.insert(field_writer_path);
         else if (is_leaf)

@@ -90,7 +90,6 @@ private:
     const Names partition_columns;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
-    /// Per-column lake facts for the writer; null when the table has none.
     const FormatFilterInfoPtr format_filter_info;
     const size_t data_file_max_rows;
     const size_t data_file_max_bytes;

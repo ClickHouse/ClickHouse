@@ -68,8 +68,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         /// max definition level from the schema, while the writer takes the level bit width from the
         /// state the data path builds, so the two would desynchronize.
         iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
-        /// An empty encoding map means the mapper carries no field ids at all, not that they are all
-        /// missing, which is what convertSchema would report. An Iceberg mapper always has one per field.
+        /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
         const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
         schema = convertSchema(
             *header_,

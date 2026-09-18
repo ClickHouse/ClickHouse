@@ -62,7 +62,6 @@ public:
     /// but "read schema" would not.
     const DB::Names & getPartitionColumns() const;
     const DB::NameToNameMap & getPhysicalNamesMap() const;
-    /// Dotted paths of the table's `timestamp_ntz` columns; see TableSchemaResult.
     const std::unordered_set<String> & getTimestampNtzPaths() const;
 
     DB::ObjectStoragePtr getObjectStorage() const { return object_storage; }

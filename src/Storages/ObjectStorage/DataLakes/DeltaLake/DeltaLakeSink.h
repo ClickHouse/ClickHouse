@@ -53,7 +53,6 @@ private:
     const DeltaLake::WriteTransactionPtr delta_transaction;
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
-    /// Per-column lake facts for the writer; null when the table has none.
     const FormatFilterInfoPtr format_filter_info;
     const SharedHeader sample_block;
     /// `sample_block` with each column's type replaced by the Delta write-schema type, so the data files

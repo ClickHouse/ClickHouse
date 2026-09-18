@@ -45,8 +45,6 @@ public:
     /// column). Nullable Delta columns are wrapped in `DataTypeNullable`.
     const DB::NamesAndTypesList & getWriteSchema() const;
 
-    /// The `timestamp_ntz` paths of the write schema above, so an annotation and the schema it
-    /// annotates always come from the same place. See `DeltaLake::TableSchemaResult`.
     const std::unordered_set<String> & getTimestampNtzPaths() const;
 
 private:
