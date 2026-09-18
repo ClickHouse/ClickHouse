@@ -77,6 +77,7 @@ BlockIO createHypotheticalProjection(
     /// definition is rejected here rather than silently accepted and skipped later
     auto projection_desc = ProjectionDescription::getProjectionFromAST(
         query.projection_decl, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
+    ProjectionDescription::validateDeclaredColumnCodecs(projection_desc, context, LoadingStrictnessLevel::CREATE);
 
     /// run the engine's own ADD PROJECTION validation rather than copying its checks, so a
     /// definition that could not be materialized is rejected here too

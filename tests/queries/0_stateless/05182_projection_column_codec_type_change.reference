@@ -1,3 +1,11 @@
 {'d':'CODEC(Delta(8), ZSTD(1))'}
 {'d':'CODEC(Delta(4), ZSTD(1))'}
 1
+projection part type before the change
+d	UInt64
+declared codec after the change
+{'d':'CODEC(Delta(4), ZSTD(1))'}
+projection part type after the change
+d	UInt32
+read from the projection
+499500
