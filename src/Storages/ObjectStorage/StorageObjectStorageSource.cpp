@@ -291,7 +291,9 @@ static Block replaceDirectlyReadSubcolumnsWithStorageColumns(
 
         if (!subcolumn || !subcolumn->isSubcolumn())
         {
-            result.insert(column);
+            /// A subcolumn earlier in the header may have inserted this storage column already.
+            if (!result.has(column.name))
+                result.insert(column);
             to_extract.emplace_back(column.name, column.type);
             continue;
         }
