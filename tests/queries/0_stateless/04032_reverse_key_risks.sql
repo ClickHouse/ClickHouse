@@ -1,13 +1,12 @@
 -- Tags: no-random-merge-tree-settings
 
 -- Test for three reverse key risk fixes:
--- 1. Old ReadInOrderOptimizer with reverse keys (allow_experimental_analyzer = 0)
+-- 1. `ReadInOrderOptimizer` with reverse keys (still used by `StorageMerge`, `StorageBuffer` and `StorageMaterializedView`)
 -- 2. ALTER TABLE MODIFY ORDER BY direction change validation
 -- 3. MinMaxCount projection with explicit PRIMARY KEY + reverse sorting key
 
 -- ==========================================================================
--- Risk #1: Old ReadInOrderOptimizer must handle reverse keys correctly
--- When allow_experimental_analyzer = 0, the old ReadInOrderOptimizer is used.
+-- Risk #1: `ReadInOrderOptimizer` must handle reverse keys correctly.
 -- It must account for reverse_flags when matching sort descriptions.
 -- ==========================================================================
 
@@ -15,25 +14,16 @@ DROP TABLE IF EXISTS t_reverse_old_analyzer;
 
 CREATE TABLE t_reverse_old_analyzer (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY (a DESC, b)
-SETTINGS allow_experimental_reverse_key = 1, index_granularity = 8;
+SETTINGS index_granularity = 8;
 
 INSERT INTO t_reverse_old_analyzer SELECT number, number FROM numbers(100);
 OPTIMIZE TABLE t_reverse_old_analyzer FINAL;
 
--- With old analyzer: ORDER BY a DESC should give correct results
-SELECT a FROM t_reverse_old_analyzer ORDER BY a DESC LIMIT 5
-SETTINGS allow_experimental_analyzer = 0;
+-- ORDER BY a DESC should give correct results
+SELECT a FROM t_reverse_old_analyzer ORDER BY a DESC LIMIT 5;
 
 -- ORDER BY a ASC should also work correctly
-SELECT a FROM t_reverse_old_analyzer ORDER BY a ASC LIMIT 5
-SETTINGS allow_experimental_analyzer = 0;
-
--- With new analyzer for comparison (should give same results)
-SELECT a FROM t_reverse_old_analyzer ORDER BY a DESC LIMIT 5
-SETTINGS allow_experimental_analyzer = 1;
-
-SELECT a FROM t_reverse_old_analyzer ORDER BY a ASC LIMIT 5
-SETTINGS allow_experimental_analyzer = 1;
+SELECT a FROM t_reverse_old_analyzer ORDER BY a ASC LIMIT 5;
 
 DROP TABLE t_reverse_old_analyzer;
 
@@ -49,8 +39,7 @@ DROP TABLE t_reverse_old_analyzer;
 DROP TABLE IF EXISTS t_reverse_alter;
 
 CREATE TABLE t_reverse_alter (a UInt64, b UInt64, c UInt64)
-ENGINE = MergeTree ORDER BY (a DESC, b)
-SETTINGS allow_experimental_reverse_key = 1;
+ENGINE = MergeTree ORDER BY (a DESC, b);
 
 INSERT INTO t_reverse_alter VALUES (1, 2, 3);
 
@@ -85,7 +74,7 @@ CREATE TABLE t_reverse_minmax (a UInt64, b UInt64)
 ENGINE = MergeTree
 PRIMARY KEY a
 ORDER BY (a DESC, b)
-SETTINGS allow_experimental_reverse_key = 1, index_granularity = 8;
+SETTINGS index_granularity = 8;
 
 INSERT INTO t_reverse_minmax SELECT number, number * 10 FROM numbers(1, 100);
 OPTIMIZE TABLE t_reverse_minmax FINAL;
