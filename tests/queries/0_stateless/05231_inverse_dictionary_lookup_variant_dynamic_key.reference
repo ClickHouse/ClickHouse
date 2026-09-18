@@ -1,0 +1,32 @@
+variant key	3	3
+variant key declined	1
+variant key, dict has key 0	12	12
+variant key, dict has key 0, declined	1
+variant key, single-key dict	1	1
+variant key, single-key dict, declined	1
+variant key, LIKE	12	12
+variant key, LIKE, declined	1
+variant key, no dict key matches	0	0
+variant key, no dict key matches, declined	1
+dynamic key	3	3
+dynamic key declined	1
+dynamic key, dict has key 0	12	12
+dynamic key, dict has key 0, declined	1
+dynamic key, single-key dict	1	1
+dynamic key, single-key dict, declined	1
+dynamic key, LIKE	12	12
+dynamic key, LIKE, declined	1
+dynamic array element key	12	12
+dynamic array element key declined	1
+dynamic in complex key	12	12
+dynamic in complex key declined	1
+variant in complex key	12	12
+variant in complex key declined	1
+variant key in projection	3	3
+variant key in projection declined	1
+json key	1	1
+json key declined	1
+nullable key, dict has key 0	2	2
+nullable key, dict has key 0, declined	0
+nullable key	3	3
+nullable key declined	0

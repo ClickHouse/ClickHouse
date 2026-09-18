@@ -150,6 +150,23 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
     return false;
 }
 
+/// `Variant`, `Dynamic` and `JSON` carry NULL in a discriminator instead of a `Nullable` wrapper.
+/// `dictGet` casts its key argument to the dictionary's key type (`IDictionary::convertKeyColumns`),
+/// which turns such a NULL into that type's default and looks that key up, while `IN` and `=` treat the
+/// same row as NULL. A `Nullable` key is unaffected: there the cast propagates the NULL.
+/// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
+bool keyHoldsNullOutsideNullable(const IDataType & key_type)
+{
+    if (key_type.hasDynamicStructure())
+        return true;
+
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= isVariant(nested); };
+    check(key_type);
+    key_type.forEachChild(check);
+    return result;
+}
+
 bool isRewriteSemanticallySafe(
     const DataTypePtr & dict_attr_type,
     const DataTypePtr & dictget_result_type,
@@ -318,6 +335,9 @@ public:
         {
             return;
         }
+
+        if (keyHoldsNullOutsideNullable(*dictget_function_info.key_expr_node->getResultType()))
+            return;
 
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
