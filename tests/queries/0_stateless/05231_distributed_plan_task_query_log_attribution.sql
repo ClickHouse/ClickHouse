@@ -3,7 +3,12 @@
 
 -- A task of a distributed query plan is a query of its own, so system.query_log must report the
 -- task's own metrics in a row of its own, correlated to the initiator by initial_query_id. The
--- assertions below hold for both ways of running the tasks, on workers and in-process.
+-- assertions below hold for both ways of running the tasks, on workers and in-process, and for a
+-- plan whose initiator is itself a secondary query.
+
+-- The stress profile sets `ast_fuzzer_runs = 5`; a fuzzed re-run inherits `log_comment` and would
+-- win the lookup against `system.query_log` below.
+SET ast_fuzzer_runs = 0;
 
 DROP TABLE IF EXISTS t_dp_task_metrics;
 
@@ -36,6 +41,17 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     use_query_condition_cache = 0, log_comment = '05231_in_process'
 FORMAT Null;
 
+-- A plan whose own initiator is a secondary query: the shard read below builds a plan of its own,
+-- and its tasks belong to the query the client sent, not to the shard query. Reading a local
+-- address in place leaves no nested initiator at all, so prefer_localhost_replica = 0 is what makes
+-- the shard read a query of its own.
+SELECT count() FROM remote('127.0.0.1', currentDatabase(), t_dp_task_metrics) WHERE k < 150000
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 0, prefer_localhost_replica = 0,
+    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    use_query_condition_cache = 0, log_comment = '05231_nested'
+FORMAT Null;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- A dispatched task's row carries the worker's own default database, so the task rows of a query are
@@ -49,6 +65,9 @@ WITH (
     LIMIT 1
 ) AS initiator
 SELECT
+    -- A scalar subquery with no matching row yields the type default, and the row filter below would
+    -- then degenerate into one that matches unrelated traffic.
+    throwIf(initiator = '', 'dispatched execution: the initiator row was not found'),
     throwIf(count() = 0, 'dispatched execution logged no task row for the query'),
     throwIf(uniqExact(query_id) != count(), 'task rows do not carry a query_id of their own'),
     -- Three reader buckets, each selecting the fixture's two parts.
@@ -76,6 +95,7 @@ WITH (
     LIMIT 1
 ) AS initiator
 SELECT
+    throwIf(initiator = '', 'in-process execution: the initiator row was not found'),
     throwIf(count() = 0, 'in-process execution logged no task row for the query'),
     throwIf(uniqExact(query_id) != count(), 'task rows do not carry a query_id of their own'),
     throwIf(sum(ProfileEvents['SelectedParts']) != 6, 'the parts a task read are not reported in its own row'),
@@ -85,6 +105,29 @@ SELECT
             != sum(ProfileEvents['DistributedPlanWorkerPartsScanned'])
              + sum(ProfileEvents['DistributedPlanWorkerPartsPruned']),
             'a task read or pruned a number of parts other than the number it was assigned')
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
+  AND initial_query_id = initiator
+SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
+FORMAT Null;
+
+WITH (
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+      AND log_comment = '05231_nested' AND is_initial_query AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 1
+) AS initiator
+SELECT
+    throwIf(initiator = '', 'nested execution: the initiator row was not found'),
+    -- A task's query_id is `<plan uuid>::<task id>`, which is what tells a task row apart from the
+    -- shard read's own secondary query. Both must be there: without the shard query no plan was
+    -- nested, and the root the tasks carry would be trivially the initiator's own.
+    throwIf(countIf(position(query_id, '::') = 0) = 0,
+            'the shard read did not run as a query of its own, so no plan was nested'),
+    throwIf(countIf(position(query_id, '::') > 0) = 0,
+            'a dispatched task did not keep the outer query as its root')
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query = 0
   AND initial_query_id = initiator
