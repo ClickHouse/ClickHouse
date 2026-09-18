@@ -1149,8 +1149,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         }
     }
 
-    const Int32 sort_order_id
-        = sorting_fields->size() == 0 ? Iceberg::unsorted_sort_order_id : Iceberg::initial_sort_order_id;
+    const Int32 sort_order_id = sorting_fields->size() == 0 ? 0 : 1;
     sort_order->set(Iceberg::f_order_id, sort_order_id);
     sort_order->set(Iceberg::f_fields, sorting_fields);
 
