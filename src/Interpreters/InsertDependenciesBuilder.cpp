@@ -1490,11 +1490,11 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     metadata_snapshots[current] = metadata;
     storage_locks[current] = std::move(lock);
 
-    auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
-    {
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
 
+    auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
+    {
         root_view = root_view_;
         inner_tables[root_view] = inner_table_;
         select_queries[root_view] = init_query;
@@ -1510,8 +1510,14 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         dependent_views[root_view] = {};
     };
 
+    const auto& column_names = insert_context->getInsertionTableColumnNames();
+    const bool has_value = column_names.has_value();
+
     if (materialized_view)
     {
+        if (init_context->hasQueryContext())
+            init_context->getQueryContext()->addQueryAccessInfo(current, has_value ? column_names.value() : Names{});
+
         if (current == init_table_id)
         {
             set_defaults_for_root_view(init_table_id, materialized_view->getTargetTableId());
@@ -1545,7 +1551,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// the following iterations will be for inner tables of materialized views
 
         if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
+            init_context->getQueryContext()->addQueryAccessInfo(current, has_value ? column_names.value() : Names{});
 
         if (current == init_table_id)
         {
