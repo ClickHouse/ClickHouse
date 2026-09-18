@@ -2,11 +2,11 @@
 
 `test_nats_credentials_rotation.py` proves the recovery for core NATS against a fake broker. The
 recovery path is shared with JetStream, whose half of the contract is different: replacing the
-connection tears down the durable pull consumer's subscription with messages possibly still
-unacknowledged, and the table has to resume through a fresh subscription to the same durable
-consumer, with the broker redelivering whatever was not acknowledged. That needs a real broker,
-so these tests put an authentication proxy (`nats_auth_proxy.py`) in front of `nats1`, which
-rejects the credentials of the live table the way the broker does after a rotation.
+connection tears down the durable consumer's subscription, and the table has to resume through a
+fresh subscription to the same durable consumer, draining the backlog the stream kept meanwhile
+exactly once. That needs a real broker, so this test puts an authentication proxy
+(`nats_auth_proxy.py`) in front of `nats1`, which rejects the credentials of the live table the
+way the broker does after a rotation.
 """
 
 import asyncio
@@ -275,52 +275,5 @@ def test_jetstream_credentials_rejected_after_rotation(started_cluster):
     wait_for_ack_pending(0)
     assert consumed_keys() == list(range(30))
     assert consumed() == 30, "A message was consumed twice"
-
-    instance.query("DROP DATABASE test SYNC")
-
-
-def test_jetstream_unacked_messages_survive_rotation(started_cluster):
-    """Messages delivered but not acknowledged when the connection closes are redelivered.
-
-    The table acknowledges a message only after it has been inserted into the views. A view whose
-    insert fails leaves every delivered message pending, which is the state a table is in when
-    the connection dies in the middle of a batch: the old consumer is torn down with the messages
-    unacknowledged, and the broker redelivers them to the fresh subscription.
-    """
-    set_proxy_state("accept")
-    jetstream_setup(ack_wait_seconds=3)
-    create_pipeline()
-
-    # Swap the working view for one whose insert always fails, so the delivered messages stay
-    # pending acknowledgement.
-    instance.query("DROP TABLE test.consumer SYNC")
-    instance.query(
-        """
-        CREATE MATERIALIZED VIEW test.consumer TO test.destination AS
-            SELECT key, throwIf(value < 1000000000, 'insert boom') AS value FROM test.nats;
-        """
-    )
-    jetstream_publish(0, 10)
-    wait_for_ack_pending(10)
-    assert consumed() == 0
-
-    set_proxy_state("reject")
-    wait_for_connection_closed()
-
-    # The messages the old consumer held are still owned by the durable consumer on the broker,
-    # not lost with the connection.
-    instance.query("DROP TABLE test.consumer SYNC")
-    instance.query(
-        """
-        CREATE MATERIALIZED VIEW test.consumer TO test.destination AS
-            SELECT * FROM test.nats;
-        """
-    )
-    assert_consumed_stays(0)
-
-    set_proxy_state("accept")
-    wait_for_consumed_at_least(10)
-    wait_for_ack_pending(0)
-    assert consumed_keys() == list(range(10))
 
     instance.query("DROP DATABASE test SYNC")

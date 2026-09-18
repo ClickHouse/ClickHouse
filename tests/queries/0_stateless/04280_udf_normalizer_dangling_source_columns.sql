@@ -17,7 +17,10 @@ CREATE FUNCTION udf_normalizer_04280 AS (x) -> ((x + 1 AS y, y + 2));
 SET prefer_column_name_to_alias = 1;
 SET skip_redundant_aliases_in_udf = 1;
 
--- The visitor is called from InterpreterCreateQuery::createTable.
+-- Old (non-analyzer) path: TreeRewriter::normalize -> UserDefinedSQLFunctionVisitor.
+SELECT udf_normalizer_04280(4 + 2) SETTINGS enable_analyzer = 0;
+
+-- New-analyzer path still calls the visitor from InterpreterCreateQuery::createTable.
 DROP TABLE IF EXISTS udf_normalizer_04280_table;
 CREATE TABLE udf_normalizer_04280_table
 (

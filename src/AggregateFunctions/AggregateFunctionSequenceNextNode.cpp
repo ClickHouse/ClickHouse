@@ -30,7 +30,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_funnel_functions;
+    extern const SettingsBool allow_experimental_funnel_functions;
 }
 
 constexpr size_t max_events_size = 64;
@@ -255,7 +255,7 @@ public:
         data(place).value.push_back(node, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (data(rhs).value.empty())
             return;
@@ -460,10 +460,10 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings == nullptr || !(*settings)[Setting::enable_funnel_functions])
+    if (settings == nullptr || !(*settings)[Setting::allow_experimental_funnel_functions])
     {
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
-            "Set `enable_funnel_functions` setting to enable it", name);
+            "Set `allow_experimental_funnel_functions` setting to enable it", name);
     }
 
     if (parameters.size() < 2)
@@ -556,7 +556,7 @@ void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factor
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, {.description = R"DOC(Returns the value of the event that directly follows a matched chain of events, according to the specified direction and base point.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, properties });
+    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, {}, properties });
 }
 
 }

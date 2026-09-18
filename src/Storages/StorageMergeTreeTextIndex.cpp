@@ -176,7 +176,7 @@ private:
 
                 size_t block_idx = matching_blocks[next_matching_block++];
                 dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
             else /// Sequential reading without filtering.
             {
@@ -186,7 +186,7 @@ private:
                     continue;
                 }
 
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
         }
     }
@@ -259,8 +259,7 @@ private:
         DataTypes key_types = {string_type};
 
         /// FieldRef can reference a column cell by pointer, avoiding string copies.
-        /// The sparse index is loaded without a cache here, so tokens are stored as a raw column.
-        ColumnsWithTypeAndName ref_columns = {{sparse_index.getTokensColumn(), string_type, "token"}};
+        ColumnsWithTypeAndName ref_columns = {{sparse_index.tokens, string_type, "token"}};
 
         for (size_t i = 0; i < num_blocks; ++i)
         {
@@ -429,17 +428,14 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
 
 void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index)
 {
-    /// The checks below are for the user who runs the query, so a shard of a distributed query may run it only as the
-    /// initiating user: authenticated by the interserver secret, or reached by `remote(...)` as the same user, which the
-    /// initiator confirms by pushing its roles (it does not when it rewrote the initial user to the connection user).
+    /// The checks below are for the user who runs the query. A shard reached through an ordinary connection runs a
+    /// distributed query as the user of that connection and does not know who initiated it; only through an
+    /// interserver connection does the shard authenticate the initiating user itself.
     const auto & client_info = context->getClientInfo();
-    const bool same_user = client_info.initial_user == client_info.current_user && client_info.current_roles.has_value();
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER && !same_user)
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Table function `mergeTreeTextIndex` checks the access of the user who runs the query, so a shard of a "
-            "distributed query can execute it only as the initiating user: through a cluster with an interserver secret, "
-            "or through `remote` with the credentials of that user");
+            "distributed query can execute it only when the cluster uses an interserver secret");
 
     context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
 

@@ -1,4 +1,3 @@
 <clickhouse>
-    <disable_insertion_and_mutation>0</disable_insertion_and_mutation>
     <message_queue_disable_insertion>0</message_queue_disable_insertion>
 </clickhouse>

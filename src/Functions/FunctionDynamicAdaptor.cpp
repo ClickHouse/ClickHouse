@@ -1,7 +1,8 @@
 #include <Functions/FunctionDynamicAdaptor.h>
-#include <Functions/TypeMismatchStrictness.h>
+#include <Common/CurrentThread.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -15,6 +16,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool dynamic_throw_on_type_mismatch;
+}
 
 namespace ErrorCodes
 {
@@ -41,8 +47,12 @@ ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
     size_t dynamic_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , dynamic_argument_index(dynamic_argument_index_)
-    , throw_on_type_mismatch(shouldThrowOnDynamicTypeMismatch())
 {
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::dynamic_throw_on_type_mismatch];
+    }
 }
 
 ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t, bool dry_run) const
@@ -583,7 +593,7 @@ FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFu
         }
     }
 
-    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic(arguments))
+    if (auto type = function_overload_resolver->getReturnTypeForDefaultImplementationForDynamic())
         return_type = makeNullableSafe(type);
     else
         return_type = std::make_shared<DataTypeDynamic>(result_max_dynamic_type);

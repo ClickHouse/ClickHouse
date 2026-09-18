@@ -91,6 +91,7 @@ public:
         bool cleanup,
         MergeTreeData::MergingParams merging_params,
         MergeTreeTransactionPtr txn,
+        bool need_prefix = true,
         ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
@@ -103,10 +104,11 @@ public:
         MutationCommandsConstPtr commands,
         MergeListEntry * merge_entry,
         time_t time_of_mutation,
-        ContextMutablePtr context,
+        ContextPtr context,
         const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
-        TableLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder,
+        bool need_prefix = true);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,

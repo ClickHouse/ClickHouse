@@ -42,7 +42,6 @@ private:
     bool commit_in_suffix;
 
     bool is_finished = false;
-    const UInt64 cancel_epoch;
 
     Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};
 

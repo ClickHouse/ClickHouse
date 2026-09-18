@@ -4,7 +4,6 @@
 
 #if USE_AVRO
 
-#include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/Pipe.h>
@@ -18,9 +17,7 @@ Pipe executeRemoveOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_components,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name);
+    const PersistentTableComponents & persistent_components);
 
 }
 

@@ -1,9 +1,7 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 
-#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
@@ -11,8 +9,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -21,7 +17,6 @@ namespace DB
 bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create(Keyword::CREATE);
-    ParserKeyword s_attach(Keyword::ATTACH);
     ParserKeyword s_function(Keyword::FUNCTION);
     ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
@@ -30,22 +25,14 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ParserKeyword s_as(Keyword::AS);
     ParserKeyword s_language(Keyword::LANGUAGE);
     ParserKeyword s_settings(Keyword::SETTINGS);
-    ParserKeyword s_drv_arguments(Keyword::ARGUMENTS);
-    ParserKeyword s_drv_returns(Keyword::RETURNS);
-    ParserKeyword s_drv_engine(Keyword::ENGINE);
 
     ASTPtr function_name;
 
     String cluster_str;
     bool or_replace = false;
     bool if_not_exists = false;
-    bool is_attach = false;
 
-    if (s_create.ignore(pos, expected))
-        is_attach = false;
-    else if (s_attach.ignore(pos, expected))
-        is_attach = true;
-    else
+    if (!s_create.ignore(pos, expected))
         return false;
 
     if (s_or_replace.ignore(pos, expected))
@@ -64,148 +51,6 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
-    }
-
-    /// Driver-based form:
-    ///     CREATE FUNCTION name [ARGUMENTS (...)] [RETURNS T] ENGINE = DriverName(k=v, ...) AS '...'
-    /// `ATTACH FUNCTION ...` form ends up here too.
-    {
-        IParser::Pos saved_pos = pos;
-
-        ASTPtr arguments_ast;
-        ASTPtr return_type_ast;
-        bool consumed_anything = false;
-
-        if (s_drv_arguments.ignore(pos, expected))
-        {
-            ParserToken s_lparen(TokenType::OpeningRoundBracket);
-            ParserToken s_rparen(TokenType::ClosingRoundBracket);
-
-            if (!s_lparen.ignore(pos, expected))
-                return false;
-
-            if (s_rparen.ignore(pos, expected))
-            {
-                arguments_ast = make_intrusive<ASTExpressionList>();
-            }
-            else if (ParserNameTypePairList{}.parse(pos, arguments_ast, expected)
-                || ParserTypeList{}.parse(pos, arguments_ast, expected))
-            {
-                if (!s_rparen.ignore(pos, expected))
-                    return false;
-            }
-            else
-                return false;
-
-            consumed_anything = true;
-        }
-
-        if (s_drv_returns.ignore(pos, expected))
-        {
-            if (!ParserDataType{}.parse(pos, return_type_ast, expected))
-                return false;
-            consumed_anything = true;
-        }
-
-        if (s_drv_engine.ignore(pos, expected))
-        {
-            ParserToken s_eq(TokenType::Equals);
-            s_eq.ignore(pos, expected);
-
-            ASTPtr engine_ident;
-            if (!ParserIdentifier{}.parse(pos, engine_ident, expected))
-                return false;
-            String engine_name = engine_ident->as<ASTIdentifier>()->name();
-
-            ParserToken s_lparen(TokenType::OpeningRoundBracket);
-            ParserToken s_rparen(TokenType::ClosingRoundBracket);
-
-            std::vector<std::pair<String, ASTPtr>> engine_arguments;
-            if (s_lparen.ignore(pos, expected))
-            {
-                if (!s_rparen.ignore(pos, expected))
-                {
-                    ParserToken s_comma(TokenType::Comma);
-                    ParserToken s_eq_inner(TokenType::Equals);
-
-                    while (true)
-                    {
-                        ASTPtr key_ast;
-                        if (!ParserIdentifier{}.parse(pos, key_ast, expected))
-                            return false;
-                        String key_name = key_ast->as<ASTIdentifier>()->name();
-
-                        if (!s_eq_inner.ignore(pos, expected))
-                            return false;
-
-                        ASTPtr value_ast;
-                        if (!ParserLiteral{}.parse(pos, value_ast, expected))
-                            return false;
-
-                        engine_arguments.emplace_back(key_name, value_ast);
-
-                        if (!s_comma.ignore(pos, expected))
-                            break;
-                    }
-
-                    if (!s_rparen.ignore(pos, expected))
-                        return false;
-                }
-            }
-
-            /// The driver contract is `ENGINE = DriverName(...) AS '...code...'`, so the body is mandatory.
-            /// Requiring it here turns an accidental omission of `AS` into a syntax error instead of a
-            /// side-effectful create attempt that runs the driver with an empty source body.
-            String source_code;
-            if (!s_as.ignore(pos, expected))
-                return false;
-
-            ASTPtr body_literal;
-            if (!ParserStringLiteral{}.parse(pos, body_literal, expected))
-                return false;
-            source_code = body_literal->as<ASTLiteral>()->value.safeGet<String>();
-
-            auto create_function_query = make_intrusive<ASTCreateFunctionWithDriverQuery>();
-            create_function_query->or_replace = or_replace;
-            create_function_query->if_not_exists = if_not_exists;
-            create_function_query->is_attach = is_attach;
-            create_function_query->cluster = std::move(cluster_str);
-            create_function_query->engine_name = std::move(engine_name);
-            create_function_query->engine_arguments = std::move(engine_arguments);
-            create_function_query->source_code = std::move(source_code);
-
-            create_function_query->function_name_ast = function_name;
-            create_function_query->children.push_back(function_name);
-            if (arguments_ast)
-            {
-                create_function_query->arguments_ast = arguments_ast;
-                create_function_query->children.push_back(arguments_ast);
-            }
-            if (return_type_ast)
-            {
-                create_function_query->return_type_ast = return_type_ast;
-                create_function_query->children.push_back(return_type_ast);
-            }
-            for (const auto & [_, value] : create_function_query->engine_arguments)
-                create_function_query->children.push_back(value);
-
-            node = create_function_query;
-            return true;
-        }
-
-        if (consumed_anything)
-        {
-            /// We consumed ARGUMENTS/RETURNS but did not see ENGINE - this is not a valid query.
-            return false;
-        }
-
-        pos = saved_pos;
-    }
-
-    if (is_attach)
-    {
-        /// ATTACH FUNCTION is only meaningful for the driver-based variant above.
-        return false;
     }
 
     if (s_as.ignore(pos, expected))
@@ -385,96 +230,6 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
         return true;
     }
     return false;
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementCreateFunction(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE FUNCTION",
-    {
-        .description = R"DOCS_MD(
-Creates a user defined function (UDF) from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
-
-**Syntax**
-
-```sql
-CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
-```
-A function can have an arbitrary number of parameters.
-
-There are a few restrictions:
-
-- The name of a function must be unique among user defined and system functions.
-- Recursive functions are not allowed.
-- All variables used by a function must be specified in its parameter list.
-
-If any restriction is violated then an exception is raised.
-
-**Example**
-
-```sql title="Query"
-CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
-SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
-```
-
-```text title="Response"
-┌─number─┬─plus(multiply(2, number), 1)─┐
-│      0 │                            1 │
-│      1 │                            3 │
-│      2 │                            5 │
-└────────┴──────────────────────────────┘
-```
-
-A [conditional function](/reference/functions/regular-functions/conditional-functions) is called in a user defined function in the following query:
-
-```sql title="Query"
-CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');
-SELECT number, parity_str(number) FROM numbers(3);
-```
-
-```text title="Response"
-┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
-│      0 │ even                                 │
-│      1 │ odd                                  │
-│      2 │ even                                 │
-└────────┴──────────────────────────────────────┘
-```
-
-Replace an existing UDF:
-
-```sql title="Query"
-CREATE FUNCTION exampleReplaceFunction AS frame -> frame;
-SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
-CREATE OR REPLACE FUNCTION exampleReplaceFunction AS frame -> frame + 1;
-SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
-```
-
-```text title="Response"
-┌─create_query─────────────────────────────────────────────┐
-│ CREATE FUNCTION exampleReplaceFunction AS frame -> frame │
-└──────────────────────────────────────────────────────────┘
-
-┌─create_query───────────────────────────────────────────────────┐
-│ CREATE FUNCTION exampleReplaceFunction AS frame -> (frame + 1) │
-└────────────────────────────────────────────────────────────────┘
-```
-
-## Related Content {#related-content}
-
-### [Executable UDFs](/reference/functions/regular-functions/udf). {#executable-udfs}
-
-### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs) {#user-defined-functions-in-clickhouse-cloud}
-)DOCS_MD",
-        .syntax = R"(
-CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
-)",
-        .parent = "CREATE",
-        .related = {"CREATE", "DROP", "SHOW"},
-    });
 }
 
 }
