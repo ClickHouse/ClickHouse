@@ -27,7 +27,7 @@ run_and_report_events() {
     local label=$1
     local query=$2
     echo "$label"
-    $CLICKHOUSE_LOCAL -q "
+    $CLICKHOUSE_LOCAL --input_format_vortex_preserve_order 1 -q "
         $query;
         SELECT
             ifNull((SELECT value FROM system.events WHERE event = 'VortexFilterPushdownConjunctsPushed'), 0),

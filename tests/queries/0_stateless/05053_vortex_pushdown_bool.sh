@@ -31,7 +31,7 @@ run_and_report_events() {
     local query=$2
     local query_id="${CLICKHOUSE_DATABASE}_vortex_pushdown_bool_$RANDOM$RANDOM"
     echo "$label"
-    $CLICKHOUSE_CLIENT --query_id="$query_id" -q "$query"
+    $CLICKHOUSE_CLIENT --input_format_vortex_preserve_order 1 --query_id="$query_id" -q "$query"
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     $CLICKHOUSE_CLIENT -q "
         SELECT
