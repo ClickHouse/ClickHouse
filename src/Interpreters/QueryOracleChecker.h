@@ -30,7 +30,10 @@ public:
     /// Throws `AST_FUZZER_ORACLE_MISMATCH` on oracle mismatch.
     bool check(const ASTPtr & query_ast, const ContextMutablePtr & context);
 
-private:
+    /// The individual oracles. Public because `OracleRegistry` dispatches over member
+    /// pointers to them (phase-0 adapters); prefer `check` for direct use. Each returns
+    /// true iff it performed a comparison and throws `AST_FUZZER_ORACLE_MISMATCH` on a
+    /// real mismatch.
     bool checkTLPWhere(const ASTSelectQuery & select, const ContextMutablePtr & context);
     bool checkTLPDistinct(const ASTSelectQuery & select, const ContextMutablePtr & context);
     bool checkTLPGroupBy(const ASTSelectQuery & select, const ContextMutablePtr & context);
@@ -53,8 +56,37 @@ private:
     /// Tests predicate pushdown through subqueries.
     bool checkSubqueryWrap(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
-    /// Try to insert random data into the table referenced by the SELECT query.
+    /// GROUP BY key permutation oracle: grouping keys form a set, so `GROUP BY a, b` must
+    /// return the identical result multiset as `GROUP BY b, a`. Catches multi-key grouping /
+    /// aggregation bugs that depend on key order.
+    bool checkGroupByKeyPermutation(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
+    /// DISTINCT-via-GROUP-BY oracle: `SELECT DISTINCT <exprs> ...` must return the identical
+    /// result set as `SELECT <exprs> ... GROUP BY <exprs>`. The two go through different
+    /// execution paths (DistinctStep vs aggregation), so a divergence is a real bug.
+    bool checkDistinctViaGroupBy(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// PREWHERE-equivalence oracle: on a single MergeTree-family table, `SELECT ... WHERE p` must
+    /// return the identical result multiset as `SELECT ... PREWHERE p` (PREWHERE is a transparent
+    /// read-time optimization of WHERE). A divergence is a real PREWHERE bug.
+    bool checkPrewhereEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Skip-index-equivalence oracle: skip indexes only prune granules, they must never change the
+    /// result. Running the same query with `use_skip_indexes=0` vs `=1` must return the identical
+    /// multiset; a difference is a real skip-index granule-pruning bug.
+    bool checkSkipIndexEquivalence(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Setting-flip sweep: run byte-identical SQL with a result-invariant optimizer/cache setting
+    /// toggled off vs on. Such settings (query condition cache, lazy materialization, plan-level
+    /// PREWHERE move, ...) must never change the result multiset, so a divergence is a real bug.
+    bool checkSettingFlipSweep(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+    /// Codec round-trip oracle (self-seeded, ignores the fuzzed query): codecs are lossless, so
+    /// identical data stored under CODEC(NONE) vs compression codecs must read back identical.
+    /// Creates its own fixture tables via OracleFixture; rate-limited.
+    bool checkCodecRoundtrip(const ASTSelectQuery & select, const ContextMutablePtr & context);
+
+private:
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
 
@@ -75,9 +107,6 @@ private:
 
     /// Execute a scalar query (returns a single value) and return the Field.
     static Field executeScalar(const String & query, const ContextMutablePtr & context);
-
-    /// Build a fresh context for oracle sub-queries.
-    static ContextMutablePtr makeOracleContext(const ContextMutablePtr & base_context);
 
     /// Extract the single ASTSelectQuery from an AST if it is a simple
     /// non-UNION SELECT. Returns nullptr otherwise.
