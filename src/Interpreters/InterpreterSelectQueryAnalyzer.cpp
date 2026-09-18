@@ -218,9 +218,8 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// `ASTQueryWithOutput` and are not re-applied, which is why the very same query used to be
     /// optimized or not depending on where its `SETTINGS` clause was written. Drop the overridden
     /// settings from the top-level `SETTINGS` carriers of the (cloned) AST so that the overrides above
-    /// actually hold. Nested carriers are left as written: a subquery's `SETTINGS` clause is part of its
-    /// query-node tree hash, and that hash is the identity its prepared set and its read step are
-    /// matched by against the single-node plan.
+    /// actually hold. A subquery's `SETTINGS` clause is part of its query-node tree hash, and that hash
+    /// is the identity its prepared set and its read step are matched by against the single-node plan.
     static constexpr std::array settings_overridden_for_this_plan{
         std::string_view{"automatic_parallel_replicas_mode"},
         std::string_view{"force_primary_key"},
