@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"query_plan_merge_filters_into_join", false, false, "New setting. Allow to merge `Filter` steps into the JOIN step during the join reordering optimization."},
             {"iceberg_tolerate_conflicting_manifest_schemas", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."},
             {"prefer_optimize_projection", false, false, "New setting: choose a usable projection regardless of its estimated cost, like `force_optimize_projection`, but without failing the query when no projection is used."},
             {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
@@ -129,7 +130,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_manifest_min_count_to_compact", 30, 100, "Aligned with the documented default of the Iceberg table property `commit.manifest.min-count-to-merge` (100), see https://iceberg.apache.org/docs/1.5.2/configuration/."},
             {"parallel_replicas_allow_merge_tables", false, false, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`."},
             {"optimize_mutations_with_partition_pruning", false, true, "New setting to automatically prune partitions for mutations based on WHERE clause"},
-            {"query_plan_merge_filters_into_join", false, false, "New setting. Allow to merge `Filter` steps into the JOIN step during the join reordering optimization."},
             {"statistics_max_set_size_for_exact_selectivity_estimation", 10000, 10000, "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."},
             {"type_json_skip_null_typed_paths", false, false, "New setting to treat NULL values in typed JSON paths as absent"},
             {"use_iceberg_manifest_list_partition_pruning", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."},
