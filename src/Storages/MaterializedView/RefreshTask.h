@@ -253,13 +253,16 @@ private:
         /// Whether another replica published a "request-<replica>" znode for a SYSTEM REFRESH VIEW
         /// it accepted but hasn't started. Ours is `out_of_schedule_refresh_requested` instead.
         bool other_replica_request_znode_exists = false;
-        /// Number of run() calls that have published a request znode but not yet counted it in
+        /// Number of `run` calls that have published a request znode but not yet counted it in
         /// `out_of_schedule_refresh_requested`. A refresh is owed during that window too, so the
         /// scheduling pass must not mistake the new znode for a leftover and retract it.
         UInt64 publishing_requests = 0;
-        /// Bumped on every read of the znodes above. wait() uses it to tell that what it looks at
+        /// Bumped on every read of the znodes above. `wait` uses it to tell that what it looks at
         /// was read after the wait started, instead of trusting a possibly stale copy.
         UInt64 znodes_read_count = 0;
+        /// Bumped on every scheduling pass that failed with a Keeper error, so that `wait` can stop
+        /// waiting for a read that won't happen while Keeper is unreachable.
+        UInt64 scheduling_keeper_errors = 0;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
@@ -334,7 +337,7 @@ private:
         std::optional<String> unexpected_error;
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
-        /// shutdown() was called. A request znode must not outlive it: nobody would run or retract it.
+        /// `shutdown` was called. A request znode must not outlive it: nobody would run or retract it.
         bool shutdown_requested = false;
 
         /// Solves this unusual case:
@@ -444,10 +447,9 @@ private:
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
-    /// Name of this replica's "request-<replica>" znode; see run().
+    /// Name and path of this replica's "request-<replica>" znode; see `run`.
     String requestZnodeName() const;
-    /// Whether any replica owes an out-of-schedule refresh that hasn't started yet.
-    bool outOfScheduleRefreshPending() const;
+    String requestZnodePath() const;
     /// Update the root znode and create/remove-if-exists the 'running' znode,
     /// atomically, conditionally on the root znode version number.
     /// If `only_running_znode`, the root znode is not updated, but its version is still checked.
@@ -456,10 +458,13 @@ private:
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
 
-    /// Enter the permanent, non-resumable "coordination unavailable" state: stop the view, record
-    /// the reason, and retract our request znode if `zookeeper` is given (the last time we touch
-    /// Keeper; it may be null). Called when the Keeper lacks the flags coordination requires.
-    void markCoordinationUnavailable(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper);
+    /// Enter the permanent, non-resumable "coordination unavailable" state (sets
+    /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
+    /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
+    void markCoordinationUnavailable();
+    /// The same from a scheduling pass: also retracts our request znode (the last time we touch
+    /// Keeper, done with the mutex released) and sets the state to Disabled.
+    void giveUpCoordination(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, std::unique_lock<std::mutex> & lock);
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);

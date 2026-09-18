@@ -9,7 +9,7 @@ from jinja2 import Environment, Template
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import wait_condition
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 cluster = ClickHouseCluster(__file__)
 
@@ -1153,12 +1153,8 @@ def test_detach_view_retracts_unconsumed_refresh_request(started_cluster):
                 not requester.is_alive()
             ), "SYSTEM REFRESH VIEW got stuck behind the DETACH"
 
-            deadline = time.time() + 30
-            while node2.query(request_znodes).strip() != "0" and time.time() < deadline:
-                time.sleep(0.2)
-            assert (
-                node2.query(request_znodes).strip() == "0"
-            ), "the request znode outlived the detached view"
+            # The request znode must not outlive the detached view.
+            assert_eq_with_retry(node2, request_znodes, "0", retry_count=150, sleep_time=0.2)
             # Nothing is owed anymore, so node2 must not wait for the detached replica's request.
             node2.query("SYSTEM WAIT VIEW detach_db.mv", timeout=30)
         finally:

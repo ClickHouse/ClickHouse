@@ -18,6 +18,7 @@ import pytest
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -911,12 +912,8 @@ def test_giving_up_coordination_retracts_refresh_request(started_cluster):
     )
     node.query("SYSTEM START VIEW rdb10.mv")
 
-    deadline = time.time() + 30
-    while node.query(request_znodes).strip() != "0" and time.time() < deadline:
-        time.sleep(0.2)
-    assert (
-        node.query(request_znodes).strip() == "0"
-    ), "the request znode outlived the view's coordination"
+    # The request znode must not outlive the view's coordination.
+    assert_eq_with_retry(node, request_znodes, "0", retry_count=150, sleep_time=0.2)
 
     # And it is gone because coordination was given up, not because the refresh ran after all.
     status = node.query(
