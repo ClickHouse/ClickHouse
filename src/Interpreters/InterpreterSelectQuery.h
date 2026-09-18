@@ -42,7 +42,8 @@ using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
   * `to_stage` stage.
   *
   * A query a user sends is never interpreted this way anymore - the analyzer
-  * (`InterpreterSelectQueryAnalyzer`) is the only query analysis since v26.9. What is left are the
+  * (`InterpreterSelectQueryAnalyzer`) has been the only query analysis a query is given since v26.9,
+  * and the code that gave it the other one was removed in v26.10. What is left are the
   * internal callers that compile a synthetic `SELECT` over a source they construct themselves, and do
   * not go through query analysis at all: the projection machinery (`ProjectionDescription`,
   * `optimizeUseAggregateProjection`) and the AST-based arms of `EXPLAIN SYNTAX` / `EXPLAIN AST`. Do not

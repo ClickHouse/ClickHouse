@@ -37,7 +37,7 @@ def start_cluster():
 
 def test_two_new_versions(start_cluster):
     # Two versions of ClickHouse in one cluster: one that analyzes a query the only supported way,
-    # and one old enough to still have the query analysis that was retired in 26.9.
+    # and one old enough to still have the query analysis that was retired in 26.9 and removed in 26.10.
 
     current.query("SYSTEM FLUSH LOGS")
     backward.query("SYSTEM FLUSH LOGS")
@@ -83,7 +83,7 @@ WHERE initial_query_id = '{query_id}';"""
     # canonical name, so a shard that had to analyze the query the old way for the names to line up
     # answers with `hostName()` where this initiator asked for `hostname()`. A cluster that runs with
     # the old query analysis has to turn the analyzer on everywhere before a server is upgraded to
-    # 26.9, which is what the deprecation in 26.9 asked for.
+    # 26.10, which is what the deprecation in 26.9 asked for.
     assert "NOT_FOUND_COLUMN_IN_BLOCK" in backward.query_and_get_error(
         """
 SELECT hostname() AS h, getSetting('allow_experimental_analyzer')
@@ -92,7 +92,7 @@ ORDER BY h;"""
     )
 
     # The other direction: the old initiator sends `allow_experimental_analyzer = 0` along with the
-    # query, because that is how it analyzes the query itself. Since 26.9 this instance has no other
+    # query, because that is how it analyzes the query itself. Since 26.10 this instance has no other
     # query analysis to fall back to, so it ignores the value instead of agreeing with the initiator,
     # and the settings it recorded for its part of the query say so. (Asking the shards with
     # `getSetting` would not: an initiator this old folds it to a constant before sending the query,
