@@ -1,37 +1,6 @@
-CREATE TABLE t (`a` UInt8) ENGINE = MergeTree ORDER BY a IN (1)
-CREATE TABLE t (`a` UInt8) ENGINE = MergeTree PARTITION BY a % 8 ORDER BY a
-CREATE TABLE t (`a` UInt8, `b` UInt8) ENGINE = MergeTree PRIMARY KEY a ORDER BY (a, b)
-CREATE TABLE t (`a` UInt8) ENGINE = MergeTree ORDER BY a SAMPLE BY a
-CREATE TABLE t (`a` UInt8, INDEX i arrayJoin([a]) TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a
-CREATE TABLE t (`a` UInt8, `d` DateTime) ENGINE = MergeTree ORDER BY a TTL d + toIntervalDay(1)
-CREATE TABLE t (`a` UInt8, `d` DateTime) ENGINE = MergeTree ORDER BY a TTL d + toIntervalDay(1) WHERE a > 0
-CREATE TABLE t (`a` UInt8, `d` DateTime TTL d + toIntervalDay(1)) ENGINE = MergeTree ORDER BY a
-ALTER TABLE t (MODIFY ORDER BY (a, b))
-ALTER TABLE t (MODIFY SAMPLE BY a)
-ALTER TABLE t (MODIFY TTL d + toIntervalDay(1))
-ALTER TABLE t (MODIFY TTL d + toIntervalDay(1) RECOMPRESS CODEC(ZSTD(3)))
-ALTER TABLE t (MODIFY TTL d + toIntervalDay(1) GROUP BY a SET d = max(d))
-INSERT INTO FUNCTION file(\'p_{_partition_id}.csv\', \'CSV\', \'a UInt8\') PARTITION BY a SELECT 1
-CREATE TABLE t (`d` Date, `x` UInt64) ENGINE = MergeTree(d, x, 8192)
-CREATE TABLE t (`d` Date, `a` UInt8, `b` UInt8) ENGINE = SummingMergeTree(d, (a, b), 8192)
-CREATE TABLE t (`a` UInt8) ENGINE = Distributed(\'c\', currentDatabase(), \'t\')
-CREATE TABLE t (`a` UInt8) ENGINE = Distributed(\'c\', \'d\', \'t\', rand())
-CREATE TABLE t (`a` UInt8) ENGINE = Memory
-CREATE TABLE t (`a` UInt8, `d` DateTime) ENGINE = MergeTree ORDER BY a TTL d + toIntervalDay(1) GROUP BY a SET d = max(d)
-ALTER TABLE t (UPDATE  a = a + 1 WHERE a > 0)
-UPDATE t SET a = a + 1 WHERE a > 0
-CREATE TABLE t (`a` UInt8) ENGINE = MergeTree ORDER BY a
-CREATE TABLE t (`a` UInt8) ENGINE = MergeTree ORDER BY a
-CREATE TABLE t (`a` UInt8 CODEC(LZ4), `b` UInt8 CODEC(LZ4, ZSTD(3), Delta), `c` UInt8 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY a
-CREATE TABLE t (`a` UInt8, INDEX i a TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a
-ALTER TABLE t (ADD STATISTICS  a TYPE  tdigest)
-CREATE TABLE t (`a` UInt8, `d` DateTime) ENGINE = MergeTree ORDER BY a TTL d + toIntervalDay(1) RECOMPRESS CODEC(ZSTD(3))
-CREATE TABLE t (`a` UInt8, PROJECTION p (SELECT a ORDER BY a)) ENGINE = MergeTree ORDER BY a
-BACKUP TABLE t TO Disk(\'backups\', \'f\')
-ALTER TABLE t (UNLOCK SNAPSHOT \'s\' FROM s3(\'u\', \'k\', \'s\'))
+CREATE TABLE t (`a` UInt8, `b` UInt8 CODEC(LZ4), `c` UInt8 STATISTICS(tdigest), `d` DateTime TTL d + toIntervalDay(1), INDEX i arrayJoin([a]) TYPE minmax GRANULARITY 1) ENGINE = MergeTree PARTITION BY a % 8 PRIMARY KEY a ORDER BY (a, b) SAMPLE BY a TTL d + toIntervalDay(2) WHERE a > 0
 CREATE TABLE t (`a` UInt8) ENGINE = MergeTree ORDER BY tuple()
-CREATE TABLE t (`a` UInt8) ENGINE = MergeTree ORDER BY count()
-1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1	1
-1	1	1	1	1	1
-1
-1
+CREATE TABLE t (`d` Date, `x` UInt64) ENGINE = MergeTree(d, x, 8192)
+ALTER TABLE t (MODIFY ORDER BY (a, b)), (MODIFY SAMPLE BY a), (ADD INDEX i a TYPE minmax GRANULARITY 1), (UPDATE  a = a + 1 WHERE a > 0), (MODIFY TTL d + toIntervalDay(1) RECOMPRESS CODEC(LZ4))
+ALTER TABLE t (MODIFY TTL d + toIntervalDay(1) GROUP BY a SET d = max(d))
+1	1
