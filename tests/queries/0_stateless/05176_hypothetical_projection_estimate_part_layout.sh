@@ -28,7 +28,6 @@ compare()
 }
 
 # a remainder opens a granule of its own, as in the writer
-
 echo "--- a row count that is not a multiple of the granule ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_r; DROP TABLE IF EXISTS t_real_r;
@@ -45,7 +44,6 @@ compare p_r "(SELECT a, b, v ORDER BY b)" "SELECT a, b, v FROM TABLE WHERE b = 7
 # a Compact part reports the whole part's size for every column, so the bytes must come from the scan;
 
 # such a part carries an adaptive granularity, which the constant model can miss by a granule
-
 echo "--- Compact parts, where a wide column the projection does not store must not inflate its marks ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;
@@ -62,7 +60,6 @@ $CLICKHOUSE_CLIENT -q "
 compare p_c "(SELECT id, b, v ORDER BY b)" "SELECT sum(v) FROM TABLE WHERE b >= 0" t_est_c t_real_c
 
 # `required_columns` omits a subcolumn whose physical column is present, the key expression still needs it
-
 echo "--- a sort key over a subcolumn ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_s; DROP TABLE IF EXISTS t_real_s;
@@ -76,7 +73,6 @@ $CLICKHOUSE_CLIENT -q "
 compare p_s "(SELECT t, v ORDER BY t.x)" "SELECT t, v FROM TABLE WHERE t.x = 42" t_est_s t_real_s
 
 # a projection index also stores the parent offset, so a byte-driven granularity has to count it
-
 echo "--- a byte-driven projection index counts the parent offset it stores ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_i; DROP TABLE IF EXISTS t_real_i;
@@ -92,7 +88,6 @@ compare p_i "INDEX b TYPE basic" "SELECT count() FROM TABLE WHERE b = 7" t_est_i
 # a merged part whose row width varies along the projection key: the writer sizes a granule per block
 
 # it stores, so one average over the part would be several times out
-
 echo "--- a merged part whose rows differ in width along the projection key ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;
@@ -123,10 +118,29 @@ for w in "b >= 4000" "b < 2000"; do
     echo "${w}: within a granule of the real count: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 ))"
 done
 
+# the merge's block size sets the granule size, and a block of `merge_max_block_size` rows holds a
+# different number of granules than one long block, so the layouts differ by a fifth of the marks
+echo "--- a merged part whose granules follow the merge's block size ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_m; DROP TABLE IF EXISTS t_real_m;
+    CREATE TABLE t_est_m (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 1000, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0,
+                 min_rows_for_wide_part = 0, use_const_adaptive_granularity = 0, merge_max_block_size = 100;
+    CREATE TABLE t_real_m AS t_est_m;
+    ALTER TABLE t_real_m ADD PROJECTION p_m (SELECT a, b, v ORDER BY b);
+    SYSTEM STOP MERGES t_est_m; SYSTEM STOP MERGES t_real_m;
+    INSERT INTO t_est_m SELECT number, number % 100, number FROM numbers(1000);
+    INSERT INTO t_real_m SELECT number, number % 100, number FROM numbers(1000);
+    INSERT INTO t_est_m SELECT number, number % 100, number FROM numbers(1000, 1000);
+    INSERT INTO t_real_m SELECT number, number % 100, number FROM numbers(1000, 1000);
+    SYSTEM START MERGES t_est_m; SYSTEM START MERGES t_real_m;
+    OPTIMIZE TABLE t_est_m FINAL; OPTIMIZE TABLE t_real_m FINAL;
+"
+compare p_m "(SELECT a, b, v ORDER BY b)" "SELECT sum(v) FROM TABLE WHERE b >= 0" t_est_m t_real_m
+
 # a lightweight delete leaves the dead rows in the part, and a projection without a WHERE keeps them:
 
 # the rebuild ANDs `_row_exists` into the projection's WHERE, and there is none here to AND it into
-
 echo "--- a materialized lightweight delete ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;
@@ -147,7 +161,6 @@ compare p_d "(SELECT a, b, v ORDER BY b)" "SELECT a, v FROM TABLE WHERE b < 30" 
 # a projection that stores less per row gets bigger granules, so a full scan of it beats the base read
 
 # even when the predicate cannot prune its key and there is no ORDER BY to help
-
 echo "--- a full projection scan that is cheaper than the base read ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_n; DROP TABLE IF EXISTS t_real_n;

@@ -123,18 +123,18 @@ read_ratio: 3.00x
 verdict: not chosen
 reason: 3 marks would be read instead of 1 from the base table
 real: read from the base table
---- a near-tie on an adaptive-granularity part is not called ---
+--- a tie on an adaptive-granularity part is called ---
 marks: 3
 marks: 3
 read_ratio: 1.00x
-verdict: too close to call
-reason: 3 marks against 3 from the base table, and the adaptive-granularity model can miss by up to 1 mark
---- an ORDER BY tie-break inside the margin is not called either ---
+verdict: not chosen
+reason: the same 3 marks would be read, and the query has no ORDER BY to serve
+--- the ORDER BY tie-break on the same tie ---
 marks: 3
 marks: 3
 read_ratio: 1.00x
-verdict: too close to call
-reason: 3 marks against 3 from the base table, and the adaptive-granularity model can miss by up to 1 mark
+verdict: chosen
+reason: the same 3 marks would be read, and the projection order serves the ORDER BY
 --- a baseline already served by a real projection is reported as such ---
 status: not_applicable
 reason: The query is already served from projection \'p_ab\', EXPLAIN WHATIF estimates candidates against the base table read only

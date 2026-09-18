@@ -68,7 +68,6 @@ echo "--- base PK already prunes to one granule, the projection cannot beat it -
 compare p_b "(SELECT a, b, v ORDER BY b)" "SELECT count() FROM TABLE WHERE a < 100 AND b = 42"
 
 # a tie plus an ORDER BY this projection cannot serve, the fourth state of the tie-break reason
-
 echo "--- a tie with an ORDER BY the projection order cannot serve ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
@@ -95,7 +94,6 @@ echo "--- the INDEX form, which the optimizer serves the read from ---"
 compare p_idx "INDEX b TYPE basic" "SELECT count() FROM TABLE WHERE b = 42"
 
 # the projection's own granularity makes it read more than a base read the primary key already pruned
-
 echo "--- a projection that reads more marks than the base table is not chosen ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_g ON t_est_g (SELECT a, b, v ORDER BY b) WITH SETTINGS (index_granularity = 50);
@@ -104,9 +102,9 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT a, b, v FROM t_real_g WHERE a < 100 AND b = 42 SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_g'" \
     | grep -oE 'ReadFromMergeTree \(p_g\)' || echo "real: read from the base table"
 
-# on an adaptive part the constant model can miss a granule, so a decision that close is not claimed
-
-echo "--- a near-tie on an adaptive-granularity part is not called ---"
+# every block size the writer could have been handed lays this part out the same way, so a tie here
+# is still called
+echo "--- a tie on an adaptive-granularity part is called ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_a;
     CREATE TABLE t_est_a (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
@@ -117,16 +115,14 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a, b, v FROM t_est_a WHERE b >= 0 SETTINGS ${PIN};
 " | grep -E '^\s+(marks|read_ratio|verdict|reason):' | awk '{$1=$1; print}'
 
-# the ORDER BY tie-break is decided by the same mark comparison, so it is uncertain in the same window
-
-echo "--- an ORDER BY tie-break inside the margin is not called either ---"
+# the ORDER BY tie-break is decided by the same mark comparison
+echo "--- the ORDER BY tie-break on the same tie ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_a ON t_est_a (SELECT a, b, v ORDER BY b);
     EXPLAIN WHATIF SELECT a, b, v FROM t_est_a ORDER BY b SETTINGS ${PIN};
 " | grep -E '^\s+(marks|read_ratio|verdict|reason):' | awk '{$1=$1; print}'
 
 # the read step of such a baseline carries the real projection's metadata, not the table's
-
 echo "--- a baseline already served by a real projection is reported as such ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_served;

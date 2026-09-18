@@ -54,6 +54,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
+    extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
+    extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
 }
 
 namespace
@@ -282,7 +284,97 @@ bool buildProjectionPart(
     return true;
 }
 
+/// The writer never sizes granules over a whole part: it asks `computeIndexGranularity` for one
+/// granule size per block it is handed, then fills the marks with `fillIndexGranularityImpl`. Both
+/// steps are reproduced here over a simulated block sequence, so the layout follows the writer's for
+/// any block size instead of only for one long block.
+std::vector<size_t> simulateWriterMarks(
+    const ProjectionPartData & data,
+    MergeTreeDataPartType part_type,
+    const MergeTreeSettings & mt_settings,
+    bool adaptive_marks,
+    size_t block_rows_limit,
+    size_t block_bytes_limit)
+{
+    const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
+    const size_t fixed_granularity_rows = mt_settings[MergeTreeSetting::index_granularity];
+    const bool per_row_bytes = data.row_bytes.size() == data.rows;
+    const size_t average_row_bytes = data.rows != 0 ? std::max<size_t>(data.bytes / data.rows, 1) : 1;
+    auto row_bytes = [&](size_t row) -> size_t { return per_row_bytes ? data.row_bytes[data.order[row]] : average_row_bytes; };
+
+    std::vector<size_t> mark_rows;
+    size_t recorded = 0; /// rows the marks claim
+    size_t written = 0; /// rows that reached them
+
+    for (size_t row = 0; row < data.rows;)
+    {
+        size_t block_rows = 0;
+        size_t block_bytes = 0;
+        while (row + block_rows < data.rows && block_rows < block_rows_limit)
+        {
+            const size_t bytes = row_bytes(row + block_rows);
+            if (block_bytes_limit != 0 && block_rows != 0 && block_bytes + bytes > block_bytes_limit)
+                break;
+            block_bytes += bytes;
+            ++block_rows;
+        }
+        row += block_rows;
+
+        const size_t granule_rows = computeIndexGranularity(
+            block_rows, block_bytes, granularity_bytes, fixed_granularity_rows, /* blocks_are_granules */ false, adaptive_marks);
+
+        /// rows of this block that go into the mark the previous block left open
+        size_t offset = 0;
+        if (recorded > written)
+        {
+            const size_t open_rows = written - (recorded - mark_rows.back());
+            /// a mark wider than this block's granule is shrunk first, as `MergeTreeDataPartWriterWide::write` does
+            if (mark_rows.back() - open_rows > granule_rows)
+            {
+                recorded -= mark_rows.back();
+                mark_rows.back() = std::max(open_rows, granule_rows);
+                recorded += mark_rows.back();
+            }
+            offset = std::min(recorded - written, block_rows);
+        }
+
+        for (size_t cur = offset; cur < block_rows; cur += granule_rows)
+        {
+            const size_t left = block_rows - cur;
+            /// the compact writer closes the block's tail, into a mark of its own or into the previous
+            /// mark when it holds under half a granule; the wide writer leaves the mark open
+            const bool close_tail = part_type == MergeTreeDataPartType::Compact && left < granule_rows
+                && (block_rows >= granule_rows || offset != 0) && !mark_rows.empty();
+            if (close_tail)
+            {
+                if (left * 2 >= granule_rows)
+                    mark_rows.push_back(left);
+                else
+                    mark_rows.back() += left;
+                recorded += left;
+            }
+            else
+            {
+                mark_rows.push_back(granule_rows);
+                recorded += granule_rows;
+            }
+        }
+        written += block_rows;
+    }
+
+    /// closing the part shrinks the last mark to the rows that reached it (`adjustLastMark`)
+    if (recorded > written)
+    {
+        recorded -= mark_rows.back();
+        mark_rows.back() = written - recorded;
+    }
+    if (!mark_rows.empty() && mark_rows.back() == 0)
+        mark_rows.pop_back();
+    return mark_rows;
+}
+
 /// build the primary index in memory and prune it with the engine's own PK-range pruning, nothing is written
+/// `marks_low_out` and `marks_high_out` take the range the layouts of the other write paths span
 MarkRanges pruneSyntheticProjectionPart(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
@@ -294,6 +386,8 @@ MarkRanges pruneSyntheticProjectionPart(
     const MergeTreeSettings & mt_settings,
     const Settings & query_settings,
     MergeTreeIndexGranularityPtr & granularity_out,
+    UInt64 & marks_low_out,
+    UInt64 & marks_high_out,
     LoggerPtr log)
 {
     const auto & proj_key = projection.metadata->getSortingKey();
@@ -305,127 +399,117 @@ MarkRanges pruneSyntheticProjectionPart(
 
     /// sorted order via one permutation
     stableGetPermutation(data.key_block, sort_description, data.order);
-
     const auto part_type
         = merge_tree.choosePartFormat(data.bytes, data.rows, parent_ranges.data_part->info.level, &projection).part_type;
+    const bool adaptive_marks = parent_ranges.data_part->index_granularity_info.mark_type.adaptive;
+    /// a constant granularity object pins one granule size for the whole part, an adaptive one lets
+    /// every block the writer stores size its own granules, so only then do the blocks matter
+    const bool granularity_per_block = part_type == MergeTreeDataPartType::Compact
+        || (adaptive_marks && !mt_settings[MergeTreeSetting::use_const_adaptive_granularity]);
 
-    /// The writer picks one granule size per block it stores, from that block's average row size.
-    /// An insert stores the projection of one whole inserted block, so its granules come out even and
-    /// the part average is exact; a merge feeds the writer a long run of small blocks, so each granule
-    /// ends up holding the rows that fit `index_granularity_bytes` at the width found at that point in
-    /// the key order. Which of the two a part got is not recorded, so read it off the merge level.
-    /// ponytail: heuristic. It is exact at both ends and can miss where a part was written some third
-    /// way (a partial merge, a rebuilt projection); the margin below carries what it can miss by.
-    /// a constant granularity object pins every block to the same granule size, only an adaptive one
-    /// lets the writer resize per block, so follow `createMergeTreeIndexGranularity` on which it gets
-    const bool granularity_varies_per_block = part_type == MergeTreeDataPartType::Compact
-        || !mt_settings[MergeTreeSetting::use_const_adaptive_granularity];
-    const bool granules_follow_row_width
-        = data.row_bytes.size() == data.rows && parent_ranges.data_part->info.level > 0 && granularity_varies_per_block;
-
-    std::vector<size_t> mark_rows;
-    if (granules_follow_row_width)
+    /// The granule sizes follow the blocks the writer was handed, and nothing in a part records them:
+    /// an insert or a materialization writes one squashed block, a merge writes runs of at most
+    /// `merge_max_block_size` and cuts them shorter at every source it drains. So estimate with the
+    /// chunking of the path that wrote the parent and take the others as the spread of the estimate.
+    const size_t merge_rows = mt_settings[MergeTreeSetting::merge_max_block_size];
+    const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
+    /// one granule worth of bytes is the shortest run whose width can still move the granule size
+    const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
+    /// With rows of one width the merge's own block size sets the granule size. Once the widths vary
+    /// it is where the merge cut its blocks that sets it, and a merge cuts at every source it drains,
+    /// so the short runs follow the width.
+    bool uneven_rows = false;
+    if (data.row_bytes.size() == data.rows && data.rows != 0)
     {
-        const size_t granularity_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
-        const size_t max_granule_rows = mt_settings[MergeTreeSetting::index_granularity];
-        size_t rows_in_granule = 0;
-        size_t bytes_in_granule = 0;
-        for (size_t i = 0; i < data.rows; ++i)
+        const auto [narrowest, widest] = std::minmax_element(data.row_bytes.begin(), data.row_bytes.end());
+        uneven_rows = *narrowest != *widest;
+    }
+
+    std::vector<std::pair<size_t, size_t>> chunkings;
+    size_t primary = 0;
+    chunkings.emplace_back(data.rows, 0); /// one squashed block, as an insert or a materialization writes
+    if (granularity_per_block)
+    {
+        chunkings.emplace_back(merge_rows, merge_bytes); /// the blocks a merge is bounded to
+        chunkings.emplace_back(merge_rows, granule_bytes); /// a merge that cuts a block short at every source
+        /// a level-zero part was written in one go, a merged one block by block
+        if (parent_ranges.data_part->info.level > 0)
+            primary = uneven_rows ? chunkings.size() - 1 : chunkings.size() - 2;
+    }
+
+    std::vector<std::vector<size_t>> layouts;
+    layouts.reserve(chunkings.size());
+    for (const auto & [rows_limit, bytes_limit] : chunkings)
+        layouts.push_back(simulateWriterMarks(data, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
+
+    auto prune = [&](const std::vector<size_t> & rows_per_mark, MergeTreeIndexGranularityPtr & granularity)
+    {
+        const size_t num_marks = rows_per_mark.size();
+        std::vector<size_t> mark_starts(num_marks);
+        std::vector<size_t> partial_sums(num_marks);
+        for (size_t mark = 0, row = 0; mark < num_marks; ++mark)
         {
-            const size_t row_bytes = data.row_bytes[data.order[i]];
-            /// a granule holds the rows that fit, the way `index_granularity_bytes / row size` sizes it
-            if (rows_in_granule != 0 && bytes_in_granule + row_bytes > granularity_bytes)
-            {
-                mark_rows.push_back(rows_in_granule);
-                rows_in_granule = 0;
-                bytes_in_granule = 0;
-            }
-            ++rows_in_granule;
-            bytes_in_granule += row_bytes;
-            if (rows_in_granule == max_granule_rows)
-            {
-                mark_rows.push_back(rows_in_granule);
-                rows_in_granule = 0;
-                bytes_in_granule = 0;
-            }
+            mark_starts[mark] = row;
+            row += rows_per_mark[mark];
+            partial_sums[mark] = row;
         }
-        if (rows_in_granule != 0)
-            mark_rows.push_back(rows_in_granule);
-    }
-    else
+        granularity = std::make_shared<MergeTreeIndexGranularityAdaptive>(partial_sums);
+
+        if (!key_condition)
+            return MarkRanges{{0, num_marks}};
+
+        /// primary index = the key at the first row of every granule
+        Columns index_columns;
+        index_columns.reserve(data.key_block.columns());
+        for (const auto & key_column : data.key_block)
+        {
+            auto index_column = key_column.column->cloneEmpty();
+            for (size_t mark = 0; mark < num_marks; ++mark)
+                index_column->insertFrom(*key_column.column, data.order[mark_starts[mark]]);
+            index_columns.push_back(std::move(index_column));
+        }
+
+        /// `Synthetic` keeps the part off its directory: `CreateFresh` would reclaim a `.tmp_proj` left
+        /// by an interrupted materialization, and an estimate must not write to storage at all
+        auto synthetic_part = const_cast<IMergeTreeDataPart &>(*parent_ranges.data_part)
+                                  .getProjectionPartBuilder(
+                                      projection.name, &projection, PartDirIntent::Synthetic, /* is_temp_projection */ true)
+                                  .withPartType(MergeTreeDataPartType::Compact)
+                                  .withBytesAndRows(0, data.rows, 0)
+                                  .build();
+        synthetic_part->index_granularity = granularity;
+        synthetic_part->setIndex(index_columns);
+
+        RangesInDataPart synthetic_ranges(
+            synthetic_part, parent_ranges.data_part, parent_ranges.part_index_in_query, parent_ranges.part_starting_offset_in_query);
+        synthetic_ranges.ranges = MarkRanges{{0, num_marks}};
+
+        return MergeTreeDataSelectExecutor::markRangesFromPKRange(
+            synthetic_ranges,
+            projection.metadata,
+            *key_condition,
+            part_offset_condition ? &part_offset_condition->generateForPart(synthetic_part) : nullptr,
+            total_offset_condition ? &total_offset_condition->generateForPart(synthetic_part) : nullptr,
+            nullptr,
+            nullptr,
+            query_settings,
+            log);
+    };
+
+    MarkRanges pruned = prune(layouts[primary], granularity_out);
+    marks_low_out = pruned.getNumberOfMarks();
+    marks_high_out = marks_low_out;
+    for (size_t i = 0; i < layouts.size(); ++i)
     {
-        const size_t granule_rows = computeIndexGranularity(
-            data.rows,
-            data.bytes,
-            mt_settings[MergeTreeSetting::index_granularity_bytes],
-            mt_settings[MergeTreeSetting::index_granularity],
-            /* blocks_are_granules */ false,
-            parent_ranges.data_part->index_granularity_info.mark_type.adaptive);
-
-        const size_t num = (data.rows + granule_rows - 1) / granule_rows;
-        mark_rows.assign(num, granule_rows);
-        mark_rows.back() = data.rows - (num - 1) * granule_rows;
+        /// the same layout prunes to the same marks, and a chunking often repeats one
+        if (i == primary || layouts[i] == layouts[primary])
+            continue;
+        MergeTreeIndexGranularityPtr other_granularity;
+        const UInt64 other_marks = prune(layouts[i], other_granularity).getNumberOfMarks();
+        marks_low_out = std::min(marks_low_out, other_marks);
+        marks_high_out = std::max(marks_high_out, other_marks);
     }
-
-    /// the two writers part ways on the remainder: the wide one keeps the short last mark
-    /// (`fillIndexGranularityImpl` plus `adjustLastMark`), the compact one folds a remainder below
-    /// half a granule into the previous mark, so follow the format this part would get
-    if (part_type == MergeTreeDataPartType::Compact && mark_rows.size() > 1
-        && mark_rows.back() * 2 < mark_rows[mark_rows.size() - 2])
-    {
-        mark_rows[mark_rows.size() - 2] += mark_rows.back();
-        mark_rows.pop_back();
-    }
-
-    const size_t num_marks = mark_rows.size();
-    std::vector<size_t> mark_starts(num_marks);
-    std::vector<size_t> partial_sums(num_marks);
-    for (size_t mark = 0, row = 0; mark < num_marks; ++mark)
-    {
-        mark_starts[mark] = row;
-        row += mark_rows[mark];
-        partial_sums[mark] = row;
-    }
-    granularity_out = std::make_shared<MergeTreeIndexGranularityAdaptive>(partial_sums);
-
-    if (!key_condition)
-        return MarkRanges{{0, num_marks}};
-
-    /// primary index = the key at the first row of every granule
-    Columns index_columns;
-    index_columns.reserve(data.key_block.columns());
-    for (const auto & key_column : data.key_block)
-    {
-        auto index_column = key_column.column->cloneEmpty();
-        for (size_t mark = 0; mark < num_marks; ++mark)
-            index_column->insertFrom(*key_column.column, data.order[mark_starts[mark]]);
-        index_columns.push_back(std::move(index_column));
-    }
-
-    /// the builder only reads the parent, it does not mutate it
-    auto synthetic_part = const_cast<IMergeTreeDataPart &>(*parent_ranges.data_part)
-                              .getProjectionPartBuilder(
-                                  projection.name, &projection, PartDirIntent::CreateFresh, /* is_temp_projection */ true)
-                              .withPartType(MergeTreeDataPartType::Compact)
-                              .withBytesAndRows(0, data.rows, 0)
-                              .build();
-    synthetic_part->index_granularity = granularity_out;
-    synthetic_part->setIndex(std::move(index_columns));
-
-    RangesInDataPart synthetic_ranges(
-        synthetic_part, parent_ranges.data_part, parent_ranges.part_index_in_query, parent_ranges.part_starting_offset_in_query);
-    synthetic_ranges.ranges = MarkRanges{{0, num_marks}};
-
-    return MergeTreeDataSelectExecutor::markRangesFromPKRange(
-        synthetic_ranges,
-        projection.metadata,
-        *key_condition,
-        part_offset_condition ? &part_offset_condition->generateForPart(synthetic_part) : nullptr,
-        total_offset_condition ? &total_offset_condition->generateForPart(synthetic_part) : nullptr,
-        nullptr,
-        nullptr,
-        query_settings,
-        log);
+    return pruned;
 }
 
 bool tryEstimateProjection(
@@ -458,7 +542,8 @@ bool tryEstimateProjection(
     UInt64 projection_rows = 0;
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
-    UInt64 adaptive_parts = 0;
+    UInt64 marks_low = 0;
+    UInt64 marks_high = 0;
     UInt64 uneven_width_parts = 0;
 
     for (const auto & part_with_ranges : baseline_parts)
@@ -483,8 +568,6 @@ bool tryEstimateProjection(
 
         ++scanned_parts;
         scanned_marks += part_marks;
-        if (adaptive)
-            ++adaptive_parts;
         /// the writer sizes a granule from the average width of the block it stores, so once the rows
         /// differ in width the layout follows the blocks it was fed, and that is not recorded anywhere
         if (adaptive && part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
@@ -510,6 +593,8 @@ bool tryEstimateProjection(
             continue;
 
         MergeTreeIndexGranularityPtr granularity;
+        UInt64 part_marks_low = 0;
+        UInt64 part_marks_high = 0;
         MarkRanges pruned = pruneSyntheticProjectionPart(
             part_data,
             projection,
@@ -521,22 +606,24 @@ bool tryEstimateProjection(
             mt_settings,
             query_settings,
             granularity,
+            part_marks_low,
+            part_marks_high,
             log);
 
         projection_marks += pruned.getNumberOfMarks();
         projection_rows += granularity->getRowsCountInRanges(pruned);
+        marks_low += part_marks_low;
+        marks_high += part_marks_high;
     }
 
     result.estimated_marks = projection_marks;
     result.estimated_rows = projection_rows;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
-    /// the walk cuts granules over the whole part while the writer restarts at every block it stores,
-    /// which can cost a mark per part, so a decision that close to the base read is not a decision
-    const UInt64 margin = adaptive_parts;
-    /// fewer marks never loses, so the estimate decides only when both ends of its interval agree
+    /// fewer marks never loses, so the estimate decides only when both layouts agree
     auto would_win = [&](UInt64 marks)
     { return marks < baseline_marks || (marks == baseline_marks && sort_help == SortOrderHelp::Helps); };
-    const UInt64 fewest = projection_marks > margin ? projection_marks - margin : 0;
+    const UInt64 fewest = marks_low;
+    const UInt64 most = marks_high;
     if (uneven_width_parts != 0)
     {
         result.verdict = "too close to call";
@@ -548,14 +635,16 @@ bool tryEstimateProjection(
             uneven_width_parts,
             scanned_parts);
     }
-    else if (would_win(fewest) != would_win(projection_marks + margin))
+    else if (would_win(fewest) != would_win(most))
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, and the adaptive-granularity model can miss by up to {}",
+            "{} against {} from the base table, and the projection would read {} to {} marks depending on the blocks the "
+            "writer is handed, which a part does not record",
             marks_text(projection_marks),
             baseline_marks,
-            marks_text(margin));
+            fewest,
+            most);
     }
     else if (projection_marks != baseline_marks)
     {
