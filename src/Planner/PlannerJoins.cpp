@@ -94,7 +94,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 void JoinClause::dump(WriteBuffer & buffer) const

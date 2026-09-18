@@ -47,6 +47,12 @@ void writeError(char * error, size_t error_size, const std::string & message)
     error[length] = '\0';
 }
 
+int handleException(char * error, size_t error_size, const std::string & message)
+{
+    writeError(error, error_size, message);
+    return 1;
+}
+
 void setUpDeviceMemoryResourceOnce()
 {
     static std::once_flag once;
@@ -389,13 +395,11 @@ int clickhouseGPUReduce(
     }
     catch (const std::exception & e)
     {
-        writeError(error, error_size, e.what());
-        return 1;
+        return handleException(error, error_size, e.what());
     }
     catch (...)
     {
-        writeError(error, error_size, "unknown exception");
-        return 1;
+        return handleException(error, error_size, "unknown exception");
     }
 }
 
@@ -531,13 +535,11 @@ int clickhouseGPUReduceCompressed(
     }
     catch (const std::exception & e)
     {
-        writeError(error, error_size, e.what());
-        return 1;
+        return handleException(error, error_size, e.what());
     }
     catch (...)
     {
-        writeError(error, error_size, "unknown exception");
-        return 1;
+        return handleException(error, error_size, "unknown exception");
     }
 }
 
@@ -591,13 +593,11 @@ int clickhouseGPUGroupByCreate(
     }
     catch (const std::exception & e)
     {
-        writeError(error, error_size, e.what());
-        return 1;
+        return handleException(error, error_size, e.what());
     }
     catch (...)
     {
-        writeError(error, error_size, "unknown exception");
-        return 1;
+        return handleException(error, error_size, "unknown exception");
     }
 }
 
@@ -690,29 +690,21 @@ int clickhouseGPUGroupByAddBatch(
     }
     catch (const std::exception & e)
     {
-        writeError(error, error_size, e.what());
-        return 1;
+        return handleException(error, error_size, e.what());
     }
     catch (...)
     {
-        writeError(error, error_size, "unknown exception");
-        return 1;
+        return handleException(error, error_size, "unknown exception");
     }
 }
 
 int clickhouseGPUGroupByFinalize(void * handle, size_t * num_groups, char * error, size_t error_size)
 {
     if (handle == nullptr)
-    {
-        writeError(error, error_size, "no handle");
-        return 1;
-    }
+        return handleException(error, error_size, "no handle");
 
     if (num_groups == nullptr)
-    {
-        writeError(error, error_size, "nowhere to put the number of groups");
-        return 1;
-    }
+        return handleException(error, error_size, "nowhere to put the number of groups");
 
     GroupByState & state = *static_cast<GroupByState *>(handle);
 
@@ -775,13 +767,11 @@ int clickhouseGPUGroupByCopyOut(
     }
     catch (const std::exception & e)
     {
-        writeError(error, error_size, e.what());
-        return 1;
+        return handleException(error, error_size, e.what());
     }
     catch (...)
     {
-        writeError(error, error_size, "unknown exception");
-        return 1;
+        return handleException(error, error_size, "unknown exception");
     }
 }
 
