@@ -1124,10 +1124,106 @@ void writeColumnImpl(
         return true;
     };
 
-    auto is_dict_too_big = [&] {
+    static constexpr bool dict_uses_binary_builder
+        = std::is_same_v<ParquetDType, parquet::ByteArrayType> || std::is_same_v<ParquetDType, parquet::FLBAType>;
+    static constexpr size_t arrow_binary_builder_limit = 2147483646;
+
+    auto dict_encoded_size = [&]
+    {
         auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
-        int dict_size = dict_encoder->dict_encoded_size();
-        return static_cast<size_t>(dict_size) >= options.max_dictionary_size;
+        return static_cast<size_t>(dict_encoder->dict_encoded_size());
+    };
+
+    auto is_dict_too_big = [&]
+    {
+        return dict_encoded_size() >= options.max_dictionary_size;
+    };
+
+    auto would_overflow_dict = [&](size_t batch_byte_size)
+    {
+        if constexpr (dict_uses_binary_builder)
+            return dict_encoded_size() + batch_byte_size >= arrow_binary_builder_limit;
+        else
+            return false;
+    };
+
+    /// Fallback to non-dictionary encoding.
+    ///
+    /// Discard encoded data and start over.
+    /// This is different from what arrow does: arrow writes out the dictionary-encoded
+    /// data, then uses non-dictionary encoding for later pages.
+    /// Starting over seems better: it produces slightly smaller files (I saw 1-4%) in
+    /// exchange for slight decrease in speed (I saw < 5%). This seems like a good
+    /// trade because encoding speed is less important than decoding (as evidenced
+    /// by arrow not supporting parallel encoding, even though it's easy to support).
+    auto restart_without_dictionary = [&]
+    {
+        def_offset = 0;
+        data_offset = 0;
+        row_idx = 0;
+        dict_encoded_pages.clear();
+        use_dictionary = false;
+
+        s.indexes = {};
+        /// (no need to clear hashes_for_bloom_filter)
+
+#ifndef NDEBUG
+        /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
+        /// call it even though we don't need its output.
+        encoder->FlushValues();
+#endif
+
+        encoder = parquet::MakeTypedEncoder<ParquetDType>(
+            static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
+            fixed_string_descr ? &*fixed_string_descr : nullptr);
+    };
+
+    /// A batch is bounded by bytes as well as by rows. `write_batch_size` values of a wide column
+    /// otherwise carry gigabytes into a single page, which overruns both the page's own 32-bit size
+    /// and the 32-bit offsets of the builder behind the dictionary encoder, and stages the whole
+    /// column chunk in memory on the way.
+    ///
+    /// The budget only has to keep those 32-bit quantities out of reach, so it sits far above any
+    /// page a caller would ask for: a batch of 1024 values stays under it unless the values average
+    /// more than 64 KiB, and pages of ordinary data come out exactly as they did before.
+    ///
+    /// Cuts the batch at the first record boundary at or after the budget. A record is never split,
+    /// and neither is a value, so a batch can still exceed it by one of them. Returns the byte size
+    /// of the batch it kept.
+    static constexpr size_t max_batch_bytes = 64uz << 20;
+
+    static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
+
+    auto limit_batch_by_bytes = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, auto && value_size)
+    {
+        size_t bytes = 0;
+        size_t data_idx = 0;
+
+        for (size_t i = 0; i < def_count; ++i)
+        {
+            if (s.max_def == 0 || s.def[batch_def_offset + i] == s.max_def)
+                bytes += value_size(data_idx++);
+
+            bool record_ends = !pages_change_on_record_boundaries
+                || batch_def_offset + i + 1 == num_values
+                || s.rep[batch_def_offset + i + 1] == 0;
+
+            if (!record_ends && bytes >= max_record_bytes)
+            {
+                s.indexes.column_index_valid = false;
+                s.indexes.offset_index_valid = false;
+                record_ends = true;
+            }
+
+            if (record_ends && bytes >= max_batch_bytes)
+            {
+                def_count = i + 1;
+                data_count = data_idx;
+                break;
+            }
+        }
+
+        return bytes;
     };
 
     while (def_offset < num_values)
@@ -1158,6 +1254,18 @@ void writeColumnImpl(
 
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
+
+            size_t batch_byte_size = 0;
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            {
+                batch_byte_size = limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, [&](size_t i) { return static_cast<size_t>(converted[i].len); });
+            }
+            else if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
+            {
+                batch_byte_size = limit_batch_by_bytes(
+                    next_def_offset, def_count, data_count, [&](size_t) { return converter.fixedStringSize(); });
+            }
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
 /// Workaround for clang bug: https://github.com/llvm/llvm-project/issues/63630
@@ -1191,11 +1299,14 @@ void writeColumnImpl(
 #pragma clang diagnostic pop
             }
 
-            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            if (use_dictionary && would_overflow_dict(batch_byte_size))
             {
-                for (size_t i = 0; i < data_count; ++i)
-                    s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
+                restart_without_dictionary();
+                break;
             }
+
+            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += batch_byte_size;
 
             encoder->Put(converted, static_cast<int>(data_count));
 
@@ -1204,39 +1315,13 @@ void writeColumnImpl(
 
             if (use_dictionary && is_dict_too_big())
             {
-                /// Fallback to non-dictionary encoding.
-                ///
-                /// Discard encoded data and start over.
-                /// This is different from what arrow does: arrow writes out the dictionary-encoded
-                /// data, then uses non-dictionary encoding for later pages.
-                /// Starting over seems better: it produces slightly smaller files (I saw 1-4%) in
-                /// exchange for slight decrease in speed (I saw < 5%). This seems like a good
-                /// trade because encoding speed is less important than decoding (as evidenced
-                /// by arrow not supporting parallel encoding, even though it's easy to support).
-
-                def_offset = 0;
-                data_offset = 0;
-                row_idx = 0;
-                dict_encoded_pages.clear();
-                use_dictionary = false;
-
-                s.indexes = {};
-                /// (no need to clear hashes_for_bloom_filter)
-
-#ifndef NDEBUG
-                /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
-                /// call it even though we don't need its output.
-                encoder->FlushValues();
-#endif
-
-                encoder = parquet::MakeTypedEncoder<ParquetDType>(
-                    static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
-                    fixed_string_descr ? &*fixed_string_descr : nullptr);
+                restart_without_dictionary();
                 break;
             }
 
+            const size_t page_target = std::min(options.data_page_size, max_record_bytes);
             if (next_def_offset == num_values ||
-                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= options.data_page_size)
+                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= page_target)
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;
@@ -1544,6 +1629,9 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
     {
         for (size_t j = 0; j < rg.column_indexes.size(); ++j)
         {
+            if (!rg.column_indexes.at(j).offset_index_valid)
+                continue;
+
             auto & column = rg.row_group.columns.at(j);
             column.__set_offset_index_offset(file.offset);
             size_t length = serializeThriftStruct(rg.column_indexes.at(j).offset_index, out);
