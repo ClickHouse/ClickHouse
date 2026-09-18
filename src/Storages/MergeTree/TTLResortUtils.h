@@ -51,8 +51,15 @@ bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot
 /// input no longer ordered by its keys and merge rows that belong to different groups. That is a
 /// separate defect, and re-sorting the result would only hide it behind a correctly ordered part, so
 /// such a part is left exactly as it is written without this repair.
+///
+/// `force_ttl` says an input's TTL info is not calculated at all. Combined part infos cannot express
+/// a missing entry (`MergeTreeDataPartTTLInfos::update` merges only the entries a part has), so one
+/// input's future minimum would otherwise hide another input's expired rows: assume every TTL fires.
 NameSet getFiringGroupByTTLSetTargets(
-    const StorageMetadataPtr & metadata_snapshot, const MergeTreeDataPartTTLInfos & ttl_infos, time_t current_time);
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    time_t current_time,
+    bool force_ttl);
 
 /// Sort settings for the re-sort after a `TTL ... GROUP BY ... SET` that rewrites a sort-key
 /// column. Background merge and mutation contexts keep the default

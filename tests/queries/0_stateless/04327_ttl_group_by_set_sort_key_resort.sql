@@ -213,6 +213,24 @@ SELECT 'computed idx matches', (SELECT count() FROM t_mut_computed_idx WHERE k +
                              = (SELECT count() FROM t_mut_computed_idx WHERE k + 1 IN (100001, 100021, 100040) SETTINGS use_skip_indexes = 0);
 DROP TABLE t_mut_computed_idx;
 
+-- Mutation path, implicit skip index over a persistent virtual column. Only the indices selected for
+-- a rebuild may be analysed here, and with the virtual columns in scope: `_block_number` is not a
+-- table column, so analysing every metadata index against the physical columns cannot resolve it.
+DROP TABLE IF EXISTS t_mut_block_number_idx;
+CREATE TABLE t_mut_block_number_idx (k Float64, ts DateTime, v Float64)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts)
+    SET ts = max(ts) + interval 100 years, k = max(v)
+SETTINGS min_bytes_for_full_part_storage = 128, materialize_ttl_recalculate_only = 0,
+         enable_block_number_column = 1, add_minmax_index_for_block_number_column = 1;
+SYSTEM STOP TTL MERGES t_mut_block_number_idx;
+INSERT INTO t_mut_block_number_idx VALUES (1.0, '2000-06-09 10:00', 96827), (1.0, '2000-06-10 10:00', 41302);
+ALTER TABLE t_mut_block_number_idx MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'block number idx data', k, ts, v FROM t_mut_block_number_idx ORDER BY ALL;
+SELECT 'block number idx sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_mut_block_number_idx SETTINGS optimize_read_in_order = 0));
+DROP TABLE t_mut_block_number_idx;
+
 -- Mutation path, sort-key EXPRESSION shape. The mutation recomputes the expression and re-sorts
 -- through its own implementation, separate from the merge one, so the shape needs an arm on both
 -- paths. Same fixture as t_expr_key; the mutation always runs, so one INSERT is enough.
@@ -234,6 +252,30 @@ SELECT 'mut expr key rows', count() FROM t_mut_expr_key;
 SELECT 'mut expr key sorted', phys = arraySort(phys) FROM
     (SELECT groupArray(d) AS phys FROM (SELECT toStartOfDay(ts) AS d FROM t_mut_expr_key ORDER BY _part_offset));
 DROP TABLE t_mut_expr_key;
+
+-- Parts written before the TTL existed carry no `GROUP BY` TTL info, and combining part infos cannot
+-- express that: another part's future minimum would be the only one the gate sees, while the
+-- info-less part's rows are still evaluated and rewritten.
+DROP TABLE IF EXISTS t_mixed_infos;
+CREATE TABLE t_mixed_infos (k Float64, ts DateTime, v Float64)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+SETTINGS min_bytes_for_full_part_storage = 128;
+SYSTEM STOP MERGES t_mixed_infos;
+INSERT INTO t_mixed_infos VALUES (1.0, '2000-06-09 10:00', 96827), (1.0, '2000-06-10 10:00', 41302);
+-- materialize_ttl_after_modify = 0 keeps the first part's TTL info uncalculated, so the merge below is
+-- the path that applies the TTL.
+ALTER TABLE t_mixed_infos MODIFY TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts)
+    SET ts = max(ts) + interval 100 years, k = max(v)
+SETTINGS materialize_ttl_after_modify = 0, mutations_sync = 2;
+-- A second part whose own info is far in the future: that minimum is the only one the combined infos
+-- hold.
+INSERT INTO t_mixed_infos VALUES (1.0, '2106-01-01 00:00', 5);
+SYSTEM START MERGES t_mixed_infos;
+OPTIMIZE TABLE t_mixed_infos FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'mixed infos data', k, ts, v FROM t_mixed_infos ORDER BY ALL;
+SELECT 'mixed infos sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_mixed_infos SETTINGS optimize_read_in_order = 0));
+DROP TABLE t_mixed_infos;
 
 -- Several GROUP BY TTLs in one part: no repair runs at all, because an earlier SET can rewrite a
 -- column a later TTL groups by and the re-sort would only hide the resulting wrong groups behind
@@ -295,6 +337,25 @@ SELECT 'not firing not repaired', sum(ProfileEvents['ExternalSortWritePart']) = 
 WHERE database = currentDatabase() AND table = 't_not_firing' AND event_type = 'MergeParts';
 DROP TABLE t_not_firing;
 
+-- Mutation-path firing gate: a `GROUP BY ... SET` on the sorting key that has not expired must not
+-- repair anything. The bound is one byte, so the repair would spill if it ran; `count() > 0` keeps the
+-- probe from passing on an empty `part_log`.
+DROP TABLE IF EXISTS t_mut_not_firing;
+CREATE TABLE t_mut_not_firing (k UInt32, ts DateTime, v UInt32)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalYear(40) GROUP BY k, toStartOfDay(ts) SET ts = max(ts), v = max(v)
+SETTINGS min_bytes_for_wide_part = 0, ttl_resort_max_bytes_before_external_sort = 1,
+         materialize_ttl_recalculate_only = 0;
+SYSTEM STOP TTL MERGES t_mut_not_firing;
+INSERT INTO t_mut_not_firing SELECT number % 100, toDateTime('2020-01-01 00:00:00') + (number % 5) * 86400, number FROM numbers(1000);
+ALTER TABLE t_mut_not_firing MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'mut not firing rows', count() FROM t_mut_not_firing;
+SYSTEM FLUSH LOGS part_log;
+SELECT 'mut not firing not repaired', count() > 0 AND sum(ProfileEvents['ExternalSortWritePart']) = 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_mut_not_firing' AND event_type = 'MutatePart';
+DROP TABLE t_mut_not_firing;
+
 -- Control: SET only a non-sort-key column. The re-sort must not be needed and the merge
 -- must work exactly as before.
 DROP TABLE IF EXISTS t_nonkey;
@@ -302,13 +363,19 @@ CREATE TABLE t_nonkey (k UInt32, ts DateTime, v UInt32)
 ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
 TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts)
     SET v = max(v)
-SETTINGS min_bytes_for_full_part_storage = 128;
+SETTINGS min_bytes_for_full_part_storage = 128, ttl_resort_max_bytes_before_external_sort = 1;
 SYSTEM STOP MERGES t_nonkey;
 INSERT INTO t_nonkey VALUES (5, '2000-06-09 10:00', 100);
 INSERT INTO t_nonkey VALUES (3, '2000-06-10 10:00', 200);
 SYSTEM START MERGES t_nonkey;
-OPTIMIZE TABLE t_nonkey FINAL;
+OPTIMIZE TABLE t_nonkey FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'nonkey data', k, ts, v FROM t_nonkey ORDER BY ALL;
 SELECT 'nonkey sorted', phys = arraySort(phys) FROM
     (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_nonkey SETTINGS optimize_read_in_order = 0));
+SYSTEM FLUSH LOGS part_log;
+-- The `SET` misses the sorting key entirely, so no repair may run; without this the arm passes
+-- whether or not an unnecessary whole-part sort happened.
+SELECT 'nonkey not repaired', count() > 0 AND sum(ProfileEvents['ExternalSortWritePart']) = 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_nonkey' AND event_type = 'MergeParts';
 DROP TABLE t_nonkey;

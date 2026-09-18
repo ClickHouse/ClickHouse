@@ -73,7 +73,10 @@ bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot
 }
 
 NameSet getFiringGroupByTTLSetTargets(
-    const StorageMetadataPtr & metadata_snapshot, const MergeTreeDataPartTTLInfos & ttl_infos, time_t current_time)
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    time_t current_time,
+    bool force_ttl)
 {
     /// With several `GROUP BY` TTLs in one part an earlier `SET` can rewrite a column a later TTL
     /// groups by, so that TTL aggregates an input no longer ordered by its keys and produces wrong
@@ -87,7 +90,7 @@ NameSet getFiringGroupByTTLSetTargets(
         auto it = ttl_infos.group_by_ttl.find(group_by_ttl.result_column);
         /// Missing info or uninitialized `min` -> conservatively assume it may fire. A forced merge
         /// does not imply this TTL fired: it may evaluate a future TTL without rewriting any row.
-        bool fires = it == ttl_infos.group_by_ttl.end() || it->second.min == 0 || it->second.min <= current_time;
+        bool fires = force_ttl || it == ttl_infos.group_by_ttl.end() || it->second.min == 0 || it->second.min <= current_time;
         if (fires)
             for (const auto & set_part : group_by_ttl.set_parts)
                 targets.insert(set_part.column_name);
@@ -99,6 +102,11 @@ SortingStep::Settings buildTTLResortSortingSettings(const ContextPtr & context, 
 {
     SortingStep::Settings sort_settings(context->getSettingsRef());
 
+    /// `max_rows_to_sort` / `max_bytes_to_sort` bound a user query's result. `SortingStep` enforces
+    /// them with a `LimitsCheckingTransform`, which under `sort_overflow_mode = 'break'` stops
+    /// reading and lets the writer commit a truncated part, so this maintenance sort clears them.
+    sort_settings.size_limits = {};
+
     /// Background merge and mutation contexts inherit the default `max_bytes_before_external_sort = 0`
     /// (neither `Context::makeQueryContextForMerge` nor `makeQueryContextForMutate` overrides it),
     /// and `MergeSortingTransform` spills only when that threshold is non-zero, so as taken from the
@@ -107,14 +115,13 @@ SortingStep::Settings buildTTLResortSortingSettings(const ContextPtr & context, 
     /// global context provides it (a server always does; skip the override otherwise, since a non-zero
     /// threshold without temporary storage is an error at pipeline build time).
     const UInt64 max_bytes_before_external_sort = storage_settings[MergeTreeSetting::ttl_resort_max_bytes_before_external_sort];
+
+    /// The table setting is the whole bound: `0` means do not spill, so an inherited query threshold
+    /// must not put spilling back either.
+    sort_settings.max_bytes_in_block_before_external_sort = 0;
+    sort_settings.max_bytes_in_query_before_external_sort = 0;
     if (max_bytes_before_external_sort && context->getSharedTempDataOnDisk())
-    {
         sort_settings.max_bytes_in_block_before_external_sort = max_bytes_before_external_sort;
-        /// The query-memory gate (derived from `max_bytes_ratio_before_external_sort`, half of the
-        /// available server memory by default) would delay the spill until this merge or mutation
-        /// alone uses that much memory. Disable it so the threshold above is the actual bound.
-        sort_settings.max_bytes_in_query_before_external_sort = 0;
-    }
 
     return sort_settings;
 }

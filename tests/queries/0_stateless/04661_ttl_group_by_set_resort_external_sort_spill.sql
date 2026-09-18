@@ -34,9 +34,11 @@ SELECT 'aggregated', count(), min(k), max(k) FROM t_ttl_resort_spill WHERE k < 1
 -- The part must be physically ordered by the sorting key: the keys in physical row order must
 -- already be sorted. A second read with ORDER BY (k, toStartOfDay(ts)) is not a usable comparison
 -- side, because it is answered from the part's own declared order and returns the same rows even
--- when the part is not sorted; arraySort does the ordering outside the planner.
+-- when the part is not sorted; reading in _part_offset order puts the physical order on the left.
+SELECT 'spill parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_resort_spill' AND active;
 SELECT 'sorted', phys = arraySort(phys) FROM
-    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_ttl_resort_spill SETTINGS optimize_read_in_order = 0));
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_ttl_resort_spill ORDER BY _part_offset));
 
 -- The sort must actually have spilled: the TTL merge writes external-sort temporary files.
 -- Aggregate over all merges: a follow-up merge of the already-aggregated part has nothing
@@ -70,8 +72,10 @@ ALTER TABLE t_ttl_resort_spill_mat
 ALTER TABLE t_ttl_resort_spill_mat MATERIALIZE TTL SETTINGS mutations_sync = 2;
 
 SELECT 'mat count', count() FROM t_ttl_resort_spill_mat;
+SELECT 'mat parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_resort_spill_mat' AND active;
 SELECT 'mat sorted', phys = arraySort(phys) FROM
-    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_ttl_resort_spill_mat SETTINGS optimize_read_in_order = 0));
+    (SELECT groupArray((k, toStartOfDay(ts))) AS phys FROM (SELECT k, ts FROM t_ttl_resort_spill_mat ORDER BY _part_offset));
 
 SYSTEM FLUSH LOGS part_log;
 SELECT 'mat spilled', max(ProfileEvents['ExternalSortWritePart']) > 0

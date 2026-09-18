@@ -2820,12 +2820,11 @@ private:
         /// primary key here would conflict with the columns already in the stream.
         auto add_skip_indices_expression = [&]()
         {
-            if (ctx->metadata_snapshot->getSecondaryIndices().empty())
+            if (skip_indices.empty())
                 return;
 
-            add_expression_transform(ctx->metadata_snapshot->getSecondaryIndices()
-                .getSingleExpressionForIndices(ctx->metadata_snapshot->getColumns(), ctx->context)
-                ->getActionsDAG().clone());
+            add_expression_transform(
+                ctx->data->getSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone());
         };
 
         /// The re-sort below reorders the post-TTL stream, so any skip-index expression column
@@ -2841,7 +2840,9 @@ private:
         /// `MATERIALIZE TTL` does not apply a not-yet-expired `GROUP BY` TTL, so the repair is
         /// restricted to the targets that can actually be rewritten in this part.
         const auto firing_set_targets = group_by_ttl_runs
-            ? getFiringGroupByTTLSetTargets(ctx->metadata_snapshot, ctx->source_part->ttl_infos, ctx->time_of_mutation)
+            /// One source part, so a missing entry is visible as a missing entry here.
+            ? getFiringGroupByTTLSetTargets(
+                  ctx->metadata_snapshot, ctx->source_part->ttl_infos, ctx->time_of_mutation, /*force_ttl=*/ false)
             : NameSet{};
         const bool resort_after_group_by_ttl
             = group_by_ttl_runs && groupByTTLAssignsSortKeyColumn(ctx->metadata_snapshot, firing_set_targets);

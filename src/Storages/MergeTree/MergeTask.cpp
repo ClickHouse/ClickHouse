@@ -3601,7 +3601,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// future TTL rewrote a row. A part with several `GROUP BY` TTLs is left unrepaired, see
         /// `getFiringGroupByTTLSetTargets`.
         const auto firing_set_targets = getFiringGroupByTTLSetTargets(
-            global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge);
+            global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge, ctx->force_ttl);
 
         if (groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot, firing_set_targets))
         {
