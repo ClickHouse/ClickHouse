@@ -6,6 +6,7 @@
 
 /// musl defines stderr as (stderr) which is a self-referential macro
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -30,11 +31,24 @@
 #include <Common/formatReadable.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/Ask.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
+
+#include <Parsers/Access/ASTSetRoleQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTUseQuery.h>
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
@@ -52,6 +66,9 @@
 #include <Poco/Util/Application.h>
 #include <Poco/URI.h>
 
+#include <algorithm>
+#include <charconv>
+#include <chrono>
 #include <filesystem>
 
 #include "config.h"
@@ -69,6 +86,12 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsBool apply_settings_from_server;
+extern const SettingsString default_format;
+extern const SettingsString format;
+extern const SettingsString output_format;
+extern const SettingsBool partial_result_on_first_cancel;
+extern const SettingsBool run_query_in_background;
 extern const SettingsBool use_client_time_zone;
 }
 
@@ -84,6 +107,7 @@ namespace ErrorCodes
     extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int USER_EXPIRED;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
 Client::Client()
@@ -93,6 +117,600 @@ Client::Client()
 
 
 Client::~Client() = default;
+
+namespace
+{
+
+std::optional<BackgroundQueryManager::JobId> parseBackgroundJobId(std::string_view argument)
+{
+    BackgroundQueryManager::JobId id = 0;
+    const auto [end, error] = std::from_chars(argument.data(), argument.data() + argument.size(), id);
+    if (error != std::errc{} || end != argument.data() + argument.size() || id == 0)
+        return {};
+    return id;
+}
+
+bool containsSetting(const ASTPtr & ast, std::string_view setting_name)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * set_query = ast->as<ASTSetQuery>())
+    {
+        if (std::any_of(set_query->changes.begin(), set_query->changes.end(), [&](const auto & change)
+            { return boost::iequals(change.name, setting_name); }))
+            return true;
+        if (std::any_of(set_query->default_settings.begin(), set_query->default_settings.end(), [&](const auto & name)
+            { return boost::iequals(name, setting_name); }))
+            return true;
+    }
+
+    return std::any_of(ast->children.begin(), ast->children.end(), [&](const auto & child)
+        { return containsSetting(child, setting_name); });
+}
+
+std::optional<String> getDetachableOutputFormat(
+    const ASTPtr & ast,
+    const ContextPtr & context,
+    const SettingsChanges & settings_from_server,
+    const String & default_output_format,
+    bool is_default_format,
+    bool has_vertical_output_suffix)
+{
+    auto format_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(ast, format_context);
+
+    if (format_context->getSettingsRef()[Setting::apply_settings_from_server])
+    {
+        SettingsChanges changes_to_apply;
+        for (const auto & change : settings_from_server)
+            if (!format_context->getSettingsRef().isChanged(change.name))
+                changes_to_apply.push_back(change);
+        format_context->applySettingsChanges(changes_to_apply);
+    }
+
+    String format = default_output_format;
+    bool has_format_clause = false;
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+    {
+        if (query_with_output->out_file)
+            return {};
+        if (query_with_output->format_ast)
+        {
+            has_format_clause = true;
+            format = query_with_output->format_ast->as<ASTIdentifier &>().name();
+        }
+    }
+
+    const auto & settings = format_context->getSettingsRef();
+    if (settings[Setting::partial_result_on_first_cancel] || settings[Setting::run_query_in_background])
+        return {};
+
+    if (!settings[Setting::output_format].value.empty())
+        format = settings[Setting::output_format];
+    else if (!settings[Setting::format].value.empty())
+        format = settings[Setting::format];
+    else if (is_default_format && !has_format_clause && !settings[Setting::default_format].value.empty())
+        format = settings[Setting::default_format];
+
+    if (has_vertical_output_suffix)
+        format = "Vertical";
+
+    auto & factory = FormatFactory::instance();
+    if (!factory.checkIfOutputFormatIsTTYFriendly(format)
+        || !factory.checkIfFormatSupportAppend(format, format_context))
+        return {};
+    return format;
+}
+
+String formatBackgroundJobMetrics(const BackgroundQueryManager::JobInfo & job)
+{
+    const auto & progress = job.metrics.progress;
+    String result = fmt::format(
+        "read: {} rows, {}", formatReadableQuantity(progress.read_rows), formatReadableSizeWithDecimalSuffix(progress.read_bytes));
+
+    const double elapsed_seconds
+        = progress.elapsed_ns ? static_cast<double>(progress.elapsed_ns) / 1e9 : static_cast<double>(job.elapsed.count()) / 1000.0;
+    if (elapsed_seconds > 0 && (progress.read_rows || progress.read_bytes))
+    {
+        result += fmt::format(
+            " ({} rows/s., {}/s.)",
+            formatReadableQuantity(static_cast<double>(progress.read_rows) / elapsed_seconds),
+            formatReadableSizeWithDecimalSuffix(static_cast<double>(progress.read_bytes) / elapsed_seconds));
+    }
+
+    UInt64 current = 0;
+    UInt64 total = 0;
+    if (progress.total_rows_to_read)
+    {
+        current = progress.read_rows;
+        total = progress.total_rows_to_read;
+    }
+    else if (progress.total_bytes_to_read)
+    {
+        current = progress.read_bytes;
+        total = progress.total_bytes_to_read;
+    }
+    if (total)
+    {
+        const auto denominator = std::max(current, total);
+        const bool completed = job.state == BackgroundQueryManager::State::Succeeded && current >= total;
+        const auto scale = completed ? 100.0L : 99.0L;
+        const auto percent = static_cast<UInt64>(scale * static_cast<long double>(current) / static_cast<long double>(denominator));
+        result += fmt::format("  {}%", percent);
+    }
+
+    if (progress.written_rows || progress.written_bytes)
+    {
+        result += fmt::format(
+            "  written: {} rows, {}",
+            formatReadableQuantity(progress.written_rows),
+            formatReadableSizeWithDecimalSuffix(progress.written_bytes));
+    }
+    if (progress.result_rows || progress.result_bytes)
+    {
+        result += fmt::format(
+            "  result: {} rows, {}",
+            formatReadableQuantity(progress.result_rows),
+            formatReadableSizeWithDecimalSuffix(progress.result_bytes));
+    }
+
+    const auto & metrics = job.metrics;
+    if (metrics.cpu_usage_available || metrics.memory_usage > 0 || metrics.temporary_data_on_disk > 0)
+    {
+        result += metrics.cpu_usage_is_average ? fmt::format("  (avg CPU: {:.1f}", std::max(metrics.cpu_usage, 0.0))
+                                               : fmt::format("  ({:.1f} CPU", std::max(metrics.cpu_usage, 0.0));
+        if (metrics.memory_usage)
+            result += ", " + formatReadableSizeWithDecimalSuffix(metrics.memory_usage) + " RAM";
+        if (metrics.max_host_memory_usage < metrics.memory_usage)
+            result += ", " + formatReadableSizeWithDecimalSuffix(metrics.max_host_memory_usage) + " max/host";
+        if (metrics.temporary_data_on_disk)
+            result += ", " + formatReadableSizeWithDecimalSuffix(metrics.temporary_data_on_disk) + " disk";
+        if (metrics.max_host_temporary_data_on_disk < metrics.temporary_data_on_disk)
+            result += ", " + formatReadableSizeWithDecimalSuffix(metrics.max_host_temporary_data_on_disk) + " max/host";
+        result += ')';
+    }
+    if (metrics.peak_memory_usage >= 0)
+        result += "  peak RAM: " + formatReadableSizeWithDecimalSuffix(metrics.peak_memory_usage);
+
+    return result;
+}
+}
+
+bool Client::tryProcessInteractiveClientCommand(std::string_view input)
+{
+    const auto name_end = std::find_if(input.begin(), input.end(), [](char character) { return isWhitespaceASCII(character); });
+    const size_t name_size = static_cast<size_t>(name_end - input.begin());
+    const std::string_view name = input.substr(0, name_size);
+    if (!boost::iequals(name, "\\bg")
+        && !boost::iequals(name, "\\jobs")
+        && !boost::iequals(name, "\\fg")
+        && !boost::iequals(name, "\\cancel"))
+        return false;
+
+    std::string_view argument = input.substr(name_size);
+    while (!argument.empty() && isWhitespaceASCII(argument.front()))
+        argument.remove_prefix(1);
+
+    if (boost::iequals(name, "\\bg"))
+    {
+        if (argument.empty())
+        {
+            error_stream << "Usage: \\bg <query>" << std::endl;
+            return true;
+        }
+
+        String query(argument);
+        const char * query_position = query.data();
+        const char * query_end = query_position + query.size();
+        const auto parsed_query = parseQuery(query_position, query_end, client_context->getSettingsRef(), false);
+        if (!parsed_query)
+        {
+            error_stream << "A background job must contain one SQL statement" << std::endl;
+            return true;
+        }
+
+        const auto * set_role = parsed_query->as<ASTSetRoleQuery>();
+        const bool changes_only_session_state = parsed_query->as<ASTSetQuery>() || parsed_query->as<ASTUseQuery>()
+            || parsed_query->as<ASTTransactionControl>()
+            || (set_role && set_role->kind != ASTSetRoleQuery::Kind::SET_DEFAULT_ROLE);
+        const auto * table_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(parsed_query.get());
+        if (changes_only_session_state || (table_query && table_query->isTemporary()))
+        {
+            error_stream << "A background job cannot run a statement whose effects are limited to its private session" << std::endl;
+            return true;
+        }
+
+        if (containsSetting(parsed_query, "run_query_in_background"))
+        {
+            error_stream << "The run_query_in_background server setting cannot be combined with a client background job" << std::endl;
+            return true;
+        }
+        if (containsSetting(parsed_query, "profile"))
+        {
+            error_stream << "A query-level settings profile cannot be combined with a client background job" << std::endl;
+            return true;
+        }
+
+        if (!external_tables.empty() || !external_scalars.empty())
+        {
+            error_stream << "Background jobs do not support command-line external tables or scalars" << std::endl;
+            return true;
+        }
+
+        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+        {
+            ASTPtr input_function;
+            if (insert->select)
+                insert->tryFindInputFunction(input_function);
+
+            if (!insert->select || input_function)
+            {
+                error_stream << "A background job supports INSERT only as INSERT ... SELECT" << std::endl;
+                return true;
+            }
+        }
+
+        BackgroundQueryManager::Snapshot snapshot(
+            client_context,
+            connection_parameters,
+            getClientConfiguration(),
+            default_database,
+            max_client_network_bandwidth,
+            client_local_timezone,
+            default_output_format,
+            is_default_format,
+            default_output_compression_method,
+            has_vertical_output_suffix,
+            inline_insert_data,
+            allow_merge_tree_settings,
+            query_processing_stage,
+            query_kind);
+        const auto id = background_queries.start(
+            std::move(query), parsed_query->formatForLogging(/* max_length = */ 80), std::move(snapshot));
+        output_stream << "Background job " << id << " started" << std::endl;
+        return true;
+    }
+
+    if (boost::iequals(name, "\\jobs"))
+    {
+        if (!argument.empty())
+        {
+            error_stream << "Usage: \\jobs" << std::endl;
+            return true;
+        }
+
+        const auto jobs = background_queries.list();
+        if (jobs.empty())
+        {
+            output_stream << "No background jobs." << std::endl;
+            return true;
+        }
+
+        for (const auto & job : jobs)
+        {
+            output_stream << '[' << job.id << "] " << BackgroundQueryManager::stateName(job.state) << "  "
+                          << fmt::format("{:.1f}", static_cast<double>(job.elapsed.count()) / 1000.0) << " sec"
+                          << "  " << formatBackgroundJobMetrics(job) << "  spooled: " << formatReadableSizeWithBinarySuffix(job.spool_bytes)
+                          << "  " << job.query_id << "  " << job.query << std::endl;
+        }
+        return true;
+    }
+
+    const auto id = parseBackgroundJobId(argument);
+    if (!id)
+    {
+        error_stream << "Usage: " << name << " <job_id>" << std::endl;
+        return true;
+    }
+
+    if (boost::iequals(name, "\\fg"))
+    {
+        const auto job = background_queries.get(*id);
+        if (!job)
+        {
+            error_stream << "Background job " << *id << " does not exist" << std::endl;
+            return true;
+        }
+        if (job->state == BackgroundQueryManager::State::Starting || job->state == BackgroundQueryManager::State::Running)
+        {
+            output_stream << "Background job " << *id << " is still "
+                          << BackgroundQueryManager::stateName(job->state) << std::endl;
+            return true;
+        }
+
+        if (!job->output_is_tty_friendly && stdin_is_a_tty && stdout_is_a_tty)
+        {
+            const auto question = fmt::format(
+                "The background job uses binary output format `{}`, which can produce side-effects when written to the terminal. "
+                "Replay it anyway? [y/N] ",
+                job->output_format);
+            const bool replay = ask(question, *std_in, *std_out);
+            *std_out << '\n';
+            std_out->next();
+            if (!replay)
+            {
+                output_stream << "Background job " << *id << " was not replayed; use \\cancel " << *id
+                              << " to discard it" << std::endl;
+                return true;
+            }
+        }
+
+        std::unique_ptr<ShellCommand> background_pager;
+        bool pager_signals_changed = false;
+        auto finish_background_pager = [&](bool wait_for_pager)
+        {
+            std::exception_ptr cleanup_error;
+            if (background_pager)
+            {
+                try
+                {
+                    background_pager->in.close();
+                    if (wait_for_pager)
+                        background_pager->wait();
+                }
+                catch (...)
+                {
+                    cleanup_error = std::current_exception();
+                }
+                background_pager.reset();
+            }
+
+            if (pager_signals_changed)
+            {
+                auto restore_signal = [&](int signal_number, const char * signal_name)
+                {
+                    try
+                    {
+                        if (SIG_ERR == signal(signal_number, SIG_DFL))
+                            throw ErrnoException(
+                                ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot restore signal handler for {}", signal_name);
+                    }
+                    catch (...)
+                    {
+                        if (!cleanup_error)
+                            cleanup_error = std::current_exception();
+                    }
+                };
+                restore_signal(SIGPIPE, "SIGPIPE");
+                restore_signal(SIGQUIT, "SIGQUIT");
+                pager_signals_changed = false;
+
+                try
+                {
+                    setupSignalHandler();
+                }
+                catch (...)
+                {
+                    if (!cleanup_error)
+                        cleanup_error = std::current_exception();
+                }
+            }
+
+            if (cleanup_error)
+                std::rethrow_exception(cleanup_error);
+        };
+
+        WriteBuffer * result_output = std_out.get();
+        BackgroundQueryManager::ForegroundResult result;
+        try
+        {
+            if (!pager.empty())
+            {
+                if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
+                    throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
+                pager_signals_changed = true;
+                if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
+                    throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+
+                ShellCommand::Config config(pager);
+                config.pipe_stdin_only = true;
+                config.terminate_in_destructor_strategy.terminate_in_destructor = true;
+                config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
+                background_pager = ShellCommand::execute(config);
+                result_output = &background_pager->in;
+            }
+
+            AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> diagnostics(stderr_fd);
+            result = background_queries.foreground(*id, *result_output, diagnostics, true);
+            finish_background_pager(true);
+        }
+        catch (...)
+        {
+            auto exception = std::current_exception();
+            try
+            {
+                finish_background_pager(false);
+            }
+            catch (...)
+            {
+            }
+            std::rethrow_exception(exception);
+        }
+
+        switch (result.status)
+        {
+            case BackgroundQueryManager::ForegroundStatus::NotFound:
+                error_stream << "Background job " << *id << " does not exist" << std::endl;
+                break;
+            case BackgroundQueryManager::ForegroundStatus::Running:
+                output_stream << "Background job " << *id << " is still "
+                              << BackgroundQueryManager::stateName(result.job->state) << std::endl;
+                break;
+            case BackgroundQueryManager::ForegroundStatus::UnsafeOutput:
+                UNREACHABLE();
+            case BackgroundQueryManager::ForegroundStatus::Replayed:
+                output_stream << "Background job " << *id << ' '
+                              << BackgroundQueryManager::stateName(result.job->state) << std::endl;
+                break;
+        }
+        return true;
+    }
+
+    switch (background_queries.cancel(*id))
+    {
+        case BackgroundQueryManager::CancelStatus::NotFound:
+            error_stream << "Background job " << *id << " does not exist" << std::endl;
+            break;
+        case BackgroundQueryManager::CancelStatus::Requested:
+            output_stream << "Cancellation requested for background job " << *id << std::endl;
+            break;
+        case BackgroundQueryManager::CancelStatus::Discarded:
+            output_stream << "Discarded background job " << *id << std::endl;
+            break;
+    }
+    return true;
+}
+
+bool Client::tryExecuteDetachableQuery(
+    std::string_view query, const ASTPtr & parsed_query, size_t insert_query_without_data_length)
+{
+    /// A Ctrl+B pressed during an ineligible query must not detach the next
+    /// eligible query as soon as it starts.
+    query_detachment_requested.store(false, std::memory_order_release);
+
+    if (!is_interactive
+        || insert_query_without_data_length != 0
+        || !parsed_query->as<ASTSelectWithUnionQuery>()
+        || !pager.empty()
+        || default_output_compression_method != CompressionMethod::None
+        || !external_tables.empty()
+        || !external_scalars.empty()
+        || client_context->getSettingsRef()[Setting::partial_result_on_first_cancel]
+        || client_context->getSettingsRef()[Setting::run_query_in_background]
+        || containsSetting(parsed_query, "partial_result_on_first_cancel")
+        || containsSetting(parsed_query, "run_query_in_background")
+        || containsSetting(parsed_query, "profile"))
+        return false;
+
+    /// Prepare the session before the worker runs the normal query path.
+    if (connection_needs_resynchronization)
+        resynchronizeConnectionAfterError();
+    else if (!connection || !connection->checkConnectedWithoutRoundTrip())
+        connect();
+
+    if (!getDetachableOutputFormat(
+            parsed_query,
+            client_context,
+            settings_from_server,
+            default_output_format,
+            is_default_format,
+            has_vertical_output_suffix))
+        return false;
+
+    BackgroundQueryManager::Snapshot snapshot(
+        client_context,
+        connection_parameters,
+        getClientConfiguration(),
+        default_database,
+        max_client_network_bandwidth,
+        client_local_timezone,
+        default_output_format,
+        is_default_format,
+        default_output_compression_method,
+        has_vertical_output_suffix,
+        inline_insert_data,
+        allow_merge_tree_settings,
+        query_processing_stage,
+        query_kind);
+
+    int foreground_tty_fd = -1;
+    if (need_render_progress || need_render_progress_table)
+    {
+        if (stderr_is_a_tty)
+            foreground_tty_fd = stderr_fd;
+        else if (stdout_is_a_tty)
+            foreground_tty_fd = stdout_fd;
+        else if (stdin_is_a_tty)
+            foreground_tty_fd = stdin_fd;
+    }
+
+    /// Complete local allocation before transferring connection ownership.
+    AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> diagnostics(stderr_fd);
+
+    /// Arm controls before transfer so interceptor startup cannot orphan a worker.
+    query_interrupt_handler.start(/* signals_before_stop = */ 1);
+    SCOPE_EXIT({
+        stopKeystrokeInterceptorIfExists();
+        query_interrupt_handler.stop();
+    });
+    startKeystrokeInterceptorIfExists();
+
+    const auto handle = background_queries.startAttached(
+        String(query),
+        parsed_query->formatForLogging(/* max_length = */ 80),
+        std::move(snapshot),
+        connection,
+        *std_out,
+        output_stream,
+        error_stream,
+        server_logs_file,
+        server_revision,
+        server_version,
+        stdout_is_a_tty,
+        stderr_is_a_tty,
+        terminal_width,
+        stderr_fd,
+        foreground_tty_fd,
+        need_render_progress,
+        need_render_progress_table,
+        progress_table_toggle_enabled,
+        progress_table_toggle_on);
+
+    bool attached_handle_owned = true;
+    SCOPE_EXIT({
+        if (attached_handle_owned)
+            background_queries.discardAttached(handle);
+    });
+
+    /// The main thread must not touch the exchange until the worker returns it.
+    connection_needs_resynchronization = false;
+
+    bool cancellation_requested = false;
+    bool detachment_pending = false;
+
+    while (true)
+    {
+        if (!detachment_pending && query_detachment_requested.exchange(false, std::memory_order_acq_rel))
+        {
+            background_queries.requestDetach(handle);
+            detachment_pending = true;
+        }
+
+        if (!cancellation_requested && query_interrupt_handler.cancelled())
+        {
+            cancellation_requested = background_queries.cancelAttached(handle);
+        }
+
+        const auto wait_status = background_queries.waitAttached(handle, std::chrono::milliseconds(25));
+        if (wait_status == BackgroundQueryManager::AttachedWaitStatus::DetachAcknowledged)
+        {
+            const auto id = background_queries.promoteDetached(handle);
+            if (!id)
+                continue;
+
+            attached_handle_owned = false;
+            /// Restore terminal input only after the worker redirects its output.
+            stopKeystrokeInterceptorIfExists();
+            output_stream << "\nBackground job " << *id
+                          << " detached. The main client will reconnect with a new session." << std::endl;
+            return true;
+        }
+
+        if (wait_status != BackgroundQueryManager::AttachedWaitStatus::Terminal)
+            continue;
+
+        auto result = background_queries.collectAttached(handle, *std_out, diagnostics);
+        attached_handle_owned = false;
+        connection = std::move(result.connection);
+        connection_needs_resynchronization = result.connection_needs_resynchronization;
+        server_exception = std::move(result.server_exception);
+        client_exception = std::move(result.client_exception);
+        have_error = result.job.state == BackgroundQueryManager::State::Failed || server_exception || client_exception;
+        cancelled = result.job.state == BackgroundQueryManager::State::Cancelled;
+        return true;
+    }
+}
 
 void Client::processError(std::string_view query) const
 {

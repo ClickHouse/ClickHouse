@@ -68,7 +68,12 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
     for (auto & new_host : new_hosts_data)
     {
         total_cpu_ns += us_to_ns * new_host.second.time();
-        hosts_data[new_host.first] = new_host.second;
+        auto & host_data = hosts_data[new_host.first];
+        const UInt64 cumulative_user_time = host_data.user_ms + new_host.second.user_ms;
+        const UInt64 cumulative_system_time = host_data.system_ms + new_host.second.system_ms;
+        host_data = new_host.second;
+        host_data.user_ms = cumulative_user_time;
+        host_data.system_ms = cumulative_system_time;
     }
     cpu_usage_meter.add(static_cast<double>(getElapsedNanoseconds()), static_cast<double>(total_cpu_ns));
 }
@@ -77,6 +82,18 @@ double ProgressIndication::getCPUUsage()
 {
     std::lock_guard lock(profile_events_mutex);
     return cpu_usage_meter.rate(static_cast<double>(getElapsedNanoseconds()));
+}
+
+double ProgressIndication::getAverageCPUUsage() const
+{
+    std::lock_guard lock(profile_events_mutex);
+    const UInt64 elapsed_ns = std::max(progress.elapsed_ns.load(std::memory_order_relaxed), watch.elapsed());
+    const UInt64 total_cpu_us = std::accumulate(
+        hosts_data.cbegin(),
+        hosts_data.cend(),
+        UInt64{},
+        [](UInt64 total, const auto & host_data) { return total + host_data.second.time(); });
+    return elapsed_ns ? static_cast<double>(total_cpu_us) * 1000.0 / static_cast<double>(elapsed_ns) : 0;
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const

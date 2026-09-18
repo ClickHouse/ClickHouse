@@ -88,6 +88,8 @@ public:
     };
 
     MemoryUsage getMemoryUsage() const;
+    double getCPUUsage();
+    double getAverageCPUUsage() const;
 
     struct TempDataOnDiskUsage
     {
@@ -101,8 +103,6 @@ public:
     void updateThreadEventData(HostToTimesMap & new_hosts_data);
 
 private:
-    double getCPUUsage();
-
     UInt64 getElapsedNanoseconds() const;
 
     /// This flag controls whether to show the progress bar. We start showing it after

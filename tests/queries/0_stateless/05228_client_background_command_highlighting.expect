@@ -1,0 +1,32 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+set env(TERM) xterm-256color
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --highlight=1 --history_file=$history_file"
+expect ":) "
+
+# A recognized command must stay contiguous instead of being split by the SQL error color.
+send -- {\jobs}
+expect -ex {\jobs}
+
+send -- "\3"
+expect -ex "^C"
+expect ":) "
+send -- "\4"
+expect eof
