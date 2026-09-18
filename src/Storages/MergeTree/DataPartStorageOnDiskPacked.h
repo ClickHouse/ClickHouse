@@ -31,6 +31,8 @@ public:
         const ReadSettings & read_settings_,
         bool initialize_ = true);
 
+    ~DataPartStorageOnDiskPacked() override;
+
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Packed; }
 
     MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
@@ -86,6 +88,7 @@ public:
 
     /// Finalizes writer and writes buffered data into transaction.
     void precommitTransaction() override;
+    void startPrecommitTransaction() override;
 
 #if CLICKHOUSE_CLOUD
     TransactionCommitOutcomeVariant tryCommitTransaction(const TransactionCommitOptionsVariant & options) override;
@@ -123,6 +126,17 @@ private:
 
     /// Writer is initialized after creating a disk transaction.
     std::optional<PackedFilesWriter> writer;
+
+    struct PendingWriterFinalization
+    {
+        std::unique_ptr<WriteBufferFromFileBase> buffer;
+        PackedFilesIO::Index index;
+        String archive_path;
+        bool need_sync;
+        bool replace_archive;
+    };
+
+    std::optional<PendingWriterFinalization> pending_writer_finalization;
 
     bool is_precommitted = false;
 
@@ -165,6 +179,7 @@ private:
 
     void resetReader(const ReadSettings & read_settings);
     void resetWriterFromTransaction();
+    void preFinalizeWriter();
     void finalizeWriter();
 
     /// Modifying of files is possible only with transaction.

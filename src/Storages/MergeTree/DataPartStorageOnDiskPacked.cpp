@@ -55,6 +55,12 @@ DataPartStorageOnDiskPacked::DataPartStorageOnDiskPacked(
         resetReader(read_settings_);
 }
 
+DataPartStorageOnDiskPacked::~DataPartStorageOnDiskPacked()
+{
+    if (pending_writer_finalization)
+        pending_writer_finalization->buffer->cancel();
+}
+
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::create(
     VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const // NOLINT
 {
@@ -526,12 +532,21 @@ void DataPartStorageOnDiskPacked::beginTransaction()
 
 void DataPartStorageOnDiskPacked::precommitTransaction()
 {
+    startPrecommitTransaction();
+    finalizeWriter();
+}
+
+void DataPartStorageOnDiskPacked::startPrecommitTransaction()
+{
     if (!transaction || (!writer && !is_precommitted))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no uncommitted transaction");
 
     if (!is_precommitted)
     {
-        finalizeWriter();
+        preFinalizeWriter();
+        /// Local writes cannot overlap: release their file descriptors before starting the next part.
+        if (!supportParallelWrite())
+            finalizeWriter();
         is_precommitted = true;
     }
 }
@@ -544,12 +559,7 @@ void DataPartStorageOnDiskPacked::commitTransaction()
     if (has_shared_transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
-    if (!is_precommitted)
-    {
-        finalizeWriter();
-        is_precommitted = true;
-    }
-
+    precommitTransaction();
     transaction->commit();
 
     if (!reader)
@@ -568,12 +578,7 @@ TransactionCommitOutcomeVariant DataPartStorageOnDiskPacked::tryCommitTransactio
     if (has_shared_transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
-    if (!is_precommitted)
-    {
-        finalizeWriter();
-        is_precommitted = true;
-    }
-
+    precommitTransaction();
     auto result = transaction->tryCommit(options);
 
     if (!mayRetryCommit(options, result))
@@ -590,12 +595,15 @@ TransactionCommitOutcomeVariant DataPartStorageOnDiskPacked::tryCommitTransactio
 
 void DataPartStorageOnDiskPacked::undoTransaction()
 {
-    if (!transaction || (!writer && !is_precommitted))
+    if (!transaction)
         return;
 
     if (has_shared_transaction)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot commit shared transaction");
 
+    if (pending_writer_finalization)
+        pending_writer_finalization->buffer->cancel();
+    pending_writer_finalization.reset();
     transaction->undo();
     transaction.reset();
     /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
@@ -710,13 +718,15 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
 
 void DataPartStorageOnDiskPacked::resetWriterFromTransaction()
 {
+    chassert(!pending_writer_finalization);
     writer.emplace();
     is_precommitted = false;
 }
 
-void DataPartStorageOnDiskPacked::finalizeWriter()
+void DataPartStorageOnDiskPacked::preFinalizeWriter()
 {
     chassert(writer);
+    chassert(!pending_writer_finalization);
 
     /// Data is unchanged.
     if (!writer->hasModifiedFiles())
@@ -755,7 +765,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
 
     /// If the archive already exists, write to a temporary file and replace it,
     /// to avoid modification of hardlinked files.
-    const String archive_path = file_is_rewriten ? getRelativeDataPath() + ".tmp" : getRelativeDataPath();
+    String archive_path = file_is_rewriten ? getRelativeDataPath() + ".tmp" : getRelativeDataPath();
 
     /// Validate the metadata changes and calculate the index before the destination file is
     /// opened: on a disk without a real transaction `writeFile` truncates the destination right
@@ -764,21 +774,46 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
 
     /// The writer keeps the whole part in memory, so stream the archive directly into the
     /// destination file: serializing it into a string first would hold a second copy of the part.
+    /// Small asynchronous uploads must not retain a full default-sized buffer each.
     auto buf = transaction->writeFile(
-        archive_path, DBMS_DEFAULT_BUFFER_SIZE,
+        archive_path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, plan.total_size),
         WriteMode::Rewrite, writer->getWriteSettings());
 
     writer->finalize(*buf, plan);
 
-    buf->finalize();
-    if (plan.need_sync)
-        buf->sync();
+    pending_writer_finalization.emplace(PendingWriterFinalization
+    {
+        .buffer = std::move(buf),
+        .index = std::move(plan.index),
+        .archive_path = std::move(archive_path),
+        .need_sync = plan.need_sync,
+        .replace_archive = file_is_rewriten,
+    });
 
-    if (file_is_rewriten)
-        transaction->replaceFile(archive_path, getRelativeDataPath());
-
-    reader.emplace(plan.index);
+    /// Retain the buffer before starting asynchronous work so exception cleanup cancels it.
+    /// Serialization is complete; release the virtual files before scheduling the upload.
     writer.reset();
+    pending_writer_finalization->buffer->preFinalize();
+}
+
+void DataPartStorageOnDiskPacked::finalizeWriter()
+{
+    if (writer)
+        preFinalizeWriter();
+
+    if (!pending_writer_finalization)
+        return;
+
+    auto & pending = *pending_writer_finalization;
+    pending.buffer->finalize();
+    if (pending.need_sync)
+        pending.buffer->sync();
+
+    if (pending.replace_archive)
+        transaction->replaceFile(pending.archive_path, getRelativeDataPath());
+
+    reader.emplace(std::move(pending.index));
+    pending_writer_finalization.reset();
 }
 
 template <typename Op>
