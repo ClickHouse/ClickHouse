@@ -320,7 +320,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::DateTimeWithTimezone:
         {
             const auto & datetime_type = assert_cast<const DataTypeDateTime &>(*type);
-            writeStringBinary(getDateLUTTimeZone(datetime_type.getTimeZone()), buf);
+            writeStringBinary(datetime_type.getTimeZoneName(), buf);
             break;
         }
         case BinaryTypeIndex::DateTime64UTC:
@@ -334,7 +334,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
         {
             const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*type);
             buf.write(UInt8(datetime64_type.getScale()));
-            writeStringBinary(getDateLUTTimeZone(datetime64_type.getTimeZone()), buf);
+            writeStringBinary(datetime64_type.getTimeZoneName(), buf);
             break;
         }
         case BinaryTypeIndex::Time64:
