@@ -5,6 +5,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -155,6 +156,14 @@ static ColumnPtr recursiveRemoveLowCardinalityImpl(const ColumnPtr & column, boo
     {
         if (remove_native || !column_low_cardinality->isNativeLowCardinality())
             res = column_low_cardinality->convertToFullColumn();
+    }
+    else if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
+    {
+        /// The values of a sparse column follow the same rule as any other nested column.
+        const auto & values = column_sparse->getValuesPtr();
+        auto values_no_lc = recursiveRemoveLowCardinalityImpl(values, remove_native);
+        if (values.get() != values_no_lc.get())
+            res = ColumnSparse::create(values_no_lc, column_sparse->getOffsetsPtr(), column_sparse->size());
     }
     else if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
     {

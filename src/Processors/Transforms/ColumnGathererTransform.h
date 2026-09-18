@@ -98,6 +98,9 @@ private:
     const std::optional<size_t> max_dynamic_subcolumns;
     const bool is_result_sparse;
 
+    /// Coerces an input chunk to the representation the result column is built from.
+    void removeInputRepresentations(Chunk & chunk) const;
+
     Source * source_to_fully_copy = nullptr;
 
     ssize_t next_required_source = -1;
