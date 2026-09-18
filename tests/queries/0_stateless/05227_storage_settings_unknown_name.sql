@@ -53,6 +53,17 @@ SETTINGS disk = 'default', not_a_setting_at_all = DEFAULT; -- { serverError UNKN
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = File(CSV)
 SETTINGS format_csv_delimiter = ';', not_a_setting_at_all = DEFAULT; -- { serverError UNKNOWN_SETTING }
 
+-- `param_x = ...` is parsed into a third payload of the SETTINGS clause, which only a standalone `SET` reads.
+CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog
+SETTINGS disk = 'default', param_x = 1; -- { serverError UNKNOWN_SETTING }
+
+CREATE TABLE t_unknown_setting (a UInt64) ENGINE = File(CSV)
+SETTINGS format_csv_delimiter = ';', param_x = 1; -- { serverError UNKNOWN_SETTING }
+
+-- Alone in the clause it is dropped before any engine sees it, except on the `AS SELECT` path.
+CREATE TABLE t_unknown_setting ENGINE = TinyLog
+SETTINGS param_x = 1 AS SELECT 1 AS a; -- { serverError UNKNOWN_SETTING }
+
 SELECT '--- a setting of the engine is still accepted ---';
 
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS disk = 'default';
@@ -61,6 +72,12 @@ DROP TABLE t_unknown_setting;
 
 -- A reset naming a real setting is not an unknown name, in either payload.
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS disk = 'default', max_threads = DEFAULT;
+SHOW CREATE TABLE t_unknown_setting;
+DROP TABLE t_unknown_setting;
+
+-- A query parameter is declared by `SET` and substituted into a setting value, which is a value and not a name.
+SET param_d = ';';
+CREATE TABLE t_unknown_setting (a UInt64) ENGINE = File(CSV) SETTINGS format_csv_delimiter = {d:String};
 SHOW CREATE TABLE t_unknown_setting;
 DROP TABLE t_unknown_setting;
 

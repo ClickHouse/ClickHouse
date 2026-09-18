@@ -84,6 +84,9 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the stored definition.
     for (const auto & name : args.storage_def->settings->default_settings)
         check(name);
+    /// `param_x = ...` lands in `query_parameters` with the prefix stripped, and only a standalone `SET` reads that payload.
+    for (const auto & parameter : args.storage_def->settings->query_parameters)
+        check(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
 
