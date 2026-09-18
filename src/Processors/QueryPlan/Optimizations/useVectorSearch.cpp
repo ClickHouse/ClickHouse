@@ -1,3 +1,4 @@
+#include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -415,8 +417,13 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             /// Both are per part: a patch part in another partition does not concern this read.
             if (mutations_snapshot)
             {
+                const auto context = read_from_mergetree_step->getContext();
                 auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
-                    part_with_ranges.data_part, mutations_snapshot, read_from_mergetree_step->getContext());
+                    part_with_ranges.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                    , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+                    );
 
                 if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
                     return true;
