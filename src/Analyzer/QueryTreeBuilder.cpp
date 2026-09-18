@@ -56,6 +56,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 
 
 namespace DB
@@ -87,6 +88,69 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool hasQueryParameter(const IAST & ast)
+{
+    std::vector<const IAST *> nodes_to_visit{&ast};
+
+    while (!nodes_to_visit.empty())
+    {
+        const auto * node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (node->as<ASTQueryParameter>())
+            return true;
+
+        for (const auto & child : node->children)
+            if (child)
+                nodes_to_visit.push_back(child.get());
+    }
+
+    return false;
+}
+
+/** Move the bodies of the parameterized common table expressions out of a `WITH` list onto `context`.
+  *
+  * A parameterized CTE still carries its `ASTQueryParameter` placeholders at this point:
+  * `ReplaceQueryParameterVisitor` deliberately preserves them because their values come from the CTE
+  * invocation, not from the query parameters. `buildExpression` cannot represent a placeholder, so such a
+  * body must stay an AST until `QueryAnalyzer` expands an invocation of it.
+  *
+  * A body that holds placeholders but is never invoked is not a template and is left in the list, so it
+  * still fails on the unset parameter the way it always did.
+  *
+  * Returns the `WITH` list to build, which is the original list when it declares no parameterized CTE, and
+  * `nullptr` when every element was parameterized.
+  */
+ASTPtr extractParameterizedCTEs(const ASTSelectQuery & select_query, const ASTPtr & with_list, const ContextMutablePtr & context)
+{
+    ASTs kept_elements;
+    bool extracted_any = false;
+
+    for (const auto & child : with_list->children)
+    {
+        const auto * with_element = child->as<ASTWithElement>();
+        if (with_element && with_element->subquery && hasQueryParameter(*with_element->subquery)
+            && isParameterizedCTEInvoked(select_query, with_element->name))
+        {
+            context->setParameterizedCTE(with_element->name, with_element->subquery->as<ASTSubquery &>().children.at(0));
+            extracted_any = true;
+            continue;
+        }
+
+        kept_elements.push_back(child);
+    }
+
+    if (!extracted_any)
+        return with_list;
+
+    if (kept_elements.empty())
+        return nullptr;
+
+    auto kept_list = make_intrusive<ASTExpressionList>();
+    kept_list->children = std::move(kept_elements);
+    return kept_list;
+}
 
 class QueryTreeBuilder
 {
@@ -347,9 +411,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     auto current_context = current_query_tree->getContext();
 
+    /// Register the parameterized CTEs declared here before anything else, because everything below copies
+    /// this context for the nested query nodes it builds. Registering later would leave a nested scope
+    /// unable to see a CTE declared by its own parent, e.g. `WITH t AS (SELECT {v:String} AS value)
+    /// SELECT * FROM (SELECT * FROM t(v = 'x'))`.
+    auto select_with_list = select_query_typed.with();
+    if (select_with_list)
+        select_with_list = extractParameterizedCTEs(select_query_typed, select_with_list, current_query_tree->getMutableContext());
+
     current_query_tree->getJoinTreeNode() = buildJoinTree(is_subquery, select_query_typed, current_context);
 
-    auto select_with_list = select_query_typed.with();
     if (select_with_list)
     {
         current_query_tree->getWithNode() = buildExpressionList(select_with_list, current_context);
