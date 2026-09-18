@@ -12,3 +12,13 @@ entries	1
 entries after the same query again	1
 0
 entries after the other setting	2
+0
+entries after an unrelated setting	2
+a format setting the conversion reads while parsing
+0
+countMatches
+0
+20000
+a comparison against a string literal
+0
+20000

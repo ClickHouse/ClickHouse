@@ -135,6 +135,9 @@ struct FunctionConvertSettings
     const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
+    /// `format_settings` has too many members to hash one by one; this hashes the session settings it
+    /// was derived from instead (see `getFormatSettingsHash`).
+    const UInt64 format_settings_hash;
 
     /// Note: context may be nullptr (i.e. via castColumn())
     explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
@@ -151,6 +154,7 @@ struct FunctionConvertSettings
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
+        , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
     {
     }
 
@@ -159,8 +163,9 @@ struct FunctionConvertSettings
       * to see them: without this, two sessions that differ only in `precise_float_parsing` build the
       * same key and one serves the other its granule-skip verdicts.
       *
-      * `format_settings` is hashed by the fields the text (de)serialization of a converted value can
-      * read; a setting added to this struct has to be added here too.
+      * Every member is hashed: the captured settings one by one, and `format_settings` through the hash
+      * of the session settings it was derived from, which covers each member the text (de)serialization
+      * of a converted value can read. A setting added to this struct has to be added here too.
       */
     void updateHash(SipHash & hash) const
     {
@@ -175,21 +180,7 @@ struct FunctionConvertSettings
         hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
         hash.update(cast_keep_nullable);
         hash.update(cast_string_to_date_time_mode);
-
-        hash.update(format_settings.date_time_input_format);
-        hash.update(format_settings.date_time_output_format);
-        hash.update(format_settings.interval_output_format);
-        hash.update(format_settings.date_time_overflow_behavior);
-        hash.update(format_settings.bool_true_representation);
-        hash.update(format_settings.bool_false_representation);
-        hash.update(format_settings.json.quote_64bit_integers);
-        hash.update(format_settings.json.quote_64bit_floats);
-        hash.update(format_settings.json.quote_denormals);
-        hash.update(format_settings.json.quote_decimals);
-        hash.update(format_settings.try_infer_integers);
-        hash.update(format_settings.try_infer_dates);
-        hash.update(format_settings.try_infer_datetimes);
-        hash.update(format_settings.decimal_trailing_zeros);
+        hash.update(format_settings_hash);
     }
 };
 

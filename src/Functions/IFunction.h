@@ -191,7 +191,9 @@ public:
       * parameters and the types it was resolved for: a conversion, for instance, captures the
       * settings that tell it how to parse. Anything that keys an expression by a hash - the query
       * condition cache, the reuse of collected statistics - relies on this, so a function that
-      * captured a setting must not leave it out.
+      * captures a setting must override this and hash it, as the conversions, the comparisons,
+      * `countMatches` and `toJSONString` do. A function that does not is keyed by its name and types
+      * alone, and two sessions that differ in the setting it captured share one key.
       */
     virtual void updateHash(SipHash &) const {}
 
