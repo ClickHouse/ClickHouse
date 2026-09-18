@@ -27,7 +27,6 @@ BUILD_TYPE_CONFIGS_ONLY=0
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --fast-test) FAST_TEST=1 && EXPORT_S3_STORAGE_POLICIES=0 ;;
-        --analyzer) USE_OLD_ANALYZER=1 ;;
         --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 && USE_S3_STORAGE_FOR_MERGE_TREE=1 && RANDOMIZE_OBJECT_KEY_TYPE=1 ;;
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
@@ -107,19 +106,43 @@ function build_option_flag()
     echo "$value"
 }
 
+# Print 1 or 0 for whether a named system.build_options row is enabled, or fail. Flags that cmake
+# applies per-directory never reach CXX_FLAGS, so build_option_flag cannot probe them. A missing
+# row aborts the install instead of reading as false, so a renamed option cannot go unnoticed.
+function build_option_enabled()
+{
+    local description=$1 name=$2 value rc=0
+    value=$(clickhouse local --query \
+        "SELECT multiIf(count() = 0, 'missing', countIf(upper(value) IN ('ON', '1')) > 0, '1', '0') \
+         FROM system.build_options WHERE name = '$name'") || rc=$?
+    if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
+        echo "install.sh: cannot determine whether this is a $description (exit $rc, output '$value')" >&2
+        return 1
+    fi
+    echo "$value"
+}
+
 # Install the configs whose presence depends on the build flavour of the binary installed right
 # now. Idempotent in both directions, so a tree installed for one build type can be re-decided
 # for another (see --build-type-configs-only).
 function install_build_type_configs()
 {
-    local is_memory_sanitizer is_sanitizer
-    # Resolve both probes before touching either file, so a failing probe cannot leave a
+    local is_memory_sanitizer is_sanitizer is_coverage
+    # Resolve every probe before touching any file, so a failing probe cannot leave a
     # half-adjusted tree.
     is_memory_sanitizer=$(build_option_flag "MemorySanitizer build" '%-fsanitize=memory%')
     # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test
     # for -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on
     # a bad vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
     is_sanitizer=$(build_option_flag "sanitizer build" '%-DSANITIZER%')
+    # Coverage instrumentation slows in-flush symbolization as much as a sanitizer runtime does,
+    # and carries no -DSANITIZER, so the flavour is read from its own build_options row. That row
+    # exists from 26.2 on; the upgrade check installs these configs for an older released server.
+    if check_clickhouse_version 26.2; then
+        is_coverage=$(build_option_enabled "coverage build" 'WITH_COVERAGE')
+    else
+        is_coverage=0
+    fi
 
     # A non-zero global_profiler_* period is rejected by an msan server while it parses its own
     # settings, so the config must be absent rather than merely unused there.
@@ -129,7 +152,7 @@ function install_build_type_configs()
         ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
     fi
 
-    if [ "$is_sanitizer" = "1" ]; then
+    if [ "$is_sanitizer" = "1" ] || [ "$is_coverage" = "1" ]; then
         ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
     else
         rm -f $DEST_SERVER_PATH/config.d/trace_log_no_symbolize.xml
@@ -360,10 +383,6 @@ fi
 # test there. Other jobs that satisfy is_fast_build run the long tests that Fast test skips.
 if [ "$FAST_TEST" == "1" ] && is_fast_build; then
     ln -sf $SRC_PATH/users.d/limits_fast.yaml $DEST_SERVER_PATH/users.d/
-fi
-
-if [[ -n "$USE_OLD_ANALYZER" ]] && [[ "$USE_OLD_ANALYZER" -eq 1 ]]; then
-    ln -sf $SRC_PATH/users.d/analyzer.xml $DEST_SERVER_PATH/users.d/
 fi
 
 if [[ -n "$USE_DISTRIBUTED_PLAN" ]] && [[ "$USE_DISTRIBUTED_PLAN" -eq 1 ]]; then

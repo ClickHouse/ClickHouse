@@ -11,17 +11,17 @@ INSERT INTO t_nullable_key
 SELECT if(number % 7 = 0, NULL, toDateTime64('2026-03-01 00:00:00', 6) + INTERVAL number * 6 HOUR), number
 FROM numbers(40);
 
-SELECT trimLeft(explain) FROM (
+SELECT extract(explain, 'Granules: \\d+/\\d+') AS granules FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_nullable_key WHERE toDate(x) = toDate('2026-03-02')
-) WHERE explain LIKE '%Granules:%';
+) WHERE granules != '';
 
-SELECT trimLeft(explain) FROM (
+SELECT extract(explain, 'Granules: \\d+/\\d+') AS granules FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_nullable_key WHERE toDate32(x) = toDate32('2026-03-02')
-) WHERE explain LIKE '%Granules:%';
+) WHERE granules != '';
 
-SELECT trimLeft(explain) FROM (
+SELECT extract(explain, 'Granules: \\d+/\\d+') AS granules FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_nullable_key WHERE toDateTime(x) = toDateTime('2026-03-02 06:00:00')
-) WHERE explain LIKE '%Granules:%';
+) WHERE granules != '';
 
 -- The rows the index analysis keeps must be the rows the predicate selects, `NULL`s included.
 SELECT count(), sum(y) FROM t_nullable_key WHERE toDate(x) = toDate('2026-03-02');
