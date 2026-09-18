@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
@@ -363,7 +364,7 @@ SELECT medianAbsoluteDeviation(number) FROM numbers(10);
         )",
             R"(
 ┌─medianAbsoluteDeviation(number)─┐
-│                                1 │
+│                              2.5 │
 └─────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
