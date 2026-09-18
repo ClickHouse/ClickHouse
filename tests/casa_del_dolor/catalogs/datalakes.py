@@ -499,7 +499,7 @@ logger.jetty.level = warn
 
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri",
-                    f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
+                    f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
                 )
                 if storage == TableStorage.S3:
                     builder.config(
@@ -837,7 +837,7 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "hive",
-                        "uri": f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
+                        "uri": f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
                         "client.region": "us-east-1",
                     }
                 )
@@ -868,7 +868,7 @@ logger.jetty.level = warn
                 params.update(
                     {
                         "type": "hive",
-                        "uri": f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
+                        "uri": f"thrift://{cluster.get_instance_ip('hive')}:{cluster.hms_catalog_port}",
                     }
                 )
             else:
