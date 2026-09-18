@@ -13,6 +13,8 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
+#include <Poco/Process.h>
+
 #include <base/getMemoryAmount.h>
 
 #include <Poco/UnWindows.h>
@@ -255,6 +257,30 @@ void memoryAmountRespectsTheJobObject()
         "the memory amount stays within the job object limit (" + std::to_string(amount) + " <= " + std::to_string(*limit) + ")");
 }
 
+/// `ServerApplication::waitForTerminationRequest` on Windows waits on the named `POCOTRM<pid>`
+/// event, because that is the object `Process::requestTermination` - and therefore
+/// `ServerApplication::terminate` - signals. Nothing else wakes a graceful shutdown, so the two
+/// sides have to keep naming the same object.
+///
+/// The wait is bounded, so that a regression fails this check instead of hanging the build job.
+void terminationRequestSignalsTheEventTheServerWaitsOn()
+{
+    const std::string name = Poco::ProcessImpl::terminationEventName(Poco::Process::id());
+    const std::wstring wide_name(name.begin(), name.end()); /// The name is `POCOTRM` plus hex digits.
+
+    HANDLE event = CreateEventW(nullptr, 0, 0, wide_name.c_str());
+    check(event != nullptr, "the termination event of this process can be created");
+    if (!event)
+        return;
+
+    Poco::Process::requestTermination(Poco::Process::id());
+    check(
+        WaitForSingleObject(event, 5000) == WAIT_OBJECT_0,
+        "`Process::requestTermination` signals the event `ServerApplication::waitForTerminationRequest` waits on");
+
+    CloseHandle(event);
+}
+
 }
 
 
@@ -271,6 +297,7 @@ int main(int, char **)
     dontWaitOnReadyDatagramSocketSendsAndReceives();
     jobObjectMemoryLimitIsDecidedFromTheFlags();
     memoryAmountRespectsTheJobObject();
+    terminationRequestSignalsTheEventTheServerWaitsOn();
 
     std::cout << (failures ? "FAILED: " + std::to_string(failures) + " check(s)\n" : "OK\n");
     return failures ? 1 : 0;
