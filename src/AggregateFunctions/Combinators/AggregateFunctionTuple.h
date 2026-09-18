@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnTuple.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -10,6 +11,16 @@
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+extern const char aggregate_function_state_transfer_throw_after_child[];
+}
 
 /** Adaptor for aggregate functions.
   * Adding -Tuple suffix to aggregate function
@@ -150,6 +161,18 @@ private:
     {
         for (; transferred < nested_functions.size(); ++transferred)
         {
+            if constexpr (!for_merge)
+            {
+                /// Only past the first element, whose transfer returned, is there a completed child to undo.
+                if (unlikely(transferred > 0))
+                {
+                    fiu_do_on(FailPoints::aggregate_function_state_transfer_throw_after_child,
+                    {
+                        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure in AggregateFunctionTuple::insertResultInto");
+                    });
+                }
+            }
+
             if constexpr (for_merge)
                 nested_functions[transferred]->insertMergeResultInto(
                     place + state_offsets[transferred], tuple_to.getColumn(transferred), arena);

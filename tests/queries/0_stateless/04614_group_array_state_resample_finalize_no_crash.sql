@@ -9,7 +9,11 @@
 -- Each sub-state below holds more than 4096 bytes of groupArray data, so it is allocated outside the
 -- arena and the second destroy reaches a real deallocation.
 
+-- The second failpoint throws at the start of a -Tuple element whose predecessor transferred in full,
+-- so the child being undone is a COMPLETED one rather than the partially transferred innermost -State.
+
 SYSTEM DISABLE FAILPOINT aggregate_function_state_transfer_throw;
+SYSTEM DISABLE FAILPOINT aggregate_function_state_transfer_throw_after_child;
 
 -- Plain -State: the transfer is atomic, so this must throw cleanly on every version.
 SYSTEM ENABLE FAILPOINT aggregate_function_state_transfer_throw;
@@ -82,3 +86,17 @@ SYSTEM ENABLE FAILPOINT aggregate_function_state_transfer_throw;
 SELECT groupArrayStateResampleTupleDistinctTuple(0, 2, 1)(CAST(((number, number + 1), (number + 2, number + 3)), 'Tuple(Nullable(Tuple(UInt64, UInt64)), Nullable(Tuple(UInt64, UInt64)))'), ((number % 2, number % 2), (number % 2, number % 2))) FROM numbers(2000) SETTINGS max_threads = 1, enable_nullable_tuple_type = 1 FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
 SYSTEM DISABLE FAILPOINT aggregate_function_state_transfer_throw;
 SELECT arrayMap(x -> length(finalizeAggregation(x)), assumeNotNull(t.1).1), arrayMap(x -> length(finalizeAggregation(x)), assumeNotNull(t.2).2) FROM (SELECT groupArrayStateResampleTupleDistinctTuple(0, 2, 1)(CAST(((number, number + 1), (number + 2, number + 3)), 'Tuple(Nullable(Tuple(UInt64, UInt64)), Nullable(Tuple(UInt64, UInt64)))'), ((number % 2, number % 2), (number % 2, number % 2))) AS t FROM numbers(2000)) SETTINGS max_threads = 1, enable_nullable_tuple_type = 1;
+
+-- A completed -Resample child undone by its parent: with the second failpoint the first tuple element
+-- transfers all of its buckets, and the throw lands before the second element.
+SYSTEM ENABLE FAILPOINT aggregate_function_state_transfer_throw_after_child;
+SELECT groupArrayStateResampleTuple(0, 2, 1)((number, number + 1), (number % 2, number % 2)) FROM numbers(2000) SETTINGS max_threads = 1 FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SYSTEM DISABLE FAILPOINT aggregate_function_state_transfer_throw_after_child;
+SELECT arrayMap(x -> length(finalizeAggregation(x)), t.1), arrayMap(x -> length(finalizeAggregation(x)), t.2) FROM (SELECT groupArrayStateResampleTuple(0, 2, 1)((number, number + 1), (number % 2, number % 2)) AS t FROM numbers(2000)) SETTINGS max_threads = 1;
+
+-- The same completed child behind an -OrNull that forwards: Array cannot be inside Nullable, so -OrFill
+-- passes the array column straight through and has to forward the undo as well.
+SYSTEM ENABLE FAILPOINT aggregate_function_state_transfer_throw_after_child;
+SELECT groupArrayStateResampleOrNullTuple(0, 2, 1)((number, number + 1), (number % 2, number % 2)) FROM numbers(2000) SETTINGS max_threads = 1 FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SYSTEM DISABLE FAILPOINT aggregate_function_state_transfer_throw_after_child;
+SELECT arrayMap(x -> length(finalizeAggregation(x)), t.1), arrayMap(x -> length(finalizeAggregation(x)), t.2) FROM (SELECT groupArrayStateResampleOrNullTuple(0, 2, 1)((number, number + 1), (number % 2, number % 2)) AS t FROM numbers(2000)) SETTINGS max_threads = 1;
