@@ -105,8 +105,14 @@ void StorageFileCluster::updateBeforeRead(const ContextPtr & context)
     checkWriteAccessIfFilesAreRenamed(context);
 }
 
-void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const DB::ContextPtr & context)
+void StorageFileCluster::updateQueryToSendIfNeeded(
+    DB::ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const DB::ContextPtr & context,
+    const String & /*target_cluster_name*/)
 {
+    /// `fileCluster` has no plain counterpart that `parallel_replicas_for_cluster_engines` could convert,
+    /// so the function is always already the `*Cluster` variant and no cluster name has to be injected.
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
