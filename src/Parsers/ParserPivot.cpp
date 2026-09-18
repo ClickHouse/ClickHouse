@@ -343,6 +343,47 @@ ASTPtr makePivotAggregate(const ASTPtr & aggregate, const ASTPtr & pivot_column,
     return result;
 }
 
+ASTPtr wrapPivotSourceWithColumnAliases(ASTPtr source, const String & alias)
+{
+    auto & table_expression = source->as<ASTTableExpression &>();
+    if (!table_expression.column_aliases || table_expression.subquery)
+        return source;
+
+    /// The analyzer applies table-expression column aliases to subqueries, but not directly to tables
+    /// or table functions. Put the source behind a derived table so `source(column_alias)` remains
+    /// visible to the generated PIVOT expressions.
+    auto column_aliases = table_expression.column_aliases->clone();
+
+    auto source_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    source_element->table_expression = source;
+    source_element->children.push_back(source);
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(source_element);
+
+    auto select_list = make_intrusive<ASTExpressionList>();
+    select_list->children.push_back(make_intrusive<ASTAsterisk>());
+
+    auto select = make_intrusive<ASTSelectQuery>();
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+    select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(select);
+
+    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union->children.push_back(list_of_selects);
+    select_with_union->list_of_selects = list_of_selects;
+
+    auto wrapped_source = make_intrusive<ASTTableExpression>();
+    wrapped_source->subquery = make_intrusive<ASTSubquery>(std::move(select_with_union));
+    wrapped_source->children.push_back(wrapped_source->subquery);
+    wrapped_source->subquery->setAlias(alias);
+    wrapped_source->column_aliases = std::move(column_aliases);
+    wrapped_source->children.push_back(wrapped_source->column_aliases);
+    return wrapped_source;
+}
+
 ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result_alias)
 {
     if (spec.aggregates.empty() || spec.values.empty())
@@ -422,6 +463,8 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
             select_list->children.push_back(makePivotAggregate(aggregate, pivot_column, value, output_name));
         }
     }
+
+    source = wrapPivotSourceWithColumnAliases(std::move(source), target_qualifier);
 
     auto source_element = make_intrusive<ASTTablesInSelectQueryElement>();
     source_element->table_expression = source;

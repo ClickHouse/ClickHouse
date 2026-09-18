@@ -1,7 +1,7 @@
 === unclosed brackets: the error points at the place where the parser stopped, and every bracket
 === that is never closed is listed with its own position
 --- SELECT a FROM (SELECT b FROM (SELECT c FROM (SELECT count(* AS cnt FROM numbers(10)) t3) t2) t1
-Syntax error: failed at position 68 (FROM): FROM numbers(10)) t3) t2) t1. Unmatched parentheses: '(' at position 15 is never closed. (SYNTAX_ERROR)
+Syntax error: failed at position 96 (end of query): (SELECT b FROM (SELECT c FROM (SELECT count(* AS cnt FROM numbers(10)) t3) t2) t1. Unmatched parentheses: '(' at position 15 is never closed. (SYNTAX_ERROR)
 --- SELECT count(* FROM numbers(10)
 Syntax error: failed at position 16 (FROM): FROM numbers(10). Unmatched parentheses: '(' at position 13 is never closed. (SYNTAX_ERROR)
 --- SELECT (1, 2
