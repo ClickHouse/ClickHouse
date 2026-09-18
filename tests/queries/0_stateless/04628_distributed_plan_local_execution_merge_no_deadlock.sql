@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- With distributed_plan_execute_locally = 1 the initiator pipeline reads the result from an
 -- in-memory exchange. If that reader blocked the pipeline thread instead of yielding, the source
 -- that starts the producing tasks could never run and the query hung. Whether that happens depends
