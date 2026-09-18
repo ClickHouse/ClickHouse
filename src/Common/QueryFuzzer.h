@@ -277,6 +277,9 @@ private:
     /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
     /// occasionally qualified with a known table name.
     ASTPtr makeFuzzedVirtualColumn();
+    /// Builds the string literal naming a data part that `OPTIMIZE ... DRY RUN PARTS` and the
+    /// `PART` forms of `ALTER` take.
+    ASTPtr makeFuzzedPartName();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     /// Fuzz every element of a type list in place. Returns true if any element changed.

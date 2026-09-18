@@ -1085,6 +1085,15 @@ static const Strings virtual_columns
        "_topic",
        "_version"};
 
+/// Part names as `MergeTreePartInfo::fromPartName` expects them, plus one that fails to parse.
+/// `getPartNameFromAST` reads them off a string literal, so every consumer takes the same shape.
+static const Strings part_names = {"all_1_1_0", "all_0_0_0", "20000101_1_1_0", "invalid_part"};
+
+ASTPtr QueryFuzzer::makeFuzzedPartName()
+{
+    return make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, part_names));
+}
+
 ASTPtr QueryFuzzer::makeFuzzedVirtualColumn()
 {
     const String & name = pickRandomly(fuzz_rand, virtual_columns);
@@ -7451,6 +7460,18 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
         };
 
+        /// `part` picks the payload grammar: `ParserPartition` for PARTITION, a string part name
+        /// for PART. The formatter only swaps the keyword, so turning the flag on must install a
+        /// name too; off needs nothing, since a part name is already a partition expression.
+        auto flipPartFlag = [&]
+        {
+            if (!alter_cmd->partition)
+                return;
+            if (!alter_cmd->part)
+                replaceCommandMember(alter_cmd->partition, makeFuzzedPartName());
+            alter_cmd->part = !alter_cmd->part;
+        };
+
         switch (alter_cmd->type)
         {
             case ASTAlterCommand::DELETE:
@@ -7556,23 +7577,33 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
                 if (fuzz_rand() % 20 == 0)
-                    alter_cmd->part = !alter_cmd->part;
+                    flipPartFlag();
                 break;
             case ASTAlterCommand::MOVE_PARTITION:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
                 if (fuzz_rand() % 20 == 0)
-                    alter_cmd->part = !alter_cmd->part;
-                /// Cycle move destination type between DISK, VOLUME, TABLE
+                    flipPartFlag();
+                /// Cycle move destination type. `TO TABLE` needs a destination table to render.
                 if (fuzz_rand() % 10 == 0)
                 {
-                    static const DataDestinationType dest_types[] = {
+                    static constexpr DataDestinationType dest_types[] = {
                         DataDestinationType::DISK,
                         DataDestinationType::VOLUME,
+                        DataDestinationType::SHARD,
                         DataDestinationType::TABLE,
                     };
-                    alter_cmd->move_destination_type = dest_types[fuzz_rand() % 3];
+                    const DataDestinationType picked = dest_types[fuzz_rand() % std::size(dest_types)];
+                    if (picked != DataDestinationType::TABLE || !alter_cmd->to_table.empty())
+                        alter_cmd->move_destination_type = picked;
                 }
+                /// `TO SHARD` parses only after MOVE PART and `TO TABLE` only after MOVE PARTITION,
+                /// so the flag follows the destination: either mutation above can otherwise leave a
+                /// pair that no grammar branch accepts.
+                if (alter_cmd->move_destination_type == DataDestinationType::SHARD && !alter_cmd->part)
+                    flipPartFlag();
+                else if (alter_cmd->move_destination_type == DataDestinationType::TABLE && alter_cmd->part)
+                    flipPartFlag();
                 break;
             case ASTAlterCommand::DROP_CONSTRAINT:
             case ASTAlterCommand::MODIFY_CONSTRAINT:
@@ -7741,11 +7772,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// The parser requires PARTS after DRY RUN, so always synthesize a missing list
         if (optimize_query->dry_run && !optimize_query->parts_list)
         {
-            static const Strings part_names = {"all_1_1_0", "all_0_0_0", "20000101_1_1_0", "invalid_part"};
             auto list = make_intrusive<ASTExpressionList>();
             const size_t nparts = 1 + fuzz_rand() % 2;
             for (size_t i = 0; i < nparts; ++i)
-                list->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, part_names)));
+                list->children.push_back(makeFuzzedPartName());
             optimize_query->parts_list = list;
             optimize_query->children.push_back(optimize_query->parts_list);
         }
