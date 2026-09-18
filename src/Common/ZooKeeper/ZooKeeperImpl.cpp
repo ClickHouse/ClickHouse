@@ -24,10 +24,12 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -576,21 +578,24 @@ void ZooKeeper::connect(
     {
         try
         {
-            const Poco::Net::SocketAddress host_socket_addr{node.host};
+            /// Resolve through `DNSResolver` so that the lookup is counted in `system.events` and shared
+            /// with the rest of the server through the DNS cache. A stale entry cannot pin us to a dead
+            /// address: every failed connection attempt below drops the host from the cache.
+            const Poco::Net::SocketAddress host_socket_addr = DB::DNSResolver::instance().resolveAddress(node.host);
             LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
             node.address = host_socket_addr;
             ++resolved_count;
         }
-        catch (const Poco::Net::HostNotFoundException & e)
+        catch (const DB::NetException & e)
         {
-            /// Most likely it's misconfiguration and wrong hostname was specified
-            LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
-        }
-        catch (const Poco::Net::DNSException & e)
-        {
-            /// Most likely DNS is not available now
+            /// Either DNS is not available now, or there is no such host name
             dns_error = true;
             LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", node.host, e.displayText());
+        }
+        catch (const DB::Exception & e)
+        {
+            /// Most likely it's misconfiguration and a malformed host and port was specified
+            LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", node.host, e.displayText());
         }
     }
 
@@ -675,6 +680,11 @@ void ZooKeeper::connect(
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address->toString();
                 cancelWriteBuffer();
+
+                /// Remove this possibly stale entry from the DNS cache, so that the next attempt to
+                /// connect to this host resolves it again instead of retrying a dead address.
+                /// `node.host` is well formed here - otherwise `node.address` would not have been set.
+                DB::DNSResolver::instance().removeHostFromCache(DB::DNSResolver::splitHostAndPort(node.host).first);
             }
         }
 

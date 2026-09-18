@@ -4,6 +4,7 @@
 #include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Client/ClientApplicationBase.h>
+#include <Common/DNSResolver.h>
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -93,7 +94,7 @@ String KeeperClient::executeFourLetterCommand(const String & command)
 {
     /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
     Poco::Net::StreamSocket socket;
-    socket.connect(Poco::Net::SocketAddress{zk_args.hosts[0]}, zk_args.connection_timeout_ms * 1000);
+    socket.connect(DNSResolver::instance().resolveAddress(zk_args.hosts[0]), zk_args.connection_timeout_ms * 1000);
 
     socket.setReceiveTimeout(zk_args.operation_timeout_ms * 1000);
     socket.setSendTimeout(zk_args.operation_timeout_ms * 1000);

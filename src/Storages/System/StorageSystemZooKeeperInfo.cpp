@@ -11,6 +11,7 @@
 #include <Poco/NumberParser.h>
 #include <Common/logger_useful.h>
 #include <base/find_symbols.h>
+#include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -405,12 +406,12 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
 
 std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(const String & host, UInt16 port, std::string_view command) const
 {
-    Poco::Net::SocketAddress address(host, port);
     Poco::Net::StreamSocket socket;
 
     String response;
     try
     {
+        auto address = DNSResolver::instance().resolveAddress(host, port);
         socket = Poco::Net::StreamSocket();
         socket.connect(address);
         socket.setNoDelay(true);
