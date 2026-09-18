@@ -351,19 +351,19 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     return TextIndexDirectReadMode::None;
 }
 
-TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
+std::optional<TextSearchQueryMatch> MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
 {
     RPNElement rpn_element;
     RPNBuilderTreeContext rpn_tree_context(getContext());
     RPNBuilderTreeNode rpn_node(&node, rpn_tree_context);
 
     if (!traverseAtomNode(rpn_node, rpn_element))
-        return nullptr;
+        return std::nullopt;
 
     if (rpn_element.text_search_queries.size() != 1)
-        return nullptr;
+        return std::nullopt;
 
-    return rpn_element.text_search_queries.front();
+    return TextSearchQueryMatch{rpn_element.text_search_queries.front(), rpn_element.requires_positive_filter};
 }
 
 bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const
@@ -1955,17 +1955,15 @@ bool MergeTreeIndexConditionText::traverseJSONStringValuesNode(
         encoded_tokens.push_back(KeyValuePairsTokenizer::encodeToken(haystack->path, token, /*is_rest=*/ false));
     }
 
-    const bool positive_filter_only = haystack->kind != JSONStringValuesHaystackKind::TypedString;
-    out.requires_positive_filter = positive_filter_only;
-    const auto direct_read_mode = positive_filter_only
-        ? TextIndexDirectReadMode::None
-        : TextIndexDirectReadMode::Exact;
+    /// Exact for skip and for positive-filter direct read. Negative polarity is handled by
+    /// `dropPositiveFilterQueriesUnderNot` (skip) and by the filter-DAG walk (direct read).
+    out.requires_positive_filter = haystack->kind != JSONStringValuesHaystackKind::TypedString;
 
     const auto search_mode = function_name == "hasAnyTokens" ? TextSearchMode::Any : TextSearchMode::All;
     out.function = function_name == "hasAnyTokens" ? RPNElement::FUNCTION_HAS_ANY_TOKENS
         : (function_name == "hasAllTokens" ? RPNElement::FUNCTION_HAS_ALL_TOKENS : RPNElement::FUNCTION_EQUALS);
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-        function_name, search_mode, direct_read_mode, std::move(encoded_tokens)));
+        function_name, search_mode, TextIndexDirectReadMode::Exact, std::move(encoded_tokens)));
     return true;
 }
 

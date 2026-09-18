@@ -10,6 +10,11 @@ SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_query_condition_cache = 0;
+SET optimize_trivial_count_query = 1;
+SET query_plan_optimize_count_from_text_index = 1;
+SET max_rows_to_group_by = 0;
+SET make_distributed_plan = 0;
+SET serialize_query_plan = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -62,6 +67,52 @@ SELECT count() > 0
 FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.status, 'error'))
 WHERE explain LIKE '%__text_index_idx_hasToken%';
 
+SELECT '-- Exact direct read replaces positive Nullable and .:String';
+SELECT count() > 0
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.note, 'hello'))
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+SELECT count() > 0
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.msg.:`String`, 'error'))
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+
+SELECT '-- positive count() is ReadFromTextIndexCount';
+SELECT count() > 0
+FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(json.note, 'hello'))
+WHERE explain LIKE '%ReadFromTextIndexCount%';
+SELECT count() > 0
+FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(json.msg.:`String`, 'error'))
+WHERE explain LIKE '%ReadFromTextIndexCount%';
+
+SELECT '-- Exact direct read does not replace under NOT';
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(json.msg.:`String`, 'error'))
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+
+SELECT '-- IS FALSE over Nullable is not Exact';
+SELECT 'idx', id FROM tab WHERE hasToken(json.note, 'hello') IS FALSE ORDER BY id;
+SELECT 'scan', id FROM tab WHERE hasToken(json.note, 'hello') IS FALSE ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.note, 'hello') IS FALSE)
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+
+SELECT '-- NOT (IS FALSE) must keep NULL rows';
+SELECT 'idx', id FROM tab WHERE NOT (hasToken(json.note, 'hello') IS FALSE) ORDER BY id;
+SELECT 'scan', id FROM tab WHERE NOT (hasToken(json.note, 'hello') IS FALSE) ORDER BY id SETTINGS use_skip_indexes = 0;
+
+SELECT '-- equals 0 over Nullable is not Exact';
+SELECT 'idx', id FROM tab WHERE hasToken(json.note, 'hello') = 0 ORDER BY id;
+SELECT 'scan', id FROM tab WHERE hasToken(json.note, 'hello') = 0 ORDER BY id SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.note, 'hello') = 0)
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+
+SELECT '-- notEquals 1 over Nullable is not Exact';
+SELECT 'idx', id FROM tab WHERE hasToken(json.note, 'hello') != 1 ORDER BY id;
+SELECT 'scan', id FROM tab WHERE hasToken(json.note, 'hello') != 1 ORDER BY id SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.note, 'hello') != 1)
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+
 SELECT '-- bare Dynamic is Unknown: correct rows, but the index is not used';
 SELECT 'idx', id FROM tab WHERE hasToken(json.msg, 'error') ORDER BY id;
 SELECT 'scan', id FROM tab WHERE hasToken(json.msg, 'error') ORDER BY id SETTINGS use_skip_indexes = 0;
@@ -84,15 +135,40 @@ SELECT 'scan', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(js
 SELECT 'idx', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.msg.:`String`, 'error') ORDER BY id;
 SELECT 'scan', id FROM tab WHERE hasToken(json.status, 'ok') AND NOT hasToken(json.msg.:`String`, 'error') ORDER BY id SETTINGS use_skip_indexes = 0;
 
-SELECT '-- direct read does not replace requires_positive_filter atoms';
-SELECT count()
-FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(json.note, 'hello'))
-WHERE explain LIKE '%__text_index_idx_hasToken%';
-SELECT count()
-FROM (EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(json.msg.:`String`, 'error'))
-WHERE explain LIKE '%__text_index_idx_hasToken%';
+SELECT '-- projected hasToken keeps NULL';
+SELECT id, hasToken(json.note, 'hello') AS matched FROM tab WHERE matched OR id = 2 ORDER BY id;
+SELECT id, hasToken(json.note, 'hello') AS matched FROM tab WHERE matched OR id = 2 ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab;
+
+SELECT '-- mixed parts: unmaterialized default uses ifNull';
+DROP TABLE IF EXISTS tab_partial;
+CREATE TABLE tab_partial
+(
+    id UInt32,
+    json JSON(note Nullable(String))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_partial VALUES
+    (0, '{"note": "hello"}'),
+    (1, '{"note": null}');
+
+ALTER TABLE tab_partial ADD INDEX idx json TYPE text(tokenizer = 'jsonStringValues') GRANULARITY 1;
+
+INSERT INTO tab_partial VALUES
+    (2, '{"note": "hello"}'),
+    (3, '{"note": null}');
+
+SELECT 'idx', id FROM tab_partial WHERE hasToken(json.note, 'hello') ORDER BY id;
+SELECT 'scan', id FROM tab_partial WHERE hasToken(json.note, 'hello') ORDER BY id SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count() > 0
+FROM (EXPLAIN actions = 1 SELECT id FROM tab_partial WHERE hasToken(json.note, 'hello'))
+WHERE explain LIKE '%__text_index_idx_hasToken%';
+
+DROP TABLE tab_partial;
 
 SELECT '-- nested JSON keeps the parent path prefix';
 DROP TABLE IF EXISTS tab_nested;

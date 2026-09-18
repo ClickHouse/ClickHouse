@@ -23,6 +23,35 @@ Name: idx
 Granules: 2/5
 -- Exact direct read replaces the predicate
 1
+-- Exact direct read replaces positive Nullable and .:String
+1
+1
+-- positive count() is ReadFromTextIndexCount
+1
+1
+-- Exact direct read does not replace under NOT
+0
+-- IS FALSE over Nullable is not Exact
+idx	4
+scan	4
+0
+-- NOT (IS FALSE) must keep NULL rows
+idx	0
+idx	1
+idx	2
+idx	3
+scan	0
+scan	1
+scan	2
+scan	3
+-- equals 0 over Nullable is not Exact
+idx	4
+scan	4
+0
+-- notEquals 1 over Nullable is not Exact
+idx	4
+scan	4
+0
 -- bare Dynamic is Unknown: correct rows, but the index is not used
 idx	1
 scan	1
@@ -36,9 +65,17 @@ idx	4
 scan	4
 idx	3
 scan	3
--- direct read does not replace requires_positive_filter atoms
-0
-0
+-- projected hasToken keeps NULL
+0	1
+2	\N
+0	1
+2	\N
+-- mixed parts: unmaterialized default uses ifNull
+idx	0
+idx	2
+scan	0
+scan	2
+1
 -- nested JSON keeps the parent path prefix
 typed nested	0
 typed nested scan	0

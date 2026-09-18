@@ -77,6 +77,14 @@ private:
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 
+/// Direct-read match for a single function node. `requires_positive_filter` is not part of the query hash:
+/// Nullable / `.:String` Exact may replace only in a positive filter.
+struct TextSearchQueryMatch
+{
+    TextSearchQueryPtr query;
+    bool requires_positive_filter = false;
+};
+
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
@@ -114,8 +122,9 @@ public:
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
-    /// Create a text search query for a single function node.
-    TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
+    /// Create a text search query for a single function node. Direct read uses `requires_positive_filter`
+    /// with filter-DAG polarity; skip-index polarity stays in `dropPositiveFilterQueriesUnderNot`.
+    std::optional<TextSearchQueryMatch> createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
     /// Returns generated virtual column name for the replacement of related function node.
