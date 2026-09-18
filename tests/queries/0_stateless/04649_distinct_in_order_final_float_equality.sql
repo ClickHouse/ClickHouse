@@ -16,6 +16,9 @@ INSERT INTO t_distinct_float VALUES (1, 0., 1), (2, -0., 1), (3, reinterpretAsFl
 SET query_plan_remove_redundant_sorting = 0;
 -- One stream, so pipeline processor names come without the "x N" suffix.
 SET max_threads = 1;
+-- The test checks which DISTINCT variant runs; keep the final one a plain `DistinctTransform` rather than
+-- `ExternalDistinctTransform`, which is the same hash variant with spilling to disk.
+SET max_bytes_before_external_distinct = 0, max_bytes_ratio_before_external_distinct = 0;
 
 SELECT '-- hash DISTINCT keeps binary identity: all four rows survive';
 SET optimize_distinct_in_order = 0;
