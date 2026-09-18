@@ -18,9 +18,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTProjectionSelectQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -179,15 +176,6 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
             w.writeString("kind", kind_str);
     }
     w.writeAlias(*this);
-}
-
-/// The select query node types the AST JSON format can build. `as` matches the exact type, and
-/// `ASTSelectIntersectExceptQuery` derives from `ASTSelectQuery`, so each one is listed.
-static bool isBareSelectQuery(const IAST * node)
-{
-    return node
-        && (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSelectIntersectExceptQuery>()
-            || node->as<ASTProjectionSelectQuery>());
 }
 
 static bool containsBareSelectQuery(const IAST * node)
