@@ -31,18 +31,14 @@ namespace DB
 bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & right);
 
 /// Whether a `FixedString` sits inside an `Array` or a `Map` in either type. Recurses into `Tuple`.
-/// A `Field` comparison cannot answer these, so the caller compares the cast columns instead.
 bool fixedStringPaddingInsideContainer(const DataTypePtr & left, const DataTypePtr & right);
 
 /// Whether a search constant of this type is subject to the rule, and so has no single canonical
-/// spelling among the values it matches. A skip index that stores one hash or one term per stored
-/// value cannot probe all of them, so it must decline rather than prune a matching granule.
-/// Recurses into `Array` for the constant of `has`/`hasAny`/`hasAll`.
+/// spelling among the values it matches.
 bool zeroPaddedStringConstant(const DataTypePtr & type);
 
-/// A copy of `field` with the trailing zero padding removed from every `FixedString` value it
-/// carries, recursing into `Array`. `String = FixedString(N)` ignores that padding, so the search
-/// terms of a skip index have to be taken from the value without it.
+/// Returns a copy of `field` with the trailing zero padding removed from every `FixedString` value it
+/// carries, recursing into `Array` for consistent comparisons when comparing `String = FixedString(N)`
 Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type);
 
 /// The type whose values become the terms or hashes of a skip index: for an array-typed indexed
