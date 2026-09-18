@@ -25,3 +25,94 @@
 --
 2	['another test','another example']
 --
+--
+2
+hasAnyTokens and hasAllTokens
+tokenbf_v1, granules pruned
+Granules: 5/5
+Description: tokenbf_v1 GRANULARITY 1
+Granules: 1/5
+--
+Granules: 5/5
+Description: tokenbf_v1 GRANULARITY 1
+Granules: 1/5
+--
+Granules: 5/5
+Description: tokenbf_v1 GRANULARITY 1
+Granules: 0/5
+tokenbf_v1, answers unchanged by the index
+1
+3
+--
+1
+3
+--
+3
+--
+3
+A String needle stays unindexed
+1
+3
+--
+1
+--
+An explicit tokenizer argument stays unindexed
+1
+3
+--
+1
+3
+--
+An empty needle array
+Granules: 5/5
+Description: tokenbf_v1 GRANULARITY 1
+Granules: 0/5
+--
+Granules: 5/5
+Description: tokenbf_v1 GRANULARITY 1
+Granules: 5/5
+--
+0
+0
+0
+0
+ngrambf_v1
+Granules: 5/5
+Description: ngrambf_v1 GRANULARITY 1
+Granules: 1/5
+--
+2
+--
+Granules: 5/5
+Description: ngrambf_v1 GRANULARITY 1
+Granules: 5/5
+--
+5
+--
+5
+sparse_grams
+Granules: 5/5
+Description: sparse_grams GRANULARITY 1
+Granules: 1/5
+--
+2
+--
+2
+A text index on the same column, tokenizer mismatch
+1
+--
+1
+--
+A text index on the same column, preprocessor mismatch
+1
+--
+1
+--
+A text index on another column
+1
+--
+1
+--
+A text index on a map element
+1
+--

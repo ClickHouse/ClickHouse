@@ -158,13 +158,15 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
-    NameSet columns_shadowing_map_subcolumns_)
+    NameSet columns_shadowing_map_subcolumns_,
+    bool has_text_index_)
     : index_columns(index_sample_block.getNames())
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , has_text_index(has_text_index_)
 {
     if (!predicate)
     {
@@ -456,7 +458,9 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                  function_name == "endsWith" ||
                  function_name == "multiSearchAny" ||
                  function_name == "hasAny" ||
-                 function_name == "hasAll")
+                 function_name == "hasAll" ||
+                 function_name == "hasAnyTokens" ||
+                 function_name == "hasAllTokens")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -732,10 +736,20 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         // When map_value_index is set, we shouldn't use ngram/token bf for other functions
         return false;
     }
-    if ((function_name == "has" && value_data_type.isArray()) || function_name == "hasAny" || function_name == "hasAll")
+    /// `hasAnyTokens`/`hasAllTokens` take their tokenizer and preprocessor from a `text` index on the
+    /// haystack, and an `Array` needle's elements are tokens verbatim while a `String` one is tokenized
+    /// into several.
+    const bool is_token_search = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+    if (is_token_search && (has_text_index || const_value.getType() != Field::Types::Array))
+        return false;
+
+    if ((function_name == "has" && value_data_type.isArray()) || function_name == "hasAny" || function_name == "hasAll"
+        || is_token_search)
     {
         out.key_column = *key_index;
-        out.function = function_name == "hasAll" ? RPNElement::FUNCTION_HAS_ALL : RPNElement::FUNCTION_HAS_ANY;
+        out.function = (function_name == "hasAll" || function_name == "hasAllTokens")
+            ? RPNElement::FUNCTION_HAS_ALL
+            : RPNElement::FUNCTION_HAS_ANY;
 
         // 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;
@@ -980,7 +994,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns());
+        predicate,
+        context,
+        index.sample_block,
+        params,
+        tokenizer.get(),
+        getColumnsShadowingMapSubcolumns(),
+        metadata_snapshot->getSecondaryIndices().hasType(TEXT_INDEX_NAME));
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

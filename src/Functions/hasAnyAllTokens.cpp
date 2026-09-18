@@ -441,7 +441,8 @@ Returns 1, if at least one token in the `needle` string or array matches the `in
 
 <Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
-If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
+If the table has no `text` index, a `tokenbf_v1`, `ngrambf_v1` or `sparse_grams` index on the column is used to skip granules when the function is called with two arguments and `needles` is an [Array(String)](/reference/data-types/array).
+Without any of these indexes the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 </Note>
 
 Prior to searching, the function tokenizes
@@ -663,7 +664,8 @@ Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needl
 
 <Note>
 Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
-If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
+If the table has no `text` index, a `tokenbf_v1`, `ngrambf_v1` or `sparse_grams` index on the column is used to skip granules when the function is called with two arguments and `needles` is an [Array(String)](/reference/data-types/array).
+Without any of these indexes the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 </Note>
 
 Prior to searching, the function tokenizes

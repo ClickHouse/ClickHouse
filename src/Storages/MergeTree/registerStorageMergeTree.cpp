@@ -1856,8 +1856,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [hasTokenOrNull](/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
 | [hasTokenCaseInsensitive (`*`)](/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
 | [hasTokenCaseInsensitiveOrNull (`*`)](/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [hasAnyTokens (`**`)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                       | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
+| [hasAllTokens (`**`)](/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                       | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [pointInPolygon](/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗    |
 | [mapContains (mapContainsKey)](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
@@ -1867,6 +1867,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
 (*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
+
+(**) For `hasAnyTokens` and `hasAllTokens`, the `ngrambf_v1`, `tokenbf_v1` and `sparse_grams` indexes are used only when the call has two arguments, the needle is a constant `Array(String)` and the table has no `text` index; with a `text` index these functions take their tokenizer from it instead.
 
 <Note>
 Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
