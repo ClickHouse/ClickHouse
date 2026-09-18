@@ -90,6 +90,21 @@ HOST_OOM_DMESG_PATTERNS = (
 # too, and `oom_reaper` is kept because the surviving lines are read rather than classified.
 OOM_DMESG_MARKERS = ("oom-kill:", "Out of memory:", "oom_reaper:")
 
+# Kernel records of a process dying on a fault rather than on a memory kill. A support container
+# that aborts mid-run leaves nothing else behind: Docker drops its port mapping, so the harness
+# sees only `Connection refused` from every later test the same session-scoped cluster serves, and
+# the container's own log is overwritten by the next cluster started in that directory. `traps:`
+# is x86's prefix for every fault report it renders (general protection fault, invalid opcode,
+# divide error), `segfault at` is the page-fault one, and `potentially unexpected fatal signal`
+# is arm64's. `show_signal:` carries printk's rate-limit line, which says how many of these the
+# kernel dropped - an absence below it is not evidence of none.
+PROCESS_CRASH_DMESG_MARKERS = (
+    "traps:",
+    "segfault at",
+    "potentially unexpected fatal signal",
+    "show_signal:",
+)
+
 # The cgroup leaves `docker_in_docker.sh` creates, and what a kill in each one means. The paths
 # are unqualified because the script only runs under `--cgroupns=private`.
 DIND_CGROUP_ROOT = "/sys/fs/cgroup"
@@ -592,6 +607,32 @@ def print_oom_lines(dmesg: str, caveat: str = "", partial: str = "") -> None:
         print(f"No kernel memory kill in dmesg{partial}")
 
 
+def print_process_crash_lines(dmesg: str, caveat: str = "", partial: str = "") -> None:
+    """Print the kernel's process-fault lines, whoever faulted.
+
+    A crashed support container is otherwise undiagnosable from a report: see
+    `PROCESS_CRASH_DMESG_MARKERS` for what the harness is left with instead. Printed rather
+    than turned into a result row, and unfiltered by who crashed, because a fault here is not
+    a verdict on anything: some tests kill a server on purpose, and the kernel names the
+    process but not the container, so no row could be attributed to the run's outcome.
+
+    The caveats carry the same two unsoundness directions as in `print_oom_lines`, for the same
+    reason - `caveat` rides the faults so one cannot be taken for this run's, `partial` rides
+    their absence, which a record short of the run cannot establish.
+    """
+    if not dmesg:
+        print("WARNING: no dmesg available, so a process crash can neither be shown nor ruled out")
+        return
+    if crash_lines := [
+        l for l in dmesg.splitlines() if any(m in l for m in PROCESS_CRASH_DMESG_MARKERS)
+    ]:
+        print(f"Process crashes in dmesg{caveat}:")
+        for line in crash_lines:
+            print(f"  {line}")
+    else:
+        print(f"No process crash in dmesg{partial}")
+
+
 def print_timeout_diagnostics(
     env, follow_proc=None, dmesg_cleared=False, cgroup_root=DIND_CGROUP_ROOT
 ) -> None:
@@ -619,6 +660,11 @@ def print_timeout_diagnostics(
     snapshot = Shell.get_output("dmesg -T", verbose=True)
     covers_run = follow_proc is not None and follow_proc.poll() is None and bool(snapshot)
     print_oom_lines(
+        follow_dmesg + snapshot,
+        caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+        partial="" if covers_run else PARTIAL_DMESG_CAVEAT,
+    )
+    print_process_crash_lines(
         follow_dmesg + snapshot,
         caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
         partial="" if covers_run else PARTIAL_DMESG_CAVEAT,
@@ -1497,7 +1543,6 @@ def main():
     args = parse_args()
     job_params = args.options.split(",") if args.options else []
     job_params = [to.strip() for to in job_params]
-    use_old_analyzer = False
     use_distributed_plan = False
     use_database_disk = False
     is_flaky_check = False
@@ -1552,8 +1597,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         elif any(build in to for build in ("amd_", "arm_")):
             if "amd_llvm_coverage" in to:
                 is_llvm_coverage = True
-        elif to == "old analyzer":
-            use_old_analyzer = True
         elif to == "distributed plan":
             use_distributed_plan = True
         elif to == "db disk":
@@ -1846,7 +1889,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_TESTS_SERVER_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_BINARY": clickhouse_path,  # some test cases support alternative binary location
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
-        "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
@@ -2333,6 +2375,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
             )
         ):
             print_oom_lines(
+                dmesg.decode(errors="replace"),
+                caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+                partial="" if dmesg_covers_run else PARTIAL_DMESG_CAVEAT,
+            )
+            print_process_crash_lines(
                 dmesg.decode(errors="replace"),
                 caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
                 partial="" if dmesg_covers_run else PARTIAL_DMESG_CAVEAT,
