@@ -661,34 +661,30 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
 
-    std::pair<Field, DataTypePtr> value_raw;
+    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+
+    Field & expression_value = value_raw.first;
+
+    if (format_settings.null_as_default)
+        tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
+
+    /// This materializes a value into a column (the `INSERT` VALUES expression fallback), so convert
+    /// to the nearest representable floating-point value like CAST, consistent with the streaming
+    /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
+    /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
     Field value;
     try
     {
-        value_raw = evaluateConstantExpression(ast, context);
-
-        if (format_settings.null_as_default)
-            tryToReplaceNullFieldsInComplexTypesWithDefaultValues(value_raw.first, type);
-
-        /// This materializes a value into a column (the `INSERT` VALUES expression fallback), so convert
-        /// to the nearest representable floating-point value like CAST, consistent with the streaming
-        /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
-        /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
-        value = convertFieldToType(value_raw.first, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+        value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
     }
     catch (const Exception & e)
     {
-        /// `TYPE_MISMATCH` here means `convertFieldToType` has no rule for this pair of types, which is
-        /// never the real story when the template path already evaluated the very same expression and
-        /// failed for a concrete reason - typically a value outside the range of the target type under
-        /// `date_time_overflow_behavior = 'throw'`. That diagnostic names the offending value, so prefer
-        /// it. Any other failure here is about the real expression and is reported as is.
+        /// `TYPE_MISMATCH` only means there is no rule for these types, while the template already
+        /// evaluated the same expression and named the actual offending value.
         if (template_exception && e.code() == ErrorCodes::TYPE_MISMATCH)
             std::rethrow_exception(template_exception);
         throw;
     }
-
-    Field & expression_value = value_raw.first;
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !canContainNull(type))
