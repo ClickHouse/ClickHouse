@@ -2754,6 +2754,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             scope.scope_node->formatASTForErrorMessage());
 
                     result_projection_names.back() = *target_name;
+                    node_to_projection_name.insert_or_assign(node, *target_name);
                     rename_target = *target_name;
                 }
             }
