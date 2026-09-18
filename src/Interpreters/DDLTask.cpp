@@ -104,7 +104,7 @@ void DDLLogEntry::assertVersion() const
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
     || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
     || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}."
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}. "
                                                             "Maximum supported version is {}", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 }
 
@@ -112,7 +112,7 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
     version = context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
     if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}. "
                                                             "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 
     parent_table_uuid = context->getParentTable();

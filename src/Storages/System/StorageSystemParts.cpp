@@ -339,7 +339,7 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->default_codec_is_approximate ? "UNKNOWN" : part->default_codec->getCodecDesc()->formatForLogging());
+            columns[res_index++]->insert(part->default_codec_is_approximate ? "UNKNOWN" : part->default_codec->getCodecDescription()->formatForLogging());
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
@@ -363,7 +363,7 @@ void StorageSystemParts::processNextStorage(
 
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
         {
-            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
+            return Tuple{tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version};
         };
 
         auto current_version_info = part->version->getInfo();
