@@ -31,6 +31,7 @@
 #include <Poco/Util/Application.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/saturatedWaitDuration.h>
@@ -74,6 +75,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char keeper_local_logs_preprocessing_wait[];
+}
 
 namespace CoordinationSetting
 {
@@ -1055,6 +1061,11 @@ void KeeperServer::waitForLocalLogsPreprocessing()
 
     SCOPE_EXIT(threads_waiting_for_local_logs_preprocessing.fetch_sub(1));
     CurrentMetrics::Increment waiting_metric_increment{CurrentMetrics::KeeperRaftThreadsWaitingForLogsPreprocessing};
+
+    /// Holds this thread here with the slot taken, which is the only way a test can put a second
+    /// one against the admission gate: the deadline below is always shorter than the interval
+    /// after which the leader re-sends, so the two never overlap on timing alone.
+    FailPointInjection::pauseFailPoint(FailPoints::keeper_local_logs_preprocessing_wait);
 
     /// Read what the instance is running with rather than the settings it came from: both are
     /// bounded where they enter NuRaft, so this product cannot overflow.

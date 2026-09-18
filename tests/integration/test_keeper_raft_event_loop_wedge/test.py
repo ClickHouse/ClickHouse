@@ -66,6 +66,13 @@ PAUSE_DISABLED = (
     "<nuraft_test_disable_append_entries_pause>1"
     "</nuraft_test_disable_append_entries_pause>"
 )
+WAIT_FAILPOINT = "keeper_local_logs_preprocessing_wait"
+# Enabled from the config rather than over SQL, because the replay - and with it the first wait -
+# starts as the server comes up, before a query could reach it.
+FAILPOINT_ACTIVE = (
+    f"<fail_points_active><{WAIT_FAILPOINT}>1</{WAIT_FAILPOINT}></fail_points_active>"
+)
+CONFIG_END = "</clickhouse>"
 
 LOG_LINE = re.compile(r"^\S+ (\S+) \[ (\d+) \]")
 TAIL_CORRECTION = re.compile(
@@ -199,44 +206,16 @@ def test_raft_event_loop_is_not_wedged_by_log_replay(started_cluster):
         "so the leader is not backing off"
     )
 
-    # Only one thread of the Raft event loop may wait for the replay at a time, and it has to
-    # give up on its own deadline. Before the fix no thread ever stopped waiting, so the waits
-    # piled up until the pool was exhausted.
-    events = waiting_thread_events(node2)
-    logging.info("node2 waits for log preprocessing: %s", events)
-    waiting = 0
-    for timestamp, thread, delta in events:
-        waiting += delta
-        assert waiting <= 1, (
-            f"{waiting} threads of the Raft event loop were waiting for log preprocessing at "
-            f"{timestamp}, when thread {thread} started waiting"
-        )
-    assert waiting == 0, "a thread of the Raft event loop is still waiting for log preprocessing"
-
-    # The deadline is 100 ms here and the replay takes seconds, so every wait must have ended on
-    # the deadline rather than because the replay finished underneath it.
-    assert grep_log(node2, f"{WAIT_STOPPED}, preprocessed=false"), (
-        "no wait for log preprocessing ended on its deadline"
-    )
-
-    # The one-thread cap is a structural bound, not something the fix relies on in the ordinary
-    # case: the negative batch size hint stops the leader before a second request carrying
-    # entries can arrive, so no thread should ever find another one already waiting. This
-    # asserts the hint rather than the cap - if it fires, the leader kept sending entries at
-    # full speed and the cap became load-bearing, which is how the wedge starts.
+    # Whether a thread reaches the wait at all is not something this test can force: the arm
+    # that waits and the condition that pauses the leader are the same predicate, so the
+    # requests that would reach the wait are the ones the pause stops. The wait, its bound and
+    # its deadline are exercised by test_one_thread_waits_when_the_leader_is_never_paused, which
+    # removes the pause. What belongs here is the pause itself: no thread should ever find
+    # another one already waiting, because the leader is stopped before a second request
+    # carrying entries arrives.
     assert not grep_log(node2, ADMISSION_DECLINED), (
         "a second thread of the Raft event loop reached the wait, so the leader was never "
         "paused - the negative batch size hint regressed"
-    )
-
-    # And the leader must stay paused: once node2 has given up and asked it to back off, no
-    # further request carrying entries may arrive. One grep of both patterns returns the lines
-    # in log order, so the last wait can be located without parsing timestamps.
-    timeline = grep_log(node2, f"{ENTRIES_REFUSED}|{WAIT_STOPPED}")
-    last_wait_end = max(i for i, line in enumerate(timeline) if WAIT_STOPPED in line)
-    assert all(WAIT_STOPPED in line for line in timeline[last_wait_end:]), (
-        "the leader sent entries to node2 again after it asked for heartbeats, so the pause is "
-        "not holding for the rest of the replay"
     )
 
     # 6) node2 is a working member of the cluster again.
@@ -419,6 +398,10 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
         node2.replace_in_config(
             NODE2_CONFIG, PAUSE_ANCHOR, PAUSE_ANCHOR + PAUSE_DISABLED
         )
+        # And hold the first waiting thread there, so the second one meets an occupied gate. The
+        # deadline is one heartbeat less than the interval after which the leader re-sends, so
+        # without this the two never overlap and the refusal below is unreachable.
+        node2.replace_in_config(NODE2_CONFIG, CONFIG_END, FAILPOINT_ACTIVE + CONFIG_END)
 
         zk = get_fake_zk(keeper_utils.get_leader(cluster, [node1, node3]))
         try:
@@ -434,6 +417,20 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
         assert not grep_log(node2, NO_REPLAY_NEEDED), (
             "node2 restarted with nothing to replay, so this test checks nothing"
         )
+
+        # One thread is parked at the failpoint; the leader re-sends to a peer that stopped
+        # answering, and that request is what meets the occupied gate.
+        for _ in range(240):
+            if count_in_log(node2, ADMISSION_DECLINED):
+                break
+            time.sleep(0.5)
+        else:
+            raise Exception(
+                "no thread reached the admission gate while one was parked at the failpoint"
+            )
+
+        # Release it, so the wait it goes on to do is a real one and the replay can finish.
+        node2.query(f"SYSTEM DISABLE FAILPOINT {WAIT_FAILPOINT}")
 
         # The refusal has to have happened, or the leader backed off for some other reason and
         # this is the first test with extra steps.
@@ -477,3 +474,4 @@ def test_one_thread_waits_when_the_leader_is_never_paused(started_cluster):
         node2.replace_in_config(
             NODE2_CONFIG, PAUSE_ANCHOR + PAUSE_DISABLED, PAUSE_ANCHOR
         )
+        node2.replace_in_config(NODE2_CONFIG, FAILPOINT_ACTIVE + CONFIG_END, CONFIG_END)
