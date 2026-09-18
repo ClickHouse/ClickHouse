@@ -44,11 +44,14 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
 }
@@ -604,6 +607,9 @@ struct AggregateProjectionCandidates
 
     /// If not empty, try to answer the aggregation from per-part column statistics.
     std::vector<StatisticsMinMaxAggregate> statistics_min_max_aggregates;
+
+    /// Why each projection that was not used could not be used.
+    std::unordered_map<String, String> reject_reasons;
 };
 
 /// Check if the whole aggregation can be answered from per-part column statistics: there is no
@@ -727,6 +733,20 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     return result;
 }
 
+/// The implicit `minmax_count` projection aggregates only with `min`, `max` and `count`
+/// (`ProjectionDescription::getMinMaxCountProjection`), and `matchAggregateFunctions` pairs a query
+/// aggregate with a projection one by exact function name, so no other name can ever match.
+static bool canMinMaxCountProjectionMatchAggregates(const AggregateDescriptions & aggregates)
+{
+    for (const auto & aggregate : aggregates)
+    {
+        const auto & name = aggregate.function->getName();
+        if (name != "min" && name != "max" && name != "count")
+            return false;
+    }
+    return true;
+}
+
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
     AggregatingStep & aggregating,
@@ -753,14 +773,18 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
-        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask();
+        && !reading.getMutationsSnapshot()->hasLightweightDeletedMask()
+        && canMinMaxCountProjectionMatchAggregates(aggregates);
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
 
     QueryDAG dag;
     if (!dag.build(*node.children.front()))
+    {
+        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection");
         return candidates;
+    }
 
     auto query_index = buildDAGIndex(*dag.dag);
 
@@ -797,9 +821,13 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 minmax.candidate.projection = projection;
                 candidates.minmax_projection.emplace(std::move(minmax));
             }
+            else
+                candidates.reject_reasons.try_emplace(projection->name, "the implicit projection has no parts to read");
         }
         else
         {
+            candidates.reject_reasons.try_emplace(projection->name, "the implicit projection cannot compute the aggregation keys and functions of the query");
+
             /// Trivial count optimization only applies after @can_use_minmax_projection.
             if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
                 candidates.only_count_column = aggregates[0].column_name;
@@ -808,18 +836,9 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (!candidates.minmax_projection)
     {
-        auto it = std::find_if(
-            agg_projections.begin(),
-            agg_projections.end(),
-            [&](const auto * projection)
-            { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-        if (it != agg_projections.end())
-        {
-            const ProjectionDescription * preferred_projection = *it;
-            agg_projections.clear();
-            agg_projections.push_back(preferred_projection);
-        }
+        const auto all_agg_projections = agg_projections;
+        filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+        rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, "the setting preferred_optimize_projection_name names another projection");
 
         candidates.real.reserve(agg_projections.size());
         for (const auto * projection : agg_projections)
@@ -828,7 +847,10 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             if (projection->where_clause_ast)
             {
                 if (!doesQueryFilterImplyProjectionWhere(dag.filter_node, projection->where_clause_ast, projection->query_ast, context))
+                {
+                    candidates.reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
                     continue;
+                }
             }
 
             /// When the projection has a WHERE, strip the implied conjuncts from the query
@@ -846,6 +868,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 candidate.has_filter = (dag.filter_node != nullptr);
                 candidates.real.emplace_back(std::move(candidate));
             }
+            else
+                candidates.reject_reasons.try_emplace(projection->name, "the projection cannot compute the aggregation keys and functions of the query");
 
             dag.filter_node = original_filter;
         }
@@ -885,7 +909,10 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     QueryDAG dag;
     if (!dag.build(*node.children.front()))
+    {
+        rejectProjections(candidates.reject_reasons, agg_projections, {}, "the steps between the aggregation and the read cannot be rewritten onto a projection");
         return candidates;
+    }
 
     auto query_index = buildDAGIndex(*dag.dag);
     candidates.has_filter = dag.filter_node;
@@ -894,18 +921,9 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     const Names keys = distinct.getOutputHeader()->getNames();
 
     /// Prefer the user specified projection if any.
-    auto it = std::find_if(
-        agg_projections.begin(),
-        agg_projections.end(),
-        [&](const auto * projection)
-        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-    if (it != agg_projections.end())
-    {
-        const ProjectionDescription * preferred_projection = *it;
-        agg_projections.clear();
-        agg_projections.push_back(preferred_projection);
-    }
+    const auto all_agg_projections = agg_projections;
+    filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+    rejectProjections(candidates.reject_reasons, all_agg_projections, agg_projections, "the setting preferred_optimize_projection_name names another projection");
 
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());
@@ -917,7 +935,10 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection->where_clause_ast)
         {
             if (!doesQueryFilterImplyProjectionWhere(dag.filter_node, projection->where_clause_ast, projection->query_ast, context))
+            {
+                candidates.reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
                 continue;
+            }
         }
 
         /// Strip implied conjuncts from the query filter (see aggregation path above).
@@ -933,26 +954,13 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
             candidate.has_filter = (dag.filter_node != nullptr);
             candidates.real.emplace_back(std::move(candidate));
         }
+        else
+            candidates.reject_reasons.try_emplace(projection->name, "the projection cannot compute the DISTINCT columns of the query");
 
         dag.filter_node = original_filter;
     }
 
     return candidates;
-}
-
-static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
-{
-    IQueryPlanStep * step = node.step.get();
-    if (auto * /*reading*/ _ = typeid_cast<ReadFromMergeTree *>(step))
-        return &node;
-
-    if (node.children.size() != 1)
-        return nullptr;
-
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step))
-        return findReadingStep(*node.children.front());
-
-    return nullptr;
 }
 
 /// Pseudo projection name used to indicate exact count optimization
@@ -1118,39 +1126,63 @@ static Block makeBlockWithMinMaxFromStatistics(
     return block;
 }
 
-std::optional<String> optimizeUseAggregateProjections(
+static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
+{
+    IQueryPlanStep * step = node.step.get();
+    if (auto * /*reading*/ _ = typeid_cast<ReadFromMergeTree *>(step))
+        return &node;
+
+    if (node.children.size() != 1)
+        return nullptr;
+
+    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step))
+        return findReadingStep(*node.children.front());
+
+    return nullptr;
+}
+
+UseProjectionsResult optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
+    UseProjectionsResult result;
     if (node.children.size() != 1)
-        return {};
+        return result;
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
-
     auto * distinct = typeid_cast<DistinctStep *>(node.step.get());
-
-    /// In the event there is DISTINCT but no GROUP BY, we still want to use aggregate projections.
     if (!aggregating && !distinct)
-        return {};
-
-    if (aggregating && !aggregating->canUseProjection())
-        return {};
-
-    /// A merge-only step already consumes aggregate states; requesting projection merge mode for it again makes no sense.
-    if (aggregating && aggregating->getParams().only_merge)
-        return {};
+        return result;
 
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
     if (!reading_node)
-        return {};
+        return result;
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
     if (!reading)
-        return {};
+        return result;
 
-    if (!canUseProjectionForReadingStep(reading))
-        return {};
+    std::vector<const ProjectionDescription *> agg_projections;
+    for (const auto & projection : reading->getStorageMetadata()->projections)
+        if (projection.type == ProjectionDescription::Type::Aggregate)
+            agg_projections.push_back(&projection);
+
+    auto reject_all = [&](const String & reason)
+    {
+        rejectProjections(result.projection_reject_reasons, agg_projections, {}, reason);
+        return std::move(result);
+    };
+
+    if (aggregating && !aggregating->canUseProjection())
+        return reject_all("this kind of aggregation cannot be served by a projection");
+
+    /// A merge-only step already consumes aggregate states; requesting projection merge mode for it again makes no sense.
+    if (aggregating && aggregating->getParams().only_merge)
+        return reject_all("the aggregation only merges states");
+
+    if (auto can_use = canUseProjectionForReadingStep(reading); !can_use)
+        return reject_all(can_use.error());
 
     /// Test hook: make a parallel-replicas follower skip the aggregate-projection short-circuit so it
     /// plans a real read while the initiator still short-circuits. This deterministically manufactures the
@@ -1160,7 +1192,7 @@ std::optional<String> optimizeUseAggregateProjections(
     fiu_do_on(FailPoints::parallel_replicas_skip_aggregate_projection_on_follower,
     {
         if (reading->isParallelReplicasLocalPlanForFollower())
-            return {};
+            return reject_all("skipped on a parallel replicas follower by a failpoint");
     });
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
@@ -1175,6 +1207,8 @@ std::optional<String> optimizeUseAggregateProjections(
                           max_added_blocks,
                           optimization_settings.optimize_use_implicit_projections,
                           max_set_size_for_match));
+
+    result.projection_reject_reasons = std::move(candidates.reject_reasons);
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
@@ -1199,7 +1233,7 @@ std::optional<String> optimizeUseAggregateProjections(
             parent_reading_select_result = reading->selectRangesToRead(false);
 
         if (parent_reading_select_result->parts_with_ranges.empty())
-            return {};
+            return reject_all("the read selects no parts");
 
         /// Copy parent analysis result to isolate modifications. This result will store the
         /// remaining parts (without statistics), to be used for normal reading.
@@ -1208,7 +1242,7 @@ std::optional<String> optimizeUseAggregateProjections(
             candidates.statistics_min_max_aggregates, *inexact_ranges_select_result, logger);
 
         if (statistics_min_max_block.empty())
-            return {};
+            return result;
     }
     else if (!candidates.real.empty() || !candidates.only_count_column.empty())
     {
@@ -1217,13 +1251,13 @@ std::optional<String> optimizeUseAggregateProjections(
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
 
-        bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+        const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
-        if (!force_optimize_projection)
+        if (!relax_projection_checks)
         {
-            /// /// Nothing to read. Ignore projections.
+            /// Nothing to read. Ignore projections.
             if (parent_reading_select_result->parts_with_ranges.empty())
-                return {};
+                return reject_all("the read selects no parts");
         }
 
         /// Try to identify ranges that can be exactly counted using primary key analysis.
@@ -1323,7 +1357,7 @@ std::optional<String> optimizeUseAggregateProjections(
         auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
 
         /// If there are remaining parts to read, attempt to select the best candidate.
-        if (!parent_reading_select_result->parts_with_ranges.empty() || force_optimize_projection)
+        if (!parent_reading_select_result->parts_with_ranges.empty() || relax_projection_checks)
         {
             for (auto & candidate : candidates.real)
             {
@@ -1358,7 +1392,10 @@ std::optional<String> optimizeUseAggregateProjections(
                     context);
 
                 if (!analyzed)
+                {
+                    result.projection_reject_reasons.try_emplace(candidate.projection->name, "no selected part has the projection materialized, or its analysis exceeded the read limits");
                     continue;
+                }
 
                 auto & stat = parent_reading_select_result->projection_stats.emplace_back();
                 stat.name = candidate.projection->name;
@@ -1378,7 +1415,7 @@ std::optional<String> optimizeUseAggregateProjections(
                 candidate.stat = &stat;
 
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-                if (candidate.sum_marks > parent_reading_marks)
+                if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
                 {
                     stat.description = fmt::format(
                         "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -1386,6 +1423,7 @@ std::optional<String> optimizeUseAggregateProjections(
                         candidate.sum_marks,
                         parent_reading_marks);
 
+                    result.projection_reject_reasons.try_emplace(candidate.projection->name, stat.description);
                     LOG_DEBUG(logger, "{}", stat.description);
                     continue;
                 }
@@ -1397,11 +1435,11 @@ std::optional<String> optimizeUseAggregateProjections(
 
         /// No suitable projection found, and exact count optimization is not used.
         if (!best_candidate && exact_count == 0)
-            return {};
+            return result;
     }
     else
     {
-        return {};
+        return result;
     }
 
     /// Identify projections selected as the best candidates and update their stat descriptions with appropriate logging
@@ -1430,6 +1468,7 @@ std::optional<String> optimizeUseAggregateProjections(
                     candidate.sum_marks,
                     best_candidate->projection->name,
                     best_candidate->sum_marks);
+                result.projection_reject_reasons.try_emplace(candidate.projection->name, candidate.stat->description);
                 LOG_DEBUG(logger, "{}", candidate.stat->description);
             }
         }
@@ -1673,7 +1712,8 @@ std::optional<String> optimizeUseAggregateProjections(
     else
         node.children.front() = source_node;
 
-    return selected_projection_name;
+    result.applied_projection = std::move(selected_projection_name);
+    return result;
 }
 
 }

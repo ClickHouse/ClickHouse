@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -65,10 +66,21 @@ public:
     virtual JoinResultBlock next() = 0;
 
     /// Right table rows matched while producing the result. Only meaningful once the result is exhausted.
-    virtual size_t getMatchedRightRows() const { return 0; }
+    /// Empty when the probe never counted matches, so its zero would be structural rather than measured.
+    virtual std::optional<size_t> getMatchedRightRows() const { return 0; }
 
     static JoinResultPtr createFromBlock(Block block);
 };
+
+/// Folds one `getMatchedRightRows()` into a running total. Empty absorbs: a total counts every match
+/// only if every part of it did.
+inline void addMatchedRightRows(std::optional<size_t> & total, std::optional<size_t> part)
+{
+    if (!part)
+        total.reset();
+    else if (total)
+        *total += *part;
+}
 
 class IJoin
 {
@@ -195,8 +207,9 @@ public:
 
     /// Called by `JoiningTransform` when every probe stream has consumed its whole left input.
     /// Not called when the probe is cut short (LIMIT, cancellation).
-    /// `matched_right_rows` is the number of right table rows matched across every probe stream.
-    virtual void onProbePhaseFinish(size_t /*matched_right_rows*/) { }
+    /// `matched_right_rows` is the number of right table rows matched across every probe stream,
+    /// empty if any of them did not count matches.
+    virtual void onProbePhaseFinish(std::optional<size_t> /*matched_right_rows*/) { }
 
     /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
     /// a post build optimization step.
