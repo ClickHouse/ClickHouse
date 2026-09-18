@@ -1170,7 +1170,11 @@ Create the user account `john` with a default database:
 CREATE USER john DEFAULT DATABASE database1
 ```
 
-`DEFAULT DATABASE NONE` leaves the default database unset. To use a database named `NONE`, quote its name with backticks: ``DEFAULT DATABASE `NONE```.
+`DEFAULT DATABASE NONE` leaves the default database unset. To use a database named `NONE`, quote its name with backticks:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
 
 Use a query parameter to create the user account `john`:
 
@@ -1302,7 +1306,11 @@ Change the default database for a user:
 ALTER USER user1 DEFAULT DATABASE database1
 ```
 
-`DEFAULT DATABASE NONE` clears the user's default database. To use a database named `NONE`, quote its name with backticks: ``DEFAULT DATABASE `NONE```.
+`DEFAULT DATABASE NONE` clears the user's default database. To use a database named `NONE`, quote its name with backticks:
+
+```sql
+DEFAULT DATABASE `NONE`
+```
 
 ## VALID UNTIL Clause {#valid-until-clause}
 
