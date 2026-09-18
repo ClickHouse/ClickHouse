@@ -644,6 +644,8 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        const bool is_data_lake = table.second->isDataLake();
+
                         while (src_index < columns_mask.size())
                         {
                             // total_rows
@@ -663,7 +665,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_rows = table.second->totalRows(context))
+                                    if (auto total_rows = is_data_lake ? std::nullopt : table.second->totalRows(context))
                                         res_columns[res_index]->insert(*total_rows);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -681,7 +683,7 @@ protected:
                             {
                                 try
                                 {
-                                    if (auto total_bytes = table.second->totalBytes(context))
+                                    if (auto total_bytes = is_data_lake ? std::nullopt : table.second->totalBytes(context))
                                         res_columns[res_index]->insert(*total_bytes);
                                     else
                                         res_columns[res_index]->insertDefault();
@@ -940,11 +942,13 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
+                const bool is_data_lake = table && table->isDataLake();
+
                 if (columns_mask[src_index++])
                 {
                     try
                     {
-                        auto total_rows = table ? table->totalRows(context_without_sequential_consistency) : std::nullopt;
+                        auto total_rows = table && !is_data_lake ? table->totalRows(context_without_sequential_consistency) : std::nullopt;
                         if (total_rows)
                             res_columns[res_index]->insert(*total_rows);
                         else
@@ -963,7 +967,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table ? table->totalBytes(context_without_sequential_consistency) : std::nullopt;
+                        auto total_bytes = table && !is_data_lake ? table->totalBytes(context_without_sequential_consistency) : std::nullopt;
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else

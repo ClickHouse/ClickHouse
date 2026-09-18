@@ -698,7 +698,20 @@ def format_profile_html(stacks, total_bytes, label):
 
 
 def generate_html_report(
-    query_results, total_master, total_pr, total_regressions, total_improvements, total_errors, duration, output_path
+    query_results,
+    total_master,
+    total_pr,
+    total_regressions,
+    total_improvements,
+    total_errors,
+    duration,
+    output_path,
+    *,
+    report_title="Parser AST Memory Check Report",
+    report_subtitle="Measuring AST allocated memory during SQL parsing (not query execution).",
+    item_label="Query",
+    change_threshold_bytes=CHANGE_THRESHOLD_BYTES,
+    change_threshold_pct=CHANGE_THRESHOLD_PCT,
 ):
     """Generate a standalone HTML report viewable in browser.
     Detail panels live OUTSIDE the table to avoid table-layout issues with SVG/nested tables."""
@@ -717,7 +730,9 @@ def generate_html_report(
         abs_ch = abs(change)
         base_b = abs(master_b)
         pct_ch = (abs_ch / base_b * 100) if base_b > 0 else (100.0 if abs_ch > 0 else 0)
-        sig = abs_ch > CHANGE_THRESHOLD_BYTES and pct_ch > CHANGE_THRESHOLD_PCT
+        sig = (
+            abs_ch > change_threshold_bytes and pct_ch > change_threshold_pct
+        )
 
         if status == Result.Status.FAIL:
             row_class = "regression"
@@ -777,7 +792,7 @@ def generate_html_report(
             f"</tr>\n"
             f'<tr class="detail-row" id="detail-{qid}" style="display:none">'
             f'<td colspan="7"><div class="detail-content">'
-            f'<div class="detail-query"><strong>Query {qid}:</strong> <code>{query_escaped}</code></div>'
+            f'<div class="detail-query"><strong>{html_escape(item_label)} {qid}:</strong> <code>{query_escaped}</code></div>'
             f'<div class="detail-summary">'
             f'<span>Master: <strong>{r["master_bytes"]:,}</strong> B</span>'
             f'<span>PR: <strong>{r["pr_bytes"]:,}</strong> B</span>'
@@ -799,7 +814,7 @@ def generate_html_report(
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Parser AST Memory Check Report</title>
+<title>{html_escape(report_title)}</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #333; padding: 12px; }}
@@ -864,8 +879,8 @@ def generate_html_report(
 </head>
 <body>
 
-<h1>Parser AST Memory Check Report</h1>
-<p class="subtitle">Measuring AST allocated memory during SQL parsing (not query execution). Direction: Master &rarr; PR.</p>
+<h1>{html_escape(report_title)}</h1>
+<p class="subtitle">{html_escape(report_subtitle)} Direction: Master &rarr; PR.</p>
 
 <div class="summary">
   <div class="summary-item">
@@ -873,7 +888,7 @@ def generate_html_report(
     <span class="summary-value {'fail' if (total_regressions > 0 or total_errors > 0) else 'ok'}">{overall_status}</span>
   </div>
   <div class="summary-item">
-    <span class="summary-label">Queries</span>
+    <span class="summary-label">{html_escape(item_label)}s</span>
     <span class="summary-value">{num_queries}</span>
   </div>
   <div class="summary-item">
@@ -906,7 +921,7 @@ def generate_html_report(
   </div>
   <div class="summary-item">
     <span class="summary-label">Threshold</span>
-    <span class="summary-value">&gt;{CHANGE_THRESHOLD_BYTES} B and &gt;{CHANGE_THRESHOLD_PCT}%</span>
+    <span class="summary-value">&gt;{change_threshold_bytes} B and &gt;{change_threshold_pct}%</span>
   </div>
 </div>
 
@@ -914,7 +929,7 @@ def generate_html_report(
   <thead>
     <tr>
       <th onclick="sortTable(0, 'num')" style="width:50px"># <span class="sort-arrow">&#9650;&#9660;</span></th>
-      <th onclick="sortTable(1, 'str')">Query <span class="sort-arrow">&#9650;&#9660;</span></th>
+      <th onclick="sortTable(1, 'str')">{html_escape(item_label)} <span class="sort-arrow">&#9650;&#9660;</span></th>
       <th onclick="sortTable(2, 'num')" style="width:100px">Master (B) <span class="sort-arrow">&#9650;&#9660;</span></th>
       <th onclick="sortTable(3, 'num')" style="width:100px">PR (B) <span class="sort-arrow">&#9650;&#9660;</span></th>
       <th onclick="sortTable(4, 'num')" style="width:100px">Change (B) <span class="sort-arrow">&#9650;&#9660;</span></th>
@@ -1039,7 +1054,11 @@ def run_profiler_collect_heap(
     }
 
 
-def batch_symbolize(binary_path: str, heap_files: list) -> bool:
+def batch_symbolize(
+    binary_path: str,
+    heap_files: list,
+    timeout: int = 600,
+) -> bool:
     """
     Run batch symbolization: invokes --symbolize-batch on all heap files.
     The tool's global LRU cache deduplicates addresses across files.
@@ -1056,7 +1075,7 @@ def batch_symbolize(binary_path: str, heap_files: list) -> bool:
             args,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         print("ERROR: batch symbolization timed out")

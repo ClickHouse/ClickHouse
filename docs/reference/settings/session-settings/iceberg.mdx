@@ -22,17 +22,31 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 Whether to delete all iceberg files on drop or not.
 
-## iceberg_delete_manifest_decode_concurrency {#iceberg_delete_manifest_decode_concurrency}
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."}]}]}/>
+
+Capacity of the queue between the Iceberg data manifest decode tasks and the query, in data file entries.
+
+The decode tasks pause once the queue is full and the query is not consuming, so this also bounds the read-ahead.
+
+Must be greater than zero.
+
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+
+**Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}]}]}/>
 
-Maximum number of Iceberg delete manifest files decoded concurrently during query execution before any data file is read.
+Maximum number of Iceberg manifest files decoded concurrently while reading a table.
 
-All delete manifests must be decoded before any data file is read, so this work sits on the critical path before the first row is returned. Decoding several at a time overlaps both the object storage round-trips and the per-row pruning work.
+Delete manifests are all decoded before any data file is read; data manifests are decoded while the list of data files for the query is produced, and new ones are decoded only as the query consumes already decoded entries. Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work.
 
-Higher values raise peak memory during query initialization when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+Higher values raise peak memory when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
 
 Must be greater than zero; `1` decodes the manifests one at a time.
 

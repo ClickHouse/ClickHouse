@@ -37,7 +37,7 @@ guide):
 
 4. Install-page Cloud banner parity. The English and localized install pages
    must render the same recommended Cloud banner, attributed signup link, and
-   locale-preserving quickstart link under the canonical `/docs` mount.
+   locale-preserving quickstart link.
 
 5. Explorer links. Quickstart and sample-dataset cards must render the
    canonical `/docs` mount during server-side rendering in English and every
@@ -810,14 +810,6 @@ def check_install_cloud_banners(docs_root: Path) -> list:
         for locale in LOCALES
     ]
 
-    docs_base_helper = (
-        "export const withDocsBase = (href) => {\n"
-        "  if (!href || !href.startsWith('/')) return href;\n"
-        "  const base = typeof window === 'undefined' || "
-        "window.location.pathname.startsWith('/docs') ? '/docs' : '';\n"
-        "  return base + href;\n"
-        "};"
-    )
     errors = []
     for locale, page in pages:
         source = page.read_text(encoding="utf-8")
@@ -825,7 +817,6 @@ def check_install_cloud_banners(docs_root: Path) -> list:
         quickstart_href = "/get-started/setup/cloud"
         if locale:
             quickstart_href = f"/{locale}{quickstart_href}"
-        quickstart_anchor = f"href={{withDocsBase('{quickstart_href}')}}"
 
         if source.count('className="ch-install-cloud-card"') != 1:
             errors.append(
@@ -836,15 +827,10 @@ def check_install_cloud_banners(docs_root: Path) -> list:
                 f"{name}: expected one signup link attributed with "
                 "`loc=docs-install-page-banner`"
             )
-        if source.count(docs_base_helper) != 1:
+        if source.count(f'href="{quickstart_href}"') != 1:
             errors.append(
-                f"{name}: withDocsBase must default to the canonical `/docs` "
-                "mount during server-side rendering"
-            )
-        if source.count(quickstart_anchor) != 1:
-            errors.append(
-                f"{name}: expected one Cloud quickstart link that renders "
-                f"{f'/docs{quickstart_href}'!r} during server-side rendering"
+                f"{name}: expected one Cloud quickstart link to "
+                f"{quickstart_href!r}"
             )
         if '<Card title="ClickHouse Cloud"' in source:
             errors.append(
@@ -854,7 +840,13 @@ def check_install_cloud_banners(docs_root: Path) -> list:
 
 
 def check_explorer_docs_links(docs_root: Path) -> list:
-    """Ensure explorer card anchors include `/docs` before hydration."""
+    """Ensure card anchors are left for Mintlify to resolve against `/docs`.
+
+    Mintlify applies the `/docs` base to anchors rendered by JSX components at
+    hydration, so a manually prefixed href renders as `/docs/docs/...`. The
+    assetBase helper must stay for static assets (images) and full-page
+    `window.location.assign` navigations, which Mintlify does not rewrite.
+    """
     errors = []
     for locale in [None, *LOCALES]:
         snippets_root = docs_root / "snippets"
@@ -876,8 +868,8 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                 / "components"
                 / "QuickStartsGrid"
                 / "QuickStartsGrid.jsx",
-                "href={withBase(quickStart.href)}",
                 "href={quickStart.href}",
+                "href={withBase(quickStart.href)}",
                 2,
             ),
             (
@@ -885,12 +877,12 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                 / "components"
                 / "SampleDatasetExplorer"
                 / "SampleDatasetExplorer.jsx",
-                "href={withBase(ds.href)}",
                 "href={ds.href}",
+                "href={withBase(ds.href)}",
                 1,
             ),
         ]
-        for path, resolved_anchor, raw_anchor, expected_count in components:
+        for path, expected_anchor, prefixed_anchor, expected_count in components:
             source = path.read_text(encoding="utf-8")
             name = path.relative_to(docs_root)
             if source.count(docs_base) != 1:
@@ -898,15 +890,17 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                     f"{name}: assetBase must default to `/docs` during "
                     "server-side rendering"
                 )
-            if source.count(resolved_anchor) != expected_count:
+            if source.count(expected_anchor) != expected_count:
                 errors.append(
-                    f"{name}: expected {expected_count} server-rendered "
-                    "card anchor(s) resolved through withBase"
+                    f"{name}: expected {expected_count} card anchor(s) left "
+                    "unprefixed for Mintlify's base handling"
                 )
-            if raw_anchor in source:
+            if prefixed_anchor in source:
                 errors.append(
-                    f"{name}: raw card anchor {raw_anchor!r} bypasses the "
-                    "canonical `/docs` mount"
+                    f"{name}: card anchor {prefixed_anchor!r} is prefixed "
+                    "with withBase; Mintlify already applies the `/docs` "
+                    "base to card anchors at hydration, so a manual prefix "
+                    "produces `/docs/docs/...` links"
                 )
     return errors
 

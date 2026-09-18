@@ -18,7 +18,7 @@
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTParallelWithQuery.h>
-#include <Parsers/ASTHypotheticalIndexQuery.h>
+#include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -49,6 +49,7 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateTokenQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
@@ -274,6 +275,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterSystemQuery";
     }
+    else if (query->as<ASTCreateTokenQuery>())
+    {
+        interpreter_name = "InterpreterCreateTokenQuery";
+    }
     else if (query->as<ASTCreateUserQuery>())
     {
         interpreter_name = "InterpreterCreateUserQuery";
@@ -386,9 +391,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropIndexQuery";
     }
-    else if (query->as<ASTHypotheticalIndexQuery>())
+    else if (query->as<ASTHypotheticalObjectQuery>())
     {
-        interpreter_name = "InterpreterHypotheticalIndexQuery";
+        interpreter_name = "InterpreterHypotheticalObjectQuery";
     }
     else if (query->as<ASTBackupQuery>())
     {

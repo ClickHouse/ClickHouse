@@ -1,8 +1,8 @@
 """Export of the `system.*_log` tables of a local server to the CI Logs cluster.
 
 Every check exports its system logs the same way: for each system log table a
-`Distributed` table (`system.<table>_sender`) is created next to it, fed by a
-materialized view (`system.<table>_watcher`) that adds the columns identifying
+`Distributed` table (`<export database>.<table>_sender`) is created, fed by a
+materialized view (`<export database>.<table>_watcher`) that adds the columns identifying
 the CI run. The rows are then sent to the CI Logs cluster in the background, by
 the server itself. The tables and the views are created by
 `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`; this module holds what
@@ -18,6 +18,7 @@ than one server tells them apart with `check_name_suffix`.
 import os
 from pathlib import Path
 
+from ci.jobs.scripts.log_cluster import LogCluster
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell, Utils
@@ -49,13 +50,15 @@ CI_LOGS_SENDER_USER_CONFIG = "./tests/config/users.d/ci_logs_sender.yaml"
 # The port of the local server to export from, for `setup_log_cluster.sh`.
 SERVER_PORT_ENV = "LOG_EXPORT_SERVER_PORT"
 
+# The local database of the export tables; must match the default of
+# `LOG_EXPORT_DATABASE` in `setup_log_cluster.sh`, which creates them.
+LOG_EXPORT_DATABASE = "ci_logs_export"
+
 # The `Distributed` tables the export sends through, created by `start` as
-# `system.<log table>_sender`. `endsWith` rather than `LIKE '%\_sender'`, to
-# keep the escape of the underscore out of a query that goes through a shell
-# command line.
+# `<LOG_EXPORT_DATABASE>.<log table>_sender`
 SENDER_TABLES_QUERY = (
     "SELECT database || '.' || name FROM system.tables "
-    "WHERE database = 'system' AND endsWith(name, '_sender') AND engine = 'Distributed'"
+    f"WHERE database = '{LOG_EXPORT_DATABASE}' AND endsWith(name, '_sender') AND engine = 'Distributed'"
 )
 
 _credentials = None
@@ -138,10 +141,14 @@ def start(
         os.environ["CLICKHOUSE_CI_LOGS_HOST"] = host
         os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
         os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = password
-    info = Info()
-    check_name = info.job_name + check_name_suffix
-    os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
-        f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{commit_sha or info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{check_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
+    # The exported columns are defined once in LogCluster.META_COLUMNS so the
+    # DDL of the destination tables and these SELECT expressions cannot drift.
+    check_name = Info().job_name + check_name_suffix
+    os.environ["EXTRA_COLUMNS"] = LogCluster.extra_columns_ddl()
+    os.environ["EXTRA_COLUMNS_EXPRESSION"] = LogCluster.extra_columns_expression(
+        Utils.timestamp_to_str(check_start_time),
+        check_name=check_name,
+        commit_sha=commit_sha,
     )
     _set_server_port(port)
 

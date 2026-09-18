@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Distributed plans support `IN (subquery)` (issue #109476): the set is built once on the
 -- initiator and its values ship with the worker tasks, so there is no `IN` -> `JOIN`
 -- auto-rewrite. The rewrite stays available as an explicit setting.
