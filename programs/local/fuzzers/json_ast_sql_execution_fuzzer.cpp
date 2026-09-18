@@ -346,17 +346,44 @@ void recordLastInput(const DB::JSONASTFuzzer::PipelineInput & input)
 }
 
 /// ------------------------------------------------------------------------------------------------
-/// Mutation post-processor: mutated identifiers rarely resolve against the fixture, so most complex
-/// mutants die on name resolution. After every mutation, unknown table names become fixture tables,
-/// unknown column names fixture columns, and unknown function names real functions. A small share
-/// is left untouched so that name-resolution error paths stay covered.
+/// Mutation post-processor (opt-in, see `fixupEnabled`): after every mutation, unknown table names
+/// become fixture tables, unknown column names fixture columns, and unknown function names real
+/// functions. A small share is left untouched so that name-resolution error paths stay covered.
 /// ------------------------------------------------------------------------------------------------
 
-const std::vector<std::string_view> fixture_tables = {"t", "t", "t", "t1", "t2", "t3", "src", "dst", "tbl", "empsalary", "lg", "nul", "jt", "st", "v", "mv", "d", "numbers(10)"};
-const std::vector<std::string_view> fixture_columns = {
-    "a", "b", "c", "d", "e", "f", "s", "x", "y", "z", "id", "key", "value", "n", "arr", "m", "tup", "dt", "dt64", "lc", "u", "dec",
-    "ip", "en", "fs", "bl", "d32", "nested.k", "nested.v", "j", "dyn", "var", "i128", "u256", "fl32", "ipv6", "dec2", "t_arr", "arr_null",
-    "m2", "lc_null", "k", "ts", "v", "name", "tags", "depname", "empno", "salary", "enroll_date", "jv", "dv", "number", "*"};
+struct FixtureTable
+{
+    std::string_view name;
+    std::vector<std::string_view> columns;
+};
+
+/// Tables of json_ast_sql_execution_fuzzer_schema.sql with their columns.
+const std::vector<FixtureTable> fixture_tables = {
+    {"t", {"a", "b", "c", "d", "e", "f", "s", "x", "y", "z", "id", "key", "value", "n", "arr", "m", "tup", "dt", "dt64", "lc", "u", "dec", "ip", "en",
+           "fs", "bl", "d32", "nested.k", "nested.v", "j", "dyn", "var", "i128", "u256", "fl32", "ipv6", "dec2", "t_arr", "arr_null", "m2", "lc_null"}},
+    {"t1", {"k", "ts", "a", "b", "v"}},
+    {"t2", {"k", "ts", "a", "b", "v"}},
+    {"t3", {"id", "name", "value", "tags"}},
+    {"src", {"a", "b", "c"}},
+    {"dst", {"a", "b", "c"}},
+    {"tbl", {"t", "name", "arr"}},
+    {"empsalary", {"depname", "empno", "salary", "enroll_date"}},
+    {"lg", {"a", "s"}},
+    {"nul", {"a", "s"}},
+    {"jt", {"k", "jv"}},
+    {"st", {"k"}},
+    {"v", {"a", "c", "total"}},
+    {"mv", {"a", "b", "c"}},
+    {"d", {"k", "dv"}},
+};
+
+const FixtureTable * findFixtureTable(std::string_view name)
+{
+    for (const auto & table : fixture_tables)
+        if (table.name == name)
+            return &table;
+    return nullptr;
+}
 
 bool textToEnumTable_hasFunction(const std::string & name)
 {
@@ -371,19 +398,71 @@ bool textToEnumTable_hasFunction(const std::string & name)
     return names.contains(name);
 }
 
-bool isKnownIdentifier(std::string_view name)
+/// What a query refers to, collected in a first pass over the tree.
+struct QueryNames
 {
-    for (auto known : fixture_tables)
-        if (name == known)
-            return true;
-    for (auto known : fixture_columns)
-        if (name == known)
-            return true;
-    /// qualified `table.column`, aliases from the seed vocabulary, `system.*`
-    return name.find('.') != std::string::npos || name.size() <= 2;
+    std::vector<const FixtureTable *> tables;   /// fixture tables referenced by `TableIdentifier`s
+    std::unordered_set<std::string> aliases;    /// `AS alias` of expressions and tables, `WITH ... AS name`
+    bool uses_numbers = false;
+};
+
+void collectNames(const json_ast_fuzzer::Node & node, QueryNames & names)
+{
+    using namespace json_ast_fuzzer;
+    for (const auto & prop : node.props())
+    {
+        if (prop.key() == K_alias && prop.has_string_value() && !prop.string_value().empty())
+            names.aliases.insert(prop.string_value());
+        if (prop.key() == K_name && node.type() == T_TableIdentifier && prop.has_string_value())
+        {
+            if (const auto * table = findFixtureTable(prop.string_value()))
+                names.tables.push_back(table);
+        }
+        if (prop.key() == K_name && node.type() == T_Function && prop.has_string_value() && prop.string_value().starts_with("numbers"))
+            names.uses_numbers = true;
+        if (prop.key() == K_name && node.type() == T_Function && prop.has_function_name())
+            names.uses_numbers = true; /// cannot tell; be permissive about `number`
+        if (prop.has_node_value())
+            collectNames(prop.node_value(), names);
+        else if (prop.has_node_list())
+            for (const auto & child : prop.node_list().items())
+                collectNames(child, names);
+    }
+    for (const auto & child : node.children())
+        collectNames(child, names);
 }
 
-void fixIdentifiers(json_ast_fuzzer::Node & node, std::mt19937 & rng)
+bool isKnownColumn(std::string_view name, const QueryNames & names)
+{
+    if (name == "*" || name.size() <= 1 || names.aliases.contains(std::string(name)))
+        return true;
+    if (name == "number" && names.uses_numbers)
+        return true;
+    std::string_view column = name;
+    /// `table.column` or `alias.column`
+    if (auto dot = name.find('.'); dot != std::string_view::npos && name.substr(0, dot) != "nested")
+    {
+        std::string_view qualifier = name.substr(0, dot);
+        column = name.substr(dot + 1);
+        if (names.aliases.contains(std::string(qualifier)))
+            return true;
+        if (const auto * table = findFixtureTable(qualifier))
+        {
+            for (auto c : table->columns)
+                if (c == column)
+                    return true;
+            return false;
+        }
+        return false;
+    }
+    for (const auto * table : names.tables)
+        for (auto c : table->columns)
+            if (c == name)
+                return true;
+    return false;
+}
+
+void rewriteNames(json_ast_fuzzer::Node & node, const QueryNames & names, const FixtureTable & target, std::mt19937 & rng)
 {
     using namespace json_ast_fuzzer;
     const bool is_table = node.type() == T_TableIdentifier;
@@ -394,10 +473,10 @@ void fixIdentifiers(json_ast_fuzzer::Node & node, std::mt19937 & rng)
         if (prop.key() == K_name && prop.has_string_value() && rng() % 10 != 0)
         {
             const std::string & name = prop.string_value();
-            if (is_table && !isKnownIdentifier(name))
-                prop.set_string_value(std::string(fixture_tables[rng() % fixture_tables.size()]));
-            else if (is_identifier && !isKnownIdentifier(name))
-                prop.set_string_value(std::string(fixture_columns[rng() % fixture_columns.size()]));
+            if (is_table && !findFixtureTable(name) && !names.aliases.contains(name))
+                prop.set_string_value(std::string(target.name));
+            else if (is_identifier && !isKnownColumn(name, names))
+                prop.set_string_value(std::string(target.columns[rng() % target.columns.size()]));
             else if (is_function && !textToEnumTable_hasFunction(name))
                 prop.set_function_name(static_cast<FunctionName>(1 + rng() % (FunctionName_descriptor()->value_count() - 1)));
         }
@@ -407,13 +486,35 @@ void fixIdentifiers(json_ast_fuzzer::Node & node, std::mt19937 & rng)
             prop.clear_value();
         }
         if (prop.has_node_value())
-            fixIdentifiers(*prop.mutable_node_value(), rng);
+            rewriteNames(*prop.mutable_node_value(), names, target, rng);
         else if (prop.has_node_list())
             for (auto & child : *prop.mutable_node_list()->mutable_items())
-                fixIdentifiers(child, rng);
+                rewriteNames(child, names, target, rng);
     }
     for (auto & child : *node.mutable_children())
-        fixIdentifiers(child, rng);
+        rewriteNames(child, names, target, rng);
+}
+
+/// Unknown table names become one fixture table chosen for the query (the first fixture table it
+/// already references, otherwise a random one), unknown column names become columns of that table,
+/// unknown function names real functions. Aliases defined in the query are kept.
+void fixIdentifiers(json_ast_fuzzer::Node & root, std::mt19937 & rng)
+{
+    QueryNames names;
+    collectNames(root, names);
+    const FixtureTable * target = names.tables.empty() ? nullptr : names.tables.front();
+    if (!target)
+    {
+        static const std::vector<size_t> weighted = {0, 0, 0, 0, 1, 2, 3, 4, 6, 7};
+        target = &fixture_tables[weighted[rng() % weighted.size()]];
+    }
+    /// Unknown tables are rewritten to the target, so its columns are resolvable everywhere.
+    bool present = false;
+    for (const auto * table : names.tables)
+        present = present || table == target;
+    if (!present)
+        names.tables.push_back(target);
+    rewriteNames(root, names, *target, rng);
 }
 
 std::string loadSchema()
@@ -432,11 +533,25 @@ std::string loadSchema()
 
 }
 
+/// Opt-in (`JSON_AST_FUZZER_FIXUP=1`): measured on 600 mined seeds, the rewrite *increased* the number of
+/// failing queries (244 -> 296): it also renames lambda parameters, CTE names and aggregate combinators
+/// such as `sumIf` that are not in `system.functions`, and picks columns of the wrong type. Kept for
+/// experiments with a smarter, type-aware version.
+bool fixupEnabled()
+{
+    static const bool enabled = []
+    {
+        const char * value = getenv("JSON_AST_FUZZER_FIXUP"); // NOLINT(concurrency-mt-unsafe)
+        return value && std::string_view(value) == "1";
+    }();
+    return enabled;
+}
+
 /// Registered for the whole session; libprotobuf-mutator calls it after every mutation and crossover.
 static protobuf_mutator::libfuzzer::PostProcessorRegistration<json_ast_fuzzer::Node> fix_identifiers_registration = {
     [](json_ast_fuzzer::Node * root, unsigned int seed)
     {
-        if (getenv("JSON_AST_FUZZER_NO_FIXUP")) // NOLINT(concurrency-mt-unsafe)
+        if (!fixupEnabled())
             return;
         std::mt19937 rng(seed);
         fixIdentifiers(*root, rng);
@@ -466,7 +581,7 @@ DEFINE_BINARY_PROTO_FUZZER(const json_ast_fuzzer::Node & original_root)
     /// would otherwise never resolve against the fixture. Mutations are rewritten by the post-processor
     /// already; a second pass is a no-op for them.
     json_ast_fuzzer::Node root = original_root;
-    if (!getenv("JSON_AST_FUZZER_NO_FIXUP")) // NOLINT(concurrency-mt-unsafe)
+    if (fixupEnabled())
     {
         std::mt19937 rng(static_cast<unsigned int>(std::hash<std::string>{}(original_root.SerializeAsString())));
         fixIdentifiers(root, rng);
