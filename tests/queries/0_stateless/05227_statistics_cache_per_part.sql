@@ -14,38 +14,38 @@ SET query_plan_optimize_join_order_limit = 10;
 -- The join estimates below must come from the statistics, not from the randomized fuzzing of the join order.
 SET query_plan_optimize_join_order_randomize = 0;
 
-DROP TABLE IF EXISTS fact_05218;
-DROP TABLE IF EXISTS dim_05218;
+DROP TABLE IF EXISTS fact_05227;
+DROP TABLE IF EXISTS dim_05227;
 
-CREATE TABLE fact_05218 (p UInt8, id UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY id;
-CREATE TABLE dim_05218 (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE fact_05227 (p UInt8, id UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+CREATE TABLE dim_05227 (id UInt64) ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO fact_05218 SELECT 1, number FROM numbers(100000);
-INSERT INTO fact_05218 SELECT 2, number % 10 FROM numbers(1000);
-INSERT INTO dim_05218 SELECT number FROM numbers(10000);
+INSERT INTO fact_05227 SELECT 1, number FROM numbers(100000);
+INSERT INTO fact_05227 SELECT 2, number % 10 FROM numbers(1000);
+INSERT INTO dim_05227 SELECT number FROM numbers(10000);
 
 -- The first query loads the statistics of the columns it reads (`p` and `id`) of every part.
-SELECT count() FROM fact_05218 AS f INNER JOIN dim_05218 AS d ON f.id = d.id WHERE f.p >= 1
+SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.p >= 1
 SETTINGS log_comment = 'stats_cache_1_cold' FORMAT Null;
 
 -- The same query hits the cache and loads nothing.
-SELECT count() FROM fact_05218 AS f INNER JOIN dim_05218 AS d ON f.id = d.id WHERE f.p >= 1
+SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.p >= 1
 SETTINGS log_comment = 'stats_cache_2_warm' FORMAT Null;
 
 -- A query over the parts left after partition pruning hits the cache as well.
-SELECT count() FROM fact_05218 AS f INNER JOIN dim_05218 AS d ON f.id = d.id WHERE f.p = 2
+SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.p = 2
 SETTINGS log_comment = 'stats_cache_3_pruned' FORMAT Null;
 
 -- A new part is loaded by the next query; the other parts are still cached.
-INSERT INTO fact_05218 SELECT 3, number FROM numbers(1000);
+INSERT INTO fact_05227 SELECT 3, number FROM numbers(1000);
 
-SELECT count() FROM fact_05218 AS f INNER JOIN dim_05218 AS d ON f.id = d.id WHERE f.p >= 1
+SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.p >= 1
 SETTINGS log_comment = 'stats_cache_4_new_part' FORMAT Null;
 
 -- Dropping the cache makes the next query load everything again.
 SYSTEM DROP STATISTICS CACHE;
 
-SELECT count() FROM fact_05218 AS f INNER JOIN dim_05218 AS d ON f.id = d.id WHERE f.p >= 1
+SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.p >= 1
 SETTINGS log_comment = 'stats_cache_5_dropped' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
@@ -64,17 +64,17 @@ ORDER BY log_comment;
 
 -- The cached statistics are shared between queries and must not be changed by merging them:
 -- the estimated sizes of the joined relations must not drift from one execution to the next.
-CREATE TEMPORARY TABLE join_estimates_05218 (run UInt8, line String);
+CREATE TEMPORARY TABLE join_estimates_05227 (run UInt8, line String);
 
-INSERT INTO join_estimates_05218 SELECT 1, explain
-FROM (EXPLAIN SELECT count() FROM fact_05218 AS f INNER JOIN dim_05218 AS d ON f.id = d.id WHERE f.id < 5000)
+INSERT INTO join_estimates_05227 SELECT 1, explain
+FROM (EXPLAIN SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.id < 5000)
 WHERE explain LIKE '%⋈%';
 
-INSERT INTO join_estimates_05218 SELECT 2, explain
-FROM (EXPLAIN SELECT count() FROM fact_05218 AS f INNER JOIN dim_05218 AS d ON f.id = d.id WHERE f.id < 5000)
+INSERT INTO join_estimates_05227 SELECT 2, explain
+FROM (EXPLAIN SELECT count() FROM fact_05227 AS f INNER JOIN dim_05227 AS d ON f.id = d.id WHERE f.id < 5000)
 WHERE explain LIKE '%⋈%';
 
-SELECT count() = 2 AS both_runs_estimated, uniqExact(line) = 1 AS same_estimates FROM join_estimates_05218;
+SELECT count() = 2 AS both_runs_estimated, uniqExact(line) = 1 AS same_estimates FROM join_estimates_05227;
 
-DROP TABLE fact_05218;
-DROP TABLE dim_05218;
+DROP TABLE fact_05227;
+DROP TABLE dim_05227;

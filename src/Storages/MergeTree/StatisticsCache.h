@@ -23,7 +23,7 @@ struct StatisticsCacheCell
 {
     ColumnStatisticsPtr stats;
     /// Uncompressed size of the serialized statistics, a close proxy for the in-memory size.
-    size_t memory_bytes;
+    size_t memory_bytes = 0;
 };
 
 struct StatisticsCacheWeightFunction
