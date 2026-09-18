@@ -105,7 +105,7 @@ DataTypePtr makeExplicitParsedObjectTypeFromMetadataHint(std::string_view hint, 
     /// `makeNullableSafe` rather than `DataTypeNullable`: `Dynamic` cannot be wrapped in
     /// `Nullable`, and it already represents missing values on its own.
     if (hint.starts_with("Nullable(") || primitive_output_nullable)
-        type = makeNullableSafe(std::move(type));
+        type = makeNullableSafe(type);
 
     return type;
 }
@@ -153,7 +153,7 @@ DataTypePtr makeExplicitParsedObjectTypeFromTypeHint(const DataTypePtr & type_hi
     }
 
     if (nullable || primitive_output_nullable)
-        type = makeNullableSafe(std::move(type));
+        type = makeNullableSafe(type);
 
     return type;
 }
