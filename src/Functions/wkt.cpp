@@ -34,8 +34,9 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        checkGeometryArgumentType(arguments[0], getName(), 0);
         return std::make_shared<DataTypeString>();
     }
 
