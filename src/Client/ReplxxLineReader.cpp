@@ -787,12 +787,22 @@ bool ReplxxLineReader::hintChosen()
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    if (history_file_fd >= 0 && close(history_file_fd))
-        rx.print("Close of history file failed: %s\n", errnoToString().c_str());
+    /// `Replxx::print` writes straight to the terminal fd and throws `std::runtime_error` ("write failed")
+    /// when the write is short, e.g. the pty of the embedded (SSH) client is already gone. A destructor is
+    /// implicitly `noexcept`, so letting it escape would `std::terminate` the whole process. There is nobody
+    /// left to report to on a dead terminal, so suppress it here, the same way `Replxx::ReplxxImpl::~ReplxxImpl` does.
+    try
+    {
+        if (history_file_fd >= 0 && close(history_file_fd))
+            rx.print("Close of history file failed: %s\n", errnoToString().c_str());
 
-    /// Reset cursor blinking
-    if (overwrite_mode)
-        rx.print("%s", "\033[0 q");
+        /// Reset cursor blinking
+        if (overwrite_mode)
+            rx.print("%s", "\033[0 q");
+    }
+    catch (const std::runtime_error &)
+    {
+    }
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
