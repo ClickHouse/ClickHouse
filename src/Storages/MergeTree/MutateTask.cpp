@@ -266,7 +266,6 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
-    bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
@@ -283,7 +282,6 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
-        NameSet ignored_columns;
         NameSet extra_columns_for_indices_and_projections;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
@@ -345,14 +343,6 @@ static void splitAndModifyMutationCommands(
                         mutated_columns.emplace(child->as<ASTAssignment &>().column_name);
                 }
 
-                if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
-                {
-                    for (const auto & col : part_columns)
-                    {
-                        if (!mutated_columns.contains(col.name))
-                            ignored_columns.emplace(col.name);
-                    }
-                }
                 if (command.type == MutationCommand::Type::MATERIALIZE_INDEX)
                 {
                     const auto & all_indices = metadata_snapshot->getSecondaryIndices();
@@ -545,7 +535,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name) && !ignored_columns.contains(column.name))
+                if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -554,8 +544,10 @@ static void splitAndModifyMutationCommands(
                     auto part_metadata_version = part->getMetadataVersion();
                     auto table_metadata_version = metadata_snapshot->getMetadataVersion();
 
-                    bool allow_equal_versions = part_metadata_version == table_metadata_version && part->old_part_with_no_metadata_version_on_disk;
-                    if (part_metadata_version < table_metadata_version || allow_equal_versions)
+                    /// `ATTACH`/`REPLACE PARTITION FROM` and `MOVE PARTITION TO TABLE` stamp the destination's
+                    /// version on a part that keeps the source's columns and require matching structures, so
+                    /// an equal version with the column absent means it is in no schema at all.
+                    if (part_metadata_version <= table_metadata_version)
                     {
                         LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
                                          "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
@@ -569,6 +561,17 @@ static void splitAndModifyMutationCommands(
                                         "in table {} with metadata version {}",
                                         part->name, part_metadata_version, column.name,
                                         part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+
+                    /// The part is ahead of a table that has no metadata version to reason with, so there is
+                    /// nothing else to go on: the column is on disk, the table does not have it, and reads and
+                    /// merges already ignore it. Reading it would add a `READ_COLUMN` command below, whose
+                    /// identifier the mutation then resolves against the table and fails with
+                    /// `UNKNOWN_IDENTIFIER` - for every mutation of that part, so the mutation queue stays
+                    /// wedged until the part is merged or dropped. Skip the column and let the rewrite drop it.
+                    LOG_WARNING(log, "Ignoring column {} from part {} because there is no such column in table {}. "
+                                     "Assuming the column was dropped", column.name, part->name,
+                                part->storage.getStorageID().getNameForLogs());
+                    continue;
                 }
 
                 for_interpreter.emplace_back(
@@ -1784,7 +1787,7 @@ static void finalizeMutatedPart(
         if (codec_is_approximate)
             DB::writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, *out_comp);
         else
-            DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
+            DB::writeText(codec->getFullCodecDescription()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 
@@ -4137,7 +4140,6 @@ bool MutateTask::prepare()
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
-        suitable_for_ttl_optimization,
         ctx->log);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
