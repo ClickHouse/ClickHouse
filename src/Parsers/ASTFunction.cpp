@@ -301,7 +301,7 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         if (!is_table_function_shape)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A select query argument is only allowed in 'view(SELECT ...)' or "
-                "'viewIfPermitted(SELECT ..., f(...))' during AST JSON deserialization");
+                "'viewIfPermitted(SELECT ... ELSE f(...))' during AST JSON deserialization");
 
         /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
         /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and
