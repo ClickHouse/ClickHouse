@@ -47,6 +47,7 @@ struct FilterAnalysisResult
 struct AggregationAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
+    InToJoinAnalysisResult in_to_join;
     Names aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
@@ -56,6 +57,7 @@ struct AggregationAnalysisResult
 struct WindowAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_window_actions;
+    InToJoinAnalysisResult in_to_join;
     std::vector<WindowDescription> window_descriptions;
 };
 

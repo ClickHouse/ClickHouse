@@ -45,10 +45,12 @@ namespace
 class CollectSetsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSetsVisitor>
 {
 public:
-    CollectSetsVisitor(PlannerContext & planner_context_, std::vector<QueryTreeNodePtr> & pending_source_expressions_)
+    CollectSetsVisitor(
+        PlannerContext & planner_context_, std::vector<QueryTreeNodePtr> & pending_source_expressions_, bool visits_planned_query_)
         : InDepthQueryTreeVisitorWithContext(planner_context_.getQueryContext())
         , planner_context(planner_context_)
         , pending_source_expressions(pending_source_expressions_)
+        , visits_planned_query(visits_planned_query_)
     {}
 
     void enterImpl(QueryTreeNodePtr & node)
@@ -77,11 +79,11 @@ public:
         /// The planner evaluates this `IN` with a join, so it needs no set. This is the only occurrence
         /// that leaves without building one: an occurrence in a blocked scope takes the rewrite back and
         /// builds the set on its way through here.
-        if (const auto * in_to_join_rewrite_root = getUnblockedJoinRewriteRoot(node))
+        if (auto in_to_join_rewrite_scope = getUnblockedJoinRewriteScope(node))
         {
-            if (canRewriteInToJoin(node, query_node, in_to_join_rewrite_root, planner_context))
+            if (canRewriteInToJoin(node, query_node, planner_context))
             {
-                planner_context.addInSubqueryForJoinRewrite(in_to_join_rewrite_root, node);
+                planner_context.addInSubqueryForJoinRewrite(*in_to_join_rewrite_scope, node);
                 return;
             }
         }
@@ -191,7 +193,9 @@ private:
     {
         if (node->as<QueryNode>())
         {
-            query_node = node;
+            /// Another query plans its own `IN` with its own context, so this walk leaves them their sets.
+            if (visits_planned_query)
+                query_node = node;
             return;
         }
 
@@ -212,15 +216,8 @@ private:
             return;
         }
 
-        if (join_rewrite_root)
-            return;
-
-        /// Whether this node roots one of the expressions the IN to JOIN rewrite can insert its join under.
-        const auto & typed_query_node = query_node->as<const QueryNode &>();
-        if (node == typed_query_node.getWhere() || node == typed_query_node.getHaving()
-            || node == typed_query_node.getQualify() || node == typed_query_node.getProjectionNode()
-            || node == typed_query_node.getOrderByNode() || node == typed_query_node.getLimitByNode())
-            join_rewrite_root = node.get();
+        if (auto step = scopeFor(node))
+            scope_stack.push_back(*step);
     }
 
     void leaveJoinRewriteScope(const QueryTreeNodePtr & node)
@@ -234,18 +231,49 @@ private:
             return;
         }
 
-        if (join_rewrite_root == node.get())
-            join_rewrite_root = nullptr;
+        if (blocked_depth == 0 && scopeFor(node))
+            scope_stack.pop_back();
     }
 
-    /// The expression the rewrite would insert the join for `node` under, or null when a scope that no
-    /// join can be added under reads it - the one being walked right now, or any other.
-    const IQueryTreeNode * getUnblockedJoinRewriteRoot(const QueryTreeNodePtr & node) const
+    /// The step of the chain that computes the expressions of this scope, when it is one the rewrite can insert its join under.
+    std::optional<InToJoinScope> scopeFor(const QueryTreeNodePtr & node) const
     {
-        if (blocked_in_subqueries.contains(node.get()))
-            return nullptr;
+        const auto & typed_query_node = query_node->as<const QueryNode &>();
+        if (node == typed_query_node.getWhere())
+            return InToJoinScope::Where;
+        if (node == typed_query_node.getGroupByNode())
+            return InToJoinScope::Aggregation;
+        if (node == typed_query_node.getHaving())
+            return InToJoinScope::Having;
+        if (node == typed_query_node.getWindowNode())
+            return InToJoinScope::Window;
+        if (node == typed_query_node.getQualify())
+            return InToJoinScope::Qualify;
+        if (node == typed_query_node.getProjectionNode())
+            return InToJoinScope::Projection;
+        if (node == typed_query_node.getOrderByNode())
+            return InToJoinScope::OrderBy;
+        if (node == typed_query_node.getLimitByNode())
+            return InToJoinScope::LimitBy;
 
-        return join_rewrite_root;
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            if (function_node->isAggregateFunction())
+                return InToJoinScope::Aggregation;
+            if (function_node->isWindowFunction())
+                return InToJoinScope::Window;
+        }
+
+        return {};
+    }
+
+    /// The step the rewrite would insert the join for `node` under, or nothing when a scope is blocked.
+    std::optional<InToJoinScope> getUnblockedJoinRewriteScope(const QueryTreeNodePtr & node) const
+    {
+        if (blocked_in_subqueries.contains(node.get()) || scope_stack.empty())
+            return {};
+
+        return scope_stack.back();
     }
 
     /// A scope whose expressions no join the rewrite can add is below, so an `IN` here is evaluated with
@@ -257,8 +285,7 @@ private:
             return true;
 
         const auto & typed_query_node = query_node->as<const QueryNode &>();
-        if (node == typed_query_node.getPrewhere() || node == typed_query_node.getJoinTreeNode()
-            || node == typed_query_node.getGroupByNode() || node == typed_query_node.getWindowNode())
+        if (node == typed_query_node.getPrewhere() || node == typed_query_node.getJoinTreeNode())
             return true;
 
         const auto * function_node = node->as<FunctionNode>();
@@ -266,18 +293,18 @@ private:
             return false;
 
         /// `indexHint` builds its arguments into a dag that has no join above it.
-        /// The arguments of an aggregate or window function are built by the aggregation or window step.
-        return function_node->getFunctionName() == "indexHint" || function_node->isAggregateFunction()
-            || function_node->isWindowFunction();
+        return function_node->getFunctionName() == "indexHint";
     }
 
     PlannerContext & planner_context;
     std::vector<QueryTreeNodePtr> & pending_source_expressions;
 
-    /// The query level being visited.
+    /// Whether the visit is rooted at the query this context plans.
+    const bool visits_planned_query;
+    /// The query being visited.
     QueryTreeNodePtr query_node;
-    /// The expression the rewrite would insert its join under.
-    const IQueryTreeNode * join_rewrite_root = nullptr;
+    /// The scopes being walked, innermost last.
+    std::vector<InToJoinScope> scope_stack;
     int blocked_depth = 0;
     /// IN subqueries that occurred in a blocked scope.
     std::unordered_set<const IQueryTreeNode *> blocked_in_subqueries;
@@ -304,7 +331,7 @@ void collectSets(const QueryTreeNodePtr & node, PlannerContext & planner_context
 
         /// Each pending node is visited as a root: needChildVisit refuses QUERY and UNION
         /// children, so a source expression that is itself a query must start its own visit.
-        CollectSetsVisitor visitor(planner_context, pending_source_expressions);
+        CollectSetsVisitor visitor(planner_context, pending_source_expressions, node_to_visit == node);
         visitor.visit(node_to_visit);
     }
 }

@@ -2849,7 +2849,8 @@ void Planner::buildPlanForQueryNode()
                     /*correlated_subtrees=*/{},
                     select_query_options,
                     "Before GROUP BY",
-                    useful_sets);
+                    useful_sets,
+                    aggregation_analysis_result.in_to_join);
 
             addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context);
         }
@@ -2875,7 +2876,8 @@ void Planner::buildPlanForQueryNode()
                         /*correlated_subtrees=*/{},
                         select_query_options,
                         "Before WINDOW",
-                        useful_sets);
+                        useful_sets,
+                        window_analysis_result.in_to_join);
             }
             else
             {
@@ -2980,7 +2982,8 @@ void Planner::buildPlanForQueryNode()
                         /*correlated_subtrees=*/{},
                         select_query_options,
                         "Before window functions",
-                        useful_sets);
+                        useful_sets,
+                        window_analysis_result.in_to_join);
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result, select_query_options.max_step_description_length);
             }

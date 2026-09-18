@@ -1,12 +1,10 @@
 #include <Core/NamesAndTypes.h>
 #include <Planner/PlannerUncorrelatedSubqueries.h>
 
-#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
-#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
@@ -63,7 +61,7 @@ void applySetSemantics(JoinStepLogical & join_step)
 {
     auto & join_settings = join_step.getJoinSettings();
     join_settings.join_algorithms = {JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::HASH};
-    join_settings.join_overflow_mode = OverflowMode::THROW;
+    makeInternalJoinUnbounded(join_step);
 }
 
 /// Whether `equals` compares one key the way regular `IN` does.
@@ -209,26 +207,6 @@ bool readsCorrelatedColumn(const QueryTreeNodePtr & node, const ColumnNodePtrWit
     return false;
 }
 
-/// The join is placed above the aggregation, so the rewrite needs the left argument to still be a column
-/// after it. `collectSets` takes care of the other half, that nothing below the join reads the `IN`.
-bool keyIsDroppedByAggregation(const QueryTreeNodePtr & left_key, const QueryNode & query_node)
-{
-    if (!query_node.hasGroupBy())
-        return !collectAggregateFunctionNodes(query_node.getProjectionNode()).empty();
-
-    /// Ignoring aliases.
-    QueryTreeNodePtrWithHashIgnoreAliasesSet grouping_keys;
-    for (const auto & grouping_key : query_node.getGroupBy().getNodes())
-    {
-        if (const auto * list_node = grouping_key->as<ListNode>())
-            grouping_keys.insert_range(list_node->getNodes());
-        else
-            grouping_keys.insert(grouping_key);
-    }
-
-    return !grouping_keys.contains(left_key);
-}
-
 }
 
 QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
@@ -249,7 +227,6 @@ QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node)
 bool canRewriteInToJoin(
     const QueryTreeNodePtr & in_node,
     const QueryTreeNodePtr & query_node,
-    const IQueryTreeNode * rewrite_root_node,
     const PlannerContext & planner_context)
 {
     const auto & function_node = in_node->as<const FunctionNode &>();
@@ -260,6 +237,10 @@ bool canRewriteInToJoin(
 
     const auto & settings = planner_context.getQueryContext()->getSettingsRef();
     if (!settings[Setting::rewrite_in_to_join])
+        return false;
+
+    /// The join can only throw on overflow, so a truncated set has no equivalent.
+    if (settings[Setting::set_overflow_mode] != OverflowMode::THROW && (settings[Setting::max_rows_in_set] || settings[Setting::max_bytes_in_set]))
         return false;
 
     const auto & arguments = function_node.getArguments().getNodes();
@@ -285,17 +266,7 @@ bool canRewriteInToJoin(
     if (containsSubquery(left_key))
         return false;
 
-    /// Only a join under `WHERE` is below the aggregation.
-    const auto & typed_query_node = query_node->as<const QueryNode &>();
-    const bool above_aggregation = rewrite_root_node != typed_query_node.getWhere().get();
-    if (above_aggregation && keyIsDroppedByAggregation(left_key, typed_query_node))
-        return false;
-
-    if (readsCorrelatedColumn(left_key, typed_query_node.getCorrelatedColumnsSet()))
-        return false;
-
-    /// The join can only throw on overflow, so a truncated set has no equivalent.
-    if (settings[Setting::set_overflow_mode] != OverflowMode::THROW && (settings[Setting::max_rows_in_set] || settings[Setting::max_bytes_in_set]))
+    if (readsCorrelatedColumn(left_key, query_node->as<const QueryNode &>().getCorrelatedColumnsSet()))
         return false;
 
     return true;

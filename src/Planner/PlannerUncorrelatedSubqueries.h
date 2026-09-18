@@ -47,13 +47,24 @@ struct UncorrelatedInSubquery
 
 using UncorrelatedInSubqueries = std::vector<UncorrelatedInSubquery>;
 
+enum class InToJoinScope : uint8_t
+{
+    Where,
+    Aggregation,
+    Having,
+    Window,
+    Qualify,
+    Projection,
+    OrderBy,
+    LimitBy,
+};
+
 /// The expressions the join keys on: the left argument of the `IN`, or its elements.
 QueryTreeNodes getInToJoinKeyElements(const FunctionNode & function_node);
 
 bool canRewriteInToJoin(
     const QueryTreeNodePtr & in_node,
     const QueryTreeNodePtr & query_node,
-    const IQueryTreeNode * rewrite_root_node,
     const PlannerContext & planner_context);
 
 void buildQueryPlanForUncorrelatedInSubquery(

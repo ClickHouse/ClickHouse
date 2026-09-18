@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/PreparedSets.h>
 
+#include <Planner/PlannerUncorrelatedSubqueries.h>
 #include <Planner/TableExpressionData.h>
 #include <Interpreters/SelectQueryOptions.h>
 
@@ -197,30 +198,28 @@ public:
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
 
-    /// `expression_root` is the expression the join that evaluates this `IN` is inserted under.
-    void addInSubqueryForJoinRewrite(const IQueryTreeNode * expression_root, const QueryTreeNodePtr & node)
+    void addInSubqueryForJoinRewrite(InToJoinScope scope, const QueryTreeNodePtr & node)
     {
         in_to_join_subqueries.insert(node.get());
-        in_to_join_subqueries_by_expression[expression_root].push_back(node);
+        in_to_join_subqueries_by_scope[scope].push_back(node);
     }
 
     void removeInSubqueryForJoinRewrite(const QueryTreeNodePtr & node)
     {
         in_to_join_subqueries.erase(node.get());
 
-        for (auto & [_, nodes] : in_to_join_subqueries_by_expression)
+        for (auto & [_, nodes] : in_to_join_subqueries_by_scope)
             std::erase(nodes, node);
     }
 
     bool isInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) const { return in_to_join_subqueries.contains(node.get()); }
 
-    /// The `IN` of one expression, in the order it computes them.
-    const QueryTreeNodes & getInSubqueriesForJoinRewrite(const IQueryTreeNode * expression_root) const
+    const QueryTreeNodes & getInSubqueriesForJoinRewrite(InToJoinScope scope) const
     {
         static const QueryTreeNodes none;
 
-        auto it = in_to_join_subqueries_by_expression.find(expression_root);
-        return it == in_to_join_subqueries_by_expression.end() ? none : it->second;
+        auto it = in_to_join_subqueries_by_scope.find(scope);
+        return it == in_to_join_subqueries_by_scope.end() ? none : it->second;
     }
 
     /// Returns false if any of following conditions met:
@@ -252,7 +251,7 @@ private:
     PreparedSets prepared_sets;
 
     std::unordered_set<const IQueryTreeNode *> in_to_join_subqueries;
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodes> in_to_join_subqueries_by_expression;
+    std::unordered_map<InToJoinScope, QueryTreeNodes> in_to_join_subqueries_by_scope;
 };
 
 }

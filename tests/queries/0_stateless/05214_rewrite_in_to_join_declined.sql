@@ -18,14 +18,6 @@ INSERT INTO p VALUES ((1, 1)), ((2, 9));
 INSERT INTO s VALUES (1), (2);
 INSERT INTO t VALUES (1, 1, [1, 2]), (2, 3, [5]), (3, 4, [7]);
 INSERT INTO w VALUES (1, 1), (2, 3), (3, 2);
-SELECT '-- The IN is the grouping key';
-SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN SELECT id IN (SELECT k FROM s) AS g, count() FROM t GROUP BY g);
-
-SELECT '-- The left argument is an aggregate function';
-SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN SELECT sum(b) AS x FROM t GROUP BY id HAVING x IN (SELECT k FROM s));
-
 SELECT '-- IN over a tuple column and a multi-column subquery';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM p WHERE c IN (SELECT k, v FROM w));
@@ -45,10 +37,6 @@ FROM (EXPLAIN SELECT count() FROM t WHERE id IN (SELECT toInt8(k) FROM s));
 SELECT '-- IN inside a lambda';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT count() FROM t WHERE arrayExists(z -> z IN (SELECT k FROM s), arr));
-
-SELECT '-- IN as an argument of an aggregate function';
-SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
-FROM (EXPLAIN SELECT sum(id IN (SELECT k FROM s)) FROM t);
 
 SELECT '-- `nullIn`';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0

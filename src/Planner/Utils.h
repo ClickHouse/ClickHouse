@@ -142,4 +142,14 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
 
+class JoinStepLogical;
+
+/// The joins the planner builds for decorrelation and for the `IN` to `JOIN` rewrite are internal
+/// implementation details, not user joins, so the user's join size limits must not apply to them. In
+/// particular, under join_overflow_mode = 'break' a size limit lets the build side stop early and drop
+/// rows, which both yields a wrong subquery result and lets the probe side start before the build side has
+/// fully consumed its input (the source of the ChunkBuffer / runtime-filter "before all inputs are
+/// finished" logical errors). Run such joins unbounded with THROW.
+void makeInternalJoinUnbounded(JoinStepLogical & join_step);
+
 }

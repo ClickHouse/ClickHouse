@@ -183,6 +183,34 @@ FROM (EXPLAIN SELECT id, row_number() OVER (ORDER BY id) AS r FROM t QUALIFY id 
 SELECT groupArray(id) FROM (SELECT id, row_number() OVER (ORDER BY id) AS r FROM t QUALIFY id IN (SELECT k FROM s) ORDER BY id) SETTINGS rewrite_in_to_join = 0;
 SELECT groupArray(id) FROM (SELECT id, row_number() OVER (ORDER BY id) AS r FROM t QUALIFY id IN (SELECT k FROM s) ORDER BY id) SETTINGS rewrite_in_to_join = 1;
 
+SELECT '-- IN subquery as a grouping key';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id IN (SELECT k FROM s) AS g, count() FROM t GROUP BY g);
+
+SELECT groupArray((g, n)) FROM (SELECT id IN (SELECT k FROM s) AS g, count() AS n FROM t GROUP BY g ORDER BY g) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray((g, n)) FROM (SELECT id IN (SELECT k FROM s) AS g, count() AS n FROM t GROUP BY g ORDER BY g) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- IN subquery as an argument of an aggregate function';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT sum(id IN (SELECT k FROM s)) FROM t);
+
+SELECT sum(id IN (SELECT k FROM s)) FROM t SETTINGS rewrite_in_to_join = 0;
+SELECT sum(id IN (SELECT k FROM s)) FROM t SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- The left argument is an aggregate function';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT sum(b) AS x FROM t GROUP BY id HAVING x IN (SELECT k FROM s));
+
+SELECT groupArray(x) FROM (SELECT sum(b) AS x FROM t GROUP BY id HAVING x IN (SELECT k FROM s) ORDER BY x) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray(x) FROM (SELECT sum(b) AS x FROM t GROUP BY id HAVING x IN (SELECT k FROM s) ORDER BY x) SETTINGS rewrite_in_to_join = 1;
+
+SELECT '-- IN subquery inside a window function';
+SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
+FROM (EXPLAIN SELECT id, row_number() OVER (ORDER BY id IN (SELECT k FROM s), id) AS r FROM t);
+
+SELECT groupArray((id, r)) FROM (SELECT id, row_number() OVER (ORDER BY id IN (SELECT k FROM s), id) AS r FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 0;
+SELECT groupArray((id, r)) FROM (SELECT id, row_number() OVER (ORDER BY id IN (SELECT k FROM s), id) AS r FROM t ORDER BY id) SETTINGS rewrite_in_to_join = 1;
+
 SELECT '-- IN subquery inside ORDER BY';
 SELECT countIf(explain LIKE '%Join%') > 0, countIf(explain LIKE '%Set%') > 0
 FROM (EXPLAIN SELECT id FROM t ORDER BY id IN (SELECT k FROM s), id);

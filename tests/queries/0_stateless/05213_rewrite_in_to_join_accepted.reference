@@ -92,6 +92,22 @@
 1	0
 [1,2]
 [1,2]
+-- IN subquery as a grouping key
+1	0
+[(0,1),(1,2)]
+[(0,1),(1,2)]
+-- IN subquery as an argument of an aggregate function
+1	0
+2
+2
+-- The left argument is an aggregate function
+1	0
+[1]
+[1]
+-- IN subquery inside a window function
+1	0
+[(1,2),(2,3),(3,1)]
+[(1,2),(2,3),(3,1)]
 -- IN subquery inside ORDER BY
 1	0
 [3,1,2]

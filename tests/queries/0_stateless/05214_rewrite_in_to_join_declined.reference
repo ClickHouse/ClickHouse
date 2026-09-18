@@ -1,7 +1,3 @@
--- The IN is the grouping key
-0	1
--- The left argument is an aggregate function
-0	1
 -- IN over a tuple column and a multi-column subquery
 0	1
 -- IN with a constant left argument
@@ -11,8 +7,6 @@
 -- IN with an incomparable subquery column type
 0	1
 -- IN inside a lambda
-0	1
--- IN as an argument of an aggregate function
 0	1
 -- `nullIn`
 0	1
