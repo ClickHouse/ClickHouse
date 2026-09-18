@@ -26,8 +26,20 @@
 #include <LocalFuzzerRunner.h>
 #include <json_ast_sql_execution_fuzzer_schema.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTDropIndexQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
@@ -45,6 +57,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Common/QueryScope.h>
+#include <Common/quoteString.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
@@ -73,18 +86,141 @@ extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
 namespace
 {
 
-/// Statement kinds that are executed. Everything else only goes through the generation stages.
-/// `readonly = 2` in the fixture is the second line of defence.
-bool isExecutable(const DB::IAST & ast)
+/// Objects of the fixture that no fuzzed statement may create, alter, drop, rename, truncate or write to.
+const std::unordered_set<std::string> fixture_objects = {"t", "t1", "t2", "t3", "src", "dst", "tbl", "empsalary", "lg", "nul", "jt", "st", "v", "mv", "d"};
+const std::unordered_set<std::string> protected_databases = {"default", "system", "information_schema", "INFORMATION_SCHEMA"};
+
+bool isFixtureTable(const std::string & database, const std::string & table)
 {
-    return ast.as<DB::ASTSelectWithUnionQuery>()
-        || ast.as<DB::ASTSelectIntersectExceptQuery>()
-        || ast.as<DB::ASTExplainQuery>()
-        || ast.as<DB::ASTShowTablesQuery>()
-        || ast.as<DB::ASTShowColumnsQuery>()
-        || ast.as<DB::ASTShowIndexesQuery>()
-        || ast.as<DB::ASTCheckTableQuery>()
-        || ast.as<DB::ASTCheckAllTablesQuery>();
+    return (database.empty() || database == "default") && fixture_objects.contains(table);
+}
+
+/// Which statements are executed. Read-only statements always; statements that create or change
+/// objects only when their target is not part of the fixture (they may read from it). `SYSTEM`,
+/// `SET`, `USE`, `KILL`, `BACKUP`/`RESTORE`, database-level `DROP`/`ALTER`/`RENAME` and `INTO OUTFILE`
+/// are never executed. `readonly` is not used, so the fixture is protected by this policy alone.
+enum class Verdict
+{
+    SKIP,
+    READ_ONLY,
+    MODIFYING,
+};
+
+Verdict classify(const DB::IAST & ast)
+{
+    using namespace DB;
+    if (const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(&ast); with_output && with_output->out_file)
+        return Verdict::SKIP;
+
+    if (ast.as<ASTSelectWithUnionQuery>() || ast.as<ASTSelectIntersectExceptQuery>() || ast.as<ASTExplainQuery>()
+        || ast.as<ASTShowTablesQuery>() || ast.as<ASTShowColumnsQuery>() || ast.as<ASTShowIndexesQuery>()
+        || ast.as<ASTCheckTableQuery>() || ast.as<ASTCheckAllTablesQuery>())
+        return Verdict::READ_ONLY;
+
+    if (const auto * create = ast.as<ASTCreateQuery>())
+    {
+        if (!create->database.get() && create->getTable().empty()) /// CREATE DATABASE
+            return protected_databases.contains(create->getDatabase()) ? Verdict::SKIP : Verdict::MODIFYING;
+        if (create->getTable().empty() || isFixtureTable(create->getDatabase(), create->getTable()))
+            return Verdict::SKIP;
+        if (create->hasTargetTableID(ViewTarget::To))
+        {
+            const auto target = create->getTargetTableID(ViewTarget::To);
+            if (isFixtureTable(target.database_name, target.table_name))
+                return Verdict::SKIP;
+        }
+        return Verdict::MODIFYING;
+    }
+    if (const auto * drop = ast.as<ASTDropQuery>())
+        return (drop->getTable().empty() || isFixtureTable(drop->getDatabase(), drop->getTable())) ? Verdict::SKIP : Verdict::MODIFYING;
+    if (const auto * alter = ast.as<ASTAlterQuery>())
+        return (alter->alter_object != ASTAlterQuery::AlterObjectType::TABLE || alter->getTable().empty()
+                || isFixtureTable(alter->getDatabase(), alter->getTable())) ? Verdict::SKIP : Verdict::MODIFYING;
+    if (const auto * rename = ast.as<ASTRenameQuery>())
+    {
+        if (rename->database)
+            return Verdict::SKIP;
+        for (const auto & element : rename->getElements())
+            if (isFixtureTable(element.from.getDatabase(), element.from.getTable()) || isFixtureTable(element.to.getDatabase(), element.to.getTable()))
+                return Verdict::SKIP;
+        return Verdict::MODIFYING;
+    }
+    if (const auto * insert = ast.as<ASTInsertQuery>())
+        return (!insert->table_function && isFixtureTable(insert->getDatabase(), insert->getTable())) ? Verdict::SKIP : Verdict::MODIFYING;
+    if (ast.as<ASTOptimizeQuery>() || ast.as<ASTDeleteQuery>() || ast.as<ASTUpdateQuery>() || ast.as<ASTCreateIndexQuery>() || ast.as<ASTDropIndexQuery>())
+    {
+        const auto & with_table = dynamic_cast<const ASTQueryWithTableAndOutput &>(ast);
+        return (with_table.getTable().empty() || isFixtureTable(with_table.getDatabase(), with_table.getTable())) ? Verdict::SKIP : Verdict::MODIFYING;
+    }
+    if (ast.as<ASTCreateSQLFunctionQuery>())
+        return Verdict::MODIFYING;
+    return Verdict::SKIP;
+}
+
+/// Everything the fuzzer created is dropped after this many modifying statements, so objects do not
+/// accumulate and the fixture stays the only long-lived state.
+constexpr size_t cleanup_every = 200;
+size_t modifying_since_cleanup = 0;
+size_t executed_modifying = 0;
+
+std::vector<std::string> runNamesQuery(DB::ContextMutablePtr session_context, const std::string & sql)
+{
+    std::vector<std::string> names;
+    try
+    {
+        auto context = DB::Context::createCopy(session_context);
+        context->makeQueryContext();
+        context->setCurrentQueryId("");
+        auto query_scope = DB::QueryScope::create(context);
+        auto io = DB::executeQuery(sql, context, DB::QueryFlags{.internal = true}).second;
+        DB::PullingPipelineExecutor executor(io.pipeline);
+        DB::Block block;
+        while (executor.pull(block))
+            for (size_t row = 0; row < block.rows(); ++row)
+                names.push_back(std::string(block.getByPosition(0).column->getDataAt(row)));
+        io.onFinish();
+    }
+    catch (const DB::Exception &)
+    {
+    }
+    return names;
+}
+
+void runStatement(DB::ContextMutablePtr session_context, const std::string & sql)
+{
+    try
+    {
+        auto context = DB::Context::createCopy(session_context);
+        context->makeQueryContext();
+        context->setCurrentQueryId("");
+        auto query_scope = DB::QueryScope::create(context);
+        auto io = DB::executeQuery(sql, context, DB::QueryFlags{.internal = true}).second;
+        DB::executeTrivialBlockIO(io, context);
+    }
+    catch (const DB::Exception &)
+    {
+    }
+}
+
+void cleanupFuzzerObjects()
+{
+    DB::LocalFuzzerRunner::runOnRunnerThread([&](DB::ContextMutablePtr context)
+    {
+        std::thread worker([&]
+        {
+            DB::ThreadStatus thread_status;
+            std::string fixture_list;
+            for (const auto & name : fixture_objects)
+                fixture_list += (fixture_list.empty() ? "'" : ", '") + name + "'";
+            for (const auto & name : runNamesQuery(context, "SELECT name FROM system.tables WHERE database = 'default' AND name NOT IN (" + fixture_list + ")"))
+                runStatement(context, "DROP TABLE IF EXISTS default." + DB::backQuoteIfNeed(name) + " SYNC");
+            for (const auto & name : runNamesQuery(context, "SELECT name FROM system.databases WHERE name NOT IN ('default', 'system', 'information_schema', 'INFORMATION_SCHEMA')"))
+                runStatement(context, "DROP DATABASE IF EXISTS " + DB::backQuoteIfNeed(name) + " SYNC");
+            for (const auto & name : runNamesQuery(context, "SELECT name FROM system.functions WHERE origin = 'SQLUserDefined'"))
+                runStatement(context, "DROP FUNCTION IF EXISTS " + DB::backQuoteIfNeed(name));
+        });
+        worker.join();
+    });
 }
 
 /// ------------------------------------------------------------------------------------------------
@@ -331,6 +467,8 @@ void printOracleStats()
     if (oracle_runs)
         std::cerr << "json_ast_sql_execution_fuzzer oracle: runs " << oracle_runs << ", mismatches " << oracle_mismatches
             << ", error asymmetries " << oracle_error_asymmetries << " (see " << oracle_log_path << ")\n";
+    if (executed_modifying)
+        std::cerr << "json_ast_sql_execution_fuzzer: executed " << executed_modifying << " statements that create or change objects\n";
 }
 
 /// ClickHouse installs its own fatal signal handler inside `clickhouse local`, which replaces libFuzzer's,
@@ -593,7 +731,8 @@ DEFINE_BINARY_PROTO_FUZZER(const json_ast_fuzzer::Node & original_root)
         return;
 
     auto & stats = DB::JSONASTFuzzer::pipelineStats();
-    if (!isExecutable(*ast))
+    const Verdict verdict = classify(*ast);
+    if (verdict == Verdict::SKIP)
     {
         ++stats.execution_skipped;
         return;
@@ -601,6 +740,15 @@ DEFINE_BINARY_PROTO_FUZZER(const json_ast_fuzzer::Node & original_root)
     ++stats.executed;
     recordLastInput(input);
     DB::LocalFuzzerRunner::runQuery(input.sql);
+    if (verdict == Verdict::MODIFYING)
+    {
+        ++executed_modifying;
+        if (++modifying_since_cleanup >= cleanup_every)
+        {
+            modifying_since_cleanup = 0;
+            cleanupFuzzerObjects();
+        }
+    }
 
     if (ast->as<DB::ASTSelectWithUnionQuery>())
         runOracle(input.sql, input.json);

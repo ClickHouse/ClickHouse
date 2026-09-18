@@ -246,13 +246,33 @@ same protobuf -> JSON -> AST -> SQL stages and then executes the SQL in an in-pr
 
 The names are part of the `KnownString` vocabulary in `json_ast.proto` and of the seed queries, so
 mutated statements reference existing tables and columns and reach the analyzer, the planner and the
-processors instead of failing on name resolution. The fixture ends with `SET readonly = 2`, and only
-`SELECT`, `EXPLAIN`, `SHOW` and `CHECK TABLE` statements are executed (the rest is counted as
-skipped), so a mutated statement cannot destroy the fixture.
+processors instead of failing on name resolution.
+
+Which statements run is decided by `classify` in the target: read-only statements (`SELECT`,
+`EXPLAIN`, `SHOW`, `CHECK TABLE`) always; statements that create or change objects (`CREATE`,
+`DROP`, `ALTER`, `RENAME`, `INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `CREATE/DROP INDEX`,
+`CREATE FUNCTION`) only when their target is not a fixture object (they may read from the fixture);
+`SYSTEM`, `SET`, `USE`, `KILL`, `BACKUP`/`RESTORE`, database-level `DROP`/`ALTER`/`RENAME`, `CREATE`
+of a protected database and `INTO OUTFILE` never. After every 200 modifying statements the fuzzer
+drops every table, database and SQL function it created, so the fixture is the only long-lived state.
+
+Deterministic `SELECT`s additionally go through a differential oracle: the query is executed with
+the default plan, with the planner optimizations off and one-row blocks, with eight threads, tiny
+blocks, two-level and external aggregation and sorting and the other join algorithms, and with the
+JIT forced; the row count and an order-independent row hash (floats rounded to nine significant
+digits) must agree. Mismatches and error asymmetries are appended, with the SQL and the JSON, to
+`oracle_mismatches.log` (`JSON_AST_FUZZER_ORACLE_LOG`); `JSON_AST_FUZZER_ORACLE=0` disables the
+oracle. Functions whose result depends on the run (randomness, time, environment, ordering-dependent
+or approximate aggregates, `arrayShuffle`, `viewExplain`) exclude a query from the oracle.
 
 Query errors are expected outcomes. Findings are crashes, sanitizer reports, `LOGICAL_ERROR`
-exceptions (fatal in sanitizer and debug builds) and hangs. `tests/fuzz/json_ast_sql_execution_fuzzer.options`
-passes `--max_execution_time=2`, `--max_rows_to_read` and network timeouts to `clickhouse local`, like `clickhouse_fuzzer`.
+exceptions (fatal in sanitizer and debug builds), hangs and oracle mismatches.
+`tests/fuzz/json_ast_sql_execution_fuzzer.options` passes `--max_execution_time=2`, `--max_rows_to_read`
+and network and S3 timeouts to `clickhouse local`, like `clickhouse_fuzzer`, and enables console
+logging of fatal errors: `clickhouse local` installs its own fatal signal handler, which replaces
+libFuzzer's, so without it an abort inside a query would end the process silently. For the same
+reason the JSON and SQL of the input being executed are written to `json_ast_last_input.txt`
+(`JSON_AST_FUZZER_LAST_INPUT`) before every execution.
 
 ```bash
 ninja -C build_fuzz json_ast_sql_execution_fuzzer

@@ -141,6 +141,6 @@ SELECT count() FROM t WHERE a IN (SELECT a FROM src) FORMAT Null;
 SELECT dictGet('d', 'dv', toUInt64(1)) FORMAT Null;
 SELECT * FROM v ORDER BY a LIMIT 1 FORMAT Null;
 
--- The fuzzed statements run in this session: forbid DDL and data modification so that a mutated query
--- cannot destroy the fixture. `readonly = 2` still allows per-query `SETTINGS`.
-SET readonly = 2;
+-- The fuzzed statements run in this session. The fixture is protected by the statement policy of the
+-- fuzzer (`classify` in json_ast_sql_execution_fuzzer.cpp), not by `readonly`, so that DDL, inserts and
+-- mutations on other objects are exercised as well.
