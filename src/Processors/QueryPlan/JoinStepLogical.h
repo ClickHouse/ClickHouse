@@ -141,6 +141,12 @@ public:
     std::unordered_set<JoinTableSide> typeChangingSides() const;
 
     bool isOptimized() const { return optimized; }
+
+    /// The runtime filter pass records its small-probe decision here instead of re-deciding per plan
+    /// build, because the estimate it compares against is absent from a deserialized step. See
+    /// `tryAddJoinRuntimeFilter`.
+    bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
+    void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     std::optional<double> getEstimatedCost() const { return estimated_cost; }
     std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
@@ -261,6 +267,15 @@ protected:
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
 
+    /// Whether the join order was already chosen. A copy of this step, whether made by `clone` or taken
+    /// over the wire, carries it, so that whoever receives the copy does not choose an order again.
+    bool optimized = false;
+
+    /// Whether the runtime filter pass already declined this join because its probe side is small
+    /// (`join_runtime_filter_min_probe_rows`). Travels with the step for the same reason `optimized`
+    /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
+    bool runtime_filter_declined_small_probe = false;
+
     /// Runtime info, do not serialize
 
     /// The join key pairs a merge join would sort its inputs by, in the order of its sort description
@@ -275,7 +290,6 @@ protected:
     /// See `isRuntimeFilterSuppressedForSortedMerge`.
     bool runtime_filter_suppressed_for_sorted_merge = false;
 
-    bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
     std::optional<double> estimated_cost = {};
     std::optional<double> estimated_selectivity = {};
@@ -293,7 +307,6 @@ protected:
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;
-
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
