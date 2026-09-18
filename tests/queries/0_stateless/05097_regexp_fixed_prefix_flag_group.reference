@@ -33,3 +33,20 @@ a plain quantifier over a literal is unchanged
 2
 1
 1
+a quantifier over a multi-byte literal
+1	1	1
+3
+3
+2
+2
+3
+3
+3
+3
+2
+2
+2
+2
+a multi-byte literal without a quantifier still prunes
+1
+1
