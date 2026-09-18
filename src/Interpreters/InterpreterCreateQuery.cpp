@@ -2051,15 +2051,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
+        const bool is_fresh_definition = isFreshTableDefinition(mode, create.attach_short_syntax);
+
         /// Before the visitors and before the query is enqueued or forwarded, so an accepted definition is valid on
         /// every replica; a replayed entry of an older initiator is not fresh and keeps the legacy expansion below.
-        if (create.is_materialized_view && isFreshTableDefinition(mode, create.attach_short_syntax))
+        if (create.is_materialized_view && is_fresh_definition)
             SelectQueryDescription::checkSettingsAllowedInMatView(*create.select, getContext());
 
         // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
         // A loaded or replayed materialized view that fixes `enable_global_with_statement` keeps the legacy full expansion.
         std::unordered_set<const IAST *> kept_cte_references;
-        if (create.is_materialized_view && !isFreshTableDefinition(mode, create.attach_short_syntax)
+        if (create.is_materialized_view && !is_fresh_definition
             && SelectQueryDescription::fixesGlobalWithSetting(*create.select))
             ApplyWithSubqueryVisitor::visit(*create.select);
         else
@@ -3217,9 +3219,13 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         insert->select = create.select->clone();
 
-        auto insert_context = Context::createCopy(getContext());
+        ContextMutablePtr insert_context = getContext();
         if (create.is_materialized_view)
+        {
+            /// A materialized view's queries always run with the setting pinned, so its `POPULATE` insert must too.
+            insert_context = Context::createCopy(getContext());
             insert_context->setSetting("enable_global_with_statement", Field{true});
+        }
         InterpreterInsertQuery interpreter(
             insert,
             insert_context,
