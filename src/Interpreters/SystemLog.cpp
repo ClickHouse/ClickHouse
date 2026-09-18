@@ -347,7 +347,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         /// The bucketed `Map` serialization is a part of the default table definition, which an
         /// explicit `engine` replaces, so say it out loud instead of quietly creating a table that
         /// has the shape of the `bucketed` schema without the bucketed reads that motivate it.
-        if (config.has(config_prefix + ".engine") && log_settings.engine.find("map_serialization_version") == String::npos)
+        if (config.has(config_prefix + ".engine") && !log_settings.engine.contains("map_serialization_version"))
             LOG_WARNING(getLogger("SystemLog"),
                 "The '{}' schema of {} is requested together with an explicit 'engine' that does not set "
                 "'map_serialization_version', so the 'metrics' column will use the default Map serialization "
