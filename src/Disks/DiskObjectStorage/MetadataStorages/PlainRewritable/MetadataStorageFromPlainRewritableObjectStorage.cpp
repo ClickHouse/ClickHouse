@@ -631,13 +631,20 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
     /// A real hard link would make the metadata of the target directory unreadable by older servers, so it is opt-in.
     if (!metadata_storage.hard_links_enabled)
     {
-        operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+        /// The copy is a new file with its own blob at the default location of the target directory. The following
+        /// operations of this transaction have to see it, like any other created file: otherwise a rewrite of the
+        /// target would plan as the creation of a missing file, and the copy would overwrite it at commit.
+        uncommitted_state.recordCreatedFile(path_to, /*blob_key=*/"");
+
+        auto copy = std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
             path_from,
             path_to,
             commit_snapshot,
             metadata_storage.object_storage,
             metadata_storage.layout,
-            metadata_storage.metrics));
+            metadata_storage.metrics);
+        fallback_copies[normalized_path_to.string()] = copy.get();
+        operations.addOperation(std::move(copy));
         return;
     }
 
@@ -712,6 +719,15 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
     const auto normalized_path = normalizePath(path);
     if (normalized_path.filename().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", path);
+
+    /// The new blob replaces the copy that stood in for a hard link in this transaction, so the copy is redundant.
+    /// It would also go to the same default key at commit (the target directory keeps the implicit form, where a file
+    /// has one key) and overwrite the bytes that the caller writes to the key returned from here before the commit.
+    if (const auto it = fallback_copies.find(normalized_path.string()); it != fallback_copies.end())
+    {
+        it->second->supersede();
+        fallback_copies.erase(it);
+    }
 
     const auto parent_path = normalized_path.parent_path();
     const auto parent_info = uncommitted_state.getDirectoryRemoteInfo(parent_path);

@@ -642,6 +642,12 @@ MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlain
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
 {
+    if (superseded)
+    {
+        LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Skipping the copy from '{}' to '{}': the transaction rewrites the target", path_from, path_to);
+        return;
+    }
+
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Copying file from '{}' to '{}'", path_from, path_to);
 
     if (!fs_tree->existsFile(path_from))

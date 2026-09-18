@@ -216,6 +216,7 @@ private:
     bool copy_attempted = false;
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
+    bool superseded = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCopyFileOperation(
@@ -225,6 +226,11 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_);
+
+    /// The same transaction rewrites the target after this copy, so the copy has nothing to contribute. It would also
+    /// go to the key of the rewritten blob and overwrite the new bytes at commit, because the copy stands in for a hard
+    /// link (hard links are disabled), and the target directory keeps the implicit form where a file has one key.
+    void supersede() { superseded = true; }
 
     void execute() override;
     void undo() override;

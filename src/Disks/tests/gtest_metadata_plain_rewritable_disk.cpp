@@ -2929,6 +2929,56 @@ TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabled)
     EXPECT_EQ(metadata->getFileSize("A/f2"), 4u);
 }
 
+/// Without `enable_hard_links` a hard link is a copy that runs at commit. A rewrite of the link in the same transaction
+/// has to keep the new bytes: the copy would otherwise go to the same key as the rewrite and overwrite them.
+TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabledRewriteLinkInTheSameTransaction)
+{
+    thread_local_rng.seed(42);
+
+    hard_links_enabled = false;
+
+    const std::string test = "HardLinksDisabledRewriteLink";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        const auto key = tx->generateObjectKeyForPath("A/f1").serialize();
+        size_t size = writeObject(object_storage, key, "old bytes");
+        tx->createMetadataFile("A/f1", {StoredObject(key, "A/f1", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("A/f1", "B/f1");
+
+        /// The link exists for the rest of the transaction, so the rewrite is planned as a rewrite of an existing file.
+        const auto key = tx->generateObjectKeyForPath("B/f1").serialize();
+        EXPECT_TRUE(key.ends_with("/f1"));
+        size_t size = writeObject(object_storage, key, "new bytes");
+        tx->createMetadataFile("B/f1", {StoredObject(key, "B/f1", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f1").front().remote_path), "old bytes");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "new bytes");
+    EXPECT_NE(metadata->getStorageObjects("A/f1").front().remote_path, metadata->getStorageObjects("B/f1").front().remote_path);
+    EXPECT_EQ(metadata->getFileSize("B/f1"), 9u);
+
+    /// The layout stays in the implicit form.
+    EXPECT_FALSE(parsePrefixPath(readObject(object_storage, createMetadataObjectPath(metadata, "A"))).has_explicit_file_list);
+    EXPECT_FALSE(parsePrefixPath(readObject(object_storage, createMetadataObjectPath(metadata, "B"))).has_explicit_file_list);
+
+    metadata = restartMetadataStorage(test);
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/f1").front().remote_path), "old bytes");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "new bytes");
+    EXPECT_EQ(metadata->getFileSize("B/f1"), 9u);
+    EXPECT_EQ(listAllBlobs(test).size(), 4u);  /// Two `prefix.path` objects and two blobs.
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkSharedFileUndo)
 {
     thread_local_rng.seed(42);
