@@ -1,24 +1,7 @@
-# libcudf, the RAPIDS dataframe library, and the reason the rest of this GPU contrib block
-# exists. The source list below is upstream's `add_library(cudf ...)` verbatim - all 557 files,
-# nothing left out - plus the two generated assembly blobs described under "JIT embed" below. It
-# stays verbatim so that a version bump is a diff against upstream's list and nothing else; what
-# this build compiles is that list minus the exclusions applied after it.
-#
-# Four things differ from upstream's own CMakeLists, and only four:
-#
-#   - Dependencies come from ClickHouse's contrib rather than from CPM. Upstream's cmake
-#     modules that this file reuses reach for their own target names, so the aliases further
-#     down bridge them.
-#   - Every compiled target goes through gpu_island_target: ClickHouse's global compile
-#     options do not survive nvcc, and .cpp files compile as CUDA so nvcc's host pass sees
-#     the toolkit headers. See cmake/cuda.cmake.
-#   - The library is static, so upstream's whole-archive absorption of rmm and rapids_logger
-#     (which only matters for a shared libcudf) collapses into ordinary linking, which is
-#     exactly what upstream does when BUILD_SHARED_LIBS is OFF.
-#   - The sources the device aggregation never reaches are removed from the list before it
-#     becomes a target. See the exclusions below.
-#
-# The tests, benchmarks, testutil and the Python-facing pieces are not built.
+# libcudf, the RAPIDS dataframe library. CUDF_SOURCES below is upstream's `add_library(cudf ...)`
+# list verbatim, so that a version bump is a diff against it; the exclusions come after.
+# Dependencies come from contrib rather than CPM, and every compiled target goes through
+# gpu_island_target - see cmake/cuda.cmake. Tests, benchmarks and the Python pieces are not built.
 
 if (NOT ENABLE_GPU)
     message (STATUS "Not using cuDF")
@@ -27,14 +10,10 @@ endif ()
 
 set (CUDF_DIR "${ClickHouse_SOURCE_DIR}/contrib/cudf/cpp")
 
-# Upstream generates these into its binary dir. include/cudf/version_config.hpp and
-# include/cudf/logger_macros.hpp are checked in instead, the way contrib/rmm-cmake keeps
-# theirs - see that file for how to regenerate them.
-# Upstream's CUDF_CUDA_FLAGS, minus the warning flags: -Werror=all-warnings and
-# -Xcompiler=-Wall,-Werror are upstream's own CI policy, and contrib is not built with
-# -Werror here. --expt-extended-lambda is required by cuDF's device lambdas, and
-# -diag-suppress=1407 silences the visibility warning CCCL templates trip in anonymous
-# namespaces (upstream carries the same suppression with the same explanation).
+# version_config.hpp and logger_macros.hpp are checked in rather than generated - see
+# contrib/rmm-cmake for how to regenerate them.
+# Upstream's flags minus its -Werror CI policy. -diag-suppress=1407 silences the visibility
+# warning CCCL templates trip in anonymous namespaces, as upstream's own build does.
 set (CUDF_CUDA_FLAGS --expt-extended-lambda -diag-suppress=1407)
 
 set (CUDF_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/rtcx_embed")
@@ -43,14 +22,9 @@ set (CUDF_INSTANTIATIONS_DIR "${CMAKE_CURRENT_BINARY_DIR}/instantiations")
 # ##################################################################################################
 # JIT embed
 #
-# cuDF compiles part of itself at query time, and NVRTC needs the headers to do it. librtcx's
-# embed helpers pack those header trees into an object file - a .s with the bytes and a .hpp
-# naming the symbols - which the library then reads at run time. `cudf_cuda_embed` carries the
-# headers (zstd-compressed), `cudf_fragments` the precompiled LTO-IR fragments below.
-#
-# The helpers are plain CMake and are reused as they are. They look up two targets by literal
-# name, `zstd` and `xxhash`, plus ZSTD_INCLUDE_DIR, so ClickHouse's get aliased under the
-# names they expect.
+# cuDF compiles part of itself at query time; librtcx's embed helpers pack the headers NVRTC needs
+# into an object file. The helpers look up `zstd` and `xxhash` by literal target name, hence the
+# aliases below.
 # ##################################################################################################
 
 add_library (zstd ALIAS _zstd)
@@ -59,14 +33,9 @@ set (ZSTD_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib")
 
 include ("${ClickHouse_SOURCE_DIR}/contrib/librtcx/cmake/modules/embed.cmake")
 
-# rtcx_embed() finishes by adding a host tool that walks the registered files and writes the
-# blob, and that tool is the one target here that ClickHouse's own C++ pipeline would compile.
-# It cannot: rtcx's sources take transitive standard-library includes for granted and pass
-# string_view iterators where a `const char*` is expected, and ClickHouse's libc++ is
-# configured for neither (_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1, bounded iterators). So the
-# generator joins the island as well and is built by nvcc's host pass against the toolchain's
-# own standard library, which is what upstream builds it with. zstd does the compression;
-# xxhash is header-only through XXH_INLINE_ALL, so only its include path is needed.
+# rtcx_embed() adds a host tool to write the blob. It cannot go through ClickHouse's C++ pipeline:
+# rtcx's sources rely on transitive standard-library includes and unbounded iterators, which this
+# libc++ is configured against - so the generator joins the island too.
 function (cudf_embed_runner_island _runner)
     gpu_island_executable (${_runner})
     target_include_directories (${_runner} SYSTEM PRIVATE
@@ -102,9 +71,8 @@ foreach (_jit_dir IN ITEMS jit binaryop/jit join/jit rolling transform/jit)
         INCLUDE_DIRECTORIES cudf/cpp/src)
 endforeach ()
 
-# Upstream walks CCCL::libcudacxx's interface include directories here. ClickHouse's cccl
-# wrapper carries all three of CCCL on one target, so libcudacxx's directory is named
-# directly - the destination is the same one upstream computes from its last path component.
+# ClickHouse's cccl wrapper carries all three CCCL libraries on one target, so libcudacxx's
+# include directory is named directly where upstream walks the target's interface.
 rtcx_embed_includes (cudf_cuda_embed
     SOURCE_DIRECTORY "${ClickHouse_SOURCE_DIR}/contrib/cccl/libcudacxx/include"
     DEST_DIRECTORY CCCL/libcudacxx/include
@@ -117,11 +85,9 @@ cudf_embed_runner_island (cudf_cuda_embed__jit_embed_run)
 # ##################################################################################################
 # Precompiled JIT fragments
 #
-# The transform kernels for the physical types below are compiled ahead of time into LTO-IR
-# fatbins and embedded the same way, so the common cases skip NVRTC at run time. Upstream does
-# this through cpp/cmake/Modules/AddFragment.cmake; the macro is inlined here instead, because
-# the fragment objects have to become island targets before anything is set on them and
-# upstream's macro configures the target in one go.
+# Transform kernels for the types below are compiled ahead of time so the common cases skip NVRTC.
+# Upstream's AddFragment.cmake macro is inlined here, because a fragment has to become an island
+# target before anything else is set on it.
 # ##################################################################################################
 
 set (CUDF_PRECOMPILE_PHYSICAL_TYPES
@@ -164,9 +130,8 @@ function (cudf_add_fragment FRAGMENT INSTANCE UDF_TYPE FILE_INDEX)
         CUDA_STANDARD_REQUIRED ON
         CUDA_VISIBILITY_PRESET hidden)
 
-    # Header-only or island dependencies only: the IO libraries upstream also names here -
-    # zlib, zstd, nvcomp, kvikio - are ordinary ClickHouse targets that would hand this island
-    # target global-group's compile options, and the JIT kernel does not include them.
+    # Island or header-only dependencies only: the IO libraries upstream also names here would hand
+    # this target global-group's compile options, and the JIT kernel does not include them.
     target_link_libraries (${_object} PRIVATE
         ch_contrib::cccl
         ch_contrib::rmm
@@ -215,22 +180,10 @@ cudf_embed_runner_island (cudf_fragments__jit_embed_run)
 # ##################################################################################################
 # What is left out
 #
-# cuDF's format readers and writers - Parquet, ORC, JSON, CSV, Avro, the Arrow interop, and the
-# statistics they share - are not built. Nothing here reads a file through cuDF: a column reaches
-# the device from a `MergeTree` part that ClickHouse has already decoded itself. That is a third of
-# the library's translation units, and the slowest of them to compile, for no gain.
-#
-# They also do not compile here, which is what turned the choice from tidiness into necessity.
-# `io/parquet/arrow_schema_writer.cpp` static-asserts on the flatbuffers version, and ClickHouse's
-# contrib carries a different one than cuDF generated its Arrow IPC headers with. And
-# `io/orc/writer_impl.cu` hits an overload ambiguity inside cuDF's own
-# `io/statistics/typed_statistics_chunk.cuh` under CUDA 13.2. Settling either would mean pinning a
-# second flatbuffers, or patching cuDF, for a reader and a writer that nothing calls.
-#
-# What stays out of `src/io` is the plumbing the rest of the library links against: `io/comp`,
-# whose `load_nvcomp_library` `src/runtime/context.cpp` calls, and `io/utilities`, whose
-# `parsing_utils.cuh` `src/json/json_path.cu` includes. Leaving those out would mean patching cuDF
-# instead of configuring it.
+# cuDF's format readers and writers are not built - nothing here reads a file through cuDF, and two
+# of them do not compile against this contrib anyway (`io/parquet/arrow_schema_writer.cpp`
+# static-asserts on a different flatbuffers, `io/orc/writer_impl.cu` hits an overload ambiguity
+# under CUDA 13.2). `io/comp` and `io/utilities` stay: the rest of the library links against them.
 # ##################################################################################################
 
 set (CUDF_SOURCES
@@ -707,15 +660,10 @@ set (CUDF_SOURCES
     "${CUDF_EMBED_DIR}/cudf_fragments.s"
 )
 
-# Sources unreachable from src/GPU/GPUAggregationCudf.cpp, which calls `cudf::reduce`,
-# `cudf::groupby`, `cudf::cast` and `cudf::concatenate`. 212 of 469, 6.5 of cuDF's 16.6 CPU-hours.
-#
-# Derived, not hand-picked: every archive member outside the transitive closure of the island's
-# undefined symbols, which is the linker's own member-selection algorithm. Regenerate by resolving
-# `nm -u` of libclickhouse_gpu_cudf.a against `nm -A --defined-only` of lib_cudf.a. Ten members
-# whose basename is not unique in the list are kept, since an archive names members by basename.
-#
-# A new cuDF call fails the link naming what is missing; add that source back, or comment this out.
+# Sources unreachable from src/GPU/GPUAggregationCudf.cpp: 212 of 469, 6.5 of cuDF's 16.6 CPU-hours.
+# Derived, not hand-picked - every archive member outside the transitive closure of the island's
+# undefined symbols. Regenerate by resolving `nm -u` of libclickhouse_gpu_cudf.a against
+# `nm -A --defined-only` of lib_cudf.a. A new cuDF call fails the link naming what is missing.
 list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/ast/expression_parser.cpp"
     "${CUDF_DIR}/src/ast/operators.cpp"
@@ -944,43 +892,28 @@ target_include_directories (_cudf SYSTEM PRIVATE
     "${CUDF_DIR}/src"
     "${CUDF_EMBED_DIR}"
     "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib"
-    # cuDF 26.08 includes rtcx's umbrella header flat, as `<rtcx.hpp>`, which is where the commit
-    # it pins through CPM keeps it. contrib/librtcx is newer than that commit and moved every
-    # header under `rtcx/` - along with `embed.cmake`, which this file reads from its new path -
-    # so both directories are needed: this one for cuDF's three `<rtcx.hpp>` includes, and the one
-    # `ch_contrib::rtcx` publishes for the `<rtcx/...>` includes inside rtcx itself.
+    # cuDF includes rtcx's umbrella header flat as `<rtcx.hpp>`; contrib/librtcx moved it under
+    # `rtcx/`, so both directories are needed.
     "${ClickHouse_SOURCE_DIR}/contrib/librtcx/include/rtcx"
     "${GPU_CUDA_ROOT}/include"
 )
 
-# Both of these are nvcc's own, and the target holds two assembly blobs as well - the embedded
-# header trees - which CMake hands to ClickHouse's clang as the ASM compiler. It rejects
-# `--expt-extended-lambda` outright, so the options are restricted to the sources nvcc compiles.
-#
-# The force-include is there because `cudf/detail/utilities/integer_utils.hpp` uses
-# `CUDF_UNREACHABLE` under `__CUDA_ARCH__` without including the header that defines it. Upstream
-# gets away with that: the translation units including it are compiled as C++ there, so the device
-# branch never reaches a compiler. Here every one of cuDF's .cpp files goes through nvcc - that is
-# what `gpu_island_target` does, and cmake/cuda.cmake explains why - so the device pass does reach
-# it and `src/strings/regex` fails to compile. Force-including the definition is the smallest fix
-# short of patching cuDF; the header is `#pragma once` and defines nothing but two macros.
+# Restricted to what nvcc compiles: the target also holds two assembly blobs, and clang rejects
+# `--expt-extended-lambda`. The force-include is because `cudf/detail/utilities/integer_utils.hpp`
+# uses `CUDF_UNREACHABLE` under `__CUDA_ARCH__` without including its definition, which only
+# matters here because every .cpp goes through nvcc and so reaches the device pass.
 target_compile_options (_cudf PRIVATE
     "$<$<COMPILE_LANGUAGE:CUDA>:${CUDF_CUDA_FLAGS}>"
     "$<$<COMPILE_LANGUAGE:CUDA>:-include;cudf/detail/utilities/assert.cuh>")
 
-# The blobs themselves are two lines of assembly that pull the bytes in with `.incbin`, and clang's
-# integrated assembler - which is what CMake uses for ASM here - looks that file up on the include
-# path rather than next to the source it appears in. The include directories above do not help: it
-# ignores `-isystem`. Upstream never needs this, compiling these with gcc, whose assembler resolves
-# an `.incbin` relative to the file.
+# clang's integrated assembler resolves an `.incbin` against the include path rather than the
+# source's own directory, and ignores `-isystem`.
 target_compile_options (_cudf PRIVATE "$<$<COMPILE_LANGUAGE:ASM>:-I${CUDF_EMBED_DIR}>")
 
 target_compile_definitions (_cudf PRIVATE
     CUDF_LOG_ACTIVE_LEVEL=RAPIDS_LOGGER_LOG_LEVEL_INFO
-    # `src/io/comp/decompression.cpp` calls `ZSTD_findDecompressedSize`, which zstd.h declares
-    # only behind this - it is part of the static-only API. Upstream sets it on its own zstd
-    # target (`cmake/thirdparty/get_zstd.cmake`), where ClickHouse's contrib does not; the
-    # function is in the archive either way, since ClickHouse links zstd statically.
+    # `ZSTD_findDecompressedSize` is declared only behind this; upstream sets it on its own zstd
+    # target, where ClickHouse's contrib does not.
     ZSTD_STATIC_LINKING_ONLY
     # Both are upstream's, and both are workarounds it carries for the CCCL it pins.
     THRUST_FORCE_32_BIT_OFFSET_TYPE=1
@@ -1002,13 +935,9 @@ target_link_libraries (_cudf PUBLIC
     ch_gpu::cudart
 )
 
-# What `src/io/comp` and `src/io/utilities` still need - the readers and writers that needed
-# nanoarrow and flatbuffers are not built, see "What is left out" above.
-#
-# The last three are ordinary ClickHouse targets whose INTERFACE_COMPILE_OPTIONS carry
-# global-group's flags - -Werror among them, which nvcc reads as taking a value - so they are
-# linked with $<LINK_ONLY:> and their headers arrive through target_include_directories instead,
-# the way contrib/librtcx-cmake handles zstd.
+# The last three are ordinary ClickHouse targets whose INTERFACE_COMPILE_OPTIONS carry -Werror,
+# which nvcc reads as taking a value - so they are linked with $<LINK_ONLY:> and their headers
+# arrive through target_include_directories instead.
 target_link_libraries (_cudf PRIVATE
     ch_contrib::nvtx3
     ch_contrib::cuco
