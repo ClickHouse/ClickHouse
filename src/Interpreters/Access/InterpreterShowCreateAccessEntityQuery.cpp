@@ -294,13 +294,15 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
 {
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
     const auto & access_control = getContext()->getAccessControl();
-    getContext()->checkAccess(getRequiredAccess());
+    /// The names are bound to the tables they denote (see `DatabaseCatalog`) before the required access is built from
+    /// them, so that the check and the lookup agree on the table.
     show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
     if (show_query.row_policy_names)
         resolveHierarchicalNamesForAccess(*show_query.row_policy_names, getContext());
     if (show_query.database_and_table_name)
         resolveHierarchicalNameForAccess(
             show_query.database_and_table_name->first, show_query.database_and_table_name->second, getContext());
+    getContext()->checkAccess(getRequiredAccess());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)

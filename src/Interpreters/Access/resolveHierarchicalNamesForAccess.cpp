@@ -15,10 +15,8 @@ void resolveHierarchicalNameForAccess(String & database, String & table, Context
     if (database.empty() || table.empty())
         return;
 
-    /// Only a name with dots has other candidates.
-    if (!database.contains('.') && !table.contains('.'))
-        return;
-
+    /// Also a name without dots has other candidates: `sales.customers` inside `USE db` is `db`.`sales.customers`
+    /// when there is no database `sales`.
     StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(StorageID(database, table), context);
     database = resolved.database_name;
     table = resolved.table_name;

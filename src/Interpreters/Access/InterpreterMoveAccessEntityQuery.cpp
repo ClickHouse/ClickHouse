@@ -21,15 +21,17 @@ namespace ErrorCodes
 BlockIO InterpreterMoveAccessEntityQuery::execute()
 {
     auto & query = query_ptr->as<ASTMoveAccessEntityQuery &>();
+    /// The names are bound to the tables they denote (see `DatabaseCatalog`) before the required access is built from
+    /// them, so that the check and the move agree on the table.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    if (query.row_policy_names)
+        resolveHierarchicalNamesForAccess(*query.row_policy_names, getContext());
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext());
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
-    if (query.row_policy_names)
-        resolveHierarchicalNamesForAccess(*query.row_policy_names, getContext());
 
     std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)
