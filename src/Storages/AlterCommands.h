@@ -236,10 +236,8 @@ public:
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
     void validate(const StoragePtr & table, ContextPtr context) const;
 
-    /// Prepare alter commands. Set ignore flag to some of them and fill parts
-    /// of commands from storage metadata (for example, an absent default).
-    /// Advances a working column snapshot per command like `validate`/`apply`;
-    /// `context` supplies `flatten_nested` for ADD expansion.
+    /// Prepare commands: set `ignore`, fill missing defaults, and advance a column snapshot
+    /// per command like `validate`/`apply`. `context` is needed for `flatten_nested` on ADD.
     void prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true);
 
     /// Apply all alter command in sequential order to storage metadata.

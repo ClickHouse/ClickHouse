@@ -1,8 +1,0 @@
-before	auto_minmax_index_x
-before	auto_minmax_index_y
-after clear	auto_minmax_index_x
-after clear	auto_minmax_index_y
-0	2
-after clear in partition	auto_minmax_index_x
-after clear in partition	auto_minmax_index_y
-0	4

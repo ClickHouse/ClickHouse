@@ -5155,19 +5155,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
-            /// CLEAR COLUMN rewrites the whole part and drops `unique_key_index.sst`.
-            /// Reject it for a stored target; `CLEAR COLUMN missing IF EXISTS` is a no-op.
-            /// Nested-parent existence is physical-only: a dotted ALIAS/EPHEMERAL prefix is
-            /// not stored and must stay a no-op, matching `getMutationStageDecision`.
-            /// `hasColumnOrNested` scans the whole `n.*` range so a mixed prefix such as
-            /// `` `n.x` ALIAS `` then physical `` `n.y` `` is still a stored target.
-            /// CLEAR of a UNIQUE KEY column is rejected by ALTER_OF_COLUMN_IS_FORBIDDEN below.
+            /// CLEAR COLUMN rewrites the part and drops `unique_key_index.sst`. Reject a stored
+            /// target (`hasColumnOrNested` when offsets are shared, else exact `hasPhysical`).
             if (command.type == AlterCommand::DROP_COLUMN && command.clear
                 && !uk_set.contains(command.column_name)
-                && (old_metadata.columns.hasPhysical(command.column_name)
-                    || ((*settings_from_storage)[MergeTreeSetting::share_nested_offsets]
-                        && old_metadata.columns.hasColumnOrNested(
-                            GetColumnsOptions::AllPhysical, command.column_name))))
+                && ((*settings_from_storage)[MergeTreeSetting::share_nested_offsets]
+                    ? old_metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, command.column_name)
+                    : old_metadata.columns.hasPhysical(command.column_name)))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
                     "the whole part is rewritten regardless of which column is targeted, so the "

@@ -89,6 +89,14 @@ rename replaces the stale index	auto_minmax_index_n.w	`n.w`	Implicit
 rename replaces the stale index	auto_minmax_index_n.z	`n.z`	Implicit
 1	0	0
 all_1_1_0_4	1	
+scalar clear keeps index	auto_minmax_index_x
+scalar clear keeps index	auto_minmax_index_y
+scalar after clear	auto_minmax_index_x
+scalar after clear	auto_minmax_index_y
+0	2
+scalar after clear in partition	auto_minmax_index_x
+scalar after clear in partition	auto_minmax_index_y
+0	4
 x			
 modify if exists nested is a noop	a	Int64
 modify if exists nested is a noop	n.x	Array(Enum8(\'a\' = 1))

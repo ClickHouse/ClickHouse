@@ -1,8 +1,6 @@
 -- Tags: no-ordinary-database, no-async-insert, no-fasttest, no-object-storage, no-s3-storage
--- Regression: `CLEAR COLUMN n` on a UNIQUE KEY table rewrites the whole part and loses the
--- per-part `unique_key_index.sst`, so the guard must reject it when `n` names a stored column --
--- including a flattened Nested parent (stored as `n.x` / `n.y`). With `share_nested_offsets = 0`
--- a dotted scalar is independent, so `CLEAR COLUMN IF EXISTS n` is a no-op and must pass.
+-- UNIQUE KEY `CLEAR COLUMN n` is rejected for a stored Nested parent, including mixed
+-- `ALIAS` + physical `n.*`. Missing/`ALIAS`-only prefixes with `IF EXISTS` stay no-ops.
 
 SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
@@ -27,8 +25,7 @@ SELECT 'state_intact', count(), groupArray(n.x), groupArray(n.y) FROM uk_clear_n
 
 DROP TABLE uk_clear_nested;
 
--- With `share_nested_offsets = 0` the dotted scalar `n.x` is an independent column, so `n` is
--- not a stored target and the conditional clear is a no-op.
+-- `share_nested_offsets = 0`: dotted `n.x` is independent, so `CLEAR COLUMN IF EXISTS n` is a no-op.
 DROP TABLE IF EXISTS uk_clear_no_share;
 CREATE TABLE uk_clear_no_share (id UInt32, `n.x` UInt32)
 ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)
@@ -42,8 +39,7 @@ SELECT 'state_intact_no_share', * FROM uk_clear_no_share;
 
 DROP TABLE uk_clear_no_share;
 
--- A dotted ALIAS is not stored, so `CLEAR COLUMN IF EXISTS n` must stay a no-op even
--- with default `share_nested_offsets` (hasNested is a raw prefix match over all kinds).
+-- Dotted `ALIAS` is not stored, so `CLEAR COLUMN IF EXISTS n` is a no-op.
 DROP TABLE IF EXISTS uk_clear_dotted_alias;
 CREATE TABLE uk_clear_dotted_alias (id UInt32, `n.x` UInt32 ALIAS id)
 ENGINE = MergeTree ORDER BY id UNIQUE KEY (id);
@@ -56,8 +52,7 @@ SELECT 'state_intact_alias', id, `n.x` FROM uk_clear_dotted_alias;
 
 DROP TABLE uk_clear_dotted_alias;
 
--- A mixed prefix (ALIAS then physical) is a stored target: `hasColumnOrNested` must look
--- past the first `n.*` member, so `CLEAR COLUMN n` is rejected, with or without IF EXISTS.
+-- Mixed `ALIAS` then physical `n.*` is a stored target.
 DROP TABLE IF EXISTS uk_clear_mixed_alias;
 CREATE TABLE uk_clear_mixed_alias (id UInt32, `n.x` UInt32 ALIAS id, `n.y` UInt32)
 ENGINE = MergeTree ORDER BY id UNIQUE KEY (id);

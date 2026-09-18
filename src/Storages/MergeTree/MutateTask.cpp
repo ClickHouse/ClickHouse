@@ -277,13 +277,9 @@ static void splitAndModifyMutationCommands(
             name = alter_conversions->getColumnOldName(name);
         return name;
     };
-    /// Same-batch `DROP`/`CLEAR` after `RENAME` cannot use `nameInPart` alone:
-    /// `AlterConversions` records the drop under the source-part name and erases
-    /// the mapping. Walk `renamed_in_batch` first so both storage layouts still
-    /// find the files. Do not fall back to `nameInPart` while the part still has
-    /// this name: that map is the finished batch, and a later `RENAME other TO
-    /// name` would make `DROP name` (as in `DROP a, RENAME b TO a`) address
-    /// `other`'s files instead of the column being dropped.
+    /// Same-batch DROP/CLEAR after RENAME: `AlterConversions` records the drop under the
+    /// source-part name and erases the map, so walk `renamed_in_batch` before `nameInPart`.
+    /// Skip `nameInPart` while the part still has this name (`DROP a, RENAME b TO a`).
     auto nameStoredInPart = [&](const String & name, const NameToNameMap & renamed_in_batch) -> String
     {
         if (auto it = renamed_in_batch.find(name); it != renamed_in_batch.end())
@@ -450,14 +446,12 @@ static void splitAndModifyMutationCommands(
 
                     if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
                     {
-                        /// Keep the clear command so we also clear dependent indices.
                         for_interpreter.push_back(command);
-                        for_file_renames.push_back(command); /// For packed parts
+                        for_file_renames.push_back(command); /// packed parts
                     }
                 }
                 else if (command.type == MutationCommand::Type::DROP_COLUMN)
                 {
-                    /// Marker-only DROP/CLEAR must still update metadata and dependencies.
                     if (part->getSerializationInfos().isMissingColumn(name_in_part))
                     {
                         if (command.clear)
@@ -478,15 +472,10 @@ static void splitAndModifyMutationCommands(
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
             if (dropped_columns.contains(rename_from))
-            {
-                /// The source-part column is being dropped. Replaying the rename as
-                /// `READ_COLUMN` would carry the stale values into the new name.
                 continue;
-            }
 
             if (part_columns.has(rename_from))
             {
-                /// Not needed for compact parts (not executed); produces the new part's column set.
                 for_file_renames.push_back(
                 {
                      .type = MutationCommand::Type::RENAME_COLUMN,
@@ -497,7 +486,6 @@ static void splitAndModifyMutationCommands(
 
                 if (cleared_columns.contains(rename_from))
                 {
-                    /// CLEAR already mutates the data; do not re-read the pre-clear values.
                     mutated_columns.emplace(rename_to);
                     continue;
                 }
@@ -653,13 +641,7 @@ static void splitAndModifyMutationCommands(
     }
     else
     {
-        /// Part names of columns whose files must not survive this mutation. A rename of the
-        /// same files is pushed too and wins in `collectFilesForRenames` (first command per
-        /// source file), so such renames are removed after the loop.
         NameSet dropped_column_names_in_part;
-        /// New name -> name in the source part for renames applied to `part_columns` below.
-        /// A drop erases the entry from `rename_map` (see `AlterConversions`), so a DROP after
-        /// the rename in the same command batch cannot be resolved by `nameInPart`.
         NameToNameMap renamed_in_batch;
         for (const auto & command : commands)
         {
@@ -738,8 +720,6 @@ static void splitAndModifyMutationCommands(
                 if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
                     for_interpreter.push_back(command);
 
-                /// A DROP/CLEAR of a renamed column must address the files by the name the
-                /// source part stores, otherwise the rename carries the data forward.
                 auto command_for_renames = command;
                 if (command.type == MutationCommand::Type::DROP_COLUMN)
                 {
@@ -764,14 +744,9 @@ static void splitAndModifyMutationCommands(
                 }
                 else if (share_nested && part_columns.hasNested(stored))
                 {
-                    /// A Nested parent matches no flattened column (`n` is stored as `n.x`, ...).
-                    /// Gated by `share_nested_offsets`: with sharing off, a scalar `n` and dotted
-                    /// `n.a` are independent, so `DROP COLUMN n` on a part that only has `n.a`
-                    /// (written before `n` was added) must not delete the dotted files.
                     for (const auto & nested_member : part_columns.getNested(stored))
                     {
                         auto member_command = command;
-                        /// The interpreter matches `column_name` against the current table metadata.
                         member_command.column_name = nested_member.name;
                         if (member_command.clear)
                         {
@@ -780,7 +755,6 @@ static void splitAndModifyMutationCommands(
                             for_interpreter.push_back(member_command);
                         }
 
-                        /// Files are resolved against the source part (old name after a pending rename).
                         member_command.column_name = nameInPart(nested_member.name);
                         dropped_column_names_in_part.emplace(member_command.column_name);
                         for_file_renames.push_back(member_command);
@@ -788,7 +762,6 @@ static void splitAndModifyMutationCommands(
                 }
                 else if (part->getSerializationInfos().isMissingColumn(stored))
                 {
-                    /// Marker-only DROP/CLEAR has the same logical effect as physical data.
                     if (command.clear)
                         for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
@@ -806,8 +779,6 @@ static void splitAndModifyMutationCommands(
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
 
-        /// The files of columns in `dropped_column_names_in_part` must be removed, not renamed
-        /// to the column's current name, so the renames pushed before their drop lose here.
         if (!dropped_column_names_in_part.empty())
         {
             std::erase_if(for_file_renames, [&](const MutationCommand & command_for_renames)

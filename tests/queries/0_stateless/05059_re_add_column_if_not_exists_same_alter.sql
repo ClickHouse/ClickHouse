@@ -1,8 +1,5 @@
--- Regression: same-statement `DROP COLUMN x, ADD COLUMN IF NOT EXISTS x ...` must re-add the
--- column. `AlterCommands::prepare` judged the ADD's `IF NOT EXISTS` against the untouched original
--- schema, marked the ADD as a no-op, and the DROP silently removed x for good. The working schema
--- must advance per command (drop/rename un-exists, add re-exists), and the wide-part mutation fast
--- path must drop the files of the removed column under whatever name the part stores them.
+-- Same-statement DROP + ADD IF NOT EXISTS must re-add. prepare() advances the schema per
+-- command; the mutation path drops files under the name the part stores.
 
 DROP TABLE IF EXISTS re_add_ine;
 CREATE TABLE re_add_ine (a Int64, x Int64, pad Int64) ENGINE = MergeTree ORDER BY tuple();
@@ -21,8 +18,7 @@ SELECT 'dup-noop count', count() FROM system.columns
 
 DROP TABLE re_add_ine;
 
--- Nested: a plain `DROP COLUMN n` un-exists the whole flattened `n.*` range, so re-adding a
--- flattened child is a genuine re-add, not a no-op.
+-- Nested: `DROP COLUMN n` un-exists `n.*`, so re-adding a child is a real add.
 DROP TABLE IF EXISTS re_add_ine_nested;
 CREATE TABLE re_add_ine_nested (a Int64, n Nested(x Int64, y Int64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO re_add_ine_nested VALUES (1, [10], [20]), (2, [11], [21]);
@@ -34,8 +30,7 @@ SELECT 'nested re-add data', a, n.x FROM re_add_ine_nested ORDER BY a;
 
 DROP TABLE re_add_ine_nested;
 
--- Mirror shapes: dropping the only child un-exists the group, so re-adding the group is a genuine
--- re-add; re-adding one child next to a surviving sibling reads defaults sized by shared offsets.
+-- Dropping the last child un-exists the group; dropping one sibling keeps shared offsets.
 DROP TABLE IF EXISTS re_add_ine_nested_mirror;
 CREATE TABLE re_add_ine_nested_mirror (a Int64, n Nested(x Int64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO re_add_ine_nested_mirror VALUES (1, [10]), (2, [11]);
@@ -69,8 +64,7 @@ SELECT 'partial re-add data', a, n.x, n.y FROM re_add_ine_nested_partial ORDER B
 
 DROP TABLE re_add_ine_nested_partial;
 
--- After `RENAME COLUMN x TO x_old` the name x is free by apply time, so a same-statement re-add
--- must not be skipped.
+-- `RENAME x TO x_old` frees `x` for a same-statement re-add.
 DROP TABLE IF EXISTS re_add_ine_rename;
 CREATE TABLE re_add_ine_rename (x Int64, pad Int64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO re_add_ine_rename VALUES (42, 1);
@@ -80,8 +74,7 @@ SELECT 'rename re-add', x_old, x, pad FROM re_add_ine_rename ORDER BY x_old;
 
 DROP TABLE re_add_ine_rename;
 
--- The conditional form `DROP COLUMN IF EXISTS n` must recognize a Nested parent stored as
--- flattened members; apply's exact-only skip guard let the re-add run against unmodified metadata.
+-- `DROP COLUMN IF EXISTS n` must see a Nested parent stored as flattened members.
 DROP TABLE IF EXISTS re_add_if_exists_nested;
 CREATE TABLE re_add_if_exists_nested (a Int64, n Nested(x Int64, y Int64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO re_add_if_exists_nested VALUES (1, [10], [20]), (2, [11], [21]);
@@ -105,8 +98,7 @@ SELECT 'missing skip data', a FROM drop_if_exists_missing ORDER BY a;
 
 DROP TABLE drop_if_exists_missing;
 
--- Wide parts (hardlink fast path): dropping a flattened Nested parent must remove the member
--- files, otherwise they are hardlinked into the new part and a same-name re-add reads stale data.
+-- Wide parts: dropping Nested parent `n` must remove member files, not hardlink stale data.
 DROP TABLE IF EXISTS drop_nested_wide;
 CREATE TABLE drop_nested_wide (a Int64, n Nested(x Int64, y Int64))
     ENGINE = MergeTree ORDER BY tuple()
@@ -144,8 +136,7 @@ SELECT 'after clear parent', a, n.x, n.y FROM clear_nested_wide ORDER BY a;
 CHECK TABLE clear_nested_wide;
 DROP TABLE clear_nested_wide;
 
--- A DROP/CLEAR after a rename (same mutation or pending) must drop the files under the name the
--- part stores, not the current name -- otherwise the rename carries the old data forward.
+-- DROP/CLEAR after RENAME must use the name the part stores.
 DROP TABLE IF EXISTS clear_nested_after_rename;
 CREATE TABLE clear_nested_after_rename (a Int64, n Nested(x Int64, y Int64))
     ENGINE = MergeTree ORDER BY tuple()
@@ -220,9 +211,7 @@ SELECT 'scalar rename and clear', k, b FROM clear_scalar_after_rename;
 CHECK TABLE clear_scalar_after_rename;
 DROP TABLE clear_scalar_after_rename;
 
--- Compact/non-wide parts (the default for small inserts) must use the same source-part
--- name lookup. The cases above force Wide; without this, the rename-map replay keeps
--- the old values after DROP/CLEAR of the renamed column.
+-- Compact parts use the same source-part name lookup as Wide.
 DROP TABLE IF EXISTS compact_readd_after_rename;
 CREATE TABLE compact_readd_after_rename (a UInt64, k UInt64)
     ENGINE = MergeTree ORDER BY k
@@ -285,9 +274,7 @@ SELECT 'compact clear after pending rename', k, b FROM compact_clear_after_pendi
 CHECK TABLE compact_clear_after_pending_rename;
 DROP TABLE compact_clear_after_pending_rename;
 
--- The opposite order: `DROP a, RENAME b TO a` must drop a's files and keep b's
--- values under a. The finished `AlterConversions` map would resolve a to b and
--- make this a `DROP b` that also suppresses the rename.
+-- `DROP a, RENAME b TO a` must drop a's files and keep b under a.
 DROP TABLE IF EXISTS drop_then_rename_wide;
 CREATE TABLE drop_then_rename_wide (k UInt64, a UInt64, b UInt64)
     ENGINE = MergeTree ORDER BY k
@@ -310,9 +297,7 @@ SELECT 'compact drop then rename', k, a FROM drop_then_rename_compact;
 CHECK TABLE drop_then_rename_compact;
 DROP TABLE drop_then_rename_compact;
 
--- Implicit minmax indices follow the column: a prefix-range DROP removes the indices of all
--- flattened members, and a RENAME replaces a stale implicit index at the target name. Nested
--- members never get implicit indices, but a scalar dotted-name column does.
+-- Implicit minmax follows the column across prefix DROP and RENAME.
 DROP TABLE IF EXISTS t_implicit_orphan;
 CREATE TABLE t_implicit_orphan (a Int64, n Nested(x Int64, y Int64))
     ENGINE = MergeTree ORDER BY tuple()
@@ -354,7 +339,7 @@ ALTER TABLE t_implicit_clear DROP COLUMN n;
 ALTER TABLE t_implicit_clear ADD COLUMN `n.x` Int64;
 ALTER TABLE t_implicit_clear ADD COLUMN `n.w` Int64;
 
--- `CLEAR COLUMN n` keeps the column definitions, so the implicit indices stay.
+-- `CLEAR COLUMN n` keeps definitions, so implicit indices stay.
 ALTER TABLE t_implicit_clear (CLEAR COLUMN n) SETTINGS mutations_sync = 2;
 SELECT 'clear keeps the indices', name, expr, creation FROM system.data_skipping_indices
     WHERE database = currentDatabase() AND table = 't_implicit_clear' ORDER BY name;
@@ -367,8 +352,32 @@ SELECT a, n.z, n.w FROM t_implicit_clear ORDER BY a;
 CHECK TABLE t_implicit_clear;
 DROP TABLE t_implicit_clear;
 
--- The snapshot advances with the full column definition, so properties of a just-added column
--- can be removed by a later command of the same ALTER.
+-- Scalar `CLEAR COLUMN` keeps `auto_minmax_index_<column>` (`apply` used to drop it before the clear guard).
+DROP TABLE IF EXISTS t_scalar_clear_keeps_implicit;
+CREATE TABLE t_scalar_clear_keeps_implicit (x Int64, y Int64)
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS add_minmax_index_for_numeric_columns = 1;
+INSERT INTO t_scalar_clear_keeps_implicit VALUES (1, 2);
+SELECT 'scalar clear keeps index', name FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 't_scalar_clear_keeps_implicit' ORDER BY name;
+ALTER TABLE t_scalar_clear_keeps_implicit CLEAR COLUMN x SETTINGS mutations_sync = 2;
+SELECT 'scalar after clear', name FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 't_scalar_clear_keeps_implicit' ORDER BY name;
+SELECT x, y FROM t_scalar_clear_keeps_implicit;
+DROP TABLE t_scalar_clear_keeps_implicit;
+
+CREATE TABLE t_scalar_clear_in_partition_keeps_implicit (x Int64, y Int64)
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS add_minmax_index_for_numeric_columns = 1;
+INSERT INTO t_scalar_clear_in_partition_keeps_implicit VALUES (3, 4);
+ALTER TABLE t_scalar_clear_in_partition_keeps_implicit CLEAR COLUMN x IN PARTITION tuple()
+    SETTINGS mutations_sync = 2;
+SELECT 'scalar after clear in partition', name FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 't_scalar_clear_in_partition_keeps_implicit' ORDER BY name;
+SELECT x, y FROM t_scalar_clear_in_partition_keeps_implicit;
+DROP TABLE t_scalar_clear_in_partition_keeps_implicit;
+
+-- prepare()/validate() snapshots use the full ADD definition (default/comment/codec).
 DROP TABLE IF EXISTS re_add_full_desc;
 CREATE TABLE re_add_full_desc (k UInt64) ENGINE = MergeTree ORDER BY k;
 
@@ -382,8 +391,7 @@ SELECT name, default_expression, comment, compression_codec FROM system.columns
 
 DROP TABLE re_add_full_desc;
 
--- `MODIFY COLUMN IF EXISTS n` on a flattened Nested parent is a no-op: there is no exact column
--- `n`. Nested-aware existence must not promote it into `columns.get(n)`, which throws.
+-- `MODIFY COLUMN IF EXISTS n` on a flattened Nested parent is a no-op.
 DROP TABLE IF EXISTS modify_if_exists_nested;
 CREATE TABLE modify_if_exists_nested (a Int64, n Nested(x Enum8('a' = 1))) ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE modify_if_exists_nested MODIFY COLUMN IF EXISTS n ADD ENUM VALUES('b' = 2);
@@ -391,8 +399,7 @@ SELECT 'modify if exists nested is a noop', name, type FROM system.columns
     WHERE database = currentDatabase() AND table = 'modify_if_exists_nested' ORDER BY name;
 DROP TABLE modify_if_exists_nested;
 
--- Independent scalar `n` and dotted `n.a` with `share_nested_offsets = 0`: `DROP COLUMN n` must
--- not delete `n.a` files on a wide part written before `n` existed.
+-- `share_nested_offsets = 0`: `DROP COLUMN n` must not delete independent `n.a` files.
 DROP TABLE IF EXISTS drop_independent_dotted;
 CREATE TABLE drop_independent_dotted (id UInt64, `n.a` Array(UInt32))
     ENGINE = MergeTree ORDER BY id
