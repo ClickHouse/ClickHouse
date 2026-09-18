@@ -247,18 +247,18 @@ bool CompressionCodecMultiple::isCompression() const
     return false;
 }
 
-bool CompressionCodecMultiple::isEncryption() const
-{
-    for (const auto & codec : getCodecs())
-        if (codec->isEncryption())
-            return true;
-    return false;
-}
-
 bool CompressionCodecMultiple::isLossyCompression() const
 {
     for (const auto & codec : getCodecs())
         if (codec->isLossyCompression())
+            return true;
+    return false;
+}
+
+bool CompressionCodecMultiple::isEncryption() const
+{
+    for (const auto & codec : getCodecs())
+        if (codec->isEncryption())
             return true;
     return false;
 }

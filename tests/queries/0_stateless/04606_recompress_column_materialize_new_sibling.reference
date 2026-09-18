@@ -1,0 +1,7 @@
+n.b still uncompressed before RECOMPRESS	1
+n.b recompressed after mixed mutation	1
+data intact after MATERIALIZE n.c + RECOMPRESS n.b	100000	100000	100000	100000
+1
+n.b recompressed after reversed mixed mutation	1
+data intact after RECOMPRESS n.b + MATERIALIZE n.c	100000	100000	100000	100000
+1
