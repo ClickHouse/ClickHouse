@@ -282,6 +282,9 @@ def should_skip_job(job_name):
         _info_cache = Info()
         print(f"INFO: PR labels: {_info_cache.pr_labels}")
 
+    if Labels.CI_FORCE_ALL in _info_cache.pr_labels:
+        return False, ""
+
     # There is no way to prevent GitHub Actions from running the PR workflow on
     # release branches, so we skip all jobs here. The ReleaseCI workflow is used
     # for testing on release branches instead.
@@ -291,21 +294,9 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped for release PR"
 
-    # A net revert pull request (see `is_net_revert_pr`) gets a green light at
-    # once: `master` is broken by the change it reverts, and the state it
-    # restores is one that CI has already validated, so every job except the
-    # style check is skipped and the pull request is mergeable immediately. Two
-    # things still guard the merge: the merge queue runs its own (small) set of
-    # checks, and the full CI runs on `master` after the merge. The style check
-    # is kept because it is fast and catches a revert left in an unformatted
-    # state by conflict resolution. The `ci-force-all` label opts out and runs
-    # the whole workflow. Applies to pull requests only (`pr_number > 0`): a
-    # revert commit pushed to `master` or a release branch is tested as usual. A
-    # revert of a revert re-applies the original change and is tested as usual.
     if (
         _info_cache.pr_number > 0
         and job_name != JobNames.STYLE_CHECK
-        and Labels.CI_FORCE_ALL not in _info_cache.pr_labels
         and is_net_revert_pr(_info_cache.pr_title)
     ):
         _add_revert_note()
