@@ -651,21 +651,13 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
                 &sizes_before_reading);
             partial_columns_started = true;
 
-            if (disk_columns + served_columns == 0)
-            {
-                /// Nothing but columns read only from the part: they measure the read.
+            /// The rows of the run are what the columns served from the cache hold, or, without
+            /// any, what the read from the part produced - which can be less than asked for at the
+            /// end of the part, and nothing at all for a column whose data file is empty (a variant
+            /// of a `Dynamic` column without values in the part), just as without the cache: the
+            /// range reader then counts the rows from its marks.
+            if (served_columns == 0)
                 rows = rows_from_disk;
-            }
-            else if (disk_columns && rows_from_disk < run_rows)
-            {
-                /// The part ended before the marks say it does. Nothing can have been served for
-                /// rows that do not exist.
-                if (served_columns)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Read {} rows of {} from part {} starting at mark {}, but {} columns of these rows were served from the columns cache",
-                        rows_from_disk, run_rows, data_part_info_for_read->getPartName(), segments[run_begin].mark, served_columns);
-                rows = rows_from_disk;
-            }
 
             /// The granules of the run read from the part are copied for the cache.
             size_t row_in_run = 0;
@@ -1029,11 +1021,13 @@ void MergeTreeReaderWide::addStreams(
     if (has_any_stream && !has_all_streams)
         partially_read_columns.insert(name_and_type.name);
 
-    /// Not a single stream of the column is in the part, and nothing of it is derived from the
-    /// streams of another column: it was added by an `ALTER` after the part was written, and the
-    /// read produces nothing for it. `partially_read_columns` records the other half of the same
-    /// situation, so `isColumnFilledAfterReading` can ask about both.
-    if (!has_any_stream && !has_derived_stream)
+    /// Not a single stream of the column is in the part: it was added by an `ALTER` after the
+    /// part was written, and the read produces nothing for it. `partially_read_columns` records
+    /// the other half of the same situation, so `isColumnFilledAfterReading` can ask about both.
+    /// A column made of derived substreams alone - the null map of a sparse `Nullable` - has no
+    /// stream of its own and is not absent; a column whose real streams are missing is, whatever
+    /// derived substreams its type has besides (the element null maps of a `Variant`).
+    if (!has_any_stream && (!has_derived_stream || !has_all_streams))
         columns_absent_from_part.insert(name_and_type.name);
 }
 
