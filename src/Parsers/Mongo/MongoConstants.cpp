@@ -1,8 +1,10 @@
 #include <Parsers/Mongo/MongoConstants.h>
 
+#include <cmath>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
@@ -244,6 +246,27 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
         return {"String", std::move(value)};
     }
 
+    /// The three fixed width numbers accept the same two spellings as `tryParseMongoConstant` -
+    /// a string in the canonical form, a number in the relaxed one - so that a number nested in an
+    /// embedded document is accepted exactly where the same number at the top level is.
+    if (name == "$numberInt")
+        return {"Int32", rapidjson::Value(extendedJSONNumber<Int32>(member.value, name))};
+    if (name == "$numberLong")
+        return {"Int64", rapidjson::Value(extendedJSONNumber<Int64>(member.value, name))};
+    if (name == "$numberDouble")
+    {
+        auto number = extendedJSONNumber<Float64>(member.value, name);
+        /// The converted document travels as JSON text, which has no spelling for these; the writer
+        /// would refuse them and the document would be cut short.
+        if (!std::isfinite(number))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value '{}' of '$numberDouble'{} cannot be stored in a document: only a finite number can",
+                member.value.IsString() ? std::string(stringView(member.value)) : std::to_string(number),
+                describeMongoField(field_name));
+        return {"Float64", rapidjson::Value(number)};
+    }
+
     if (name == "$numberDecimal" && member.value.IsString())
     {
         /// The scale is derived from the value, the same way the filters do it for
@@ -268,6 +291,23 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
         /// milliseconds since the epoch and the canonical one wraps that in `$numberLong`. It is
         /// written as text so that the way the server reads it does not depend on any setting.
         std::optional<Int64> milliseconds;
+        if (member.value.IsString())
+        {
+            /// The relaxed form is an ISO 8601 string, read the way `parseDateTime64BestEffort`
+            /// reads it for the top level constant, in UTC. It goes straight to the stored text.
+            auto text = stringView(member.value);
+            ReadBufferFromMemory buffer(text.data(), text.size());
+            DateTime64 parsed;
+            const auto & utc = DateLUT::instance("UTC");
+            if (!tryParseDateTime64BestEffort(parsed, 3, buffer, utc, utc) || !buffer.eof())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "The value '{}' of '$date'{} is not a date", text, describeMongoField(field_name));
+            WriteBufferFromOwnString formatted;
+            writeDateTimeText(parsed, 3, formatted, utc);
+            rapidjson::Value value;
+            value.SetString(formatted.str().c_str(), static_cast<rapidjson::SizeType>(formatted.str().size()), allocator);
+            return {"DateTime64(3, 'UTC')", std::move(value)};
+        }
         if (member.value.IsInt64())
             milliseconds = member.value.GetInt64();
         else if (member.value.IsObject() && member.value.MemberCount() == 1
