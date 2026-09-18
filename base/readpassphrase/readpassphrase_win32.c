@@ -12,6 +12,22 @@
 #include <windows.h>
 
 #include "readpassphrase.h"
+#include "readpassphrase_win32.h"
+
+int readpassphrase_prompt_needs_console_output(int input_is_console, int stderr_is_console)
+{
+    return input_is_console && !stderr_is_console;
+}
+
+unsigned long readpassphrase_console_mode(unsigned long original_mode, int flags)
+{
+    unsigned long mode = original_mode | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
+    if (flags & RPP_ECHO_ON)
+        mode |= ENABLE_ECHO_INPUT;
+    else
+        mode &= ~(unsigned long)ENABLE_ECHO_INPUT;
+    return mode;
+}
 
 /* The original installs temporary signal handling so that an interrupt cannot leave the caller's
  * terminal with echo disabled. The console equivalent is a control handler that restores the mode
@@ -98,14 +114,11 @@ char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
     /* When the passphrase is typed on the console, the prompt has to appear there too - otherwise
      * `clickhouse-client.exe < query.sql 2>prompt.log` waits for a keystroke with nothing on
      * screen. `stderr` is reused only when it is itself that console. */
-    if (is_console)
+    if (readpassphrase_prompt_needs_console_output(is_console, GetConsoleMode(GetStdHandle(STD_ERROR_HANDLE), &unused_mode)))
     {
-        if (!GetConsoleMode(GetStdHandle(STD_ERROR_HANDLE), &unused_mode))
-        {
-            own_output = CreateFileA(
-                "CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-            output = own_output;
-        }
+        own_output = CreateFileA(
+            "CONOUT$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+        output = own_output;
     }
 
     if (prompt && *prompt)
@@ -113,11 +126,7 @@ char * readpassphrase(const char * prompt, char * buf, size_t bufsiz, int flags)
 
     if (is_console)
     {
-        DWORD mode = original_mode | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
-        if (flags & RPP_ECHO_ON)
-            mode |= ENABLE_ECHO_INPUT;
-        else
-            mode &= ~(DWORD)ENABLE_ECHO_INPUT;
+        DWORD mode = (DWORD)readpassphrase_console_mode(original_mode, flags);
 
         restore_console_handle = input;
         restore_console_mode = original_mode;
