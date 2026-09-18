@@ -6,9 +6,12 @@ SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET use_statistics_for_part_pruning = 1, materialize_statistics_on_insert = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False, preventing LEFT/RIGHT ANY → SEMI conversion that this test validates
 
-CREATE TABLE users (uid UInt64, name String, age Int16) ENGINE=MergeTree ORDER BY uid;
+-- Pin min/max statistics so randomized statistics types do not change the asserted plans.
+CREATE TABLE users (uid UInt64, name String, age Int16) ENGINE=MergeTree ORDER BY uid
+SETTINGS auto_statistics_types = 'basic';
 
 INSERT INTO users VALUES (1231, 'John', 33);
 INSERT INTO users VALUES (6666, 'Ksenia', 48);

@@ -55,7 +55,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_kafka_offsets_storage_in_keeper;
+    extern const SettingsBool allow_kafka_offsets_storage_in_keeper;
     extern const SettingsBool kafka_disable_num_consumers_limit;
 }
 
@@ -289,10 +289,10 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
+                "Storing the Kafka offsets in Keeper is experimental. Set `allow_kafka_offsets_storage_in_keeper` setting "
                 "to enable it");
 
         if (!has_keeper_path || !has_replica_name)
@@ -805,7 +805,7 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 <ExperimentalBadge/>
 
-If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
+If `allow_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
 - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
 - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
@@ -834,7 +834,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -844,7 +844,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
 When combined with replicas (multiple `kafka_replica_name` values sharing the same `kafka_keeper_path`), the affinity filter is applied first to determine eligible partitions, then ZooKeeper locks distribute those eligible partitions among replicas.
@@ -857,7 +857,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### Known limitations {#known-limitations}
