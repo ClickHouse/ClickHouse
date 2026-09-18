@@ -50,6 +50,7 @@
 #include <Common/SipHash.h>
 
 #include <libfuzzer/libfuzzer_macro.h>
+#include <google/protobuf/descriptor.h>
 
 #include <json_ast.pb.h>
 
@@ -61,8 +62,11 @@
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <random>
 #include <string>
 #include <thread>
+#include <unordered_set>
+#include <vector>
 
 extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
 
@@ -338,6 +342,77 @@ void recordLastInput(const DB::JSONASTFuzzer::PipelineInput & input)
     out << "--- JSON AST ---\n" << input.json << "\n--- generated SQL ---\n" << input.sql << '\n';
 }
 
+/// ------------------------------------------------------------------------------------------------
+/// Mutation post-processor: mutated identifiers rarely resolve against the fixture, so most complex
+/// mutants die on name resolution. After every mutation, unknown table names become fixture tables,
+/// unknown column names fixture columns, and unknown function names real functions. A small share
+/// is left untouched so that name-resolution error paths stay covered.
+/// ------------------------------------------------------------------------------------------------
+
+const std::vector<std::string_view> fixture_tables = {"t", "t", "t", "t1", "t2", "t3", "src", "dst", "tbl", "empsalary", "lg", "nul", "jt", "st", "v", "mv", "d", "numbers(10)"};
+const std::vector<std::string_view> fixture_columns = {
+    "a", "b", "c", "d", "e", "f", "s", "x", "y", "z", "id", "key", "value", "n", "arr", "m", "tup", "dt", "dt64", "lc", "u", "dec",
+    "ip", "en", "fs", "bl", "d32", "nested.k", "nested.v", "j", "dyn", "var", "i128", "u256", "fl32", "ipv6", "dec2", "t_arr", "arr_null",
+    "m2", "lc_null", "k", "ts", "v", "name", "tags", "depname", "empno", "salary", "enroll_date", "jv", "dv", "number", "*"};
+
+bool textToEnumTable_hasFunction(const std::string & name)
+{
+    static const std::unordered_set<std::string> names = []
+    {
+        std::unordered_set<std::string> result;
+        const auto * descriptor = json_ast_fuzzer::FunctionName_descriptor();
+        for (int i = 0; i < descriptor->value_count(); ++i)
+            result.insert(descriptor->value(i)->options().GetExtension(json_ast_fuzzer::json_text));
+        return result;
+    }();
+    return names.contains(name);
+}
+
+bool isKnownIdentifier(std::string_view name)
+{
+    for (auto known : fixture_tables)
+        if (name == known)
+            return true;
+    for (auto known : fixture_columns)
+        if (name == known)
+            return true;
+    /// qualified `table.column`, aliases from the seed vocabulary, `system.*`
+    return name.find('.') != std::string::npos || name.size() <= 2;
+}
+
+void fixIdentifiers(json_ast_fuzzer::Node & node, std::mt19937 & rng)
+{
+    using namespace json_ast_fuzzer;
+    const bool is_table = node.type() == T_TableIdentifier;
+    const bool is_identifier = node.type() == T_Identifier;
+    const bool is_function = node.type() == T_Function;
+    for (auto & prop : *node.mutable_props())
+    {
+        if (prop.key() == K_name && prop.has_string_value() && rng() % 10 != 0)
+        {
+            const std::string & name = prop.string_value();
+            if (is_table && !isKnownIdentifier(name))
+                prop.set_string_value(std::string(fixture_tables[rng() % fixture_tables.size()]));
+            else if (is_identifier && !isKnownIdentifier(name))
+                prop.set_string_value(std::string(fixture_columns[rng() % fixture_columns.size()]));
+            else if (is_function && !textToEnumTable_hasFunction(name))
+                prop.set_function_name(static_cast<FunctionName>(1 + rng() % (FunctionName_descriptor()->value_count() - 1)));
+        }
+        else if ((is_table || is_identifier) && prop.key() == K_name_parts)
+        {
+            /// `name_parts` must agree with `name`; the reader rebuilds them from `name` when absent.
+            prop.clear_value();
+        }
+        if (prop.has_node_value())
+            fixIdentifiers(*prop.mutable_node_value(), rng);
+        else if (prop.has_node_list())
+            for (auto & child : *prop.mutable_node_list()->mutable_items())
+                fixIdentifiers(child, rng);
+    }
+    for (auto & child : *node.mutable_children())
+        fixIdentifiers(child, rng);
+}
+
 std::string loadSchema()
 {
     const char * path = getenv("JSON_AST_FUZZER_SCHEMA");
@@ -353,6 +428,16 @@ std::string loadSchema()
 }
 
 }
+
+/// Registered for the whole session; libprotobuf-mutator calls it after every mutation and crossover.
+static protobuf_mutator::libfuzzer::PostProcessorRegistration<json_ast_fuzzer::Node> fix_identifiers_registration = {
+    [](json_ast_fuzzer::Node * root, unsigned int seed)
+    {
+        if (getenv("JSON_AST_FUZZER_NO_FIXUP")) // NOLINT(concurrency-mt-unsafe)
+            return;
+        std::mt19937 rng(seed);
+        fixIdentifiers(*root, rng);
+    }};
 
 extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv)
 {
