@@ -119,6 +119,68 @@ SELECT 'variant element';
 SELECT variantElement(c.t, 'Int64') FROM t_shadowed_variant_element SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT variantElement(c.t, 'Int64') FROM t_shadowed_variant_element SETTINGS optimize_functions_to_subcolumns = 1;
 
+-- Another column, or another element of the same column, can answer to the same flat name:
+-- `<column>.<suffix>` is served by the shortest prefix that can answer it, so a `JSON j` with a path
+-- `m` answers `j.m.key_k` while a physical `j.m` answers `j.m`. Only the substreams path shows which
+-- one a rewrite would read.
+
+DROP TABLE IF EXISTS t_shadowed_by_json_path;
+CREATE TABLE t_shadowed_by_json_path
+(j JSON(m Map(String, String), s String, n Nullable(String)), `j.m` Map(String, String), `j.s` String, `j.n` Nullable(String))
+ENGINE = Memory;
+INSERT INTO t_shadowed_by_json_path SELECT
+    CAST('{"m":{"nokey":"json"},"s":"JSONSTRING","n":"jsonnn"}', 'JSON(m Map(String, String), s String, n Nullable(String))'),
+    map('abc', 'physical', 'def', 'physical2'), '', NULL;
+
+SELECT 'physical column shadowed by a json path';
+SELECT `j.m`['nokey'], mapKeys(`j.m`), mapValues(`j.m`), mapContains(`j.m`, 'nokey'), length(`j.m`),
+       length(`j.s`), empty(`j.s`), isNull(`j.n`)
+FROM t_shadowed_by_json_path SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT `j.m`['nokey'], mapKeys(`j.m`), mapValues(`j.m`), mapContains(`j.m`, 'nokey'), length(`j.m`),
+       length(`j.s`), empty(`j.s`), isNull(`j.n`)
+FROM t_shadowed_by_json_path SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE IF EXISTS t_element_shadowed_by_sibling_path;
+CREATE TABLE t_element_shadowed_by_sibling_path (c Tuple(`j.m` Map(String, String), j JSON(m Map(String, String)))) ENGINE = Memory;
+INSERT INTO t_element_shadowed_by_sibling_path SELECT tuple(map('abc', 'physical'), CAST('{"m":{"nokey":"json"}}', 'JSON(m Map(String, String))'));
+
+SELECT 'tuple element shadowed by a sibling json path';
+SELECT c.`j.m`['nokey'] FROM t_element_shadowed_by_sibling_path SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT c.`j.m`['nokey'] FROM t_element_shadowed_by_sibling_path SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE IF EXISTS t_shadowed_distinct_paths;
+CREATE TABLE t_shadowed_distinct_paths (j JSON(x JSON), `j.x` JSON) ENGINE = Memory;
+INSERT INTO t_shadowed_distinct_paths SELECT CAST('{"x":{"fromjson":1}}', 'JSON(x JSON)'), CAST('{"fromphysical":2}', 'JSON');
+
+DROP TABLE IF EXISTS t_distinct_paths_named_path;
+CREATE TABLE t_distinct_paths_named_path
+(j JSON(`__special_subcolumn_name_for_distinct_paths_calculation` Array(String), real Int64)) ENGINE = Memory;
+INSERT INTO t_distinct_paths_named_path SELECT
+    CAST('{"__special_subcolumn_name_for_distinct_paths_calculation":["BOGUS"],"real":1}',
+         'JSON(`__special_subcolumn_name_for_distinct_paths_calculation` Array(String), real Int64)');
+
+SELECT 'distinct json paths';
+SELECT distinctJSONPaths(`j.x`) FROM t_shadowed_distinct_paths SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT distinctJSONPaths(`j.x`) FROM t_shadowed_distinct_paths SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT distinctJSONPaths(j) FROM t_distinct_paths_named_path SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT distinctJSONPaths(j) FROM t_distinct_paths_named_path SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE IF EXISTS t_shadowed_array_of_json;
+CREATE TABLE t_shadowed_array_of_json (j JSON, `j.arr` Dynamic) ENGINE = Memory;
+INSERT INTO t_shadowed_array_of_json SELECT
+    CAST('{"arr":[{"b":"FROM_JSON"}]}', 'JSON'), CAST([CAST('{"b":"FROM_PHYSICAL"}', 'JSON')], 'Dynamic');
+
+DROP TABLE IF EXISTS t_array_of_json_shadowed_by_sibling;
+CREATE TABLE t_array_of_json_shadowed_by_sibling (c Tuple(`j.arr` Dynamic, j JSON)) ENGINE = Memory;
+INSERT INTO t_array_of_json_shadowed_by_sibling SELECT
+    tuple(CAST([CAST('{"b":"FROM_PHYSICAL"}', 'JSON')], 'Dynamic'), CAST('{"arr":[{"b":"FROM_JSON"}]}', 'JSON'));
+
+SELECT 'array of json element';
+SELECT `j.arr`[1].b FROM t_shadowed_array_of_json SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT `j.arr`[1].b FROM t_shadowed_array_of_json SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT c.`j.arr`[1].b FROM t_array_of_json_shadowed_by_sibling SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT c.`j.arr`[1].b FROM t_array_of_json_shadowed_by_sibling SETTINGS optimize_functions_to_subcolumns = 1;
+
 -- The guard must not reject the ordinary case: every rewrite still fires when nothing claims the name.
 -- The setting is randomized in CI, and these queries read it from the session.
 
@@ -147,6 +209,32 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT count(n) FROM t_plain) WHERE expl
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT tupleElement(t, 'x') FROM t_plain) WHERE explain LIKE '%t.x%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT variantElement(v, 'Int64') FROM t_plain) WHERE explain LIKE '%v.Int64%';
 
+-- A rewrite under a legitimate JSON path, and under a Tuple element, still fires: the source's
+-- substreams path is a prefix of the rewritten subcolumn's. In the unshadowed case both settings
+-- return the same value, so only the query tree can see whether the rewrite was lost.
+
+DROP TABLE IF EXISTS t_json_path_plain;
+CREATE TABLE t_json_path_plain (j JSON(m Map(String, String), s String)) ENGINE = Memory;
+INSERT INTO t_json_path_plain SELECT CAST('{"m":{"k":"v"},"s":"abc"}', 'JSON(m Map(String, String), s String)');
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT j.m['k'] FROM t_json_path_plain) WHERE explain LIKE '%j.m.key_k%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT mapKeys(j.m) FROM t_json_path_plain) WHERE explain LIKE '%j.m.keys%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT length(j.s) FROM t_json_path_plain) WHERE explain LIKE '%j.s.size%';
+
+DROP TABLE IF EXISTS t_json_array_plain;
+CREATE TABLE t_json_array_plain (j JSON) ENGINE = Memory;
+INSERT INTO t_json_array_plain SELECT CAST('{"arr":[{"b":"FROM_JSON"}]}', 'JSON');
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT j.arr[1].b FROM t_json_array_plain) WHERE explain LIKE '%Array(JSON)%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT distinctJSONPaths(j) FROM t_json_array_plain) WHERE explain LIKE '%groupArrayDistinct%';
+
+DROP TABLE IF EXISTS t_nested_plain;
+CREATE TABLE t_nested_plain (n Nested(a Int64, b String)) ENGINE = Memory;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT length(`n.a`) FROM t_nested_plain) WHERE explain LIKE '%n.a.size0%';
+
+DROP TABLE IF EXISTS t_tuple_path_plain;
+CREATE TABLE t_tuple_path_plain (c Tuple(m Map(String, String), arr Array(Int64))) ENGINE = Memory;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT c.m['k'] FROM t_tuple_path_plain) WHERE explain LIKE '%c.m.key_k%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT length(c.arr) FROM t_tuple_path_plain) WHERE explain LIKE '%c.arr.size0%';
+
 DROP TABLE t_shadowed_string_size;
 DROP TABLE t_shadowed_array_size;
 DROP TABLE t_shadowed_null_map;
@@ -160,3 +248,13 @@ DROP TABLE t_shadowed_tuple_element;
 DROP TABLE t_nested_tuple_element;
 DROP TABLE t_shadowed_variant_element;
 DROP TABLE t_plain;
+DROP TABLE t_shadowed_by_json_path;
+DROP TABLE t_element_shadowed_by_sibling_path;
+DROP TABLE t_shadowed_distinct_paths;
+DROP TABLE t_distinct_paths_named_path;
+DROP TABLE t_shadowed_array_of_json;
+DROP TABLE t_array_of_json_shadowed_by_sibling;
+DROP TABLE t_json_path_plain;
+DROP TABLE t_json_array_plain;
+DROP TABLE t_nested_plain;
+DROP TABLE t_tuple_path_plain;

@@ -234,7 +234,7 @@ def run_and_check(
             logging.debug("Env:%s", env)
         if not nothrow:
             raise Exception(
-                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {err}"
             )
     return out
 
@@ -733,6 +733,7 @@ class ClickHouseCluster:
         self.minio_bucket_db_disk = "root-db-disk"
         self.minio_s3_port = 9000
         self.minio_port = 9001
+        self.hms_catalog_port = 9083
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_ip = None
@@ -750,7 +751,6 @@ class ClickHouseCluster:
         self.with_glue_catalog = False
         self._glue_catalog_port = None
         self.with_hms_catalog = False
-        self._hms_catalog_port = None
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1090,13 +1090,6 @@ class ClickHouseCluster:
             return self._glue_catalog_port
         self._glue_catalog_port = self.port_pool.get_port()
         return self._glue_catalog_port
-
-    @property
-    def hms_catalog_port(self):
-        if self._hms_catalog_port:
-            return self._hms_catalog_port
-        self._hms_catalog_port = self.port_pool.get_port()
-        return self._hms_catalog_port
 
     @property
     def redis_port(self):
@@ -1877,7 +1870,6 @@ class ClickHouseCluster:
 
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
-        env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
         env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
             docker_compose_yml_dir, "hms_core_site_minio1.xml"
         )
@@ -2157,7 +2149,6 @@ class ClickHouseCluster:
         with_letsencrypt_pebble=False,
         handle_prometheus_remote_write=None,
         handle_prometheus_remote_read=None,
-        use_old_analyzer=None,
         use_distributed_plan=None,
         hostname=None,
         env_variables=None,
@@ -2292,7 +2283,6 @@ class ClickHouseCluster:
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
             with_hms_catalog=with_hms_catalog,
-            use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
@@ -4475,9 +4465,9 @@ class ClickHouseCluster:
             if self.docker_logs_proc is not None:
                 self.docker_logs_proc.kill()
 
-            if not sanitizer_assert_instance:
+            if not sanitizer_assert_instance and not ignore_sanitizer:
                 # Search for sinitizer signs in docker.log if it's still empty
-                with open(self.docker_logs_path, "r") as f:
+                with open(self.docker_logs_path, "r", errors="replace") as f:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
@@ -4978,7 +4968,6 @@ class ClickHouseInstance:
         with_iceberg_catalog,
         with_glue_catalog,
         with_hms_catalog,
-        use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
         clickhouse_path_dir,
@@ -5104,7 +5093,6 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
-        self.use_old_analyzer = use_old_analyzer
         self.use_distributed_plan = use_distributed_plan
         self.randomize_settings = randomize_settings
 
@@ -6219,7 +6207,7 @@ class ClickHouseInstance:
             status = handle.status
             if status == "exited":
                 raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             deadline = start_time + timeout
@@ -6232,7 +6220,7 @@ class ClickHouseInstance:
             if current_time >= deadline:
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8', errors='replace')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
@@ -6423,21 +6411,15 @@ class ClickHouseInstance:
                     "0_common_min_cpu_busy_time.xml", self.config_d_dir
                 )
 
-        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
         use_distributed_plan = (
             os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
         )
 
-        # If specific version was used there can be no
-        # enable_analyzer setting, so do this only if it was
-        # explicitly requested.
-        if self.tag:
-            use_old_analyzer = False
+        # If specific version was used there can be no such setting,
+        # so do this only if it was explicitly requested.
         if self.tag != "latest":
             use_distributed_plan = False
         # Prefer specified in the test option:
-        if self.use_old_analyzer is not None:
-            use_old_analyzer = self.use_old_analyzer
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
@@ -6448,9 +6430,6 @@ class ClickHouseInstance:
         if self.ci_logs_export_enabled:
             ci_logs_export.write_instance_config(self.config_d_dir)
             ci_logs_export.write_instance_users_config(users_d_dir)
-
-        if use_old_analyzer:
-            write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
 
         if use_distributed_plan:
             write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)
