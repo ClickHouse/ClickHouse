@@ -62,6 +62,9 @@ INSERT INTO t_kv_date_literal VALUES ('2024-01-02', 1, 'a');
 SELECT count() FROM t_kv_date_literal WHERE (dt, id) = (toDateTime('2024-01-02 00:00:00', 'UTC'), 1);
 SELECT count() FROM t_kv_date_literal WHERE (dt, id) = (CAST(toDate('2024-01-02'), 'Nullable(Date)'), 1);
 SELECT count() FROM t_kv_date_literal WHERE (dt, id) IN ((toDateTime('2024-01-02 00:00:00', 'UTC'), 1));
+-- As for a single key: a time of day is dropped by `IN` and compared as `DateTime` by `=`.
+SELECT count() FROM t_kv_date_literal WHERE (dt, id) IN ((toDateTime('2024-01-02 10:00:00', 'UTC'), 1));
+SELECT count() FROM t_kv_date_literal WHERE (dt, id) = (toDateTime('2024-01-02 10:00:00', 'UTC'), 1);
 -- A `DateTime64` element of a tuple set is refused while the set itself is built, before any key
 -- filter sees it - the same on `MergeTree`.
 SELECT count() FROM t_kv_date_literal WHERE (dt, id) IN ((toDateTime64('2024-01-02 00:00:00', 3, 'UTC'), 1)); -- { serverError TYPE_MISMATCH }

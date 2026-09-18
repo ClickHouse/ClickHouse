@@ -396,7 +396,9 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
                 else if (array_type)
                     element_type = array_type->getNestedType();
 
-                if (element_type && (element_type->equals(*column_type) || (WhichDataType(element_type).isNumber() && is_column_number)))
+                /// Every element is converted: the list is written with the column's type, so a `Float64`
+                /// element under an integer column would be read back as an integer.
+                if (element_type && element_type->equals(*column_type))
                     continue;
 
                 auto converted = tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get());

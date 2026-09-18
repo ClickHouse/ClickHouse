@@ -411,11 +411,13 @@ bool traverseDAGFilter(
                     /// Converted with the type of the element it comes from, and with the wrappers
                     /// stripped: without it a date-family element is reinterpreted in the key's unit
                     /// space, and one the key type cannot represent raises instead of being skipped.
+                    /// A set member converts as `IN` converts it, strictly but to the key type, so a
+                    /// `DateTime` with a time of day probes the day; only `=` needs the exact value.
                     DataTypePtr element_type;
                     if (col < set_element_types.size())
                         element_type = removeNullable(recursiveRemoveLowCardinality(set_element_types[col]));
 
-                    auto converted = tryConvertFieldToTypeExact(field, *primary_key_types[col], element_type.get());
+                    auto converted = tryConvertFieldToType(field, *primary_key_types[col], element_type.get(), {}, /*strict=*/ true);
                     if (converted.isNull())
                     {
                         all_converted = false;
