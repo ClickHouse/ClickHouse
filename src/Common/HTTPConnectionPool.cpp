@@ -1,5 +1,4 @@
 #include <Common/HTTPConnectionPool.h>
-#include <Common/DNSResolver.h>
 #include <Common/HostResolvePool.h>
 
 #include <Common/ProfileEvents.h>
@@ -902,17 +901,17 @@ private:
     ConnectionPtr prepareConnectionViaProxy(
         const ConnectionTimeouts & timeouts, UInt64 * connect_time, const Poco::Net::HTTPClientSession::ProxyConfig & poco_proxy_config)
     {
-        /// Poco resolves `ProxyConfig::host` itself when it connects, which would bypass the DNS
-        /// cache. Hand it an address instead: the proxy host name is used for nothing but the
-        /// connect (the request keeps the target host in its `Host` header and in the `CONNECT`
-        /// target), and Poco talks to the proxy over a plain socket, so no TLS name matching
-        /// depends on it.
-        auto resolved_proxy_config = poco_proxy_config;
-        resolved_proxy_config.host = DNSResolver::instance().resolveHost(poco_proxy_config.host).toString();
-
+        /// The proxy host name is resolved by Poco (`HTTPClientSession::reconnect` builds a
+        /// `SocketAddress` out of `ProxyConfig::host`), so it does not go through the DNS cache.
+        /// It cannot be replaced with a resolved address here: when TLS terminates at the proxy
+        /// rather than at the target - an `https` proxy, or an `http` proxy with tunneling turned
+        /// off - Poco also uses `ProxyConfig::host` as the TLS peer name
+        /// (`HTTPSClientSession::connect` calls `setPeerHostName(getProxyHost())`), and an address
+        /// there would break certificate verification. Routing it through the cache needs a
+        /// resolved-proxy-host field in the session, mirroring `setResolvedHost`.
         auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
         connection->setKeepAlive(true);
-        connection->setProxyConfig(resolved_proxy_config);
+        connection->setProxyConfig(poco_proxy_config);
 
         try
         {

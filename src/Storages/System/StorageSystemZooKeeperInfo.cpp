@@ -431,6 +431,10 @@ std::expected<String,String> StorageSystemZooKeeperInfo::sendFourLetterCommand(c
     }
     catch (...)
     {
+        /// Remove this possibly stale entry from the DNS cache, so that the next read of this table
+        /// resolves the host again instead of retrying a dead address until the cache is refreshed.
+        DNSResolver::instance().removeHostFromCache(host);
+
         LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Exception  {} ", getCurrentExceptionMessage(true));
         return getCurrentExceptionMessage(true);
     }

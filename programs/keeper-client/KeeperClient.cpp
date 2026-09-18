@@ -94,7 +94,19 @@ String KeeperClient::executeFourLetterCommand(const String & command)
 {
     /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
     Poco::Net::StreamSocket socket;
-    socket.connect(DNSResolver::instance().resolveAddress(zk_args.hosts[0]), zk_args.connection_timeout_ms * 1000);
+    const auto [host, port] = DNSResolver::splitHostAndPort(zk_args.hosts[0]);
+    try
+    {
+        socket.connect(DNSResolver::instance().resolveAddress(host, port), zk_args.connection_timeout_ms * 1000);
+    }
+    catch (...)
+    {
+        /// Remove this possibly stale entry from the DNS cache. There is no `DNSCacheUpdater` in a
+        /// client program, so nothing else would ever refresh it, and every later command of the
+        /// session would keep trying an address the host has moved away from.
+        DNSResolver::instance().removeHostFromCache(host);
+        throw;
+    }
 
     socket.setReceiveTimeout(zk_args.operation_timeout_ms * 1000);
     socket.setSendTimeout(zk_args.operation_timeout_ms * 1000);
