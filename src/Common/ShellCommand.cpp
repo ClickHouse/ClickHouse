@@ -880,7 +880,7 @@ void ShellCommand::drainOutputPipes(
 }
 
 
-bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check_exit_status)
+bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check_exit_status, bool no_grace_means_unbounded)
 {
     /// A child that writes past what the protocol asked of it fills the pipe and blocks in `write`.
     /// Nothing reads that pipe any more by the time this is called, so the only way the child ever
@@ -965,12 +965,13 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
         /// of scheduling - a query failing nondeterministically over a configuration that, before
         /// this wait existed, waited for the exit status without a bound. So zero keeps that
         /// meaning here: the wait for the exit status is unbounded, as a blocking `wait` was.
-        /// Only when the status is wanted, though. Without it this wait is for the child's last
-        /// words on stderr, and a child that does not exit on stdin EOF must not hang the query
-        /// (and a pool's slot) forever over a diagnostic it is never going to write: for that
-        /// child zero means what it means for the destructor - no grace, signal at once.
-        const bool unbounded
-            = check_exit_status && config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds == 0;
+        /// Only when the status is wanted, and only for the caller that says so (see the header):
+        /// without the status this wait is for the child's last words on stderr, and a pooled
+        /// worker being discarded was never waited for at all - neither may hang the query (and a
+        /// pool's slot) forever over a child that does not exit on stdin EOF. For those zero means
+        /// what it means for the destructor: no grace, signal at once.
+        const bool unbounded = check_exit_status && no_grace_means_unbounded
+            && config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds == 0;
         const UInt64 remaining_ms = unbounded ? poll_step_ms : remainingTerminationTimeoutMs();
         if (remaining_ms == 0)
         {

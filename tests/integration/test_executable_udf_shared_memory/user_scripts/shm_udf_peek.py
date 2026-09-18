@@ -4,12 +4,12 @@
 # dirties it. Otherwise identical to shm_udf.py.
 #
 # Protocol (all control values use the ClickHouse native binary encoding):
-#   server -> stdin : varint version, varint path length + path bytes, varint input offset,
-#                     varint input size
-#   stdout <- server: varint status (0 = ok), then on success varint output offset +
-#                     varint output size; status 2 asks the server for a larger region and is
-#                     followed by the varint total size needed; any other status is followed by
-#                     a length-prefixed error message
+#   server -> stdin : varint version, varint request id, varint path length + path bytes,
+#                     varint input offset, varint input size
+#   stdout <- server: the request id echoed back, varint status (0 = ok), then on success
+#                     varint output offset + varint output size; status 2 asks the server for a
+#                     larger region and is followed by the varint total size needed; any other
+#                     status is followed by a length-prefixed error message
 # The bulk data lives in the shared-memory file at the given path; the pipes carry only
 # these small control commands. When stdin reaches EOF the process exits.
 

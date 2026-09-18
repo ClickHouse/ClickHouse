@@ -11,9 +11,12 @@
 # What that byte costs depends entirely on whether the protocol can tell one answer from another. As
 # a bare status varint it is a plausible frame: `0` reads as success, the real status becomes the
 # offset, the real offset becomes the size - and with a compatible format the next query gets the
-# region's own *input* back as its result, in the right number of rows, with no error anywhere. The
-# request id is what makes that impossible: the next borrow reads this byte where its own id should
-# be, sees a mismatch, and fails loudly instead of answering wrongly.
+# region's own *input* back as its result, in the right number of rows, with no error anywhere. Two
+# things make that impossible. The next borrow looks at the worker's stdout before it sends anything:
+# a byte found there is provably not the new query's, so the worker is discarded and replaced, and
+# the query is answered by the replacement. And a byte that lands between that look and the request
+# is caught by the request id: the frame carries the wrong id, and the query fails loudly instead of
+# answering wrongly.
 
 import mmap
 import os

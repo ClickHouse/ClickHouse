@@ -175,6 +175,14 @@ public:
     /// `check_exit_status` is how a caller with `check_exit_code` switched off waits without
     /// turning the command's own exit code into a query failure: the child is still reaped, and
     /// its output still reaches `stderr_sink`, but a non-zero or signalled exit is not raised.
+    ///
+    /// `no_grace_means_unbounded` is for the one caller that used to `wait` for a command with no
+    /// bound at all - the non-pooled command whose output has ended - and for which a grace period
+    /// of zero would otherwise turn that wait into a single probe that fails nondeterministically:
+    /// with it, zero keeps the old meaning, and the wait for the exit status is unbounded. A
+    /// pooled worker that is being discarded was never waited for before, and for it zero means
+    /// what it means everywhere else: no grace, signal at once - so that a worker which closes
+    /// its stdout and then never exits cannot pin the query, and the pool's slot, forever.
     /// How long the command is given to exit on its own before it is signalled
     /// (`command_termination_timeout`). Zero means it is given no time at all, which a caller that
     /// wants the exit status has to know about: there is then no difference between a command that
@@ -185,7 +193,7 @@ public:
     }
 
     using StderrSink = std::function<void(std::string_view)>;
-    bool waitDrainingOutput(const StderrSink & stderr_sink = {}, bool check_exit_status = true);
+    bool waitDrainingOutput(const StderrSink & stderr_sink = {}, bool check_exit_status = true, bool no_grace_means_unbounded = false);
 
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;

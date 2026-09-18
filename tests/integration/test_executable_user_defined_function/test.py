@@ -509,25 +509,24 @@ def test_executable_function_late_stdout_cannot_be_parsed_as_the_next_query_resu
     """A borrow must not start on a worker that already has bytes waiting on its stdout."""
     skip_test_msan(node)
 
-    # The command answers, goes quiet long enough to be handed back to the pool, and only then
-    # writes an extra row. The hand-back probe finds an empty pipe and cannot say anything about
-    # what comes next, so that row is waiting when the next query borrows the same process.
+    # The command answers with its pid, goes quiet long enough to be handed back to the pool, and
+    # only then writes an extra row. The hand-back probe finds an empty pipe and cannot say
+    # anything about what comes next, so that row is waiting when the next query borrows the same
+    # process.
     #
-    # The pipe transport has no framing that would let the next query tell a stale row from its own,
-    # so it must refuse to start rather than answer with somebody else's data. The first query is
-    # correct; the second must fail loudly, and must not return `999999`.
+    # The pipe transport has no framing that would let the next query tell a stale row from its
+    # own once it has started reading - so it must not start reading on such a worker. Before
+    # anything is sent the row is provably not this query's: the worker is discarded, a fresh one
+    # answers, and the answer is a different pid, never `999999`.
     first = node.query("SELECT test_function_pool_late_stdout_python(0)").strip()
     assert first != "999999", first
 
     time.sleep(0.5)
 
-    with pytest.raises(Exception) as exc:
-        node.query("SELECT test_function_pool_late_stdout_python(1)")
-
-    assert "unread output on its stdout when it was borrowed" in str(exc.value), str(exc.value)
-
-    # And the poisoned worker is gone: a fresh process answers the query after it.
-    assert node.query("SELECT test_function_pool_late_stdout_python(2)").strip() != "999999"
+    second = node.query("SELECT test_function_pool_late_stdout_python(1)").strip()
+    assert second != "999999", second
+    assert second != first, "the worker with stale output on its stdout was reused"
+    assert node.contains_in_log("had unread output on its stdout when it was borrowed")
 
 
 def test_executable_function_pooled_worker_is_reused_and_absorbs_an_immediate_extra_byte(started_cluster):
@@ -725,6 +724,29 @@ def test_executable_function_lingering_command_with_no_grace_and_no_exit_check_i
     assert node.query("SELECT test_function_lingers_ignore_no_grace_python(1)") == "Key 1\n"
     elapsed = time.monotonic() - started
     assert elapsed < 10, f"the query waited {elapsed:.1f}s for a command that never exits"
+
+
+def test_executable_function_pooled_lingering_worker_with_no_grace_fails_the_query_at_once(started_cluster):
+    """A pooled worker that closes its stdout and never exits does not hang the query under a zero grace period."""
+    skip_test_msan(node)
+
+    # The worker answers, closes its stdout and lingers; it cannot go back to the pool, so under
+    # `check_exit_code` its exit status is read - and with `command_termination_timeout = 0` there
+    # is no grace for reading it. A pooled worker being discarded was never waited for without a
+    # bound, and must not be now: zero means zero, the status cannot be read, the query fails at
+    # once and the worker is signalled - rather than the query, and the pool's only slot, hanging
+    # forever with no way to cancel.
+    started = time.monotonic()
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_pool_lingers_no_grace_python(1)")
+    elapsed = time.monotonic() - started
+
+    assert "did not exit within command_termination_timeout" in str(exc.value), str(exc.value)
+    assert elapsed < 10, f"the query waited {elapsed:.1f}s for a pooled worker that never exits"
+
+    # The slot is free: the next call is served by a fresh worker.
+    with pytest.raises(Exception):
+        node.query("SELECT test_function_pool_lingers_no_grace_python(2)")
 
 
 def test_executable_function_query_cache(started_cluster):
