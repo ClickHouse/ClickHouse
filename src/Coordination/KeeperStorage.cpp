@@ -3272,9 +3272,9 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMul
 
     for (const auto & multi_subrequest : zk_request.requests)
     {
-        auto subdeltas = extractSubdeltas(deltas);
+        /// Local reads do not enter preprocess and therefore have no deltas or SubDeltaEnd markers.
         response->responses.push_back(callOnConcreteRequestType(
-            *multi_subrequest, [&](const auto & subrequest) { return processLocal(subrequest, storage, std::move(subdeltas), session_id); }));
+            *multi_subrequest, [&](const auto & subrequest) { return processLocal(subrequest, storage, deltas, session_id); }));
     }
 
     response->error = Coordination::Error::ZOK;
