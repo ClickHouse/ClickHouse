@@ -1,9 +1,9 @@
 -- Several aggregate functions accept parameters but previously dropped them from the
 -- aggregate function's parameter set (getParameters() returned an empty array). The -Array
 -- combinator carried the original parameters, so its wrapper-vs-nested parameter check
--- failed with a LOGICAL_ERROR (abort in debug/sanitizer builds). The parameters are now
--- preserved, so the parameterised functions also survive the -Array combinator and their
--- state type names keep the parameters.
+-- failed with a LOGICAL_ERROR (abort in debug/sanitizer builds). getParameters now preserves
+-- them, so the parameterised functions also survive the -Array combinator. The state type name
+-- keeps the parameters only for the functions that actually read them.
 
 -- groupArrayMovingSum / groupArrayMovingAvg (window-size parameter).
 SELECT groupArrayMovingSumArray(42)([1, 2, 3]);
@@ -36,14 +36,14 @@ FROM (SELECT 1. AS x, 0. AS y);
 -- ignored any passed parameters, so plain calls and persisted parameterized types were accepted.
 -- Hard-rejecting them would make legacy AggregateFunction(intervalLengthSum(...)) metadata
 -- unreadable on upgrade, so the parameters are preserved (satisfying the -Array invariant) and
--- normalized away only in the state type.
+-- kept out of the state type.
 SELECT intervalLengthSumArray('two-sided', 1)([0., 0, 1, 1], [0., 10, 1025, 3]);
 SELECT intervalLengthSum('two-sided', 1)(0., 10.);
 SELECT toTypeName(intervalLengthSumState('two-sided', 1)(number::Float64, (number + 2)::Float64)) FROM numbers(1);
 
 -- argMin / argMax (and aliases argAndMin / argAndMax / min_by / max_by) also silently ignored
 -- parameters before this patch, so the same upgrade concern applies. Preserve the parameters for
--- the -Array invariant and normalize them away in the state type instead of hard-rejecting.
+-- the -Array invariant and keep them out of the state type instead of hard-rejecting.
 SELECT argMinArray('two-sided', 2147483647)([0., 0, 1, 1], [0., 10, 1025, 3]);
 SELECT argMin('two-sided', 1)(number, number) FROM numbers(3);
 SELECT argMaxArray(2)([1, 2, 3], [1, 2, 3]);

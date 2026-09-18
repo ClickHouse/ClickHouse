@@ -63,6 +63,21 @@ AggregateFunctionTuple::AggregateFunctionTuple(
     total_state_size = ::Memory::alignUp(offset, max_state_align);
 }
 
+/// The elements share one base aggregate function and answer alike, except a placeholder built for an
+/// only-null element, which keeps the parameters its empty state never reads so that an outer wrapper
+/// still sees the caller's list. The shortest answer is therefore the one an element with a state gives.
+Array AggregateFunctionTuple::getStateParameters() const
+{
+    Array state_parameters = parameters;
+    for (const auto & func : nested_functions)
+    {
+        Array nested_parameters = func->getStateParameters();
+        if (nested_parameters.size() < state_parameters.size())
+            state_parameters = std::move(nested_parameters);
+    }
+    return state_parameters;
+}
+
 bool AggregateFunctionTuple::isVersioned() const
 {
     for (const auto & func : nested_functions)
