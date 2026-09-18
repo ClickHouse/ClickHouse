@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: the `File(Parquet)` case below needs the Parquet format, which the fast-test
+-- build does not have.
 -- The scan-time string filter (`apply_string_filters_during_scan`) replaces non-matching values with
 -- empty strings, and the row is rejected only after PREWHERE has been evaluated. The row-level filter
 -- (row policy) is a separate expression that the readers evaluate on the scanned columns *before*
