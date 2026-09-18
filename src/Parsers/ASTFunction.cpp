@@ -511,6 +511,28 @@ static bool quantifierNameNeedsQuoting(const String & name, const ASTPtr & argum
         && arguments->children[0]->as<ASTSubquery>();
 }
 
+/// A compound name (`database.view`, only for a parameterized-view table function) needs its parts
+/// quoted separately: one quoted token would re-parse as a single identifier.
+static void writeFunctionName(WriteBuffer & ostr, const String & name, bool is_compound_name, const ASTPtr & arguments)
+{
+    if (!is_compound_name)
+    {
+        ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
+        return;
+    }
+
+    std::string_view rest = name;
+    while (true)
+    {
+        const size_t dot = rest.find('.');
+        ostr << backQuoteIfNeed(rest.substr(0, dot));
+        if (dot == std::string_view::npos)
+            break;
+        ostr << '.';
+        rest.remove_prefix(dot + 1);
+    }
+}
+
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
@@ -533,7 +555,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
         if (!name.empty())
-            ostr << backQuoteIfNeed(name);
+            writeFunctionName(ostr, name, isCompoundName(), arguments);
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -1012,7 +1034,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (!name.empty())
-        ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
+        writeFunctionName(ostr, name, isCompoundName(), arguments);
 
     if (parameters)
     {
