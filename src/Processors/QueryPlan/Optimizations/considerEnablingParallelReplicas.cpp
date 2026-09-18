@@ -347,11 +347,9 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         {
             replicas_reads[i]->setAnalyzedResult(analyzed);
             /// Hand over the conditions as well, not only the ranges they produced. The replicas plan is
-            /// built with `query_plan_optimize_primary_key` off, so its reads never build them, and a read
-            /// that already has an analysis result never will. Skip indexes applied while reading granules
-            /// (`use_skip_indexes_on_data_read`) need them, and without them they are simply not applied.
-            if (!replicas_reads[i]->getIndexes())
-                replicas_reads[i]->setIndexes(paired_single_node_reads[i]->getIndexes());
+            /// built with `query_plan_optimize_primary_key` off, so `applyFilters` never runs on its reads
+            /// and a read that already has an analysis result never builds them later either.
+            replicas_reads[i]->adoptFiltersFrom(*paired_single_node_reads[i]);
         }
     }
 
@@ -658,6 +656,7 @@ void considerEnablingParallelReplicas(
                 if (!transplantAnalysisToAllReads(*query_plan.getRootNode(), *plan_with_parallel_replicas->getRootNode()))
                     return;
 
+
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
@@ -687,8 +686,7 @@ void considerEnablingParallelReplicas(
                 if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
                 {
                     local_replica_plan_reading_step->setAnalyzedResult(analysis);
-                    if (!local_replica_plan_reading_step->getIndexes())
-                        local_replica_plan_reading_step->setIndexes(source_reading_step->getIndexes());
+                    local_replica_plan_reading_step->adoptFiltersFrom(*source_reading_step);
                 }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
