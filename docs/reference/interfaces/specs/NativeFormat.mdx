@@ -16,6 +16,8 @@ The Native format is the columnar wire format ClickHouse uses to move tabular da
 
 This page describes the bytes inside a Block — the columnar payload — and the per-column type encodings that build it. Packet framing, connection state, and version negotiation belong to the [native protocol specification](/reference/interfaces/specs/NativeProtocol).
 
+An `Exception` packet contains no `Native` block. Starting with negotiated TCP revision 54493, its legacy fields are followed by the original query, symbolic error code name, and query identifier, each encoded as a binary string. Handshake exceptions retain the legacy layout. See the [exception packet specification](/interfaces/specs/NativeProtocol#exception) for the field order and negotiation rules. This revision does not change column encoding or compression frames.
+
 All multi-byte integer fields are little-endian. Signed integers use two's complement.
 
 <Tip>

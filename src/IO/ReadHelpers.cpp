@@ -2114,7 +2114,7 @@ void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_siz
     }
 }
 
-Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
+Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception, bool with_query_info)
 {
     int code = 0;
     String name;
@@ -2143,7 +2143,16 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception::createDeprecated(out.str(), code, remote_exception);
+    auto exception = Exception::createDeprecated(out.str(), code, remote_exception);
+    if (with_query_info)
+    {
+        auto info = std::make_shared<ExceptionQueryInfo>();
+        readStringBinaryGrowing(info->query, buf);
+        readStringBinaryGrowing(info->code_name, buf);
+        readStringBinaryGrowing(info->query_id, buf);
+        exception.setQueryInfo(std::move(info));
+    }
+    return exception;
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

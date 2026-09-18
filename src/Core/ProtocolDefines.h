@@ -283,6 +283,9 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE 
 static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION = 54492;
 
 
+/// Append `query`, `code_name` and `query_id` to `Exception` packets after the handshake.
+static constexpr auto DBMS_MIN_REVISION_WITH_EXCEPTION_QUERY_INFO = 54493;
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
@@ -290,5 +293,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54492;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54493;
 }

@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <exception>
+#include <memory>
 #include <vector>
 
 #include <fmt/format.h>
@@ -28,6 +29,16 @@ namespace DB
 {
 
 class AtomicLogger;
+
+/// Query metadata carried by native protocol exceptions after revision negotiation.
+struct ExceptionQueryInfo
+{
+    String query;
+    String code_name;
+    String query_id;
+};
+
+String formatExceptionJSON(int code, std::string_view name, const ExceptionQueryInfo & query_info, std::string_view formatted_message);
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
@@ -74,6 +85,7 @@ public:
         message_format_string = o.message_format_string;
         message_format_string_args = o.message_format_string_args;
         capture_thread_frame_pointers = o.capture_thread_frame_pointers;
+        query_info = o.query_info;
     }
 
     Exception(Exception && o) noexcept
@@ -84,6 +96,7 @@ public:
         message_format_string = o.message_format_string;
         message_format_string_args = std::move(o.message_format_string_args);
         capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
+        query_info = std::move(o.query_info);
         Poco::Exception::operator=(std::move(o));
     }
 
@@ -97,6 +110,7 @@ public:
             message_format_string = o.message_format_string;
             message_format_string_args = o.message_format_string_args;
             capture_thread_frame_pointers = o.capture_thread_frame_pointers;
+            query_info = o.query_info;
             Poco::Exception::operator=(o);
         }
         return *this;
@@ -113,6 +127,7 @@ public:
             message_format_string = o.message_format_string;
             message_format_string_args = std::move(o.message_format_string_args);
             capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
+            query_info = std::move(o.query_info);
             Poco::Exception::operator=(std::move(o));
         }
         return *this;
@@ -247,6 +262,16 @@ public:
 
     void addMessage(const MessageMasked & msg_masked);
 
+    void setQueryInfo(std::shared_ptr<const ExceptionQueryInfo> info)
+    {
+        query_info = std::move(info);
+    }
+
+    const ExceptionQueryInfo * getQueryInfo() const
+    {
+        return query_info.get();
+    }
+
     /// Used to distinguish local exceptions from the one that was received from remote node.
     void setRemoteException(bool remote_ = true) { remote = remote_; }
     bool isRemoteException() const { return remote; }
@@ -278,6 +303,7 @@ private:
     static size_t handleErrorCode(
         const std::string & msg, std::string_view format_string, int code, bool remote, const Trace & trace);
 
+    std::shared_ptr<const ExceptionQueryInfo> query_info;
     bool remote = false;
     std::atomic<bool> logged = false;
 

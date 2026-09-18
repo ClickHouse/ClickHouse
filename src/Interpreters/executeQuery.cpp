@@ -2227,8 +2227,11 @@ static BlockIO executeQueryImpl(
     ASTPtr & out_ast,
     ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
     HTTPContinueCallback http_continue_callback,
-    QueryResultDetails & result_details)
+    QueryResultDetails & result_details,
+    String * original_query_out = nullptr)
 {
+    if (original_query_out)
+        original_query_out->assign(begin, end);
     if (flags.internal)
         context->getClientInfo().is_internal = true;
 
@@ -2611,6 +2614,9 @@ static BlockIO executeQueryImpl(
             if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 query_end = insert_query->data;
         }
+
+        if (original_query_out)
+            original_query_out->assign(begin, query_end);
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters.
@@ -4135,7 +4141,8 @@ void executeQuery(
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
     QueryFinishCallback query_finish_callback,
-    HTTPContinueCallback http_continue_callback)
+    HTTPContinueCallback http_continue_callback,
+    String * original_query_out)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -4319,7 +4326,18 @@ void executeQuery(
 
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, result_details);
+        streams = executeQueryImpl(
+            begin,
+            end,
+            context,
+            flags,
+            QueryProcessingStage::Complete,
+            istr,
+            ast,
+            implicit_tcl_executor,
+            http_continue_callback,
+            result_details,
+            original_query_out);
     }
     catch (...)
     {
