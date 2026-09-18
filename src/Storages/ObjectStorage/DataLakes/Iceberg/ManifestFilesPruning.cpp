@@ -33,7 +33,6 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::Iceberg
@@ -236,42 +235,16 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
 namespace
 {
 
-/// Iceberg keeps a decimal partition value as an Avro `fixed`: the unscaled value in two's-complement
-/// big-endian form, using the minimum number of bytes. ClickHouse reads such a `fixed` as a `String`,
-/// so restore the decimal here. Accumulate into the unsigned counterpart, pre-filled with the sign
-/// bits, so that the sign extension comes out of the shifts themselves.
-template <typename DecimalType>
 Field decodePartitionDecimal(const String & bytes, const IDataType & type)
 {
-    using NativeType = typename DecimalType::NativeType;
-    using UnsignedType = make_unsigned_t<NativeType>;
-
-    if (bytes.empty() || bytes.size() > sizeof(NativeType))
+    auto decoded = deserializeDecimalFromBinaryRepr(bytes, type);
+    if (!decoded.has_value())
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {} bytes of {}",
+            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {}",
             bytes.size(),
-            sizeof(NativeType),
             type.getName());
-
-    UnsignedType unscaled_value = (bytes[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
-    for (const auto byte : bytes)
-        unscaled_value = (unscaled_value << 8) | static_cast<UInt8>(byte);
-
-    return DecimalField<DecimalType>(static_cast<NativeType>(unscaled_value), getDecimalScale(type));
-}
-
-Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
-{
-    if (checkDecimal<Decimal32>(type))
-        return decodePartitionDecimal<Decimal32>(bytes, type);
-    if (checkDecimal<Decimal64>(type))
-        return decodePartitionDecimal<Decimal64>(bytes, type);
-    if (checkDecimal<Decimal128>(type))
-        return decodePartitionDecimal<Decimal128>(bytes, type);
-    if (checkDecimal<Decimal256>(type))
-        return decodePartitionDecimal<Decimal256>(bytes, type);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal type {} of an Iceberg partition column", type.getName());
+    return *decoded;
 }
 
 }
@@ -303,16 +276,12 @@ PartitionTransformKind parsePartitionTransformKind(const String & transform_name
     return PartitionTransformKind::NotInvertible;
 }
 
-/// Half-open: `[first, past_last)`. The transforms map a whole such interval to one partition value,
-/// and every step below stays half-open, so a value from corrupt metadata can only fail an overflow
-/// check and disable pruning, never wrap around.
 struct Interval
 {
     Int64 first;
     Int64 past_last;
 };
 
-/// The value covers `[v, v + 1)` of its own unit.
 std::optional<Interval> unitInterval(Int64 value)
 {
     Int64 past_last = 0;
@@ -321,7 +290,6 @@ std::optional<Interval> unitInterval(Int64 value)
     return Interval{value, past_last};
 }
 
-/// `[a, b)` in one unit is `[a * factor, b * factor)` in a unit that many times finer.
 std::optional<Interval> refineInterval(std::optional<Interval> interval, Int64 factor)
 {
     Int64 first = 0;
@@ -343,37 +311,53 @@ std::optional<Range> closedRange(std::optional<Interval> interval, std::optional
     return Range(interval->first, true, last, true);
 }
 
-std::optional<Interval> dayIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
+std::optional<Interval> dayIntervalOfMonthNum(Int64 month)
 {
-    if (kind == PartitionTransformKind::Day)
-        return unitInterval(value);
-
-    auto own_unit = unitInterval(value);
-    if (!own_unit)
+    auto months = unitInterval(month);
+    if (!months)
         return {};
 
     const auto & utc = DateLUT::instance("UTC");
     const auto epoch = ExtendedDayNum(0);
+    const auto first = utc.addMonths(epoch, months->first);
+    const auto past_last = utc.addMonths(epoch, months->past_last);
+    if (utc.toMonthNumSinceEpoch(first) != months->first || utc.toMonthNumSinceEpoch(past_last) != months->past_last)
+        return {};
 
-    if (kind == PartitionTransformKind::Month)
+    return Interval{Int64{first}, Int64{past_last}};
+}
+
+std::optional<Interval> dayIntervalOfYearNum(Int64 year)
+{
+    auto years = unitInterval(year);
+    if (!years)
+        return {};
+
+    const auto & utc = DateLUT::instance("UTC");
+    const auto epoch = ExtendedDayNum(0);
+    const auto first = utc.addYears(epoch, years->first);
+    const auto past_last = utc.addYears(epoch, years->past_last);
+    if (utc.toYearSinceEpoch(first) != years->first || utc.toYearSinceEpoch(past_last) != years->past_last)
+        return {};
+
+    return Interval{Int64{first}, Int64{past_last}};
+}
+
+std::optional<Interval> dayIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
+{
+    switch (kind)
     {
-        const auto first = utc.addMonths(epoch, own_unit->first);
-        const auto past_last = utc.addMonths(epoch, own_unit->past_last);
-        if (utc.toMonthNumSinceEpoch(first) != own_unit->first || utc.toMonthNumSinceEpoch(past_last) != own_unit->past_last)
+        case PartitionTransformKind::Day:
+            return unitInterval(value);
+        case PartitionTransformKind::Month:
+            return dayIntervalOfMonthNum(value);
+        case PartitionTransformKind::Year:
+            return dayIntervalOfYearNum(value);
+        case PartitionTransformKind::Hour:
+        case PartitionTransformKind::NotInvertible:
             return {};
-        return Interval{Int64{first}, Int64{past_last}};
     }
-
-    if (kind == PartitionTransformKind::Year)
-    {
-        const auto first = utc.addYears(epoch, own_unit->first);
-        const auto past_last = utc.addYears(epoch, own_unit->past_last);
-        if (utc.toYearSinceEpoch(first) != own_unit->first || utc.toYearSinceEpoch(past_last) != own_unit->past_last)
-            return {};
-        return Interval{Int64{first}, Int64{past_last}};
-    }
-
-    return {};
+    UNREACHABLE();
 }
 
 std::optional<Interval> secondIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
@@ -381,9 +365,18 @@ std::optional<Interval> secondIntervalOfPartitionValue(PartitionTransformKind ki
     static constexpr Int64 seconds_per_hour = 3600;
     static constexpr Int64 seconds_per_day = 86400;
 
-    if (kind == PartitionTransformKind::Hour)
-        return refineInterval(unitInterval(value), seconds_per_hour);
-    return refineInterval(dayIntervalOfPartitionValue(kind, value), seconds_per_day);
+    switch (kind)
+    {
+        case PartitionTransformKind::Hour:
+            return refineInterval(unitInterval(value), seconds_per_hour);
+        case PartitionTransformKind::Day:
+        case PartitionTransformKind::Month:
+        case PartitionTransformKind::Year:
+            return refineInterval(dayIntervalOfPartitionValue(kind, value), seconds_per_day);
+        case PartitionTransformKind::NotInvertible:
+            return {};
+    }
+    UNREACHABLE();
 }
 
 std::optional<Int64> partitionValueAsInt64(const Field & partition_value)
@@ -451,7 +444,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
                     field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
                 else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
-                    field = decodePartitionDecimalByType(field.safeGet<String>(), *type);
+                    field = decodePartitionDecimal(field.safeGet<String>(), *type);
             }
 
             bool can_be_true = partition_key_condition->mayBeTrueInRange(
