@@ -19,11 +19,9 @@ Run the following command to download a single binary for your operating system.
 curl https://clickhouse.com/ | sh
 ```
 
-On Linux and macOS, this also installs [`clickhousectl`](/get-started/setup/self-managed/clickhousectl),
-the ClickHouse CLI, into `~/.local/bin` (with a `chctl` alias). `clickhousectl`
-helps you install and manage multiple local ClickHouse versions, run servers in
-the background, and manage ClickHouse Cloud. See the [clickhousectl install page](/get-started/setup/self-managed/clickhousectl)
-for the CLI-based workflow.
+On Linux and macOS, this also installs [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
+into `~/.local/bin` (with a `chctl` symlink) so you can manage local ClickHouse
+versions and servers.
 
 To install just the `clickhouse` binary without `clickhousectl`, set
 `CLICKHOUSE_ONLY=1`:

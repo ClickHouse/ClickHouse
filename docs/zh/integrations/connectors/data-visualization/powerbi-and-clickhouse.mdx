@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -183,9 +183,9 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
   ### 创建新的用户 DSN
 </div>
 
-驱动程序安装完成后，即可创建 ODBC 数据源。在开始菜单中搜索 ODBC，然后选择“ODBC 数据源 (64-bit) ”。
+驱动程序安装完成后，即可创建 ODBC 数据源。在开始菜单中搜索 ODBC，然后选择“ODBC 数据源 (64 位) ”。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Windows 搜索中显示“ODBC 数据源 (64-bit)”选项" border />
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Windows 搜索中显示“ODBC 数据源（64 位）”选项" border />
 
 <br />
 
@@ -221,15 +221,15 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 如果您尚未安装 Power BI，
 请[下载并安装 Power BI Desktop](https://www.microsoft.com/en-us/download/details.aspx?id=58494)。
 
-在 Power BI Desktop 启动屏幕上，单击“获取数据”。
+在 Power BI Desktop 启动屏幕上，单击“Get Data”。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="显示“获取数据”按钮的 Power BI Desktop 主屏幕" border />
+<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="显示“Get Data”按钮的 Power BI Desktop 主屏幕" border />
 
 <br />
 
 选择“Other”-&gt;“ODBC”。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_odbc.webp" alt="Power BI“获取数据”对话框，其中“Other”类别下已选中“ODBC”选项" border />
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_odbc.webp" alt="Power BI“Get Data”对话框，其中“Other”类别下的“ODBC”选项已选中" border />
 
 <br />
 
@@ -243,7 +243,7 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
   如果您在创建数据源时未指定凭据，系统会提示您输入用户名和密码。
 </Note>
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_dsn_credentials.webp" alt="ODBC DSN 连接的凭据对话框" border />
+<Image size="md" img="/images/integrations/data-visualization/powerbi_dsn_credentials.webp" alt="ODBC DSN connection 的凭据对话框" border />
 
 <br />
 
@@ -253,7 +253,7 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 
 <br />
 
-导入完成后，您就可以像往常一样在 Power BI 中访问 ClickHouse 数据。
+导入完成后，您就可以像平常一样在 Power BI 中访问 ClickHouse 数据。
 
 <div id="optimizing-work-with-large-datasets">
   ## 优化大规模数据集的使用体验
@@ -308,7 +308,7 @@ PowerBI 会自动生成包含嵌套子查询、复杂 JOIN 以及即时转换的
 UInt64 及更大的无符号整数类型不会自动加载到数据集中，因为 Int64 是 Power BI 支持的最大整数类型。
 
 <Note>
-  要正确导入数据，请先在 Navigator 中点击“转换数据”，再点击“Load”按钮。
+  要正确导入数据，请先在 Navigator 中点击“转换数据”，再点击“加载”按钮。
 </Note>
 
 在此示例中，`pageviews` 表有一个 UInt64 列，默认会被识别为“二进制”。

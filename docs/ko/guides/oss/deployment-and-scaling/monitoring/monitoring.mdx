@@ -59,7 +59,7 @@ ClickHouse는 다음과 같은 하드웨어 리소스의 상태도 자체적으�
 
 ClickHouse 서버에는 자체 상태를 모니터링하기 위한 내장 기능이 있습니다.
 
-서버 이벤트를 추적하려면 서버 로그를 사용하십시오. 설정 파일의 [logger](/ko/reference/settings/server-settings/settings/other#logger) 섹션을 참조하십시오.
+서버 이벤트를 추적하려면 서버 로그를 사용하십시오. 설정 파일의 [logger](/ko/reference/settings/server-settings/settings#logger) 섹션을 참조하십시오.
 
 ClickHouse는 다음을 수집합니다:
 
@@ -68,10 +68,10 @@ ClickHouse는 다음을 수집합니다:
 
 메트릭은 [system.metrics](/ko/reference/system-tables/metrics), [system.events](/ko/reference/system-tables/events), [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블에서 확인할 수 있습니다.
 
-ClickHouse를 구성하여 메트릭을 [Graphite](https://github.com/graphite-project)로 내보낼 수 있습니다. ClickHouse 서버 설정 파일의 [Graphite section](/ko/reference/settings/server-settings/settings/graphite#graphite)을 참조하십시오. 메트릭 내보내기를 구성하기 전에 공식 [guide](https://graphite.readthedocs.io/en/latest/install.html)를 따라 먼저 Graphite를 설정해야 합니다.
+ClickHouse를 구성하여 메트릭을 [Graphite](https://github.com/graphite-project)로 내보낼 수 있습니다. ClickHouse 서버 설정 파일의 [Graphite section](/ko/reference/settings/server-settings/settings#graphite)을 참조하십시오. 메트릭 내보내기를 구성하기 전에 공식 [guide](https://graphite.readthedocs.io/en/latest/install.html)를 따라 먼저 Graphite를 설정해야 합니다.
 
-ClickHouse를 구성하여 메트릭을 [Prometheus](https://prometheus.io)로 내보낼 수 있습니다. ClickHouse 서버 설정 파일의 [Prometheus section](/ko/reference/settings/server-settings/settings/other#prometheus)을 참조하십시오. 메트릭 내보내기를 구성하기 전에 공식 [guide](https://prometheus.io/docs/prometheus/latest/installation/)를 따라 먼저 Prometheus를 설정해야 합니다.
+ClickHouse를 구성하여 메트릭을 [Prometheus](https://prometheus.io)로 내보낼 수 있습니다. ClickHouse 서버 설정 파일의 [Prometheus section](/ko/reference/settings/server-settings/settings#prometheus)을 참조하십시오. 메트릭 내보내기를 구성하기 전에 공식 [guide](https://prometheus.io/docs/prometheus/latest/installation/)를 따라 먼저 Prometheus를 설정해야 합니다.
 
 또한 HTTP API를 통해 서버 가용성을 모니터링할 수 있습니다. `/ping`으로 `HTTP GET` 요청을 보내십시오. 서버를 사용할 수 있으면 `200 OK`로 응답합니다.
 
-클러스터 환경에서 서버를 모니터링하려면 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ko/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) 매개변수를 설정하고 HTTP 리소스 `/replicas_status`를 사용해야 합니다. `/replicas_status`에 요청을 보내면 레플리카를 사용할 수 있고 다른 레플리카보다 지연되지 않은 경우 `200 OK`를 반환합니다. 레플리카가 지연된 경우에는 그 차이에 대한 정보와 함께 `503 HTTP_SERVICE_UNAVAILABLE`를 반환합니다.
+클러스터 환경에서 서버를 모니터링하려면 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ko/reference/settings/session-settings#max_replica_delay_for_distributed_queries) 매개변수를 설정하고 HTTP 리소스 `/replicas_status`를 사용해야 합니다. `/replicas_status`에 요청을 보내면 레플리카를 사용할 수 있고 다른 레플리카보다 지연되지 않은 경우 `200 OK`를 반환합니다. 레플리카가 지연된 경우에는 그 차이에 대한 정보와 함께 `503 HTTP_SERVICE_UNAVAILABLE`를 반환합니다.

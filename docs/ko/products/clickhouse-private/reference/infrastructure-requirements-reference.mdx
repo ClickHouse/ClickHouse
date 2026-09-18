@@ -1,0 +1,420 @@
+---
+noindex: true
+title: "인프라 요구 사항 참고"
+sidebarTitle: "인프라 요구 사항"
+description: "이 문서는 지원되는 모든 ClickHouse Private 배포 플랫폼의 인프라 사전 요구 사항, 노드 사양, 네트워킹, 스토리지 및 IAM 요구 사항을 한데 모아 정리합니다"
+---
+
+이 문서는 지원되는 모든 ClickHouse Private 배포 플랫폼의 인프라 사전 요구 사항, 노드 사양, 네트워킹, 스토리지 및 IAM 요구 사항을 한데 모아 정리합니다.
+
+***
+
+<div id="prerequisites-by-platform">
+  ## 플랫폼별 사전 요구사항
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+| 요구 사항           | 세부 정보                                         |
+| --------------- | --------------------------------------------- |
+| AWS CLI         | 설치 및 구성 완료                                    |
+| `kubectl`       | 설치됨                                           |
+| `helm`          | v3.x 설치됨                                      |
+| `skopeo`        | 컨테이너 이미지 복사에 권장됨(모든 아키텍처 유지)                  |
+| EKS 클러스터 IAM 역할 | AWS 콘솔의 &quot;권장 역할 생성&quot;으로 기본 권한을 사용해 생성됨 |
+| 노드 IAM 역할       | AWS 콘솔의 &quot;권장 역할 생성&quot;으로 기본 권한을 사용해 생성됨 |
+| OIDC 공급자        | EKS 클러스터용으로 생성됨                               |
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+| 요구 사항                          | 세부 정보                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| GCP 프로젝트                       | 청구가 활성화됨                                                                              |
+| `gcloud` CLI                   | 설치 및 인증 완료                                                                            |
+| `kubectl`                      | 설치됨                                                                                   |
+| `helm`                         | v3.x 설치됨                                                                              |
+| `skopeo`                       | 설치됨(컨테이너 이미지 복사용)                                                                     |
+| AWS 자격 증명                      | ClickHouse ECR에 대한 읽기 권한(이미지 복사용)                                                     |
+| 배스천 호스트                        | 프라이빗 클러스터에 액세스하기 위한 VPC 내부                                                            |
+| Deployer 서비스 계정                | 적절한 권한 포함([IAM / Service Account Requirements](#iam-service-account-requirements) 참조) |
+| **(FIPS 전용)** Red Hat UBI8 이미지 | 인증서 생성을 위해 GKE를 통해 가져옴                                                                |
+
+<div id="bare-metal-rke2">
+  ### 베어 메탈 (RKE2)
+</div>
+
+| 요구 사항         | 세부 정보                                                 |
+| ------------- | ----------------------------------------------------- |
+| Terraform     | v1.13.2+                                              |
+| Ansible       | `lablabs.rke2` role 및 `kubernetes.core` collection 필요 |
+| `kubectl`     | 설치됨                                                   |
+| `helm`        | v3.x 설치됨                                              |
+| AWS IAM 자격 증명 | ECR 및 S3/MinIO용 액세스 키와 시크릿 키                          |
+| RKE2          | v1.33.5+rke2r1 (Ansible로 배포)                          |
+| OS            | Rocky Linux 9.6 (또는 호환 OS)                            |
+| MinIO         | S3 호환 객체 스토리지를 위한 Operator 및 테넌트                      |
+
+***
+
+<div id="node-group-specifications">
+  ## 노드 그룹 사양
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+<div id="keeper-node-group">
+  #### Keeper 노드 그룹
+</div>
+
+| 속성                     | 값                                                  |
+| ---------------------- | -------------------------------------------------- |
+| AMI (x86)              | `AL2023_x86_64`                                    |
+| AMI (arm64)            | `AL2023_ARM_64`                                    |
+| 디스크 크기                 | 20 GB                                              |
+| 권장 인스턴스 유형             | `m7g.2xlarge`                                      |
+| 최소 노드 수(자동 스케일링 없음)    | ClickHouse 클러스터당 3개                                |
+| Kubernetes 레이블 (x86)   | `clickhouseGroup: keeper`                          |
+| Kubernetes 레이블 (arm64) | `clickhouseGroup: keeper-arm64`                    |
+| 테인트                    | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| 테인트 (arm64 전용)         | `clickhouse.com/arch: arm64, NoSchedule`           |
+| 권장 리소스                 | CPU: 4, 메모리: 16Gi                                  |
+
+<div id="server-node-group">
+  #### 서버 노드 그룹
+</div>
+
+| 속성                     | 값                                                         |
+| ---------------------- | --------------------------------------------------------- |
+| AMI (x86)              | `AL2023_x86_64`                                           |
+| AMI (arm64)            | `AL2023_ARM_64`                                           |
+| 디스크 크기                 | 20 GB                                                     |
+| 권장 인스턴스 유형             | `m7gd.16xlarge` (NVMe SSD가 포함된 &quot;d&quot; 시리즈를 강력히 권장) |
+| 최소 노드 수 (자동 스케일링 없음)   | 원하는 ClickHouse 레플리카 수와 동일                                 |
+| Kubernetes 레이블 (x86)   | `clickhouseGroup: server`                                 |
+| Kubernetes 레이블 (arm64) | `clickhouseGroup: server-arm64`                           |
+| 테인트                    | `clickhouse.com/do-not-schedule: true, NoSchedule`        |
+| 테인트 (arm64만 해당)        | `clickhouse.com/arch: arm64, NoSchedule`                  |
+| 권장 리소스                 | CPU: 64, 메모리: 256Gi                                       |
+| 런치 템플릿                 | NVMe SSD RAID 구성을 위해 사용자 지정 템플릿이 필요함(소스 문서 참조)            |
+
+<div id="operator-node-group-x86">
+  #### Operator 노드 그룹 (x86)
+</div>
+
+| 속성         | 값                                                     |
+| ---------- | ----------------------------------------------------- |
+| AMI        | `AL2023_x86_64`                                       |
+| 디스크 크기     | 20 GB                                                 |
+| 최소 인스턴스 크기 | xlarge                                                |
+| 인스턴스 유형    | x86 호환 유형이면 모두 가능                                     |
+| 비고         | 이미 x86과 호환되며 최소 xlarge 요건을 충족한다면 기존 노드 그룹을 사용할 수 있습니다 |
+
+**모든 AWS 노드는 인증을 위해 [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html)가 필요합니다.**
+
+Keeper 및 서버 노드 그룹의 경우, 여러 AZ에 걸쳐 클러스터 오토스케일러를 지원하려면 **AZ별로 노드 그룹을 하나씩 생성하십시오**.
+
+오토스케일러 태그(클러스터 오토스케일러를 사용하는 경우): - `k8s.io/cluster-autoscaler/enabled: true` - `k8s.io/cluster-autoscaler/$CLUSTER_NAME: owned`
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+<div id="keeper-node-pool">
+  #### Keeper 노드 풀
+</div>
+
+| 속성         | 값                                                |
+| ---------- | ------------------------------------------------ |
+| 머신 유형(개발용) | `n2-standard-4`                                  |
+| 머신 유형(운영용) | `n2-standard-8`                                  |
+| 디스크 유형     | `pd-ssd`                                         |
+| 디스크 크기     | 20 GB                                            |
+| 노드 레이블     | `clickhouseGroup=keeper`                         |
+| 테인트        | `clickhouse.com/do-not-schedule=true:NoSchedule` |
+| 자동 스케일링    | 최소 1, 최대 3                                       |
+| 워크로드 메타데이터 | `GKE_METADATA` (Workload Identity용)              |
+| 권장 리소스     | CPU: 2, 메모리: 8Gi                                 |
+
+<div id="server-node-pool">
+  #### 서버 노드 풀
+</div>
+
+| 속성           | 값                                                   |
+| ------------ | --------------------------------------------------- |
+| 머신 유형 (dev)  | `n2-standard-8`                                     |
+| 머신 유형 (prod) | `n2-standard-64`                                    |
+| 디스크 유형       | `pd-standard` + 로컬 SSD                              |
+| 디스크 크기       | 20 GB                                               |
+| 로컬 SSD 개수    | 1                                                   |
+| 노드 레이블       | `clickhouseGroup=server`                            |
+| 테인트          | `clickhouse.com/do-not-schedule=true:NoSchedule`    |
+| 자동 스케일링      | 최소 1, 최대 10                                         |
+| 워크로드 메타데이터   | `GKE_METADATA` (Workload Identity용)                 |
+| 권장 리소스       | CPU: 4, 메모리: 16Gi (dev); CPU: 64, 메모리: 256Gi (prod) |
+| SSD 마운트 경로   | `/mnt/disks/ssd0` (데몬셋을 통해; GKE COS는 루트가 읽기 전용임)    |
+
+<div id="default-node-pool">
+  #### 기본 노드 풀
+</div>
+
+| 속성     | 값               |
+| ------ | --------------- |
+| 머신 유형  | `n2-standard-4` |
+| 디스크 유형 | `pd-standard`   |
+| 디스크 크기 | 50 GB           |
+| 노드 수   | 1               |
+
+<div id="bare-metal-rke2">
+  ### 베어 메탈 (RKE2)
+</div>
+
+<div id="node-layout">
+  #### 노드 배치
+</div>
+
+| 역할                  | 호스트명(예시)                                       | 레이블                            | 참고           |
+| ------------------- | ---------------------------------------------- | ------------------------------ | ------------ |
+| 컨트롤 플레인 + etcd (서버) | `chb-rke2s101`, `chb-rke2s201`, `chb-rke2s301` | `clickhouseGroup=keeper-amd64` | AZ에 걸쳐 3개 노드 |
+| Agent (워커)          | `chb-rke2s102`, `chb-rke2s202`, `chb-rke2s302` | `clickhouseGroup=server-amd64` | AZ에 걸쳐 3개 노드 |
+
+<div id="resource-configuration">
+  #### 리소스 구성
+</div>
+
+| 구성 요소  | CPU | 메모리   | 스토리지                                |
+| ------ | --- | ----- | ----------------------------------- |
+| 서버     | 64  | 128Gi | 300Gi (`local-nvme-sc`를 통한 로컬 NVMe) |
+| Keeper | 4   | 16Gi  | 30Gi (`local-nvme-sc`를 통한 로컬 NVMe)  |
+
+각 노드에는 838GiB NVMe 인스턴스 스토리지 드라이브 2개가 있습니다.
+
+***
+
+<div id="networking-requirements">
+  ## 네트워크 요구 사항
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| Component       | Specification                          |
+| --------------- | -------------------------------------- |
+| VPC CIDR        | `10.20.0.0/16` (예시)                    |
+| IPv6            | 사용 안 함                                 |
+| Tenancy         | 기본                                     |
+| Minimum AZs     | 3 (HA용)                                |
+| Public subnets  | 3 (AZ당 1개, 각 `/20`)                    |
+| Private subnets | 3 (AZ당 1개, 각 `/18`)                    |
+| NAT gateways    | AZ당 1개                                 |
+| VPC endpoints   | S3 gateway                             |
+| DNS hostnames   | 활성화                                    |
+| DNS resolution  | 활성화                                    |
+| CNI             | IPv4 필요 (예: IRSA를 사용하는 Amazon VPC CNI) |
+
+예시 서브넷 레이아웃 (us-west-2):
+
+| 유형 | AZ         | CIDR             |
+| -- | ---------- | ---------------- |
+| 공용 | us-west-2a | `10.20.192.0/20` |
+| 공용 | us-west-2b | `10.20.208.0/20` |
+| 공용 | us-west-2c | `10.20.224.0/20` |
+| 사설 | us-west-2a | `10.20.0.0/18`   |
+| 사설 | us-west-2b | `10.20.64.0/18`  |
+| 사설 | us-west-2c | `10.20.128.0/18` |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| 구성 요소                 | 사양                                                        |
+| --------------------- | --------------------------------------------------------- |
+| VPC 모드                | 커스텀 서브넷                                                   |
+| GKE 서브넷 범위            | `10.1.0.0/24` (예시)                                        |
+| 파드 보조 범위              | `10.244.0.0/14` (`/14` 경계에 있어야 하며, 세 번째 옥텟은 4로 나누어떨어져야 함) |
+| 서비스 보조 범위             | `10.252.0.0/20` (`/20` 경계에 있어야 함)                         |
+| 마스터 IPv4 CIDR         | `172.16.0.0/28`                                           |
+| 프라이빗 노드               | 사용 설정됨(내부 IP만 사용)                                         |
+| 프라이빗 엔드포인트            | 사용 설정됨(공개 API 없음, FedRAMP)                                |
+| 마스터 승인 네트워크           | GKE 서브넷 + 배스천 서브넷                                         |
+| Cloud NAT             | 프라이빗 노드에서 외부 인터넷에 액세스하는 데 필요                              |
+| Private Google Access | 서브넷에서 사용 설정됨                                              |
+
+<div id="bare-metal">
+  ### 베어 메탈
+</div>
+
+| 구성 요소           | 사양                   |
+| --------------- | -------------------- |
+| VPC CIDR        | Terraform 구성에 따라 다름  |
+| Kubernetes 네트워킹 | RKE2 기본 제공 CNI       |
+| AZ 시뮬레이션        | 노드별 토폴로지 레이블         |
+| 인그레스            | 포트 포워딩 또는 로드 밸런서를 통해 |
+
+***
+
+<div id="storage-requirements">
+  ## 스토리지 요구 사항
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| 리소스                 | 세부 정보                                                                        |
+| ------------------- | ---------------------------------------------------------------------------- |
+| S3 버킷               | Standard 클래스, 암호화 활성화, EKS 클러스터와 동일한 리전                                      |
+| S3 버킷 범위            | ClickHouse 클러스터당 1개 또는 클러스터별 고유한 `keyPrefix`를 사용해 공유                         |
+| EBS CSI 드라이버        | 필수; IRSA와 함께 Helm으로 설치                                                       |
+| StorageClass        | `gp3-encrypted` (Helm 차트에서 제공) 또는 사용자 지정                                     |
+| NVMe 캐시             | &quot;d&quot; 시리즈 인스턴스(예: `m7gd.*`); EC2 시작 템플릿 RAID 스크립트로 `/nvme/disk`에 마운트 |
+| 캐시 용량 산정            | `bytesPerGiRAM * pod_memory_limit` (예: 11.3Gi * 250Gi = 2825Gi)              |
+| VolumeSnapshot CRDs | 연산자에 필요                                                                    |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| 리소스                 | 세부 사항                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| GCS 버킷              | Standard 클래스, 균등한 버킷 수준 액세스, GKE 클러스터와 동일한 리전                                       |
+| GCS S3 호환 엔드포인트     | `https://storage.googleapis.com`                                                    |
+| GCS 리전 설정           | `auto`                                                                              |
+| StorageClass        | `premium-rwo` (GKE 기본 제공) 또는 `pd.csi.storage.gke.io` 프로비저너를 사용하는 Helm 차트를 통한 사용자 지정 |
+| 토폴로지 키              | `topology.gke.io/zone` (`topology.kubernetes.io/zone` 아님)                           |
+| 로컬 SSD 캐시           | 데몬셋을 통해 `/mnt/disks/ssd0`에 마운트 (GKE COS의 루트는 읽기 전용)                                 |
+| VolumeSnapshot CRDs | 연산자에 필요                                                                        |
+
+<div id="bare-metal">
+  ### 베어 메탈
+</div>
+
+| 리소스          | 세부 정보                                               |
+| ------------ | --------------------------------------------------- |
+| 객체 스토리지      | NVMe 드라이브용 DirectPV와 함께 사용하는 MinIO(S3-compatible)   |
+| StorageClass | `rancher.io/local-path` 프로비저너를 사용하는 `local-nvme-sc` |
+| NVMe 드라이브    | DirectPV를 통해 검색 및 초기화되며 `/nvme/disk`에 마운트됩니다        |
+| 로컬 스토리지 드라이버 | Rancher local-path-provisioner v0.0.32              |
+
+***
+
+<div id="iam-service-account-requirements">
+  ## IAM / 서비스 계정 요구 사항
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+<div id="ecr-pull-role">
+  #### ECR Pull 역할
+</div>
+
+* **역할 이름:** `ClickHouseAirgapECRPullRole`
+* **목적:** ClickHouse 비공개 ECR에서 이미지를 가져옵니다
+* **권한:** `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`, `ecr:DescribeImages`, `ecr:ListImages`, `ecr:GetAuthorizationToken`
+* **조치:** 역할 ARN을 ClickHouse 팀에 제공하십시오
+
+<div id="clickhouse-serverkeeper-s3-role">
+  #### ClickHouse 서버/Keeper S3 역할
+</div>
+
+* **프로비저닝된 ClickHouse 클러스터마다 역할 1개**
+* **명명 규칙:** `CH-S3-$NAME-$REGION-$ORDINAL-Role`
+* `$NAME`: 클러스터 이름(예: `default-xx-01`)
+* `$REGION`: 축약된 리전(예: `us-west-2`는 `uw2`)
+* `$ORDINAL`: 예약 필드이며, `00`으로 설정
+* 예시: `CH-S3-default-xx-01-uw2-00-Role`
+* **권한:** 버킷 리소스에 대한 `s3:*`, `s3:ListBucket`
+* **신뢰 정책:** EKS 클러스터의 OIDC 공급자를 사용해 `sts:AssumeRoleWithWebIdentity`로 IRSA 구성
+
+<div id="ebs-csi-driver-role">
+  #### EBS CSI Driver 역할
+</div>
+
+* **예시 이름:** `ClickHouse_EksEbsCsiDriverRole`
+* **관리형 정책:** `arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy`
+* **신뢰 정책:** EKS 클러스터의 OIDC 공급자를 사용하는 IRSA
+
+<div id="gcp">
+  ### GCP
+</div>
+
+<div id="deployer-service-account">
+  #### 배포용 서비스 계정
+</div>
+
+| 역할                                      | 용도                              |
+| --------------------------------------- | ------------------------------- |
+| `roles/compute.networkAdmin`            | VPC, 서브넷, NAT, 라우터 생성 및 관리      |
+| `roles/container.admin`                 | GKE 클러스터 및 노드 풀 생성 및 관리         |
+| `roles/storage.admin`                   | GCS 버킷 생성 및 관리                  |
+| `roles/iam.serviceAccountAdmin`         | 서비스 계정 생성 및 관리                  |
+| `roles/iam.serviceAccountUser`          | Workload Identity에 서비스 계정 사용    |
+| `roles/iam.workloadIdentityUser`        | Workload Identity 바인딩 구성        |
+| `roles/artifactregistry.admin`          | Artifact Registry 리포지토리 생성 및 관리 |
+| `roles/resourcemanager.projectIamAdmin` | 프로젝트의 IAM 정책 관리                 |
+
+<div id="clickhouse-workload-identity-service-account">
+  #### ClickHouse Workload Identity 서비스 계정
+</div>
+
+* **GCP SA:** `clickhouse@$PROJECT.iam.gserviceaccount.com`
+* **K8s SA (수동):** 네임스페이스 `ns-$CLUSTER_NAME`의 `clickhouse`
+* **K8s SA (helm으로 생성):** 네임스페이스 `ns-$CLUSTER_NAME`의 `ch-$CLUSTER_NAME-sa`
+* **K8s SA 어노테이션:** `iam.gke.io/gcp-service-account=<GSA_EMAIL>`
+* **IAM 바인딩 멤버:** `serviceAccount:$PROJECT.svc.id.goog[<namespace>/<ksa>]`
+* **버킷 권한:** `roles/storage.objectAdmin`, `roles/storage.legacyBucketReader`
+* **Artifact Registry 권한:** `roles/artifactregistry.reader`
+
+<div id="bare-metal">
+  ### 베어 메탈
+</div>
+
+* **AWS 자격 증명:** ECR image pull에 사용할 액세스 키와 시크릿 키
+* **MinIO 자격 증명:** S3-compatible 스토리지용 별도의 액세스 키와 시크릿 키
+* **Image pull secrets:** `clickhouse-operator-system` 및 cluster 네임스페이스의 `all-icr-io` docker-registry 시크릿
+* **Service account:** `default` (IRSA 없음, 자격 증명은 환경 변수를 통해 전달)
+
+***
+
+<div id="cluster-naming-conventions">
+  ## 클러스터 명명 규칙
+</div>
+
+ClickHouse 클러스터의 명명 규칙은 모든 플랫폼에서 동일하게 적용됩니다:
+
+```text
+$DESCRIPTOR-$LETTERS-$ORDINAL
+```
+
+| 구성 요소         | 설명                       | 예시        |
+| ------------- | ------------------------ | --------- |
+| `$DESCRIPTOR` | 설명용 이름(영문자만 사용)          | `default` |
+| `$LETTERS`    | 예약됨; 임의의 영문자 2개          | `xx`      |
+| `$ORDINAL`    | `01`부터 시작해 순차적으로 증가하는 번호 | `01`      |
+
+**예시 이름:** `default-xx-01`
+
+클러스터 이름은 **대상 Kubernetes 클러스터 내에서 고유해야 하며** 다음에 사용됩니다: - Kubernetes 네임스페이스: `ns-$CLUSTER_NAME` - Kubernetes 리소스: `c-$CLUSTER_NAME` 프리픽스 사용 - IAM 역할 이름(AWS): `CH-S3-$CLUSTER_NAME-$REGION-$ORDINAL-Role` - S3/GCS 키 프리픽스: `ch-s3-<uuid>` (클러스터별로 고유)
+
+***
+
+<div id="required-kubernetes-components">
+  ## 필수 Kubernetes 구성 요소
+</div>
+
+| 구성 요소               | AWS                    | GCP                               | 베어 메탈                             |
+| ------------------- | ---------------------- | --------------------------------- | --------------------------------- |
+| CNI (IPv4)          | Amazon VPC CNI (권장)    | GKE 기본 제공                         | RKE2 기본 제공                        |
+| CSI driver          | aws-ebs-csi-driver     | GKE 기본 제공 (pd.csi.storage.gke.io) | Rancher local-path-provisioner    |
+| DNS                 | CoreDNS                | GKE 기본 제공                         | RKE2 기본 제공                        |
+| VolumeSnapshot CRDs | 필수                     | 필수                                | 명시되지 않음                           |
+| Autoscaler          | 클러스터 오토스케일러 (권장)       | GKE 노드 풀 자동 스케일링                  | 해당 없음                             |
+| cert-manager        | 필요하지 않음 (FIPS 사용 시 제외) | FIPS에 필요                          | 필수 (cert-manager + trust-manager) |
