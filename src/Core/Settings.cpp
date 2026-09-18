@@ -1005,8 +1005,11 @@ Possible values:
 - 0 — Automatic `PREWHERE` optimization is disabled.
 - 1 — Automatic `PREWHERE` optimization is enabled.
 )", 0) \
-    DECLARE(Bool, optimize_move_to_prewhere_if_final, false, R"(
+    DECLARE(Bool, optimize_move_to_prewhere_if_final, true, R"(
 Enables or disables automatic [PREWHERE](/reference/statements/select/prewhere) optimization in [SELECT](/reference/statements/select/index) queries with [FINAL](/reference/statements/select/from#final-modifier) modifier.
+
+Only conditions that depend on the sorting key alone and are deterministic within the query are moved,
+so the result of `FINAL` is not affected.
 
 Works only for [*MergeTree](/reference/engines/table-engines/mergetree-family/index) tables.
 
