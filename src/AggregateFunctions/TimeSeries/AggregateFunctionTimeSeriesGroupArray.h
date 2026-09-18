@@ -401,7 +401,8 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            combined_exclude_flags = std::make_unique<UInt8[]>(row_end);
+            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+            combined_exclude_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
                 combined_exclude_flags[i] = (!!null_map[i]) | !if_flags[i]; /// Exclude if NULL or if condition is false
             exclude_flags_data = combined_exclude_flags.get();
