@@ -1,0 +1,499 @@
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/SensitiveDataMasker.h>
+#include <Core/Settings.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/QueryPlanProfiler.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
+#include <Common/JSONBuilder.h>
+#include <Processors/QueryPlan/StepStatsStorage.h>
+#include <Processors/QueryPlan/QueryPlanToJSON.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Interpreters/PreparedSets.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/StepWallClockRegistry.h>
+#include <QueryPipeline/QueryPipeline.h>
+
+namespace DB
+{
+
+namespace Setting
+{
+extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsBool log_queries;
+extern const SettingsBool log_query_plans;
+extern const SettingsBool make_distributed_plan;
+}
+
+namespace
+{
+
+/// The statements whose plan can be captured: those InterpreterFactory routes to
+/// InterpreterSelectQueryAnalyzer, currently the only interpreter that supports plan profiling.
+/// Widen this as other interpreters gain support -- it is the single place that decides which
+/// queries pay for the capture.
+bool isSupportedQuery(const ASTPtr & ast)
+{
+    return ast && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
+}
+
+/// The same for the main plan and for every sub-plan: `compact` and `pretty` are not preferences
+/// but the only settings under which the describe methods do not read an ActionsDAG that
+/// buildQueryPipeline has already moved out. See addStepDetails in QueryPlanToJSON.cpp.
+ExplainPlanOptions planExplainOptions()
+{
+    return ExplainPlanOptions
+    {
+        .actions = true,
+        .indexes = true,
+        .compact = true,
+        .pretty = true,
+    };
+}
+
+/// Records, on every step that reads a set built by a subquery, the id of that subquery.
+///
+/// This is the half of the link the document cannot work out for itself: a captured sub-plan knows
+/// which subquery it is, but only the consuming step knows that it uses the result. Both ends carry
+/// the same assigned id, so rendering is a join rather than a search through printed text.
+///
+/// Must run while the `ActionsDAG`s are still in the plan -- `buildQueryPipeline` moves them into
+/// the `ExpressionActions` -- which is the same window in which the pretty names are captured.
+void recordConsumedSubqueries(QueryPlan & plan)
+{
+    const auto collect_from_dag = [](const ActionsDAG & dag, IQueryPlanStep & step)
+    {
+        /// Scalar subqueries, whose folded value may no longer be identifiable node by node.
+        for (size_t id : dag.getScalarSubqueryIds())
+            step.addConsumedSubqueryId(id);
+
+        for (const auto & node : dag.getNodes())
+        {
+            if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+                continue;
+
+            /// A scalar subquery leaves only its value behind, so the planner wrote the ids onto
+            /// the constant as it built the actions.
+            for (size_t id : node.scalar_subquery_ids)
+                step.addConsumedSubqueryId(id);
+
+            const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+            if (!column_set)
+                continue;
+
+            const auto future_set = column_set->getData();
+            if (const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+                step.addConsumedSubqueryId(from_subquery->getSubqueryId());
+        }
+    };
+
+    /// The step types that can hold an expression referencing a set. `SourceStepWithFilter` covers
+    /// the reads generically, which is where a pushed-down `PREWHERE` puts the condition.
+    const auto collect_from_step = [&](IQueryPlanStep & step)
+    {
+        if (auto * expression = typeid_cast<ExpressionStep *>(&step))
+            collect_from_dag(expression->getExpression(), step);
+        else if (auto * filter = typeid_cast<FilterStep *>(&step))
+            collect_from_dag(filter->getExpression(), step);
+
+        if (auto * source = dynamic_cast<SourceStepWithFilter *>(&step))
+        {
+            if (const auto & dag = source->getFilterActionsDAG())
+                collect_from_dag(*dag, step);
+
+            /// Where filter pushdown puts the condition, and therefore where an `IN` over an
+            /// indexed column ends up: `s_suppkey IN subquery1` is a PREWHERE by the time the plan
+            /// is optimized, not a `Filter` step of its own.
+            if (const auto & prewhere = source->getPrewhereInfo())
+                collect_from_dag(prewhere->prewhere_actions, step);
+        }
+
+        /// Set only when PREWHERE is deferred after FINAL, in which case it is the filter that
+        /// actually runs.
+        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(&step))
+        {
+            if (const auto & prewhere = read_from_merge_tree->getDeferredPrewhereInfo())
+                collect_from_dag(prewhere->prewhere_actions, step);
+            if (const auto & row_level = read_from_merge_tree->getDeferredRowLevelFilter())
+                collect_from_dag(row_level->actions, step);
+        }
+    };
+
+    std::vector<QueryPlan::Node *> stack;
+    if (plan.isInitialized())
+        stack.push_back(plan.getRootNode());
+
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (!node || !node->step)
+            continue;
+
+        collect_from_step(*node->step);
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        /// A child plan is its own tree but the same query, and its steps can consume the same sets.
+        for (auto * child_plan : node->step->getChildPlans())
+            if (child_plan && child_plan->getRootNode())
+                stack.push_back(child_plan->getRootNode());
+    }
+}
+
+void maskSensitiveValues(JSONBuilder::IItem & item)
+{
+    auto masker = SensitiveDataMasker::getInstance();
+    if (!masker)
+        return;
+
+    item.transformStringValues([&](String & value) { masker->wipeSensitiveData(value); });
+}
+
+String toJSONString(JSONBuilder::ItemPtr item)
+{
+    maskSensitiveValues(*item);
+
+    FormatSettings format_settings;
+    format_settings.json.quote_64bit_integers = false;
+
+    String result;
+    WriteBufferFromString out(result);
+    JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
+    JSONBuilder::FormatContext format_context{.out = out};
+    item->format(json_format_settings, format_context);
+    out.finalize();
+
+    return result;
+}
+
+}
+
+QueryPlan & QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
+{
+    query_plan.emplace(std::move(plan_));
+
+    /// Both of these read the ActionsDAGs, which building the pipeline moves out of the steps, so
+    /// they happen here and not at render time.
+    recordConsumedSubqueries(*query_plan);
+    pretty_names.emplace(
+        QueryPlanFormat::buildPrettyNamesPerPlan(*query_plan)
+    );
+    return *query_plan;
+}
+
+void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * reason)
+{
+    if (!context->getSettingsRef()[Setting::log_query_plans])
+        return;
+
+    LOG_TRACE(
+        getLogger("QueryPlanProfiler"),
+        "Not storing the query plan in 'system.query_log' even though setting `log_query_plans`"
+        " is true, because {}.",
+        reason);
+}
+
+bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal)
+{
+    if (internal)
+        return false;
+
+    const auto & settings = context->getSettingsRef();
+
+    if (!settings[Setting::log_query_plans])
+        return false;
+
+    /// From here on the query asked for its plan, so every remaining way of saying no leaves the
+    /// `query_plan` column empty with nothing on the surface to explain it. Say why. The reasons
+    /// below are the ones a user can act on; the two above are not, and the secondary-query case is
+    /// by design -- the initial query logs the plan for all of them -- so none of those speak.
+    const auto declined = [&](const char * reason)
+    {
+        declineCapture(context, reason);
+        return false;
+    };
+
+    /// The plan is stored on the `system.query_log` row, so without that row there is nowhere to
+    /// put it and capturing would be pure cost.
+    if (!settings[Setting::log_queries])
+        return declined("setting `log_queries` is false, so the query writes no row to store it on");
+
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return false;
+
+    /// Asks the statement rather than the interpreter because the join analyze mode has to be
+    /// decided before the interpreter exists: that is the last moment at which it still reaches
+    /// the planner.
+    if (!isSupportedQuery(ast))
+        return declined("only `SELECT` queries have their plan captured");
+
+    if (!settings[Setting::allow_experimental_analyzer])
+        return declined("setting `allow_experimental_analyzer` is false and the old analyzer cannot capture plans");
+
+    /// Distributed execution is not supported.
+    if (settings[Setting::make_distributed_plan])
+        return declined("setting `make_distributed_plan` is true and distributed execution is not supported");
+
+    return true;
+}
+
+void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
+{
+    if (!query_plan || !query_plan->isInitialized())
+        return;
+
+    auto registry = std::make_unique<StepWallClockRegistry>();
+    registry->populateFromPlan(*query_plan);
+    pipeline.setStepWallClockRegistry(std::move(registry));
+}
+
+SubPlanCapture::SubPlanCapture(
+    QueryPlanProfilerPtr profiler_,
+    const QueryPlan & plan_,
+    PrettyNamesPerPlan pretty_names_,
+    size_t subquery_id_,
+    SubPlanKind kind_)
+    : profiler(std::move(profiler_))
+    , plan(&plan_)
+    , pretty_names(std::move(pretty_names_))
+    , subquery_id(subquery_id_)
+    , kind(kind_)
+{
+}
+
+SubPlanCapture::SubPlanCapture(SubPlanCapture && other) noexcept
+    : profiler(std::move(other.profiler))
+    , plan(other.plan)
+    , pretty_names(std::move(other.pretty_names))
+    , subquery_id(other.subquery_id)
+    , kind(other.kind)
+{
+    /// Leaves `other` inert, so only one of the two ever publishes.
+    other.profiler.reset();
+}
+
+SubPlanCapture & SubPlanCapture::operator=(SubPlanCapture && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    /// Whatever this capture was holding is finished with, and publishing the structure is better
+    /// than discarding it. A no-op in the usual case, where the target is still inert.
+    publish(nullptr);
+
+    profiler = std::move(other.profiler);
+    plan = other.plan;
+    pretty_names = std::move(other.pretty_names);
+    subquery_id = other.subquery_id;
+    kind = other.kind;
+    other.profiler.reset();
+
+    return *this;
+}
+
+SubPlanCapture::~SubPlanCapture()
+{
+    /// Reached when `finish` never ran -- an exception while the sub-pipeline was executing, or a
+    /// caller that stopped early. The structure is still worth having: without it the stored plan
+    /// does not name the tables this subquery read. Only the statistics are lost.
+    publish(nullptr);
+}
+
+void SubPlanCapture::publish(const StepStatsStorage * stats) noexcept
+{
+    if (!profiler)
+        return;
+
+    /// Spent first, so that neither a later call nor the destructor publishes this a second time.
+    auto owner = std::move(profiler);
+
+    /// As everywhere else in the profiler: this runs in the middle of planning a query that has
+    /// returned nothing yet, so the allocations are the profiler's and no exception may escape.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        auto serialized = serializeSubPlan(
+            *plan,
+            planExplainOptions(),
+            owner->max_description_length,
+            subquery_id,
+            kind,
+            stats,
+            &pretty_names);
+
+        if (serialized.nodes.empty())
+            return;
+
+        owner->addSubPlan(std::move(serialized));
+    }
+    catch (...) /// Ok: the plan is a diagnostic, and this runs both from a destructor and in the
+                /// middle of planning a query that has not returned anything yet. Losing one
+                /// sub-plan from the document costs the row some detail; letting the exception out
+                /// would fail the query itself.
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void SubPlanCapture::instrument(QueryPipeline & pipeline)
+{
+    if (!profiler)
+        return;
+
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        auto registry = std::make_unique<StepWallClockRegistry>();
+        registry->populateFromPlan(*plan);
+        pipeline.setStepWallClockRegistry(std::move(registry));
+    }
+    catch (...) /// Ok: the sub-plan keeps its structure and loses only its timings.
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void SubPlanCapture::finish(const QueryPipeline & pipeline)
+{
+    if (!profiler)
+        return;
+
+    std::optional<StepStatsStorage> stats;
+
+    {
+        MemoryTrackerBlockerInThread block_memory_tracker;
+
+        try
+        {
+            UInt64 execution_time_ns = 0;
+            if (const auto * registry = pipeline.getStepClocks())
+                execution_time_ns = registry->getExecutionTimeNs();
+
+            /// The subquery's own pipeline and its own execution time -- not the query's, which has
+            /// no pipeline at this point.
+            stats.emplace(pipeline, *plan, execution_time_ns);
+        }
+        catch (...) /// Ok: publishing below still records the sub-plan, without its statistics.
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    publish(stats ? &*stats : nullptr);
+}
+
+SubPlanCapture QueryPlanProfiler::captureSubPlan(
+    const ContextPtr & context, const QueryPlan & plan, size_t subquery_id, SubPlanKind kind)
+{
+    auto profiler = context->getPlanProfiler();
+    if (!profiler)
+        return {};
+
+    if (!plan.isInitialized() || !plan.getRootNode())
+        return {};
+
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        /// The only thing that has to be read now rather than at the end: building the pipeline
+        /// moves the ActionsDAGs these names come from out of every expression step.
+        /// The sub-plan is a plan of its own: its steps can consume other subqueries' sets too,
+        /// which is how TPC-H Q20 nests one set subquery inside another.
+        recordConsumedSubqueries(const_cast<QueryPlan &>(plan));
+
+        return SubPlanCapture(
+            std::move(profiler), plan, QueryPlanFormat::buildPrettyNamesPerPlan(plan), subquery_id, kind);
+    }
+    catch (...) /// Ok: see `publish`.
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return {};
+    }
+}
+
+void QueryPlanProfiler::addSubPlan(SerializedSubPlan sub_plan)
+{
+    std::lock_guard lock(sub_plans_mutex);
+    sub_plans.push_back(std::move(sub_plan));
+}
+
+const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
+{
+    /// Rendering twice would throw away the version that has the statistics, and the second call
+    /// would have no plan left to read anyway.
+    if (plan_json)
+        return *plan_json;
+
+    if (!canRender())
+        return plan_json.emplace();
+
+    /// Rendering runs on the query-finish path, which BlockIO::onFinish calls without a guard,
+    /// after the client has already received the result. An exception here would fail a query that
+    /// had already succeeded, so diagnostics must not propagate.
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        std::optional<StepStatsStorage> stats;
+        if (pipeline)
+        {
+            UInt64 execution_time_ns = 0;
+            if (const auto * registry = pipeline->getStepClocks())
+                execution_time_ns = registry->getExecutionTimeNs();
+            stats.emplace(*pipeline, *query_plan, execution_time_ns);
+        }
+
+        std::lock_guard lock(sub_plans_mutex);
+        plan_json = toJSONString(queryPlanToJSON(
+            *query_plan,
+            planExplainOptions(),
+            max_description_length,
+            stats ? &*stats : nullptr,
+            pretty_names ? &*pretty_names : nullptr,
+            &sub_plans));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        try
+        {
+            /// The result is written into a JSON column, so a failure has to be reported as JSON as
+            /// well: a bare message would fail to parse in QueryLogElement::appendToBlock and take
+            /// the whole log flush with it. Going through JSONBuilder also escapes whatever the
+            /// exception message happens to contain.
+            auto error_map = std::make_unique<JSONBuilder::JSONMap>();
+            error_map->add("Error", getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+            plan_json = toJSONString(std::move(error_map));
+        }
+        catch (...) /// Ok: reporting the failure has itself failed, and this runs on the
+                    /// query-finish path of a query that already returned its result. The first
+                    /// exception was logged above; leaving the plan empty costs the row its plan
+                    /// and nothing else, whereas letting this one out would fail a query that
+                    /// succeeded.
+        {
+            /// Empty rather than invalid: the column takes its default, an empty JSON object.
+            plan_json.emplace();
+        }
+    }
+
+    releasePlan();
+
+    return *plan_json;
+}
+}

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
@@ -41,11 +43,29 @@ struct ExplainFormatSettings;
 
 using StepProcessors = std::span<IProcessor * const>;
 
+/// Identity of a plan step, unique within a query. A copy of a step is a different step:
+/// clone() is `make_unique<Step>(*this)` and both copies can end up in the same plan, so
+/// copying allocates a new index rather than duplicating the source's. Moving preserves it.
+class PlanStepIndex
+{
+public:
+    PlanStepIndex();                                                   // fresh index
+    PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}          // copy => fresh index
+    PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // NOLINT(cert-oop54-cpp) - keeping our own index is self-assignment safe
+    PlanStepIndex(PlanStepIndex &&) noexcept = default;
+    PlanStepIndex & operator=(PlanStepIndex &&) noexcept = default;
+
+    size_t get() const { return value; }
+
+private:
+    size_t value = 0;
+};
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
 public:
-    IQueryPlanStep();
+    IQueryPlanStep() = default;
 
     IQueryPlanStep(const IQueryPlanStep &) = default;
     IQueryPlanStep(IQueryPlanStep &&) = default;
@@ -119,6 +139,20 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
+
+    /// Ids of the subqueries whose results this step consumes -- an `IN (SELECT ...)` set built
+    /// during planning, whose plan ran outside this query's tree. Recorded so that
+    /// `system.query_log.query_plan` can say which step used each captured sub-plan, instead of
+    /// leaving it looking like an unrelated plan that happened to run. Filled only when the query
+    /// is being profiled, and empty otherwise.
+    const std::vector<size_t> & getConsumedSubqueryIds() const { return consumed_subquery_ids; }
+    void addConsumedSubqueryId(size_t id)
+    {
+        /// A step can reach the same set twice -- the index-analysis filter and the PREWHERE hold
+        /// the same condition -- and it consumes it once.
+        if (std::find(consumed_subquery_ids.begin(), consumed_subquery_ids.end(), id) == consumed_subquery_ids.end())
+            consumed_subquery_ids.push_back(id);
+    }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
@@ -214,7 +248,11 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
-    size_t step_index = 0;
+    PlanStepIndex step_index;
+
+    /// See `getConsumedSubqueryIds`. Not copied with the step: a copy is a different step, and the
+    /// walk that fills this runs once per plan, after any copying is done.
+    std::vector<size_t> consumed_subquery_ids;
 };
 
 }

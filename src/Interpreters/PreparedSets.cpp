@@ -12,6 +12,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryPlanProfiler.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -25,6 +26,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -283,6 +285,19 @@ SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 }
 
 
+namespace
+{
+
+/// Ids come from a counter shared by the whole query, so that a set subquery and a step in another
+/// plan can refer to the same one. Outside a query -- a unit test constructing a set directly --
+/// there is no counter and no document to link, so 0 is as good as anything.
+size_t nextSubqueryId()
+{
+    return CurrentThread::isInitialized() ? CurrentThread::get().getNextSubqueryIndex() : 0;
+}
+
+}
+
 FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
     ASTPtr ast_,
@@ -292,7 +307,11 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
+    : subquery_id(nextSubqueryId())
+    , hash(hash_)
+    , ast(std::move(ast_))
+    , external_table_set(std::move(external_table_set_))
+    , source(std::move(source_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
@@ -310,7 +329,7 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), query_tree(std::move(query_tree_))
+    : subquery_id(nextSubqueryId()), hash(hash_), ast(std::move(ast_)), query_tree(std::move(query_tree_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
@@ -492,9 +511,24 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (!plan)
         return;
 
-    auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    /// Optimized before the capture rather than inside `buildQueryPipeline`, which is what the
+    /// interpreter does for the query's own plan. Optimization rewrites the plan -- it merges and
+    /// replaces steps, and pushes filters into `PREWHERE` -- so a capture taken before it would
+    /// describe a shape that never ran, would hold the pretty names of steps that no longer exist,
+    /// and would record which subqueries a step consumes onto steps that are then discarded.
+    /// `applyDistributedPlanFallbackToLocal` comes first because `buildQueryPipeline` would
+    /// otherwise do it, and `optimize` needs the decision already applied to its settings.
+    auto optimization_settings = makeInplaceBuildOptimizationSettings(context);
+    plan->applyDistributedPlanFallbackToLocal(optimization_settings);
+    plan->optimize(optimization_settings);
+
+    auto sub_plan_capture = QueryPlanProfiler::captureSubPlan(context, *plan, subquery_id, SubPlanKind::Set);
+
+    auto builder = plan->buildQueryPipeline(
+        optimization_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
+    sub_plan_capture.instrument(pipeline);
 
     /// A callback that merely returns `true` stops the executor without throwing. Remember that
     /// cancellation so a source already consumed by `build` cannot leave an uncreated set behind.
@@ -514,6 +548,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
                 std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
     executor.execute();
+    sub_plan_capture.finish(pipeline);
 
     if (observed_cancel && !set_and_key->set->isCreated())
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while building a set for subquery");
@@ -700,9 +735,18 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// Returns false when the pipeline stopped without creating the set.
     auto run_plan = [&](QueryPlan & plan_to_run)
     {
-        auto builder = plan_to_run.buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
+        /// See `buildSetInplace`: optimized first, then captured, then built without optimizing again.
+        auto optimization_settings = makeInplaceBuildOptimizationSettings(context);
+        plan_to_run.applyDistributedPlanFallbackToLocal(optimization_settings);
+        plan_to_run.optimize(optimization_settings);
+
+        auto sub_plan_capture = QueryPlanProfiler::captureSubPlan(context, plan_to_run, subquery_id, SubPlanKind::Set);
+
+        auto builder = plan_to_run.buildQueryPipeline(
+            optimization_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
+        sub_plan_capture.instrument(pipeline);
 
         /// A callback that merely returns `true` stops the executor without throwing. Remember that
         /// cancellation so a source already consumed by `build` cannot leave an uncreated set behind.
@@ -722,6 +766,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
                     std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
         }
         executor.execute();
+        sub_plan_capture.finish(pipeline);
 
         /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
         /// `timeout_overflow_mode` set to `break`, no exception is thrown, and the executor just stops executing

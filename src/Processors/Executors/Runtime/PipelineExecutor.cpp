@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/Runtime/ExecutingGraph.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
@@ -109,7 +110,7 @@ struct WorkloadResources
 };
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry_)
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, StepWallClockRegistry * step_wall_clock_registry_)
     : step_wall_clock_registry(step_wall_clock_registry_)
     , process_list_element(std::move(elem))
 {
@@ -282,6 +283,9 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 
 void PipelineExecutor::finalizeExecution()
 {
+    if (step_wall_clock_registry)
+        step_wall_clock_registry->markExecutionFinished();
+
     single_thread_cpu_slot.reset();
     tasks.freeCPU();
     {
