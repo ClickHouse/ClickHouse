@@ -11,6 +11,14 @@ lc sorted	1
 sub data	100	2100-06-10 10:00:00
 sub data	900	2100-06-09 10:00:00
 sub sorted	1
+expr key parts	1
+expr key rows	40
+expr key sorted	1
+expr key pruning	1
+expr key next merge rows	41
+expr key live parts	1
+expr key live rows	6
+expr key live sorted	1
 mut data	41302	2100-06-10 10:00:00	41302
 mut data	96827	2100-06-09 10:00:00	96827
 mut sorted	1
@@ -19,12 +27,9 @@ mut sub data	900	2100-06-09 10:00:00
 mut sub sorted	1
 computed idx present	3
 computed idx matches	1
-mat prefix rows	4
-mat prefix sorted	1
-1
-mat suffix rows	5
-mat suffix sorted	1
-1
+mut expr key parts	1
+mut expr key rows	40
+mut expr key sorted	1
 multi ttl rows	100
 single ttl rows	100
 multi ttl not repaired	1

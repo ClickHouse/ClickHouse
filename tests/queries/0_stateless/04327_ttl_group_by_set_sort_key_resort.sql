@@ -3,13 +3,15 @@
 --   tiny inputs are reliably merged into a single part.
 
 -- Regression test for "TTL ... GROUP BY ... SET <col>" assigning a column the sorting key
--- depends on. The aggregation emits groups in the original (input) order, so when SET
--- rewrites a sort-key column the produced stream is no longer ordered by the sorting key.
--- Before the fix this wrote a part with a primary index inconsistent with the data: a debug
--- build aborts with "Sort order of blocks violated", a release build silently writes a
--- corrupt part. The fix recomputes the sorting key after the SET and re-sorts the merge
--- output. Each check below confirms the merge succeeds AND the resulting part is physically
--- ordered by the sorting key (the natural read order equals the ORDER BY read order).
+-- depends on. The aggregation emits groups in the original (input) order and the part writer
+-- takes the key columns out of that same block by name, in two shapes: the SET assigns a
+-- sort-key column directly, so the data is physically unsorted (a debug build aborts with
+-- "Sort order of blocks violated", a release build silently writes a corrupt part); or the SET
+-- assigns a column that a sort-key EXPRESSION reads, where the expression column was
+-- materialized before the TTL step, so the index describes a value the data no longer holds and
+-- a key-range read misses rows. The fix recomputes the sorting key expressions from the
+-- post-SET columns and re-sorts the output. Each check below confirms the merge succeeds AND
+-- the resulting part is physically ordered by the sorting key.
 
 -- Float64 sort key, non-monotonic SET on the first sort column. The last row is not expired, so
 -- the aggregation also takes its flush-and-pass-through path: the aggregated groups and that row
@@ -88,6 +90,65 @@ SELECT 'sub sorted', phys = arraySort(phys) FROM
     (SELECT groupArray((`t.a`, toStartOfDay(ts))) AS phys FROM (SELECT t.a, ts FROM t_sub SETTINGS optimize_read_in_order = 0));
 DROP TABLE t_sub;
 
+-- The sorting key only READS the column the SET assigns: ORDER BY (k, toStartOfDay(ts)) with
+-- SET ts. toStartOfDay(ts) is materialized before the TTL step, so it keeps the pre-SET value and
+-- stays ascending, which is why the part is written at all; the index then holds a day the data no
+-- longer has. Here max(v) descends as the input day ascends, so the rewritten day descends too.
+DROP TABLE IF EXISTS t_expr_key;
+CREATE TABLE t_expr_key (k Float64, ts DateTime('UTC'), v Float64)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts)
+    SET ts = toDateTime('2100-01-01 00:00:00', 'UTC') + toIntervalDay(toUInt32(max(v)))
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         max_number_of_merges_with_ttl_in_pool = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+-- Group i (old day i) has max(v) = 39 - i. Two INSERTs, so OPTIMIZE FINAL always has work to do.
+INSERT INTO t_expr_key SELECT 1.0,
+    toDateTime('2000-01-01 10:00:00', 'UTC') + toIntervalDay(number DIV 2) + toIntervalHour(number % 2),
+    39 - (number DIV 2) FROM numbers(40);
+INSERT INTO t_expr_key SELECT 1.0,
+    toDateTime('2000-01-01 10:00:00', 'UTC') + toIntervalDay(number DIV 2) + toIntervalHour(number % 2),
+    39 - (number DIV 2) FROM numbers(40, 40);
+OPTIMIZE TABLE t_expr_key FINAL SETTINGS optimize_throw_if_noop = 1;
+-- With more than one active part, ORDER BY _part_offset interleaves them and the order oracle
+-- below goes vacuous.
+SELECT 'expr key parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_expr_key' AND active;
+SELECT 'expr key rows', count() FROM t_expr_key;
+SELECT 'expr key sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray(d) AS phys FROM (SELECT toStartOfDay(ts) AS d FROM t_expr_key ORDER BY _part_offset));
+-- The stale index prunes granules that do hold matching rows: 40 groups over 10 granules, so the
+-- granules this predicate needs are interior ones. Before the fix the read returned 0 of 9 rows.
+SELECT 'expr key pruning', count() = (SELECT countIf(toStartOfDay(ts) >= toDateTime('2100-02-01 00:00:00', 'UTC')) FROM t_expr_key)
+FROM t_expr_key WHERE toStartOfDay(ts) >= toDateTime('2100-02-01 00:00:00', 'UTC');
+-- The merge that READS the part is where the violation surfaces: it recomputes toStartOfDay(ts)
+-- from the stored ts. The added row is not expired, so this merge runs no aggregation of its own.
+INSERT INTO t_expr_key VALUES (1.0, '2100-06-01 10:00:00', 1);
+OPTIMIZE TABLE t_expr_key FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'expr key next merge rows', count() FROM t_expr_key;
+DROP TABLE t_expr_key;
+
+-- Same expression shape with a rewrite that is MONOTONE in the group's day: five expired days
+-- each collapse into one row in 2100-06, and one row at 2050-01-01 does not expire and is passed
+-- through last. An aggregated row jumping over a row that did not expire is enough on its own.
+DROP TABLE IF EXISTS t_expr_key_live;
+CREATE TABLE t_expr_key_live (k Float64, ts DateTime('UTC'), v Float64)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts)
+    SET ts = max(ts) + interval 100 years
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         max_number_of_merges_with_ttl_in_pool = 0, max_bytes_to_merge_at_max_space_in_pool = 1;
+INSERT INTO t_expr_key_live SELECT 1.0,
+    toDateTime('2000-06-01 10:00:00', 'UTC') + toIntervalDay(number DIV 2) + toIntervalHour(number % 2),
+    number FROM numbers(10);
+INSERT INTO t_expr_key_live VALUES (1.0, '2050-01-01 10:00:00', 999);
+OPTIMIZE TABLE t_expr_key_live FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'expr key live parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_expr_key_live' AND active;
+SELECT 'expr key live rows', count() FROM t_expr_key_live;
+SELECT 'expr key live sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray(d) AS phys FROM (SELECT toStartOfDay(ts) AS d FROM t_expr_key_live ORDER BY _part_offset));
+DROP TABLE t_expr_key_live;
+
 -- Mutation path: the same violation is reachable through ALTER TABLE ... MATERIALIZE TTL.
 -- The mutation runs the GROUP BY ... SET aggregation through the mutation pipeline and the
 -- full-rewrite writer also rebuilds the primary index from the stream, so the post-SET stream
@@ -152,61 +213,27 @@ SELECT 'computed idx matches', (SELECT count() FROM t_mut_computed_idx WHERE k +
                              = (SELECT count() FROM t_mut_computed_idx WHERE k + 1 IN (100001, 100021, 100040) SETTINGS use_skip_indexes = 0);
 DROP TABLE t_mut_computed_idx;
 
--- A MATERIALIZED sort-key column whose source the SET rewrites is NOT recomputed and NOT
--- re-sorted: a GROUP BY TTL's keys are a prefix of the primary key and the writer takes the
--- column from the stream by name, so it keeps the value the index is built from. Both positions
--- of such a column are covered, with rows per group that straddle the TTL boundary so the
--- aggregation takes its flush-then-pass-through path and emits aggregated and passed-through
--- rows interleaved. The expiry reads a separate column, which is what allows one group to hold
--- both kinds of row. The oracle is the part's order and validity only: `d` is EXPECTED to
--- disagree with toDate(ts) afterwards, since nothing recomputes it.
-DROP TABLE IF EXISTS t_mat_prefix;
-CREATE TABLE t_mat_prefix (ts DateTime, exp DateTime, d Date MATERIALIZED toDate(ts), v UInt32)
-ENGINE = MergeTree ORDER BY d
-TTL exp + toIntervalDay(1) GROUP BY d SET ts = max(ts) + interval 100 years
-SETTINGS min_bytes_for_wide_part = 0;
-SYSTEM STOP MERGES t_mat_prefix;
--- One part per day, so the merged order inside a group is the insert order.
-INSERT INTO t_mat_prefix (ts, exp, v) VALUES
-    ('2000-01-01 00:00:00', '2000-01-01 00:00:00', 10),
-    ('2000-01-01 06:00:00', '2000-01-01 00:00:00', 20),
-    ('2000-01-01 12:00:00', '2100-01-01 00:00:00', 30);
-INSERT INTO t_mat_prefix (ts, exp, v) VALUES
-    ('2000-01-02 00:00:00', '2000-01-01 00:00:00', 40),
-    ('2000-01-02 06:00:00', '2100-01-01 00:00:00', 50);
-SYSTEM START MERGES t_mat_prefix;
-OPTIMIZE TABLE t_mat_prefix FINAL;
--- Two groups, each collapsing its expired rows into one row and passing its live row through.
-SELECT 'mat prefix rows', count() FROM t_mat_prefix;
-SELECT 'mat prefix sorted', phys = arraySort(phys) FROM
-    (SELECT groupArray(d) AS phys FROM (SELECT d FROM t_mat_prefix SETTINGS optimize_read_in_order = 0));
-CHECK TABLE t_mat_prefix SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_mat_prefix;
-
-DROP TABLE IF EXISTS t_mat_suffix;
-CREATE TABLE t_mat_suffix (k UInt32, ts DateTime, exp DateTime, d Date MATERIALIZED toDate(ts), v UInt32)
-ENGINE = MergeTree ORDER BY (k, d)
-TTL exp + toIntervalDay(1) GROUP BY k SET ts = max(ts) + interval 100 years
-SETTINGS min_bytes_for_wide_part = 0;
-SYSTEM STOP MERGES t_mat_suffix;
--- One part per group key, so the merged order inside a group is the insert order. k = 1 has an
--- expired run, a live row, then another expired run: three emitted rows whose `d` must still
--- ascend.
-INSERT INTO t_mat_suffix (k, ts, exp, v) VALUES
-    (1, '2000-01-01 00:00:00', '2000-01-01 00:00:00', 10),
-    (1, '2000-01-02 00:00:00', '2000-01-01 00:00:00', 20),
-    (1, '2000-01-03 00:00:00', '2100-01-01 00:00:00', 30),
-    (1, '2000-01-04 00:00:00', '2000-01-01 00:00:00', 40);
-INSERT INTO t_mat_suffix (k, ts, exp, v) VALUES
-    (2, '2000-01-01 00:00:00', '2000-01-01 00:00:00', 50),
-    (2, '2000-01-05 00:00:00', '2100-01-01 00:00:00', 60);
-SYSTEM START MERGES t_mat_suffix;
-OPTIMIZE TABLE t_mat_suffix FINAL;
-SELECT 'mat suffix rows', count() FROM t_mat_suffix;
-SELECT 'mat suffix sorted', phys = arraySort(phys) FROM
-    (SELECT groupArray((k, d)) AS phys FROM (SELECT k, d FROM t_mat_suffix SETTINGS optimize_read_in_order = 0));
-CHECK TABLE t_mat_suffix SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_mat_suffix;
+-- Mutation path, sort-key EXPRESSION shape. The mutation recomputes the expression and re-sorts
+-- through its own implementation, separate from the merge one, so the shape needs an arm on both
+-- paths. Same fixture as t_expr_key; the mutation always runs, so one INSERT is enough.
+DROP TABLE IF EXISTS t_mut_expr_key;
+CREATE TABLE t_mut_expr_key (k Float64, ts DateTime('UTC'), v Float64)
+ENGINE = MergeTree ORDER BY (k, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY k, toStartOfDay(ts)
+    SET ts = toDateTime('2100-01-01 00:00:00', 'UTC') + toIntervalDay(toUInt32(max(v)))
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         materialize_ttl_recalculate_only = 0;
+SYSTEM STOP TTL MERGES t_mut_expr_key;
+INSERT INTO t_mut_expr_key SELECT 1.0,
+    toDateTime('2000-01-01 10:00:00', 'UTC') + toIntervalDay(number DIV 2) + toIntervalHour(number % 2),
+    39 - (number DIV 2) FROM numbers(80);
+ALTER TABLE t_mut_expr_key MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'mut expr key parts', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_mut_expr_key' AND active;
+SELECT 'mut expr key rows', count() FROM t_mut_expr_key;
+SELECT 'mut expr key sorted', phys = arraySort(phys) FROM
+    (SELECT groupArray(d) AS phys FROM (SELECT toStartOfDay(ts) AS d FROM t_mut_expr_key ORDER BY _part_offset));
+DROP TABLE t_mut_expr_key;
 
 -- Several GROUP BY TTLs in one part: no repair runs at all, because an earlier SET can rewrite a
 -- column a later TTL groups by and the re-sort would only hide the resulting wrong groups behind
