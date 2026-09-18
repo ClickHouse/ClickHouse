@@ -68,6 +68,7 @@
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
@@ -1731,6 +1732,10 @@ void Context::dropStorageCacheEntry(const StorageID & id) const
 
 std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const
 {
+    /// Disk probes cannot publish from where they run, since they are reached from constructors
+    /// that may already hold `shared->mutex`; drained here, before this function takes it.
+    flushExt4CorruptionKernelBugWarning(*this);
+
     std::unordered_map<Context::WarningType, PreformattedMessage> common_warnings;
     {
         SharedLockGuard lock(shared->mutex);
@@ -1990,6 +1995,8 @@ catch (...)
 
 static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
 {
+    /// `_tmp_default` is an internal helper disk that does not probe its own root: its path is
+    /// probed by `setTemporaryStoragePath`, and for the cache case by `FileCache` itself.
     auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
     VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     return volume;
@@ -1997,6 +2004,9 @@ static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poc
 
 void Context::setTemporaryStoragePath(const String & path, size_t max_size)
 {
+    /// The `_tmp_default` disk built below is exempt from the probe, so its path is probed here.
+    warnIfAffectedByExt4CorruptionKernelBug(path, "the temporary storage path");
+
     std::lock_guard lock(shared->mutex);
 
     if (shared->root_temp_data_on_disk)
@@ -2129,7 +2139,7 @@ void Context::setDynamicUserDefinedExecutableFunctionsPath(const String & path)
     shared->dynamic_user_defined_executable_functions_path = path;
 }
 
-void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
+bool Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
 {
     std::lock_guard lock(shared->mutex);
     auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
@@ -2137,6 +2147,7 @@ void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedM
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message.text, suppress_re);
     if (!is_supressed)
         shared->addOrUpdateWarningMessage(warning, message);
+    return !is_supressed;
 }
 
 void Context::addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const
@@ -7547,8 +7558,11 @@ DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock *
         constexpr auto config_name = "storage_configuration.disks";
         const auto & config = getConfigRef();
         auto disk_selector = std::make_shared<DiskSelector>();
+        /// Disks of a selector whose build fails never become active: drop what they recorded.
+        Ext4CorruptionKernelBugWarningBatch ext4_warnings;
         disk_selector->initialize(config, config_name, shared_from_this());
         shared->merge_tree_disk_selector = disk_selector;
+        ext4_warnings.commit();
     }
 
     return shared->merge_tree_disk_selector;
@@ -7573,8 +7587,20 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         std::lock_guard lock(shared->storage_policies_mutex);
         Strings disks_to_reinit;
         if (shared->merge_tree_disk_selector)
+        {
+            /// Disks of a reload that throws never become active: drop what they recorded.
+            Ext4CorruptionKernelBugWarningBatch ext4_warnings;
             shared->merge_tree_disk_selector
                 = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
+            ext4_warnings.commit();
+            /// These disks are active now, so publish before a later step of this reload can throw.
+            /// Only `storage_policies_mutex` is held here, never the lock publishing takes.
+            size_t published_for_disks = flushExt4CorruptionKernelBugWarning(*this);
+            LOG_TEST(
+                shared->log,
+                "Updated the disk selector and published {} recorded ext4 corruption kernel bug warnings",
+                published_for_disks);
+        }
 
         if (shared->merge_tree_storage_policy_selector)
         {
@@ -7609,6 +7635,13 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
             shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"storage_configuration.disks", getSettingsRef());
     }
 
+    /// Disks and caches built by the reload above only recorded their probe; publish it here, where
+    /// none of the locks taken above is held, so a reload logs it instead of waiting for a reader.
+    size_t published = flushExt4CorruptionKernelBugWarning(*this);
+    LOG_TEST(
+        shared->log,
+        "Reloaded the storage configuration and published {} recorded ext4 corruption kernel bug warnings",
+        published);
 }
 
 

@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <utime.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
@@ -214,6 +215,49 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
     return fs_info.mnt_fsname;
 #else
     throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getFilesystemName is supported on Linux only");
+#endif
+}
+
+String getDirectoryFilesystemType([[maybe_unused]] const std::string & directory)
+{
+#if defined(OS_LINUX)
+    std::error_code ec;
+    const String canonical_directory = fs::canonical(directory, ec).string();
+    String filesystem_type_of_directory;
+    size_t longest_mount_point_match = 0;
+
+    ReadBufferFromFile mounts_file("/proc/self/mounts");
+    while (!mounts_file.eof())
+    {
+        String line;
+        readStringUntilNewlineInto(line, mounts_file);
+        if (!mounts_file.eof())
+            mounts_file.ignore();
+
+        /// Fields: device, mount point, filesystem type. Skip mount points with escaped characters.
+        size_t p1 = line.find(' ');
+        size_t p2 = (p1 == String::npos) ? String::npos : line.find(' ', p1 + 1);
+        size_t p3 = (p2 == String::npos) ? String::npos : line.find(' ', p2 + 1);
+        if (p3 == String::npos)
+            continue;
+        String mount_point = line.substr(p1 + 1, p2 - p1 - 1);
+        String fs_type = line.substr(p2 + 1, p3 - p2 - 1);
+        if (mount_point.contains('\\'))
+            continue;
+
+        const bool contains_directory = canonical_directory == mount_point
+            || (canonical_directory.starts_with(mount_point)
+                && (mount_point == "/" || canonical_directory[mount_point.size()] == '/'));
+        if (contains_directory && mount_point.size() >= longest_mount_point_match)
+        {
+            longest_mount_point_match = mount_point.size();
+            filesystem_type_of_directory = fs_type;
+        }
+    }
+
+    return filesystem_type_of_directory;
+#else
+    return {};
 #endif
 }
 
