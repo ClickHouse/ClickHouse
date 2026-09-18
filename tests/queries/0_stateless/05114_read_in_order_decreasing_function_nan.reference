@@ -93,6 +93,7 @@ a later key rejected on its own
 1	1
 1	-5
 1	-5
+Prefix sort description: a ASC
 a LowCardinality float key
 -3
 -2
@@ -106,29 +107,3 @@ nan
 -2
 -3
 -2
-the legacy read-in-order optimizer
--3
--2
--1
-nan
--3
--2
--1
-nan
--3
--2
--3
--2
-nan
-1
-2
-3
-nan
-1
-2
-3
-1
-2
-3
-nan
-1

@@ -259,6 +259,17 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             continue;
         }
 
+        /** This optimizer does not model a key column declared `DESC` (a reverse flag) at all:
+          * `matchSortDescriptionAndKey` compares the request against the key as if every column ascended,
+          * so the direction it returns is the one that would serve an ascending key, while
+          * `ReadFromMergeTree` applies the reverse flag once more when it builds the sort description of
+          * the stream it advertises. The advertised order then disagrees with the order the merge upstream
+          * assumes, for every type of key and not only for the `NULL`/`NaN` cases below. Reject a reverse
+          * key column outright until this optimizer can fold the flags into the match direction.
+          */
+        if (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[key_pos])
+            break;
+
         /** A part stores a `Nullable` or `Float` key with its NULLs and NaNs at one physical end, and
           * reading the part cannot move them: a forward read of an ordinary key column produces them
           * last, a backward read produces them first. `nulls_direction` asks for them last exactly when
@@ -266,9 +277,6 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
           * in order - the sort this optimization elides is what used to repair it. `match.direction`
           * already has the monotonicity of the match applied, so `ORDER BY negate(x)` over an ascending
           * `Float` key is a backward read here, and `ASC NULLS LAST` is rejected.
-          *
-          * This optimizer does not model a key column declared `DESC` (a reverse flag), which holds the
-          * NULLs and NaNs at the opposite end, so such a key is rejected outright rather than guessed at.
           */
         if (match.direction)
         {
@@ -278,9 +286,6 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
 
             if (key_can_have_nulls_or_nans)
             {
-                if (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[key_pos])
-                    break;
-
                 const bool produces_nulls_last = match.direction == 1;
                 const bool requests_nulls_last = description[desc_pos].direction == description[desc_pos].nulls_direction;
                 if (produces_nulls_last != requests_nulls_last)

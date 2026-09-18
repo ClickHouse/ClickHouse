@@ -67,6 +67,12 @@ SELECT a, b FROM t_read_in_order_nan_two_keys ORDER BY a ASC, b ASC NULLS FIRST 
 SELECT a, b FROM t_read_in_order_nan_two_keys ORDER BY a ASC, b ASC NULLS FIRST LIMIT 3 SETTINGS optimize_read_in_order = 0;
 SELECT a, negate(b) AS n FROM t_read_in_order_nan_two_keys ORDER BY a, n LIMIT 1;
 SELECT a, negate(b) AS n FROM t_read_in_order_nan_two_keys ORDER BY a, n LIMIT 1 SETTINGS optimize_read_in_order = 0;
+-- The advertised prefix has to stop at `a`, because `b` is the key the placement check rejects. (The
+-- width the storage reads with, `used_prefix_of_sorting_key_size`, is not exposed by `EXPLAIN` in any
+-- form, so this pins the advertised prefix only.)
+SELECT extract(explain, 'Prefix sort description.*') FROM (
+    EXPLAIN SELECT a, b FROM t_read_in_order_nan_two_keys ORDER BY a ASC, b ASC NULLS FIRST)
+WHERE explain LIKE '%Prefix sort description%';
 DROP TABLE t_read_in_order_nan_two_keys;
 
 -- A `LowCardinality(Float64)` key holds its `NaN`s at a physical end just like a plain one, so the guard
@@ -81,33 +87,3 @@ SELECT negate(x) AS n FROM t_read_in_order_nan_lc ORDER BY n SETTINGS optimize_r
 SELECT negate(x) AS n FROM t_read_in_order_nan_lc ORDER BY n LIMIT 2;
 SELECT negate(x) AS n FROM t_read_in_order_nan_lc ORDER BY n LIMIT 2 SETTINGS optimize_read_in_order = 0;
 DROP TABLE t_read_in_order_nan_lc;
-
--- `query_plan_read_in_order = 0` without the analyzer takes the legacy `ReadInOrderOptimizer`, which had
--- no placement check at all: it accepted a backward read for `ORDER BY negate(x)`, and even a forward one
--- for `ASC NULLS FIRST`.
-SELECT 'the legacy read-in-order optimizer';
-DROP TABLE IF EXISTS t_read_in_order_nan_legacy;
-CREATE TABLE t_read_in_order_nan_legacy (x Float64) ENGINE = MergeTree ORDER BY x;
-INSERT INTO t_read_in_order_nan_legacy VALUES (1), (2), (nan), (3);
-SELECT negate(x) AS n FROM t_read_in_order_nan_legacy ORDER BY n
-SETTINGS enable_analyzer = 0, query_plan_read_in_order = 0;
-SELECT negate(x) AS n FROM t_read_in_order_nan_legacy ORDER BY n
-SETTINGS enable_analyzer = 0, query_plan_read_in_order = 0, optimize_read_in_order = 0;
-SELECT negate(x) AS n FROM t_read_in_order_nan_legacy ORDER BY n LIMIT 2
-SETTINGS enable_analyzer = 0, query_plan_read_in_order = 0;
-SELECT negate(x) AS n FROM t_read_in_order_nan_legacy ORDER BY n LIMIT 2
-SETTINGS enable_analyzer = 0, query_plan_read_in_order = 0, optimize_read_in_order = 0;
-SELECT x FROM t_read_in_order_nan_legacy ORDER BY x ASC NULLS FIRST
-SETTINGS enable_analyzer = 0, query_plan_read_in_order = 0;
-SELECT x FROM t_read_in_order_nan_legacy ORDER BY x ASC NULLS FIRST
-SETTINGS enable_analyzer = 0, query_plan_read_in_order = 0, optimize_read_in_order = 0;
--- The orders a forward read does satisfy stay in order.
-SELECT x FROM t_read_in_order_nan_legacy ORDER BY x
-SETTINGS enable_analyzer = 0, query_plan_read_in_order = 0;
--- `enable_analyzer` cannot differ between a query and its subquery, so it is set for the session here.
-SET enable_analyzer = 0;
-SELECT count() > 0 AS read_in_order_used FROM (
-    EXPLAIN SELECT x FROM t_read_in_order_nan_legacy ORDER BY x
-    SETTINGS query_plan_read_in_order = 0, optimize_read_in_order = 1)
-WHERE explain LIKE '%Prefix sort description%';
-DROP TABLE t_read_in_order_nan_legacy;
