@@ -1,0 +1,4 @@
+Variant(Array(Int64), Date32, String)
+Array(Int64)	[1,2]
+Date32	2024-01-02
+String	x

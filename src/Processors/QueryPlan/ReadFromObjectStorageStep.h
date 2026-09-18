@@ -82,7 +82,7 @@ private:
     ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
     const std::optional<DB::FormatSettings> format_settings;
-    const bool need_only_count;
+    bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;
     const size_t max_num_streams;

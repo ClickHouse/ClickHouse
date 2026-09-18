@@ -1,0 +1,15 @@
+-- Mixed Enum8/String, names
+a	String
+x	String
+-- Mixed Enum8/String, numeric representation
+2	Int64
+x	String
+-- Mixed Enum16/Float64, names
+1.5	Float64
+y	String
+-- Mixed Enum16/Float64, numeric representation
+1.5	Float64
+300	Int64
+-- Enum inside a mixed-type object residual
+{'e':'a'}
+{'e':'x'}

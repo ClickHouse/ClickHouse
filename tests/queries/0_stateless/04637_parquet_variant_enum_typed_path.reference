@@ -1,0 +1,12 @@
+-- Dynamic holding Enum8 scalars
+a	String
+b	String
+-- Dynamic holding Enum16 scalars
+x	String
+y	String
+-- Dynamic holding Enum8 scalars, numeric representation
+1	Int8
+2	Int8
+-- JSON typed path declared as enum
+a	Enum8('a' = 1, 'b' = 2)	1
+b	Enum8('a' = 1, 'b' = 2)	2

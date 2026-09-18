@@ -3,8 +3,12 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnDynamic.h>
 
+#include <optional>
+
 namespace DB
 {
+
+class DataTypeVariant;
 
 /// Dynamic column can store only limited number of types as subcolumns.
 /// If this limit is reached, all other types are stored together in a single
@@ -32,5 +36,24 @@ void unflattenDynamicColumn(FlattenedDynamicColumn && flattened_column, ColumnDy
 
 /// Iterate over indexes and calculate the total number of occurrences for each index.
 std::vector<size_t> getLimitsForFlattenedDynamicColumn(const IColumn & indexes_column, size_t num_types);
+
+/// Dynamic subcolumn lookup should treat nested `JSON` types with the same schema as compatible
+/// even if only `max_dynamic_paths`/`max_dynamic_types` differ.
+bool areDynamicSubcolumnTypesCompatible(const DataTypePtr & lhs, const DataTypePtr & rhs);
+
+/// Same, but for reads of a `Dynamic` subcolumn (`d.JSON`, `d.JSON.a`, `dynamicElement`), where the
+/// stored value is converted to the requested type before the value or its subcolumn is extracted.
+/// A stored `JSON(...)` type is compatible when it declares every typed path of the requested type
+/// with a compatible type (it may declare more, and the skipped path sets may differ), so the
+/// conversion always succeeds and never changes the data. The same holds for a nested `Dynamic`
+/// carrier differing only in `max_dynamic_types`.
+/// Do not use for insertion: values of such types cannot be stored in one variant column.
+bool areDynamicSubcolumnTypesCompatibleForRead(const DataTypePtr & stored_type, const DataTypePtr & requested_type);
+
+/// Dynamic storage variants must preserve exact storage type identity where it
+/// affects serialization. For example, `JSON(max_dynamic_paths=0)` and
+/// `JSON(max_dynamic_paths=1)` can expose compatible subcolumns, but they are
+/// distinct stored `Dynamic` variants.
+bool areDynamicStorageTypesCompatible(const DataTypePtr & existing_type, const DataTypePtr & inserted_type);
 
 }

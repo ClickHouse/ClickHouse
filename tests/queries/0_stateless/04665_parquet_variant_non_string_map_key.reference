@@ -1,0 +1,4 @@
+-- Dynamic holding Map(UInt64, String)
+-- Dynamic holding Map(Date, String)
+-- Dynamic holding Map(String, String) still works
+1

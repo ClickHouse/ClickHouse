@@ -1,0 +1,9 @@
+plain	j
+plain	1	2
+plain	\N	3
+variant	j.metadata
+variant	j.typed_value.b.typed_value
+variant	j.typed_value.b.value
+variant	j.value
+variant	1	2
+variant	\N	3
