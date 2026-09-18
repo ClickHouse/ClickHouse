@@ -41,5 +41,5 @@ DROP TABLE t_statistics_pending_readd;
 DROP TABLE IF EXISTS t_statistics_pruned;
 CREATE TABLE t_statistics_pruned (x Int64 STATISTICS(basic)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_statistics_pruned SETTINGS materialize_statistics_on_insert = 1 VALUES (1), (2);
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_statistics_pruned WHERE x = 100) WHERE explain LIKE '%Parts: 0/1%';
+SELECT extract(explain, 'Parts: [0-9]+/[0-9]+') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_statistics_pruned WHERE x = 100) WHERE explain LIKE '%Parts: 0/1%';
 DROP TABLE t_statistics_pruned;
