@@ -6408,8 +6408,8 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
     # `ts_tz` is the selectivity control (it must stay UTC-adjusted) and `vc` carries the char/varchar
     # field annotation. Every Delta field is nullable because `write_deltalake` declares a non-nullable
     # one without listing the `invariants` writer feature its NOT NULL constraint needs, which makes
-    # Spark reject the table for that unrelated reason; the Nullable/non-Nullable pair comes from the
-    # ClickHouse column declaration below, which is what picks the writer path.
+    # Spark reject the table for that unrelated reason. Both ntz columns reach the writer as the Delta
+    # schema's `Nullable(DateTime64(6))`, so the pair proves both ClickHouse declarations get annotated.
     # The table is partitioned on `id` so the INSERT goes through DeltaLakePartitionedSink; the nested
     # test covers the unpartitioned DeltaLakeSink.
     schema = pa.schema(
@@ -6497,6 +6497,39 @@ def test_writes_timestamp_ntz_annotation(started_cluster):
         "2024-06-01 12:00:00.000000\tabc"
     )
 
+    # Version 1 is what the INSERT above committed. A pinned snapshot may not describe the table the
+    # transaction commits into, so the annotation is skipped and the write keeps the UTC-adjusted default.
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(2, '2024-06-02 12:00:00.000000', '2024-06-02 12:00:00.000000', "
+        "'2024-06-02 12:00:00.000000', 'def')",
+        settings={"session_timezone": "UTC", "delta_lake_snapshot_version": 1},
+    )
+
+    pinned_found = (
+        instance.exec_in_container(
+            ["bash", "-c", f"find {result_file}/id=2 -name '*.parquet'"]
+        )
+        .strip()
+        .split("\n")
+    )
+    pinned_files = [name for name in pinned_found if name.endswith(".parquet")]
+    assert len(pinned_files) == 1, pinned_found
+
+    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+
+    pinned_written = pq.read_schema(pinned_files[0])
+    assert pinned_written.field("ts_ntz").type == pa.timestamp(
+        "us", tz="UTC"
+    ), pinned_written
+
+    assert instance.query(
+        f"SELECT id, ts_ntz FROM {table_name} ORDER BY id",
+        settings={"session_timezone": "UTC"},
+    ).strip() == (
+        "1\t2024-06-01 12:00:00.000000\n2\t2024-06-02 12:00:00.000000"
+    )
+
     instance.query(f"DROP TABLE {table_name}")
 
 
@@ -6511,6 +6544,8 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     # per leaf, not per top-level column.
     # A Delta field name may contain a dot, so `sc`'s two leaves both flatten to the path `sc.a.b`; one
     # is `timestamp_ntz` and the other `timestamp`, so neither may be annotated from that path.
+    # `sg` is the same dotted name against a GROUP: the struct `sg.a.b` flattens onto the ntz leaf's path,
+    # but only a leaf path is ever looked up, so the leaf there does keep its annotation.
     schema = pa.schema(
         [
             pa.field("id", pa.int32()),
@@ -6532,6 +6567,20 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
                         pa.field("a.b", pa.timestamp("us")),
                         pa.field(
                             "a", pa.struct([pa.field("b", pa.timestamp("us", tz="UTC"))])
+                        ),
+                    ]
+                ),
+            ),
+            pa.field(
+                "sg",
+                pa.struct(
+                    [
+                        pa.field("a.b", pa.timestamp("us")),
+                        pa.field(
+                            "a",
+                            pa.struct(
+                                [pa.field("b", pa.struct([pa.field("x", pa.int32())]))]
+                            ),
                         ),
                     ]
                 ),
@@ -6560,6 +6609,11 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert (
         log_fields["sc"]["fields"][1]["type"]["fields"][0]["type"] == "timestamp"
     ), log_fields
+    assert log_fields["sg"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+    # `sg.a.b` must be a struct, not a leaf, or the leaf-versus-group case is not exercised at all.
+    sg_inner = log_fields["sg"]["fields"][1]["type"]["fields"][0]["type"]
+    assert sg_inner["type"] == "struct", log_fields
+    assert sg_inner["fields"][0]["type"] == "integer", log_fields
 
     LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
 
@@ -6567,7 +6621,8 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
         f"CREATE TABLE {table_name} (id Int32, "
         "st Tuple(inner_ts DateTime64(6), inner_tz DateTime64(6)), "
         "arr Array(DateTime64(6)), m Map(String, DateTime64(6)), "
-        "sc Tuple(`a.b` DateTime64(6), a Tuple(b DateTime64(6)))) "
+        "sc Tuple(`a.b` DateTime64(6), a Tuple(b DateTime64(6))), "
+        "sg Tuple(`a.b` DateTime64(6), a Tuple(b Tuple(x Int32)))) "
         f"ENGINE = DeltaLakeLocal('{result_file}') "
         "SETTINGS output_format_parquet_compression_method = 'none'"
     )
@@ -6575,7 +6630,8 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
         f"INSERT INTO {table_name} VALUES "
         "(1, ('2024-06-01 12:00:00', '2024-06-01 12:00:00'), "
         "['2024-06-01 12:00:00'], {'k': '2024-06-01 12:00:00'}, "
-        "('2024-06-01 12:00:00', tuple('2024-06-01 12:00:00')))",
+        "('2024-06-01 12:00:00', tuple('2024-06-01 12:00:00')), "
+        "('2024-06-01 12:00:00', tuple(tuple(42))))",
         settings={"session_timezone": "UTC"},
     )
 
@@ -6599,6 +6655,12 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert (
         collision_type.field("a").type.field("b").type == pa.timestamp("us", tz="UTC")
     ), written
+    # The group at the same path is not a competing claim, so this ntz leaf is annotated.
+    group_type = written.field("sg").type
+    assert group_type.field("a.b").type == pa.timestamp("us"), written
+    assert (
+        group_type.field("a").type.field("b").type.field("x").type == pa.int32()
+    ), written
 
     spark = started_cluster.spark_session
     rows = (
@@ -6608,6 +6670,11 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert str(rows[0]["st"]["inner_ts"]) == "2024-06-01 12:00:00", rows
     assert str(rows[0]["arr"][0]) == "2024-06-01 12:00:00", rows
     assert str(rows[0]["m"]["k"]) == "2024-06-01 12:00:00", rows
+
+    # `sg`'s annotated leaf is what Spark could not read before this fix.
+    rows_sg = spark.read.format("delta").load(result_file).select("sg").collect()
+    assert str(rows_sg[0]["sg"]["a.b"]) == "2024-06-01 12:00:00", rows_sg
+    assert rows_sg[0]["sg"]["a"]["b"]["x"] == 42, rows_sg
 
     # `sc` is read separately because it is still annotated as on master, so Spark refuses it with the
     # reported error. Reading it is also what proves the ambiguous path was not annotated after all.

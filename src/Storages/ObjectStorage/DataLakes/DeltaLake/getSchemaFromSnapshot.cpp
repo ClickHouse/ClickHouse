@@ -102,8 +102,8 @@ public:
         DB::NameToNameMap physical_names_map;
         /// Dotted paths of `timestamp_ntz` leaves, spelled the way the Parquet writer spells them.
         std::unordered_set<String> timestamp_ntz_paths;
-        /// Writer paths claimed by any field that is not a `timestamp_ntz` leaf. A Delta field name may
-        /// contain a dot, so two different fields can flatten to one dotted path; a path claimed by both
+        /// Writer paths claimed by a leaf field that is not a `timestamp_ntz` leaf. A Delta field name may
+        /// contain a dot, so two different leaves can flatten to one dotted path; a path claimed by both
         /// is ambiguous and must keep the default annotation.
         std::unordered_set<String> non_ntz_writer_paths;
     };
@@ -511,12 +511,9 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
         ++child_index;
         const std::string field_writer_path
             = parent_writer_path.empty() ? writer_component : parent_writer_path + "." + writer_component;
-        if (field.is_timestamp_ntz)
-            result.timestamp_ntz_paths.insert(field_writer_path);
-        else
-            result.non_ntz_writer_paths.insert(field_writer_path);
 
         DB::DataTypePtr type;
+        bool is_leaf = true;
         if (field.is_bool)
         {
             type = DB::DataTypeFactory::instance().get("Bool");
@@ -543,6 +540,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
         }
         else
         {
+            is_leaf = false;
             if (!field.child_list_id)
             {
                 throw DB::Exception(
@@ -602,6 +600,13 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
         }
         chassert(type);
+        /// Only a leaf path is ever looked up (`preparePrimitiveColumn`), so only a leaf can make a path
+        /// ambiguous; a container that flattens onto a leaf's path never competes for the annotation.
+        if (field.is_timestamp_ntz)
+            result.timestamp_ntz_paths.insert(field_writer_path);
+        else if (is_leaf)
+            result.non_ntz_writer_paths.insert(field_writer_path);
+
         if (!field.physical_name.empty())
         {
             /// Use the full ancestor path as the map key so that lookups in
