@@ -103,6 +103,8 @@ SELECT 'subquery arm, key pruned', count() FROM t2_120650 WHERE dictGet('d_11203
 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) LIKE 'x%' SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
 SELECT 'lowcardinality key pruned', count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) = 'x' SETTINGS force_primary_key = 1;
 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) = 'x' SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
+SELECT 'lowcardinality subquery arm, key pruned', count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) LIKE 'x%' SETTINGS force_primary_key = 1;
+SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) LIKE 'x%' SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
 SELECT 'and spine, key pruned', count() FROM t2_120650 WHERE (dictGet('d_112032', 'a', nid) = 'x' AND bfc IS NOT NULL) AND lc IS NOT NULL SETTINGS force_primary_key = 1;
 SELECT count() FROM t2_120650 WHERE (dictGet('d_112032', 'a', nid) = 'x' AND bfc IS NOT NULL) AND lc IS NOT NULL SETTINGS force_primary_key = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError INDEX_NOT_USED }
 SELECT 'prewhere, key pruned', count() FROM t2_120650 PREWHERE dictGet('d_112032', 'a', nid) = 'x' SETTINGS force_primary_key = 1;
@@ -130,6 +132,10 @@ SELECT 'granules pruned, lowcardinality PK', countIf(toUInt64OrZero(extract(expl
   FROM (EXPLAIN indexes = 1 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) = 'x') WHERE explain ILIKE '%Granules:%';
 SELECT 'granules pruned, lowcardinality PK, rewrite off', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
   FROM (EXPLAIN indexes = 1 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0) WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, lowcardinality subquery arm', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) LIKE 'x%') WHERE explain ILIKE '%Granules:%';
+SELECT 'granules pruned, lowcardinality subquery arm, rewrite off', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
+  FROM (EXPLAIN indexes = 1 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) LIKE 'x%' SETTINGS optimize_inverse_dictionary_lookup = 0) WHERE explain ILIKE '%Granules:%';
 SELECT 'granules pruned, skip index', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
   FROM (EXPLAIN indexes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', bfc) = 'x') WHERE explain ILIKE '%Granules:%';
 SELECT 'granules pruned, skip index, rewrite off', countIf(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)'))) > 0
@@ -190,6 +196,9 @@ SELECT 'projection values, rewrite off', count(dictGet('d_112032', 'a', nid) = '
        count(dictGet('d_112032', 'a', nid) LIKE 'x%'), sum(dictGet('d_112032', 'a', nid) LIKE 'x%'),
        count(dictGet('d_112032', 'a', lc) = 'x'), sum(dictGet('d_112032', 'a', lc) = 'x'),
        count(dictGet('d_112032', 'a', lc) LIKE 'x%'), sum(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t2_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'lowcardinality subquery arm value', count(dictGet('d_112032', 'a', lc) LIKE 'x%'), sum(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t3_120650;
+SELECT 'lowcardinality subquery arm value, setting off', count(dictGet('d_112032', 'a', lc) LIKE 'x%'), sum(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t3_120650 SETTINGS transform_null_in = 0;
+SELECT 'lowcardinality subquery arm value, rewrite off', count(dictGet('d_112032', 'a', lc) LIKE 'x%'), sum(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t3_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
 WITH dictGet('d_112032', 'a', nid) = 'x' AS p SELECT 'shared node value', count(p) FROM t2_120650 WHERE p;
 WITH dictGet('d_112032', 'a', nid) = 'x' AS p SELECT 'shared node value, setting off', count(p) FROM t2_120650 WHERE p SETTINGS transform_null_in = 0;
 WITH dictGet('d_112032', 'a', nid) = 'x' AS p SELECT 'shared node value, rewrite off', count(p) FROM t2_120650 WHERE p SETTINGS optimize_inverse_dictionary_lookup = 0;
@@ -209,6 +218,16 @@ SELECT 'where form if', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT c
 SELECT 'where form dictGet', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) = 'x') WHERE explain ILIKE '%function_name: dictGet%';
 SELECT 'prewhere form indexHint', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 PREWHERE dictGet('d_112032', 'a', nid) = 'x') WHERE explain ILIKE '%function_name: indexHint%';
 SELECT 'subquery arm indexHint', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) LIKE 'x%') WHERE explain ILIKE '%function_name: indexHint%';
+SELECT 'lowcardinality subquery arm indexHint', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) LIKE 'x%') WHERE explain ILIKE '%function_name: indexHint%';
+-- Both arms restore the comparison's own result type, and a `LowCardinality(Nullable)` key is the carrier
+-- that needs a `_CAST` for it. Counting that cast against the plain `Nullable` key's count of the same
+-- query keeps a cast either tree would have anyway out of the comparison.
+SELECT 'lowcardinality const arm keeps its type',
+  (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', lc) = 'x') FROM t2_120650) WHERE explain ILIKE '%function_name: _CAST%')
+  > (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) = 'x') FROM t2_120650) WHERE explain ILIKE '%function_name: _CAST%');
+SELECT 'lowcardinality subquery arm keeps its type',
+  (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t2_120650) WHERE explain ILIKE '%function_name: _CAST%')
+  > (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) LIKE 'x%') FROM t2_120650) WHERE explain ILIKE '%function_name: _CAST%');
 SELECT 'subquery arm dictGet', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) LIKE 'x%') WHERE explain ILIKE '%function_name: dictGet%';
 SELECT 'projection form indexHint', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) = 'x') FROM t2_120650) WHERE explain ILIKE '%function_name: indexHint%';
 SELECT 'projection form nullIn', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) = 'x') FROM t2_120650) WHERE explain ILIKE '%function_name: nullIn%';

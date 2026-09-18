@@ -25,6 +25,7 @@ nested nullable, setting off	100	3
 const arm, key pruned	3
 subquery arm, key pruned	3
 lowcardinality key pruned	3
+lowcardinality subquery arm, key pruned	3
 and spine, key pruned	3
 prewhere, key pruned	3
 and with a second set, key pruned	1
@@ -36,6 +37,8 @@ granules pruned, subquery arm	1
 granules pruned, subquery arm, rewrite off	0
 granules pruned, lowcardinality PK	1
 granules pruned, lowcardinality PK, rewrite off	0
+granules pruned, lowcardinality subquery arm	1
+granules pruned, lowcardinality subquery arm, rewrite off	0
 granules pruned, skip index	1
 granules pruned, skip index, rewrite off	0
 where values	3	897	4	3	3	3
@@ -51,6 +54,9 @@ and with a second set value, rewrite off	1
 projection values	900	3	900	3	900	3	900	3
 projection values, setting off	900	3	900	3	900	3	900	3
 projection values, rewrite off	900	3	900	3	900	3	900	3
+lowcardinality subquery arm value	900	3
+lowcardinality subquery arm value, setting off	900	3
+lowcardinality subquery arm value, rewrite off	900	3
 shared node value	3
 shared node value, setting off	3
 shared node value, rewrite off	3
@@ -63,6 +69,9 @@ where form if	1
 where form dictGet	0
 prewhere form indexHint	1
 subquery arm indexHint	1
+lowcardinality subquery arm indexHint	1
+lowcardinality const arm keeps its type	1
+lowcardinality subquery arm keeps its type	1
 subquery arm dictGet	0
 projection form indexHint	0
 projection form nullIn	1
