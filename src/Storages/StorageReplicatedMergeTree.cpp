@@ -10611,7 +10611,8 @@ std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidat
             {
                 throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected retryable ZooKeeper error for the check_table_inject_retryable_zk_error failpoint");
             });
-            return part_check_thread.checkPartAndFix(part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true);
+            return part_check_thread.checkPartAndFix(
+                part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true, /* throw_if_cancelled */true);
         }
         catch (const Exception & ex)
         {
