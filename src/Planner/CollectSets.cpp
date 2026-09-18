@@ -8,6 +8,7 @@
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
@@ -18,6 +19,7 @@
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerUncorrelatedSubqueries.h>
 
 #include <unordered_set>
 
@@ -51,6 +53,8 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        enterJoinRewriteScope(node);
+
         if (const auto * constant_node = node->as<ConstantNode>())
             /// Collect sets from source expression as well.
             /// Most likely we will not build them, but those sets could be requested during analysis.
@@ -69,6 +73,18 @@ public:
                 "Function '{}' is expected to have at least 2 arguments, got {}",
                 function_node->getFunctionName(),
                 function_node->getArguments().getNodes().size());
+
+        /// The planner evaluates this `IN` with a join, so it needs no set. This is the only occurrence
+        /// that leaves without building one: an occurrence in a blocked scope takes the rewrite back and
+        /// builds the set on its way through here.
+        if (const auto * in_to_join_rewrite_root = getUnblockedJoinRewriteRoot(node))
+        {
+            if (canRewriteInToJoin(node, query_node, in_to_join_rewrite_root, planner_context))
+            {
+                planner_context.addInSubqueryForJoinRewrite(in_to_join_rewrite_root, node);
+                return;
+            }
+        }
 
         auto in_first_argument = function_node->getArguments().getNodes().at(0);
         auto in_second_argument = function_node->getArguments().getNodes().at(1);
@@ -159,6 +175,11 @@ public:
         }
     }
 
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        leaveJoinRewriteScope(node);
+    }
+
     static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child_node)
     {
         auto child_node_type = child_node->getNodeType();
@@ -166,8 +187,101 @@ public:
     }
 
 private:
+    void enterJoinRewriteScope(const QueryTreeNodePtr & node)
+    {
+        if (node->as<QueryNode>())
+        {
+            query_node = node;
+            return;
+        }
+
+        if (!query_node)
+            return;
+
+        if (isBlockedScope(node))
+            ++blocked_depth;
+
+        /// Every join the rewrite can add is below this scope, so an `IN` here keeps its set - and so does
+        /// the same `IN` wherever else the query reads it, which the walk may have taken already.
+        if (blocked_depth != 0)
+        {
+            const auto * function_node = node->as<FunctionNode>();
+            if (function_node && isNameOfInFunction(function_node->getFunctionName())
+                && blocked_in_subqueries.insert(node.get()).second)
+                planner_context.removeInSubqueryForJoinRewrite(node);
+            return;
+        }
+
+        if (join_rewrite_root)
+            return;
+
+        /// Whether this node roots one of the four expressions the IN to JOIN rewrite can insert its join under.
+        const auto & typed_query_node = query_node->as<const QueryNode &>();
+        if (node == typed_query_node.getWhere() || node == typed_query_node.getHaving()
+            || node == typed_query_node.getQualify() || node == typed_query_node.getProjectionNode())
+            join_rewrite_root = node.get();
+    }
+
+    void leaveJoinRewriteScope(const QueryTreeNodePtr & node)
+    {
+        if (!query_node)
+            return;
+
+        if (isBlockedScope(node))
+        {
+            --blocked_depth;
+            return;
+        }
+
+        if (join_rewrite_root == node.get())
+            join_rewrite_root = nullptr;
+    }
+
+    /// The expression the rewrite would insert the join for `node` under, or null when a scope that no
+    /// join can be added under reads it - the one being walked right now, or any other.
+    const IQueryTreeNode * getUnblockedJoinRewriteRoot(const QueryTreeNodePtr & node) const
+    {
+        if (blocked_in_subqueries.contains(node.get()))
+            return nullptr;
+
+        return join_rewrite_root;
+    }
+
+    /// A scope whose expressions no join the rewrite can add is below, so an `IN` here is evaluated with
+    /// a set and cannot be rewritten anywhere else in the query either.
+    bool isBlockedScope(const QueryTreeNodePtr & node) const
+    {
+        /// A lambda parameter is not a column of the plan header, so there is nothing to join on.
+        if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
+            return true;
+
+        /// `PREWHERE` is computed by the reading step, `JOIN ON` and `ARRAY JOIN` by the join tree, the
+        /// grouping keys by the aggregation step and the window definitions by the window step.
+        const auto & typed_query_node = query_node->as<const QueryNode &>();
+        if (node == typed_query_node.getPrewhere() || node == typed_query_node.getJoinTreeNode()
+            || node == typed_query_node.getGroupByNode() || node == typed_query_node.getWindowNode())
+            return true;
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return false;
+
+        /// `indexHint` builds its arguments into a dag that has no join above it.
+        /// The arguments of an aggregate or window function are built by the aggregation or window step.
+        return function_node->getFunctionName() == "indexHint" || function_node->isAggregateFunction()
+            || function_node->isWindowFunction();
+    }
+
     PlannerContext & planner_context;
     std::vector<QueryTreeNodePtr> & pending_source_expressions;
+
+    /// The query level being visited.
+    QueryTreeNodePtr query_node;
+    /// The expression the rewrite would insert its join under.
+    const IQueryTreeNode * join_rewrite_root = nullptr;
+    int blocked_depth = 0;
+    /// IN subqueries that occurred in a blocked scope.
+    std::unordered_set<const IQueryTreeNode *> blocked_in_subqueries;
 };
 
 }

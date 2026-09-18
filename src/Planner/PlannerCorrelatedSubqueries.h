@@ -4,8 +4,6 @@
 #include <string_view>
 #include <vector>
 
-#include <DataTypes/IDataType.h>
-#include <Analyzer/HashUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
@@ -27,7 +25,6 @@ enum class CorrelatedSubqueryKind
 {
     SCALAR,
     EXISTS,
-    IN,
 };
 
 struct CorrelatedSubquery
@@ -39,24 +36,10 @@ struct CorrelatedSubquery
         , correlated_column_identifiers(std::move(correlated_column_identifiers_))
     {}
 
-    /// IN only.
-    CorrelatedSubquery(QueryTreeNodePtr subquery_, const String & action_node_name_, ColumnIdentifiers correlated_column_identifiers_, QueryTreeNodePtr left_key_, bool is_negated_)
-        : query_tree(std::move(subquery_))
-        , kind(CorrelatedSubqueryKind::IN)
-        , action_node_name(action_node_name_)
-        , correlated_column_identifiers(std::move(correlated_column_identifiers_))
-        , left_key(std::move(left_key_))
-        , is_negated(is_negated_)
-    {}
-
     QueryTreeNodePtr query_tree;
     CorrelatedSubqueryKind kind;
     String action_node_name;
     ColumnIdentifiers correlated_column_identifiers;
-
-    /// IN only.
-    QueryTreeNodePtr left_key;
-    bool is_negated = false;
 };
 
 using CorrelatedSubqueries = std::vector<CorrelatedSubquery>;

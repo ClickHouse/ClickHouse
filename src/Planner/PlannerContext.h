@@ -21,6 +21,8 @@ class QueryNode;
 class TableNode;
 class UnionNode;
 
+using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
+
 struct FiltersForTableExpression
 {
     std::shared_ptr<const ActionsDAG> filter_actions;
@@ -195,6 +197,32 @@ public:
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
 
+    /// `expression_root` is the expression the join that evaluates this `IN` is inserted under.
+    void addInSubqueryForJoinRewrite(const IQueryTreeNode * expression_root, const QueryTreeNodePtr & node)
+    {
+        in_to_join_subqueries.insert(node.get());
+        in_to_join_subqueries_by_expression[expression_root].push_back(node);
+    }
+
+    void removeInSubqueryForJoinRewrite(const QueryTreeNodePtr & node)
+    {
+        in_to_join_subqueries.erase(node.get());
+
+        for (auto & [_, nodes] : in_to_join_subqueries_by_expression)
+            std::erase(nodes, node);
+    }
+
+    bool isInSubqueryForJoinRewrite(const QueryTreeNodePtr & node) const { return in_to_join_subqueries.contains(node.get()); }
+
+    /// The `IN` of one expression, in the order it computes them.
+    const QueryTreeNodes & getInSubqueriesForJoinRewrite(const IQueryTreeNode * expression_root) const
+    {
+        static const QueryTreeNodes none;
+
+        auto it = in_to_join_subqueries_by_expression.find(expression_root);
+        return it == in_to_join_subqueries_by_expression.end() ? none : it->second;
+    }
+
     /// Returns false if any of following conditions met:
     /// 1. Query is executed on a follower node.
     /// 2. ignore_ast_optimizations is set.
@@ -222,6 +250,9 @@ private:
 
     /// Set key to set
     PreparedSets prepared_sets;
+
+    std::unordered_set<const IQueryTreeNode *> in_to_join_subqueries;
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodes> in_to_join_subqueries_by_expression;
 };
 
 }

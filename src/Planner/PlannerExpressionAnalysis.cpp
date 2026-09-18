@@ -22,6 +22,7 @@
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
@@ -50,6 +51,100 @@ namespace ErrorCodes
 namespace
 {
 
+/** Construct the analysis result for the `IN` of `expression` that the planner to will evaluate with a join
+  * The columns the joins use as keys are added into the actions chain as a a separate step below the step
+  * that reads the join result.
+  */
+InToJoinAnalysisResult analyzeInToJoin(
+    const QueryTreeNodePtr & expression,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    ActionsChain & actions_chain)
+{
+    InToJoinAnalysisResult result;
+
+    NameSet input_column_names;
+    for (const auto & column : input_columns)
+        input_column_names.insert(column.name);
+
+    for (const auto & in_node : planner_context->getInSubqueriesForJoinRewrite(expression.get()))
+    {
+        /// Skip an `IN` that another step already delivers as an input column.
+        auto action_node_name = calculateActionNodeName(in_node, *planner_context);
+        if (!input_column_names.insert(action_node_name).second)
+            continue;
+
+        const auto & function_node = in_node->as<const FunctionNode &>();
+        result.subqueries.emplace_back(
+            getInToJoinKeyElements(function_node),
+            function_node.getArguments().getNodes()[1],
+            action_node_name,
+            function_node.getResultType(),
+            function_node.getFunctionName() == "notIn");
+    }
+
+    if (result.subqueries.empty())
+        return result;
+
+    QueryTreeNodes key_elements;
+    for (const auto & in_subquery : result.subqueries)
+        key_elements.insert(key_elements.end(), in_subquery.key_elements.begin(), in_subquery.key_elements.end());
+
+    const size_t key_elements_count = key_elements.size();
+    auto [key_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        std::make_shared<ListNode>(std::move(key_elements)),
+        input_columns,
+        planner_context,
+        correlated_columns_set);
+    correlated_subtrees.assertEmpty("in the left argument of IN");
+
+    /// One output per key, in the order the list was built.
+    if (key_dag.getOutputs().size() != key_elements_count)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The dag for the left arguments of `IN` has {} outputs. Expected {}",
+            key_dag.getOutputs().size(),
+            key_elements_count);
+
+    auto key_outputs = key_dag.getOutputs();
+    size_t key_output_index = 0;
+    bool has_computed_key = false;
+
+    NameSet distinct_key_names;
+    ActionsDAG::NodeRawConstPtrs distinct_key_outputs;
+
+    for (auto & in_subquery : result.subqueries)
+    {
+        for (size_t i = 0; i < in_subquery.key_elements.size(); ++i)
+        {
+            const auto * key_output = key_outputs[key_output_index++];
+            has_computed_key |= key_output->type != ActionsDAG::ActionType::INPUT;
+            in_subquery.key_column_names.push_back(key_output->result_name);
+
+            /// Two `IN` can key on the same expression, and a block cannot carry one column twice.
+            if (distinct_key_names.insert(key_output->result_name).second)
+                distinct_key_outputs.push_back(key_output);
+        }
+    }
+
+    key_dag.getOutputs() = std::move(distinct_key_outputs);
+
+    ColumnsWithTypeAndName in_results;
+    in_results.reserve(result.subqueries.size());
+    for (const auto & in_subquery : result.subqueries)
+        in_results.emplace_back(nullptr, in_subquery.result_type, in_subquery.action_node_name);
+
+    auto key_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    key_actions->dag = std::move(key_dag);
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(key_actions, /*use_actions_nodes_as_output_columns=*/true, std::move(in_results)));
+
+    if (has_computed_key)
+        result.key_actions = std::move(key_actions);
+
+    return result;
+}
+
 /** Construct filter analysis result for filter expression node
   * Actions before filter are added into into actions chain.
   * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
@@ -63,13 +158,7 @@ std::optional<FilterAnalysisResult> analyzeFilter(
 {
     FilterAnalysisResult result;
 
-    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
-        filter_expression_node,
-        input_columns,
-        planner_context,
-        correlated_columns_set,
-        /*use_column_identifier_as_action_node_name=*/true,
-        /*can_rewrite_in_to_join=*/true);
+    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context, correlated_columns_set);
 
     result.filter_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     result.filter_actions->dag = std::move(filter_expression_dag);
@@ -468,9 +557,7 @@ ProjectionAnalysisResult analyzeProjection(
         query_node.getProjectionNode(),
         input_columns,
         planner_context,
-        correlated_columns_set,
-        /*use_column_identifier_as_action_node_name=*/true,
-        /*can_rewrite_in_to_join=*/true);
+        correlated_columns_set);
 
     auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     projection_actions->dag = std::move(projection_actions_dag);
@@ -706,6 +793,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (query_node.hasWhere())
     {
+        auto in_to_join = analyzeInToJoin(
+            query_node.getWhere(),
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (in_to_join.notEmpty())
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
         where_analysis_result_optional = analyzeFilter(
             query_node.getWhere(),
             current_output_columns,
@@ -714,6 +810,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             actions_chain);
         if (where_analysis_result_optional)
         {
+            where_analysis_result_optional->in_to_join = std::move(in_to_join);
             where_action_step_index_optional = actions_chain.getLastStepIndex();
             current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
         }
@@ -733,6 +830,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (query_node.hasHaving())
     {
+        auto in_to_join = analyzeInToJoin(
+            query_node.getHaving(),
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (in_to_join.notEmpty())
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
         having_analysis_result_optional = analyzeFilter(
             query_node.getHaving(),
             current_output_columns,
@@ -741,6 +847,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             actions_chain);
         if (having_analysis_result_optional)
         {
+            having_analysis_result_optional->in_to_join = std::move(in_to_join);
             having_action_step_index_optional = actions_chain.getLastStepIndex();
             current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
         }
@@ -760,6 +867,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (query_node.hasQualify())
     {
+        auto in_to_join = analyzeInToJoin(
+            query_node.getQualify(),
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (in_to_join.notEmpty())
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
         qualify_analysis_result_optional = analyzeFilter(
             query_node.getQualify(),
             current_output_columns,
@@ -768,10 +884,20 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             actions_chain);
         if (qualify_analysis_result_optional)
         {
+            qualify_analysis_result_optional->in_to_join = std::move(in_to_join);
             qualify_action_step_index_optional = actions_chain.getLastStepIndex();
             current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
         }
     }
+
+    auto in_to_join = analyzeInToJoin(
+        query_node.getProjectionNode(),
+        current_output_columns,
+        planner_context,
+        correlated_columns_set,
+        actions_chain);
+    if (in_to_join.notEmpty())
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
     auto projection_analysis_result = analyzeProjection(
         query_node,
@@ -779,6 +905,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         planner_context,
         correlated_columns_set,
         actions_chain);
+    projection_analysis_result.in_to_join = std::move(in_to_join);
     current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
     std::optional<SortAnalysisResult> sort_analysis_result_optional;

@@ -9,16 +9,27 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Planner/PlannerUncorrelatedSubqueries.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
 #include <Planner/PlannerWindowFunctions.h>
 
 namespace DB
 {
 
+struct InToJoinAnalysisResult
+{
+    bool notEmpty() const noexcept { return !subqueries.empty(); }
+
+    UncorrelatedInSubqueries subqueries;
+    /// The actions that compute the columns the joins key on.
+    ActionsAndProjectInputsFlagPtr key_actions;
+};
+
 struct ProjectionAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr projection_actions;
     CorrelatedSubtrees correlated_subtrees;
+    InToJoinAnalysisResult in_to_join;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
     ActionsAndProjectInputsFlagPtr project_names_actions;
@@ -28,6 +39,7 @@ struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
     CorrelatedSubtrees correlated_subtrees;
+    InToJoinAnalysisResult in_to_join;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };

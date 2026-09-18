@@ -27,7 +27,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/SelectQueryOptions.h>
 
 #include <Parsers/SelectUnionMode.h>
 
@@ -1173,16 +1172,6 @@ QueryPlan buildLogicalJoin(
     return result_plan;
 }
 
-/// Plan a subquery that is not correlated.
-Planner buildPlannerForSubquery(const QueryTreeNodePtr & subquery, const SelectQueryOptions & select_query_options)
-{
-    auto subquery_options = select_query_options.subquery();
-    Planner subquery_planner(
-        subquery, subquery_options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
-    subquery_planner.buildQueryPlanIfNeeded();
-    return subquery_planner;
-}
-
 Planner buildPlannerForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
     const CorrelatedSubquery & correlated_subquery,
@@ -1253,85 +1242,6 @@ void addStepForResultRenaming(
     correlated_subquery_plan.addStep(std::move(expression_step));
 }
 
-/// Compare the subquery result with the left argument of `IN`: the comparison reads the outer columns through PLACEHOLDER nodes.
-// A subquery of several columns is compared element by element when the left argument is a tuple, or as a whole otherwise.
-void addStepForInComparison(
-    const CorrelatedSubquery & correlated_subquery,
-    QueryPlan & subquery_plan,
-    const PlannerContextPtr & planner_context)
-{
-    const auto & query_context = planner_context->getQueryContext();
-    auto & function_factory = FunctionFactory::instance();
-
-    ColumnNodePtrWithHashSet left_key_columns;
-    collectExpressionColumns(correlated_subquery.left_key, *planner_context, left_key_columns);
-
-    auto [left_key_dag, key_correlated_subtrees] = buildActionsDAGFromExpressionNode(
-        correlated_subquery.left_key, /*input_columns=*/{}, planner_context, left_key_columns);
-    key_correlated_subtrees.assertEmpty("in the left argument of IN");
-
-    const auto & subquery_header = subquery_plan.getCurrentHeader();
-    ActionsDAG filter_dag(subquery_header->getColumnsWithTypeAndName());
-
-    ActionsDAG::NodeRawConstPtrs rhs_nodes = filter_dag.getOutputs();
-    ActionsDAG::NodeRawConstPtrs lhs_nodes;
-    filter_dag.mergeNodes(std::move(left_key_dag), &lhs_nodes);
-
-    const auto * left_key_node = lhs_nodes.front();
-    if (rhs_nodes.size() > 1)
-    {
-        if (left_key_node->type == ActionsDAG::ActionType::FUNCTION && left_key_node->function_base->getName() == "tuple"
-            && left_key_node->children.size() == rhs_nodes.size())
-            lhs_nodes = left_key_node->children;
-        else
-            rhs_nodes = {&filter_dag.addFunction(function_factory.get("tuple", query_context), std::move(rhs_nodes), {})};
-    }
-
-    ActionsDAG::NodeRawConstPtrs equalities;
-    equalities.reserve(lhs_nodes.size());
-    for (size_t i = 0; i < lhs_nodes.size(); ++i)
-        equalities.push_back(
-            &filter_dag.addFunction(function_factory.get("equals", query_context), {lhs_nodes[i], rhs_nodes[i]}, {}));
-
-    const auto * predicate = equalities.size() == 1
-        ? equalities.front()
-        : &filter_dag.addFunction(function_factory.get("and", query_context), std::move(equalities), {});
-    filter_dag.getOutputs().push_back(predicate);
-
-    auto filter_step = std::make_unique<FilterStep>(
-        subquery_header, std::move(filter_dag), predicate->result_name, /*remove_filter_column_=*/true);
-    filter_step->setStepDescription("Compare the left argument of IN with the subquery result");
-    subquery_plan.addStep(std::move(filter_step));
-}
-
-/// `x NOT IN (subquery)`: the join produces a membership marker, so negate it.
-void addStepForMarkerNegation(
-    const CorrelatedSubquery & correlated_subquery,
-    QueryPlan & query_plan,
-    const PlannerContextPtr & planner_context)
-{
-    auto & function_factory = FunctionFactory::instance();
-    const auto & query_context = planner_context->getQueryContext();
-
-    const auto & joined_header = query_plan.getCurrentHeader();
-    ActionsDAG negate_dag(joined_header->getNamesAndTypesList());
-    ActionsDAG::NodeRawConstPtrs negate_outputs;
-    negate_outputs.reserve(negate_dag.getInputs().size());
-    for (const auto * input : negate_dag.getInputs())
-    {
-        if (input->result_name == correlated_subquery.action_node_name)
-            negate_outputs.push_back(&negate_dag.addFunction(
-                function_factory.get("not", query_context), {input}, correlated_subquery.action_node_name));
-        else
-            negate_outputs.push_back(input);
-    }
-    negate_dag.getOutputs() = std::move(negate_outputs);
-
-    auto negate_step = std::make_unique<ExpressionStep>(joined_header, std::move(negate_dag));
-    negate_step->setStepDescription("Negate the IN result for NOT IN");
-    query_plan.addStep(std::move(negate_step));
-}
-
 }
 
 /* Build query plan for correlated subquery using decorrelation algorithm
@@ -1353,27 +1263,57 @@ void buildQueryPlanForCorrelatedSubquery(
     const CorrelatedSubquery & correlated_subquery,
     const SelectQueryOptions & select_query_options)
 {
-    /// The `IN` subquery is not correlated: the comparison added later is what correlates it.
-    Planner subquery_planner = correlated_subquery.kind == CorrelatedSubqueryKind::IN
-        ? buildPlannerForSubquery(correlated_subquery.query_tree, select_query_options)
-        : buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
-    /// Logical plan for correlated subquery
-    auto & correlated_query_plan = subquery_planner.getQueryPlan();
+    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
     switch (correlated_subquery.kind)
     {
         case DB::CorrelatedSubqueryKind::SCALAR:
         {
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
+            /// Logical plan for correlated subquery
+            auto & correlated_query_plan = subquery_planner.getQueryPlan();
+
             addStepForResultRenaming(correlated_subquery, correlated_query_plan, planner_context);
-            break;
-        }
-        case CorrelatedSubqueryKind::IN:
-        {
-            addStepForInComparison(correlated_subquery, correlated_query_plan, planner_context);
+
+            /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
+            /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
+            auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
+
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
+
+            DecorrelationContext context{
+                .correlated_subquery = correlated_subquery,
+                .planner_context = planner_context,
+                .query_plan = std::move(query_plan),
+                .correlated_query_plan = std::move(correlated_plan),
+                .correlated_plan_steps = std::move(correlated_step_map),
+                .scope_stack = { DecorrelationScope{} }
+            };
+
+            auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
+            buildRenamingForScalarSubquery(decorrelated_plan, correlated_subquery);
+
+            /// Use LEFT OUTER JOIN to produce the result plan.
+            query_plan = buildLogicalJoin(
+                planner_context,
+                std::move(context.query_plan),
+                std::move(decorrelated_plan),
+                correlated_subquery,
+                context.uses_in_memory_buffer);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
         {
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
+            /// Logical plan for correlated subquery
+            auto & correlated_query_plan = subquery_planner.getQueryPlan();
+
             /// For EXISTS expression we can remove plan steps that doesn't change the number of result rows.
             /// It may also result in non-correlated subquery plan
             /// Example:
@@ -1384,59 +1324,41 @@ void buildQueryPlanForCorrelatedSubquery(
                 buildExistsResultExpression(query_plan, correlated_subquery, /*project_only_correlated_columns=*/false);
                 return;
             }
-            break;
-        }
-    }
 
-    /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
-    /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
-    auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
+            /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
+            /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
+            auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
-    auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
-    /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
-    /// so they stay alive after decorrelation destroys the correlated plan.
-    for (const auto & ctx : correlated_plan.getInterpretersContexts())
-        query_plan.addInterpreterContext(ctx);
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
 
-    DecorrelationContext context{
-        .correlated_subquery = correlated_subquery,
-        .planner_context = planner_context,
-        .query_plan = std::move(query_plan),
-        .correlated_query_plan = std::move(correlated_plan),
-        .correlated_plan_steps = std::move(correlated_step_map),
-        .scope_stack = { DecorrelationScope{} }
-    };
+            DecorrelationContext context{
+                .correlated_subquery = correlated_subquery,
+                .planner_context = planner_context,
+                .query_plan = std::move(query_plan),
+                .correlated_query_plan = std::move(correlated_plan),
+                .correlated_plan_steps = std::move(correlated_step_map),
+                .scope_stack = { DecorrelationScope{} }
+            };
 
-    auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
-
-    switch (correlated_subquery.kind)
-    {
-        case CorrelatedSubqueryKind::SCALAR:
-        {
-            buildRenamingForScalarSubquery(decorrelated_plan, correlated_subquery);
-            break;
-        }
-        /// `IN` contributes the same marker column as `EXISTS`.
-        case CorrelatedSubqueryKind::IN:
-        case CorrelatedSubqueryKind::EXISTS:
-        {
+            auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
             /// Add a 'exists(<table expression id>)' expression that is always true.
             buildExistsResultExpression(decorrelated_plan, correlated_subquery, /*project_only_correlated_columns=*/true);
+
+            /// Use LEFT OUTER JOIN to produce the result plan.
+            /// If there's no corresponding rows from the right side, 'exists(<table expression id>)' would be replaced by default value (false).
+            query_plan = buildLogicalJoin(
+                planner_context,
+                std::move(context.query_plan),
+                std::move(decorrelated_plan),
+                correlated_subquery,
+                context.uses_in_memory_buffer);
             break;
         }
     }
-
-    /// Use LEFT OUTER JOIN to produce the result plan.
-    /// If there's no corresponding rows from the right side, 'exists(<table expression id>)' would be replaced by default value (false).
-    query_plan = buildLogicalJoin(
-        planner_context,
-        std::move(context.query_plan),
-        std::move(decorrelated_plan),
-        correlated_subquery,
-        context.uses_in_memory_buffer);
-
-    if (correlated_subquery.is_negated)
-        addStepForMarkerNegation(correlated_subquery, query_plan, planner_context);
 }
 
 }
