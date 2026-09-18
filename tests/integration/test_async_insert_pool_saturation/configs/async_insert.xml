@@ -1,0 +1,4 @@
+<clickhouse>
+    <async_insert_threads>1</async_insert_threads>
+    <async_insert_queue_flush_on_shutdown>true</async_insert_queue_flush_on_shutdown>
+</clickhouse>
