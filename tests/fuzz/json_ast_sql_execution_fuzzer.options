@@ -18,6 +18,16 @@ detect_leaks = 0
 --max_memory_usage=2000000000
 --max_parser_backtracks=10000
 --max_query_size=0
+# Reach experimental code paths too.
+--allow_experimental_correlated_subqueries=1
+--allow_experimental_full_text_index=1
+--allow_experimental_lightweight_update=1
+--allow_experimental_time_time64_type=1
+--allow_experimental_qbit_type=1
+--allow_suspicious_low_cardinality_types=1
+--allow_suspicious_types_in_group_by=1
+--allow_suspicious_types_in_order_by=1
+--allow_not_comparable_types_in_order_by=1
 # Table functions and engines that reach out to other servers (`mysql`, `remote`, `url`, `s3`) must fail fast.
 --connect_timeout=1
 --connect_timeout_with_failover_ms=200

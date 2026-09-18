@@ -288,6 +288,8 @@ private:
                     break;
                 }
                 case Property::kNullValue: out += "null"; break;
+                case Property::kFunctionName: writeEscapedString(enumJSONText(FunctionName_descriptor(), prop.function_name())); break;
+                case Property::kSettingName: writeEscapedString(enumJSONText(SettingName_descriptor(), prop.setting_name())); break;
                 case Property::VALUE_NOT_SET: break;
             }
         }
@@ -454,8 +456,14 @@ void varToProperty(const std::string & key, const Poco::Dynamic::Var & value, Pr
     else if (value.isString())
     {
         std::string text = value.convert<std::string>();
+        const auto & function_names = textToEnumTable<FunctionName>(FunctionName_descriptor());
+        const auto & setting_names = textToEnumTable<SettingName>(SettingName_descriptor());
         if (auto it = known_strings.find(text); it != known_strings.end())
             prop.set_known_string(it->second);
+        else if (auto fn = function_names.find(text); key == "name" && fn != function_names.end())
+            prop.set_function_name(fn->second);
+        else if (auto st = setting_names.find(text); key == "name" && st != setting_names.end())
+            prop.set_setting_name(st->second);
         else
             prop.set_string_value(text);
     }

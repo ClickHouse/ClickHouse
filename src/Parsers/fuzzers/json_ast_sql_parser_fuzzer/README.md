@@ -73,8 +73,12 @@ the ~90 node types with its own message:
   elements for `Array`, `Tuple` and `Map`.
 - `KnownString` enumerates every string constant that some `readJSON` accepts for an
   enumeration-like property (`union_mode`, join `kind`/`strictness`/`locality`, `Function.kind`,
-  `command_type`, `query_type`, `field_type`, ...) plus a small vocabulary of identifiers, function,
-  type, engine and format names.
+  `command_type`, `query_type`, `field_type`, ...) plus a small vocabulary of identifiers, type,
+  engine and format names and the tables and columns of the execution fixture.
+- `FunctionName` (every function and aggregate function of `system.functions`) and `SettingName`
+  (settings with non-string values) are separate enums, so a mutation of a `Function.name` or of a
+  `SETTINGS` entry lands on a real function or setting rather than on a random string; they are
+  regenerated from `clickhouse local` (see the comment in the `.proto`).
 
 The value kind of a property is chosen independently of its key on purpose: the same key has
 different kinds in different node types (`value`, `cluster`, `settings`, `database`, `table`,
