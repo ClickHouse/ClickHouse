@@ -3,6 +3,7 @@
 #include <Access/Credentials.h>
 #include <Access/GSSAcceptor.h>
 #include <Access/HTTPAuthClient.h>
+#include <Access/HTTPUserDirectoryResponseParser.h>
 #include <Access/LDAPClient.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/defines.h>
@@ -44,6 +45,12 @@ public:
         const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
     bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
     bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const;
+
+    /// Authenticates a user of an `http` external user directory against the named
+    /// `http_authentication_servers` entry, using the strict typed response parser.
+    /// Legacy users with `IDENTIFIED WITH HTTP` keep using checkHTTPBasicCredentials.
+    HTTPUserDirectoryResponseParser::Result checkHTTPUserDirectoryCredentials(
+        const String & server, const BasicCredentials & credentials, const ClientInfo & client_info) const;
 
     GSSAcceptorContext::Params getKerberosParams() const;
 
