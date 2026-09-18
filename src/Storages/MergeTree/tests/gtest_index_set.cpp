@@ -49,6 +49,15 @@ ColumnWithTypeAndName tupleWithDynamicColumn(const String & name, UInt64 begin, 
     return {std::move(column), type, name};
 }
 
+ColumnWithTypeAndName tupleWithVariantColumn(const String & name, UInt64 begin, UInt64 end)
+{
+    auto type = DataTypeFactory::instance().get("Tuple(UInt64, Variant(UInt64, String))");
+    auto column = type->createColumn();
+    for (UInt64 value = begin; value < end; ++value)
+        column->insert(Field(Tuple{Field(value), Field(value)}));
+    return {std::move(column), type, name};
+}
+
 void expectMeasuredRange(std::string_view what, const Range & range, UInt64 expected_left, UInt64 expected_right)
 {
     SCOPED_TRACE(what);
@@ -168,6 +177,26 @@ TEST(MergeTreeIndexSet, GranuleRangeForNestedDynamicColumn)
 {
     const String index_name = "idx";
     const Block block{tupleWithDynamicColumn("value", 0, 10)};
+    const Block index_sample_block = block.cloneEmpty();
+
+    MergeTreeIndexAggregatorSet aggregator(index_name, index_sample_block, MAX_ROWS);
+    updateAggregator(aggregator, block);
+
+    const auto granule = takeGranule(aggregator);
+    ASSERT_NE(granule, nullptr);
+    ASSERT_EQ(granule->set_hyperrectangle.size(), 1);
+    expectWholeUniverse("build path", granule->set_hyperrectangle[0]);
+
+    MergeTreeIndexGranuleSet restored(index_name, index_sample_block, MAX_ROWS);
+    reserializeGranule(*granule, restored);
+    ASSERT_EQ(restored.set_hyperrectangle.size(), 1);
+    expectWholeUniverse("read path", restored.set_hyperrectangle[0]);
+}
+
+TEST(MergeTreeIndexSet, GranuleRangeForNestedVariantColumn)
+{
+    const String index_name = "idx";
+    const Block block{tupleWithVariantColumn("value", 0, 10)};
     const Block index_sample_block = block.cloneEmpty();
 
     MergeTreeIndexAggregatorSet aggregator(index_name, index_sample_block, MAX_ROWS);
