@@ -42,7 +42,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
+#include <Poco/String.h>
 
 #if USE_AVRO
 
@@ -75,6 +77,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -119,13 +122,13 @@ using namespace DB;
 /// reporting metrics, not deletion safety.
 FileCategory inspectFileCategory(const String & relative_path)
 {
-    if (relative_path.find("/metadata/") != String::npos || relative_path.starts_with("metadata/"))
+    if (relative_path.contains("/metadata/") || relative_path.starts_with("metadata/"))
     {
-        if (relative_path.find(".metadata.json") != String::npos)
+        if (relative_path.contains(".metadata.json"))
             return FileCategory::METADATA_JSON;
         if (relative_path.ends_with(".avro"))
         {
-            if (relative_path.find("snap-") != String::npos)
+            if (relative_path.contains("snap-"))
                 return FileCategory::MANIFEST_LIST;
             return FileCategory::MANIFEST_FILE;
         }
@@ -133,10 +136,10 @@ FileCategory inspectFileCategory(const String & relative_path)
             return FileCategory::STATISTICS_FILE;
     }
 
-    if (relative_path.find("eq-del") != String::npos)
+    if (relative_path.contains("eq-del"))
         return FileCategory::EQUALITY_DELETE_FILE;
 
-    if (relative_path.find("-deletes.parquet") != String::npos || relative_path.find("-delete-") != String::npos)
+    if (relative_path.contains("-deletes.parquet") || relative_path.contains("-delete-"))
         return FileCategory::POSITION_DELETE_FILE;
 
     return FileCategory::DATA_FILE;
@@ -166,6 +169,32 @@ static bool isTemporaryMetadataFile(const String & file_name)
         return true;
     String substring = String(file_name.begin(), file_name.begin() + string_position);
     return Poco::UUID{}.tryParse(substring);
+}
+
+/// True for `v<N>.metadata.json`, the only scheme whose file name is itself the compare-and-set:
+/// aiming at an N that exists collides, so existence means N is committed and a higher N carries a
+/// superset of the state. A uuid in the name removes both properties.
+static bool isVersionNumberedCommitScheme(const String & file_name)
+{
+    if (!file_name.starts_with('v'))
+        return false;
+    auto end_pos = file_name.find_first_of(".-");
+    if (end_pos == String::npos || end_pos <= 1 || file_name[end_pos] != '.')
+        return false;
+    return std::all_of(file_name.begin() + 1, file_name.begin() + end_pos, isdigit);
+}
+
+/// The file name a configured pointer addresses, resolved the way the reader resolves it: a bare
+/// version number can only address `v<N>`, any other content names a file directly, and a
+/// directory part is dropped because the reader reads the name alone under `metadata/`.
+static std::optional<String> metadataPointerTargetName(const String & pointer_content)
+{
+    if (pointer_content.empty())
+        return {};
+    if (std::all_of(pointer_content.begin(), pointer_content.end(), isdigit))
+        return "v" + pointer_content + ".metadata.json";
+    String named = pointer_content.ends_with(".metadata.json") ? pointer_content : pointer_content + ".metadata.json";
+    return String(std::filesystem::path(named).filename());
 }
 
 /// Parse an all-digit version string into Int32, mapping overflow/garbage to BAD_ARGUMENTS.
@@ -346,6 +375,16 @@ bool writeMetadataFileAndVersionHint(
             /* write-if-none-match */ "*",
             "",
             metadata_file_info.compression_method);
+    }
+    catch (const Exception & e)
+    {
+        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
+        /// reporting a lost race would make the caller retry an operation that can never succeed.
+        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
+        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+            throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
     }
     catch (...)
     {
@@ -546,6 +585,22 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
+/// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
+/// minimum number of bytes that can hold every value of the declared precision. One bit of that
+/// space is taken by the sign, hence `8 * bytes - 1`.
+static size_t icebergDecimalRequiredBytes(UInt32 precision)
+{
+    UInt256 max_value = 1;
+    for (UInt32 i = 0; i < precision; ++i)
+        max_value *= 10;
+    max_value -= 1;
+
+    size_t bytes = 1;
+    while (bytes < sizeof(UInt256) && (max_value >> (8 * bytes - 1)) != 0)
+        ++bytes;
+    return bytes;
+}
+
 /// Returns type and required
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
 {
@@ -573,6 +628,11 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"string", true};
         case TypeIndex::UUID:
             return {"uuid", true};
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return {fmt::format("decimal({}, {})", getDecimalPrecision(*type), getDecimalScale(*type)), true};
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
@@ -587,7 +647,9 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
                 field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
-                auto child_type = getIcebergType(element->getNormalizedType(), iter);
+                /// Recurse on the element itself: `getNormalizedType` would rename a nested
+                /// tuple's elements to "1", "2", ... (`DataTypeTuple::getNormalizedType`).
+                auto child_type = getIcebergType(element, iter);
                 field->set(Iceberg::f_required, child_type.second);
                 field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
@@ -640,7 +702,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type)
+Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 {
     switch (type->getTypeId())
     {
@@ -676,6 +738,25 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::String:
         case TypeIndex::UUID:
             return "string";
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        {
+            const UInt32 precision = getDecimalPrecision(*type);
+            const UInt32 scale = getDecimalScale(*type);
+
+            Poco::JSON::Object::Ptr decimal_type = new Poco::JSON::Object;
+            decimal_type->set("type", "fixed");
+            decimal_type->set("size", icebergDecimalRequiredBytes(precision));
+            /// `fixed` is a named Avro type, so the name must be unique within the manifest schema:
+            /// two partition fields of the same decimal shape must not both define `decimal_P_S`.
+            decimal_type->set("name", fmt::format("decimal_{}_{}_{}", precision, scale, field_id));
+            decimal_type->set("logicalType", "decimal");
+            decimal_type->set("precision", precision);
+            decimal_type->set("scale", scale);
+            return decimal_type;
+        }
         case TypeIndex::Nullable:
         {
             /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
@@ -684,7 +765,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
             union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType()));
+            union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
             return union_array;
         }
         default:
@@ -768,12 +849,12 @@ static Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "toRelativeDayNum")
     {
-        result->set(Iceberg::f_transform, "days");
+        result->set(Iceberg::f_transform, "day");
         return result;
     }
     else if (partition_function->name == "toRelativeHourNum")
     {
-        result->set(Iceberg::f_transform, "hours");
+        result->set(Iceberg::f_transform, "hour");
         return result;
     }
     else if (partition_function->name == "icebergTruncate")
@@ -1125,7 +1206,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ContextPtr & local_context,
     std::optional<String> table_uuid,
     bool use_table_uuid_for_metadata_file_selection,
-    bool force_fetch_latest_metadata)
+    bool force_fetch_latest_metadata,
+    bool ignore_metadata_pointer_overrides)
 {
     auto load_fn = [&]()
     {
@@ -1155,12 +1237,102 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         {
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
         }
+
+        /// A candidate outside the scheme the table itself commits through counts a version sequence
+        /// that is not this table's, so it must not be ranked against this table's files. A pointer
+        /// declares the scheme; uuid selection identifies files by content and needs no name rule.
+        std::optional<bool> own_scheme_is_version_numbered;
+        std::optional<String> declared_target;
+        Int32 declared_target_version = 0;
+        if (!(table_uuid.has_value() && use_table_uuid_for_metadata_file_selection))
+        {
+            /// The version a pointer names may be stale, which is why these callers list instead,
+            /// but the scheme it spells is this table's. A commit advances the hint and never the
+            /// explicit path, so only the hint spells it here; a reader obeys the explicit path.
+            String pointer_content;
+            bool pointer_is_version_hint = false;
+            if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value
+                && (ignore_metadata_pointer_overrides
+                    || !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed))
+            {
+                /// A hint that cannot be read leaves the scheme unknown, and guessing it here would
+                /// widen what a destructive caller may delete, so the read is allowed to throw.
+                StoredObject version_hint(std::filesystem::path(table_path) / "metadata" / "version-hint.text");
+                auto buf = object_storage->readObject(version_hint, ReadSettings{});
+                readString(pointer_content, *buf);
+                pointer_is_version_hint = true;
+            }
+            else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+                pointer_content = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
+            if (auto target = metadataPointerTargetName(pointer_content))
+            {
+                const bool version_numbered = isVersionNumberedCommitScheme(*target);
+                /// A bare version number addresses a compressed spelling of the name just as well,
+                /// so `v<N>.` is what identifies the file the pointer means, not the whole name.
+                const String target_prefix = target->substr(0, target->size() - strlen(".metadata.json")) + ".";
+                bool scheme_present = false;
+                bool target_present = false;
+                String only_spelling;
+                size_t spellings = 0;
+                for (const auto & path : metadata_files)
+                {
+                    String name = std::filesystem::path(path).filename();
+                    /// A commit in progress leaves one of these behind and it is never a candidate,
+                    /// so counting its name as a scheme would describe the table by a file that
+                    /// cannot be current.
+                    if (isTemporaryMetadataFile(name))
+                        continue;
+                    if (isVersionNumberedCommitScheme(name) == version_numbered)
+                        scheme_present = true;
+                    if (name == *target)
+                        target_present = true;
+                    else if (version_numbered && isVersionNumberedCommitScheme(name) && name.starts_with(target_prefix))
+                    {
+                        only_spelling = name;
+                        ++spellings;
+                    }
+                }
+                /// A pointer naming a file declares nothing unless that file is really there, and a
+                /// bare version number needs one spelling of it to be unambiguous.
+                if (scheme_present && (version_numbered || target_present))
+                {
+                    /// Hiding the other scheme hides the file the table committed last unless the name
+                    /// that declares it is both a commit order and current: a uuid-named one is neither,
+                    /// and an explicit path no commit advances may predate a change of writer.
+                    if (!ignore_metadata_pointer_overrides || (version_numbered && pointer_is_version_hint))
+                        own_scheme_is_version_numbered = version_numbered;
+                    /// A file that is really there says more than the scheme: this table committed it,
+                    /// so nothing older is current and nothing else holds its version. A bare version
+                    /// number names one spelling of it, and two spellings name neither.
+                    if (ignore_metadata_pointer_overrides)
+                    {
+                        if (!target_present && spellings > 1)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Iceberg table with path {} holds {} metadata files spelling the version its pointer "
+                                "names ('{}'), so which of them is current cannot be determined. Refusing, because "
+                                "this operation deletes or rewrites metadata. Remove the spelling that is not current",
+                                table_path,
+                                spellings,
+                                *target);
+                        if (target_present || spellings == 1)
+                        {
+                            declared_target = target_present ? *target : only_spelling;
+                            declared_target_version = getMetadataFileAndVersion(*declared_target).version;
+                        }
+                    }
+                }
+            }
+        }
+
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
         for (const auto & path : metadata_files)
         {
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
+                continue;
+            if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
             auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 
@@ -1215,25 +1387,97 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 table_path);
         }
 
+        /// Two schemes among the candidates mean no `v<N>` pointer declared one, and their numbers are
+        /// unrelated: the highest can name a file this table never committed, or sit either side of a
+        /// uuid-named declaration. A destructive caller cannot undo rooting there.
+        if (ignore_metadata_pointer_overrides)
+        {
+            bool version_numbered_candidate = false;
+            bool uuid_named_candidate = false;
+            for (const auto & candidate : metadata_files_with_versions)
+            {
+                if (isVersionNumberedCommitScheme(std::filesystem::path(candidate.path).filename()))
+                    version_numbered_candidate = true;
+                else
+                    uuid_named_candidate = true;
+            }
+            if (version_numbered_candidate && uuid_named_candidate && declared_target
+                && !isVersionNumberedCommitScheme(*declared_target))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg table with path {} declares '{}' as its current metadata file, but the table also "
+                    "holds `v<N>.metadata.json` files, whose numbers cannot be ordered against a "
+                    "`<N>-<uuid>.metadata.json` one, so a file this table committed may rank either side of the "
+                    "declared one. Refusing, because this operation deletes or rewrites metadata. Declare the "
+                    "current `v<N>.metadata.json` instead, or remove the metadata files of the other scheme",
+                    table_path,
+                    *declared_target);
+            if (version_numbered_candidate && uuid_named_candidate)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg table with path {} has metadata files named `v<N>.metadata.json` and metadata "
+                    "files named `<N>-<uuid>.metadata.json`, and nothing declares which of the two schemes "
+                    "this table commits through, so its current metadata file cannot be identified. "
+                    "Refusing, because this operation deletes or rewrites metadata. Declare the current "
+                    "`v<N>.metadata.json` with `iceberg_use_version_hint = 1` and a "
+                    "`metadata/version-hint.text` naming it, or remove the metadata files of the other scheme",
+                    table_path);
+        }
+
         /// Get the latest version of metadata file: v<V>.metadata.json
-        const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
+        auto ranks_below = [selection_way](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b)
         {
             if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-            {
-                return *std::max_element(
-                    metadata_files_with_versions.begin(),
-                    metadata_files_with_versions.end(),
-                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.last_updated_ms < b.last_updated_ms; });
-            }
-            else
-            {
-                return *std::max_element(
-                    metadata_files_with_versions.begin(),
-                    metadata_files_with_versions.end(),
-                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
-            }
-        }();
-        return MetadataFileWithInfo{latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+                return a.last_updated_ms < b.last_updated_ms;
+            return a.version < b.version;
+        };
+
+        const ShortMetadataFileInfo & latest_metadata_file_info
+            = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end(), ranks_below);
+
+        /// Ranking selected another file than the one the table declares current: either the
+        /// declaration is stale or that file was never committed, and nothing here tells which.
+        /// Only a higher `v<N>` is no disagreement, that number exists because a commit wrote it.
+        if (declared_target)
+        {
+            const bool superseded_in_own_scheme = isVersionNumberedCommitScheme(*declared_target)
+                && latest_metadata_file_info.version > declared_target_version;
+            if (!superseded_in_own_scheme
+                && std::filesystem::path(latest_metadata_file_info.path).filename() != *declared_target)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg table with path {} declares '{}' as its current metadata file, but ranking selects "
+                    "'{}', so which one is current cannot be determined. Refusing, because this operation deletes "
+                    "or rewrites metadata. Point the table at the newest committed metadata file, or remove the "
+                    "one that is not current",
+                    table_path,
+                    *declared_target,
+                    latest_metadata_file_info.path);
+        }
+
+        /// `max_element` returns the first of equal elements, so a candidate ranking equal to the
+        /// winner was separated from it by listing order alone. Ambiguity is whatever the policy in
+        /// force cannot order: one number spelled plain and compressed, or one timestamp on two numbers.
+        if (own_scheme_is_version_numbered || ignore_metadata_pointer_overrides)
+            for (const auto & candidate : metadata_files_with_versions)
+                if (candidate.path != latest_metadata_file_info.path
+                    && !ranks_below(candidate, latest_metadata_file_info)
+                    && !ranks_below(latest_metadata_file_info, candidate))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Iceberg table with path {} has two metadata files that rank equal by {}: '{}' and '{}', "
+                        "so which one is current cannot be determined. Remove or rename the one that is not current",
+                        table_path,
+                        selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
+                            ? "their last-updated-ms field"
+                            : "their version number",
+                        latest_metadata_file_info.path,
+                        candidate.path);
+
+        return MetadataFileWithInfo{
+            latest_metadata_file_info.version,
+            latest_metadata_file_info.path,
+            getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
     };
 
     /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
@@ -1264,12 +1508,12 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
     bool force_fetch_latest_metadata,
-    bool ignore_explicit_metadata_file_path)
+    bool ignore_metadata_pointer_overrides)
 {
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_metadata_pointer_overrides)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-        if (explicit_metadata_path.find('\0') != String::npos)
+        if (explicit_metadata_path.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata file path contains a null byte");
         LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
         std::filesystem::path p(explicit_metadata_path);
@@ -1302,9 +1546,17 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             explicit_table_uuid,
             table_path);
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true, force_fetch_latest_metadata);
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            normalizeUuid(explicit_table_uuid),
+            true,
+            force_fetch_latest_metadata,
+            ignore_metadata_pointer_overrides);
     }
-    else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
         auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
@@ -1324,7 +1576,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 
     {
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            table_uuid,
+            false,
+            force_fetch_latest_metadata,
+            ignore_metadata_pointer_overrides);
     }
 }
 
@@ -1339,7 +1599,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool ignore_explicit_metadata_file_path)
+    bool ignore_metadata_pointer_overrides)
 {
     if (!catalog)
         return getLatestOrExplicitMetadataFileAndVersion(
@@ -1352,7 +1612,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             table_uuid,
             known_compression_method,
             /* force_fetch_latest_metadata */ true,
-            ignore_explicit_metadata_file_path);
+            ignore_metadata_pointer_overrides);
 
     DataLake::TableMetadata table_metadata;
     table_metadata.withDataLakeSpecificProperties().withLocation();
@@ -1370,6 +1630,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
         = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
 
+    /// A catalog's pointer IS the committed state, so it is resolved rather than overridden.
     return getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         table_path,
@@ -1380,7 +1641,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
         table_uuid,
         known_compression_method,
         /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ false);
+        /* ignore_metadata_pointer_overrides */ false);
 }
 
 
@@ -1558,6 +1819,37 @@ void forEachAvroEntry(
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))
         callback(datum);
+}
+
+PartitionColumnValues getIdentityPartitionColumnValues(
+    const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor)
+{
+    const auto & partition_key_value = manifest_file_entry.parsed_entry->partition_key_value;
+    if (partition_key_value.empty())
+        return {};
+
+    PartitionColumnValues result;
+    for (const auto & partition_field : *manifest_file_entry.common_partition_specification)
+    {
+        if (Poco::toLower(partition_field.transform_name) != "identity")
+            continue;
+
+        if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= partition_key_value.size())
+            continue;
+
+        const auto name_and_type
+            = schema_processor.tryGetFieldCharacteristics(manifest_file_entry.resolved_schema_id, partition_field.source_id);
+        if (!name_and_type.has_value())
+            continue;
+
+        Field value = convertFieldToTypeOrThrow(partition_key_value[partition_field.tuple_index], *name_and_type->type);
+        if (value.isNull())
+            continue;
+
+        result.emplace_back(name_and_type->name, std::move(value));
+    }
+
+    return result;
 }
 
 }

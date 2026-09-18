@@ -1,6 +1,9 @@
 SET explain_query_plan_default = 'legacy';
 CREATE TABLE t (c UInt64) ENGINE=MergeTree;
 
+SET materialize_statistics_on_insert = 1;
+SET use_statistics = 1;
+
 INSERT INTO t SELECT * FROM numbers(999);
 
 SET enable_analyzer = 1,

@@ -100,7 +100,13 @@ class SparkAndClickHouseCheck:
             return True, engine
         return engine.startswith(expected), engine
 
-    def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
+    def check_table(
+        self,
+        cluster,
+        spark: SparkSession,
+        table: SparkTable,
+        extra_ch_settings: str = "",
+    ) -> bool:
         try:
             clickhouse_predicate = ""
             spark_predicate = ""
@@ -150,6 +156,16 @@ class SparkAndClickHouseCheck:
                 clickhouse_predicate = f" SETTINGS iceberg_timestamp_ms = {int(next_time.timestamp() * 1000)}"
                 spark_predicate = f" TIMESTAMP AS OF '{next_time}'"
                 extra_predicate = f" on timestamp {next_time}"
+
+            # Fold in caller-supplied ClickHouse settings (e.g. the File-table reader's
+            # engine_file_skip_empty_files / missing-column pins) so the count and hash queries
+            # below run under the same settings as the caller's probe, not the randomized defaults
+            if extra_ch_settings:
+                clickhouse_predicate += (
+                    f", {extra_ch_settings}"
+                    if clickhouse_predicate
+                    else f" SETTINGS {extra_ch_settings}"
+                )
 
             # Start by checking counts
             spark_query = spark.sql(
@@ -211,15 +227,26 @@ class SparkAndClickHouseCheck:
             # `CAST(decimal AS STRING)` can emit scientific notation for a zero read from a lake
             # file (e.g. "0E-11"), which ClickHouse never does; `format_number` always yields plain
             # fixed-point (strip its grouping commas) and preserves full 38-digit precision.
+            # The same applies inside Array(Decimal) columns, so their elements are formatted
+            # one by one instead of relying on `CAST(array AS STRING)`.
+            def spark_decimal_str(expr: str, scale: int) -> str:
+                plain = f"regexp_replace(format_number({expr}, {scale}), ',', '')"
+                return (
+                    f"CASE WHEN {plain} LIKE '%.%' "
+                    f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {plain})) ELSE {plain} END"
+                )
+
             def spark_col_expr(col) -> str:
                 if isinstance(col.spark_type, DecimalType):
-                    plain = (
-                        f"regexp_replace(format_number({col.column_name}, {col.spark_type.scale}), ',', '')"
-                    )
-                    s = (
-                        f"CASE WHEN {plain} LIKE '%.%' "
-                        f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {plain})) ELSE {plain} END"
-                    )
+                    s = spark_decimal_str(col.column_name, col.spark_type.scale)
+                elif isinstance(col.spark_type, ArrayType) and isinstance(
+                    col.spark_type.elementType, DecimalType
+                ):
+                    # `array_join` drops NULL elements unless a replacement is given, which would
+                    # make `[1, NULL, 2]` and `[1, 2]` hash the same. Render them as `null`, the
+                    # same text `CAST(array AS STRING)` produces for every other element type.
+                    elem = spark_decimal_str("x", col.spark_type.elementType.scale)
+                    s = f"'[' || array_join(transform({col.column_name}, x -> {elem}), ', ', 'null') || ']'"
                 else:
                     s = f"CAST({col.column_name} AS STRING)"
                 return f"COALESCE({s}, '{_NULL_SENTINEL}')"
@@ -246,9 +273,12 @@ class SparkAndClickHouseCheck:
             # ClickHouse arrays as strings don't have a space after the comma, add it
             # Wrap in coalesce with the same sentinel as the Spark side so NULL rows are kept
             # and compared rather than dropped by groupArray.
+            # `toString` of a NULL element is NULL, and `arrayStringConcat` skips those, so a NULL
+            # element would vanish and `[1, NULL, 2]` would hash like `[1, 2]`. Spell it as `null`
+            # to match what Spark renders for the same array.
             clickhouse_strings = {
                 col.column_name: (
-                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
+                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> coalesce(toString(x), 'null'), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
                     if isinstance(col.spark_type, (ArrayType))
                     else f"coalesce(toString({col.column_name}), '{_NULL_SENTINEL}')"
                 )

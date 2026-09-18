@@ -1,0 +1,81 @@
+<test>
+    <!--
+    Positive performance coverage is limited to one-argument functions on `Date` and `DateTime`
+    columns. `Date32`/`DateTime64` sources and explicit-timezone function overloads are outside
+    this iteration.
+    -->
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE date_preimage_perf
+        (
+            id UInt64,
+            seen DateTime('UTC'),
+            d Date,
+            INDEX idx_seen seen TYPE minmax GRANULARITY 1,
+            INDEX idx_d d TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS index_granularity = 256
+    </create_query>
+
+    <fill_query>
+        INSERT INTO date_preimage_perf
+        SELECT
+            number AS id,
+            toDateTime(1772323200 + intDiv(number, 25000000) * 86400 + number % 86400, 'UTC') AS seen,
+            toDate(seen) AS d
+        FROM numbers(50000000)
+    </fill_query>
+
+    <query tag="toDate optimized">
+        SELECT count()
+        FROM date_preimage_perf
+        WHERE toDate(seen) = toDate('2026-03-02')
+        SETTINGS optimize_time_filter_with_preimage = 1
+    </query>
+    <query tag="toDate baseline">
+        SELECT count()
+        FROM date_preimage_perf
+        WHERE toDate(seen) = toDate('2026-03-02')
+        SETTINGS optimize_time_filter_with_preimage = 0
+    </query>
+    <query tag="timestamp range">
+        SELECT count()
+        FROM date_preimage_perf
+        WHERE seen &gt;= toDateTime('2026-03-02 00:00:00', 'UTC')
+          AND seen &lt; toDateTime('2026-03-03 00:00:00', 'UTC')
+    </query>
+
+    <query tag="DateTime month optimized">
+        SELECT count()
+        FROM date_preimage_perf
+        WHERE toStartOfMonth(seen) = toDate('2026-03-01')
+        SETTINGS optimize_time_filter_with_preimage = 1
+    </query>
+    <query tag="DateTime month baseline">
+        SELECT count()
+        FROM date_preimage_perf
+        WHERE toStartOfMonth(seen) = toDate('2026-03-01')
+        SETTINGS optimize_time_filter_with_preimage = 0
+    </query>
+
+    <query tag="Date month optimized">
+        SELECT count()
+        FROM date_preimage_perf
+        WHERE toStartOfMonth(d) = toDate('2026-03-01')
+        SETTINGS optimize_time_filter_with_preimage = 1
+    </query>
+    <query tag="Date month baseline">
+        SELECT count()
+        FROM date_preimage_perf
+        WHERE toStartOfMonth(d) = toDate('2026-03-01')
+        SETTINGS optimize_time_filter_with_preimage = 0
+    </query>
+
+    <drop_query>DROP TABLE date_preimage_perf</drop_query>
+</test>

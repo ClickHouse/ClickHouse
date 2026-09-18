@@ -1,0 +1,13 @@
+# test_disk_04812
+dst
+parent
+child
+# test_disk_plain_rewritable_04812
+dst
+parent
+child
+# missing parent: test_disk_04812
+src
+# missing parent: test_disk_plain_rewritable_04812
+aa
+cc

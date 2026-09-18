@@ -1,15 +1,13 @@
 ---
-description: 'Le jeu de données de benchmark TPC-DS et ses requêtes.'
-sidebarTitle: 'TPC-DS'
-slug: /getting-started/example-datasets/tpcds
-title: 'TPC-DS (2012)'
-doc_type: 'guide'
-keywords: ['jeu de données d’exemple', 'tpcds', 'benchmark', 'données d’exemple', 'tests de performance']
+title: "TPC-DS (2012)"
+description: "Le jeu de données de benchmark TPC-DS et ses requêtes."
+sidebarTitle: "TPC-DS"
+slug: "/getting-started/example-datasets/tpcds"
+doc_type: "guide"
+keywords: ["jeu de données d’exemple", "tpcds", "benchmark", "données d’exemple", "tests de performance"]
 ---
 
-À l’instar du [Star Schema Benchmark (SSB)](/fr/get-started/sample-datasets/star-schema), TPC-DS repose sur [TPC-H](/fr/get-started/sample-datasets/tpch), mais suit l’approche inverse : il augmente le nombre de jointures nécessaires en stockant les données dans un schéma en flocon complexe (24 tables au lieu de 8).
-La distribution des données est déséquilibrée (par ex. distributions normale et de Poisson).
-Il comprend 99 requêtes de reporting et ad hoc avec des substitutions aléatoires.
+À l’instar du [Star Schema Benchmark (SSB)](/fr/get-started/sample-datasets/star-schema), TPC-DS repose sur [TPC-H](/fr/get-started/sample-datasets/tpch), mais suit l’approche inverse : il augmente le nombre de jointures nécessaires en stockant les données dans un schéma en flocon complexe (24 tables au lieu de 8). La distribution des données est déséquilibrée (par ex. distributions normale et de Poisson). Il comprend 99 requêtes de reporting et ad hoc avec des substitutions aléatoires.
 
 **Références**
 
@@ -70,11 +68,16 @@ Ensuite, exécutez les requêtes générées.
   ## Requêtes
 </div>
 
-Les 99 requêtes TPC-DS sont disponibles [ici](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-ds/queries), dans le dépôt de ClickHouse.
+Les 99 requêtes TPC-DS sont disponibles [ici](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-ds/queries), dans le dépôt ClickHouse.
 
-Pour obtenir un comportement compatible avec la norme SQL et les résultats attendus, appliquez les paramètres définis dans [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json).
-Consultez le [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md) pour connaître les problèmes connus et les remarques concernant certaines requêtes.
+Pour obtenir un comportement compatible avec la norme SQL et les résultats attendus, appliquez les paramètres définis dans [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json). Consultez le [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md) pour connaître les problèmes connus et les remarques concernant certaines requêtes.
 
 **Conformité**
 
-Les résultats des requêtes correspondent aux résultats officiels, sauf mention contraire. De légères différences de précision peuvent exister ; elles sont autorisées par la spécification TPC-DS.
+Les résultats des requêtes correspondent aux résultats officiels, sauf indication contraire. De légères différences de précision peuvent exister ; elles sont autorisées par la spécification TPC-DS.
+
+<div id="performance-benchmark">
+  ## Benchmark de performances
+</div>
+
+ClickHouse suit les performances des requêtes TPC-DS dans chaque version publiée. Vous pouvez consulter les temps d&#39;exécution des 99 requêtes TPC-DS (facteur d&#39;échelle 32) sur la page [benchmark des versions de ClickHouse](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ps\&metric=hot\&queries=-) afin de voir comment ces performances ont évolué au fil du temps.

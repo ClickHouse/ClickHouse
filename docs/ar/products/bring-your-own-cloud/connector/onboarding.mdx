@@ -1,0 +1,218 @@
+---
+title: 'الإعداد الأولي'
+sidebarTitle: 'الإعداد الأولي'
+description: 'ثبّت ClickHouse Connector وسجّله في Kubernetes أو على جهاز افتراضي يعمل بنظام Linux'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تنقلك هذه الصفحة من رمز التسجيل إلى موصل سليم ومتحقَّق منه. يُثبَّت الموصل على أحد هدفين: عنقود Kubernetes ‏(Helm) أو جهاز افتراضي بنظام Linux ‏(systemd). يُعد التسجيل بالرمز المسار القياسي؛ وإذا كانت بيئتك لا تستطيع الوصول مباشرةً إلى نقاط نهاية ClickHouse، فراجع [عمليات التثبيت المعزولة شبكيًا والمنعكسة](#air-gapped-and-mirrored-installs).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+لكل عملية تثبيت:
+
+* **نقطة نهاية الموصل ورمز التسجيل**، اللذان توفرهما ClickHouse أثناء الإعداد الأولي (راجع الخطوة 1).
+* **اتصال صادر عبر المنفذ 443** إلى `https://<subdomain>.<connector-domain>` و`https://<subdomain>.enroll.<connector-domain>`، وإلى `releases.clicklink.clickhouse.com` وAmazon ECR Public أثناء التثبيت. إذا تعذر الوصول إلى أيٍّ منها، فراجع [عمليات التثبيت المعزولة شبكيًا والمنعكسة](#air-gapped-and-mirrored-installs).
+* **مستمع ClickHouse الأصلي يمكن الوصول إليه** من موقع تشغيل الموصل: الآمن (9440) أو النص الصريح (9000)، ويُكتشف تلقائيًا على Kubernetes.
+* **صلاحية إدارية في ClickHouse لإجراء التوفير**: مستخدم `default` بلا كلمة مرور، أو كلمة مرور (تُطلب تفاعليًا أو تُمرَّر باستخدام `--ch-admin-password-stdin`)، أو مثيل يديره عامل تشغيل، حيث يتحول التوفير إلى حقن CR ولا يتطلب كلمة مرور.
+* **cosign** في كل موقع تُنزِّل منه ملفات الإصدار. يتحقق المثبّت دائمًا من المجموع الاختباري SHA-256، ويضيف التحقق من توقيع cosign عند تثبيت cosign، ويرفض المتابعة بدونه إذا عيّنت `CLICKLINK_REQUIRE_COSIGN=1`.
+
+لعمليات التثبيت على Kubernetes ‏(Helm):
+
+* **أي عنقود Kubernetes متوافق.**
+* **ملف kubeconfig** يتيح إنشاء مساحة أسماء الموصل وقراءتها، وتطبيق Secrets، وتنفيذ الأوامر داخل Pods الخاصة بـ ClickHouse (يشغّل التوفير `clickhouse-client` داخل Pod)، وإنشاء ServiceAccounts وRoles وRoleBindings، وتثبيت المخطط.
+* **StorageClass افتراضي**، أو فئة تمررها باستخدام `--storage-class`؛ إذ يحتفظ مستكشف الأخطاء بالحالة في PersistentVolumeClaim.
+* **إتاحة سحب الصور**: يجب أن تتمكن عُقد العنقود من سحب صورة ECR العامة أو صورة معكوسة تستضيفها أنت.
+
+لعمليات التثبيت على جهاز Linux افتراضي ‏(systemd):
+
+* **أي مضيف Linux يعمل بـ systemd**، بمعمارية amd64 أو arm64. تعمل إصدارات Linux في وضع FIPS.
+* **صلاحية الجذر** للمثبّت و`init`.
+* **منافذ متاحة**: 8080 و8082 و8084 (للفحوصات الصحية)، و9090 و9092 و9094 (للمقاييس)، بالإضافة إلى 8443 عند تمكين بوابة جلسة الدعم.
+* **صلاحية إدارية للوصول إلى خادم API لـ Kubernetes** لإجراء التوفير، تُوفَّر عبر kubeconfig على المضيف، أو باستخدام `--server` و`--ca-data`، أو من خلال المطالبات. ترتبط حزم الوصول بـ Kubernetes ServiceAccounts في كلا الهدفين.
+
+<Note>
+  `--skip-provision` هو الطريقة الوحيدة لتجاوز متطلب Kubernetes، وهو مخصص لمرحلة التجهيز فقط: إذ يتخطى توفير مستخدم ClickHouse، وعلى جهاز افتراضي، تمكين الوحدة والتحقق منها؛ لذا لا ينشئ موصلًا قيد التشغيل بمفرده.
+</Note>
+
+<div id="install-and-enroll">
+  ## التثبيت والتسجيل
+</div>
+
+<Steps>
+  <Step title="احصل على نقطة نهاية الموصل ورمز الانضمام" id="get-endpoint-and-token">
+    يوفّر ClickHouse نقطة نهاية للموصل ورمز تسجيل للاستخدام مرة واحدة أثناء الإعداد. تكون نقطة النهاية بالشكل التالي:
+
+    ```text
+    https://<subdomain>.<connector-domain>
+    ```
+
+    الرمز المميز للاستخدام لمرة واحدة وتنتهي صلاحيته سريعًا، لذا احرص على تنفيذ عملية التسجيل بعد وقت قصير من استلامه. تعامل معه باعتباره سرًا: تقرأه واجهة CLI من مطالبة مخفية (أو من السطر الأول من stdin)، ولا تقرأه مطلقًا من وسيطات سطر الأوامر أو القرص أو السجلات. إذا انتهت صلاحية الرمز المميز قبل استخدامه، فتواصل مع فريق حسابك لدى ClickHouse للحصول على رمز جديد.
+  </Step>
+
+  <Step title="تثبيت واجهة سطر الأوامر والتحقق منها" id="install-and-verify-the-cli">
+    يثبّت أمر واحد ملف `clicklink` ثنائيًا موثوقًا: إذ يكتشف منصتك ومعماريتها (macOS أو Linux، وamd64 أو arm64)، وينزّل الإصدار الحالي، ويتحقق من المجموع الاختباري SHA-256، ومن توقيع الإصدار عند تثبيت cosign، ثم يثبّت الملف الثنائي ضمن `PATH`. لتثبيته على Kubernetes، شغّل الأمر من أي محطة عمل لديها إمكانية الوصول إلى المجموعة عبر kubeconfig:
+
+    ```bash
+    curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | bash
+    ```
+
+    لتثبيته على جهاز افتراضي، شغّل البرنامج النصي نفسه على المضيف باستخدام `--host`. بعد التحقق من التنزيل، ينشئ أيضًا مستخدم النظام `clicklink`، وأدلة `/etc/clicklink` و`/var/lib/clicklink` و`/var/log/clicklink`، ووحدات systemd، كما يُنشئ ملف `/etc/clicklink/redaction-patterns.yaml` افتراضيًا (مع الإبقاء عليه إذا كان موجودًا)، بحيث تبدأ الخطوة التالية مباشرةً بالتسجيل:
+
+    ```bash
+    curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
+    ```
+
+    يقبل كلا الخيارين `--version vX.Y.Z` لتثبيت إصدار محدد، ومن الآمن إعادة تشغيل أيٍّ منهما: إذ يحتفظ التثبيت على المضيف بنسخة احتياطية من الملف الثنائي السابق ويحافظ على إعداداتك الحالية. لفحص البرنامج النصي قبل تشغيله، أو لتنزيل أرشيف tar للإصدار والتحقق منه بنفسك، راجع [التنزيل والتحقق اليدويين](#manual-download-and-verification).
+  </Step>
+
+  <Step title="سجّل الموصل وثبّته" id="enroll-and-install">
+    يتم التسجيل بأمر واحد. فهو يستردّ الرمز المميز، ويهيّئ الوصول إلى ClickHouse، ويحصل على شهادة عميل موقّعة، ويثبّت الموصل ويتحقق من عمله، من البداية إلى النهاية.
+
+    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="مسار تسجيل ClickHouse Connector" />
+
+    <Tabs>
+      <Tab title="Kubernetes">
+        شغّل من محطة العمل لديك:
+
+        ```bash
+        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm
+        ```
+
+        الصق رمز التسجيل المميز عند ظهور الموجّه المخفي. ثم تطلب CLI ما يلي:
+
+        * مساحة اسم الموصل (القيمة الافتراضية هي `clicklink`)
+        * مساحة الاسم التي تعمل فيها مثيلات ClickHouse
+        * تفاصيل اتصال المثيل، المُعبّأة مسبقًا من خدمة ClickHouse التي يكتشفها
+        * ‏StorageClass، فقط إذا لم تكن هناك فئة تخزين افتراضية محددة في المجموعة
+        * إعداد جلسات الدعم، وقائمة السماح بعناوين البريد الإلكتروني للمشغّلين عند تفعيلها
+        * كلمة مرور مسؤول ClickHouse، فقط إذا تطلب توفير SQL ذلك
+
+        ينفّذ هذا الاستدعاء الواحد العملية كاملةً: يستردّ الرمز المميز (ويحفظ حزمة التسجيل باسم `handoff.yaml` في دليل العمل)، ويُعدّ تراكب قيم Helm باسم `clicklink-values.yaml`، وينشئ مساحة الاسم، ويطبّق السرَّين `clicklink-hmac` و`clicklink-mtls`، ويوفّر مستخدمي ClickHouse بصلاحية القراءة فقط لكل مثيل (مع الاختيار التلقائي بين منح SQL أو حقن CR للمثيلات التي يديرها المشغّل)، وينشئ مفتاحًا خاصًا وCSR ويطلب من ClickHouse توقيع شهادة العميل، ويثبّت إصدار Helm ‏`clicklink-connector` باستخدام عميل Helm المدمج (ولا يتطلب ملفًا ثنائيًا لـ `helm`)، ثم يتحقق من حالته الصحية.
+
+        للتشغيل غير المراقب، أجب عن الموجّهات باستخدام العلامات بدلًا من ذلك. استخدم الحزمة المحفوظة كنقطة دخول، لأن `--enroll` يقرأ رمز التسجيل المميز من السطر الأول لـ stdin في التشغيلات غير الطرفية، ما سيستهلك كلمة المرور المعاد توجيهها:
+
+        ```bash
+        clicklink clctl init --handoff handoff.yaml --target helm \
+          --instance name=<name>,host=<service-host>,port=9440,secure=true,database=default,namespace=<clickhouse-namespace> \
+          --operators '<operator-email-1>,<operator-email-2>' \
+          --storage-class <storage-class> \
+          --ch-admin-password-stdin < admin-password.txt
+        ```
+
+        كرر `--instance` لكل مثيل من ClickHouse. مرّر `--no-gateway` بدلًا من `--operators` لتعطيل جلسات الدعم؛ فالعلامتان متنافيتان.
+      </Tab>
+
+      <Tab title="آلة Linux افتراضية">
+        كان تثبيت `--host` في الخطوة السابقة قد ثبّت بالفعل الملف الثنائي ومستخدم النظام `clicklink` والأدلة ووحدات systemd. سجّل الدخول كمستخدم root:
+
+        ```bash
+        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain>
+        ```
+
+        الصق رمز التسجيل المميز عند ظهور الموجّه المخفي. يستردّ الأمر الرمز المميز (ويحفظ حزمة التسجيل باسم `handoff.yaml`)، ويكتب `/etc/clicklink/config.yaml`، ويثبّت بيانات اعتماد API وسلسلة CA، وينشئ مفتاحًا خاصًا وCSR ويطلب من ClickHouse توقيع شهادة العميل، ويوفّر مستخدمي ClickHouse بصلاحية القراءة فقط لكلتا الخدمتين، ويفعّل ويشغّل خدمتي `clicklink-scraper` و`clicklink-troubleshooter`، وينتظر حتى تُبلغ كل منهما عن جاهزيتها، ثم ينهي العملية بتشغيل المجموعة الكاملة من فحوصات Preflight.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="التحقّق من نجاح العملية" id="verify-success">
+    يتحقق `init` من التثبيت قبل الإبلاغ عن نجاحه. في Kubernetes، يستطلع نقطة النهاية `/livez` لكل مكوّن مفعّل لمدة تصل إلى خمس دقائق، وعند تفعيل بوابة جلسة الدعم، يشترط أيضًا أن تستجيب البوابة للمجسّات غير الموثَّقة بالرمز `401`. على جهاز افتراضي، ينتظر نقطة النهاية `/livez` لكل عملية خفية ثم يشغّل مجموعة فحوصات ما قبل التشغيل الكاملة: الإعدادات، والملفات، وتعارضات المنافذ، وقابلية الوصول عبر الشبكة، والاتصال بـ ClickHouse، وحالة وحدة systemd، والوصول إلى كل مكوّن، والقرص، وأنماط إخفاء البيانات الحساسة.
+
+    للتأكد يدويًا في Kubernetes:
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+    kubectl get pods -n "${CONNECTOR_NAMESPACE}"
+    ```
+
+    يجب أن تكون جميع قرون الموصل في حالة `Running` وجاهزة.
+
+    للتحقق يدويًا على جهاز افتراضي:
+
+    ```bash
+    sudo clicklink clctl preflight
+    ```
+
+    ينهي التنفيذ برمز `0` عند اجتياز جميع عمليات التحقق، وبرمز `2` عند حدوث أي إخفاق، مع عرض عمليات التحقق الفاشلة.
+  </Step>
+
+  <Step title="تنظيف" id="clean-up">
+    تُوفَّر حزمة التسجيل `handoff.yaml` (المكتوبة بوضع `0600` في دليل العمل) كي لا تتطلب إعادة التشغيل أو الاسترداد أثناء التثبيت رمزًا مميزًا ثانيًا. وهي تحتوي على سر واجهة برمجة تطبيقات الموصل بنص عادي، لذا احذفها فور التحقق من التثبيت:
+
+    ```bash
+    rm handoff.yaml        # workstation (Kubernetes installs)
+    sudo rm handoff.yaml   # VM host (init ran as root, so the file is root-owned)
+    ```
+
+    يحتفظ الموصل قيد التشغيل بنسخته الخاصة من بيانات الاعتماد، لذا لا تعتمد أي عملية تشغيلية على الملف: فلا تحتاج إليه الترقيات أو تغييرات الإعداد مطلقًا. وإذا احتجت لاحقًا إلى تشغيل `init` مجددًا، فاطلب رمز تسجيل جديدًا من فريق حساب ClickHouse لديك، ثم شغّل `init --enroll --force`.
+  </Step>
+</Steps>
+
+<div id="air-gapped-and-mirrored-installs">
+  ## عمليات التثبيت المعزولة شبكيًا والمنعكسة
+</div>
+
+يمكن نقل جزأين مستقلين خارج النطاق، بحسب ما يمكن لبيئتك الوصول إليه.
+
+**تسليم الحزمة.** إذا كنت تفضّل عدم استرداد رمز التسجيل عبر الإنترنت، يمكن لـ ClickHouse توفير حزمة التسجيل مباشرةً أثناء الإعداد الأولي؛ شغّل `clicklink clctl init --handoff <bundle-file>` بدلًا من `--enroll`. يستبدل `--handoff` استرداد رمز التسجيل فقط: إذ يظل توقيع الشهادة يتم عبر نقطة نهاية التسجيل، لذا استخدمه وحده عندما تكون نقطة النهاية متاحة من الموقع الذي تشغّل منه `init`.
+
+**توقيع الشهادات خارج النطاق.** عندما يتعذر الوصول إلى نقطة نهاية التسجيل من الموقع الذي تشغّل منه `init`، أضف `--no-auto-sign`: يجهّز `init` كل شيء ويكتب `clicklink.csr`. أرسل طلب توقيع الشهادة (CSR) إلى ClickHouse عبر فريق الحساب لديك، ثم أكمل التثبيت باستخدام الشهادة وسلسلتها المُعادتين: `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt` على جهاز افتراضي، أو أمر الإكمال الكامل الذي تطبعه العملية المُجهَّزة على Kubernetes (بما في ذلك `--target helm`). لا يُنقل سوى طلب توقيع الشهادة (CSR)؛ أما المفتاح الخاص فلا يغادر بيئتك مطلقًا.
+
+على Kubernetes، يقبل `--chart` اسم مخطط يُحل عبر `--chart-repo`، أو مرجع `oci://`، أو عنوان URL مباشرًا، أو أرشيفًا أو دليلًا محليًا. وتكون قيمة `--chart-version` افتراضيًا هي إصدار CLI نفسه، بحيث ينتقل الملف الثنائي والمخطط معًا. لخدمة الصور من السجل الخاص بك، اعكس صورة الحاوية واضبط `image.repository` في تراكب values. إذا كان مسار حركة البيانات الصادرة لديك يقدّم CA خاصة للموصل، فمرّر `--api-private-ca` للتحقق من نقطة نهاية واجهة برمجة التطبيقات باستخدام سلسلة CA من حزمة التسجيل بدلًا من مخزن الثقة الخاص بالنظام.
+
+يعمل المُثبّت من مرآة أيضًا: استضف ملفات الإصدار و`install.sh` على مرآتك الخاصة، ثم أشر إليها باستخدام `CLICKLINK_MIRROR_URL`.
+
+<div id="manual-download-and-verification">
+  ### التنزيل والتحقق يدويًا
+</div>
+
+إذا كنت تفضّل عدم تمرير المُثبِّت عبر pipe، فاجلب الإصدار وتحقّق منه بنفسك. تكتشف الكتلة نظامك الأساسي ومعماريته؛ شغّلها كما هي على macOS أو Linux، سواء كان amd64 أو arm64:
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+# Or pin a specific release: CLICKLINK_VERSION='v0.9.0'
+CLICKLINK_TARBALL="clicklink-${CLICKLINK_VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz"
+for suffix in '' .sha256 .sig .crt; do
+  curl -fsSLO "https://releases.clicklink.clickhouse.com/${CLICKLINK_TARBALL}${suffix}"
+done
+if command -v sha256sum >/dev/null; then
+  sha256sum -c "${CLICKLINK_TARBALL}.sha256"
+else
+  shasum -a 256 -c "${CLICKLINK_TARBALL}.sha256"
+fi
+```
+
+تحقق من صحة التوقيع باستخدام cosign قبل استخراج أي ملفات:
+
+```bash
+cosign verify-blob \
+  --certificate "${CLICKLINK_TARBALL}.crt" \
+  --signature "${CLICKLINK_TARBALL}.sig" \
+  --certificate-identity-regexp "^https://github\.com/ClickHouse/data-plane-clicklink/\.github/workflows/release\.yaml@refs/tags/v" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "${CLICKLINK_TARBALL}"
+```
+
+على محطة عمل (في عمليات تثبيت Kubernetes)، فك ضغط أرشيف tarball وثبّت الملف التنفيذي:
+
+```bash
+tar -xzf "${CLICKLINK_TARBALL}"
+sudo install -m 0755 clicklink /usr/local/bin/clicklink
+```
+
+على جهاز افتراضي، استخرج أرشيف tarball وشغّل `sudo ./install.sh` من الدليل المستخرج؛ وإلى جانب ملفات الإصدار الخاصة به، يُجري التثبيت نفسه على المضيف كما يفعل الخيار `--host`.
+
+<div id="if-something-fails">
+  ## في حال فشل شيء ما
+</div>
+
+أعِد تشغيل الأمر نفسه. يتميز `init` بخاصية التكرار الآمن: إذ تؤدي عمليات إعادة التشغيل إلى الحالة نفسها، وتحافظ على إعداداتك الحالية وملفاتك المرحلية، وتتخطى العمل المكتمل. إذا فشلت خطوة أثناء تنفيذها، تطبع واجهة CLI أوامر الاسترداد الدقيقة المناسبة لحالتك، ويمكن تكرار هذه الأوامر بأمان.
+
+إذا رُفض التسجيل، فإما أن رمز التسجيل قد استُخدم بالفعل (أعِد التشغيل باستخدام `--handoff handoff.yaml`، وهو موجود حتى خطوة التنظيف النهائية) أو أنه غير صالح أو منتهي الصلاحية (تواصل مع فريق حسابك لدى ClickHouse للحصول على رمز التسجيل جديد). وإذا فشل التسجيل بسبب خطأ في النقل، فلن يكون رمز التسجيل قد استُهلك؛ أعِد تشغيل الأمر نفسه.
+
+يمثل `--force` إعادة تعيين صريحة، وليس مجرد إعادة محاولة اعتيادية: فهو يستبدل تراكب إعدادات `config` أو `values` المحفوظ، ويُعيد إنشاء مفتاح العميل، ويحل محل شهادة عميل غير منتهية الصلاحية (تعني استجابة `409` من نقطة نهاية التوقيع أن شهادة موجودة بالفعل). يُحفَظ معرّف UUID للعنقود الخاص بالموصل حتى عند استخدام `--force`، لذا يحتفظ الموصل المعاد تهيئته بهويته. استخدمه عند تدوير بيانات الاعتماد أو استبدال شهادة، وراجع [العمليات](/ar/products/bring-your-own-cloud/connector/operations) للاطلاع على النموذج الكامل لإعادة التشغيل والاسترداد.

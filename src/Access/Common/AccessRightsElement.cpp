@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
+#include <Common/re2.h>
 #include <unordered_set>
 
 
@@ -15,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_COMPILE_REGEXP;
     extern const int INVALID_GRANT;
     extern const int LOGICAL_ERROR;
 }
@@ -148,15 +150,20 @@ void AccessRightsElement::formatFilter(WriteBuffer & buffer) const
     buffer << "(" << backQuoteIfNeed(filter) << ")";
 }
 
-void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
+void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool precise) const
 {
     auto is_enabled_user_name_access_type = true;
     auto is_enabled_read_write_grants = true;
-    if (const auto context = Context::getGlobalContextInstance())
+    /// In precise mode the backward-compatibility rewrites below must not fire, so keep both toggles enabled
+    /// regardless of the server configuration (see the declaration for the rationale).
+    if (!precise)
     {
-        const auto & access_control = context->getAccessControl();
-        is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
-        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+        if (const auto context = Context::getGlobalContextInstance())
+        {
+            const auto & access_control = context->getAccessControl();
+            is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+            is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+        }
     }
 
     buffer << "ON ";
@@ -407,10 +414,28 @@ bool AccessRightsElements::sameOptions() const
     return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
 }
 
+void AccessRightsElement::throwIfFilterIsNotCompilable() const
+{
+    if (!hasFilter())
+        return;
+
+    re2::RE2::Options options;
+    options.set_log_errors(false);
+    if (const re2::RE2 compiled(filter, options); !compiled.ok())
+        throw Exception(
+            ErrorCodes::CANNOT_COMPILE_REGEXP, "The pattern '{}' cannot be compiled: {}", filter, compiled.error());
+}
+
 void AccessRightsElements::throwIfNotGrantable() const
 {
     for (const auto & element : *this)
         element.throwIfNotGrantable();
+}
+
+void AccessRightsElements::throwIfFilterIsNotCompilable() const
+{
+    for (const auto & element : *this)
+        element.throwIfFilterIsNotCompilable();
 }
 
 void AccessRightsElements::eraseNotGrantable()
@@ -437,7 +462,7 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
-void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bool precise) const
 {
     bool no_output = true;
     /// Track which access flags have already been output within the current group
@@ -448,7 +473,9 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
     for (size_t i = 0; i != size(); ++i)
     {
         auto element = (*this)[i];
-        element.makeBackwardCompatible();
+        /// The backward-compatibility conversion widens grants (see `formatONClause`); skip it in precise mode.
+        if (!precise)
+            element.makeBackwardCompatible();
 
         auto keywords = element.access_flags.toKeywords();
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
@@ -480,7 +507,8 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
             /// Compare backward-compatible versions of both elements so that
             /// the parameter field (cleared by makeBackwardCompatible) matches on both sides.
             auto next_element = (*this)[i + 1];
-            next_element.makeBackwardCompatible();
+            if (!precise)
+                next_element.makeBackwardCompatible();
             if (element.sameDatabaseAndTableAndParameter(next_element))
             {
                 next_element_on_same_db_and_table = true;
@@ -490,13 +518,20 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         if (!next_element_on_same_db_and_table)
         {
             buffer << " ";
-            element.formatONClause(buffer);
+            element.formatONClause(buffer, precise);
             group_flags = {};
         }
     }
 
     if (no_output)
         buffer << "USAGE ON " << "*.*";
+}
+
+String AccessRightsElements::toStringPrecise() const
+{
+    WriteBufferFromOwnString buffer;
+    formatElementsWithoutOptions(buffer, /*precise=*/true);
+    return buffer.str();
 }
 
 }

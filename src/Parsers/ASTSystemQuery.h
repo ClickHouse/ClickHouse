@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
+
+namespace Poco::JSON { class Object; }
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 #include <base/EnumReflection.h>
@@ -81,8 +83,6 @@ public:
         RELOAD_DICTIONARIES,
         UNLOAD_DICTIONARY,
         UNLOAD_DICTIONARIES,
-        RELOAD_MODEL,
-        RELOAD_MODELS,
         RELOAD_FUNCTION,
         RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
@@ -181,7 +181,6 @@ public:
     void setDatabase(const String & name);
     void setTable(const String & name);
 
-    String target_model;
     String target_function;
     String replica;
     String shard;
@@ -249,11 +248,15 @@ public:
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.
-    std::optional<Int64> fake_time_for_view;
+    /// The literal text of `SET FAKE TIME '...'`. Converting it to a timestamp needs a timezone,
+    /// which is a property of the running server, not of the query text, so the interpreter does it.
+    std::optional<String> fake_time_for_view;
 
     ASTPtr scheduled_merge_parts;
 
     String getID(char) const override { return "SYSTEM query"; }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr clone() const override
     {

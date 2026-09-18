@@ -1,6 +1,6 @@
 ---
 slug: /cloud/managed-postgres
-title: 'Managed Postgres'
+title: 'ClickHouse Managed Postgres'
 description: 'Postgres rápido, escalável e de nível empresarial, com armazenamento NVMe e integração nativa com ClickHouse para analytics em tempo real'
 keywords: ['managed postgres', 'postgresql', 'banco de dados em nuvem', 'serviço Postgres', 'postgres nvme', 'integração com ClickHouse']
 doc_type: 'guide'
@@ -13,7 +13,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 ClickHouse Managed Postgres é um serviço gerenciado de Postgres de nível empresarial, criado para desempenho e escala. Com armazenamento NVMe fisicamente colocalizado com o processamento, ele oferece desempenho até 10 vezes superior para workloads com gargalo de disco, em comparação com alternativas que usam armazenamento conectado à rede, como o EBS.
 
-Desenvolvido em parceria com a [Ubicloud](https://www.ubicloud.com/), cuja equipe fundadora tem um histórico de oferecer Postgres de classe mundial na Citus Data, Heroku e Microsoft, o Managed Postgres resolve os desafios de desempenho que aplicações em rápido crescimento costumam enfrentar: ingestão e atualizações mais lentas, vacuums lentos, aumento da latência de cauda e picos de WAL causados por IOPS de disco limitados.
+Desenvolvido em parceria com a [Ubicloud](https://www.ubicloud.com/), cuja equipe fundadora tem um histórico de oferecer Postgres de classe mundial na Citus Data, Heroku e Microsoft, o ClickHouse Managed Postgres resolve os desafios de desempenho que aplicações em rápido crescimento costumam enfrentar: ingestão e atualizações mais lentas, vacuums lentos, aumento da latência de cauda e picos de WAL causados por IOPS de disco limitados.
 
 {/* TODO: Diagrama de arquitetura mostrando a integração entre Postgres e ClickHouse
     Caminho: /images/cloud/managed-postgres/architecture-overview.png */}
@@ -24,7 +24,7 @@ Desenvolvido em parceria com a [Ubicloud](https://www.ubicloud.com/), cuja equip
 
 A maioria dos serviços de Postgres gerenciados usa armazenamento conectado à rede, como o Amazon EBS, o que exige uma ida e volta pela rede a cada acesso ao disco. Isso introduz latência na casa dos milissegundos e limita os IOPS, criando gargalos para cargas de trabalho com muita gravação ou intensivas em E/S.
 
-O Managed Postgres usa armazenamento NVMe fisicamente conectado ao mesmo servidor do seu banco de dados. Essa diferença arquitetural oferece:
+O ClickHouse Managed Postgres usa armazenamento NVMe fisicamente conectado ao mesmo servidor do seu banco de dados. Essa diferença arquitetural oferece:
 
 * **Latência de disco na casa dos microssegundos** em vez de milissegundos
 * **Limites sustentados de IOPS 10x maiores**<sup>*</sup> sem gargalos de rede
@@ -42,7 +42,7 @@ Para ver os limites locais de NVMe na AWS, consulte [Otimizado para memória](ht
   ## Integração nativa com o ClickHouse
 </div>
 
-O Managed Postgres se integra nativamente ao ClickHouse para unir transações e análises sem pipelines de ETL complexos.
+O ClickHouse Managed Postgres se integra nativamente ao ClickHouse para unir transações e análises sem pipelines de ETL complexos.
 
 <div id="postgres-replication">
   ### Replicação de Postgres para ClickHouse
@@ -54,7 +54,7 @@ Replique seus dados do Postgres para o ClickHouse usando o [conector Postgres CD
   ### pg_clickhouse: camada unificada de consultas
 </div>
 
-Toda instância do Managed Postgres vem com a extensão [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse), que permite consultar o ClickHouse diretamente do Postgres. Sua aplicação pode usar o Postgres como uma camada unificada de consultas para transações e análises, sem precisar se conectar a vários bancos de dados.
+Toda instância do ClickHouse Managed Postgres vem com a extensão [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse), que permite consultar o ClickHouse diretamente do Postgres. Sua aplicação pode usar o Postgres como uma camada unificada de consultas para transações e análises, sem precisar se conectar a vários bancos de dados.
 
 A extensão oferece amplo suporte a query pushdown para o ClickHouse, garantindo execução eficiente, inclusive com suporte a filtros, junções, semijunções, agregações e funções. Atualmente, 14 de 22 consultas TPC-H são totalmente processadas via pushdown, resultando em ganhos de desempenho de mais de 60x em comparação com a execução das mesmas consultas no Postgres padrão.
 
@@ -62,7 +62,7 @@ A extensão oferece amplo suporte a query pushdown para o ClickHouse, garantindo
   ## Confiabilidade de nível empresarial
 </div>
 
-O Managed Postgres oferece os recursos de confiabilidade e segurança exigidos pelas cargas de trabalho em produção.
+O ClickHouse Managed Postgres oferece os recursos de confiabilidade e segurança exigidos pelas cargas de trabalho em produção.
 
 <div id="high-availability">
   ### Alta disponibilidade
@@ -80,7 +80,7 @@ Toda instância inclui backups automáticos com suporte a forks e recuperação 
   ### Segurança e conformidade
 </div>
 
-O Managed Postgres foi projetado para atender aos mesmos padrões de segurança do ClickHouse Cloud:
+O ClickHouse Managed Postgres foi projetado para atender aos mesmos padrões de segurança do ClickHouse Cloud:
 
 * **Autenticação**: suporte a SAML/SSO
 * **Segurança de rede**: lista de IPs permitidos, criptografia em repouso e em trânsito (TLS 1.3)

@@ -1,0 +1,9 @@
+-- { echo }
+-- Moving a part to another disk keeps the part name, so the entries cached for a filter over the
+-- future disk name (when it matched no rows) must not be reused after the move (when it matches
+-- all rows). The condition on the key forces reading rows instead of selecting parts by disk name.
+select count() from test_qcc_move where _disk_name = 's3_disk' or key < 0;
+0
+alter table test_qcc_move move part 'all_1_1_0' to disk 's3_disk';
+select count() from test_qcc_move where _disk_name = 's3_disk' or key < 0;
+100000

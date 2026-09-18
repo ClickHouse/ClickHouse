@@ -95,7 +95,7 @@ public:
         }
         catch (Exception & e)
         {
-            if ((e.code() != code) || (e.message().find(message) == String::npos))
+            if ((e.code() != code) || !e.message().contains(message))
                 throw;
         }
     }

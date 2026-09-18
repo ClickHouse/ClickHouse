@@ -68,7 +68,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
   ## اكتشاف نوع البيانات
 </div>
 
-عند إنشاء قيم Tuple أثناء التنفيذ، يستنتج ClickHouse أنواع وسائط Tuple على أنها أصغر أنواع يمكنها احتواء قيمة الوسيطة المقدَّمة. إذا كانت القيمة هي [NULL](/ar/reference/settings/formats#input_format_null_as_default)، فسيكون النوع المستنتَج هو [Nullable](/ar/reference/data-types/nullable).
+عند إنشاء قيم Tuple أثناء التنفيذ، يستنتج ClickHouse أنواع وسائط Tuple على أنها أصغر أنواع يمكنها احتواء قيمة الوسيطة المقدَّمة. إذا كانت القيمة هي [NULL](/ar/reference/settings/formats/input-format#input_format_null_as_default)، فسيكون النوع المستنتَج هو [Nullable](/ar/reference/data-types/nullable).
 
 مثال على الاكتشاف التلقائي لنوع البيانات:
 

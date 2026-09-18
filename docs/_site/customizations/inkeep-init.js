@@ -106,17 +106,24 @@
     return [
       // Let the row wrap and stop the single-line horizontal scroll.
       LIST + ' { flex-wrap: wrap !important; overflow-x: visible !important; row-gap: 0.375rem; }',
+      // Categories share a compact tag size; a mild radius keeps their edges
+      // distinct from the fully rounded search controls.
+      TAB + ' { font-size: 0.8125rem !important; min-height: 1.75rem !important; padding-inline: 0.625rem !important; border-radius: 12px !important; }',
       // Force ordering: row-1 tabs, then a break, then the sub-area tabs.
       row1 + ' { order: 0; }',
-      SUB + ' { order: 2; display: none !important; }',
+      // Sub-areas use an outline and muted inactive state to distinguish them
+      // from their parent categories.
+      SUB + ' { order: 2; display: none !important; box-shadow: inset 0 0 0 1px currentColor !important; }',
+      SUB + ':not([data-state="active"]) { background: transparent !important; opacity: 0.7; }',
       // Reveal the sub-area tabs only when Docs (or a sub-area) is active.
       docsActive + ' ' + SUB + ', ' + subActive + ' ' + SUB + ' { display: inline-flex !important; }',
       // A full-width pseudo-element (a flex item of the tab-list) ordered
       // between row-1 and the sub-areas forces the sub-areas onto their own
-      // second line — only while that row is showing. No DOM injection, so it
-      // survives Inkeep's re-renders.
+      // second line — only while that row is showing. It also supplies a
+      // subtle visual divider. No DOM injection, so it survives Inkeep's
+      // re-renders.
       docsActive + '::before, ' + subActive + '::before' +
-        ' { content: ""; order: 1; flex: 0 0 100%; height: 0; }',
+        ' { content: ""; order: 1; flex: 0 0 100%; height: 1px; margin-block: 0.125rem; background: currentColor; opacity: 0.18; }',
     ].join('');
   }
 
@@ -155,11 +162,17 @@
       return;
     }
 
+    var initialQuery = new URLSearchParams(window.location.search).get('q') || '';
     var settings = {
       // Open straight to the search view. (canToggleView is honored by
       // SearchBar/ChatButton but NOT by ModalSearchAndChat, so we hide the
       // chat affordances via CSS below instead.)
       defaultView: 'search',
+      // A URL such as /docs/?q=MergeTree opens the modal and runs the search
+      // immediately, matching the old Docusaurus search-page behavior.
+      modalSettings: {
+        isOpen: Boolean(initialQuery),
+      },
       baseSettings: {
         apiKey: INKEEP_API_KEY,
         primaryBrandColor: '#fdff75',
@@ -243,6 +256,7 @@
       },
       searchSettings: {
         placeholder: 'Search ClickHouse docs...',
+        defaultQuery: initialQuery,
         // Wait 300ms after the last keystroke before firing a search request,
         // so fast typing issues one query instead of one per character.
         debounceTimeMs: 300,

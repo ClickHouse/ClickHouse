@@ -180,6 +180,25 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');
 
 DROP TABLE tab;
 
+-- Array column: both `arrayMap` lambdas must survive the DAG merge, the duplicated predicate keeps a row-level copy that applies both.
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(Nullable(String)),
+    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val), postprocessor = upper(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo', 'Bar']), (2, ['Baz']);
+
+-- ['Foo','Bar'] -> lower -> tokens 'foo','bar' -> upper -> 'FOO','BAR'
+SELECT count() FROM tab PREWHERE hasAllTokens(val, ['FOO']) WHERE hasAllTokens(val, ['FOO']);
+SELECT count() FROM tab PREWHERE hasAllTokens(val, ['FOO', 'BAR']) WHERE hasAllTokens(val, ['FOO', 'BAR']);
+SELECT count() FROM tab PREWHERE hasAnyTokens(val, ['BAZ']) WHERE hasAnyTokens(val, ['BAZ']);
+SELECT count() FROM tab PREWHERE hasAllTokens(val, ['NOPE']) WHERE hasAllTokens(val, ['NOPE']);
+
+DROP TABLE tab;
+
 SELECT '7. Stop-word filtering postprocessor.';
 
 -- Tokens that map to empty string are excluded from the index.
