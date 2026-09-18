@@ -269,6 +269,55 @@ static std::optional<NameAndTypePair> resolveSubcolumnFromHeader(const Block & h
     return std::nullopt;
 }
 
+/// The planner may ask the reader for subcolumns as flat columns (`t.x`, or a declared `JSON` path `j.a`, see
+/// `filterTupleColumnsToRead`) when the table-level format can read them directly. Only the `Parquet` reader
+/// can, and a data lake may store a file in another format, which would then treat such a name as a missing
+/// column. For such a file this replaces every header column that is a subcolumn of a storage column by that
+/// storage column, and fills `subcolumns_to_extract` with the pairs that rebuild the original header (in its
+/// order) from the returned one. Returns `header` unchanged, leaving `subcolumns_to_extract` empty, when
+/// nothing had to be replaced.
+static Block replaceDirectlyReadSubcolumnsWithStorageColumns(
+    const Block & header, const ColumnsDescription & storage_columns, NamesAndTypesList & subcolumns_to_extract)
+{
+    Block result;
+    NamesAndTypesList to_extract;
+    bool replaced = false;
+    for (const auto & column : header)
+    {
+        /// A storage column can itself have a dotted name, so check it first.
+        std::optional<NameAndTypePair> subcolumn;
+        if (!storage_columns.has(column.name))
+            subcolumn = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name);
+
+        if (!subcolumn || !subcolumn->isSubcolumn())
+        {
+            result.insert(column);
+            to_extract.emplace_back(column.name, column.type);
+            continue;
+        }
+
+        if (!column.type->equals(*subcolumn->type))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Type {} of the directly read subcolumn {} differs from its type {} in the table",
+                column.type->getName(),
+                column.name,
+                subcolumn->type->getName());
+
+        const auto & storage_name = subcolumn->getNameInStorage();
+        if (!result.has(storage_name))
+            result.insert({subcolumn->getTypeInStorage()->createColumn(), subcolumn->getTypeInStorage(), storage_name});
+        to_extract.push_back(std::move(*subcolumn));
+        replaced = true;
+    }
+
+    if (!replaced)
+        return header;
+
+    subcolumns_to_extract = std::move(to_extract);
+    return result;
+}
+
 static FilterDAGInfoPtr prepareFallbackFilter(const FilterDAGInfoPtr & filter, const NamesAndTypesList & requested_columns)
 {
     if (!filter)
@@ -1161,6 +1210,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         file_iterator,
         configuration,
         object_storage,
+        storage_snapshot,
         read_from_format_info,
         format_settings,
         read_context,
@@ -1178,6 +1228,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const std::shared_ptr<IObjectIterator> & file_iterator,
     const StorageObjectStorageConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage,
+    const StorageSnapshotPtr & storage_snapshot,
     ReadFromFormatInfo & read_from_format_info,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context_,
@@ -1578,6 +1629,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_inputs(stripped_prewhere_info->prewhere_actions);
         }
 
+        /// Direct subcolumn reads are planned from the table-level format (`supports_tuple_elements`); this
+        /// file's format may differ in a data lake, and only the `Parquet` reader supports them. The header
+        /// of a schema-changed file is its own schema of whole columns, so there is nothing to replace.
+        /// The snapshot is absent only for the queue storages, which never plan direct subcolumn reads.
+        NamesAndTypesList directly_read_subcolumns_to_extract;
+        if (storage_snapshot && !schema_changed
+            && !FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, context_, format_settings))
+        {
+            initial_header = replaceDirectlyReadSubcolumnsWithStorageColumns(
+                initial_header, storage_snapshot->metadata->getColumns(), directly_read_subcolumns_to_extract);
+        }
+
         chassert(object_info->getObjectMetadata().has_value());
 
         LOG_DEBUG(
@@ -1637,6 +1700,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
+
+        /// Restore the planned header: extract the directly read subcolumns from the storage columns
+        /// read instead of them (see above), so the rest of the pipeline is unaffected.
+        if (!directly_read_subcolumns_to_extract.empty())
+        {
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<ExtractColumnsTransform>(header, directly_read_subcolumns_to_extract);
+            });
+        }
 
         if (!identity_partition_columns.empty())
         {
