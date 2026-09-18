@@ -5547,6 +5547,15 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return False
 
+            # A graceful stop is not a crash simulation, so push the tail of the
+            # system logs out to the CI Logs cluster first: the rows still in the
+            # buffers of the log tables, in the asynchronous insert queue and in
+            # the `_sender` queues would otherwise be lost. restart_clickhouse()
+            # delegates here, so restarts are covered too. A hard kill keeps its
+            # semantics: nothing is sent to the server before it is killed.
+            if not kill:
+                ci_logs_export.flush_before_shutdown(self)
+
             # Under LLVM coverage the server runs several times slower and writes its
             # .profraw only on a graceful shutdown (the libprofile atexit handler, or
             # dumpCoverageReportIfPossible() on the forced-shutdown path). Escalating to

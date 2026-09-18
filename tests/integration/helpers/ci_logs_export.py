@@ -417,31 +417,85 @@ TRANSIENT_PROBE_ERRORS = ("Connection reset by peer", "MEMORY_LIMIT_EXCEEDED")
 PROBE_ATTEMPTS = 3
 
 
-def _probe_connection(client_bin_path):
-    """Check that the CI Logs cluster is reachable. Returns None on success and
-    the error of the last attempt otherwise."""
+def _is_transient_error(error):
+    return any(marker in str(error) for marker in TRANSIENT_PROBE_ERRORS)
+
+
+def _run_remote_query_with_retries(client_bin_path, sql, timeout=90, extra_args=()):
+    """Run a query on the CI Logs cluster, retrying it up to PROBE_ATTEMPTS
+    times when it fails with one of the transient errors. Raises the error of
+    the last attempt."""
     for attempt in range(1, PROBE_ATTEMPTS + 1):
         try:
-            _run_remote_query(
-                client_bin_path,
-                "SELECT 1 FORMAT Null",
-                timeout=60,
-                extra_args=("--connect_timeout", "3"),
-            )
-            return None
+            return _run_remote_query(client_bin_path, sql, timeout=timeout, extra_args=extra_args)
         except Exception as e:
             error = e
-        if not any(marker in str(error) for marker in TRANSIENT_PROBE_ERRORS):
-            break
-        if attempt == PROBE_ATTEMPTS:
-            break
+        if attempt == PROBE_ATTEMPTS or not _is_transient_error(error):
+            raise error
         logging.info(
-            "CI logs export: attempt %s/%s to connect to the CI Logs cluster failed with a transient error, retrying",
+            "CI logs export: attempt %s/%s of a query on the CI Logs cluster failed with a transient error, retrying",
             attempt,
             PROBE_ATTEMPTS,
         )
         time.sleep(attempt + 1)
-    return error
+
+
+def _probe_connection(client_bin_path):
+    """Check that the CI Logs cluster is reachable. Returns None on success and
+    the error of the last attempt otherwise."""
+    try:
+        _run_remote_query_with_retries(
+            client_bin_path,
+            "SELECT 1 FORMAT Null",
+            timeout=60,
+            extra_args=("--connect_timeout", "3"),
+        )
+    except Exception as e:
+        return e
+    return None
+
+
+def _destination_table_exists(client_bin_path, table, hash_value):
+    """Whether the destination table of `table` exists on the CI Logs cluster.
+    Raises when that cannot be determined."""
+    output = _run_remote_query_with_retries(
+        client_bin_path,
+        f"EXISTS TABLE default.{table}_{hash_value}",
+        timeout=60,
+        extra_args=("--connect_timeout", "3"),
+    )
+    return output.strip() == "1"
+
+
+def _create_destination_table(client_bin_path, table, hash_value, statement):
+    """Create the destination table of `table` on the CI Logs cluster. Returns
+    True if it exists afterwards, False if it is known not to, and None if that
+    could not be determined - the caller must not remember the latter.
+
+    The DDL is idempotent (`CREATE TABLE IF NOT EXISTS`), so a transient failure
+    is retried, and a failure of any other kind is followed by an existence
+    check: the DDL may well have been applied on the cluster while the client
+    saw a timeout or a reset connection, and a marker written on that evidence
+    alone would suppress the export of the table for the rest of the job."""
+    try:
+        _run_remote_query_with_retries(client_bin_path, statement)
+        return True
+    except Exception:
+        logging.warning(
+            "CI logs export: failed to create the destination table for %s:\n%s",
+            table,
+            statement,
+            exc_info=True,
+        )
+    try:
+        return _destination_table_exists(client_bin_path, table, hash_value)
+    except Exception:
+        logging.warning(
+            "CI logs export: cannot tell whether the destination table for %s exists, will retry on the next server",
+            table,
+            exc_info=True,
+        )
+        return None
 
 
 def _ensure_remote_tables(client_bin_path, tables):
@@ -451,7 +505,10 @@ def _ensure_remote_tables(client_bin_path, tables):
     hash depends only on the table structure), so the result of each creation
     is cached on disk and shared between all tests and pytest-xdist workers of
     the job: only the first test that needs a table pays for the WAN round
-    trip. Returns the set of tables which exist on the CI Logs cluster.
+    trip. Returns the set of tables which exist on the CI Logs cluster. A table
+    is only remembered as failed once it is confirmed absent from the cluster
+    after the DDL failed; a failure that leaves that unknown is retried by the
+    next server.
 
     A failure to connect at all disables the export for the rest of the job
     (the marker file is checked on every call), so that a broken or unreachable
@@ -485,14 +542,13 @@ def _ensure_remote_tables(client_bin_path, tables):
             continue
         if failed_marker.exists():
             continue
-        try:
-            _run_remote_query(client_bin_path, statement)
-        except Exception:
+        exists = _create_destination_table(client_bin_path, table, hash_value, statement)
+        if exists is None:
+            continue
+        if not exists:
             logging.warning(
-                "CI logs export: failed to create the destination table for %s (will not be retried in this job):\n%s",
+                "CI logs export: the destination table for %s does not exist on the CI Logs cluster, it will not be retried in this job",
                 table,
-                statement,
-                exc_info=True,
             )
             failed_marker.touch()
             continue
