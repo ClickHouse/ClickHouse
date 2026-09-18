@@ -424,15 +424,14 @@ private:
     /// Add an attribute to the fragment span. No-op when the fragment is not traced.
     void addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept TSA_REQUIRES(was_cancelled_mutex);
 
-    /// Finish the fragment span with its outcome and write it to the span log. The first outcome wins,
-    /// later calls are no-ops: OK only for a fragment that delivered its full result (`EndOfStream`),
-    /// ERROR for a genuine failure, UNSET plus an explaining attribute otherwise.
+    /// Finish the fragment span with its outcome and write it to the span log.
+    /// OK only for a fragment that delivered its full result (`EndOfStream`),
+    /// ERROR for a genuine failure.
+    /// UNSET plus an explaining attribute otherwise.
     void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept TSA_REQUIRES(was_cancelled_mutex);
 
     /// Finish the span of a fragment cancelled by the initiator: UNSET, tagged `clickhouse.cancelled = 1`
-    /// and `clickhouse.cancel_reason = reason`, where the reason is `limit` (the initiator needs no more
-    /// data, e.g. `LIMIT` satisfied), `initiator` (`KILL QUERY`, or a failure elsewhere in the pipeline)
-    /// or `destroyed` (the executor was torn down before the fragment finished).
+    /// and `clickhouse.cancel_reason = reason`, reason can be: `limit`, `initiator`, `destroyed`.
     void finishFragmentSpanCancelled(std::string_view reason) noexcept TSA_REQUIRES(was_cancelled_mutex);
 
     /// Record a shard failure tolerated by `skip_unavailable_shards`
@@ -441,11 +440,8 @@ private:
     /// Close the fragment span of a parallel replica that became unavailable.
     void finishFragmentSpanForUnavailableReplica() noexcept TSA_REQUIRES(was_cancelled_mutex);
 
-    /// Record the fragment as failed, from a `SCOPE_FAIL` at the entry points of the executor, so
-    /// that no later cancel or teardown path records a benign outcome for a fragment that actually
-    /// failed. Runs during unwinding, where no handler is active and the exception message is not
-    /// available; only the status is recorded, the message is on the query span. Takes the lock
-    /// itself: declare the `SCOPE_FAIL` before the `LockAndBlocker` of the entry point.
+    /// Record the fragment as failed, from a `SCOPE_FAIL` at the entry points of the executor
+    /// Takes the lock itself: declare the `SCOPE_FAIL` before the `LockAndBlocker` of the entry point.
     void failFragmentSpan() noexcept;
 };
 

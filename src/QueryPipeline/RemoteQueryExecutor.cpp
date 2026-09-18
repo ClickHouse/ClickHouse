@@ -72,14 +72,12 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
-    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
     extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
-    extern const char remote_query_executor_local_packet_processing_error[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -904,12 +902,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                 connections->dumpAddresses());
             break;
         case Protocol::Server::Data:
-            /// A local, non-`Server::Exception` failure raised on the consumer thread while processing a packet.
-            fiu_do_on(FailPoints::remote_query_executor_local_packet_processing_error,
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while processing a data packet");
-            });
-
             /// Note: `packet.block.rows() > 0` means it's a header block.
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
