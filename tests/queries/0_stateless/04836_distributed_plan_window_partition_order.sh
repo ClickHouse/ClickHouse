@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
-# no-old-analyzer: make_distributed_plan requires the analyzer.
 
 # A PARTITION BY window under make_distributed_plan=1 must produce the same result as the
 # non-distributed plan, in the same row order. Every setting the comparison depends on is pinned
