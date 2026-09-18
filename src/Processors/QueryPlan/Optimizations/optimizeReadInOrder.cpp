@@ -1677,6 +1677,34 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     return order_info.input_order;
 }
 
+InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
+    const SortingStep & sorting,
+    ReadFromMerge & merge,
+    const QueryPlan::Node & subtree_above_reading)
+{
+    if (sorting.getType() != SortingStep::Type::Full)
+        return nullptr;
+
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    size_t limit = sorting.getLimit();
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    /// The same matching as in `optimizeReadInOrder` itself: every child's sorting key against the sort
+    /// description, through the renaming that the child plan performs on top of the child table.
+    auto order_info = buildInputOrderFromSortDescription(
+        &merge,
+        fixed_columns,
+        dag,
+        sorting.getSortDescription(),
+        limit);
+
+    return order_info.input_order;
+}
+
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)

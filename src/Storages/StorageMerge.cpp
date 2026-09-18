@@ -2354,6 +2354,23 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
+bool ReadFromMerge::canReadInReverseOrder()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    auto can_read_in_reverse_order = [](ReadFromMergeTree & read_from_merge_tree)
+    {
+        return read_from_merge_tree.canReadInReverseOrder();
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized()
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read_in_reverse_order))
+            return false;
+
+    return true;
+}
+
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
 {
     filterTablesAndCreateChildrenPlans();
@@ -2361,18 +2378,8 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     /// Not every reading step accepts a reverse direction (with `FINAL`, only some engines do, see
     /// `ReadFromMergeTree::canReadInReverseOrder`). Ask all of them before the loop below switches
     /// the children one by one, so that no child is left reading in order when the request is rejected.
-    if (order_info_->direction != 1)
-    {
-        auto can_read_in_reverse_order = [](ReadFromMergeTree & read_from_merge_tree)
-        {
-            return read_from_merge_tree.canReadInReverseOrder();
-        };
-
-        for (const auto & child_plan : *child_plans)
-            if (child_plan.plan.isInitialized()
-                && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read_in_reverse_order))
-                return false;
-    }
+    if (order_info_->direction != 1 && !canReadInReverseOrder())
+        return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
     {

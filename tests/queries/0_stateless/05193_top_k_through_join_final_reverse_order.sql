@@ -169,12 +169,10 @@ SELECT 'rows_large_limit_equal' AS label, (SELECT groupArray((k, src, v)) FROM (
     ORDER BY l.k DESC LIMIT 500 SETTINGS optimize_read_in_order = 0, query_plan_top_k_through_join = 0
 ));
 
--- A Merge table over ReplacingMergeTree children behind a join. `topKThroughJoin` never defers for
--- a Merge table, because it looks for a MergeTree read on the preserved input and a Merge table
--- reads through its own step, so it injects its Sort + Limit. The children are still read in
--- reverse order, because that injected sort is itself satisfied by reading in order, so the only
--- cost of the missing deferral is the extra sort step. With `topKThroughJoin` disabled, the second
--- pass reads the children in reverse order through the join without it.
+-- A Merge table over ReplacingMergeTree children behind a join. `topKThroughJoin` probes the Merge
+-- table the way the second pass does (every child table has to accept the order and the reverse
+-- direction) and defers to it, so the children are read in reverse order through the join without
+-- an injected Sort + Limit, exactly as with `topKThroughJoin` disabled.
 CREATE TABLE t_merge (k Int64, src Int64) ENGINE = Merge(currentDatabase(), '^t_replacing$');
 
 SELECT 'plan_merge_topk_on' AS label,
