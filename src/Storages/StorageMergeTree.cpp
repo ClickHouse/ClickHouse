@@ -123,7 +123,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
-    extern const MergeTreeSettingsBool table_disk;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
@@ -468,47 +467,37 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
 void StorageMergeTree::drop()
 {
     shutdown(true);
-
-    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
-    /// recursively (see `MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation`), so the state that this table
-    /// keeps there would survive the drop and get loaded by the next table created on the same disk.
-    if ((*getSettings())[MergeTreeSetting::table_disk])
-        removeOwnFilesInDiskRootOnDrop();
-
     dropAllData();
 }
 
-void StorageMergeTree::removeOwnFilesInDiskRootOnDrop()
+void StorageMergeTree::removeOwnFilesInDiskRootOnDrop(const DiskPtr & disk)
 {
-    for (const auto & disk : getDisks())
+    /// Runs after the parts are removed (see `MergeTreeData::dropAllData`): a drop that fails while removing the parts
+    /// is retried, and `UNDROP TABLE` can restore the table until then, so the mutation entries and the deduplication
+    /// log have to outlive the parts they describe.
+    size_t removed_count = 0;
+    for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
     {
-        if (disk->isBroken() || disk->isReadOnly())
-            continue;
-
-        size_t removed_count = 0;
-        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+        if (startsWith(it->name(), "mutation_") || startsWith(it->name(), "tmp_mutation_"))
         {
-            if (startsWith(it->name(), "mutation_") || startsWith(it->name(), "tmp_mutation_"))
-            {
-                LOG_DEBUG(log, "Removing mutation file {} on drop", it->path());
-                disk->removeFile(it->path());
-                ++removed_count;
-            }
-        }
-
-        /// Otherwise the next table created on the same disk loads the block numbers of this one and deduplicates
-        /// (silently skips) its inserts.
-        const auto deduplication_logs_path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
-        if (disk->existsDirectory(deduplication_logs_path))
-        {
-            LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path.string());
-            disk->removeRecursive(deduplication_logs_path);
+            LOG_DEBUG(log, "Removing mutation file {} on drop", it->path());
+            disk->removeFile(it->path());
             ++removed_count;
         }
-
-        if (removed_count > 0)
-            LOG_INFO(log, "Removed {} entries of this table from the root of the disk {} on drop", removed_count, disk->getName());
     }
+
+    /// Otherwise the next table created on the same disk loads the block numbers of this one and deduplicates
+    /// (silently skips) its inserts.
+    const auto deduplication_logs_path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
+    if (disk->existsDirectory(deduplication_logs_path))
+    {
+        LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path.string());
+        disk->removeRecursive(deduplication_logs_path);
+        ++removed_count;
+    }
+
+    if (removed_count > 0)
+        LOG_INFO(log, "Removed {} entries of this table from the root of the disk {} on drop", removed_count, disk->getName());
 }
 
 void StorageMergeTree::alter(
