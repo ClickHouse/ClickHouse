@@ -6397,3 +6397,181 @@ def test_create_table_concurrent_race_attaches(started_cluster):
 
     instance.query(f"DROP TABLE {table_a}")
     instance.query(f"DROP TABLE {table_b}")
+
+
+def test_writes_timestamp_ntz_annotation(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_writes_timestamp_ntz")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    # A tz-less pyarrow timestamp becomes Delta `timestamp_ntz`, a tz-aware one Delta `timestamp`.
+    # `ts_tz` is the selectivity control (it must stay UTC-adjusted) and `vc` carries the char/varchar
+    # field annotation. Every Delta field is nullable because `write_deltalake` declares a non-nullable
+    # one without listing the `invariants` writer feature its NOT NULL constraint needs, which makes
+    # Spark reject the table for that unrelated reason; the Nullable/non-Nullable pair comes from the
+    # ClickHouse column declaration below, which is what picks the writer path.
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("ts_ntz", pa.timestamp("us")),
+            pa.field("ts_ntz_nullable", pa.timestamp("us")),
+            pa.field("ts_tz", pa.timestamp("us", tz="UTC")),
+            pa.field(
+                "vc",
+                pa.string(),
+                metadata={b"__CHAR_VARCHAR_TYPE_STRING": b"varchar(16)"},
+            ),
+        ]
+    )
+    empty_arrays = [pa.array([], type=field.type) for field in schema]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+    )
+
+    # Precondition: a `deltalake` version that mapped a tz-less timestamp to Delta `timestamp` would
+    # make every assertion below pass without exercising `timestamp_ntz` at all.
+    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
+        metadata = [json.loads(line) for line in log if "metaData" in line][0]
+    log_types = {
+        field["name"]: field["type"]
+        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
+    }
+    assert log_types["ts_ntz"] == "timestamp_ntz", log_types
+    assert log_types["ts_ntz_nullable"] == "timestamp_ntz", log_types
+    assert log_types["ts_tz"] == "timestamp", log_types
+
+    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} "
+        "(id Int32, ts_ntz DateTime64(6), ts_ntz_nullable Nullable(DateTime64(6)), "
+        "ts_tz DateTime64(6), vc String) "
+        f"ENGINE = DeltaLakeLocal('{result_file}') "
+        "SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    # A DateTime64 literal is parsed in the session time zone, so pin it to fix the stored number.
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(1, '2024-06-01 12:00:00.000000', '2024-06-01 12:00:00.000000', "
+        "'2024-06-01 12:00:00.000000', 'abc')",
+        settings={"session_timezone": "UTC"},
+    )
+
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls {result_file}"]).strip().split("\n")
+    )
+    parquet_files = [name for name in files if name.endswith(".parquet")]
+    assert len(parquet_files) == 1, files
+
+    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+
+    # pyarrow renders isAdjustedToUTC=false as tz None and isAdjustedToUTC=true as tz 'UTC'.
+    written = pq.read_schema(f"{result_file}/{parquet_files[0]}")
+    assert written.field("ts_ntz").type == pa.timestamp("us"), written
+    assert written.field("ts_ntz_nullable").type == pa.timestamp("us"), written
+    assert written.field("ts_tz").type == pa.timestamp("us", tz="UTC"), written
+
+    # The reported defect: Spark refuses a table whose data file contradicts its own Delta schema.
+    spark = started_cluster.spark_session
+    rows = spark.read.format("delta").load(result_file).collect()
+    assert len(rows) == 1, rows
+    assert str(rows[0]["ts_ntz"]) == "2024-06-01 12:00:00", rows
+    assert str(rows[0]["ts_ntz_nullable"]) == "2024-06-01 12:00:00", rows
+
+    # The ClickHouse round trip stays lossless: the reader takes types from the Delta schema.
+    assert instance.query(
+        f"SELECT id, ts_ntz, ts_ntz_nullable, ts_tz, vc FROM {table_name}",
+        settings={"session_timezone": "UTC"},
+    ).strip() == (
+        "1\t2024-06-01 12:00:00.000000\t2024-06-01 12:00:00.000000\t"
+        "2024-06-01 12:00:00.000000\tabc"
+    )
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+def test_writes_timestamp_ntz_annotation_nested(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_writes_timestamp_ntz_nested")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    # One `timestamp_ntz` leaf per container shape, because the writer spells a nested column path
+    # itself (`st.inner_ts`, `arr.element`, `m.value`) rather than reusing the Delta child names.
+    # `st.inner_tz` is a Delta `timestamp` sharing a struct with an ntz sibling: selectivity has to hold
+    # per leaf, not per top-level column.
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field(
+                "st",
+                pa.struct(
+                    [
+                        pa.field("inner_ts", pa.timestamp("us")),
+                        pa.field("inner_tz", pa.timestamp("us", tz="UTC")),
+                    ]
+                ),
+            ),
+            pa.field("arr", pa.list_(pa.timestamp("us"))),
+            pa.field("m", pa.map_(pa.string(), pa.timestamp("us"))),
+        ]
+    )
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(
+            [pa.array([], type=field.type) for field in schema], schema=schema
+        ),
+        mode="overwrite",
+    )
+
+    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
+        metadata = [json.loads(line) for line in log if "metaData" in line][0]
+    log_fields = {
+        field["name"]: field["type"]
+        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
+    }
+    assert log_fields["st"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+    assert log_fields["st"]["fields"][1]["type"] == "timestamp", log_fields
+    assert log_fields["arr"]["elementType"] == "timestamp_ntz", log_fields
+    assert log_fields["m"]["valueType"] == "timestamp_ntz", log_fields
+
+    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, "
+        "st Tuple(inner_ts DateTime64(6), inner_tz DateTime64(6)), "
+        "arr Array(DateTime64(6)), m Map(String, DateTime64(6))) "
+        f"ENGINE = DeltaLakeLocal('{result_file}') "
+        "SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(1, ('2024-06-01 12:00:00', '2024-06-01 12:00:00'), "
+        "['2024-06-01 12:00:00'], {'k': '2024-06-01 12:00:00'})",
+        settings={"session_timezone": "UTC"},
+    )
+
+    files = (
+        instance.exec_in_container(["bash", "-c", f"ls {result_file}"]).strip().split("\n")
+    )
+    parquet_files = [name for name in files if name.endswith(".parquet")]
+    assert len(parquet_files) == 1, files
+
+    LocalDownloader(instance).download_directory(f"{result_file}/", f"{result_file}/")
+
+    written = pq.read_schema(f"{result_file}/{parquet_files[0]}")
+    struct_type = written.field("st").type
+    assert struct_type.field("inner_ts").type == pa.timestamp("us"), written
+    assert struct_type.field("inner_tz").type == pa.timestamp("us", tz="UTC"), written
+    assert written.field("arr").type.value_type == pa.timestamp("us"), written
+    assert written.field("m").type.item_type == pa.timestamp("us"), written
+
+    spark = started_cluster.spark_session
+    rows = spark.read.format("delta").load(result_file).collect()
+    assert len(rows) == 1, rows
+    assert str(rows[0]["st"]["inner_ts"]) == "2024-06-01 12:00:00", rows
+    assert str(rows[0]["arr"][0]) == "2024-06-01 12:00:00", rows
+    assert str(rows[0]["m"]["k"]) == "2024-06-01 12:00:00", rows
+
+    instance.query(f"DROP TABLE {table_name}")

@@ -30,6 +30,8 @@
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/DeltaMetadataLog.h>
+#include <Formats/FormatFilterInfo.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace CurrentMetrics
 {
@@ -657,6 +659,20 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, snapshot->getTableSchema());
     delta_transaction->create(partition_columns);
 
+    /// Only Parquet reads these paths; ORC and Avro read any mapper as Iceberg metadata, so do not hand
+    /// them one. The column-mapping rejection above makes logical names equal written names here, so the
+    /// paths need no physical-name translation; a columnMapping write path would have to translate them.
+    const auto & timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
+    FormatFilterInfoPtr format_filter_info;
+    if (!timestamp_ntz_paths.empty() && boost::iequals(configuration->format, "Parquet"))
+    {
+        auto column_mapper = std::make_shared<ColumnMapper>();
+        /// The table schema is a superset of the write schema (partition columns); harmless, because the
+        /// writer only looks up paths of columns present in the block.
+        column_mapper->setLocalTimestampPaths(std::unordered_set<String>(timestamp_ntz_paths));
+        format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+    }
+
     if (partition_columns.empty())
     {
         return std::make_shared<DeltaLakeSink>(
@@ -665,6 +681,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             context,
             sample_block,
             format_settings,
+            format_filter_info,
             configuration->format,
             configuration->compression_method);
     }
@@ -676,6 +693,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
         context,
         sample_block,
         format_settings,
+        format_filter_info,
         configuration->format,
         configuration->compression_method);
 }

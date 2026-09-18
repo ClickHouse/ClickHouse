@@ -87,6 +87,8 @@ struct IcebergOptionality
     bool owned_by_enclosing_nullable = false;
 
     bool isOptional(const String & path) const;
+    /// Whether the lake declares this path a wall clock time, which Parquet must leave unadjusted.
+    bool isLocalTimestamp(const String & path) const;
 };
 
 struct ColumnChunkIndexes
