@@ -263,6 +263,27 @@ SELECT 'correlated key value, setting off', count() FROM t2_120650 WHERE dictGet
 SELECT 'correlated key value, rewrite off', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0;
 SELECT 'correlated key not hinted', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x') WHERE explain ILIKE '%function_name: indexHint%';
 
+-- The `in` family keeps a top-level `Nullable` argument as one key column, so a dictionary with more
+-- than one key column cannot be served by the restored-NULL rewrite; those keys keep their comparison.
+DROP DICTIONARY IF EXISTS cd_120650;
+CREATE DICTIONARY cd_120650 (k1 UInt64, k2 String, a String) PRIMARY KEY k1, k2
+SOURCE(CLICKHOUSE(QUERY 'SELECT arrayJoin([1, 2, 3]) AS k1, \'s\' AS k2, \'x\' AS a'))
+LAYOUT(complex_key_hashed()) LIFETIME(0);
+
+DROP TABLE IF EXISTS t4_120650;
+CREATE TABLE t4_120650 (nt Nullable(Tuple(UInt64, String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t4_120650 SELECT if(number % 10 = 0, NULL, (number, 's')) FROM numbers(100);
+
+SELECT 'complex key like value', count(dictGet('cd_120650', 'a', nt) LIKE 'x%'), sum(dictGet('cd_120650', 'a', nt) LIKE 'x%') FROM t4_120650;
+SELECT 'complex key like value, rewrite off', count(dictGet('cd_120650', 'a', nt) LIKE 'x%'), sum(dictGet('cd_120650', 'a', nt) LIKE 'x%') FROM t4_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'complex key where', count() FROM t4_120650 WHERE dictGet('cd_120650', 'a', nt) LIKE 'x%';
+SELECT 'complex key where, rewrite off', count() FROM t4_120650 WHERE dictGet('cd_120650', 'a', nt) LIKE 'x%' SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'complex key equals value', count(dictGet('cd_120650', 'a', nt) = 'x'), sum(dictGet('cd_120650', 'a', nt) = 'x') FROM t4_120650;
+SELECT 'complex key equals value, rewrite off', count(dictGet('cd_120650', 'a', nt) = 'x'), sum(dictGet('cd_120650', 'a', nt) = 'x') FROM t4_120650 SETTINGS optimize_inverse_dictionary_lookup = 0;
+SELECT 'complex key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t4_120650 WHERE dictGet('cd_120650', 'a', nt) LIKE 'x%') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+
+DROP TABLE t4_120650;
+DROP DICTIONARY cd_120650;
 DROP TABLE td_120650;
 DROP TABLE tv_120650;
 DROP TABLE t3_120650;

@@ -273,11 +273,13 @@ bool canReplaceWithDictGetKeys(
 /// `Nullable` and `LowCardinality` forward from the nested type.
 /// A correlated subquery must be evaluated exactly once, and index analysis re-plans a hinted node in
 /// its own actions DAG, which rejects one.
-bool canRestoreNullForKey(const QueryTreeNodePtr & key_expr_node)
+/// The `in` family keeps a top-level `Nullable` argument as a single key column, so a key set with
+/// more than one column can never match it.
+bool canRestoreNullForKey(const QueryTreeNodePtr & key_expr_node, size_t key_columns_count)
 {
     const DataTypePtr key_type = key_expr_node->getResultType();
-    return isNullableOrLowCardinalityNullable(key_type) && !key_type->hasDynamicStructure()
-        && !containsCorrelatedSubquery(key_expr_node);
+    return key_columns_count == 1 && isNullableOrLowCardinalityNullable(key_type)
+        && !key_type->hasDynamicStructure() && !containsCorrelatedSubquery(key_expr_node);
 }
 
 /// Restores the NULL the null-aware name swallows, so the result equals `in`'s for every row.
@@ -536,7 +538,7 @@ public:
                 /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
                 const DataTypePtr key_type = dictget_function_info.key_expr_node->getResultType();
                 const auto in_function_name = getInFunctionNameForPassCreatedNode("in", key_type, getContext());
-                if (!in_function_name && !canRestoreNullForKey(dictget_function_info.key_expr_node))
+                if (!in_function_name && !canRestoreNullForKey(dictget_function_info.key_expr_node, key_cols.size()))
                     return;
 
                 /// The null-aware name is a fixed point of the renaming, so a shard re-analyzing the
@@ -595,7 +597,7 @@ public:
         /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
         const DataTypePtr key_type = dictget_function_info.key_expr_node->getResultType();
         const auto in_function_name = getInFunctionNameForPassCreatedNode("in", key_type, getContext());
-        if (!in_function_name && !canRestoreNullForKey(dictget_function_info.key_expr_node))
+        if (!in_function_name && !canRestoreNullForKey(dictget_function_info.key_expr_node, key_cols.size()))
             return;
 
         const String set_function_name = in_function_name ? *in_function_name : String(getNullInFunctionName("in"));
