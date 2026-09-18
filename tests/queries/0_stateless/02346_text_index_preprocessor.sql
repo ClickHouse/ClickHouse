@@ -879,22 +879,49 @@ SELECT 'mapContainsValueLike (no index)', count() FROM tabm WHERE mapContainsVal
 
 DROP TABLE tabm;
 
+SELECT '-- Control: ASCII lower on a map index keeps mapContainsKeyLike / mapContainsValueLike on the index';
+
+CREATE TABLE tabm
+(
+    m Map(String, String),
+    INDEX idx_mk(mapKeys(m)) TYPE text(tokenizer = ngrams(2), preprocessor = lower(mapKeys(m))),
+    INDEX idx_mv(mapValues(m)) TYPE text(tokenizer = ngrams(2), preprocessor = lower(mapValues(m)))
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+
+INSERT INTO tabm VALUES (map('Hello, world!', 'Hello, world!')), (map('nothing', 'to see'));
+
+SELECT 'mapContainsKeyLike', count() FROM tabm WHERE mapContainsKeyLike(m, '%Hello%');
+SELECT 'mapContainsKeyLike (no index)', count() FROM tabm WHERE mapContainsKeyLike(m, '%Hello%') SETTINGS use_skip_indexes = 0;
+SELECT 'mapContainsValueLike', count() FROM tabm WHERE mapContainsValueLike(m, '%Hello%');
+SELECT 'mapContainsValueLike (no index)', count() FROM tabm WHERE mapContainsValueLike(m, '%Hello%') SETTINGS use_skip_indexes = 0;
+-- One row per granule, so this fails if the index is refused or stops pruning the non-matching row.
+SELECT 'granules pruned', countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT m FROM tabm WHERE mapContainsKeyLike(m, '%Hello%'));
+
+DROP TABLE tabm;
+
 SELECT '-- Control: ASCII lower maps every byte in place, so the index is still used';
+
+-- Each control table below holds one matching and one non-matching row at index_granularity = 1: with both
+-- rows in one granule, a granule that holds the match is always read and the counts cannot tell an index
+-- that prunes correctly from one that is refused.
 
 CREATE TABLE tab
 (
     s String,
     INDEX idx(s) TYPE text(tokenizer = ngrams(2), preprocessor = lower(s))
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
 INSERT INTO tab VALUES ('Hello, world!'), ('ΣΟΣΑ');
 
 SELECT 'like', count() FROM tab WHERE s LIKE '%Hello%';
 SELECT 'like (no index)', count() FROM tab WHERE s LIKE '%Hello%' SETTINGS use_skip_indexes = 0;
+SELECT 'granules pruned', countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE s LIKE '%Hello%');
 -- ASCII case mapping leaves non-ASCII bytes alone, so a Greek sigma needle is unaffected.
 SELECT 'startsWith non-ASCII', count() FROM tab WHERE startsWith(s, 'ΣΟΣ');
 SELECT 'startsWith non-ASCII (no index)', count() FROM tab WHERE startsWith(s, 'ΣΟΣ') SETTINGS use_skip_indexes = 0;
+SELECT 'startsWith non-ASCII granules pruned', countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE startsWith(s, 'ΣΟΣ'));
 SELECT 'index in plan', countIf(explain LIKE '%idx%') > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE s LIKE '%Hello%');
 
 DROP TABLE tab;
@@ -906,12 +933,13 @@ CREATE TABLE tab
     s String,
     INDEX idx(s) TYPE text(tokenizer = ngrams(2), preprocessor = upper(s))
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
-INSERT INTO tab VALUES ('Hello, world!');
+INSERT INTO tab VALUES ('Hello, world!'), ('nothing to see');
 
 SELECT 'like', count() FROM tab WHERE s LIKE '%world%';
 SELECT 'like (no index)', count() FROM tab WHERE s LIKE '%world%' SETTINGS use_skip_indexes = 0;
+SELECT 'granules pruned', countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE s LIKE '%world%');
 SELECT 'index in plan', countIf(explain LIKE '%idx%') > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE s LIKE '%world%');
 
 DROP TABLE tab;
@@ -923,12 +951,13 @@ CREATE TABLE tab
     s String,
     INDEX idx(s) TYPE text(tokenizer = ngrams(2))
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 
-INSERT INTO tab VALUES ('Hello, world!');
+INSERT INTO tab VALUES ('Hello, world!'), ('nothing to see');
 
 SELECT 'like', count() FROM tab WHERE s LIKE '%Hello%';
 SELECT 'like (no index)', count() FROM tab WHERE s LIKE '%Hello%' SETTINGS use_skip_indexes = 0;
+SELECT 'granules pruned', countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE s LIKE '%Hello%');
 SELECT 'index in plan', countIf(explain LIKE '%idx%') > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE s LIKE '%Hello%');
 
 DROP TABLE tab;

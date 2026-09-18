@@ -269,17 +269,27 @@ mapContainsKeyLike	1
 mapContainsKeyLike (no index)	1
 mapContainsValueLike	1
 mapContainsValueLike (no index)	1
+-- Control: ASCII lower on a map index keeps mapContainsKeyLike / mapContainsValueLike on the index
+mapContainsKeyLike	1
+mapContainsKeyLike (no index)	1
+mapContainsValueLike	1
+mapContainsValueLike (no index)	1
+granules pruned	1
 -- Control: ASCII lower maps every byte in place, so the index is still used
 like	1
 like (no index)	1
+granules pruned	1
 startsWith non-ASCII	1
 startsWith non-ASCII (no index)	1
+startsWith non-ASCII granules pruned	1
 index in plan	1
 -- Control: ASCII upper is admitted on the same terms as ASCII lower
 like	1
 like (no index)	1
+granules pruned	1
 index in plan	1
 -- Control: without a preprocessor nothing changes
 like	1
 like (no index)	1
+granules pruned	1
 index in plan	1

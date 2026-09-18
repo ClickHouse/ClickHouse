@@ -79,7 +79,7 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS index_granularity = 1;
 
-INSERT INTO tab VALUES ('ΣΟΣΑ');
+INSERT INTO tab VALUES ('ΣΟΣΑ'), ('Hello, world!');
 
 SELECT '-- lowerUTF8 preprocessor: startsWith must not prune the matching granule (expect 1 and 1)';
 SELECT count() FROM tab WHERE startsWith(str, 'ΣΟΣ') SETTINGS use_skip_indexes = 0;
@@ -88,6 +88,23 @@ SELECT count() FROM tab WHERE startsWith(str, 'ΣΟΣ') SETTINGS use_skip_indexe
 SELECT '-- lowerUTF8 preprocessor: like must not prune the matching granule (expect 1 and 1)';
 SELECT count() FROM tab WHERE str LIKE '%ΣΟΣ%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE str LIKE '%ΣΟΣ%' SETTINGS use_skip_indexes = 1;
+
+-- No ASCII character has a conditional mapping, so an all-ASCII needle preprocesses the same way on its own
+-- as inside the value and the index is used. One row per granule, so the third query fails if it is refused.
+SELECT '-- lowerUTF8 preprocessor: an all-ASCII needle keeps the index (expect 1, 1 and 1)';
+SELECT count() FROM tab WHERE str LIKE '%Hello%' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE str LIKE '%Hello%' SETTINGS use_skip_indexes = 1;
+SELECT countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT str FROM tab WHERE str LIKE '%Hello%');
+
+SELECT '-- lowerUTF8 preprocessor: an all-ASCII needle array keeps the index (expect 1, 1 and 1)';
+SELECT count() FROM tab WHERE multiSearchAny(str, ['Hello']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE multiSearchAny(str, ['Hello']) SETTINGS use_skip_indexes = 1;
+SELECT countIf(explain LIKE '%Granules: 1/2%') > 0 FROM (EXPLAIN indexes = 1 SELECT str FROM tab WHERE multiSearchAny(str, ['Hello']));
+
+-- The sigma needle would prune the row it matches, so one non-ASCII needle disables the whole predicate.
+SELECT '-- lowerUTF8 preprocessor: one non-ASCII needle in the array disables pruning (expect 2 and 2)';
+SELECT count() FROM tab WHERE multiSearchAny(str, ['Hello', 'ΣΟΣ']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE multiSearchAny(str, ['Hello', 'ΣΟΣ']) SETTINGS use_skip_indexes = 1;
 
 DROP TABLE tab;
 
