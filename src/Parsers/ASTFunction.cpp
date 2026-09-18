@@ -190,10 +190,6 @@ static bool isBareSelectQuery(const IAST * node)
             || node->as<ASTProjectionSelectQuery>());
 }
 
-/// Whether a bare select query appears among a function's own argument or parameter elements.
-/// Nested expression lists are followed because an expression list legitimately holds select queries
-/// (`ASTSelectWithUnionQuery::list_of_selects`) and so cannot reject them in its own `readJSON`;
-/// a select query under any other node type is that node's own boundary.
 static bool containsBareSelectQuery(const IAST * node)
 {
     const auto * list = node ? node->as<ASTExpressionList>() : nullptr;
@@ -299,14 +295,12 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     /// has exactly (select, function), because after `ELSE` only a function call is accepted; neither
     /// form has parameters, a window or a NULLS action. In an expression context both names parse as
     /// ordinary functions and a bare select cannot appear among their arguments at all. The formatter
-    /// prints exactly those two shapes through dedicated branches which emit the name and the select
-    /// and then return, so `parameters` and the whole `finishFormatWithWindow` suffix (the NULLS
-    /// action and `OVER ...`) never reach the output; under any other name a bare select formats into
-    /// text that does not parse back. Nor can the accepted select carry query output options:
-    /// `ParserSelectWithUnionQuery` parses none, and `ASTQueryWithOutput::formatImpl` is `final`, so that
-    /// suffix is printed even from those branches. Reject every combination the parser cannot produce.
-    /// The checks are case-insensitive because the parser dispatches to the table function parser on
-    /// the lowercased name, so any spelling hits the same parse-back constraints.
+    /// prints those two shapes through branches that return early, so `parameters` and the
+    /// `finishFormatWithWindow` suffix (NULLS action, `OVER ...`) never reach the output, while query
+    /// output options do escape them, because `ASTQueryWithOutput::formatImpl` is `final` and
+    /// `ParserSelectWithUnionQuery` parses none. The checks are case-insensitive because the parser
+    /// dispatches to the table function parser on the lowercased name, so any spelling hits the same
+    /// parse-back constraints.
     bool is_view = equalsCaseInsensitive(name, "view");
     bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
     if (containsBareSelectQuery(arguments.get()) || containsBareSelectQuery(parameters.get()))
