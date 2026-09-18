@@ -255,15 +255,21 @@ StoragePtr TableFunctionTraceView::executeImpl(
     const auto & col_attribute = *spans.getByName("attribute").column;
 
     /// Children follow the ORDER BY of the query (start time, then span id), so sibling
-    /// order and the DFS below are deterministic.
+    /// order and the DFS below are deterministic. A span id read twice keeps its first row
+    /// only: with `cluster`, replicas that resolve to the same node return the same log rows.
     std::unordered_map<UInt64, size_t> row_by_span_id;
+    std::vector<bool> duplicate(rows, false);
     for (size_t i = 0; i < rows; ++i)
-        row_by_span_id.emplace(col_span_id.getUInt(i), i);
+        if (!row_by_span_id.emplace(col_span_id.getUInt(i), i).second)
+            duplicate[i] = true;
 
     std::vector<std::vector<size_t>> children(rows);
     std::vector<size_t> roots;
     for (size_t i = 0; i < rows; ++i)
     {
+        if (duplicate[i])
+            continue;
+
         auto parent = row_by_span_id.find(col_parent.getUInt(i));
         /// A span whose parent is not part of the trace is shown as a root: this keeps
         /// subtrees visible when their parent span was lost or not instrumented.
@@ -298,10 +304,34 @@ StoragePtr TableFunctionTraceView::executeImpl(
     for (size_t i = roots.size(); i > 0; --i)
         stack.push_back({roots[i - 1], "", ""});
 
-    while (!stack.empty())
+    /// Every span is rendered once. The guard also ends the walk of a cycle in the parent links.
+    std::vector<bool> visited(rows, false);
+
+    /// Spans whose parent chain never reaches a root (a cycle in the parent links) are reachable
+    /// from no root: once the roots are done, whatever is left is rendered as a root too, so that
+    /// no span of the trace is lost.
+    size_t next_unvisited = 0;
+    auto push_next_unvisited = [&]
+    {
+        for (; next_unvisited < rows; ++next_unvisited)
+        {
+            if (!visited[next_unvisited] && !duplicate[next_unvisited])
+            {
+                stack.push_back({next_unvisited, "", ""});
+                return true;
+            }
+        }
+        return false;
+    };
+
+    while (!stack.empty() || push_next_unvisited())
     {
         auto [row, prefix, connector] = std::move(stack.back());
         stack.pop_back();
+
+        if (visited[row])
+            continue;
+        visited[row] = true;
 
         const UInt64 start = col_start.getUInt(row);
         const UInt64 finish = std::max(col_finish.getUInt(row), start);
