@@ -29,7 +29,10 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
 
     ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --group "${CLICKHOUSE_GROUP}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}" --log-path "${CLICKHOUSE_LOGDIR}" --data-path "${CLICKHOUSE_DATADIR}"
 
-    if [ -x "/bin/systemctl" ] && [ -f /lib/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
+    if [ -x "/bin/systemctl" ] && [ -d /run/systemd/system ] &&
+        { [ -f /etc/systemd/system/$PROGRAM.service ] ||
+          [ -f /lib/systemd/system/$PROGRAM.service ] ||
+          [ -f /usr/lib/systemd/system/$PROGRAM.service ]; }; then
         # if old rc.d service present - remove it
         if [ -x "/etc/init.d/clickhouse-server" ] && [ -x "/usr/sbin/update-rc.d" ]; then
             /usr/sbin/update-rc.d clickhouse-server remove
