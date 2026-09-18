@@ -246,8 +246,9 @@ private:
             // settings mean a single-root hierarchy behaves exactly as before.
             auto implicit = std::make_shared<Node>(scheduler->event_queue, WorkloadSettings{}, unit, resource_name);
             // Anonymous: an empty basename cannot collide with any user workload (workload names are
-            // never empty), so no name has to be reserved and no legacy reconciliation is needed. It
-            // surfaces in system.scheduler node paths as a leading empty segment (e.g. "//all").
+            // never empty), so no name has to be reserved and no legacy reconciliation is needed.
+            // getPath() skips the empty segment, so system.scheduler paths are unchanged from before
+            // the implicit root existed (a single root still renders as "/all").
             implicit->basename = {};
             implicit_root = std::static_pointer_cast<IWorkloadNode>(implicit);
             auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
