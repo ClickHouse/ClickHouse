@@ -401,11 +401,6 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     {
         auto mutations_snapshot = read_from_mergetree_step->getMutationsSnapshot();
 
-        /// A patch part can carry an update of `_row_exists`, and which rows it hides is only known
-        /// once it is applied, so do not look any closer in that case.
-        if (mutations_snapshot && mutations_snapshot->hasPatchParts())
-            return true;
-
         for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
         {
             if (part_with_ranges.ranges.empty())
@@ -415,7 +410,9 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             if (part_with_ranges.data_part->hasLightweightDelete())
                 return true;
 
-            /// A delete that is still a pending mutation, applied on the fly at read time.
+            /// A delete that is still a pending mutation, applied on the fly at read time, or a patch part
+            /// attached to this part that updates `_row_exists` (a lightweight update may delete rows).
+            /// Both are per part: a patch part in another partition does not concern this read.
             if (mutations_snapshot)
             {
                 auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
