@@ -688,7 +688,11 @@ void ColumnVector<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
     if (options.notFull(name_buf))
+    {
         name_buf << FieldVisitorToString()(castToNearestFieldType(data[n]));
+        if (isNaN(data[n]))
+            name_buf << "_" << bit_cast<UInt64>(data[n]);
+    }
 }
 
 template <typename T>
