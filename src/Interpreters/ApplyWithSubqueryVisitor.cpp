@@ -52,6 +52,24 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
     checkStackSize();
 
+    if (data.kept_cte_references)
+    {
+        const auto * subquery = ast->as<ASTSubquery>();
+        if (subquery && !subquery->cte_name.empty())
+        {
+            auto declaration_it = data.cte_declaration_scopes.find(subquery->cte_name);
+            if (declaration_it != data.cte_declaration_scopes.end())
+            {
+                /// An expansion copy is classified with the scope its CTE was declared in, not with the reference site's.
+                Data declaration_scope = *declaration_it->second;
+                declaration_scope.kept_cte_references = data.kept_cte_references;
+                for (auto & child : ast->children)
+                    visit(child, declaration_scope);
+                return;
+            }
+        }
+    }
+
     if (auto * node_select = ast->as<ASTSelectQuery>())
         visit(*node_select, data);
     else
@@ -114,7 +132,13 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 continue;
             }
 
-            visit(child, new_data ? *new_data : scope);
+            /// Keep mode: remember the scope a plain CTE's body is visited with, to classify its expansion copies.
+            const bool keep_plain = ast_with_elem && scope.keep_materialized_cte && !ast_with_elem->is_materialized;
+            std::optional<Data> body_scope;
+            if (keep_plain)
+                body_scope = new_data ? *new_data : scope;
+
+            visit(child, body_scope ? *body_scope : (new_data ? *new_data : scope));
             auto child_alias = child->tryGetAlias();
             if (ast_with_elem || !child_alias.empty())
             {
@@ -124,6 +148,8 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 {
                     new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
                     new_data->materialized_ctes.erase(ast_with_elem->name);
+                    if (body_scope)
+                        new_data->cte_declaration_scopes[ast_with_elem->name] = std::make_shared<const Data>(std::move(*body_scope));
                 }
                 else
                     new_data->literals[child_alias] = child;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <set>
 #include <unordered_set>
 
@@ -32,6 +33,8 @@ public:
         bool keep_materialized_cte = false;
         std::set<String> materialized_ctes;
         std::unordered_set<const IAST *> * kept_cte_references = nullptr;
+        /// Keep mode: the scope each plain CTE's body was visited with, to classify its expansion copies.
+        std::map<String, std::shared_ptr<const Data>> cte_declaration_scopes;
     };
 
     static void visit(ASTPtr & ast) { visit(ast, Data{}); }
