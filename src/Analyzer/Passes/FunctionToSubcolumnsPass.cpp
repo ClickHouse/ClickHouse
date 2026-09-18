@@ -987,11 +987,28 @@ void optimizeJSONArrayElementChain(
             key = escapeDotInJSONKey(key);
     }
 
+    const auto & data_type_object = assert_cast<const DataTypeObject &>(*ctx.column.type);
+
+    /// If any intermediate prefix of the key chain is a typed path (e.g. `a` in `json['a']['b']`
+    /// for JSON(a JSON(b UInt32)) or JSON(m Map(String, UInt32))), its nested data is stored in the
+    /// typed path's own subcolumns, not under the parent's flat combined subcolumn `@a.b`. Refuse flattening.
+    const auto & typed_paths = data_type_object.getTypedPaths();
+    if (!typed_paths.empty())
+    {
+        String prefix;
+        for (size_t i = 0; i + 1 < keys.size(); ++i)
+        {
+            if (i > 0)
+                prefix += ".";
+            prefix += keys[i];
+            if (typed_paths.contains(prefix))
+                return;
+        }
+    }
+
     /// Build subcolumn name: @`key1`.key2.key3...
     /// First element is back-quoted (required by tryGetPrefixedSubcolumn);
     /// subsequent elements are plain dot-separated path components.
-    const auto & data_type_object = assert_cast<const DataTypeObject &>(*ctx.column.type);
-
     String subcolumn_name = DataTypeObject::getCombinedSubcolumnName(keys[0]);
     for (size_t i = 1; i < keys.size(); ++i)
         subcolumn_name += "." + keys[i];
