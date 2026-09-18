@@ -18,15 +18,9 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 
 using namespace DB;
-
-namespace DB::ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 namespace
 {
@@ -167,31 +161,13 @@ TEST(DistinctStepInputOrder, DeserializedStepsDeriveOrderFromTheirInput)
     }
 }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-TEST(DistinctStepInputOrderDeathTest, GlobalOrderRequiresSingleInputStream)
-#else
-TEST(DistinctStepInputOrder, GlobalOrderRequiresSingleInputStream)
-#endif
+TEST(DistinctStepInputOrder, OrderRequirementMergesStreamsWithoutScattering)
 {
+    /// The requirement to keep the input order can outlive its `ORDER BY`: the optimizer removes a sort that
+    /// no consumer needs, and the final step then receives the unmerged streams of the preliminary step.
+    /// They are merged into one stream and never scattered, whatever the parallel flag says.
     DistinctStep step(makeHeader(), DistinctStep::Settings{}, 0, Names{"k"}, false);
     step.preserveInputOrder();
-    auto pipeline = makePipeline(step.getInputHeaders().front(), 4);
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-    EXPECT_DEATH(
-        step.transformPipeline(pipeline, BuildQueryPipelineSettings(getContext().context)),
-        "Order-preserving DISTINCT requires a single input stream");
-#else
-    try
-    {
-        step.transformPipeline(pipeline, BuildQueryPipelineSettings(getContext().context));
-        FAIL() << "Expected an exception for globally ordered input with multiple streams";
-    }
-    catch (Exception & e)
-    {
-        e.markAsLogged();
-        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
-    }
-#endif
+    step.enableParallelDistinct();
+    expectPipeline(step, 4, 1, 1, false);
 }
