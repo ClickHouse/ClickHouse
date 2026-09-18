@@ -374,7 +374,10 @@ std::vector<size_t> simulateWriterMarks(
 }
 
 /// build the primary index in memory and prune it with the engine's own PK-range pruning, nothing is written
-/// `marks_low_out` and `marks_high_out` take the range the layouts of the other write paths span
+/// `marks_low_out` and `marks_high_out` take the range the layouts of the other write paths span.
+/// With rows of one width the merge's own block size sets the granule size; once the widths vary it is
+/// where the merge cut its blocks that sets it, and a merge cuts at every source it drains, so the
+/// short runs follow the width - hence `uneven_rows` picks the layout to estimate with.
 MarkRanges pruneSyntheticProjectionPart(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
@@ -385,6 +388,7 @@ MarkRanges pruneSyntheticProjectionPart(
     const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
     const MergeTreeSettings & mt_settings,
     const Settings & query_settings,
+    bool uneven_rows,
     MergeTreeIndexGranularityPtr & granularity_out,
     UInt64 & marks_low_out,
     UInt64 & marks_high_out,
@@ -415,16 +419,6 @@ MarkRanges pruneSyntheticProjectionPart(
     const size_t merge_bytes = mt_settings[MergeTreeSetting::merge_max_block_size_bytes];
     /// one granule worth of bytes is the shortest run whose width can still move the granule size
     const size_t granule_bytes = mt_settings[MergeTreeSetting::index_granularity_bytes];
-    /// With rows of one width the merge's own block size sets the granule size. Once the widths vary
-    /// it is where the merge cut its blocks that sets it, and a merge cuts at every source it drains,
-    /// so the short runs follow the width.
-    bool uneven_rows = false;
-    if (data.row_bytes.size() == data.rows && data.rows != 0)
-    {
-        const auto [narrowest, widest] = std::minmax_element(data.row_bytes.begin(), data.row_bytes.end());
-        uneven_rows = *narrowest != *widest;
-    }
-
     std::vector<std::pair<size_t, size_t>> chunkings;
     size_t primary = 0;
     chunkings.emplace_back(data.rows, 0); /// one squashed block, as an insert or a materialization writes
@@ -445,11 +439,9 @@ MarkRanges pruneSyntheticProjectionPart(
     auto prune = [&](const std::vector<size_t> & rows_per_mark, MergeTreeIndexGranularityPtr & granularity)
     {
         const size_t num_marks = rows_per_mark.size();
-        std::vector<size_t> mark_starts(num_marks);
         std::vector<size_t> partial_sums(num_marks);
         for (size_t mark = 0, row = 0; mark < num_marks; ++mark)
         {
-            mark_starts[mark] = row;
             row += rows_per_mark[mark];
             partial_sums[mark] = row;
         }
@@ -465,7 +457,7 @@ MarkRanges pruneSyntheticProjectionPart(
         {
             auto index_column = key_column.column->cloneEmpty();
             for (size_t mark = 0; mark < num_marks; ++mark)
-                index_column->insertFrom(*key_column.column, data.order[mark_starts[mark]]);
+                index_column->insertFrom(*key_column.column, data.order[mark != 0 ? partial_sums[mark - 1] : 0]);
             index_columns.push_back(std::move(index_column));
         }
 
@@ -570,18 +562,14 @@ bool tryEstimateProjection(
         scanned_marks += part_marks;
         /// the writer sizes a granule from the average width of the block it stores, so once the rows
         /// differ in width the layout follows the blocks it was fed, and that is not recorded anywhere
-        if (adaptive && part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
+        bool uneven_rows = false;
+        if (part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
         {
-            UInt32 lo = part_data.row_bytes[0];
-            UInt32 hi = part_data.row_bytes[0];
-            for (const auto row_size : part_data.row_bytes)
-            {
-                lo = std::min(lo, row_size);
-                hi = std::max(hi, row_size);
-            }
-            if (hi != lo)
-                ++uneven_width_parts;
+            const auto [narrowest, widest] = std::minmax_element(part_data.row_bytes.begin(), part_data.row_bytes.end());
+            uneven_rows = *narrowest != *widest;
         }
+        if (uneven_rows)
+            ++uneven_width_parts;
         /// no key rows out of a part that has rows means the key needs something the scan cannot
         /// provide, `_part_offset` for one, so do not pass a zero-mark estimate off as measured
         if (part_data.rows == 0 && part->rows_count > 0)
@@ -605,6 +593,7 @@ bool tryEstimateProjection(
             total_offset_condition,
             mt_settings,
             query_settings,
+            uneven_rows,
             granularity,
             part_marks_low,
             part_marks_high,
@@ -622,8 +611,6 @@ bool tryEstimateProjection(
     /// fewer marks never loses, so the estimate decides only when both layouts agree
     auto would_win = [&](UInt64 marks)
     { return marks < baseline_marks || (marks == baseline_marks && sort_help == SortOrderHelp::Helps); };
-    const UInt64 fewest = marks_low;
-    const UInt64 most = marks_high;
     if (uneven_width_parts != 0)
     {
         result.verdict = "too close to call";
@@ -635,7 +622,7 @@ bool tryEstimateProjection(
             uneven_width_parts,
             scanned_parts);
     }
-    else if (would_win(fewest) != would_win(most))
+    else if (would_win(marks_low) != would_win(marks_high))
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
@@ -643,8 +630,8 @@ bool tryEstimateProjection(
             "writer is handed, which a part does not record",
             marks_text(projection_marks),
             baseline_marks,
-            fewest,
-            most);
+            marks_low,
+            marks_high);
     }
     else if (projection_marks != baseline_marks)
     {
@@ -789,7 +776,8 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// both `TYPE commit_order` and its query form order by these, so name the surface instead of the type
+    /// both `TYPE commit_order` and its query form order by these, so name the surface instead of the type,
+    /// and the scan reads what the projection stores, so a key over a virtual column has no source there
     for (const auto & required : proj_key.expression->getRequiredColumns())
     {
         if (required == BlockNumberColumn::name || required == BlockOffsetColumn::name)
@@ -798,6 +786,13 @@ WhatIfCandidateResult evaluateProjection(
                 "Projection orders by the commit order ({}, {}), which EXPLAIN WHATIF does not estimate yet",
                 backQuote(BlockNumberColumn::name),
                 backQuote(BlockOffsetColumn::name));
+            return result;
+        }
+        if (!metadata->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required))
+        {
+            result.not_applicable_reason = fmt::format(
+                "Projection orders by {}, which it does not store, so EXPLAIN WHATIF cannot rebuild its key",
+                backQuoteIfNeed(required));
             return result;
         }
     }
@@ -810,18 +805,6 @@ WhatIfCandidateResult evaluateProjection(
             "Projection stores {}, so it is built only when a part is merged, which EXPLAIN WHATIF does not estimate yet",
             backQuote(BlockNumberColumn::name));
         return result;
-    }
-
-    /// the scan reads what the projection stores, so a key over a virtual column has no source there
-    for (const auto & required : proj_key.expression->getRequiredColumns())
-    {
-        if (!metadata->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required))
-        {
-            result.not_applicable_reason = fmt::format(
-                "Projection orders by {}, which it does not store, so EXPLAIN WHATIF cannot rebuild its key",
-                backQuoteIfNeed(required));
-            return result;
-        }
     }
 
     const auto [outer_sorting, subtree_above_reading] = findOuterSorting(plan_root, read_step);
