@@ -1,8 +1,5 @@
 #pragma once
 
-#include <optional>
-#include <unordered_set>
-
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -150,18 +147,6 @@ struct IdentifierResolveScope
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
     ScopeAliases global_with_aliases;
 
-    /// Alias names of this scope through which some identifier was actually resolved.
-    /// Multiple expressions with the same alias are an error only if the alias is actually used:
-    /// unused conflicting aliases are allowed, because aliases also give names to expressions
-    /// without being referenced, e.g. to tuple elements in SELECT tuple(1 AS x), tuple(2 AS x)
-    /// (see the setting enable_named_columns_in_function_tuple).
-    /// The names are recorded only when alias resolution wins, not on tentative probes that
-    /// fall back to another resolution path (e.g. SELECT tuple(a AS a) FROM t resolves a to
-    /// the source column). This state is deliberately per scope and not inside ScopeAliases:
-    /// the alias table is copied between scopes (see global_with_aliases), and a lookup in one
-    /// scope must not make an alias of another scope look referenced.
-    std::unordered_set<std::string> used_alias_names;
-
     /// Valid only during table ALIAS columns resolve.
     AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;
 
@@ -180,23 +165,12 @@ struct IdentifierResolveScope
     std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
 
     /// Table expression node to data
-    std::unordered_map<TableExpressionNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
+    std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 
     /// Table expression nodes that appear in the join tree of the corresponding query
     std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
 
-    /** When `group_by_use_nulls` is enabled, maps every shape in which a GROUP BY key expression
-      * can arrive at the lookup during expression resolution to the original key node.
-      *
-      * Keys are resolved before other clauses, so a key is stored in its original form. But other
-      * expressions are resolved bottom-up, and by the time an expression equal to a GROUP BY key is
-      * checked against this container, the subexpressions of it that are themselves GROUP BY keys
-      * have already been converted to Nullable, and the types of all nodes above them have been
-      * recomputed. So for each key the map also contains the key with every maximal proper sub-key
-      * converted to Nullable (with ancestor types recomputed), and the key converted to Nullable itself.
-      * This way the lookup uses exact comparison, including types.
-      */
-    QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
+    QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
       * (For example, after join_use_nulls or USING column cast to supertype)
@@ -211,21 +185,8 @@ struct IdentifierResolveScope
     bool join_use_nulls = false;
     bool allow_resolve_from_using = true;
 
-    /** True while the `PREWHERE` expression of this query is being resolved.
-      * `PREWHERE` is evaluated by the reading step and cannot contain a correlated subquery,
-      * so the `rewrite_in_to_join` rewrite of `x IN (subquery)` into `exists(...)` must not be
-      * applied there - the plain `IN` is kept instead.
-      */
-    bool in_prewhere = false;
-
     /// JOINs count
     size_t joins_count = 0;
-
-    /// JOIN USING count (joins whose keys can retype a matched column)
-    size_t using_joins_count = 0;
-
-    /// True while resolving a JOIN ON expression.
-    bool resolving_join_on_expression = false;
 
     /// Subquery depth
     size_t subquery_depth = 0;
@@ -233,7 +194,7 @@ struct IdentifierResolveScope
     /** Scope join tree node for expression.
       * Valid only during analysis construction for single expression.
       */
-    TableExpressionNodePtr expression_join_tree_node;
+    QueryTreeNodePtr expression_join_tree_node;
 
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
@@ -242,55 +203,18 @@ struct IdentifierResolveScope
 
     IdentifierResolveScope * getNearestQueryScope();
 
-    AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node);
+    AnalysisTableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node);
 
-    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const TableExpressionNodePtr & table_expression_node) const;
+    const AnalysisTableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const;
 
     void pushExpressionNode(const QueryTreeNodePtr & node);
 
     void popExpressionNode();
 
-    /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.
-    /// Policy is encapsulated in `findCachedIdentifier` and `tryCacheIdentifier`.
-    void disableIdentifierCache() { identifier_resolve_cache_enabled = false; }
-    void enableIdentifierCache() { if (!identifier_resolve_cache_force_disabled) identifier_resolve_cache_enabled = true; }
-    void disableIdentifierCachePermanently() { identifier_resolve_cache_force_disabled = true; identifier_resolve_cache_enabled = false; }
-    void clearIdentifierCache() { identifier_resolve_cache.clear(); }
-
-    std::optional<IdentifierResolveResult> findCachedIdentifier(
-        const IdentifierLookup & lookup,
-        const IdentifierResolveContext & resolve_context);
-
-    void tryCacheIdentifier(
-        const IdentifierLookup & lookup,
-        const IdentifierResolveResult & result,
-        const IdentifierResolveContext & resolve_context);
-
     /// Dump identifier resolve scope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const;
 
     [[maybe_unused]] String dump() const;
-
-private:
-    bool canCacheIdentifier(
-        const IdentifierLookup & lookup,
-        const IdentifierResolveContext & resolve_context) const;
-
-    struct IdentifierResolveCacheEntry
-    {
-        IdentifierResolveResult result;
-
-        /// Expressions that contain subqueries cannot be shared between use sites:
-        /// later stages rewrite each subquery instance independently (`GLOBAL IN`
-        /// external tables, `rewrite_in_to_join`, `createUniqueAliasesIfNecessary`),
-        /// so every retrieval must return its own copy of the tree. Computed once at
-        /// insertion to avoid walking the subtree on every hit.
-        bool needs_clone_on_retrieval = false;
-    };
-
-    std::unordered_map<IdentifierLookup, IdentifierResolveCacheEntry, IdentifierLookupHash> identifier_resolve_cache;
-    bool identifier_resolve_cache_enabled = true;
-    bool identifier_resolve_cache_force_disabled = false;
 };
 
 }

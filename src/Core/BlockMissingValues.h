@@ -4,7 +4,6 @@
 #include <boost/dynamic_bitset.hpp>
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -34,7 +33,7 @@ public:
     size_t getNumColumns() const;
 
 private:
-    using RowsMaskByColumnId = VectorWithMemoryTracking<RowsBitMask>;
+    using RowsMaskByColumnId = std::vector<RowsBitMask>;
 
     /// If rows_mask_by_column_id[column_id][row_id] is true related value in Block should be replaced with column default.
     /// It could contain less rows than related block.

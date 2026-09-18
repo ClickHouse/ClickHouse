@@ -7,7 +7,6 @@
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -22,7 +21,7 @@ namespace Setting
 }
 
 /// Append ORDER BY rand() to an order-by list
-static void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
+void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
 {
     /// Build rand() node
     auto & function_factory = FunctionFactory::instance();
@@ -36,43 +35,24 @@ static void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
 }
 
 /// Wrap query_root in new QueryNode that includes a random order by
-static void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
+void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
 {
     auto * query_node = query_root->as<QueryNode>();
 
-    /// Original projection columns (with the user-visible names like `number`).
+    /// Re-resolve query_node columns setting the unique alias
+    String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
     auto subquery_projection_columns = query_node->getProjectionColumns();
-
-    /// Internal unique aliases used to reference the inner columns from the wrapper.
-    /// One alias per projection column so multi-column SELECTs work, and aliases are
-    /// kept internal so output names (CTAS, VIEW, JSONEachRow, etc.) stay intact.
-    Names unique_column_names;
-    unique_column_names.reserve(subquery_projection_columns.size());
-    const String uuid_suffix = toString(UUIDHelpers::generateV4());
-    for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
-        unique_column_names.push_back("__subquery_column_" + std::to_string(i) + "_" + uuid_suffix);
-
-    /// Re-resolve inner query columns with the unique internal aliases.
     query_node->clearProjectionColumns();
-    query_node->setProjectionAliasesToOverride(unique_column_names);
+    query_node->setProjectionAliasesToOverride({unique_column_name});
     query_node->resolveProjectionColumns(subquery_projection_columns);
     query_node->setIsSubquery(true);
 
-    /// Wrapper: SELECT <inner columns referenced by UUID alias> FROM (inner) ORDER BY rand().
-    /// The wrapper's projection columns keep the ORIGINAL names so CTAS/VIEW and named
-    /// output formats produce user-expected column names.
+    /// SELECT unique_column_name FROM query_node order by rand()
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
-    new_root->getJoinTreeNode() = query_root;
-
-    NamesAndTypes outer_projection_columns;
-    outer_projection_columns.reserve(subquery_projection_columns.size());
-    for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
-    {
-        NameAndTypePair inner_ref{unique_column_names[i], subquery_projection_columns[i].type};
-        new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(inner_ref, static_pointer_cast<ITableExpressionNode>(query_root)));
-        outer_projection_columns.emplace_back(subquery_projection_columns[i].name, subquery_projection_columns[i].type);
-    }
-    new_root->resolveProjectionColumns(std::move(outer_projection_columns));
+    new_root->getJoinTree() = query_root;
+    NameAndTypePair column{unique_column_name, subquery_projection_columns[0].type};
+    new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, query_root));
+    new_root->resolveProjectionColumns({column});
     addRandomOrderBy(new_root->getOrderBy(), context);
 
     /// Replace old root with new wrapping query node
