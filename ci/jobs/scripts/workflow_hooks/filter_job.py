@@ -61,11 +61,6 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Stateless tests (amd_binary, flaky check)",
 ]
 
-# The Darwin (macOS) "Fast test" jobs, resolved to their parametrized names
-# (e.g. "Fast test (arm_darwin)"). They run on scarce self-hosted macOS runners,
-# so in PRs they are skipped unless the PR carries the `ci-macos` label.
-DARWIN_FAST_TEST_JOBS = [j.name for j in JobConfigs.darwin_fast_test_jobs]
-
 # Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
 KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
 
@@ -118,6 +113,7 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
     "ci/jobs/scripts/print_uncovered_code.py",
+    "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
@@ -147,6 +143,50 @@ def _has_coverage_pipeline_changes(changed_files):
 _info_cache = None
 _pipeline_note_labels = set()
 
+# A revert pull request is recognized by the canonical shapes only - the ones
+# `git revert`, the GitHub "Revert" button and the `Revert CI regressions` job
+# produce - not by a prose mention of a revert:
+#   - the title `Revert "<title of the reverted change>"`;
+#   - the anchored `Reverts <owner>/<repo>#<n>` marker line in the body.
+# The same shapes are what `ci/jobs/revert_ci_regressions.py` refuses to revert
+# again, so the two automations agree on what a revert is.
+_REVERT_TITLE_RE = re.compile(r'^Revert\s+".*"$')
+
+# The per-job reason shown on the report page and, when every job is skipped,
+# the description of the `Ready For Merge` commit status (80 characters max).
+REVERT_PR_SKIP_REASON = (
+    f"Skipped: revert PR, CI is bypassed unless labeled '{Labels.CI_FORCE_ALL}'"
+)
+REVERT_PR_NOTE = (
+    "Revert PR: all CI jobs are skipped so that the revert can be merged as quickly "
+    f"as possible. Add the `{Labels.CI_FORCE_ALL}` label to run the full CI."
+)
+
+
+def is_revert_pr(title, body, repo):
+    """True if the pull request has the canonical shape of a revert: the
+    `Revert "..."` title, or the anchored `Reverts <repo>#<n>` marker line in
+    the body. See `_REVERT_TITLE_RE` for why only the canonical shapes count.
+    """
+    if _REVERT_TITLE_RE.fullmatch((title or "").strip()):
+        return True
+    marker = rf"^Reverts {re.escape(repo)}#\d+\s*$"
+    return re.search(marker, body or "", re.MULTILINE) is not None
+
+
+_revert_note_added = False
+
+
+def _add_revert_note():
+    """Explain the green light once: on the workflow report page and in the
+    description of the `Ready For Merge` commit status."""
+    global _revert_note_added
+    if _revert_note_added or _info_cache is None:
+        return
+    _revert_note_added = True
+    _info_cache.add_workflow_note(REVERT_PR_NOTE)
+    _info_cache.set_ready_for_merge_description(REVERT_PR_SKIP_REASON)
+
 _PIPELINE_NOTES = {
     Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
     Labels.DO_NOT_TEST: (
@@ -174,10 +214,6 @@ _PIPELINE_NOTES = {
     ),
     Labels.CI_NO_COVERAGE: (
         "Label `ci-no-coverage` skips coverage jobs and the `LLVM Coverage` merge job."
-    ),
-    Labels.CI_MACOS: (
-        "Label `ci-macos` runs the Darwin (macOS) `Fast test` job, which is "
-        "skipped by default in PRs."
     ),
 }
 
@@ -246,6 +282,25 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped for release PR"
 
+    # A revert pull request gets a green light at once: `master` is broken by the
+    # change it reverts, and the state it restores is one that CI has already
+    # validated, so every job is skipped and the pull request is mergeable
+    # immediately. Two things still guard the merge: the merge queue runs its own
+    # (small) set of checks, and the full CI runs on `master` after the merge.
+    # The `ci-force-all` label opts out and runs the whole workflow - it also
+    # bypasses this hook entirely in `native_jobs.py`, the check here is only
+    # for clarity. Applies to pull requests only (`pr_number > 0`): a revert
+    # commit pushed to `master` or a release branch is tested as usual.
+    if (
+        _info_cache.pr_number > 0
+        and Labels.CI_FORCE_ALL not in _info_cache.pr_labels
+        and is_revert_pr(
+            _info_cache.pr_title, _info_cache.pr_body, _info_cache.repo_name
+        )
+    ):
+        _add_revert_note()
+        return True, REVERT_PR_SKIP_REASON
+
     # The AI `Code Review` job reviews the PR's code. When the PR's latest commit is
     # an empty merge commit (base branch merged in with no net change - e.g. the
     # GitHub "Update branch" button), the code is identical to the previous head and
@@ -274,16 +329,6 @@ def should_skip_job(job_name):
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
         return False, ""
-
-    # The Darwin (macOS) fast test runs on scarce self-hosted macOS runners, so
-    # in PRs it runs only when explicitly requested via the `ci-macos` label.
-    # Master has no such job, so this gate is a no-op there.
-    if (
-        job_name in DARWIN_FAST_TEST_JOBS
-        and _info_cache.pr_number
-        and Labels.CI_MACOS not in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, not labeled with '{Labels.CI_MACOS}'"
 
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
@@ -467,6 +512,19 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, no integration tests updates"
 
+    # When the PR carries a functional or integration test, `new_tests_check.check`
+    # decides the bug fix on the per-arch validators for those and returns before it
+    # reads the unit validator, so a merge-base unit build has no verdict to contribute.
+    if (
+        _is_bugfix_pr()
+        and job_name == JobNames.BUGFIX_VALIDATE_UT
+        and (
+            has_new_functional_tests(_info_cache.get_changed_files())
+            or has_new_integration_tests(_info_cache.get_changed_files())
+        )
+    ):
+        return True, "Skipped, the functional/integration bugfix validation owns the verdict"
+
     # skip AMD perf tests for non-performance update (ARM runs by default)
     if (
         " Performance Improvement" not in _info_cache.pr_body
@@ -510,20 +568,21 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, and the stateless flaky check). Only the flaky check is
-    conditional: it reruns the PR's new/changed stateless tests as a drift guard,
-    so a PR that changes no stateless tests has nothing for it to do. Filter it
-    out here, at config time, so such a PR does not schedule the runner, restore
-    `CH_AMD_BINARY`, and enter the test container only to exit `SKIPPED`. This is
-    the merge-queue counterpart to the `flaky` branch of `should_skip_job`, kept
-    deliberately minimal so it cannot skip the build/style/fast-test jobs the
-    queue always needs. The skip condition matches the in-job selection in
-    `functional_tests.py` (both rely on `Targeting.get_changed_tests`), so the
-    early exit and the config-time skip never disagree. `get_changed_tests`
-    resolves data fixtures (a `.parquet`/`.tsv` under `tests/queries/0_stateless/`,
-    even one nested in a subdirectory) back to the tests that consume them, so a
-    fixture-only PR still reruns the affected test surface instead of being
-    skipped here as "no changed tests".
+    `amd_binary` build, the stateless flaky check, and the docs examples). Only
+    the flaky check is conditional: it reruns the PR's new/changed stateless
+    tests as a drift guard, so a PR that changes no stateless tests has nothing
+    for it to do. Filter it out here, at config time, so such a PR does not
+    schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
+    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
+    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
+    build/style/fast-test/docs-examples jobs the queue always needs. The skip
+    condition matches the in-job selection in `functional_tests.py` (both rely
+    on `Targeting.get_changed_tests`), so the early exit and the config-time
+    skip never disagree. `get_changed_tests` resolves data fixtures (a
+    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
+    subdirectory) back to the tests that consume them, so a fixture-only PR
+    still reruns the affected test surface instead of being skipped here as
+    "no changed tests".
     """
     global _info_cache
     if _info_cache is None:

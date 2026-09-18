@@ -20,6 +20,8 @@ JoinSwitcher::JoinSwitcher(
     join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row_, /*reserve_num_=*/0, /*instance_id_=*/"",
         /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
+    /// Until the build phase ends this join may have to hand its right blocks to `MergeJoin`.
+    assert_cast<HashJoin *>(join.get())->keepRightBlocksForAnotherAlgorithm();
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();
@@ -42,6 +44,18 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, bool)
         return switchJoin();
 
     return true;
+}
+
+void JoinSwitcher::onBuildPhaseFinish()
+{
+    join->onBuildPhaseFinish();
+
+    /// The switch to `MergeJoin` only happens while blocks are being added, and that is over: if it
+    /// did not happen, nothing will take the right blocks now, so a join that stores only the keys
+    /// can drop them.
+    std::lock_guard lock(switch_mutex);
+    if (!switched)
+        assert_cast<HashJoin *>(join.get())->dropRightBlocksKeptForAnotherAlgorithm();
 }
 
 bool JoinSwitcher::switchJoin()

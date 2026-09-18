@@ -119,11 +119,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
     }
 
-    void skipSerializedInArena(ReadBuffer &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
-    }
-
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
     void updateHashFast(SipHash & hash) const override;

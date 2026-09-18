@@ -143,9 +143,9 @@ REGISTER_FUNCTION(Idna)
 Returns the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
 The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
 
-:::note
+<Note>
 No percent decoding or trimming of tabs, spaces or control characters is performed.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax_encode = "idnaEncode(s)";
     FunctionDocumentation::Arguments arguments_encode = {
