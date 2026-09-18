@@ -2,7 +2,6 @@
 
 #include <Common/VersionNumber.h>
 #include <base/types.h>
-#include <source_location>
 #include <vector>
 
 
@@ -23,7 +22,6 @@ namespace DB
   * - syntax (how the component is referenced in a query);
   * - examples (queries that can be referenced from the text by names);
   * - the version when the component was introduced;
-  * - the name of the enclosing component (e.g. "SELECT" for a "WHERE" statement description)
   * - a list of related components.
   *
   * The list of related components is documentation cross-reference metadata: it may name components
@@ -34,11 +32,6 @@ namespace DB
   *
   * Documentation does not support multiple languages.
   * The only available language is English.
-  *
-  * Every documentation object captures the path of the source file where it is defined (the `source` field).
-  * It is initialized by default to the location of the (aggregate) initialization of the object, which is the
-  * registration site of the corresponding component, so it points to the source code that documents it. The path
-  * is as produced by the compiler; `system.documentation` exposes it normalized to be relative to the repository root.
   */
 struct Documentation
 {
@@ -54,25 +47,15 @@ struct Documentation
     using Examples = std::vector<Example>;
 
     using IntroducedIn = VersionNumber;
-    using Parent = String;
-    using Related = std::vector<String>;
-
     static constexpr VersionNumber VERSION_UNKNOWN;
+
+    using Related = std::vector<String>;
 
     Description description;                       /// E.g. "The most universal and functional table engine for high-load tasks."
     Syntax syntax {};                              /// E.g. "ENGINE = MergeTree() ORDER BY expr"
     Examples examples {};                          ///
     IntroducedIn introduced_in {VERSION_UNKNOWN};  /// E.g. {25, 5}
-    Parent parent {};                              /// E.g. "SELECT" for the `WHERE` clause.
     Related related {};                            /// E.g. {"ReplicatedMergeTree"}
-
-    /// The source file where this documentation is defined. Captured automatically at the construction site;
-    /// do not set it explicitly. See the note in the class comment above.
-    /// NOTE: this only works when the object is initialized at its construction site, i.e. with aggregate/designated
-    /// initialization (`Documentation doc{...}`) or value-initialization (`Documentation doc{}`). A default-initialized
-    /// object (`Documentation doc;`, without braces) records this header instead, so always use braces when building
-    /// the documentation field by field afterwards (or set `source` explicitly).
-    const char * source = std::source_location::current().file_name();
 
     String syntaxAsString() const;
     String examplesAsString() const;

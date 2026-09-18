@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemWasmModules.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -122,7 +121,7 @@ void StorageSystemWasmModules::fillData(MutableColumns & res_columns, ContextPtr
     }
 }
 
-void StorageSystemWasmModules::alter(const AlterCommands &, ContextPtr, AlterLockHolder &, DDLGuardPtr &)
+void StorageSystemWasmModules::alter(const AlterCommands &, ContextPtr, AlterLockHolder &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER is not supported by storage {}", getName());
 }
@@ -145,7 +144,7 @@ static std::optional<ModuleDeleteFilter> getModuleDeleteFilterFromAst(const Muta
 
     const auto & command = commands.front();
     auto alter = command.ast();
-    if (command.type != MutationCommand::DELETE || !alter || alter->partition || alter->partitions || !alter->predicate)
+    if (command.type != MutationCommand::DELETE || !alter || alter->partition || !alter->predicate)
         return {};
 
     const auto * func = alter->predicate->as<ASTFunction>();
@@ -208,6 +207,3 @@ void StorageSystemWasmModules::mutate(const MutationCommands & commands, Context
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemWasmModules) }

@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {

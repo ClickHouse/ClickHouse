@@ -6,7 +6,6 @@
 -- All checks rely on `extractAll(explain, 'Prewhere filter column: ...')`,
 -- so the test stays robust to EXPLAIN formatting and indentation changes.
 
-SET explain_query_plan_default = 'legacy';
 SET allow_statistics = 1;
 SET use_statistics = 1;
 SET mutations_sync = 1;
@@ -31,8 +30,7 @@ CREATE TABLE test_basic_prewhere
     range_probe Int64 STATISTICS(tdigest)
 ) ENGINE = MergeTree()
 ORDER BY id
--- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
-SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
+SETTINGS auto_statistics_types = '';
 
 INSERT INTO test_basic_prewhere SELECT
     number,

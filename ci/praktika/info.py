@@ -1,12 +1,11 @@
 import json
 import os
 import traceback
-import urllib.parse
+import urllib
 from pathlib import Path
 from typing import Optional
 
 from .settings import Settings
-from .workflow import Workflow
 
 class Info:
 
@@ -46,30 +45,12 @@ class Info:
         return self.env.EVENT_TIME
 
     @property
-    def workflow_start_time(self):
-        """When this workflow run started, as a Unix timestamp.
-
-        The same value in every job of the run, and a rerun keeps it, unlike
-        the per-job start time.
-        """
-        return self.env.WORKFLOW_START_TIME
-
-    @property
-    def event_action(self):
-        return self.env.EVENT_ACTION
-
-    @property
     def job_config(self):
         return self.env.JOB_CONFIG
 
     @property
     def job_name(self):
         return self.env.JOB_NAME
-
-    @property
-    def rerun_count(self):
-        """How many times this job was manually re-run (0 = first attempt)."""
-        return self.env.RERUN_COUNT
 
     @property
     def pr_body(self):
@@ -144,19 +125,12 @@ class Info:
         return self.env.PR_LABELS
 
     @property
-    def pr_is_draft(self):
-        return self.env.PR_IS_DRAFT
-
-    @property
     def instance_type(self):
         return self.env.INSTANCE_TYPE
 
     @property
     def is_merge_queue_event(self):
-        # EVENT_TYPE always holds a Workflow.Event value, never GitHub's event
-        # name: the GitHub event is called "merge_group", praktika's value is
-        # "merge_queue". Compare against the enum so the two cannot drift.
-        return self.env.EVENT_TYPE == Workflow.Event.MERGE_QUEUE
+        return self.env.EVENT_TYPE == "merge_group"
 
     @property
     def is_push_event(self):
@@ -217,7 +191,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
+        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
@@ -237,7 +211,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
+        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
@@ -294,12 +268,6 @@ class Info:
 
     def get_changed_files(self):
         return self.get_kv_data().get("changed_files", None)
-
-    def get_changed_file_statuses(self):
-        return self.get_kv_data().get("changed_file_statuses", None)
-
-    def get_added_files(self):
-        return self.get_kv_data().get("added_files", None)
 
     def store_traceback(self):
         self.env.TRACEBACKS.append(traceback.format_exc())

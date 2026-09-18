@@ -1,5 +1,4 @@
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
@@ -23,7 +22,7 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
             "The rule type. Possible values: RuleTypeAll = 0 - default, with regex, compatible with old scheme; "
             "RuleTypePlain = 1 - plain metrics, with regex, compatible with old scheme; "
             "RuleTypeTagged = 2 - tagged metrics, with regex, compatible with old scheme; "
-            "RuleTypeTagList = 3 - tagged metrics, with regex (converted to RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')"},
+            "RuleTypeTagList = 3 - tagged metrics, with regex (converted to  RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')"},
         {"regexp",          std::make_shared<DataTypeString>(), "A pattern for the metric name."},
         {"function",        std::make_shared<DataTypeString>(), "The name of the aggregating function."},
         {"age",             std::make_shared<DataTypeUInt64>(), "The minimum age of the data in seconds."},
@@ -152,6 +151,3 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGraphite) }

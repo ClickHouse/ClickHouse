@@ -23,7 +23,10 @@ head -c 2000000 /dev/zero > "$ZEROS"
 
 $CLICKHOUSE_LOCAL --query "SELECT count() FROM file('$ZEROS', 'TabSeparated', 'x UInt8')"
 
-$CLICKHOUSE_LOCAL --query "SELECT number FROM numbers(3) INTO OUTFILE '$VALID' TRUNCATE COMPRESSION 'snappy' FORMAT TabSeparated"
+# 26.6 has no hadoop-snappy writer, so build the valid block by hand: the big-endian uncompressed
+# length (6), the big-endian compressed length (8), then the raw snappy stream for "0\n1\n2\n":
+# a varint uncompressed length (0x06) and one literal tag (0x14 = 5 << 2, i.e. six bytes follow).
+printf '\x00\x00\x00\x06\x00\x00\x00\x08\x06\x14\x30\x0a\x31\x0a\x32\x0a' > "$VALID"
 cat "$ZEROS" "$VALID" "$ZEROS" > "$MIXED"
 
 $CLICKHOUSE_LOCAL --query "SELECT * FROM file('$MIXED', 'TabSeparated', 'x UInt8')"

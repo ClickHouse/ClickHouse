@@ -11,7 +11,7 @@ class LimitByStep : public ITransformingStep
 public:
     explicit LimitByStep(
             const SharedHeader & input_header_,
-            size_t group_length_, size_t group_offset_, Names columns_, bool always_read_till_end_ = false);
+            size_t group_length_, size_t group_offset_, Names columns_);
 
     String getName() const override { return "LimitBy"; }
 
@@ -25,14 +25,11 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
-
     size_t getGroupLength() const { return group_length; }
     size_t getGroupOffset() const { return group_offset; }
     const Names & getColumns() const { return columns; }
-    bool alwaysReadTillEnd() const { return always_read_till_end; }
 
-    void applyOrder(const SortDescription & sort_description);
+    void applyOrder();
 
     /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
     /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint
@@ -50,10 +47,7 @@ private:
 
     Names columns;
 
-    bool always_read_till_end = false;
-
-    SortDescription sorted_columns_descr;
-
+    bool input_sorted_by_keys = false;
     bool skip_stream_merging = false;
 };
 

@@ -71,7 +71,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
 }
 
 
-DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> recheck_array, bool is_nullable, uint16_t dimensions)
+static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
 {
     DataTypePtr res;
     bool is_array = false;
@@ -363,8 +363,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "attnum as att_num, "
            "{} as generated " /// if column has GENERATED
            "FROM pg_attribute "
-           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}){}"
-           " AND NOT attisdropped AND attnum > 0 "
+           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) {}"
+           "AND NOT attisdropped AND attnum > 0 "
            "ORDER BY attnum ASC", generated, where, columns_part); /// Now we use variable `generated` to form query string. End of trick.
 
     auto postgres_table_with_schema = postgres_schema.empty()

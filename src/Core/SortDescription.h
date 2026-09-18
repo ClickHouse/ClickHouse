@@ -3,13 +3,13 @@
 
 #include <Core/Field.h>
 #include <Common/IntervalKind.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/Collator.h>
 
 #include <cstddef>
 #include <string>
 #include <memory>
+#include <vector>
 
 namespace DB
 {
@@ -134,9 +134,9 @@ struct SortColumnDescriptionWithColumnIndex
 class CompiledSortDescriptionFunctionHolder;
 
 /// Description of the sorting rule for several columns.
-using SortDescriptionWithPositions = VectorWithMemoryTracking<SortColumnDescriptionWithColumnIndex>;
+using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
 
-class SortDescription : public VectorWithMemoryTracking<SortColumnDescription>
+class SortDescription : public std::vector<SortColumnDescription>
 {
 public:
     /// Can be safely cast into JITSortDescriptionFunc
@@ -173,20 +173,10 @@ std::string dumpSortDescription(const SortDescription & description);
 
 JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
 
-/// The `WITH FILL` rules that `FillingRow` and `FillingTransform` rely on: a step that does not advance
-/// the row (zero, or pointing away from the sort direction) makes them generate rows without end, and a
-/// non-numeric step reaches `safeGet` in `getStepFunction`. Returns the violated rule, or an empty string
-/// when `fill` is usable for a column sorted in `direction`. Both planners and the plan deserializer
-/// check the same rules through this function, each throwing its own error code.
-String checkFillDescription(const FillColumnDescription & fill, int direction);
-
 class WriteBuffer;
 class ReadBuffer;
 
-/// `version` is the query-plan serialization version of the stream: a `WITH FILL` column carries its
-/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP.
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version);
-void deserializeSortDescription(
-    SortDescription & sort_description, ReadBuffer & in, UInt64 version, size_t max_type_complexity = 0);
+void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out);
+void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in);
 
 }

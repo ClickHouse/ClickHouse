@@ -103,29 +103,9 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
             && 0 == strncasecmp(a.data(), b.data(), a.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
     };
 
-    /// These are valid identifiers that the parser reads back as a literal instead of an identifier:
-    /// `ParserNumber` hands a bare word to `strtod`, which accepts `inf`, `infinity` and `nan`, and
-    /// `true`/`false` are parsed as `Bool` literals. (`null` is already rejected by
-    /// `isValidIdentifier`.) Left unquoted, a reference to a column with such a name silently turns
-    /// into a constant: a table with a column named `inf` has `ORDER BY inf` written to its
-    /// metadata, and the next server start fails to load it with `Sorting key cannot contain
-    /// constants`.
-    auto isParsedAsLiteral = [&](std::string_view identifier)
-    {
-        return isCaseInsensitiveEqual(identifier, "inf")
-            || isCaseInsensitiveEqual(identifier, "infinity")
-            || isCaseInsensitiveEqual(identifier, "nan")
-            || isCaseInsensitiveEqual(identifier, "true")
-            || isCaseInsensitiveEqual(identifier, "false");
-    };
-
     if (isValidIdentifier(s)
-        && !isParsedAsLiteral(s)
         && !isCaseInsensitiveEqual(s, "distinct")
         && !isCaseInsensitiveEqual(s, "all")
-        /// The parser can consume a bare `SOME` as the array-quantifier keyword, which rewrites the
-        /// node at parse time, so a function of that name has to stay quoted to survive a re-parse.
-        && !isCaseInsensitiveEqual(s, "some")
         && !isCaseInsensitiveEqual(s, "table")
         /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
         /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
@@ -134,7 +114,6 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         /// These keywords cause parsing ambiguity when used as function or identifier names
         /// because the parser consumes them as clause-starting keywords.
         && !isCaseInsensitiveEqual(s, "from")
-        && !isCaseInsensitiveEqual(s, "top")
         && !isCaseInsensitiveEqual(s, "values"))
     {
         writeString(s, buf);
@@ -151,11 +130,6 @@ void writeProbablyBackQuotedString(std::string_view s, WriteBuffer & buf)
 void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf)
 {
     writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedString(s_, buf_); });
-}
-
-void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedStringPostgreSQL(s_, buf_); });
 }
 
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)

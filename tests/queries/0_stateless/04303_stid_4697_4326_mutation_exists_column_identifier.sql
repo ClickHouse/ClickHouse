@@ -1,4 +1,5 @@
--- The fix lives in the analyzer; the old analyzer rejects these query
+-- Tags: no-old-analyzer
+-- The fix lives in the new analyzer; the old analyzer rejects these query
 -- shapes with a different error before the planner runs, so the bug cannot
 -- manifest there.
 

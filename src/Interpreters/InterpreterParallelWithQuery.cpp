@@ -122,11 +122,7 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
-    /// The subqueries are nested, hence `internal`, but their text comes from the user, hence `user_initiated`:
-    /// without it the access checks of `CREATE` subqueries would be skipped.
-    auto query_io = executeQuery(
-        subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true, .user_initiated = true })
-        .second;
+    auto query_io = executeQuery(subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true }).second;
 
     auto & pipeline = query_io.pipeline;
 
