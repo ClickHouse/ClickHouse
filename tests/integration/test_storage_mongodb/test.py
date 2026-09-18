@@ -768,6 +768,19 @@ def test_dates_casting(started_cluster):
         )
         == "0\n"
     )
+    # A list is converted element by element.
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16', 3), toDateTime64('2000-01-01 00:00:00', 3))"
+        )
+        == "1\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date NOT IN (toDateTime('1999-02-28 00:00:00'), toDateTime('2000-01-01 00:00:00'))"
+        )
+        == "0\n"
+    )
     # A sub-second bound, or a time of day against a `Date` column, is not pushed down truncated: the query
     # is refused like any other predicate MongoDB cannot take, and evaluated in ClickHouse when allowed to.
     assert "NOT_IMPLEMENTED" in node.query_and_get_error(

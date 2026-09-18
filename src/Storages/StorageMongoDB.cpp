@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -373,15 +374,44 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     if (func_name == "$in" || func_name == "$nin")
     {
-        if (const_value.getType() == Field::Types::Array)
+        if (const_value.getType() == Field::Types::Array || const_value.getType() == Field::Types::Tuple)
         {
+            Array elements;
+            if (const_value.getType() == Field::Types::Tuple)
+            {
+                const auto & value_tuple = const_value.safeGet<Tuple>();
+                elements.assign(value_tuple.begin(), value_tuple.end());
+            }
+            else
+                elements = const_value.safeGet<Array>();
+
+            /// The list is a `Tuple` type over an `Array` value, so the elements are converted one by one.
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(const_type.get());
+            const auto * array_type = typeid_cast<const DataTypeArray *>(const_type.get());
+            for (size_t i = 0; i < elements.size(); ++i)
+            {
+                DataTypePtr element_type;
+                if (tuple_type && i < tuple_type->getElements().size())
+                    element_type = tuple_type->getElements()[i];
+                else if (array_type)
+                    element_type = array_type->getNestedType();
+
+                if (element_type && (element_type->equals(*column_type) || (WhichDataType(element_type).isNumber() && is_column_number)))
+                    continue;
+
+                auto converted = tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get());
+                if (converted.isNull())
+                {
+                    auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
+                    LOG_DEBUG(log, "Cannot convert constant value {} to column type {}", value_string, column_type->getName());
+                    return {};
+                }
+                elements[i] = std::move(converted);
+            }
+
+            const_value = std::move(elements);
             column_type = std::make_shared<DataTypeArray>(column_type);
-        }
-        else if (const_value.getType() == Field::Types::Tuple)
-        {
-            auto & value_tuple = const_value.safeGet<Tuple>();
-            const_value = Array(value_tuple.begin(), value_tuple.end());
-            column_type = std::make_shared<DataTypeArray>(column_type);
+            const_type = column_type;
         }
     }
 
