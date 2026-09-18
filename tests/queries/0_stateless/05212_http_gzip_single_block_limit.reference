@@ -1,0 +1,3 @@
+A single gzip block decompresses to more than 67108864 bytes
+1
+300000	299999
