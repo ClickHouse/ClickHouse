@@ -567,6 +567,7 @@ See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 Their index lookup takes the required tokens from the preprocessed needle, which bounds the tokens of the preprocessed value only for a preprocessor that maps bytes in place, i.e. `lower` or `upper`.
 `lowerUTF8` and `upperUTF8` do not qualify, because ICU case mapping is context sensitive: a Greek capital sigma lowercases to `ς` at the end of a word and to `σ` elsewhere, so a needle can preprocess to a token the value does not contain.
 With any other preprocessor these functions do not use the index and are evaluated row-level.
+The `array` tokenizer is an exception: for these functions it reaches the index only by the dictionary scan of footnotes ¹ and ⁴, which requires no preprocessor at all, so `lower` and `upper` do not enable the index for it either.
 
 **Experimental: Support phrase search argument (optional)**.
 
