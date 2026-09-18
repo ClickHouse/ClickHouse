@@ -213,7 +213,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     }
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     ConnectionPoolPtr pool_,
