@@ -15,10 +15,62 @@ nullable declined	90	3
 nullable declined, chain off	90	3
 nullable not rewritten	0
 nullable rewritten, setting off	1
-nullable dict declined	90	3
+nullable dict null restored	90	3
 nullable dict declined, setting off	90	3
-nullable dict not rewritten	0
+nullable dict rewritten	1
 nullable dict rewritten, setting off	1
 nested nullable rewritten	1
 nested nullable	100	3
 nested nullable, setting off	100	3
+const arm, key pruned	3
+subquery arm, key pruned	3
+lowcardinality key pruned	3
+and spine, key pruned	3
+prewhere, key pruned	3
+and with a second set, key pruned	1
+shared node, key pruned	3
+skip index used	3
+where values	3	897	4	3	3	3
+where values, setting off	3	897	4	3	3	3
+where values, rewrite off	3	897	4	3	3	3
+not inside and value	897
+not inside and value, setting off	897
+or inside and value	4
+or inside and value, setting off	4
+and with a second set value	1
+and with a second set value, setting off	1
+and with a second set value, rewrite off	1
+projection values	900	3	900	3
+projection values, setting off	900	3	900	3
+projection values, rewrite off	900	3	900	3
+shared node value	3
+shared node value, setting off	3
+shared node value, rewrite off	3
+where form indexHint	1
+where form nullIn	2
+where form if	1
+where form dictGet	0
+prewhere form indexHint	1
+subquery arm indexHint	1
+subquery arm dictGet	0
+projection form indexHint	0
+projection form nullIn	1
+not form indexHint	0
+or form indexHint	0
+not inside and form indexHint	0
+or inside and form indexHint	0
+shared node indexHint	1
+not null key rewritten	1
+not null key indexHint	0
+remote const arm	6
+remote subquery arm	6
+remote where const arm	6
+remote where subquery arm	6
+dict, parallel replicas	3
+dict where, parallel replicas	3
+variant key value	100	3
+variant key value, rewrite off	100	3
+variant key not rewritten	0
+dynamic key value	100	3
+dynamic key value, rewrite off	100	3
+dynamic key not rewritten	0
