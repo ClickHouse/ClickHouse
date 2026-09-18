@@ -61,6 +61,8 @@ CREATE TABLE d AS src ENGINE = Distributed('c1', currentDatabase(), 'src')
 SELECT name, value, source FROM system.table_settings
 WHERE table = 'd' AND name IN ('bytes_to_throw_insert', 'background_insert_batch') ORDER BY name;"
 
+# Coverage rather than a regression guard for any one change: the two sources had simply never met in a
+# single run, so nothing pinned which of them wins.
 echo "-- the config section wins where it and the compatibility setting touch one setting"
 # The two are applied in that order, and this is the only place they meet: `compute_exact_num_defaults_for_
 # sparse_columns` is rolled back by 23.3 and then assigned by the config to the same value the roll-back gave

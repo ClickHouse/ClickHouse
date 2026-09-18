@@ -230,6 +230,10 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
         {
+            /// Marked like the scalar overrides below, so that `settingsSuppliedByNamedCollection` does not
+            /// credit the collection for a value the query replaced. No caller passes `complex_args` and asks
+            /// for provenance today; this keeps the two from drifting apart when one does.
+            collection_copy->markQueryOverridden(value_override->first);
             complex_args->emplace_back(value_override->first, *value);
             continue;
         }

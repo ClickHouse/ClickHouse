@@ -1338,6 +1338,13 @@ void registerStorageNATS(StorageFactory & factory)
             (isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax)
                 && (!named_collection || collection_defined_in_config));
 
+        /// The resolution above drops whichever of the two credential settings the query did not choose, so a
+        /// collection that supplied the dropped one no longer explains anything the table holds.
+        if ((*nats_settings)[NATSSetting::nats_credentials].value.empty())
+            settings_from_named_collection.erase("nats_credentials");
+        if ((*nats_settings)[NATSSetting::nats_credential_file].value.empty())
+            settings_from_named_collection.erase("nats_credential_file");
+
         resolveCertificateSource(
             *nats_settings,
             collection_defined_in_config,

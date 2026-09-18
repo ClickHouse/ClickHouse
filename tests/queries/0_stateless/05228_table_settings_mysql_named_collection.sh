@@ -2,9 +2,11 @@
 # Tags: no-fasttest
 # Tag no-fasttest: depends on the MySQL table engine, which is an optional build.
 #
-# `MySQL` resolves its settings from the creating session, a named collection and the table's own `SETTINGS`
-# clause, in that order. It keeps the collection's name, so a value the collection supplied is reported as
-# such - which no comparison of values could reveal, since a collection may well state the default.
+# `MySQL` resolves its settings from the creating session, a named collection, key-value overrides in the
+# engine arguments and the table's own `SETTINGS` clause, in that order. It keeps the names the collection actually supplied - not the
+# collection's name, which would answer for whatever it holds when the table is read - so a value the
+# collection supplied is reported as such even when it is the compiled-in default, which no comparison of
+# values could reveal, while one the arguments overrode is not.
 #
 # The engine does not connect at `CREATE` time when the columns are given explicitly. A shell test because a
 # named collection is server-wide, so its name has to carry this test's database.

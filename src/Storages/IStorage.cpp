@@ -3,7 +3,6 @@
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/StringUtils.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -297,16 +296,13 @@ void IStorage::attributeSettingsFromNamedCollection(SettingDescriptions & settin
     if (supplied_by_collection.empty())
         return;
 
+    /// By canonical name only, unlike `attributeSettingsStatedInDefinition`: every engine's
+    /// `loadFromNamedCollection` looks its settings up in the collection by that name too, so a key spelled
+    /// as an alias is ignored by the loader - and attributing it here would name the collection for a value
+    /// it did not supply, which is the mistake this whole mechanism exists to avoid.
     for (auto & setting : settings)
-    {
-        /// A collection may name a setting by any of its aliases, as a definition may - see
-        /// `attributeSettingsStatedInDefinition`, which matches the same way.
-        const bool supplied = supplied_by_collection.contains(setting.name)
-            || std::any_of(setting.aliases.begin(), setting.aliases.end(),
-                           [&](std::string_view alias) { return supplied_by_collection.contains(String{alias}); });
-        if (supplied)
+        if (supplied_by_collection.contains(setting.name))
             setting.origin = SettingOrigin::NamedCollection;
-    }
 }
 
 void IStorage::reportOriginByValue(SettingDescriptions & settings)

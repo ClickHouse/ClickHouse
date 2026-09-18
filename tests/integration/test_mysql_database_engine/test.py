@@ -103,7 +103,8 @@ def test_table_settings_for_mysql_database(started_cluster):
         clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_database")
         clickhouse_node.query(
             "CREATE DATABASE test_settings_database ENGINE = MySQL("
-            f"'mysql80:3306', 'test_settings_database', 'root', '{mysql_pass}')"
+            f"'mysql80:3306', 'test_settings_database', 'root', '{mysql_pass}') "
+            "SETTINGS connection_pool_size = 5"
         )
 
         settings = clickhouse_node.query(
@@ -111,6 +112,26 @@ def test_table_settings_for_mysql_database(started_cluster):
             "WHERE database = 'test_settings_database' AND table = 't' ORDER BY name"
         )
         assert "connection_pool_size" in settings
+
+        # The database resolves its settings into the connection pool its tables share, and hands them to
+        # every table it makes, so the tables report what they work with rather than the compiled-in
+        # defaults. The source is `other`, not `definition`: the value came from the database's clause, and
+        # no table of it states anything itself.
+        assert (
+            clickhouse_node.query(
+                "SELECT value, source FROM system.table_settings WHERE database = 'test_settings_database' "
+                "AND table = 't' AND name = 'connection_pool_size'"
+            ).strip()
+            == "5\tother"
+        )
+        # And a setting the clause leaves out is at its own default, not at something the pool invented.
+        assert (
+            clickhouse_node.query(
+                "SELECT value, source FROM system.table_settings WHERE database = 'test_settings_database' "
+                "AND table = 't' AND name = 'connection_max_tries'"
+            ).strip()
+            == "3\tdefault"
+        )
 
         # The statement reaches them even when the caller has remote databases hidden: naming one turns
         # `show_remote_databases_in_system_tables` on for that statement. The setting is on by default, so
